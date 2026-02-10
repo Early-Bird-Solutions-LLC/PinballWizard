@@ -1,0 +1,19 @@
+# Build output
+bin/
+obj/
+publish/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user
+.idea/
+
+# Data (Docker volume — not checked in)
+data/
+
+# OS
+.DS_Store
+Thumbs.db

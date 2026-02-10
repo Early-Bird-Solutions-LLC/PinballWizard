@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/PinballWizard.Scraper/PinballWizard.Scraper.csproj" />
+  <Folder Name="/Tests/">
+    <Project Path="tests/PinballWizard.Scraper.Tests/PinballWizard.Scraper.Tests.csproj" />
+  </Folder>
+</Solution>
