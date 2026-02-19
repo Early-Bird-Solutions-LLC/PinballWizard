@@ -1,3 +1,5 @@
+using PinballWizard.Domain.Models;
+
 namespace PinballWizard.Scraper.Scrapers;
 
 /// <summary>
@@ -22,13 +24,13 @@ public interface ISourceScraper
 public sealed class ScrapedItem
 {
     /// <summary>The discovered document link with full provenance.</summary>
-    public Models.DiscoveredLink? Link { get; init; }
+    public DiscoveredLink? Link { get; init; }
 
     /// <summary>Structured game metadata (only from GamePageScraper).</summary>
-    public Models.GameRecord? Game { get; init; }
+    public GameRecord? Game { get; init; }
 
     /// <summary>The source that discovered this item.</summary>
-    public required Models.SourceType SourceType { get; init; }
+    public required SourceType SourceType { get; init; }
 
     /// <summary>The page URL where this was discovered.</summary>
     public required string DiscoveryUrl { get; init; }

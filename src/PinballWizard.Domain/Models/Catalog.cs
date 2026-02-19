@@ -1,8 +1,8 @@
-namespace PinballWizard.Scraper.Models;
+namespace PinballWizard.Domain.Models;
 
 /// <summary>
 /// The master document registry. Primary output of the scraper
-/// and primary input to Phase 2 (RAG indexing).
+/// and primary input to the content processing pipeline.
 /// </summary>
 public sealed class Catalog
 {

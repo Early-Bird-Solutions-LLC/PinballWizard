@@ -1,0 +1,17 @@
+# ── Build stage ────────────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:10.0-preview AS build
+WORKDIR /src
+COPY src/PinballWizard.Domain/PinballWizard.Domain.csproj src/PinballWizard.Domain/
+COPY src/PinballWizard.Processor/PinballWizard.Processor.csproj src/PinballWizard.Processor/
+RUN dotnet restore src/PinballWizard.Processor/PinballWizard.Processor.csproj
+COPY src/ src/
+RUN dotnet publish src/PinballWizard.Processor -c Release -o /app --no-restore
+
+# ── Runtime stage ──────────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview
+WORKDIR /app
+COPY --from=build /app .
+
+EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
+ENTRYPOINT ["dotnet", "PinballWizard.Processor.dll"]

@@ -1,4 +1,4 @@
-using PinballWizard.Scraper.Models;
+using PinballWizard.Domain.Models;
 
 namespace PinballWizard.Scraper.Downloading;
 

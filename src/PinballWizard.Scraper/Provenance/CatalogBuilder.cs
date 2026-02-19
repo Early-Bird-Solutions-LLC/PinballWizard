@@ -2,8 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Domain.Models;
 using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
 
 namespace PinballWizard.Scraper.Provenance;
 
@@ -204,7 +204,7 @@ public sealed class CatalogBuilder
 
         var previousHash = doc.File?.Sha256;
 
-        doc.File = new Models.DownloadedFileInfo
+        doc.File = new DownloadedFileInfo
         {
             LocalPath = result.LocalPath,
             Filename = result.Filename ?? Path.GetFileName(result.LocalPath),

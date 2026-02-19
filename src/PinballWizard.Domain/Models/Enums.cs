@@ -1,4 +1,4 @@
-namespace PinballWizard.Scraper.Models;
+namespace PinballWizard.Domain.Models;
 
 /// <summary>
 /// Where the document was discovered.

@@ -1,6 +1,8 @@
 services:
-  pinball-wizard:
-    build: .
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -8,3 +10,36 @@ services:
       resources:
         limits:
           memory: 2G
+
+  processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.processor
+    ports:
+      - "5100:8080"
+    environment:
+      - Storage__ConnectionString=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1
+    depends_on:
+      - azurite
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "5000:8080"
+    restart: unless-stopped
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite-data:/data
+    restart: unless-stopped
+
+volumes:
+  azurite-data:

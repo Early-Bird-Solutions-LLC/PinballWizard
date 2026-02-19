@@ -1,5 +1,5 @@
 using PinballWizard.Scraper.Downloading;
-using PinballWizard.Scraper.Models;
+using PinballWizard.Domain.Models;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests;

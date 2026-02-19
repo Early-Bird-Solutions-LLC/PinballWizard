@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Scraper.Downloading;
 using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
+using PinballWizard.Domain.Models;
 using PinballWizard.Scraper.Provenance;
 using PinballWizard.Scraper.Scrapers;
 

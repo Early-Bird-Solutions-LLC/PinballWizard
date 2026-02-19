@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 
-namespace PinballWizard.Scraper.Models;
+namespace PinballWizard.Domain.Models;
 
 /// <summary>
 /// The core metadata unit. Every downloaded file gets a DocumentRecord that travels

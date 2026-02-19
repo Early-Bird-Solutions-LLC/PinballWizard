@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
+using PinballWizard.Domain.Models;
 
 namespace PinballWizard.Scraper.Downloading;
 

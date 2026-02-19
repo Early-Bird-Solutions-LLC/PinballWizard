@@ -5,7 +5,7 @@ using PinballApi;
 using PinballApi.Models.WPPR.v2.Rankings;
 using PinballApi.Models.WPPR.v2.Tournaments;
 using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
+using PinballWizard.Domain.Models;
 
 namespace PinballWizard.Scraper.Scrapers;
 

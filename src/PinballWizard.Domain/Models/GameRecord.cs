@@ -1,6 +1,4 @@
-using System.Text.Json.Serialization;
-
-namespace PinballWizard.Scraper.Models;
+namespace PinballWizard.Domain.Models;
 
 /// <summary>
 /// Structured game metadata scraped from the game page itself (not from documents).

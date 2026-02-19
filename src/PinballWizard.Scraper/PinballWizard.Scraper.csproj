@@ -20,4 +20,8 @@
     <PackageReference Include="YoutubeExplode" Version="6.5.6" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\PinballWizard.Domain\PinballWizard.Domain.csproj" />
+  </ItemGroup>
+
 </Project>
