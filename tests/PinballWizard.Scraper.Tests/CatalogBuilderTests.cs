@@ -578,6 +578,155 @@ public sealed class CatalogBuilderTests
         Assert.Equal(2, stored.DiscoveredOn.Count);
     }
 
+    // -------- LinkDocumentsToGames: cross-source manual ↔ game linking --------
+
+    private static GameRecord MakeGame(string slug, string title) => new()
+    {
+        GameId = GameRecord.GenerateId(slug),
+        Title = title,
+        Slug = slug,
+        GamePageUrl = $"https://sternpinball.com/game/{slug}/",
+        DiscoveredOn = ["games_listing"]
+    };
+
+    [Fact]
+    public void LinkDocumentsToGames_ManualMatchesByFilenameSlug_PopulatesGameReference()
+    {
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        // Seed a manual discovered on /manuals/ with no game association
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/manuals/StrangerThings_Pro_web.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            linkText: "Stranger Things Pro Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        Assert.Null(doc.Game);
+
+        // Seed a known game with a hyphen-cased slug
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("Stranger Things", doc.Game!.Title);
+        Assert.Equal("stranger-things", doc.Game.Slug);
+        Assert.Equal("Pro", doc.Game.Edition);
+        Assert.Equal("https://sternpinball.com/game/stranger-things/", doc.Game.GamePageUrl);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_NoMatchingSlug_LeavesGameNull()
+    {
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/manuals/general-installation-instructions.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage));
+
+        var doc = Assert.Single(catalog.Documents);
+        Assert.Null(doc.Game);
+
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+        builder.MergeGameRecord(games, MakeGame("metallica", "Metallica"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.Null(doc.Game);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_BacksFillsTitleFromSlugCasedGuess()
+    {
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        // GamePage discovery — BuildGameReference produces Title="stranger things" (slug-cased)
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/st_manual.pdf",
+            discoveryUrl: "https://sternpinball.com/game/stranger-things/",
+            discoveryContext: "Game Page Stranger Things → Specs & Manual tab",
+            sourceType: SourceType.GamePage,
+            gameSlug: "stranger-things",
+            linkText: "Stranger Things Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        Assert.NotNull(doc.Game);
+        Assert.Equal("stranger things", doc.Game!.Title); // confirm starting state from BuildGameReference
+
+        // Now seed the canonical game record with the proper title
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("Stranger Things", doc.Game!.Title); // backfilled from GameRecord
+        Assert.Equal("stranger-things", doc.Game.Slug);
+        Assert.Equal("https://sternpinball.com/game/stranger-things/", doc.Game.GamePageUrl);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_AmbiguousMatch_LongestSlugWins()
+    {
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        // Filename normalizes to "metallicavaulteditionv1pdf" — both slugs are substrings
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/manuals/MetallicaVaultEdition_v1.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage));
+
+        var doc = Assert.Single(catalog.Documents);
+
+        // Seed both — the shorter "metallica" must NOT win even though it appears first
+        builder.MergeGameRecord(games, MakeGame("metallica", "Metallica"));
+        builder.MergeGameRecord(games, MakeGame("metallica-vault-edition", "Metallica Vault Edition"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("metallica-vault-edition", doc.Game!.Slug);
+        Assert.Equal("Metallica Vault Edition", doc.Game.Title);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_TiedLongestMatches_LeavesGameNull()
+    {
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        // "foobarbaz_thing.pdf" → normalized "foobarbazthingpdf"
+        // contains both "foobar" (from slug "foo-bar") and "barbaz" (from slug "bar-baz") at length 6
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/manuals/foobarbaz_thing.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage));
+
+        var doc = Assert.Single(catalog.Documents);
+
+        builder.MergeGameRecord(games, MakeGame("foo-bar", "Foo Bar"));
+        builder.MergeGameRecord(games, MakeGame("bar-baz", "Bar Baz"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        // Tied longest matches → leave unlinked rather than guess
+        Assert.Null(doc.Game);
+    }
+
     [Fact]
     public void MergeGameRecord_ExistingGame_DoesNotDuplicateDiscoveredOn()
     {

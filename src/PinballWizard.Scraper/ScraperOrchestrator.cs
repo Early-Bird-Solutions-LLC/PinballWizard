@@ -83,6 +83,9 @@ public sealed class ScraperOrchestrator
             }
         }
 
+        // Cross-source linking: associate manuals with known games by filename slug.
+        _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
+
         if (!dryRun)
         {
             await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
