@@ -1,0 +1,20 @@
+# ── PinballWizard Scraper Schedule ─────────────────────────────────────────────
+#
+# URL Discovery + Metadata
+#
+
+# Manuals (static HTML, fast) — daily 6:00 AM UTC
+0 6 * * * cd /app && dotnet PinballWizard.Scraper.dll --source manuals --scrape-only >> /data/logs/scraper_$(date +\%F).log 2>&1
+
+# Game pages (Playwright, ~80 pages × 3 tabs) — daily 6:05 AM UTC
+5 6 * * * cd /app && dotnet PinballWizard.Scraper.dll --source games --scrape-only >> /data/logs/scraper_$(date +\%F).log 2>&1
+
+# Service bulletins (Playwright) — daily 6:30 AM UTC
+30 6 * * * cd /app && dotnet PinballWizard.Scraper.dll --source bulletins --scrape-only >> /data/logs/scraper_$(date +\%F).log 2>&1
+
+#
+# File Downloads + Catalog Build
+#
+
+# Download new/changed files — daily 7:00 AM UTC
+0 7 * * * cd /app && dotnet PinballWizard.Scraper.dll --download >> /data/logs/scraper_$(date +\%F).log 2>&1
