@@ -167,6 +167,166 @@ public sealed class CatalogBuilder
     }
 
     /// <summary>
+    /// Cross-source linking pass: walks every <see cref="DocumentRecord"/> and tries to
+    /// associate it with a known game. Two complementary jobs:
+    ///  * Documents with <c>Game == null</c> (e.g. manuals discovered on <c>/manuals/</c>)
+    ///    get a <see cref="GameReference"/> populated when their filename contains a known
+    ///    game slug (case-insensitive, separator-insensitive substring match).
+    ///  * Documents whose <see cref="GameReference"/> was built from a slug-cased guess
+    ///    (e.g. <c>Title = "stranger things"</c> from <see cref="BuildGameReference"/>)
+    ///    get their <see cref="GameReference.Title"/> backfilled from the canonical
+    ///    <see cref="GameRecord.Title"/>.
+    /// </summary>
+    /// <remarks>
+    /// Ambiguity rule: when multiple slugs match a filename, the LONGEST wins. If two or
+    /// more slugs of equal (longest) length match, the document is left unlinked and a
+    /// debug message is logged — we do not guess.
+    /// </remarks>
+    public void LinkDocumentsToGames(Catalog catalog, GameCatalog gameCatalog)
+    {
+        if (gameCatalog.Games.Count == 0) return;
+
+        // Pre-compute normalized slugs once. Empty/null slugs are skipped.
+        var normalizedGames = gameCatalog.Games
+            .Where(g => !string.IsNullOrEmpty(g.Slug))
+            .Select(g => (Game: g, Normalized: NormalizeForMatch(g.Slug)))
+            .Where(t => t.Normalized.Length > 0)
+            .ToList();
+
+        if (normalizedGames.Count == 0) return;
+
+        foreach (var doc in catalog.Documents)
+        {
+            // Backfill title for docs that already have a Game reference but a slug-cased title.
+            if (doc.Game is not null)
+            {
+                BackfillTitleIfSlugGuess(doc, gameCatalog);
+                continue;
+            }
+
+            var filename = ExtractFilename(doc.Source.FileUrl);
+            if (string.IsNullOrEmpty(filename)) continue;
+
+            var normalizedFilename = NormalizeForMatch(filename);
+            if (normalizedFilename.Length == 0) continue;
+
+            // Find every slug that appears as a substring of the normalized filename.
+            var matches = normalizedGames
+                .Where(t => normalizedFilename.Contains(t.Normalized, StringComparison.Ordinal))
+                .ToList();
+
+            if (matches.Count == 0) continue;
+
+            // Longest match wins; ties leave the doc unlinked.
+            var maxLen = matches.Max(m => m.Normalized.Length);
+            var longest = matches.Where(m => m.Normalized.Length == maxLen).ToList();
+
+            if (longest.Count > 1)
+            {
+                _logger.LogDebug(
+                    "Ambiguous match for {Filename}: candidates {Slugs}",
+                    filename,
+                    string.Join(", ", longest.Select(m => m.Game.Slug)));
+                continue;
+            }
+
+            var (matchedGame, matchedNormalized) = longest[0];
+            var edition = ExtractEdition(normalizedFilename, matchedNormalized);
+
+            doc.Game = new GameReference
+            {
+                Title = matchedGame.Title,
+                Slug = matchedGame.Slug,
+                Edition = edition,
+                GamePageUrl = matchedGame.GamePageUrl
+            };
+
+            _logger.LogDebug(
+                "Linked document {DocId} to game {Slug} (edition: {Edition})",
+                doc.DocumentId, matchedGame.Slug, edition ?? "none");
+        }
+    }
+
+    private static void BackfillTitleIfSlugGuess(DocumentRecord doc, GameCatalog gameCatalog)
+    {
+        var current = doc.Game;
+        if (current is null) return;
+
+        // Detect the slug-cased guess produced by BuildGameReference: slug.Replace('-', ' ').
+        var slugAsTitle = current.Slug.Replace('-', ' ');
+        if (!string.Equals(current.Title, slugAsTitle, StringComparison.Ordinal)) return;
+
+        var match = gameCatalog.Games.FirstOrDefault(
+            g => string.Equals(g.Slug, current.Slug, StringComparison.OrdinalIgnoreCase));
+        if (match is null) return;
+
+        doc.Game = new GameReference
+        {
+            Title = match.Title,
+            Slug = current.Slug,
+            Edition = current.Edition,
+            GamePageUrl = current.GamePageUrl
+        };
+    }
+
+    private static string ExtractFilename(string fileUrl)
+    {
+        if (string.IsNullOrEmpty(fileUrl)) return string.Empty;
+        // Strip query string / fragment, then take the path's last segment.
+        var pathPart = fileUrl;
+        var queryIdx = pathPart.IndexOfAny(['?', '#']);
+        if (queryIdx >= 0) pathPart = pathPart[..queryIdx];
+        var slashIdx = pathPart.LastIndexOfAny(['/', '\\']);
+        return slashIdx >= 0 ? pathPart[(slashIdx + 1)..] : pathPart;
+    }
+
+    /// <summary>
+    /// Normalizes a string for slug-substring matching: lowercases, then strips
+    /// <c>_</c>, <c>-</c>, <c>.</c>, and whitespace so that <c>stranger-things</c>,
+    /// <c>StrangerThings</c>, and <c>stranger_things</c> all collapse to <c>strangerthings</c>.
+    /// </summary>
+    private static string NormalizeForMatch(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        var lower = value.ToLowerInvariant();
+        var sb = new System.Text.StringBuilder(lower.Length);
+        foreach (var c in lower)
+        {
+            if (c == '_' || c == '-' || c == '.' || char.IsWhiteSpace(c)) continue;
+            sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    // Edition suffixes checked against the text immediately following the matched slug
+    // in the normalized filename. Order matters: longer prefixes first so that
+    // "limited" doesn't lose to "le" and "premium" doesn't lose to "pro".
+    private static readonly (string Marker, string Canonical)[] EditionMarkers =
+    [
+        ("premium", "Premium"),
+        ("limited", "Limited"),
+        ("pro", "Pro"),
+        ("le", "LE")
+    ];
+
+    private static string? ExtractEdition(string normalizedFilename, string normalizedSlug)
+    {
+        var idx = normalizedFilename.IndexOf(normalizedSlug, StringComparison.Ordinal);
+        if (idx < 0) return null;
+
+        var afterSlug = idx + normalizedSlug.Length;
+        if (afterSlug >= normalizedFilename.Length) return null;
+
+        var tail = normalizedFilename[afterSlug..];
+        foreach (var (marker, canonical) in EditionMarkers)
+        {
+            if (tail.StartsWith(marker, StringComparison.Ordinal))
+                return canonical;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Saves the catalog to disk atomically (temp file + rename) to prevent
     /// corruption if the process is interrupted mid-write.
     /// </summary>
