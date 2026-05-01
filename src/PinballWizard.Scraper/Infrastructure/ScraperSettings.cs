@@ -25,6 +25,12 @@ public sealed class ScraperSettings
     /// <summary>Maximum file size to download in bytes (500MB).</summary>
     public long MaxFileSizeBytes { get; set; } = 500 * 1024 * 1024;
 
+    /// <summary>Maximum number of retry attempts after the initial request fails with a transient error.</summary>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>Initial delay (in milliseconds) before the first retry; doubles per subsequent attempt.</summary>
+    public int InitialRetryDelayMs { get; set; } = 1000;
+
     // Derived paths
     public string DownloadsPath => Path.Combine(DataPath, "downloads");
     public string MetadataPath => Path.Combine(DataPath, "metadata");

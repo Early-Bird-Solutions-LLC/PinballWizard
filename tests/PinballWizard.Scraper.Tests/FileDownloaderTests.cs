@@ -219,6 +219,111 @@ public sealed class FileDownloaderTests : IDisposable
         Assert.Equal(DownloadStatus.Failed, result.Status);
     }
 
+    [Fact]
+    public async Task DownloadAsync_TransientServerError_RetriesAndSucceeds()
+    {
+        const string body = "recovered";
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+
+        var handler = new SequencedHandler(
+            (_, response) =>
+            {
+                response.StatusCode = HttpStatusCode.InternalServerError;
+                response.Content = new StringContent("boom");
+            },
+            (_, response) =>
+            {
+                response.StatusCode = HttpStatusCode.BadGateway;
+                response.Content = new StringContent("boom");
+            },
+            (_, response) =>
+            {
+                response.StatusCode = HttpStatusCode.OK;
+                response.Content = new ByteArrayContent(bodyBytes);
+                response.Content.Headers.ContentLength = bodyBytes.Length;
+            });
+
+        var httpClient = new HttpClient(handler);
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MaxRetries = 2,
+            InitialRetryDelayMs = 10
+        };
+        var downloader = new FileDownloader(
+            httpClient,
+            Options.Create(settings),
+            NullLogger<FileDownloader>.Instance);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/flaky.pdf",
+            "manuals/flaky.pdf");
+        sw.Stop();
+
+        Assert.Equal(DownloadStatus.Downloaded, result.Status);
+        Assert.Equal(3, handler.InvocationCount);
+        Assert.Equal(bodyBytes.Length, result.SizeBytes);
+        // Backoff with 10ms initial: ~10ms + ~20ms = ~30ms; well under 1s.
+        Assert.True(sw.ElapsedMilliseconds < 2000,
+            $"Retries took unexpectedly long: {sw.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task DownloadAsync_PersistentServerError_ReturnsFailedAfterMaxRetries()
+    {
+        var handler = new CountingStatusHandler(HttpStatusCode.InternalServerError);
+        var httpClient = new HttpClient(handler);
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MaxRetries = 3,
+            InitialRetryDelayMs = 5
+        };
+        var downloader = new FileDownloader(
+            httpClient,
+            Options.Create(settings),
+            NullLogger<FileDownloader>.Instance);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/dead.pdf",
+            "manuals/dead.pdf");
+        sw.Stop();
+
+        Assert.Equal(DownloadStatus.Failed, result.Status);
+        // MaxRetries=3 → up to 4 total attempts.
+        Assert.Equal(4, handler.InvocationCount);
+        Assert.NotNull(result.ErrorMessage);
+        // Backoff with 5ms initial: 5+10+20 = ~35ms; well under 1s.
+        Assert.True(sw.ElapsedMilliseconds < 2000,
+            $"Retries took unexpectedly long: {sw.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task DownloadAsync_ClientError_DoesNotRetry()
+    {
+        var handler = new CountingStatusHandler(HttpStatusCode.NotFound);
+        var httpClient = new HttpClient(handler);
+        var settings = new ScraperSettings
+        {
+            DataPath = _tempDir,
+            MaxRetries = 3,
+            InitialRetryDelayMs = 10
+        };
+        var downloader = new FileDownloader(
+            httpClient,
+            Options.Create(settings),
+            NullLogger<FileDownloader>.Instance);
+
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/missing.pdf",
+            "manuals/missing.pdf");
+
+        Assert.Equal(DownloadStatus.Failed, result.Status);
+        Assert.Equal(1, handler.InvocationCount);
+    }
+
     /// <summary>
     /// Minimal HttpMessageHandler stub: lets the test configure the response
     /// per request via a delegate, with no real network involvement.
@@ -257,6 +362,64 @@ public sealed class FileDownloaderTests : IDisposable
             CancellationToken cancellationToken)
         {
             throw _exception;
+        }
+    }
+
+    /// <summary>
+    /// Handler that returns a different response for each invocation in the order provided.
+    /// If the test issues more requests than configured responses, the last response is reused.
+    /// </summary>
+    private sealed class SequencedHandler : HttpMessageHandler
+    {
+        private readonly Action<HttpRequestMessage, HttpResponseMessage>[] _configurers;
+        private int _index;
+
+        public int InvocationCount { get; private set; }
+
+        public SequencedHandler(params Action<HttpRequestMessage, HttpResponseMessage>[] configurers)
+        {
+            _configurers = configurers;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                RequestMessage = request,
+                Content = new ByteArrayContent([])
+            };
+            var idx = Math.Min(_index, _configurers.Length - 1);
+            _configurers[idx]?.Invoke(request, response);
+            _index++;
+            return Task.FromResult(response);
+        }
+    }
+
+    /// <summary>
+    /// Handler that always returns the configured status code and counts invocations.
+    /// </summary>
+    private sealed class CountingStatusHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+
+        public int InvocationCount { get; private set; }
+
+        public CountingStatusHandler(HttpStatusCode status) => _status = status;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            InvocationCount++;
+            var response = new HttpResponseMessage(_status)
+            {
+                RequestMessage = request,
+                Content = new StringContent("error")
+            };
+            return Task.FromResult(response);
         }
     }
 }
