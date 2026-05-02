@@ -12,6 +12,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Application.Provenance;
+using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Microsoft.Extensions.Configuration;
@@ -73,12 +74,13 @@ public sealed class IntegrationTests : IDisposable
 
         var scrapers = host.Services.GetRequiredService<IEnumerable<ISourceScraper>>().ToList();
 
-        // Three sources: Manuals, Game Pages, Service Bulletins. If anyone removes
-        // a registration in Program.cs, this catches it.
-        Assert.Equal(3, scrapers.Count);
+        // Four sources: Manuals, Game Pages, Service Bulletins, JJP. If anyone
+        // removes a registration in Program.cs, this catches it.
+        Assert.Equal(4, scrapers.Count);
         Assert.Contains(scrapers, s => s is ManualsScraper);
         Assert.Contains(scrapers, s => s is GamePageScraper);
         Assert.Contains(scrapers, s => s is ServiceBulletinScraper);
+        Assert.Contains(scrapers, s => s is JjpProductScraper);
     }
 
     [Fact]
@@ -285,6 +287,17 @@ public sealed class IntegrationTests : IDisposable
         builder.Services.AddTransient<ISourceScraper, ManualsScraper>();
         builder.Services.AddTransient<ISourceScraper, GamePageScraper>();
         builder.Services.AddTransient<ISourceScraper, ServiceBulletinScraper>();
+
+        // JJP scraper — mirrors Program.cs registration so the integration host
+        // resolves the same scraper graph the production host does.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jjp:BaseUrl"] = "https://jerseyjackpinball.com",
+            ["Jjp:SitemapPath"] = "/sitemap.xml",
+            ["Jjp:PinballMachinesCollectionSlug"] = "pinball-machines-for-sale",
+        });
+        builder.Services.AddJjpScraping(builder.Configuration);
+
         builder.Services.AddTransient<CatalogBuilder>();
         builder.Services.AddTransient<ScraperOrchestrator>();
 

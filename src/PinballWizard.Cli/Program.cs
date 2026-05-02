@@ -11,6 +11,7 @@ using PinballWizard.Application.Provenance;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
@@ -21,7 +22,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, all",
     DefaultValueFactory = _ => "all"
 };
 
@@ -212,12 +213,15 @@ static IHost CreateHost(string[] args)
     // Infrastructure
     builder.Services.AddSingleton<PlaywrightFactory>();
 
-    // Scrapers — all four extend PoliteScraperBase or PolitePlaywrightScraperBase
+    // Scrapers — all extend PoliteScraperBase or PolitePlaywrightScraperBase
     // and route every request through the politeness gate.
     builder.Services.AddTransient<GameListingScraper>();
     builder.Services.AddTransient<ISourceScraper, ManualsScraper>();
     builder.Services.AddTransient<ISourceScraper, GamePageScraper>();
     builder.Services.AddTransient<ISourceScraper, ServiceBulletinScraper>();
+
+    // JJP scraper (Phase 1.2 — Shopify/HTTP, sitemap-first discovery).
+    builder.Services.AddJjpScraping(builder.Configuration);
 
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();

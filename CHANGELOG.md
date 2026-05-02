@@ -11,6 +11,28 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **JJP scraper (Phase 1.2.a)**: first non-Stern manufacturer scraper
+  on the polite + Clean Architecture foundation.
+  `PinballWizard.Core/Configuration/JjpOptions.cs` (base URL, sitemap
+  path, pinball-machines collection slug).
+  `PinballWizard.Core/Models/Enums.cs` adds `SourceType.JjpProductPage`.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["jjp"] = "JJP"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/Jjp/`:
+  `JjpSitemapClient` (sitemap-first discovery — Shopify sitemap index
+  → product sitemaps → product URLs; XML parsing surface tested
+  directly); `JjpProductExtractor` (pure-function HTML → `GameRecord`
+  preferring JSON-LD product schema then Open Graph then H1, with
+  Schema.org-availability normalization to `in_stock` / `out_of_stock`
+  / `preorder` / `discontinued`); `JjpProductScraper` (extends
+  `PoliteScraperBase`, implements `ISourceScraper`); `AddJjpScraping`
+  DI extension. JJP is Shopify (server-rendered HTML), so HTTP scraping
+  via `PoliteScraperBase` rather than Playwright. JJP `GameRecord`s
+  use the ID prefix `game_jjp_{slug}` to avoid collision with Stern's
+  `game_{slug}`. CLI: `--source jjp` invokes the scraper. **16 new
+  unit tests** (201 total passing) covering sitemap-index +
+  product-sitemap parsing, JSON-LD extraction (full / og-fallback /
+  array-wrapper / malformed-JSON / non-Product types), slug parsing.
 - **OPDB integration (Phase 1.1, Track B-OPDB)**: typed HTTP client
   and sync service for the [Open Pinball Database](https://opdb.org/api).
   `PinballWizard.Core/Configuration/OpdbOptions.cs` (base URL, bearer
