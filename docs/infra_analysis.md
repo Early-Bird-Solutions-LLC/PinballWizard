@@ -318,6 +318,8 @@ Each item below is in the architectural plan with explicit "designed but unbuilt
 | **Pinside scraping** | Politeness review needed | Community sign-off; PinballPrices first |
 | **End-user social login** (Google / Apple / Discord federated identities for passport / scores / trade) | Entra External ID free tier; per-IDP config-only once tenant exists | When passport / scores / trade features start shipping |
 | **VNet + Private Endpoints** | ~$30-50/mo + complexity | Compliance / payments / admin surface justifies it |
+| **Dream Game generator** ([concept](dream_game_concept.md)) | Text generation negligible; image generation $50-150/mo at modest scale, quota-gated | Phase 5 marquee feature OR post-launch v2; decision when Phase 4 lands and budget headroom is known |
+| **Strategy Tracker** ([concept](strategy_tracker_concept.md)) — competitive-player strategy library + session log + AI-assisted refinement, **headline module of Digital Passport** | Cost-trivial (no image gen); fits in $400/mo cap with room to spare | Sequence-dependent on OCR score capture + ≥1 tournament API integration. Strong reason to promote Passport's first module to ship alongside public Blazor launch. |
 
 The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($25/mo) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
 
