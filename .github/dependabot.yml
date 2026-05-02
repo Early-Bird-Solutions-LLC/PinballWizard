@@ -1,0 +1,52 @@
+# Dependabot configuration for PinballWizard.
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Two ecosystems are tracked:
+#   - nuget         — scans every csproj under the repo (directory: "/")
+#   - github-actions — keeps workflow action pins up to date
+#
+# Security updates are grouped into a single PR per ecosystem so review of
+# a CVE batch doesn't require N round trips. Non-security version bumps stay
+# as individual PRs (capped by open-pull-requests-limit) so each can be
+# evaluated and reverted independently.
+version: 2
+
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      nuget-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      actions-security:
+        applies-to: "security-updates"
+        patterns:
+          - "*"

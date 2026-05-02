@@ -1,0 +1,45 @@
+# CodeQL static analysis for PinballWizard (C#).
+#
+# Runs on every push/PR to main and on a weekly schedule so dormant branches
+# still get scanned against the latest CodeQL query set. The build step uses
+# `--locked-mode` so a tampered or drifted lockfile fails the analysis run.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Mondays 06:00 UTC — same cadence as Dependabot so the two land together.
+    - cron: '0 6 * * 1'
+
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (csharp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          queries: security-and-quality
+
+      - name: Restore dependencies (locked)
+        run: dotnet restore --locked-mode PinballWizard.slnx
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release PinballWizard.slnx
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
