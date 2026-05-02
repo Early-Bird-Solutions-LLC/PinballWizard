@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working as expected
+title: "bug: <short description>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more reproducible the
+        report, the faster the fix. Bugs that touch live-site scraping are best
+        reported with the exact `sternpinball.com` URL or game slug that triggered
+        the problem.
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact CLI invocation, configuration, and environment.
+      placeholder: |
+        1. `dotnet run --project src/PinballWizard.Cli -- --source manuals --scrape-only`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include relevant log output (`./data/logs/*.log`) and any catalog state from `./data/metadata/catalog.json`.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: `git rev-parse --short HEAD` or release tag
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Docker container
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else relevant — recent config changes, network conditions, related issues

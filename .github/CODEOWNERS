@@ -1,0 +1,25 @@
+# GitHub uses this file to auto-request reviews on pull requests.
+# Order matters — later patterns take precedence over earlier ones.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+#
+# This is a single-maintainer project. CODEOWNERS is in place so that as
+# the project grows, ownership is codified rather than tribal — and so the
+# repo signals "code review is the norm" to outside contributors.
+
+* @JimKeeley
+
+# Architecture decision records require maintainer approval; ADRs are
+# immutable once accepted, so changes need extra care.
+/docs/adr/                  @JimKeeley
+
+# Engineering standards, quality bar, and the parallel execution plan
+# are foundational documents. Changes must be deliberate.
+/docs/ENGINEERING_STANDARDS.md   @JimKeeley
+/docs/quality-bar.md             @JimKeeley
+/docs/parallel_execution_plan.md @JimKeeley
+
+# Build configuration and CI workflows.
+/.github/                   @JimKeeley
+/Directory.Build.props      @JimKeeley
+/Directory.Packages.props   @JimKeeley
+/global.json                @JimKeeley
