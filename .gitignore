@@ -7,6 +7,13 @@ publish/
 .vs/
 .vscode/
 .claude/
+# Project-scoped skills + commands are checked in (they apply for every
+# contributor); everything else under .claude/ — runtime history,
+# scheduled-task locks, machine-local settings — stays ignored.
+!.claude/skills/
+!.claude/skills/**
+!.claude/commands/
+!.claude/commands/**
 *.user
 *.suo
 *.DotSettings.user

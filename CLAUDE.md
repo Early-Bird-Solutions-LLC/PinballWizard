@@ -173,7 +173,15 @@ See [`docs/`](docs/) for the full design documents:
 
 ## PR self-audit (pre-push, BLOCKING)
 
-Before pushing any PR that adds a new scraper, options class, extension, or other additive surface, run this checklist. Treat each item as blocking unless explicitly justified in the PR description ("deferred to PR #N"). Background and the incident that motivated this lives in `memory/feedback_pre_pr_self_audit.md`.
+Before pushing any PR that adds production code (new files, new public API, new behavior), run the two-step audit. Treat 🔴 findings as blocking. Background and the incident that motivated this lives in `memory/feedback_pre_pr_self_audit.md`.
+
+### Step 0 — Local review (qualitative)
+
+Run `/local-review`. The skill spawns a `general-purpose` agent that critiques the diff across ten categories (design, drift, error handling, security, provenance, etc.) and returns a verdict-tagged report. Fix every 🔴 finding before continuing; fix or defer-with-justification each ⚠️ finding. Skill definition: [`.claude/skills/local-review/SKILL.md`](.claude/skills/local-review/SKILL.md).
+
+### Step 1 — Mechanical self-audit (checklist)
+
+After the qualitative review, run these mechanical checks:
 
 1. **Every option field is read.** For each `*Options` property added, grep across `src/` (not just the same project) for the property name. Hits in `appsettings.json` and test config dictionaries do **not** count — only a real getter call. If unread, either wire it or delete it.
 2. **Sibling-diff for drift.** If you copied a sibling (e.g., new manufacturer scraper from JJP / AP / Spooky), diff the new file against its sibling for: `TryExtract*` wrapper presence, error-handling boundaries, `yield break` vs `continue`, log message wording, ctor null-checks, unused fields. Drift is the silent failure mode.
@@ -183,4 +191,4 @@ Before pushing any PR that adds a new scraper, options class, extension, or othe
 6. **Build is zero-warning.** Treat new warnings as bugs.
 7. **Identity check.** `git log -1 --format='%an <%ae>'` shows the personal noreply, never the work email.
 
-If a manufacturer-scraper PR template exists in `.github/pull_request_template.md`, this list lives there too.
+The PR description records the local-review outcome (number of findings + how each was addressed). The PR template at `.github/PULL_REQUEST_TEMPLATE.md` includes the line.

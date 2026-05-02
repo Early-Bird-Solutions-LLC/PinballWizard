@@ -41,6 +41,15 @@ for it. If everything is in scope, write "nothing intentionally deferred."
 
 Required for any PR that adds a scraper, options class, extension, or other additive surface. See [`CLAUDE.md` § PR self-audit](../CLAUDE.md#pr-self-audit-pre-push-blocking) and `memory/feedback_pre_pr_self_audit.md` for the why.
 
+#### Step 0 — `/local-review` (qualitative)
+
+- [ ] Ran `/local-review` and addressed every 🔴 finding before push
+- [ ] Local review outcome:
+  <!-- e.g., "0 🔴 / 2 ⚠️ (both fixed) / 8 categories ✅" -->
+  <!-- For deferred ⚠️ items, list each with a one-line justification -->
+
+#### Step 1 — Mechanical checklist
+
 - [ ] Every new `*Options` property has at least one real getter call in `src/` (appsettings.json + test config don't count)
 - [ ] Sibling-diffed against the closest existing implementation; drift is justified or removed
 - [ ] No bare `catch { }` — minimum scope is `catch (Exception)`
