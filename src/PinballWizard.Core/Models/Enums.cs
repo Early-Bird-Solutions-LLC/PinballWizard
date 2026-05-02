@@ -9,6 +9,7 @@ public enum SourceType
     GamePage,
     ServiceBulletinPage,
     JjpProductPage,
+    AmericanPinballGamePage,
 }
 
 /// <summary>
