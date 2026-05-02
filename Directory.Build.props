@@ -53,17 +53,12 @@
         CA1822 - "Mark members as static."
                  Transitional. Stylistic-only; not introducing per-instance state
                  was unintentional in some places. Cleanup in a follow-up.
-        CS8602 - "Dereference of a possibly null reference."
-                 Transitional. One nullability site in CatalogBuilder.cs
-                 (MergeGameRecord) accesses an optional Source. Will be
-                 fixed at the site in a follow-up commit on this branch;
-                 this suppression goes away with that fix.
         CA1707 - "Identifiers should not contain underscores."
                  DELIBERATE. xUnit's Method_Scenario_ExpectedResult naming
                  convention requires underscores in test method names. This is
                  the universal norm for xUnit suites and we follow it.
     -->
-    <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CS8602;CA1707</NoWarn>
+    <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CA1707</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

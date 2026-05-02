@@ -151,7 +151,19 @@ public sealed class CatalogBuilder
             existing.Title = game.Title;
             existing.Editions = game.Editions;
             existing.Status = game.Status;
-            existing.Source.ScrapedAt = DateTime.UtcNow;
+
+            // Source is optional; prefer the freshly-scraped one (which already
+            // carries the current ScrapedAt), otherwise stamp the existing one,
+            // otherwise leave null. Resolves a CS8602 nullability gap that was
+            // previously suppressed at project level.
+            if (game.Source is not null)
+            {
+                existing.Source = game.Source;
+            }
+            else if (existing.Source is not null)
+            {
+                existing.Source.ScrapedAt = DateTime.UtcNow;
+            }
 
             // Merge discovered-on lists
             foreach (var source in game.DiscoveredOn)
