@@ -51,6 +51,69 @@ public sealed class GamePageExtractorsTests
     }
 
     [Fact]
+    public void SanitizeGameTitle_RejectsSignupCtaH1()
+    {
+        // Stern templates a per-game H1 onto its newsletter signup widget,
+        // e.g. "Sign up for Pokémon by Stern Pinball Updates!". This must
+        // not win the candidate race against the real game H1 / page title.
+        string?[] candidates =
+        [
+            "Sign up for Pokémon by Stern Pinball Updates!",
+            "Pokémon",
+        ];
+
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates, pageTitle: null, slug: "pokemon");
+
+        Assert.Equal("Pokémon", title);
+    }
+
+    [Fact]
+    public void SanitizeGameTitle_RejectsCtaWhenItIsTheOnlyCandidate_FallsThroughToPageTitle()
+    {
+        string?[] candidates = ["Sign up for Pokémon by Stern Pinball Updates!"];
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates,
+            pageTitle: "Pokémon - Stern Pinball",
+            slug: "pokemon");
+
+        Assert.Equal("Pokémon", title);
+    }
+
+    [Fact]
+    public void SanitizeGameTitle_StripsDashSuffixFromCandidate()
+    {
+        // Some Stern game pages have an H1 like "John Wick - Stern Pinball"
+        // (templated from the page title). Strip the suffix wherever it appears.
+        string?[] candidates = ["John Wick - Stern Pinball"];
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates, pageTitle: null, slug: "john-wick");
+
+        Assert.Equal("John Wick", title);
+    }
+
+    [Fact]
+    public void SanitizeGameTitle_StripsDashSuffixFromPageTitleFallback()
+    {
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates: null,
+            pageTitle: "Star Wars: Fall of the Empire - Stern Pinball",
+            slug: "star-wars-fall-of-the-empire");
+
+        Assert.Equal("Star Wars: Fall of the Empire", title);
+    }
+
+    [Fact]
+    public void SanitizeGameTitle_StripsPipeSuffixFromCandidate()
+    {
+        string?[] candidates = ["JAWS | Stern Pinball"];
+        var title = GamePageExtractors.SanitizeGameTitle(
+            candidates, pageTitle: null, slug: "jaws");
+
+        Assert.Equal("JAWS", title);
+    }
+
+    [Fact]
     public void SanitizeGameTitle_FallsBackToPageTitleStrippingSternSuffix()
     {
         string?[] candidates = ["Cookie Settings"];

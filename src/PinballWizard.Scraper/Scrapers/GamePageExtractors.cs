@@ -17,15 +17,29 @@ public static class GamePageExtractors
         "your privacy choices",
         "manage preferences",
         "skip to content",
+        // CTA / signup widgets — Stern templates a per-game H1 onto its
+        // newsletter widget (e.g. "Sign up for Pokémon by Stern Pinball Updates!"),
+        // which would otherwise win the candidate race against the real game H1.
+        "sign up for",
+        "subscribe",
+        "newsletter",
     };
 
-    private const string SternTitleSuffix = " | Stern Pinball";
+    // Stern's <title> / templated H1 suffix. Both pipe and dash variants are
+    // observed in the wild; strip whichever is present.
+    private static readonly string[] SternTitleSuffixes =
+    {
+        " | Stern Pinball",
+        " - Stern Pinball",
+    };
 
     /// <summary>
     /// Picks the best title from raw page candidates, falling back to a cleaned
     /// <c>document.title</c> and finally a slug-cased title.
-    /// Rejects banner/menu text (cookie consent, privacy choices, etc.) which
-    /// otherwise wins because Stern's cookie banner renders before the game H1.
+    /// Rejects banner/menu/signup text (cookie consent, privacy choices, "Sign up
+    /// for X Updates!", etc.) which otherwise win the H1 race against the real
+    /// game heading. Strips trailing " | Stern Pinball" / " - Stern Pinball"
+    /// from whichever candidate or page-title fallback is selected.
     /// </summary>
     public static string SanitizeGameTitle(
         IReadOnlyList<string?>? candidates,
@@ -36,7 +50,7 @@ public static class GamePageExtractors
         {
             foreach (var candidate in candidates)
             {
-                var cleaned = candidate?.Trim();
+                var cleaned = StripSternSuffix(candidate?.Trim());
                 if (IsValidTitle(cleaned))
                 {
                     return cleaned!;
@@ -119,13 +133,17 @@ public static class GamePageExtractors
         return true;
     }
 
-    private static string? StripSternSuffix(string? pageTitle)
+    private static string? StripSternSuffix(string? text)
     {
-        if (string.IsNullOrWhiteSpace(pageTitle)) return null;
-        var trimmed = pageTitle.Trim();
-        if (trimmed.EndsWith(SternTitleSuffix, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var trimmed = text.Trim();
+        foreach (var suffix in SternTitleSuffixes)
         {
-            trimmed = trimmed[..^SternTitleSuffix.Length].Trim();
+            if (trimmed.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = trimmed[..^suffix.Length].Trim();
+                break;
+            }
         }
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }

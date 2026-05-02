@@ -675,6 +675,78 @@ public sealed class CatalogBuilderTests
     }
 
     [Fact]
+    public void LinkDocumentsToGames_HealsStaleTitleFromPreviousRun()
+    {
+        // Regression: a previous buggy GamePageScraper wrote
+        // "Your Privacy Choices / Cookie Settings" into doc.Game.Title for every
+        // game-linked document. The old BackfillTitleIfSlugGuess only updated the
+        // title when it still matched the slug-guess pattern — so once the bad
+        // title was in catalog.json, it survived every subsequent re-scrape.
+        // The link pass must now always sync to the canonical games.json title,
+        // regardless of what's currently stored.
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/st_manual.pdf",
+            discoveryUrl: "https://sternpinball.com/game/stranger-things/",
+            discoveryContext: "Game Page → Specs & Manual tab",
+            sourceType: SourceType.GamePage,
+            gameSlug: "stranger-things",
+            linkText: "Stranger Things Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+
+        // Simulate the stale state left by the bad run: title is no longer the
+        // slug-guess pattern, but is also not the canonical title.
+        doc.Game = new GameReference
+        {
+            Title = "Your Privacy Choices / Cookie Settings",
+            Slug = "stranger-things",
+            GamePageUrl = "https://sternpinball.com/game/stranger-things/"
+        };
+
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.Equal("Stranger Things", doc.Game!.Title);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_LeavesCanonicalTitleAlone()
+    {
+        // Defensive: if doc.Game.Title already matches canonical, the link pass
+        // should be a no-op for that document — no thrash, no reallocation.
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/st_manual.pdf",
+            discoveryUrl: "https://sternpinball.com/game/stranger-things/",
+            discoveryContext: "Game Page → Specs & Manual tab",
+            sourceType: SourceType.GamePage,
+            gameSlug: "stranger-things",
+            linkText: "Stranger Things Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        var alreadyCanonical = new GameReference
+        {
+            Title = "Stranger Things",
+            Slug = "stranger-things",
+            GamePageUrl = "https://sternpinball.com/game/stranger-things/"
+        };
+        doc.Game = alreadyCanonical;
+
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.Equal("Stranger Things", doc.Game!.Title);
+        Assert.Same(alreadyCanonical, doc.Game);
+    }
+
+    [Fact]
     public void LinkDocumentsToGames_AmbiguousMatch_LongestSlugWins()
     {
         var builder = CreateBuilder();
