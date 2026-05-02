@@ -9,6 +9,57 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Added
+
+- **Scraper-to-Machine reconciliation service (Phase 1 → Phase 2 bridge)**.
+  Bridges the legacy/working `GameRecord` shape (in `Core/Models`) to
+  the OPDB-keyed `Machine` aggregate (in `Core/Domain/`) per ADR 0011.
+  Architectural debt that had been "deferred to follow-up" in every
+  Phase 1.2 PR description — four PRs deep was enough.
+  `PinballWizard.Application/Sync/`:
+  `ScraperManufacturerKey` (static) maps `GameRecord.GameId` prefix
+  to manufacturer partition key (`stern` / `jjp` / `americanpinball`
+  / `spooky`); keys match `OpdbMachineMapper.NormalizeManufacturerKey`
+  exactly so scraped data lands in the same Cosmos partition the
+  OPDB sync wrote to.
+  `IScraperReconciliationService` + concrete
+  `ScraperReconciliationService` walks each `GameRecord`, derives the
+  manufacturer key, resolves the matching `Machine` via two-pass
+  lookup — slug fast path
+  (`Machine.ManufacturerSlugs[mfg] == GameRecord.Slug`), then
+  title-normalize fallback for bootstrap (lowercase + strip
+  non-alphanumeric; populates the slug map on first match) — and
+  upserts. Per ADR 0011 field ownership: scrapers own `Editions` and
+  `ManufacturerSlugs[mfg]` (replaced wholesale on reconcile); OPDB
+  owns `Title` / `Year` / `Designers` / `Themes` (never touched).
+  `LastSeenAt` is updated to now. Ambiguous title matches (≥2
+  Machines with the same normalized title in the partition) are
+  logged with all candidate IDs and skipped — never pick one
+  arbitrarily. Records with no Machine match are logged and skipped;
+  per ADR 0011 OPDB is the gate for what counts as a real machine.
+  Per-partition cache means O(P) repository streams per run, not
+  O(N) — the reconciler reads each manufacturer partition exactly
+  once regardless of how many `GameRecord`s belong to it.
+  CLI integration is deferred until Cosmos infrastructure is
+  deployed; in production the reconciler will be invoked from the
+  `scraper-mfg-sync` ACA Job. **28 new unit tests** (288 total)
+  using NSubstitute against `IMachineRepository` and a fake
+  `TimeProvider`: slug fast-path merge + OPDB-owned-field
+  preservation, bootstrap title-normalize match + slug-map
+  population, normalisation across case / punctuation / digits /
+  whitespace, ambiguous-title rejection (no upsert, both candidate
+  IDs logged), unmatched-record skip (no insert), unrecognised
+  `GameId` prefix counted as `FailedMapping`, partition cache
+  proves only one stream per manufacturer per run, idempotent
+  re-reconcile flips from title-fallback to slug-fast-path,
+  constructor / argument null validation. Verified against the
+  pre-push self-audit checklist shipped in PR #34.
+- **ADR 0011 — Manufacturer scraper data reconciles INTO OPDB-keyed
+  Machines.** Documents the catalog-spine ownership, the two-pass
+  match strategy, the field-ownership table, and the rejected
+  alternatives (scraper-direct insert / title-only match /
+  scraper-fills-blanks-only).
+
 ### Fixed
 
 - **JJP scraper now filters merch out of the catalog (regression that
