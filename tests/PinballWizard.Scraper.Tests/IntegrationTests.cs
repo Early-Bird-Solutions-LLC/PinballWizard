@@ -12,6 +12,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Application.Provenance;
+using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
@@ -74,13 +75,14 @@ public sealed class IntegrationTests : IDisposable
 
         var scrapers = host.Services.GetRequiredService<IEnumerable<ISourceScraper>>().ToList();
 
-        // Four sources: Manuals, Game Pages, Service Bulletins, JJP. If anyone
-        // removes a registration in Program.cs, this catches it.
-        Assert.Equal(4, scrapers.Count);
+        // Five sources: Manuals, Game Pages, Service Bulletins, JJP, AP.
+        // If anyone removes a registration in Program.cs, this catches it.
+        Assert.Equal(5, scrapers.Count);
         Assert.Contains(scrapers, s => s is ManualsScraper);
         Assert.Contains(scrapers, s => s is GamePageScraper);
         Assert.Contains(scrapers, s => s is ServiceBulletinScraper);
         Assert.Contains(scrapers, s => s is JjpProductScraper);
+        Assert.Contains(scrapers, s => s is ApGamePageScraper);
     }
 
     [Fact]
@@ -288,15 +290,19 @@ public sealed class IntegrationTests : IDisposable
         builder.Services.AddTransient<ISourceScraper, GamePageScraper>();
         builder.Services.AddTransient<ISourceScraper, ServiceBulletinScraper>();
 
-        // JJP scraper — mirrors Program.cs registration so the integration host
-        // resolves the same scraper graph the production host does.
+        // JJP + AP scrapers — mirror Program.cs registration so the integration
+        // host resolves the same scraper graph the production host does.
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Jjp:BaseUrl"] = "https://jerseyjackpinball.com",
             ["Jjp:SitemapPath"] = "/sitemap.xml",
             ["Jjp:PinballMachinesCollectionSlug"] = "pinball-machines-for-sale",
+            ["Ap:BaseUrl"] = "https://www.american-pinball.com",
+            ["Ap:SitemapPath"] = "/sitemap.xml",
+            ["Ap:GamePathPrefix"] = "/games/",
         });
         builder.Services.AddJjpScraping(builder.Configuration);
+        builder.Services.AddAmericanPinballScraping(builder.Configuration);
 
         builder.Services.AddTransient<CatalogBuilder>();
         builder.Services.AddTransient<ScraperOrchestrator>();

@@ -11,6 +11,34 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **American Pinball scraper (Phase 1.2.b)**: second non-Stern
+  manufacturer scraper. AP runs a custom CMS (not Shopify, not a
+  SPA), exposes a flat sitemap urlset (no index pagination), and does
+  NOT publish JSON-LD or Open Graph tags on game pages — so the
+  extractor falls back to a four-level chain: page `<title>` (with
+  manufacturer suffix stripping), then "About {Game}" `<h2>`, then
+  `<h1>`, then prettified slug. Downloadable assets (`.pdf` / `.zip` /
+  `.spk`) are extracted from any same-host anchor on the page —
+  same-host filter rejects external links (so the page's outbound
+  social/PR PDFs aren't accidentally swallowed).
+  `PinballWizard.Core/Configuration/ApOptions.cs` (BaseUrl,
+  SitemapPath, GamePathPrefix).
+  `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.AmericanPinballGamePage`.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["ap"] = "American Pinball"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/Ap/`: `ApSitemapClient`
+  (sitemap-first discovery; rejects sub-pages like
+  `/games/{slug}/updates`), `ApGamePageExtractor` (pure-function
+  HTML → `GameRecord` + downloads), `ApGamePageScraper` (extends
+  `PoliteScraperBase`, implements `ISourceScraper`, yields BOTH a
+  `.Game` ScrapedItem AND one `.Link` ScrapedItem per discovered
+  download), `AddAmericanPinballScraping` DI extension. CLI:
+  `--source ap`. **21 new unit tests** (222 total passing) covering
+  sitemap parsing edge cases (sub-page rejection, trailing-slash
+  handling, blank-prefix validation), every level of the title
+  fallback chain, downloads filter (same-host only, dedup),
+  null-arg validation.
 - **JJP scraper (Phase 1.2.a)**: first non-Stern manufacturer scraper
   on the polite + Clean Architecture foundation.
   `PinballWizard.Core/Configuration/JjpOptions.cs` (base URL, sitemap
