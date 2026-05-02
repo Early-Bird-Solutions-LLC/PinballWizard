@@ -321,6 +321,15 @@ Each item below is in the architectural plan with explicit "designed but unbuilt
 
 The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($25/mo) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
 
+> **See also: [`ai_ml_ideas.md`](ai_ml_ideas.md) — AI/ML ideas catalog.**
+> Distinct from this table. The deferred-to-v2 table above is "designed
+> but unbuilt" — items with a specific design + cost + trigger. The
+> AI/ML catalog is "evaluated but uncommitted" — brainstorm-stage
+> features documented so the option set is visible during scope
+> conversations. Three starred candidates (Playfield video analysis,
+> AI pinball coach, Service bulletin diagnosis) get deeper feasibility
+> treatment in that doc.
+
 ---
 
 ## 7. Engineering principles
