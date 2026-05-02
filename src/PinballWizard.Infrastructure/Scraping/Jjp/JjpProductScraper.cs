@@ -36,7 +36,6 @@ public sealed class JjpProductScraper : PoliteScraperBase, ISourceScraper
 {
     private readonly HttpClient _httpClient;
     private readonly JjpSitemapClient _sitemapClient;
-    private readonly JjpOptions _options;
 
     /// <inheritdoc />
     public string Name => "JJP";
@@ -47,23 +46,20 @@ public sealed class JjpProductScraper : PoliteScraperBase, ISourceScraper
         JjpSitemapClient sitemapClient,
         IPolitenessGate politeness,
         IOptions<PolitenessOptions> politenessOptions,
-        IOptions<JjpOptions> jjpOptions,
         ILogger<JjpProductScraper> logger)
         : base(politeness, politenessOptions.Value, logger)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(sitemapClient);
-        ArgumentNullException.ThrowIfNull(jjpOptions);
         _httpClient = httpClient;
         _sitemapClient = sitemapClient;
-        _options = jjpOptions.Value;
     }
 
     /// <inheritdoc />
     public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        Logger.LogInformation("JJP scraper starting against {BaseUrl}", _options.BaseUrl);
+        Logger.LogInformation("JJP scraper starting");
 
         List<Uri> productUrls;
         try

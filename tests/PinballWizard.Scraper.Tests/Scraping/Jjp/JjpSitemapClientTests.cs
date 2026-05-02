@@ -99,4 +99,87 @@ public sealed class JjpSitemapClientTests
     {
         Assert.Throws<ArgumentNullException>(() => JjpSitemapClient.ParseProductUrls(null!));
     }
+
+    [Fact]
+    public void ParseHandlesFromCollectionJson_ReturnsAllHandles()
+    {
+        // Realistic Shopify /collections/{slug}/products.json shape.
+        const string json = """
+            {
+              "products": [
+                { "id": 1, "handle": "harry-potter-collectors-edition", "product_type": "Pinball Game" },
+                { "id": 2, "handle": "avatar-pinball-game-collectors-edition", "product_type": "Pinball Game" },
+                { "id": 3, "handle": "guns-n-roses-pinball-limited-edition" }
+              ]
+            }
+            """;
+
+        var handles = JjpSitemapClient.ParseHandlesFromCollectionJson(json);
+
+        Assert.Equal(3, handles.Count);
+        Assert.Contains("harry-potter-collectors-edition", handles);
+        Assert.Contains("avatar-pinball-game-collectors-edition", handles);
+        Assert.Contains("guns-n-roses-pinball-limited-edition", handles);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("    ")]
+    [InlineData("not json")]
+    [InlineData("{\"unrelated\":42}")]
+    [InlineData("{\"products\":null}")]
+    public void ParseHandlesFromCollectionJson_GracefullyHandlesBadInput(string json)
+    {
+        Assert.Empty(JjpSitemapClient.ParseHandlesFromCollectionJson(json));
+    }
+
+    [Fact]
+    public void ParseHandlesFromCollectionJson_NullArg_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => JjpSitemapClient.ParseHandlesFromCollectionJson(null!));
+    }
+
+    [Fact]
+    public void FilterByHandleSet_RejectsMerchAndKeepsMachines()
+    {
+        // Mirrors the regression that motivated this change: the JJP
+        // sitemap returns BOTH machines AND merch under /products/, so
+        // the collection's handle set is the canonical filter.
+        var urls = new List<Uri>
+        {
+            new("https://jerseyjackpinball.com/products/dialed-in"),
+            new("https://jerseyjackpinball.com/products/the-godfather-pinball-game-collectors-edition"),
+            new("https://jerseyjackpinball.com/products/jjp-merch-shirt"),
+            new("https://jerseyjackpinball.com/products/jjp-flag-tee"),
+        };
+        var machineHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "dialed-in",
+            "the-godfather-pinball-game-collectors-edition",
+        };
+
+        var filtered = JjpSitemapClient.FilterByHandleSet(urls, machineHandles);
+
+        Assert.Equal(2, filtered.Count);
+        Assert.Contains(filtered, u => u.AbsolutePath.EndsWith("/products/dialed-in", StringComparison.Ordinal));
+        Assert.DoesNotContain(filtered, u => u.AbsolutePath.Contains("merch", StringComparison.Ordinal));
+        Assert.DoesNotContain(filtered, u => u.AbsolutePath.Contains("tee", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FilterByHandleSet_EmptyHandleSet_ReturnsEmpty()
+    {
+        var urls = new List<Uri> { new("https://jerseyjackpinball.com/products/dialed-in") };
+        var filtered = JjpSitemapClient.FilterByHandleSet(urls, []);
+        Assert.Empty(filtered);
+    }
+
+    [Fact]
+    public void FilterByHandleSet_NullArgs_Throw()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => JjpSitemapClient.FilterByHandleSet(null!, []));
+        Assert.Throws<ArgumentNullException>(
+            () => JjpSitemapClient.FilterByHandleSet([], null!));
+    }
 }

@@ -9,7 +9,57 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Fixed
+
+- **JJP scraper now filters merch out of the catalog (regression that
+  shipped through PRs #31 / #32 / #33).** `JjpOptions.PinballMachinesCollectionSlug`
+  was declared, defaulted in `appsettings.json`, copied into integration
+  test config, and never read by any code path — the JJP scraper would
+  emit `GameRecord` entries for every `/products/*` URL on Shopify,
+  including JJP-branded apparel and accessories. Wired the option as
+  the canonical filter: `JjpSitemapClient.FetchPinballMachineHandlesAsync`
+  fetches `/collections/{slug}/products.json`, parses the Shopify
+  product handle set, and `FilterByHandleSet` intersects the sitemap
+  output with that set. `JjpOptions.PinballMachinesCollectionSlug` is
+  now `[Required]` so a blank value fails fast at startup. **6 new
+  tests** covering JSON deserialization happy/sad paths, the merch
+  filter (named fixture rejects `jjp-merch-shirt` and `jjp-flag-tee`
+  by name), and null/empty-arg validation.
+
+### Changed
+
+- **Spooky scraper hardened for parity with JJP/AP.**
+  `SpookyGamePageScraper` now wraps per-page extraction in a private
+  `TryExtract` that catches and logs at warning, matching the
+  `TryExtractAsync` pattern from JJP and AP. Single-page extraction
+  failures no longer have any path to abort the run.
+  `SpookyGamePageExtractor.BuildAnchorTextLookup` replaced its bare
+  `catch { }` with `catch (Exception)` so OOM / cancellation can
+  propagate; the comment now documents that explicitly.
+  `SpookyOptions.MaxPagesToFetch` (default 50) replaces the previously
+  hardcoded pagination cap; bounds-validated `[Range(1, 1000)]`.
+- **`JjpProductScraper` no longer captures `JjpOptions`.** The
+  `_options` field was set but never read; constructor signature
+  simplified to drop the unused dependency. The "JJP scraper starting"
+  log message no longer interpolates `BaseUrl` (the field that backed
+  it is gone).
+
 ### Added
+
+- **`ScraperOrchestrator.KnownSourceCanonicalNames`** + new
+  `SourceAliasContractTests` suite. Pins the contract that every
+  `ISourceScraper.Name` registered in DI is reachable from the
+  `--source <alias>` CLI flag — without the test, a typo in either
+  `Name` or the alias map would silently produce a no-op run. Test
+  uses `RuntimeHelpers.GetUninitializedObject` to read each scraper's
+  `Name` property without invoking its DI-bound constructor.
+- **`PR self-audit (pre-push, BLOCKING)` section in [`CLAUDE.md`](CLAUDE.md)**
+  paired with a `### Pre-push self-audit` block in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+  Seven-item checklist for additive PRs: every option field is read,
+  sibling-diff for drift, no bare `catch { }`, CLI/orchestrator wiring
+  end-to-end, behavior-vs-structure tests, zero-warning build, identity
+  check. Motivated by the dead-`PinballMachinesCollectionSlug` bug
+  shipping through three PRs unchallenged.
 
 - **Spooky Pinball scraper (Phase 1.2.c)**: third non-Stern
   manufacturer scraper. Spooky runs WordPress + WooCommerce + Yoast

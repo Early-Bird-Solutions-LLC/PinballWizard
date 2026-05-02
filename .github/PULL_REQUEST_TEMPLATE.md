@@ -36,3 +36,15 @@ for it. If everything is in scope, write "nothing intentionally deferred."
 - [ ] If a memory in `~/.claude/projects/c--projects-PinballWizard/memory/` is now stale, it has been updated or removed in the same PR
 - [ ] No `TODO` / `FIXME` / commented-out code committed
 - [ ] No new entries in `<NoWarn>` without a comment explaining why and the removal criterion
+
+### Pre-push self-audit (additive PRs)
+
+Required for any PR that adds a scraper, options class, extension, or other additive surface. See [`CLAUDE.md` § PR self-audit](../CLAUDE.md#pr-self-audit-pre-push-blocking) and `memory/feedback_pre_pr_self_audit.md` for the why.
+
+- [ ] Every new `*Options` property has at least one real getter call in `src/` (appsettings.json + test config don't count)
+- [ ] Sibling-diffed against the closest existing implementation; drift is justified or removed
+- [ ] No bare `catch { }` — minimum scope is `catch (Exception)`
+- [ ] New `ISourceScraper`? `SourceAliasContractTests` still passes without edit
+- [ ] Tests assert behavior, not just structure (named "rejects X" → fixture contains X)
+- [ ] Build is zero-warning
+- [ ] `git log -1 --format='%an <%ae>'` shows personal noreply, not work email

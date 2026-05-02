@@ -73,13 +73,8 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         {
             if (cancellationToken.IsCancellationRequested) yield break;
 
-            var record = SpookyGamePageExtractor.ExtractGame(page, _options.S3Host);
-            if (record is null)
-            {
-                // Defensive — DiscoverGamePagesAsync already filtered, but extraction
-                // can still reject (e.g., empty title).
-                continue;
-            }
+            var (record, downloads) = TryExtract(page);
+            if (record is null) continue;
 
             yield return new ScrapedItem
             {
@@ -89,7 +84,6 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
                 DiscoveryContext = "Spooky Pinball Game Page",
             };
 
-            var downloads = SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
             foreach (var link in downloads)
             {
                 yield return new ScrapedItem
@@ -103,5 +97,22 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         }
 
         Logger.LogInformation("Spooky Pinball scraper complete");
+    }
+
+    private (GameRecord? Game, IReadOnlyList<DiscoveredLink> Downloads) TryExtract(SpookyPageRaw page)
+    {
+        try
+        {
+            var record = SpookyGamePageExtractor.ExtractGame(page, _options.S3Host);
+            if (record is null) return (null, []);
+            var downloads = SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
+            return (record, downloads);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(
+                ex, "Spooky scraper: failed to extract page {Url}; skipping.", page.Link);
+            return (null, []);
+        }
     }
 }

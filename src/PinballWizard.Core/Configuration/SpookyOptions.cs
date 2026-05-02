@@ -48,4 +48,13 @@ public sealed class SpookyOptions
     /// game pages.
     /// </summary>
     public string S3Host { get; set; } = "spookypinball.s3.us-east-2.amazonaws.com";
+
+    /// <summary>
+    /// Defensive cap on the number of paginated WP REST page fetches
+    /// per run. Spooky has roughly 30 pages today, so the default of
+    /// 50 leaves plenty of headroom while still bounding a runaway
+    /// loop if pagination is ever misconfigured.
+    /// </summary>
+    [Range(1, 1000)]
+    public int MaxPagesToFetch { get; set; } = 50;
 }

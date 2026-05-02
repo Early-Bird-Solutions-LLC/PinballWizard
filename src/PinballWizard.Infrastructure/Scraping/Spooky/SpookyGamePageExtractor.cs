@@ -119,11 +119,12 @@ public static class SpookyGamePageExtractor
                 map.TryAdd(decoded, text);
             }
         }
-        catch
+        catch (Exception)
         {
-            // Anchor lookup is best-effort — a parse failure should not
+            // Anchor lookup is best-effort — a parse failure must not
             // block download discovery; the regex pass already captured
-            // the URLs we care about.
+            // the URLs we care about. We still scope the catch so OOM
+            // / cancellation propagate.
         }
         return map;
     }

@@ -170,3 +170,17 @@ See [`docs/`](docs/) for the full design documents:
 - **Conditional requests** — be polite to sternpinball.com, don't re-download unchanged files
 - **Catalog as contract** — `catalog.json` is the API boundary between Phase 1 (scraper) and Phase 2 (RAG)
 - **Hobby project** — keep it simple, no over-engineering, but do it right
+
+## PR self-audit (pre-push, BLOCKING)
+
+Before pushing any PR that adds a new scraper, options class, extension, or other additive surface, run this checklist. Treat each item as blocking unless explicitly justified in the PR description ("deferred to PR #N"). Background and the incident that motivated this lives in `memory/feedback_pre_pr_self_audit.md`.
+
+1. **Every option field is read.** For each `*Options` property added, grep across `src/` (not just the same project) for the property name. Hits in `appsettings.json` and test config dictionaries do **not** count — only a real getter call. If unread, either wire it or delete it.
+2. **Sibling-diff for drift.** If you copied a sibling (e.g., new manufacturer scraper from JJP / AP / Spooky), diff the new file against its sibling for: `TryExtract*` wrapper presence, error-handling boundaries, `yield break` vs `continue`, log message wording, ctor null-checks, unused fields. Drift is the silent failure mode.
+3. **No bare `catch { }`.** Scope at minimum to `catch (Exception)` so OOM / cancellation propagate. If best-effort, log at debug.
+4. **CLI / orchestrator wiring is end-to-end.** New `ISourceScraper`? Run (or trace) `dotnet run -- --source <new-alias>` and confirm the orchestrator selects exactly that scraper. The `SourceAliasContractTests` suite pins this — if you add a scraper, that test must still pass without edit.
+5. **Tests assert behavior, not just structure.** A test named "deduplicates" must include a fixture where dedup actually fires; a test named "rejects merch" must include merch in the input.
+6. **Build is zero-warning.** Treat new warnings as bugs.
+7. **Identity check.** `git log -1 --format='%an <%ae>'` shows the personal noreply, never the work email.
+
+If a manufacturer-scraper PR template exists in `.github/pull_request_template.md`, this list lives there too.
