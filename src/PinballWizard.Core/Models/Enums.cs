@@ -10,6 +10,7 @@ public enum SourceType
     ServiceBulletinPage,
     JjpProductPage,
     AmericanPinballGamePage,
+    SpookyPinballGamePage,
 }
 
 /// <summary>

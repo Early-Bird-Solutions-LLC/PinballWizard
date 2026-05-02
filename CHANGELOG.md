@@ -11,6 +11,52 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Spooky Pinball scraper (Phase 1.2.c)**: third non-Stern
+  manufacturer scraper. Spooky runs WordPress + WooCommerce + Yoast
+  SEO and exposes a fully-open WordPress REST API at
+  `/wp-json/wp/v2/pages` — so this scraper consumes structured JSON
+  rather than scraping rendered HTML. More reliable than DOM
+  heuristics, politer (less data per request), and naturally
+  multilingual / entity-decoded.
+  Discovery rule: a WP page is treated as a game page iff its
+  rendered content contains S3 firmware URLs at Spooky's S3 host
+  (`spookypinball.s3.us-east-2.amazonaws.com`) AND those URLs all
+  share a single distinct first path segment (the canonical game
+  slug). This naturally rejects aggregator/cross-game update pages
+  (e.g., "SCOOBY BASE IMAGE UPDATE") that link to firmware for
+  several games. The S3-derived slug becomes the canonical
+  `GameRecord.Slug`, so games whose WP slug is a numeric placeholder
+  (like `2486-2` for "Texas Chainsaw Massacre") still get a stable
+  human-meaningful slug (`texaschainsaw`).
+  `PinballWizard.Core/Configuration/SpookyOptions.cs` (BaseUrl,
+  PagesEndpointPath, PageSize, S3Host).
+  `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.SpookyPinballGamePage`.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["spooky"] = "Spooky Pinball"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/Spooky/`:
+  `SpookyPageRaw` + `WpRenderedField` (WP REST DTOs as classes with
+  init-only accessors, not records — same lesson as the AP scraper);
+  `SpookyWpPagesClient` (paginated WP REST consumer extending
+  `PoliteScraperBase`; static parsing surface — page JSON
+  deserialization, S3-slug extraction, and the single-slug game
+  filter — kept testable); `SpookyGamePageExtractor` (pure-function
+  page → `GameRecord` + downloads, HTML-entity decoded, anchor-text
+  labels attached where present); `SpookyGamePageScraper` (extends
+  `PoliteScraperBase`, implements `ISourceScraper`, yields one
+  `.Game` ScrapedItem and one `.Link` ScrapedItem per S3 firmware
+  URL); `AddSpookyPinballScraping` DI extension. Politeness: the
+  per-origin throttle picks up Spooky's `Crawl-delay: 10` from the
+  shared robots-txt cache. CLI: `--source spooky`. **26 new unit
+  tests** (248 total passing) covering JSON deserialization (full
+  field round-trip, graceful handling of non-array bodies),
+  single-S3-slug filter (single-slug game / multi-slug aggregator
+  rejection / no-S3-link rejection), S3-slug extraction (distinct
+  slugs, non-S3 URL rejection, empty content), the canonical
+  S3-derived slug for numeric-WP-slug games, HTML entity decoding
+  in titles, dedup of repeated S3 hrefs, anchor-text label
+  attachment, null/blank-arg validation across both
+  client and extractor.
 - **American Pinball scraper (Phase 1.2.b)**: second non-Stern
   manufacturer scraper. AP runs a custom CMS (not Shopify, not a
   SPA), exposes a flat sitemap urlset (no index pagination), and does
