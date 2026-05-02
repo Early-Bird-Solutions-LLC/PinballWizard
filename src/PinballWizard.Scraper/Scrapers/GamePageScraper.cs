@@ -127,10 +127,26 @@ public sealed class GamePageScraper : ISourceScraper
     {
         try
         {
-            // Extract game title from the page
-            var title = await page.EvalOnSelectorAsync<string?>(
-                "h1, .game-title, [class*='title']",
-                "el => el?.textContent?.trim()") ?? game.Slug;
+            // Pull every plausible title candidate from the DOM, then let
+            // GamePageExtractors.SanitizeGameTitle reject banner/cookie text
+            // and pick the first valid one.
+            var candidates = await page.EvaluateAsync<string[]?>("""
+                (() => {
+                    const seen = new Set();
+                    const out = [];
+                    const push = (text) => {
+                        const t = text?.trim();
+                        if (t && !seen.has(t)) { seen.add(t); out.push(t); }
+                    };
+                    document.querySelectorAll('h1').forEach(el => push(el.textContent));
+                    document.querySelectorAll('.game-title, [class*="GameTitle"], [class*="game-name"]')
+                        .forEach(el => push(el.textContent));
+                    return out;
+                })()
+            """);
+
+            var pageTitle = await page.TitleAsync();
+            var title = GamePageExtractors.SanitizeGameTitle(candidates, pageTitle, game.Slug);
 
             var record = new GameRecord
             {
@@ -149,7 +165,7 @@ public sealed class GamePageScraper : ISourceScraper
             // Try to extract edition information
             // Stern game pages typically show edition cards/sections with name, price, description
             var editions = await ExtractEditionsAsync(page);
-            record.Editions = editions;
+            record.Editions = GamePageExtractors.DeduplicateEditions(editions);
 
             return record;
         }

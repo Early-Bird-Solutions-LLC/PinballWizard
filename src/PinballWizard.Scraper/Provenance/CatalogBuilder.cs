@@ -184,10 +184,11 @@ public sealed class CatalogBuilder
     ///  * Documents with <c>Game == null</c> (e.g. manuals discovered on <c>/manuals/</c>)
     ///    get a <see cref="GameReference"/> populated when their filename contains a known
     ///    game slug (case-insensitive, separator-insensitive substring match).
-    ///  * Documents whose <see cref="GameReference"/> was built from a slug-cased guess
-    ///    (e.g. <c>Title = "stranger things"</c> from <see cref="BuildGameReference"/>)
-    ///    get their <see cref="GameReference.Title"/> backfilled from the canonical
-    ///    <see cref="GameRecord.Title"/>.
+    ///  * Documents that already have a <see cref="GameReference"/> get their
+    ///    <see cref="GameReference.Title"/> synced to the canonical
+    ///    <see cref="GameRecord.Title"/>. The doc reference is a denormalization of game
+    ///    data, so it always follows the latest canonical title — including healing stale
+    ///    titles left by earlier buggy scrapes (see <see cref="SyncGameReferenceToCanonical"/>).
     /// </summary>
     /// <remarks>
     /// Ambiguity rule: when multiple slugs match a filename, the LONGEST wins. If two or
@@ -209,10 +210,12 @@ public sealed class CatalogBuilder
 
         foreach (var doc in catalog.Documents)
         {
-            // Backfill title for docs that already have a Game reference but a slug-cased title.
+            // Always sync title for docs that already have a Game reference —
+            // doc.Game.Title is a denormalization of the canonical games.json entry
+            // and must follow it. Skipping this would freeze stale titles.
             if (doc.Game is not null)
             {
-                BackfillTitleIfSlugGuess(doc, gameCatalog);
+                SyncGameReferenceToCanonical(doc, gameCatalog);
                 continue;
             }
 
@@ -259,18 +262,32 @@ public sealed class CatalogBuilder
         }
     }
 
-    private static void BackfillTitleIfSlugGuess(DocumentRecord doc, GameCatalog gameCatalog)
+    /// <summary>
+    /// Syncs <see cref="GameReference.Title"/> on a document to the canonical
+    /// <see cref="GameRecord.Title"/> in the game catalog. The doc's game ref is
+    /// a denormalization of game data, so it must always reflect the latest
+    /// canonical title, not the value first written to the catalog.
+    /// </summary>
+    /// <remarks>
+    /// Earlier this method only updated the title when it still equaled the
+    /// slug-guess produced by <see cref="BuildGameReference"/> (i.e. the very
+    /// first time the doc was scraped). That made stale titles permanent: a
+    /// bad scrape that wrote "Your Privacy Choices / Cookie Settings" into
+    /// every doc.Game.Title would persist across re-scrapes because the title
+    /// no longer matched the slug-guess pattern, so the backfill skipped it.
+    /// The fix is to always sync — the canonical record is in
+    /// <c>games.json</c> and the doc reference must follow it.
+    /// </remarks>
+    private static void SyncGameReferenceToCanonical(DocumentRecord doc, GameCatalog gameCatalog)
     {
         var current = doc.Game;
         if (current is null) return;
 
-        // Detect the slug-cased guess produced by BuildGameReference: slug.Replace('-', ' ').
-        var slugAsTitle = current.Slug.Replace('-', ' ');
-        if (!string.Equals(current.Title, slugAsTitle, StringComparison.Ordinal)) return;
-
         var match = gameCatalog.Games.FirstOrDefault(
             g => string.Equals(g.Slug, current.Slug, StringComparison.OrdinalIgnoreCase));
         if (match is null) return;
+
+        if (string.Equals(current.Title, match.Title, StringComparison.Ordinal)) return;
 
         doc.Game = new GameReference
         {
