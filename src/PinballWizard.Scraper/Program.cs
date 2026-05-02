@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Scraper;
@@ -9,6 +10,8 @@ using PinballWizard.Scraper.Downloading;
 using PinballWizard.Scraper.Infrastructure;
 using PinballWizard.Scraper.Provenance;
 using PinballWizard.Scraper.Scrapers;
+using Polly;
+using Polly.Retry;
 
 // ── CLI Definition ────────────────────────────────────────────────────────────
 
@@ -165,22 +168,30 @@ static IHost CreateHost(string[] args)
     builder.Logging.SetMinimumLevel(
         args.Contains("--verbose") ? LogLevel.Debug : LogLevel.Information);
 
-    // HTTP client
+    // HTTP clients with shared resilience pipeline (Microsoft.Extensions.Http.Resilience).
+    // The pipeline applies at the HttpMessageHandler layer, so every request — from
+    // ManualsScraper.GetStringAsync, FileDownloader.SendAsync, or any future client —
+    // gets the same polite-citizen retry/concurrency behavior without per-call code.
+    const string userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+    var httpSettings = builder.Configuration.GetSection(ScraperSettings.SectionName)
+        .Get<ScraperSettings>() ?? new ScraperSettings();
+
     builder.Services.AddHttpClient<ManualsScraper>(client =>
     {
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
         client.Timeout = TimeSpan.FromSeconds(120);
-    });
+    })
+    .AddResilienceHandler("stern-html", pipeline => ConfigureSternPipeline(pipeline, httpSettings));
 
     builder.Services.AddHttpClient<FileDownloader>(client =>
     {
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
         client.Timeout = TimeSpan.FromSeconds(300);
-    });
+    })
+    .AddResilienceHandler("stern-download", pipeline => ConfigureSternPipeline(pipeline, httpSettings));
 
     // Infrastructure
     builder.Services.AddSingleton<PlaywrightFactory>();
@@ -209,4 +220,29 @@ static IHost CreateHost(string[] args)
     Directory.CreateDirectory(settings.HistoryPath);
 
     return builder.Build();
+}
+
+// ── Resilience pipeline ───────────────────────────────────────────────────────
+
+// Two-strategy pipeline: concurrency limiter (politeness) + retry (transient failures).
+// Per-attempt timeout is intentionally NOT added — the per-client HttpClient.Timeout
+// already applies per attempt and accommodates large PDF downloads. See
+// docs/http-resilience-research.md for the full rationale.
+static void ConfigureSternPipeline(
+    ResiliencePipelineBuilder<HttpResponseMessage> pipeline,
+    ScraperSettings settings)
+{
+    pipeline.AddConcurrencyLimiter(permitLimit: Math.Max(1, settings.MaxConcurrentDownloads));
+
+    pipeline.AddRetry(new HttpRetryStrategyOptions
+    {
+        MaxRetryAttempts = Math.Max(0, settings.MaxRetries),
+        BackoffType = DelayBackoffType.Exponential,
+        UseJitter = true,
+        Delay = TimeSpan.FromMilliseconds(Math.Max(1, settings.InitialRetryDelayMs)),
+        MaxDelay = TimeSpan.FromSeconds(30),
+        ShouldRetryAfterHeader = true,
+        // Default ShouldHandle covers HTTP 5xx, 408, 429, HttpRequestException,
+        // and TimeoutRejectedException — exactly the set we want.
+    });
 }
