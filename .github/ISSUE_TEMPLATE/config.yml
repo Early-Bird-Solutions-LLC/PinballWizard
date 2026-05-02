@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Early-Bird-Solutions-LLC/PinballWizard/security/advisories/new
+    about: Report a vulnerability privately via GitHub Security Advisories. Do NOT open a public issue.
+  - name: Question or design discussion
+    url: https://github.com/Early-Bird-Solutions-LLC/PinballWizard/discussions
+    about: Architecture questions, design feedback, and how-to questions belong in Discussions.

@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest an improvement or new capability
+title: "feat: <short description>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lead with the **why**. Implementations follow from a clearly-stated
+        problem; the reverse is rarely true. If your request is for a new AI/ML
+        feature, check [`docs/ai_ml_ideas.md`](../../docs/ai_ml_ideas.md) first —
+        it may already be in the catalog.
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What problem does this solve? Who feels the pain today, and how often?
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: A short description of the proposed change. UI mockups, API sketches, or pseudocode are welcome but not required.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you consider, and why did you reject it? "None considered" is a valid answer for small changes.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / phase
+      description: Does this fit an already-locked phase, or would it require revisiting the [parallel execution plan](../../docs/parallel_execution_plan.md)?
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
