@@ -1,5 +1,9 @@
 # PinballWizard
 
+[![CI](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml/badge.svg)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/codeql.yml/badge.svg)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/codeql.yml)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+
 Scraper for sternpinball.com that catalogs every document with rich provenance metadata for downstream RAG indexing.
 
 ## What It Does
@@ -51,6 +55,8 @@ dotnet test
 ```
 
 Default behavior (no flags) is scrape + download for all sources. Outputs go to `./data/` unless `DATA_PATH` is set.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, conventions, and the quality bar.
 
 ## CLI Flags
 
