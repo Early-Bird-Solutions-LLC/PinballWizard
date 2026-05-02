@@ -1,0 +1,66 @@
+name: Bicep
+
+# Validates Bicep template syntax on any PR that touches infra/**.
+# Does NOT authenticate to Azure — that's a separate workflow that requires
+# OIDC federated credentials, which are not yet wired (see
+# infra/README.md "What's NOT in this scaffold" section). This job catches
+# every syntax / linter / module-resolution error before merge.
+
+on:
+  push:
+    branches: [main]
+    paths: ['infra/**']
+  pull_request:
+    branches: [main]
+    paths: ['infra/**']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: bicep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (syntax check)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          bicep --version
+
+      - name: Build main-shared.bicep
+        run: bicep build infra/main-shared.bicep --outfile /tmp/main-shared.json
+
+      - name: Lint main-shared.bicep
+        run: bicep lint infra/main-shared.bicep
+
+      - name: Build modules/shared.bicep
+        run: bicep build infra/modules/shared.bicep --outfile /tmp/shared.json
+
+      - name: Lint modules/shared.bicep
+        run: bicep lint infra/modules/shared.bicep
+
+      - name: Validate dev parameters file
+        run: bicep build-params infra/main-shared.dev.bicepparam --outfile /tmp/main-shared.dev.parameters.json
+
+      - name: Upload built ARM templates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-templates
+          path: |
+            /tmp/main-shared.json
+            /tmp/shared.json
+            /tmp/main-shared.dev.parameters.json
+          if-no-files-found: warn
+          retention-days: 14

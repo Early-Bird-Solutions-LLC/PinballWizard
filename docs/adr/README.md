@@ -20,6 +20,7 @@ negative) it carries.
 | [0007](0007-ingestion-sources-as-cosmos-data.md) | Per-manufacturer ingestion sources are Cosmos data, not Bicep config | Accepted |
 | [0008](0008-mudblazor-strict.md) | MudBlazor strict — single UI component library | Accepted |
 | [0009](0009-entra-external-id-admin-rbac-v1.md) | Microsoft Entra External ID for admin RBAC in v1 | Accepted |
+| [0010](0010-personal-azure-subscription-only.md) | Personal Azure subscription only; hard guard at deploy time | Accepted |
 
 ## Conventions
 

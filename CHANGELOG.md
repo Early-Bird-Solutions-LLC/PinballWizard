@@ -11,6 +11,24 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Bicep shared-resources scaffold** (Track A.3): [`infra/`](infra/)
+  directory with `main-shared.bicep` (subscription-scoped entry point) +
+  `modules/shared.bicep` (Cosmos Serverless + Key Vault + ACR Basic + AI
+  Search Basic + Azure OpenAI account + Storage Standard LRS + Log
+  Analytics + Application Insights + diagnostic settings + optional
+  developer RBAC) + `main-shared.dev.bicepparam` + PowerShell
+  `Deploy-SharedResources.ps1` orchestrator. Includes
+  [`docs/adr/0010-personal-azure-subscription-only.md`](docs/adr/0010-personal-azure-subscription-only.md)
+  and a hard `az account show` subscription/tenant guard that aborts any
+  deploy not targeting the personal Earlybird tenant. New
+  `.github/workflows/bicep.yml` validates Bicep syntax + lint + parameter
+  build on every PR touching `infra/**`. Azure OpenAI model deployments
+  intentionally deferred to a follow-up PR (quota provisioning needed).
+- **ADR batch 0001-0009**: codifies decisions already made — record-ADRs
+  meta-ADR, deterministic document IDs, Playwright over Puppeteer-Sharp,
+  `catalog.json` as Phase 1 ↔ Phase 2 contract, standalone Azure
+  infrastructure, Clean Architecture multi-project layout, IngestionSources
+  as Cosmos data, MudBlazor strict, Entra External ID for admin RBAC v1.
 - **Repo hygiene foundation**: PR template, issue templates (bug / feature),
   `CODEOWNERS`, `SECURITY.md`, this `CHANGELOG.md`. Closes the
   documented-vs-reality gaps in
