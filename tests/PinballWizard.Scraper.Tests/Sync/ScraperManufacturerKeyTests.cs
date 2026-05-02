@@ -16,6 +16,7 @@ public sealed class ScraperManufacturerKeyTests
     [InlineData("game_jjp_dialed-in", ScraperManufacturerKey.Jjp)]
     [InlineData("game_ap_houdini", ScraperManufacturerKey.AmericanPinball)]
     [InlineData("game_spooky_beetlejuice", ScraperManufacturerKey.Spooky)]
+    [InlineData("game_pinballbrothers_queen", ScraperManufacturerKey.PinballBrothers)]
     [InlineData("game_stranger-things", ScraperManufacturerKey.Stern)]
     [InlineData("game_jurassic-park", ScraperManufacturerKey.Stern)]
     public void FromGameId_RecognisesAllManufacturerPrefixes(string gameId, string expected)

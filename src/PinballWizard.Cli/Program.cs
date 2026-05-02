@@ -14,6 +14,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
@@ -24,7 +25,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, all",
     DefaultValueFactory = _ => "all"
 };
 
@@ -233,6 +234,11 @@ static IHost CreateHost(string[] args)
     // discovers games via the WP REST API and identifies them by single-S3-slug
     // firmware-link signature in page content).
     builder.Services.AddSpookyPinballScraping(builder.Configuration);
+
+    // Pinball Brothers scraper (Phase 1.3 — WordPress + Visual Composer,
+    // discovers games via the WP REST API and identifies them by the
+    // `-pinball` slug suffix on top-level pages).
+    builder.Services.AddPinballBrothersScraping(builder.Configuration);
 
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();

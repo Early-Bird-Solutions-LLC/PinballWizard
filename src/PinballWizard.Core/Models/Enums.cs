@@ -11,6 +11,7 @@ public enum SourceType
     JjpProductPage,
     AmericanPinballGamePage,
     SpookyPinballGamePage,
+    PinballBrothersGamePage,
 }
 
 /// <summary>
