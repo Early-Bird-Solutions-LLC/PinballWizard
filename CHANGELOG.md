@@ -11,6 +11,46 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Pinball Brothers scraper (Phase 1.3.a)**: fifth manufacturer
+  scraper, fourth in the WordPress-REST-API family. PB's site runs
+  WordPress + Visual Composer with the WP REST API fully open at
+  `/wp-json/wp/v2/pages`. Game-page filter: pages whose slug ends
+  with the configured suffix (default `-pinball`) — every shipped
+  PB title (Queen, Alien, ABBA, Predator) follows that convention,
+  so the suffix is the cheapest reliable signal. The suffix is
+  stripped to derive a canonical slug (`queen-pinball` → `queen`)
+  used as `GameRecord.Slug`.
+  PB's marketing pages contain no firmware downloads or JSON-LD
+  product data — edition information is buried in Visual Composer
+  shortcodes that need a dedicated parser. v1 produces a minimal
+  `GameRecord` (title + slug + page URL) and the catalog spine
+  comes from OPDB, matching the AP and Spooky patterns. Edition
+  extraction can land in a follow-up if it's worth the parser.
+  `PinballWizard.Core/Configuration/PinballBrothersOptions.cs`
+  (BaseUrl, PagesEndpointPath, PageSize, MaxPagesToFetch,
+  GameSlugSuffix). `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.PinballBrothersGamePage`.
+  `PinballWizard.Application/Sync/ScraperManufacturerKey.cs` adds
+  the `PinballBrothers = "pinballbrothers"` constant + `game_pinballbrothers_*`
+  prefix dispatch — matches `OpdbMachineMapper.NormalizeManufacturerKey`
+  exactly so reconciled records land in the correct Cosmos partition.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["pinballbrothers"] = "Pinball Brothers"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/PinballBrothers/`:
+  `PbPageRaw` + `PbRenderedField` (WP REST DTOs); `PbWpPagesClient`
+  (paginated WP REST consumer extending `PoliteScraperBase`; static
+  parsing surface kept testable); `PbGamePageExtractor` (pure-function
+  page → `GameRecord` with HTML-entity decoding and slug suffix
+  stripping); `PbGamePageScraper` (extends `PoliteScraperBase`,
+  implements `ISourceScraper`, yields one `.Game` per game page
+  with `TryExtract` per-page failure isolation matching the
+  JJP/AP/Spooky pattern); `AddPinballBrothersScraping` DI extension.
+  CLI: `--source pinballbrothers`. **+26 unit tests (314 total).**
+  Pre-push self-audit: ran `/local-review` skill (0 🔴 / 3 ⚠️ — one
+  fixed, two deferred as cosmetic) plus the 7-item mechanical
+  checklist (all pass). First scraper PR shipped through the new
+  two-step audit flow from PR #36.
+
 - **`/local-review` skill — pre-push qualitative code review.** Project skill at [`.claude/skills/local-review/SKILL.md`](.claude/skills/local-review/SKILL.md) spawns a `general-purpose` agent against the staged + branched diff and returns a verdict-tagged critique (✅ / ⚠️ / 🔴) across ten categories: design & Clean Architecture, test quality, error handling & blast radius, sibling drift, politeness invariants, provenance preservation, comments policy, security smells, performance smells, configuration discipline. Each 🔴 must be fixed before push; ⚠️ must be fixed or deferred-with-justification. Findings are recorded in the PR description.
   Wired into [`CLAUDE.md` § PR self-audit](CLAUDE.md#pr-self-audit-pre-push-blocking) as **Step 0** (qualitative); the existing 7-item mechanical checklist becomes **Step 1**. The two layers cover different failure modes: the checklist catches dead config, drift, identity issues; the review catches design, architecture, and reasoning issues a checklist can't.
   [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) adds a `Step 0 — /local-review` section requiring the review outcome ("0 🔴 / 2 ⚠️ (both fixed) / 8 categories ✅") and any defer justifications. Memory `feedback_pre_pr_self_audit.md` updated to reflect the two-step structure.
