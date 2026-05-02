@@ -11,6 +11,27 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **OPDB integration (Phase 1.1, Track B-OPDB)**: typed HTTP client
+  and sync service for the [Open Pinball Database](https://opdb.org/api).
+  `PinballWizard.Core/Configuration/OpdbOptions.cs` (base URL, bearer
+  API token, page size, HTTP timeout).
+  `PinballWizard.Application/Sync/{IOpdbSyncService,OpdbSyncResult}`
+  application contracts.
+  `PinballWizard.Infrastructure/Integrations/Opdb/`: `OpdbMachineDto`,
+  `OpdbManufacturerDto`, `OpdbPersonDto` (wire DTOs with explicit
+  `[JsonPropertyName]` snake_case mapping); `OpdbMachineMapper` (pure-
+  function map / merge with manufacturer-key normalization for the
+  10 most-common manufacturers); `OpdbClient` (extends
+  `PoliteScraperBase` so OPDB requests flow through the politeness
+  gate; bearer-token auth; pages until empty); `OpdbSyncService`
+  (idempotent fetch-then-upsert orchestration with insert / update /
+  skip counters and elapsed-time telemetry); `AddOpdbIntegration` DI
+  extension. **27 new unit tests** (185 total passing) covering
+  mapper happy-path + every skip case + 11 manufacturer key
+  normalizations + paging + bearer-auth header + 404-tolerance + the
+  three sync paths (insert, update-with-merge, skip).
+  CLI wiring intentionally deferred to a follow-up — Cosmos isn't
+  deployed yet, so there's nowhere for the sync to write.
 - **PoliteScraper base + politeness gate (Gate 2)**:
   `PinballWizard.Core/Configuration/PolitenessOptions.cs` (User-Agent
   identifying the project + repo, per-origin request delay floor, max
