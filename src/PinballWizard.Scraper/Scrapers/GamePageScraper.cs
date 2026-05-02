@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using AngleSharp.Html.Parser;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
@@ -122,123 +123,73 @@ public sealed class GamePageScraper : ISourceScraper
         return items;
     }
 
+    /// <summary>
+    /// Builds a <see cref="GameRecord"/> from the rendered HTML of the
+    /// game page, preferring machine-consumer metadata (Open Graph,
+    /// JSON-LD, the <c>contact-for-availability</c> shop links) over
+    /// rendered-DOM scraping. See
+    /// <see cref="StaticMetadataExtractor"/> and
+    /// <c>docs/metadata-audit.md</c> Tier 2 for the rationale.
+    /// </summary>
+    /// <remarks>
+    /// We feed Playwright's already-rendered HTML through AngleSharp
+    /// rather than issuing a second HTTP request — single page load, more
+    /// polite to Stern, and the static metadata is server-side-rendered
+    /// so it's present in the rendered HTML regardless.
+    /// </remarks>
     private async Task<GameRecord?> ExtractGameMetadataAsync(
         IPage page, DiscoveredGame game, CancellationToken cancellationToken)
     {
         try
         {
-            // Pull every plausible title candidate from the DOM, then let
-            // GamePageExtractors.SanitizeGameTitle reject banner/cookie text
-            // and pick the first valid one.
-            var candidates = await page.EvaluateAsync<string[]?>("""
-                (() => {
-                    const seen = new Set();
-                    const out = [];
-                    const push = (text) => {
-                        const t = text?.trim();
-                        if (t && !seen.has(t)) { seen.add(t); out.push(t); }
-                    };
-                    document.querySelectorAll('h1').forEach(el => push(el.textContent));
-                    document.querySelectorAll('.game-title, [class*="GameTitle"], [class*="game-name"]')
-                        .forEach(el => push(el.textContent));
-                    return out;
-                })()
-            """);
+            var html = await page.ContentAsync();
+            var parser = new HtmlParser();
+            using var doc = parser.ParseDocument(html);
 
-            var pageTitle = await page.TitleAsync();
-            var title = GamePageExtractors.SanitizeGameTitle(candidates, pageTitle, game.Slug);
+            var staticMeta = StaticMetadataExtractor.Extract(doc);
 
-            var record = new GameRecord
+            // Title: prefer the static sources Stern publishes (form input,
+            // og:title), fall back to rendered H1s, then page <title>, then
+            // slug-cased. SanitizeGameTitle handles banner/CTA filtering.
+            var titleCandidates = new List<string?> { staticMeta.Title };
+            foreach (var h1 in doc.QuerySelectorAll("h1"))
+            {
+                var text = h1.TextContent?.Trim();
+                if (!string.IsNullOrEmpty(text)) titleCandidates.Add(text);
+            }
+
+            var title = GamePageExtractors.SanitizeGameTitle(
+                titleCandidates, doc.Title, game.Slug);
+
+            if (staticMeta.Editions.Count == 0)
+            {
+                _logger.LogWarning(
+                    "Static metadata extraction yielded 0 editions for {Slug} — Stern may have changed the contact-for-availability URL pattern. Catalog will record zero editions for this game.",
+                    game.Slug);
+            }
+
+            return new GameRecord
             {
                 GameId = GameRecord.GenerateId(game.Slug),
                 Title = title,
                 Slug = game.Slug,
                 GamePageUrl = game.GamePageUrl,
                 DiscoveredOn = game.DiscoveredOn,
+                Editions = staticMeta.Editions,
+                DatePublished = staticMeta.DatePublished,
+                ReleaseYear = staticMeta.DatePublished?.Year,
                 Source = new GameSourceInfo
                 {
                     ScrapedFrom = game.GamePageUrl,
                     ScrapedAt = DateTime.UtcNow
                 }
             };
-
-            // Try to extract edition information
-            // Stern game pages typically show edition cards/sections with name, price, description
-            var editions = await ExtractEditionsAsync(page);
-            record.Editions = GamePageExtractors.DeduplicateEditions(editions);
-
-            return record;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to extract metadata for game {Slug}", game.Slug);
             return null;
         }
-    }
-
-    private async Task<List<EditionInfo>> ExtractEditionsAsync(IPage page)
-    {
-        var editions = new List<EditionInfo>();
-
-        try
-        {
-            // Stern game pages have edition sections — look for common patterns
-            // The exact selectors may need tuning after initial testing
-            var editionData = await page.EvaluateAsync<EditionRaw[]?>("""
-                (() => {
-                    const editions = [];
-                    // Look for edition containers - common patterns on Stern game pages
-                    const containers = document.querySelectorAll(
-                        '[class*="edition"], [class*="model"], [class*="version"], ' +
-                        '.product-option, .game-model');
-                    
-                    for (const container of containers) {
-                        const name = container.querySelector(
-                            'h2, h3, h4, [class*="name"], [class*="title"]')?.textContent?.trim();
-                        const price = container.querySelector(
-                            '[class*="price"], [class*="msrp"]')?.textContent?.trim();
-                        const desc = container.querySelector(
-                            'p, [class*="desc"], [class*="body"]')?.textContent?.trim();
-                        
-                        if (name) {
-                            editions.push({ name, price: price || null, description: desc || null });
-                        }
-                    }
-                    
-                    // Fallback: look for Pro/Premium/LE text patterns in headings
-                    if (editions.length === 0) {
-                        const headings = document.querySelectorAll('h2, h3');
-                        for (const h of headings) {
-                            const text = h.textContent?.trim();
-                            if (text && /\b(pro|premium|limited edition|le)\b/i.test(text)) {
-                                editions.push({ name: text, price: null, description: null });
-                            }
-                        }
-                    }
-                    
-                    return editions.length > 0 ? editions : null;
-                })()
-            """);
-
-            if (editionData is not null)
-            {
-                foreach (var ed in editionData)
-                {
-                    editions.Add(new EditionInfo
-                    {
-                        Name = ed.Name,
-                        Msrp = ed.Price,
-                        Description = ed.Description
-                    });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not extract edition info (may not be present on page)");
-        }
-
-        return editions;
     }
 
     private async Task<List<DiscoveredLink>> ScrapeTabAsync(
@@ -344,13 +295,6 @@ public sealed class GamePageScraper : ISourceScraper
         }
 
         return false;
-    }
-
-    private sealed class EditionRaw
-    {
-        [JsonPropertyName("name")] public string Name { get; set; } = "";
-        [JsonPropertyName("price")] public string? Price { get; set; }
-        [JsonPropertyName("description")] public string? Description { get; set; }
     }
 
     private sealed class LinkRaw

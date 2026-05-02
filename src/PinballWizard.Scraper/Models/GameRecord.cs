@@ -19,6 +19,16 @@ public sealed class GameRecord
     /// <summary>Current availability: available, sold_out, vault, etc.</summary>
     public string? Status { get; set; }
 
+    /// <summary>
+    /// First-published date from JSON-LD <c>WebPage.datePublished</c> on the
+    /// game page. Stern uses this to mark when the page went live, which
+    /// approximates (but is not identical to) the game's launch date.
+    /// </summary>
+    public DateTime? DatePublished { get; set; }
+
+    /// <summary>Convenience: year component of <see cref="DatePublished"/>.</summary>
+    public int? ReleaseYear { get; set; }
+
     public List<EditionInfo> Editions { get; set; } = [];
 
     public GameSourceInfo? Source { get; set; }

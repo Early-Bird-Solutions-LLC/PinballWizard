@@ -30,11 +30,13 @@ up requires no new schema, only either (a) populating from data we already
 fetch, or (b) extending an existing JS extractor.
 
 | Field | Location | Current state | What's needed |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `EditionInfo.UniqueFeatures` | [GameRecord.cs:35](../src/PinballWizard.Scraper/Models/GameRecord.cs#L35) | always `[]` | DOM survey + JS extractor; per-edition feature bullets |
 | `EditionInfo.ImageUrls` | [GameRecord.cs:37](../src/PinballWizard.Scraper/Models/GameRecord.cs#L37) | always `[]` | DOM survey + JS extractor; per-edition cabinet/playfield/backbox imagery |
-| `EditionInfo.Availability` | [GameRecord.cs:33](../src/PinballWizard.Scraper/Models/GameRecord.cs#L33) | always `null` | DOM survey; vault/sold-out badges |
+| `EditionInfo.Availability` | [GameRecord.cs:33](../src/PinballWizard.Scraper/Models/GameRecord.cs#L33) | **partial** ✓ | `sold_out` populated via `contact-for-availability` URL parsing ([StaticMetadataExtractor.cs](../src/PinballWizard.Scraper/Scrapers/StaticMetadataExtractor.cs)). `vault`/`archive` still pending — derive from `GameRecord.DiscoveredOn` |
 | `EditionInfo.LimitedQuantity` | [GameRecord.cs:36](../src/PinballWizard.Scraper/Models/GameRecord.cs#L36) | always `null` | DOM survey; LE editions disclose quantity |
+| `EditionInfo.Msrp` | [GameRecord.cs:32](../src/PinballWizard.Scraper/Models/GameRecord.cs#L32) | **wired** ✓ | Populated from `contact-for-availability` URL `price` query param |
+| `GameRecord.DatePublished` / `ReleaseYear` | [GameRecord.cs:23-29](../src/PinballWizard.Scraper/Models/GameRecord.cs#L23-L29) | **wired** ✓ | Populated from JSON-LD `datePublished` via `StaticMetadataExtractor`. Triaged 2026-05-02: extraction was correct but `CatalogBuilder.MergeGameRecord` was dropping the new fields when merging into an existing record — fixed |
 | `GameRecord.Status` | [GameRecord.cs:20](../src/PinballWizard.Scraper/Models/GameRecord.cs#L20) | always `null` | Cheap: derive from `DiscoveredOn` (`vault` / `archive` / `games_listing`) at `MergeGameRecord` time |
 | `ClassificationInfo.ContentCategories` | [DocumentRecord.cs:77](../src/PinballWizard.Scraper/Models/DocumentRecord.cs#L77) | always `[]` | Heuristic from filename + link text + tab; rules-based, no extractor needed |
 | `DownloadedFileInfo.PageCount` | [DocumentRecord.cs:106](../src/PinballWizard.Scraper/Models/DocumentRecord.cs#L106) | always `null` | Defer to Phase 2 (PdfPig); RAG indexing will need this anyway |

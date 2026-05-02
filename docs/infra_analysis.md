@@ -1,13 +1,21 @@
-# Pinball Wizard — Phase 2 Infrastructure Plan
+# pinwiz.ai — Phase 2 Infrastructure Plan
 
-This document describes the Azure infrastructure that will host Phase 2 (the
-RAG indexing pipeline and query API) of Pinball Wizard. Phase 1's scraper
-output (`catalog.json`, `games.json`, downloaded files) is the input contract.
+This document describes the Azure infrastructure that will host the
+pinwiz.ai platform — the live, anonymous community resource for pinball
+machine documentation, scoring, and (in v2) trade matchmaking and tournament
+integration. Phase 1's scraper output (`catalog.json`, `games.json`,
+downloaded files) is the input contract.
 
-> **Decisions locked 2026-05-02.** This doc reflects the locked architecture:
-> Azure Container Apps + AI Search Basic, East US 2, $200/mo cost cap. See
-> the project memory `project_phase2_architecture_decisions.md` for the full
-> rationale and the levers explicitly chosen *not* to pursue.
+> **Brand:** Public-facing domain is `pinwiz.ai`. Repo name remains
+> `PinballWizard` for continuity.
+>
+> **Decisions locked 2026-05-02 (initial scope) and same-day expanded to
+> the master pinwiz.ai plan.** Architecture: Azure Container Apps + AI
+> Search Basic + Cosmos DB Serverless + Cloudflare Pro, East US 2,
+> **$400/mo cost cap** (anomaly alert at $300/mo). See the project memory
+> `project_phase2_architecture_decisions.md` for the full rationale and the
+> levers explicitly chosen *not* to pursue, and
+> `project_phased_build_sequence.md` for the build order.
 
 ---
 
@@ -16,35 +24,48 @@ output (`catalog.json`, `games.json`, downloaded files) is the input contract.
 Single ACA environment hosting the API/UI, the scraper, and the indexer —
 one platform for everything. Deployed via Azure Deployment Stacks.
 
-### Shared resources (`main-shared.bicep` → `rg-pinball-wizard-shared`)
+### Edge layer (Cloudflare)
+
+| Service | Plan | Role |
+| --- | --- | --- |
+| Cloudflare Registrar | — | Domain `pinwiz.ai` |
+| Cloudflare DNS | Free | Authoritative DNS, traffic routes to ACA App |
+| Cloudflare Pro | $25/mo | Managed WAF (OWASP ruleset), Bot Fight Mode, DDoS, CDN, page rules |
+
+Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloudflare Pro is the WAF tier for v1; **App Gateway WAF v2 + Front Door is explicitly deferred to v2** (§7).
+
+### Shared resources (`main-shared.bicep` → `rg-pinwiz-shared`)
 
 | Resource | Service | Notes |
 | --- | --- | --- |
-| AI Models | Azure OpenAI | `gpt-4o-mini` default, `gpt-4.1` escalation for hard queries (router) |
+| AI Models | Azure OpenAI | `gpt-4o-mini` default, `gpt-4.1` escalation for hard queries; Vision LLM for OCR score photos |
 | Embeddings | Azure OpenAI | `text-embedding-3-large` (3072-dim) |
-| Search | Azure AI Search **Basic** ($74/mo) | Hybrid search + semantic ranker (included on Basic). The chosen backend — not optional. |
+| Search | Azure AI Search **Basic** ($74/mo) | Hybrid search + semantic ranker. The vector index. |
+| **Document DB** | **Azure Cosmos DB Serverless** (NoSQL API) | Users, scores, passport, raw ingestion documents (transcripts, forum sentiment, etc.). Source for the Change Feed. |
 | Container Registry | ACR Basic | Images for ACA App + ACA Jobs |
+| Functions runtime | Azure Functions Consumption | Cosmos DB Change Feed processor — chunks → embeds → upserts AI Search |
 | Secrets | Key Vault | Standard, Entra ID auth only |
 | Monitoring | Log Analytics + App Insights | 1GB/mo capped; diagnostic settings route here |
 
-### Per-environment (`main-env.bicep` → `rg-pinball-wizard-{prod|dev}`)
+### Per-environment (`main-env.bicep` → `rg-pinwiz-{prod|dev}`)
 
 | Resource | Service | Config |
 | --- | --- | --- |
 | ACA Environment | Container Apps Env | Consumption profile, single environment |
-| API + UI | ACA App `pinball-api` | ASP.NET Core (API) + Razor (UI), HTTPS ingress, **min=1 live / min=0 during build** (Bicep parameter) |
-| Scraper | ACA Job `pinball-scraper` | Schedule trigger, daily 03:00. Replaces the cron-on-VM Phase 1 deployment shape. |
-| Indexer | ACA Job `pinball-indexer` | Schedule trigger, daily 03:30 (after scraper) |
-| Storage | Blob Storage | Containers: `pinball-raw` (catalog.json + downloads), `pinball-processed` (chunk metadata), `pinball-static` (UI assets if needed) |
+| Web + API | ACA App `pinwiz-web` | **Blazor Web App** (interactive server) + ASP.NET Core API, HTTPS ingress, **min=1 live / min=0 during build** (Bicep parameter). Custom domain `pinwiz.ai` bound via ACA managed cert. |
+| Scraper | ACA Job `pinwiz-scraper` | Schedule trigger, daily 03:00. Replaces the cron-on-VM Phase 1 shape. |
+| Bulk indexer | ACA Job `pinwiz-indexer` | One-shot bulk reindex; routine indexing is event-driven via Function. |
+| Storage | Blob Storage | Containers: `pinwiz-raw` (catalog.json + downloads), `pinwiz-processed` (chunk metadata), `pinwiz-photos` (score-photo SAS uploads) |
 
 ### Deployment posture: minimal/public
 
 - Region: **East US 2**
-- `enablePrivateNetworking = false` — public endpoints
-- `searchBackend = 'azure-ai-search-basic'` — only supported backend; pgvector path was dropped
-- `apiMinReplicas` — Bicep parameter, `0` during active build, `1` in live
+- `enablePrivateNetworking = false` — public endpoints. VNet + Private Endpoints explicitly deferred (§7) — defense-in-depth would be theater for a public anonymous community resource with no PII / no payments.
+- `searchBackend = 'azure-ai-search-basic'` — only supported backend
+- `webMinReplicas` — Bicep parameter, `0` during active build, `1` in live
 - `deployAcr = true` — ACR hosts ACA App + Job images
-- Custom domain: bound to ACA App with managed cert
+- Custom domain `pinwiz.ai`: bound to ACA Web App with managed cert; Cloudflare in front handles edge TLS
+- Authentication: **anonymous v1** — no login, no accounts. Rate limiting via Cloudflare. Entra External ID planned for v2 to gate passport/scores/trade features only.
 
 ---
 
@@ -236,33 +257,57 @@ And separately upload `catalog.json` + `games.json` to the same container.
 
 ## 6. Cost estimate
 
-**Hard cap: $200/mo. Anomaly alert at $150/mo.**
+**Hard cap: $400/mo. Anomaly alert at $300/mo.**
 
 | Component | SKU | Monthly |
 | --- | --- | --- |
 | Azure AI Search | Basic | $74 |
-| ACA App `pinball-api` (0.5 vCPU + 1GB) | Consumption, **min=1 live / min=0 build** | ~$35 live / ~$3-10 build |
-| ACA Jobs `pinball-scraper` + `pinball-indexer` | Consumption, schedule-triggered | <$1 combined |
+| ACA Web App `pinwiz-web` (0.5 vCPU + 1GB, Blazor + API) | Consumption, **min=1 live / min=0 build** | ~$35 live / ~$3-10 build |
+| ACA Jobs (scraper + bulk indexer) | Consumption, schedule-triggered | <$1 combined |
+| Azure Functions (Cosmos Change Feed → AI Search) | Consumption | $5-20 |
+| **Cosmos DB Serverless** (users, scores, passport, ingestion docs) | NoSQL API, RU-based | $25-100 |
 | Container Registry | Basic | $5 |
-| Storage Account | Standard LRS | $2-5 |
+| Storage Account (catalog blobs + downloads + score photo SAS) | Standard LRS | $2-5 |
 | Azure OpenAI: embeddings | `text-embedding-3-large`, SHA-gated re-embed | ~$5 one-time + ~$0.50/mo incremental |
 | Azure OpenAI: completions | `gpt-4o-mini` default + `gpt-4.1` router (~15-20% of queries) | $10-40 variable |
+| Azure OpenAI: Vision LLM | OCR for score photos | $5-50 variable |
 | Application Insights | 1GB/mo cap | $2-5 |
 | Log Analytics | 1GB/mo cap | $2-3 |
 | Key Vault | Standard | <$1 |
-| **Steady-state (live)** | | **~$130-170/mo** |
-| **Steady-state (active build, min=0)** | | **~$95-130/mo** |
+| **Cloudflare Pro** | DNS + CDN + managed WAF + Bot Fight + DDoS | $25 |
+| **Steady-state (live)** | | **~$195-370/mo** |
+| **Steady-state (active build, min=0)** | | **~$165-340/mo** |
 
 **Decisions explicitly NOT taken** (and the cost they would have added):
 
-- AI Search Standard — would add ~$170/mo for marginal quality gain at this corpus size
+- AI Search Standard — would add ~$170/mo for marginal quality gain at v1 corpus size
+- APIM (any tier) — replaced by Cloudflare Pro at the edge; LLM gateway pattern can be added if traffic justifies token-budget telemetry
+- Redis Cache (semantic cache) — only made sense behind APIM; in-process LRU cache on the API container is sufficient at v1 scale
+- VNet + Private Endpoints — public-endpoint posture is right-sized for a public community resource with no PII / no payments / no admin surface; defense-in-depth here is theater
 - Multi-region failover — would ~2x infra cost; single region accepted
-- Separate dev environment with its own AI Search — would add another $74/mo; iterate on prod from a feature branch with min=0 instead
-- Custom embedding fine-tuning — would be entire engineering investment for ~2% recall
-- OCR pipeline for scanned manuals — deferred; documented as known gap
-- Authenticated user accounts — anonymous v1; add Cloudflare Turnstile only if abuse appears
+- Separate dev environment with its own AI Search — saves $74/mo dev tier; iterate on prod from a feature branch with min=0
+- Custom embedding fine-tuning — entire engineering investment for ~2% recall
+- Authenticated user accounts — anonymous v1; Entra External ID planned only for passport/scores/trade in v2
 
 This trade space is the cost/value showcase — picking the managed service (AI Search Basic) that ships the semantic ranker rather than building it on pgvector, and refusing to gold-plate features the corpus size doesn't warrant.
+
+---
+
+## 7. Deferred to v2 (designed but unbuilt)
+
+Each item below is in the architectural plan with explicit "designed but unbuilt" status. The decision to defer is the cost/value showcase — every item has a documented trigger condition for revisiting.
+
+| Feature | v2 cost when activated | Trigger to revisit |
+| --- | --- | --- |
+| **Whisper transcription pipeline** | $36 per ~100 hrs + Function trigger | Proprietary content (gameplay tutorials) where YouTube auto-captions don't cover |
+| **App Gateway WAF v2 + Front Door** | ~$330+/mo | Multi-region, compliance requirements, or Azure-native WAF demanded by use case |
+| **Trade Matchmaker (3-way / 4-way graph algorithm)** | Engineering only | Real user activity threshold (~100 active users with wishlists) |
+| **Match Play / IFPA real-time tournament push** (SignalR) | Engineering only | Platform adoption by tournament organizers |
+| **Pinside scraping** | Politeness review needed | Community sign-off; PinballPrices first |
+| **Authenticated user features** (passport, scores, trade) | Entra External ID free tier covers v1 | Once one of the above lands |
+| **VNet + Private Endpoints** | ~$30-50/mo + complexity | Compliance / payments / admin surface justifies it |
+
+The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($25/mo) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
 
 ---
 
