@@ -11,6 +11,32 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **PoliteScraper base + politeness gate (Gate 2)**:
+  `PinballWizard.Core/Configuration/PolitenessOptions.cs` (User-Agent
+  identifying the project + repo, per-origin request delay floor, max
+  consecutive 429 streak before abort, robots.txt enable / path / TTL).
+  `PinballWizard.Infrastructure/Scraping/Polite/`:
+  `IPolitenessGate` + `PolitenessGate` (per-origin throttle via
+  per-origin `SemaphoreSlim`, per-origin minimum delay between
+  requests, process-wide 429 streak with abort-on-threshold,
+  `IAsyncDisposable` lease pattern); `RobotsTxtCache` + `RobotsTxtParser`
+  (per-host parsed rules cached on first fetch with TTL refresh,
+  permissive fallback on 404 / network failure, longest-match Allow /
+  Disallow rules, agent-specific blocks beat wildcard, supports
+  `Crawl-delay` and `Sitemap` directives, `*` and `$` patterns);
+  `PolitenessException` + `PolitenessViolation` enum;
+  `PoliteScraperBase` (helper `SendPolitelyAsync` /
+  `GetStringPolitelyAsync` for HTTP scrapers); `PolitePlaywrightScraperBase`
+  (shared `IBrowserContext` lifecycle, `NewPolitePageAsync` returning
+  `PolitePage` lease, replaces previous per-page `NewContextAsync` waste);
+  `AddPoliteScraping` DI extension. Refactored four Stern scrapers
+  (`ManualsScraper`, `GameListingScraper`, `GamePageScraper`,
+  `ServiceBulletinScraper`) to extend the new bases — behavior
+  unchanged, all 135 existing tests still passing. Default User-Agent
+  is now `PinballWizard/0.1 (+https://github.com/Early-Bird-Solutions-LLC/PinballWizard; polite-scraper)`
+  — descriptive and self-identifying per the polite-scraping ethos
+  (replaces the previous Chrome-mimicking UA). 23 new unit tests for
+  the parser, cache, and gate (158 total passing).
 - **Cosmos schema + repository pattern (Gate 1)**: `PinballWizard.Core/Domain/`
   POCO entities (`IEntity` interface; `Machine` and `IngestionSource` fully
   detailed; `User`, `Score`, `Strategy`, `GameSession`, `DreamGame`

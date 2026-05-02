@@ -5,51 +5,58 @@ using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
-
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
 
 /// <summary>
-/// Source 2: Scrapes individual game pages at sternpinball.com/game/{slug}/.
-/// Vue.js rendered — requires Playwright. Walks 3 tabs per game page:
-/// Promotional Materials, Game Code, Specs &amp; Manual.
-/// Also extracts structured game metadata (editions, prices, features).
+/// Source 2: scrapes individual game pages at
+/// <c>sternpinball.com/game/{slug}/</c>. Vue.js rendered — requires
+/// Playwright. Walks 3 tabs per game page: Promotional Materials,
+/// Game Code, Specs &amp; Manual. Also extracts structured game
+/// metadata (editions, prices, features).
 /// </summary>
-public sealed class GamePageScraper : ISourceScraper
+/// <remarks>
+/// Extends <see cref="PolitePlaywrightScraperBase"/>. Each game-page
+/// load acquires a fresh politeness lease (per-origin throttle + delay
+/// + robots.txt check); tab clicks reuse the open page (no extra
+/// origin requests, lease held for the page's lifetime).
+/// </remarks>
+public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScraper
 {
     private readonly GameListingScraper _listingScraper;
-    private readonly PlaywrightFactory _playwrightFactory;
-    private readonly ScraperSettings _settings;
-    private readonly ILogger<GamePageScraper> _logger;
 
+    /// <inheritdoc />
     public string Name => "Game Pages";
 
+    /// <summary>Initializes a new <see cref="GamePageScraper"/>.</summary>
     public GamePageScraper(
         GameListingScraper listingScraper,
         PlaywrightFactory playwrightFactory,
-        IOptions<ScraperSettings> settings,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         ILogger<GamePageScraper> logger)
+        : base(playwrightFactory, politeness, politenessOptions.Value, logger)
     {
+        ArgumentNullException.ThrowIfNull(listingScraper);
         _listingScraper = listingScraper;
-        _playwrightFactory = playwrightFactory;
-        _settings = settings.Value;
-        _logger = logger;
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // First discover all game slugs
         var games = await _listingScraper.DiscoverGamesAsync(cancellationToken);
-        _logger.LogInformation("Beginning to scrape {Count} game pages", games.Count);
+        Logger.LogInformation("Beginning to scrape {Count} game pages", games.Count);
 
         foreach (var game in games)
         {
             if (cancellationToken.IsCancellationRequested) yield break;
 
-            _logger.LogInformation("Scraping game page: {Slug} ({Url})", game.Slug, game.GamePageUrl);
+            Logger.LogInformation("Scraping game page: {Slug} ({Url})", game.Slug, game.GamePageUrl);
 
             var items = await ScrapeGamePageAsync(game, cancellationToken);
             foreach (var item in items)
@@ -62,15 +69,10 @@ public sealed class GamePageScraper : ISourceScraper
     private async Task<List<ScrapedItem>> ScrapeGamePageAsync(DiscoveredGame game, CancellationToken cancellationToken)
     {
         var items = new List<ScrapedItem>();
-        IPage? page = null;
         try
         {
-            page = await _playwrightFactory.NewPageAsync();
-            await page.GotoAsync(game.GamePageUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30_000
-            });
+            await using var politePage = await NewPolitePageAsync(game.GamePageUrl, cancellationToken).ConfigureAwait(false);
+            var page = politePage.Page;
 
             // Allow Vue.js time to render
             await page.WaitForTimeoutAsync(2000);
@@ -111,16 +113,17 @@ public sealed class GamePageScraper : ISourceScraper
                 }
             }
 
-            // Polite delay between game pages
-            await Task.Delay(_settings.PageLoadDelayMs, cancellationToken);
+            // Polite delay between game pages is handled by the gate on
+            // the next NewPolitePageAsync acquire — no manual Task.Delay.
+        }
+        catch (PolitenessException)
+        {
+            // Bubble up — orchestrator handles source-level abort.
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to scrape game page: {Slug}", game.Slug);
-        }
-        finally
-        {
-            if (page is not null) await page.CloseAsync();
+            Logger.LogError(ex, "Failed to scrape game page: {Slug}", game.Slug);
         }
 
         return items;
@@ -166,7 +169,7 @@ public sealed class GamePageScraper : ISourceScraper
 
             if (staticMeta.Editions.Count == 0)
             {
-                _logger.LogWarning(
+                Logger.LogWarning(
                     "Static metadata extraction yielded 0 editions for {Slug} — Stern may have changed the contact-for-availability URL pattern. Catalog will record zero editions for this game.",
                     game.Slug);
             }
@@ -190,7 +193,7 @@ public sealed class GamePageScraper : ISourceScraper
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to extract metadata for game {Slug}", game.Slug);
+            Logger.LogWarning(ex, "Failed to extract metadata for game {Slug}", game.Slug);
             return null;
         }
     }
@@ -207,7 +210,7 @@ public sealed class GamePageScraper : ISourceScraper
             var tabClicked = await ClickTabAsync(page, tabName);
             if (!tabClicked)
             {
-                _logger.LogDebug("Tab '{Tab}' not found on {Slug}", tabName, game.Slug);
+                Logger.LogDebug("Tab '{Tab}' not found on {Slug}", tabName, game.Slug);
                 return links;
             }
 
@@ -222,16 +225,16 @@ public sealed class GamePageScraper : ISourceScraper
                     const allLinks = document.querySelectorAll(
                         'a[href*=".pdf"], a[href*=".zip"], a[href*=".spk"], ' +
                         'a[href*="wp-content/uploads"], a[download]');
-                    
+
                     for (const a of allLinks) {
                         // Check if the link is visible (in the active tab)
                         const rect = a.getBoundingClientRect();
                         if (rect.width === 0 && rect.height === 0) continue;
-                        
+
                         const href = a.href;
                         const text = a.textContent?.trim() || a.getAttribute('title') || '';
                         const isDownload = a.hasAttribute('download');
-                        
+
                         if (href && !href.startsWith('javascript:')) {
                             links.push({ href, text, isDownload });
                         }
@@ -257,11 +260,11 @@ public sealed class GamePageScraper : ISourceScraper
                 }
             }
 
-            _logger.LogDebug("Tab '{Tab}' on {Slug}: found {Count} links", tabName, game.Slug, links.Count);
+            Logger.LogDebug("Tab '{Tab}' on {Slug}: found {Count} links", tabName, game.Slug, links.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to scrape tab '{Tab}' on {Slug}", tabName, game.Slug);
+            Logger.LogWarning(ex, "Failed to scrape tab '{Tab}' on {Slug}", tabName, game.Slug);
         }
 
         return links;

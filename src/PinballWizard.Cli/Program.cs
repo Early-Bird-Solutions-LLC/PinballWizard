@@ -12,6 +12,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Polly;
 using Polly.Retry;
@@ -171,27 +172,35 @@ static IHost CreateHost(string[] args)
     builder.Logging.SetMinimumLevel(
         args.Contains("--verbose") ? LogLevel.Debug : LogLevel.Information);
 
-    // HTTP clients with shared resilience pipeline (Microsoft.Extensions.Http.Resilience).
-    // The pipeline applies at the HttpMessageHandler layer, so every request — from
-    // ManualsScraper.GetStringAsync, FileDownloader.SendAsync, or any future client —
-    // gets the same polite-citizen retry/concurrency behavior without per-call code.
-    const string userAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    // Polite-scraping foundation (per-origin throttle + robots.txt cache + 429 backoff,
+    // ADR-aligned User-Agent identifying the project). MUST be registered before the
+    // HttpClient and scraper registrations below — the polite User-Agent is what the
+    // typed clients pull as their default UA.
+    builder.Services.AddPoliteScraping(builder.Configuration);
 
+    var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
+        .Get<PolitenessOptions>() ?? new PolitenessOptions();
+    var politeUserAgent = politenessOptions.UserAgent;
+
+    // HTTP clients with shared resilience pipeline (Microsoft.Extensions.Http.Resilience).
+    // The resilience handler applies at the HttpMessageHandler layer; the politeness gate
+    // (extended via PoliteScraperBase) applies above it at request time. Both layers
+    // serve different purposes:
+    //   - Resilience pipeline: transient retries (5xx, network errors), concurrency limit
+    //   - Politeness gate: per-origin throttle, robots.txt, 429 abort
     var httpSettings = builder.Configuration.GetSection(ScraperSettings.SectionName)
         .Get<ScraperSettings>() ?? new ScraperSettings();
 
     builder.Services.AddHttpClient<ManualsScraper>(client =>
     {
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(politeUserAgent);
         client.Timeout = TimeSpan.FromSeconds(120);
     })
     .AddResilienceHandler("stern-html", pipeline => ConfigureSternPipeline(pipeline, httpSettings));
 
     builder.Services.AddHttpClient<FileDownloader>(client =>
     {
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(politeUserAgent);
         client.Timeout = TimeSpan.FromSeconds(300);
     })
     .AddResilienceHandler("stern-download", pipeline => ConfigureSternPipeline(pipeline, httpSettings));
@@ -203,7 +212,8 @@ static IHost CreateHost(string[] args)
     // Infrastructure
     builder.Services.AddSingleton<PlaywrightFactory>();
 
-    // Scrapers
+    // Scrapers — all four extend PoliteScraperBase or PolitePlaywrightScraperBase
+    // and route every request through the politeness gate.
     builder.Services.AddTransient<GameListingScraper>();
     builder.Services.AddTransient<ISourceScraper, ManualsScraper>();
     builder.Services.AddTransient<ISourceScraper, GamePageScraper>();

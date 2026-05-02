@@ -1,52 +1,64 @@
-using AngleSharp;
 using AngleSharp.Html.Parser;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
-
 using PinballWizard.Core.Scraping;
-using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
 
 /// <summary>
-/// Source 1: Scrapes sternpinball.com/manuals/ — static HTML page with ~148 manual PDFs.
-/// Uses HttpClient + AngleSharp (no browser needed).
+/// Source 1: scrapes <c>sternpinball.com/manuals/</c> — static HTML page
+/// with ~148 manual PDFs. Uses HttpClient + AngleSharp (no browser
+/// needed).
 /// </summary>
-public sealed class ManualsScraper : ISourceScraper
+/// <remarks>
+/// Extends <see cref="PoliteScraperBase"/> so every outbound request
+/// flows through the politeness gate (robots.txt check, per-origin
+/// throttle, 429 backoff). Per the locked feedback memory
+/// <c>feedback_polite_scraping.md</c>, the politeness must be visibly
+/// enforced — extending the base is the visible enforcement.
+/// </remarks>
+public sealed class ManualsScraper : PoliteScraperBase, ISourceScraper
 {
     private readonly HttpClient _httpClient;
     private readonly ScraperSettings _settings;
-    private readonly ILogger<ManualsScraper> _logger;
     private const string ManualsPath = "/manuals/";
 
+    /// <inheritdoc />
     public string Name => "Manuals";
 
+    /// <summary>Initializes a new <see cref="ManualsScraper"/>.</summary>
     public ManualsScraper(
         HttpClient httpClient,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         IOptions<ScraperSettings> settings,
         ILogger<ManualsScraper> logger)
+        : base(politeness, politenessOptions.Value, logger)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(settings);
         _httpClient = httpClient;
         _settings = settings.Value;
-        _logger = logger;
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var url = $"{_settings.BaseUrl}{ManualsPath}";
-        _logger.LogInformation("Scraping manuals page: {Url}", url);
+        var url = new Uri($"{_settings.BaseUrl}{ManualsPath}");
+        Logger.LogInformation("Scraping manuals page: {Url}", url);
 
         string html;
         try
         {
-            html = await _httpClient.GetStringAsync(url, cancellationToken);
+            html = await GetStringPolitelyAsync(_httpClient, url, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Failed to fetch manuals page: {Url}", url);
+            Logger.LogError(ex, "Failed to fetch manuals page: {Url}", url);
             yield break;
         }
 
@@ -63,7 +75,7 @@ public sealed class ManualsScraper : ISourceScraper
             if (string.IsNullOrWhiteSpace(href)) continue;
 
             // Resolve relative URLs
-            if (!Uri.TryCreate(new Uri(url), href, out var absoluteUri)) continue;
+            if (!Uri.TryCreate(url, href, out var absoluteUri)) continue;
             var absoluteUrl = absoluteUri.ToString();
 
             // Only interested in PDF files from sternpinball.com
@@ -82,11 +94,11 @@ public sealed class ManualsScraper : ISourceScraper
                     DiscoveryContext = "Manuals Page"
                 },
                 SourceType = SourceType.ManualsPage,
-                DiscoveryUrl = url,
+                DiscoveryUrl = url.ToString(),
                 DiscoveryContext = "Manuals Page"
             };
         }
 
-        _logger.LogInformation("Manuals page: discovered {Count} PDF links", discoveredCount);
+        Logger.LogInformation("Manuals page: discovered {Count} PDF links", discoveredCount);
     }
 }

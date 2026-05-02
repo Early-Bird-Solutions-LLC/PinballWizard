@@ -4,76 +4,74 @@ using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
-
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
 
 /// <summary>
-/// Source 3: Scrapes sternpinball.com/support/service-bulletins/.
-/// Vue.js rendered — requires Playwright. Contains ~100+ technical service bulletins
-/// filterable by date and game.
+/// Source 3: scrapes <c>sternpinball.com/support/service-bulletins/</c>.
+/// Vue.js rendered — requires Playwright. Contains ~100+ technical
+/// service bulletins; the page lazy-loads via scroll.
 /// </summary>
-public sealed class ServiceBulletinScraper : ISourceScraper
+/// <remarks>
+/// Extends <see cref="PolitePlaywrightScraperBase"/>. Only one
+/// politeness lease is taken (for the initial page load); subsequent
+/// scroll events do not issue new origin requests in the polite sense
+/// (the lazy-load fetches are XHR calls the browser makes
+/// automatically, which the source's own throttle naturally bounds).
+/// </remarks>
+public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourceScraper
 {
-    private readonly PlaywrightFactory _playwrightFactory;
     private readonly ScraperSettings _settings;
-    private readonly ILogger<ServiceBulletinScraper> _logger;
     private const string BulletinsPath = "/support/service-bulletins/";
 
+    /// <inheritdoc />
     public string Name => "Service Bulletins";
 
+    /// <summary>Initializes a new <see cref="ServiceBulletinScraper"/>.</summary>
     public ServiceBulletinScraper(
         PlaywrightFactory playwrightFactory,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         IOptions<ScraperSettings> settings,
         ILogger<ServiceBulletinScraper> logger)
+        : base(playwrightFactory, politeness, politenessOptions.Value, logger)
     {
-        _playwrightFactory = playwrightFactory;
+        ArgumentNullException.ThrowIfNull(settings);
         _settings = settings.Value;
-        _logger = logger;
     }
 
+    /// <inheritdoc />
     public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var url = $"{_settings.BaseUrl}{BulletinsPath}";
-        _logger.LogInformation("Scraping service bulletins page: {Url}", url);
+        Logger.LogInformation("Scraping service bulletins page: {Url}", url);
 
-        IPage? page = null;
-        try
+        await using var politePage = await NewPolitePageAsync(url, cancellationToken).ConfigureAwait(false);
+        var page = politePage.Page;
+
+        // Wait for Vue.js to render bulletin list
+        await page.WaitForTimeoutAsync(3000);
+
+        // Scroll to load all bulletins (they may be lazy-loaded or paginated)
+        await ScrollToLoadAllAsync(page, cancellationToken);
+
+        // Extract all bulletin entries
+        var bulletins = await ExtractBulletinsAsync(page);
+        Logger.LogInformation("Discovered {Count} service bulletins", bulletins.Count);
+
+        foreach (var bulletin in bulletins)
         {
-            page = await _playwrightFactory.NewPageAsync();
-            await page.GotoAsync(url, new PageGotoOptions
+            yield return new ScrapedItem
             {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30_000
-            });
-
-            // Wait for Vue.js to render bulletin list
-            await page.WaitForTimeoutAsync(3000);
-
-            // Scroll to load all bulletins (they may be lazy-loaded or paginated)
-            await ScrollToLoadAllAsync(page, cancellationToken);
-
-            // Extract all bulletin entries
-            var bulletins = await ExtractBulletinsAsync(page);
-            _logger.LogInformation("Discovered {Count} service bulletins", bulletins.Count);
-
-            foreach (var bulletin in bulletins)
-            {
-                yield return new ScrapedItem
-                {
-                    Link = bulletin,
-                    SourceType = SourceType.ServiceBulletinPage,
-                    DiscoveryUrl = url,
-                    DiscoveryContext = "Service Bulletins Page"
-                };
-            }
-        }
-        finally
-        {
-            if (page is not null) await page.CloseAsync();
+                Link = bulletin,
+                SourceType = SourceType.ServiceBulletinPage,
+                DiscoveryUrl = url,
+                DiscoveryContext = "Service Bulletins Page"
+            };
         }
     }
 
@@ -146,7 +144,7 @@ public sealed class ServiceBulletinScraper : ISourceScraper
         return false;
     }
 
-    private async Task<List<DiscoveredLink>> ExtractBulletinsAsync(IPage page)
+    private static async Task<List<DiscoveredLink>> ExtractBulletinsAsync(IPage page)
     {
         var rawBulletins = await page.EvaluateAsync<BulletinRaw[]?>("""
             (() => {
@@ -154,35 +152,35 @@ public sealed class ServiceBulletinScraper : ISourceScraper
                 // Service bulletins are typically listed as links to PDFs
                 const links = document.querySelectorAll(
                     'a[href*=".pdf"], a[href*="wp-content/uploads"]');
-                
+
                 for (const a of links) {
                     const href = a.href;
                     if (!href) continue;
-                    
+
                     const text = a.textContent?.trim() || '';
-                    
+
                     // Try to find a parent container with date/game info
                     const container = a.closest(
                         'tr, li, .bulletin, [class*="bulletin"], [class*="item"], article');
-                    
+
                     let date = null;
                     let relatedGames = null;
-                    
+
                     if (container) {
                         // Look for date in the container
                         const dateEl = container.querySelector(
                             'time, [class*="date"], td:nth-child(2)');
                         if (dateEl) date = dateEl.textContent?.trim();
-                        
+
                         // Look for game names in the container
                         const gameEl = container.querySelector(
                             '[class*="game"], td:nth-child(3), .games');
                         if (gameEl) relatedGames = gameEl.textContent?.trim();
                     }
-                    
+
                     bulletins.push({ href, text, date, relatedGames });
                 }
-                
+
                 return bulletins.length > 0 ? bulletins : null;
             })()
         """);
