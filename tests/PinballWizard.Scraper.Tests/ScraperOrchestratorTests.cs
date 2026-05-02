@@ -1,12 +1,15 @@
+using PinballWizard.Application;
+using PinballWizard.Application.Downloading;
+using PinballWizard.Core.Scraping;
 using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using PinballWizard.Scraper.Downloading;
-using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
-using PinballWizard.Scraper.Provenance;
-using PinballWizard.Scraper.Scrapers;
+using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Models;
+using PinballWizard.Application.Provenance;
+using PinballWizard.Infrastructure.Scraping.Stern;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests;

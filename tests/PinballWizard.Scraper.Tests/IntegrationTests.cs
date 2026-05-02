@@ -1,14 +1,18 @@
+using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Application;
+using PinballWizard.Application.Downloading;
+using PinballWizard.Core.Scraping;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
-using PinballWizard.Scraper.Downloading;
-using PinballWizard.Scraper.Infrastructure;
-using PinballWizard.Scraper.Models;
-using PinballWizard.Scraper.Provenance;
-using PinballWizard.Scraper.Scrapers;
+using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Models;
+using PinballWizard.Application.Provenance;
+using PinballWizard.Infrastructure.Scraping.Stern;
 using Polly;
 using Polly.Retry;
 using Xunit;
@@ -259,6 +263,8 @@ public sealed class IntegrationTests : IDisposable
             client.Timeout = TimeSpan.FromSeconds(300);
         })
         .AddResilienceHandler("stern-download", pipeline => ConfigureSternPipeline(pipeline, httpSettings));
+
+        builder.Services.AddTransient<IFileDownloader>(sp => sp.GetRequiredService<FileDownloader>());
 
         builder.Services.AddSingleton<PlaywrightFactory>();
         builder.Services.AddTransient<GameListingScraper>();

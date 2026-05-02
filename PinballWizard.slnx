@@ -1,5 +1,10 @@
 <Solution>
-  <Project Path="src/PinballWizard.Scraper/PinballWizard.Scraper.csproj" />
+  <Folder Name="/Source/">
+    <Project Path="src/PinballWizard.Core/PinballWizard.Core.csproj" />
+    <Project Path="src/PinballWizard.Application/PinballWizard.Application.csproj" />
+    <Project Path="src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
+    <Project Path="src/PinballWizard.Cli/PinballWizard.Cli.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/PinballWizard.Scraper.Tests/PinballWizard.Scraper.Tests.csproj" />
   </Folder>
