@@ -578,6 +578,46 @@ public sealed class CatalogBuilderTests
         Assert.Equal(2, stored.DiscoveredOn.Count);
     }
 
+    [Fact]
+    public void MergeGameRecord_ExistingGame_TransfersDatePublishedAndReleaseYear()
+    {
+        // Regression: extractor populates DatePublished + ReleaseYear from
+        // JSON-LD, but merging into an existing record dropped those fields,
+        // so games.json showed 0/78 dates after a re-scrape against the
+        // already-populated catalog. The new fields must follow the same
+        // "latest scrape wins" pattern as Title/Editions/Status.
+        var builder = CreateBuilder();
+        var games = new GameCatalog();
+
+        var first = new GameRecord
+        {
+            GameId = GameRecord.GenerateId("foo"),
+            Title = "Foo",
+            Slug = "foo",
+            GamePageUrl = "https://sternpinball.com/game/foo/",
+            DiscoveredOn = ["games_listing"],
+            DatePublished = null,
+            ReleaseYear = null
+        };
+        builder.MergeGameRecord(games, first);
+
+        var second = new GameRecord
+        {
+            GameId = GameRecord.GenerateId("foo"),
+            Title = "Foo",
+            Slug = "foo",
+            GamePageUrl = "https://sternpinball.com/game/foo/",
+            DiscoveredOn = ["games_listing"],
+            DatePublished = new DateTime(2019, 12, 13, 13, 23, 18, DateTimeKind.Utc),
+            ReleaseYear = 2019
+        };
+        builder.MergeGameRecord(games, second);
+
+        var stored = Assert.Single(games.Games);
+        Assert.Equal(new DateTime(2019, 12, 13, 13, 23, 18, DateTimeKind.Utc), stored.DatePublished);
+        Assert.Equal(2019, stored.ReleaseYear);
+    }
+
     // -------- LinkDocumentsToGames: cross-source manual ↔ game linking --------
 
     private static GameRecord MakeGame(string slug, string title) => new()

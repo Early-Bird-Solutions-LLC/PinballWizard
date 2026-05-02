@@ -151,6 +151,8 @@ public sealed class CatalogBuilder
             existing.Title = game.Title;
             existing.Editions = game.Editions;
             existing.Status = game.Status;
+            existing.DatePublished = game.DatePublished;
+            existing.ReleaseYear = game.ReleaseYear;
 
             // Source is optional; prefer the freshly-scraped one (which already
             // carries the current ScrapedAt), otherwise stamp the existing one,
