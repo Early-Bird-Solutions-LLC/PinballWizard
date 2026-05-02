@@ -70,10 +70,11 @@ public sealed class SpookyWpPagesClient : PoliteScraperBase
             }
 
             page++;
-            // Defensive cap so a misconfigured site can't loop forever.
-            if (page > 50)
+            if (page > _options.MaxPagesToFetch)
             {
-                Logger.LogWarning("Spooky: pagination cap reached at page {Page}; stopping.", page);
+                Logger.LogWarning(
+                    "Spooky: MaxPagesToFetch ({Cap}) reached; stopping pagination.",
+                    _options.MaxPagesToFetch);
                 break;
             }
         }

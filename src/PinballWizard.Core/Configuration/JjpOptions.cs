@@ -31,9 +31,13 @@ public sealed class JjpOptions
 
     /// <summary>
     /// Collection slug for pinball machines. Used to filter the
-    /// product sitemap down to actual machines (JJP's storefront
-    /// includes merch / parts / etc. that we don't want in the
-    /// machine catalog).
+    /// product sitemap down to actual machines — JJP's storefront
+    /// includes apparel / accessories / banners that share the
+    /// <c>/products/</c> URL space and would otherwise pollute the
+    /// machine catalog. The scraper fetches
+    /// <c>/collections/{slug}/products.json</c> and intersects the
+    /// resulting handle set with the sitemap URLs.
     /// </summary>
+    [Required]
     public string PinballMachinesCollectionSlug { get; set; } = "pinball-machines-for-sale";
 }

@@ -288,6 +288,16 @@ public sealed class ScraperOrchestrator
         ["spooky"] = "Spooky Pinball",
     };
 
+    /// <summary>
+    /// The canonical scraper names recognised by the <c>--source</c>
+    /// CLI filter. Contract: every registered <see cref="ISourceScraper.Name"/>
+    /// must appear in this set, otherwise <c>--source &lt;alias&gt;</c>
+    /// silently returns no scrapers and the run becomes a no-op. The
+    /// <c>SourceAliasContractTests</c> suite pins this invariant.
+    /// </summary>
+    public static IReadOnlyCollection<string> KnownSourceCanonicalNames { get; } =
+        SourceAliases.Values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     private IEnumerable<ISourceScraper> FilterScrapers(string? sourceFilter)
     {
         if (string.IsNullOrEmpty(sourceFilter) || sourceFilter.Equals("all", StringComparison.OrdinalIgnoreCase))
