@@ -75,13 +75,11 @@
       },
       "Microsoft.Playwright": {
         "type": "Direct",
-        "requested": "[1.12.0, )",
-        "resolved": "1.12.0",
-        "contentHash": "PKrwvb3Yuwmx9jvyZvhdJ2Ur8oMqwBQ7/QHWAnYPC3ghhypo61cmEXGf3ledRP2SWAT1wVPfyWSFMD1sVjYBIA==",
+        "requested": "[1.59.0, )",
+        "resolved": "1.59.0",
+        "contentHash": "igqHbZMmXI6cYNPg1X1o5/51U3CQp83lvvov/d/zmus2wlG1LjvpEL6i1Jx51pRahPtSyppvwq+ZoBfxeSjiew==",
         "dependencies": {
-          "Macross.Json.Extensions": "2.0.0",
-          "Microsoft.Bcl.AsyncInterfaces": "5.0.0",
-          "Microsoft.Extensions.Logging": "5.0.0",
+          "Microsoft.Bcl.AsyncInterfaces": "6.0.0",
           "System.ComponentModel.Annotations": "5.0.0"
         }
       },
@@ -101,15 +99,10 @@
         "resolved": "2.0.4",
         "contentHash": "L5qskg+CB8T40PhVUGFDI9M9GiRhLf9jjQq7UCB1EGGb07oT9/SyS2Q7PCZh7l8yyd41yEnlI6T2ZrkGBxRPkg=="
       },
-      "Macross.Json.Extensions": {
-        "type": "Transitive",
-        "resolved": "2.0.0",
-        "contentHash": "LgC+ZlbequOJsQtP+h1/ldhF9EJVx1zRTTEDjTuziMnymOOTWgzxFlqYQ748lvlCdQYOhNkAjOqHVOsfCWgOhA=="
-      },
       "Microsoft.Bcl.AsyncInterfaces": {
         "type": "Transitive",
-        "resolved": "5.0.0",
-        "contentHash": "W8DPQjkMScOMTtJbPwmPyj9c3zYSFGawDW3jwlBOOsnY+EzZFLgNQ/UMkK35JmkNOVPdCyPr2Tw7Vv9N+KA3ZQ=="
+        "resolved": "6.0.0",
+        "contentHash": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
