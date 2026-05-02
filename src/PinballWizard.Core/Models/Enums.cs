@@ -7,7 +7,8 @@ public enum SourceType
 {
     ManualsPage,
     GamePage,
-    ServiceBulletinPage
+    ServiceBulletinPage,
+    JjpProductPage,
 }
 
 /// <summary>
