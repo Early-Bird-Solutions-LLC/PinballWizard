@@ -1,0 +1,118 @@
+name: Sanitization
+
+# Guardrail: block the merge of any commit that re-introduces forbidden
+# tokens — old client name, personal email, raw secrets, or credential
+# patterns. This is intentionally aggressive; false positives are easy to
+# fix, and a leaked secret is not.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitization-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Scan committed files for forbidden tokens
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sanitization scan
+        shell: bash
+        run: |
+          set -u
+
+          # Directories and files to skip. The sanitization workflow itself
+          # contains every forbidden token by definition; excluding it keeps
+          # the scan from flagging its own ruleset.
+          EXCLUDES=(
+            --exclude-dir=.git
+            --exclude-dir=bin
+            --exclude-dir=obj
+            --exclude-dir=node_modules
+            --exclude-dir=coverage
+            --exclude-dir=publish
+            --exclude=sanitization.yml
+            --exclude='*.lock.json'
+          )
+
+          fail=0
+
+          # Each rule: human label + grep flags + regex.
+          # We use grep -nrIE: line numbers, recursive, skip binaries, ERE.
+          # Case sensitivity is per-rule (some patterns must be case-sensitive
+          # to avoid false positives like the word "password" appearing in
+          # field names).
+          run_rule() {
+            local label="$1"
+            local case_flag="$2"   # -i for case-insensitive, "" otherwise
+            local pattern="$3"
+
+            echo "::group::Scan: $label"
+            local hits
+            if [ -n "$case_flag" ]; then
+              hits=$(grep -nrIE $case_flag "${EXCLUDES[@]}" -- "$pattern" . || true)
+            else
+              hits=$(grep -nrIE "${EXCLUDES[@]}" -- "$pattern" . || true)
+            fi
+
+            if [ -n "$hits" ]; then
+              echo "::error title=Sanitization failure: $label::Forbidden token(s) found"
+              echo "$hits"
+              fail=1
+            else
+              echo "OK"
+            fi
+            echo "::endgroup::"
+          }
+
+          # --- Rules -----------------------------------------------------------
+
+          # Prior client name, scrubbed once already; must not return.
+          run_rule "Prior client name (JungleTech)" "-i" "JungleTech"
+
+          # User's personal email — committed code must use the GitHub noreply
+          # email instead.
+          run_rule "Personal email (jim@earlybird*)"   "-i" "jim@earlybird"
+          run_rule "Personal domain (@earlybirdsolutions)" "-i" "@earlybirdsolutions"
+
+          # Common credential / key markers (case-insensitive).
+          run_rule "PEM private key header"           "-i" "BEGIN.*PRIVATE.*KEY"
+          run_rule "RSA private key header"           "-i" "BEGIN.*RSA.*PRIVATE"
+          run_rule "Slack bot token (xoxb-)"          "-i" "xoxb-"
+          run_rule "Slack user token (xoxp-)"         "-i" "xoxp-"
+          run_rule "GitHub PAT (ghp_)"                "-i" "ghp_"
+          run_rule "GitHub OAuth token (gho_)"        "-i" "gho_"
+          run_rule "GitHub user-to-server (ghu_)"     "-i" "ghu_"
+          run_rule "GitHub server-to-server (ghs_)"   "-i" "ghs_"
+          run_rule "GitHub refresh token (ghr_)"      "-i" "ghr_"
+          run_rule "AWS access key id"                "" "AKIA[0-9A-Z]{16}"
+
+          # Literal credential assignments. Case-sensitive on purpose so we
+          # do NOT flag legitimate field names like `Password` in C# property
+          # declarations. We only fail when a credential-like LHS is
+          # paired with a quoted RHS (i.e., an actual literal value).
+          run_rule "Literal password assignment"      "" 'password.*=.*"[^"]+"'
+          run_rule "Literal api key assignment"       "" 'api[_-]?key.*=.*"[^"]+"'
+
+          # ---------------------------------------------------------------------
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "Sanitization failed. See annotations above for matches."
+            echo "If a hit is a false positive, narrow the rule rather than"
+            echo "broadening the exclude list."
+            exit 1
+          fi
+
+          echo "All sanitization checks passed."

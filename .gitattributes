@@ -1,0 +1,74 @@
+# Auto-detect text files and normalize line endings to LF on commit.
+* text=auto eol=lf
+
+# ----------------------------------------------------------------------------
+# Source code — explicit text/LF
+# ----------------------------------------------------------------------------
+*.cs            text eol=lf diff=csharp
+*.csproj        text eol=lf
+*.sln           text eol=lf
+*.slnx          text eol=lf
+*.props         text eol=lf
+*.targets       text eol=lf
+*.config        text eol=lf
+*.json          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.md            text eol=lf
+*.xml           text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.ts            text eol=lf
+
+Dockerfile      text eol=lf
+*.dockerfile    text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+.editorconfig   text eol=lf
+
+# ----------------------------------------------------------------------------
+# Shell scripts — LF (so they run on Linux containers)
+# ----------------------------------------------------------------------------
+*.sh            text eol=lf
+crontab         text eol=lf
+
+# ----------------------------------------------------------------------------
+# Windows scripts — CRLF
+# ----------------------------------------------------------------------------
+*.ps1           text eol=crlf
+*.psm1          text eol=crlf
+*.psd1          text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+
+# ----------------------------------------------------------------------------
+# Binary assets
+# ----------------------------------------------------------------------------
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.webp          binary
+*.svg           text eol=lf
+*.pdf           binary
+*.zip           binary
+*.tar           binary
+*.tar.gz        binary
+*.tgz           binary
+*.7z            binary
+*.gz            binary
+*.snk           binary
+*.pfx           binary
+*.dll           binary
+*.exe           binary
+*.so            binary
+*.dylib         binary
+
+# ----------------------------------------------------------------------------
+# GitHub linguist hints — keep generated/vendored content out of stats
+# ----------------------------------------------------------------------------
+**/obj/**       linguist-generated=true
+**/bin/**       linguist-generated=true
+*.lock.json     linguist-generated=true
