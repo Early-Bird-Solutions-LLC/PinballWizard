@@ -41,9 +41,10 @@ Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloud
 | AI Models | Azure OpenAI | `gpt-4o-mini` default, `gpt-4.1` escalation for hard queries; Vision LLM for OCR score photos |
 | Embeddings | Azure OpenAI | `text-embedding-3-large` (3072-dim) |
 | Search | Azure AI Search **Basic** ($74/mo) | Hybrid search + semantic ranker. The vector index. |
-| **Document DB** | **Azure Cosmos DB Serverless** (NoSQL API) | Users, scores, passport, raw ingestion documents (transcripts, forum sentiment, etc.). Source for the Change Feed. |
+| **Document DB** | **Azure Cosmos DB Serverless** (NoSQL API) | Users, scores, passport, ingestion sources whitelist, raw ingestion documents (transcripts, forum sentiment). Source for the Change Feed. |
 | Container Registry | ACR Basic | Images for ACA App + ACA Jobs |
 | Functions runtime | Azure Functions Consumption | Cosmos DB Change Feed processor — chunks → embeds → upserts AI Search |
+| **Identity** | **Microsoft Entra External ID** (CIAM tenant) | Admin RBAC (`GlobalAdmin` role) gating `/admin` from v1; social-login federations (Google / Apple / Discord) configured for end-user passport features when those ship |
 | Secrets | Key Vault | Standard, Entra ID auth only |
 | Monitoring | Log Analytics + App Insights | 1GB/mo capped; diagnostic settings route here |
 
@@ -52,7 +53,7 @@ Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloud
 | Resource | Service | Config |
 | --- | --- | --- |
 | ACA Environment | Container Apps Env | Consumption profile, single environment |
-| Web + API | ACA App `pinwiz-web` | **Blazor Web App** (interactive server) + ASP.NET Core API, HTTPS ingress, **min=1 live / min=0 during build** (Bicep parameter). Custom domain `pinwiz.ai` bound via ACA managed cert. |
+| Web + API + Admin | ACA App `pinwiz-web` | **Blazor Web App** with **MudBlazor** UI library + ASP.NET Core API, HTTPS ingress, **min=1 live / min=0 during build** (Bicep parameter). Custom domain `pinwiz.ai` bound via ACA managed cert. Built-in `/admin` route group secured by Entra `GlobalAdmin` role for IngestionSources whitelist + telemetry views. |
 | Scraper | ACA Job `pinwiz-scraper` | Schedule trigger, daily 03:00. Replaces the cron-on-VM Phase 1 shape. |
 | Bulk indexer | ACA Job `pinwiz-indexer` | One-shot bulk reindex; routine indexing is event-driven via Function. |
 | Storage | Blob Storage | Containers: `pinwiz-raw` (catalog.json + downloads), `pinwiz-processed` (chunk metadata), `pinwiz-photos` (score-photo SAS uploads) |
@@ -65,7 +66,7 @@ Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloud
 - `webMinReplicas` — Bicep parameter, `0` during active build, `1` in live
 - `deployAcr = true` — ACR hosts ACA App + Job images
 - Custom domain `pinwiz.ai`: bound to ACA Web App with managed cert; Cloudflare in front handles edge TLS
-- Authentication: **anonymous v1** — no login, no accounts. Rate limiting via Cloudflare. Entra External ID planned for v2 to gate passport/scores/trade features only.
+- Authentication: **Entra External ID** wired up in v1. Anonymous reads stay open for chat / search / browse. The `/admin` route is gated by Entra ID authorization policy requiring the `GlobalAdmin` role from day one. Federated social-login providers (Google / Apple / Discord) configured in v1 even though end-user auth-required features (passport / scores / trade) only enable when those features ship.
 
 ---
 
@@ -246,12 +247,22 @@ And separately upload `catalog.json` + `games.json` to the same container.
 - Threshold gate: top semantic_score < 0.6 → return "no answer found" with sternpinball.com search link (no hallucination)
 - RAG prompt with denormalized provenance from the chunk row → completion router (`gpt-4o-mini` default, `gpt-4.1` for hard queries)
 
-### Step 6: UI
+### Step 6: UI — Blazor Web App + MudBlazor
 
-- Razor Pages UI inside the same `pinball-api` ACA App (no separate frontend container)
-- Chat interface with attributed answers, citation chips clickable to sternpinball.com
-- Faceted sidebar: filter by game, edition, document type, tab, content category
-- Custom domain bound via ACA managed certificate
+- **Blazor Web App** (interactive server components) inside the same `pinwiz-web` ACA App; no separate frontend container.
+- **MudBlazor** is the strict UI component library. `MudDataGrid`, `MudPaper`, `MudChart`, etc. for everything. No mixing in other component libraries.
+- **Public anonymous routes**: chat with attributed answers and citation chips clickable to source sites; faceted sidebar (game / edition / doc type / tab / category); game-detail pages; location map.
+- **Admin Control Plane (`/admin`, built into the same Blazor app)** — secured by Entra ID authorization policy requiring `GlobalAdmin` role. Includes:
+  - `/admin/ingestion-sources` — `MudDataGrid` over the Cosmos `ingestion_sources` container; enable/disable manufacturers, edit cadence, edit politeness overrides at runtime
+  - `/admin/telemetry` — recent scrape runs, success/failure rates, document-volume trends
+  - `/admin/users` — Entra-backed admin role management
+- Custom domain bound via ACA managed certificate; Cloudflare Pro in front for edge TLS + WAF.
+
+### Step 7: IngestionSources whitelist (Cosmos data, not Bicep config)
+
+- Cosmos container `ingestion_sources` stores per-manufacturer config: `id`, `displayName`, `scraperImplKey` (mapped to a registered concrete `ISourceScraper` impl), `baseUrl`, `enabled`, `cadence`, `politenessOverrides`, telemetry counters.
+- The Bicep still creates one ACA Job per manufacturer (failure isolation + parallelism), but the **enabled / cadence / config** state lives in Cosmos. Each ACA Job reads its config from Cosmos at startup.
+- Adding a new manufacturer = code change (new `ISourceScraper` impl + new ACA Job in Bicep) + a row in `ingestion_sources`. The "is this source live in production?" toggle is a database flip via the Admin UI, not a redeploy.
 
 ---
 
@@ -275,6 +286,7 @@ And separately upload `catalog.json` + `games.json` to the same container.
 | Log Analytics | 1GB/mo cap | $2-3 |
 | Key Vault | Standard | <$1 |
 | **Cloudflare Pro** | DNS + CDN + managed WAF + Bot Fight + DDoS | $25 |
+| **Microsoft Entra External ID** | CIAM tenant (admin RBAC + social-login federations); free tier covers v1 monthly active users | $0 (free tier) |
 | **Steady-state (live)** | | **~$195-370/mo** |
 | **Steady-state (active build, min=0)** | | **~$165-340/mo** |
 
@@ -287,7 +299,7 @@ And separately upload `catalog.json` + `games.json` to the same container.
 - Multi-region failover — would ~2x infra cost; single region accepted
 - Separate dev environment with its own AI Search — saves $74/mo dev tier; iterate on prod from a feature branch with min=0
 - Custom embedding fine-tuning — entire engineering investment for ~2% recall
-- Authenticated user accounts — anonymous v1; Entra External ID planned only for passport/scores/trade in v2
+- End-user social login (passport/scores/trade) — Entra External ID infrastructure provisioned v1 (admin RBAC needs it from day one), end-user social-login flows enable when passport / scores / trade features ship
 
 This trade space is the cost/value showcase — picking the managed service (AI Search Basic) that ships the semantic ranker rather than building it on pgvector, and refusing to gold-plate features the corpus size doesn't warrant.
 
@@ -304,7 +316,7 @@ Each item below is in the architectural plan with explicit "designed but unbuilt
 | **Trade Matchmaker (3-way / 4-way graph algorithm)** | Engineering only | Real user activity threshold (~100 active users with wishlists) |
 | **Match Play / IFPA real-time tournament push** (SignalR) | Engineering only | Platform adoption by tournament organizers |
 | **Pinside scraping** | Politeness review needed | Community sign-off; PinballPrices first |
-| **Authenticated user features** (passport, scores, trade) | Entra External ID free tier covers v1 | Once one of the above lands |
+| **End-user social login** (Google / Apple / Discord federated identities for passport / scores / trade) | Entra External ID free tier; per-IDP config-only once tenant exists | When passport / scores / trade features start shipping |
 | **VNet + Private Endpoints** | ~$30-50/mo + complexity | Compliance / payments / admin surface justifies it |
 
 The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($25/mo) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
