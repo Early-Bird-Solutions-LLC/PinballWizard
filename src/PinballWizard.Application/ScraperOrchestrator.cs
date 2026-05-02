@@ -285,6 +285,7 @@ public sealed class ScraperOrchestrator
         ["bulletins"] = "Service Bulletins",
         ["jjp"] = "JJP",
         ["ap"] = "American Pinball",
+        ["spooky"] = "Spooky Pinball",
     };
 
     private IEnumerable<ISourceScraper> FilterScrapers(string? sourceFilter)

@@ -15,6 +15,7 @@ using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 using PinballWizard.Infrastructure.Scraping.Polite;
+using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Polly;
 using Polly.Retry;
@@ -23,7 +24,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, all",
     DefaultValueFactory = _ => "all"
 };
 
@@ -227,6 +228,11 @@ static IHost CreateHost(string[] args)
     // American Pinball scraper (Phase 1.2 — custom-CMS/HTTP, sitemap-first discovery,
     // DOM-heuristic title extraction, downloadable PDF/ZIP/SPK link extraction).
     builder.Services.AddAmericanPinballScraping(builder.Configuration);
+
+    // Spooky Pinball scraper (Phase 1.2 — WordPress + WooCommerce + Yoast,
+    // discovers games via the WP REST API and identifies them by single-S3-slug
+    // firmware-link signature in page content).
+    builder.Services.AddSpookyPinballScraping(builder.Configuration);
 
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();

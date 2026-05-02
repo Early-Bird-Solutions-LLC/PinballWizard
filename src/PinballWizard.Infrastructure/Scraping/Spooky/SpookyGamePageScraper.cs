@@ -1,0 +1,107 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Models;
+using PinballWizard.Core.Scraping;
+using PinballWizard.Infrastructure.Scraping.Polite;
+
+namespace PinballWizard.Infrastructure.Scraping.Spooky;
+
+/// <summary>
+/// Spooky Pinball game-page scraper. Discovers Spooky's games via the
+/// WordPress REST API, then yields per-page:
+/// <list type="bullet">
+///   <item>One <see cref="ScrapedItem"/> with <c>.Game</c> populated (canonical title, S3-derived slug, page URL).</item>
+///   <item>One <see cref="ScrapedItem"/> per firmware asset hosted at Spooky's S3 bucket.</item>
+/// </list>
+/// </summary>
+/// <remarks>
+/// Spooky is a WordPress + WooCommerce + Yoast site with the WP REST
+/// API fully open, so this scraper consumes structured JSON instead
+/// of scraping rendered HTML — more reliable than DOM heuristics, and
+/// politer because the API returns less data per request.
+/// <para>
+/// Politeness, robots.txt, and 429 backoff are inherited from
+/// <see cref="PoliteScraperBase"/>. Spooky's robots.txt declares
+/// <c>Crawl-delay: 10</c>; the project's per-origin throttle picks
+/// that up from the polite gate's robots-txt cache.
+/// </para>
+/// </remarks>
+public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
+{
+    private readonly SpookyWpPagesClient _pagesClient;
+    private readonly SpookyOptions _options;
+
+    /// <inheritdoc />
+    public string Name => "Spooky Pinball";
+
+    /// <summary>Initializes a new <see cref="SpookyGamePageScraper"/>.</summary>
+    public SpookyGamePageScraper(
+        SpookyWpPagesClient pagesClient,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
+        IOptions<SpookyOptions> spookyOptions,
+        ILogger<SpookyGamePageScraper> logger)
+        : base(politeness, politenessOptions.Value, logger)
+    {
+        ArgumentNullException.ThrowIfNull(pagesClient);
+        ArgumentNullException.ThrowIfNull(spookyOptions);
+        _pagesClient = pagesClient;
+        _options = spookyOptions.Value;
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        Logger.LogInformation("Spooky Pinball scraper starting");
+
+        List<SpookyPageRaw> pages;
+        try
+        {
+            pages = await _pagesClient.DiscoverGamePagesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not PolitenessException)
+        {
+            Logger.LogError(ex, "Spooky WP-pages discovery failed; aborting Spooky scrape for this run.");
+            yield break;
+        }
+
+        Logger.LogInformation("Spooky Pinball: {Count} game pages to process", pages.Count);
+
+        foreach (var page in pages)
+        {
+            if (cancellationToken.IsCancellationRequested) yield break;
+
+            var record = SpookyGamePageExtractor.ExtractGame(page, _options.S3Host);
+            if (record is null)
+            {
+                // Defensive — DiscoverGamePagesAsync already filtered, but extraction
+                // can still reject (e.g., empty title).
+                continue;
+            }
+
+            yield return new ScrapedItem
+            {
+                Game = record,
+                SourceType = SourceType.SpookyPinballGamePage,
+                DiscoveryUrl = page.Link,
+                DiscoveryContext = "Spooky Pinball Game Page",
+            };
+
+            var downloads = SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
+            foreach (var link in downloads)
+            {
+                yield return new ScrapedItem
+                {
+                    Link = link,
+                    SourceType = SourceType.SpookyPinballGamePage,
+                    DiscoveryUrl = page.Link,
+                    DiscoveryContext = "Spooky Pinball Game Page",
+                };
+            }
+        }
+
+        Logger.LogInformation("Spooky Pinball scraper complete");
+    }
+}
