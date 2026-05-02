@@ -1,5 +1,8 @@
-using PinballWizard.Scraper.Downloading;
-using PinballWizard.Scraper.Models;
+using PinballWizard.Application;
+using PinballWizard.Application.Downloading;
+using PinballWizard.Core.Scraping;
+using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Core.Models;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests;
