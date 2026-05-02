@@ -11,6 +11,10 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **`/local-review` skill — pre-push qualitative code review.** Project skill at [`.claude/skills/local-review/SKILL.md`](.claude/skills/local-review/SKILL.md) spawns a `general-purpose` agent against the staged + branched diff and returns a verdict-tagged critique (✅ / ⚠️ / 🔴) across ten categories: design & Clean Architecture, test quality, error handling & blast radius, sibling drift, politeness invariants, provenance preservation, comments policy, security smells, performance smells, configuration discipline. Each 🔴 must be fixed before push; ⚠️ must be fixed or deferred-with-justification. Findings are recorded in the PR description.
+  Wired into [`CLAUDE.md` § PR self-audit](CLAUDE.md#pr-self-audit-pre-push-blocking) as **Step 0** (qualitative); the existing 7-item mechanical checklist becomes **Step 1**. The two layers cover different failure modes: the checklist catches dead config, drift, identity issues; the review catches design, architecture, and reasoning issues a checklist can't.
+  [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) adds a `Step 0 — /local-review` section requiring the review outcome ("0 🔴 / 2 ⚠️ (both fixed) / 8 categories ✅") and any defer justifications. Memory `feedback_pre_pr_self_audit.md` updated to reflect the two-step structure.
+  Motivated by the same incident as the original self-audit checklist (PR #34): the dead `PinballMachinesCollectionSlug` config shipped through three PRs unchallenged. The mechanical checklist was the first response; this skill is the qualitative complement.
 - **Scraper-to-Machine reconciliation service (Phase 1 → Phase 2 bridge)**.
   Bridges the legacy/working `GameRecord` shape (in `Core/Models`) to
   the OPDB-keyed `Machine` aggregate (in `Core/Domain/`) per ADR 0011.
