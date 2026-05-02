@@ -1,23 +1,27 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Playwright;
 using PinballWizard.Core.Configuration;
-
-using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
 
 /// <summary>
-/// Discovers all game slugs from /games/, /games/archive/, and /games/vault/.
-/// These are Vue.js rendered pages requiring Playwright.
-/// Returns a list of (slug, listing_source) pairs for GamePageScraper to process.
+/// Discovers all game slugs from <c>/games/</c>, <c>/games/archive/</c>,
+/// and <c>/games/vault/</c>. These are Vue.js rendered pages requiring
+/// Playwright. Returns a list of (slug, listing source) pairs for
+/// <see cref="GamePageScraper"/> to process.
 /// </summary>
-public sealed class GameListingScraper
+/// <remarks>
+/// Extends <see cref="PolitePlaywrightScraperBase"/> so every page
+/// load goes through the politeness gate. The shared
+/// <c>BrowserContext</c> is reused across all three listing pages
+/// (one context, three navigations) instead of one fresh context per
+/// page.
+/// </remarks>
+public sealed class GameListingScraper : PolitePlaywrightScraperBase
 {
-    private readonly PlaywrightFactory _playwrightFactory;
     private readonly ScraperSettings _settings;
-    private readonly ILogger<GameListingScraper> _logger;
 
     private static readonly string[] ListingPaths =
     [
@@ -26,14 +30,17 @@ public sealed class GameListingScraper
         "/games/vault/"
     ];
 
+    /// <summary>Initializes a new <see cref="GameListingScraper"/>.</summary>
     public GameListingScraper(
         PlaywrightFactory playwrightFactory,
+        IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         IOptions<ScraperSettings> settings,
         ILogger<GameListingScraper> logger)
+        : base(playwrightFactory, politeness, politenessOptions.Value, logger)
     {
-        _playwrightFactory = playwrightFactory;
+        ArgumentNullException.ThrowIfNull(settings);
         _settings = settings.Value;
-        _logger = logger;
     }
 
     /// <summary>
@@ -47,12 +54,12 @@ public sealed class GameListingScraper
         foreach (var path in ListingPaths)
         {
             var url = $"{_settings.BaseUrl}{path}";
-            _logger.LogInformation("Discovering games from: {Url}", url);
+            Logger.LogInformation("Discovering games from: {Url}", url);
 
             try
             {
-                var slugs = await ScrapeListingPageAsync(url, cancellationToken);
-                var listingName = path.Trim('/').Replace("games/", "").TrimEnd('/');
+                var slugs = await ScrapeListingPageAsync(url, cancellationToken).ConfigureAwait(false);
+                var listingName = path.Trim('/').Replace("games/", "", StringComparison.Ordinal).TrimEnd('/');
                 if (string.IsNullOrEmpty(listingName)) listingName = "games_listing";
 
                 foreach (var slug in slugs)
@@ -72,60 +79,50 @@ public sealed class GameListingScraper
                     }
                 }
 
-                _logger.LogInformation("Found {Count} game slugs on {Path}", slugs.Count, path);
+                Logger.LogInformation("Found {Count} game slugs on {Path}", slugs.Count, path);
 
-                // Polite delay between listing pages
-                await Task.Delay(_settings.PageLoadDelayMs, cancellationToken);
+                // Polite delay between listing pages is handled by the
+                // gate on the next NewPolitePageAsync acquire — no manual
+                // Task.Delay here.
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to scrape listing page: {Url}", url);
+                Logger.LogError(ex, "Failed to scrape listing page: {Url}", url);
             }
         }
 
-        _logger.LogInformation("Total unique games discovered: {Count}", games.Count);
+        Logger.LogInformation("Total unique games discovered: {Count}", games.Count);
         return [.. games.Values];
     }
 
     private async Task<List<string>> ScrapeListingPageAsync(string url, CancellationToken cancellationToken)
     {
-        var page = await _playwrightFactory.NewPageAsync();
-        try
+        await using var politePage = await NewPolitePageAsync(url, cancellationToken).ConfigureAwait(false);
+        var page = politePage.Page;
+
+        // Wait for Vue.js to render game cards
+        await page.WaitForSelectorAsync("a[href*='/game/']", new Microsoft.Playwright.PageWaitForSelectorOptions
         {
-            await page.GotoAsync(url, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30_000
-            });
+            Timeout = 15_000
+        });
 
-            // Wait for Vue.js to render game cards
-            await page.WaitForSelectorAsync("a[href*='/game/']", new PageWaitForSelectorOptions
-            {
-                Timeout = 15_000
-            });
+        // Extract all /game/{slug}/ links
+        var hrefs = await page.EvalOnSelectorAllAsync<string[]>(
+            "a[href*='/game/']",
+            "elements => elements.map(el => el.getAttribute('href'))");
 
-            // Extract all /game/{slug}/ links
-            var hrefs = await page.EvalOnSelectorAllAsync<string[]>(
-                "a[href*='/game/']",
-                "elements => elements.map(el => el.getAttribute('href'))");
-
-            var slugs = new List<string>();
-            foreach (var href in hrefs)
+        var slugs = new List<string>();
+        foreach (var href in hrefs)
+        {
+            if (string.IsNullOrWhiteSpace(href)) continue;
+            var slug = ExtractSlug(href);
+            if (slug is not null && !slugs.Contains(slug, StringComparer.OrdinalIgnoreCase))
             {
-                if (string.IsNullOrWhiteSpace(href)) continue;
-                var slug = ExtractSlug(href);
-                if (slug is not null && !slugs.Contains(slug, StringComparer.OrdinalIgnoreCase))
-                {
-                    slugs.Add(slug);
-                }
+                slugs.Add(slug);
             }
+        }
 
-            return slugs;
-        }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        return slugs;
     }
 
     /// <summary>
@@ -152,7 +149,12 @@ public sealed class GameListingScraper
 /// </summary>
 public sealed class DiscoveredGame
 {
+    /// <summary>Game slug as it appears in the URL (e.g., "stranger-things").</summary>
     public required string Slug { get; init; }
+
+    /// <summary>Absolute URL of the game's individual page.</summary>
     public required string GamePageUrl { get; init; }
+
+    /// <summary>Which listing page(s) this slug appeared on (e.g., "games_listing", "archive", "vault").</summary>
     public List<string> DiscoveredOn { get; init; } = [];
 }

@@ -12,7 +12,9 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Application.Provenance;
+using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
+using Microsoft.Extensions.Configuration;
 using Polly;
 using Polly.Retry;
 using Xunit;
@@ -243,6 +245,18 @@ public sealed class IntegrationTests : IDisposable
             s.MaxRetries = httpSettings.MaxRetries;
             s.InitialRetryDelayMs = httpSettings.InitialRetryDelayMs;
         });
+
+        // Test-friendly politeness: small delays so tests don't hang waiting on
+        // throttle, robots.txt disabled because tests don't reach a real host.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Politeness:UserAgent"] = "PinballWizard-Tests/1.0",
+            ["Politeness:RequestDelayMs"] = "250",
+            ["Politeness:Max429Streak"] = "3",
+            ["Politeness:RespectRobotsTxt"] = "false",
+            ["Politeness:RobotsTxtTtlSeconds"] = "60",
+        });
+        builder.Services.AddPoliteScraping(builder.Configuration);
 
         // Quiet logging in tests — clear providers so nothing prints, but keep
         // the ILogger<> registrations the framework adds by default.
