@@ -1,0 +1,68 @@
+<Project>
+
+  <!--
+    Shared MSBuild settings for all projects in the PinballWizard solution.
+
+    These properties intentionally live here (not in individual .csproj files) so
+    that the quality bar (warnings-as-errors, deterministic build, locked-mode
+    restore, source link, etc.) is enforced uniformly. Per-project settings should
+    only override what's truly project-specific (OutputType, RootNamespace, etc.).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Quality bar: every warning is a failure. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Reproducible builds. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Locked-mode restore: packages.lock.json files are the source of truth. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- Source link for debugging into NuGet packages and committed source. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+    <!--
+      NoWarn: project-level suppressions. Each entry must explain WHY and either
+      list a removal criterion or be marked DELIBERATE. Add to this list ONLY
+      with a comment.
+
+        CA1848 - "Use LoggerMessage delegates for performance."
+                 DELIBERATE. The codebase already uses message templates (audited
+                 across all 27 logging sites). LoggerMessage source-generated
+                 delegates are a perf-only refactor whose payoff is negligible at
+                 our log volume (one scraper run/day). Re-evaluate if/when log
+                 volume grows by an order of magnitude.
+        CA1873 - "Argument may be expensive if logging is disabled."
+                 DELIBERATE. Same scope as CA1848 — both are perf rules that fire
+                 across every log site even when arguments are cheap (string
+                 literals, primitive locals). Same re-evaluation criterion.
+        CA1310 - "Specify StringComparison for clarity."
+                 Transitional. Existing code uses default comparison in places
+                 where ordinal would be safer; will be addressed in a focused
+                 string-comparison audit. Tracked as a follow-up issue.
+        CA1822 - "Mark members as static."
+                 Transitional. Stylistic-only; not introducing per-instance state
+                 was unintentional in some places. Cleanup in a follow-up.
+        CA1707 - "Identifiers should not contain underscores."
+                 DELIBERATE. xUnit's Method_Scenario_ExpectedResult naming
+                 convention requires underscores in test method names. This is
+                 the universal norm for xUnit suites and we follow it.
+    -->
+    <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
