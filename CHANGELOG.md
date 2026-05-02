@@ -11,6 +11,26 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Cosmos schema + repository pattern (Gate 1)**: `PinballWizard.Core/Domain/`
+  POCO entities (`IEntity` interface; `Machine` and `IngestionSource` fully
+  detailed; `User`, `Score`, `Strategy`, `GameSession`, `DreamGame`
+  sketched to lock the schema vocabulary).
+  `PinballWizard.Application/Persistence/` repository interfaces
+  (`IRepository<T>`, `IMachineRepository`, `IIngestionSourceRepository`).
+  `PinballWizard.Infrastructure/Persistence/Cosmos/` implementations:
+  generic `CosmosRepository<T>` with idempotent deletion, 404-tolerant
+  reads, and `IAsyncEnumerable` streaming queries; concrete
+  `MachineRepository` and `IngestionSourceRepository`; `CosmosOptions`
+  with data-annotation validation and per-container partition-key
+  declarations; `CosmosBootstrapper.EnsureCreatedAsync` for idempotent
+  database/container provisioning with partition-key drift detection;
+  `SystemTextJsonCosmosSerializer` so the SDK uses System.Text.Json
+  consistently with the rest of the codebase; `AddCosmosPersistence` DI
+  extension wiring `DefaultAzureCredential` → `CosmosClient` (Managed
+  Identity, no shared secrets). 20 new unit tests (135 total passing,
+  zero warnings) covering CRUD paths, 404 tolerance, partition-key
+  scoping, parameter binding, argument validation. Live Cosmos
+  integration tests via Testcontainers deferred to a follow-up PR.
 - **Bicep shared-resources scaffold** (Track A.3): [`infra/`](infra/)
   directory with `main-shared.bicep` (subscription-scoped entry point) +
   `modules/shared.bicep` (Cosmos Serverless + Key Vault + ACR Basic + AI
