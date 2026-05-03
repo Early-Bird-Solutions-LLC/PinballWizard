@@ -13,12 +13,33 @@ public sealed class CosmosOptions
     public const string SectionName = "Cosmos";
 
     /// <summary>
-    /// Cosmos account endpoint URL — sourced from the Bicep output
-    /// <c>cosmosAccountEndpoint</c>. Required.
+    /// Full configuration key for <see cref="AccountEndpoint"/>. Exposed
+    /// so callers (e.g., Aspire-vs-Managed-Identity gating logic in CLI
+    /// hosts) can presence-check the key without duplicating the
+    /// <c>"Cosmos:AccountEndpoint"</c> string and risking a silent
+    /// drift if the section is ever renamed.
     /// </summary>
-    [Required]
+    public const string AccountEndpointKey = $"{SectionName}:{nameof(AccountEndpoint)}";
+
+    /// <summary>
+    /// Connection-string name Aspire uses when wiring a Cosmos resource
+    /// via <c>builder.AddAzureCosmosDB("cosmos")</c>. CLI hosts use
+    /// <c>IConfiguration.GetConnectionString(CosmosConnectionName)</c>
+    /// to detect Aspire-injected connections.
+    /// </summary>
+    public const string CosmosConnectionName = "cosmos";
+
+    /// <summary>
+    /// Cosmos account endpoint URL — sourced from the Bicep output
+    /// <c>cosmosAccountEndpoint</c> when running against a deployed
+    /// Cosmos account. Optional when an <see cref="Microsoft.Azure.Cosmos.CosmosClient"/>
+    /// is already registered in DI by an external integration (e.g.,
+    /// .NET Aspire's <c>AddAzureCosmosClient("cosmos")</c>, which
+    /// builds the client from the Aspire-injected connection string
+    /// and supersedes this endpoint).
+    /// </summary>
     [Url]
-    public required string AccountEndpoint { get; init; }
+    public string? AccountEndpoint { get; init; }
 
     /// <summary>
     /// Database name within the account. Defaults to <c>pinwiz</c>;

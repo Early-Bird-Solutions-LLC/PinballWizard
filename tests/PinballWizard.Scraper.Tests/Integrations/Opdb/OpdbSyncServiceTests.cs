@@ -38,7 +38,8 @@ public sealed class OpdbSyncServiceTests : IDisposable
             RespectRobotsTxt = false,
         });
         var robots = new RobotsTxtCache(new HttpClient(new StubHandler()), politenessOptions, NullLogger<RobotsTxtCache>.Instance);
-        var gate = new PolitenessGate(robots, politenessOptions, NullLogger<PolitenessGate>.Instance);
+        var resolver = new DefaultPerSourcePolitenessResolver(politenessOptions);
+        var gate = new PolitenessGate(robots, resolver, NullLogger<PolitenessGate>.Instance);
 
         _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://opdb.org/api/") };
 
