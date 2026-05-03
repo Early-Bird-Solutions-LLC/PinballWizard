@@ -3,6 +3,7 @@ using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Scraping.JsonLd;
+using PinballWizard.Infrastructure.Scraping.OpenGraph;
 
 namespace PinballWizard.Infrastructure.Scraping.Multimorphic;
 
@@ -46,12 +47,12 @@ public static class MultimorphicProductExtractor
 
         var product = JsonLdProductParser.FindFirstProduct(doc);
         var title = product?.Name
-            ?? GetMetaContent(doc, "og:title")
+            ?? OpenGraphExtractor.GetMetaContent(doc, "og:title")
             ?? doc.QuerySelector("h1")?.TextContent?.Trim();
 
         if (string.IsNullOrWhiteSpace(title)) return null;
 
-        var description = product?.Description ?? GetMetaContent(doc, "og:description");
+        var description = product?.Description ?? OpenGraphExtractor.GetMetaContent(doc, "og:description");
         var images = CollectImageUrls(product, doc);
         var availability = product?.Offers?.Availability;
         var status = NormalizeAvailability(availability);
@@ -130,17 +131,10 @@ public static class MultimorphicProductExtractor
         };
     }
 
-    private static string? GetMetaContent(IHtmlDocument doc, string property)
-    {
-        var meta = doc.QuerySelector($"meta[property='{property}']")
-            ?? doc.QuerySelector($"meta[name='{property}']");
-        return meta?.GetAttribute("content")?.Trim();
-    }
-
     private static List<string> CollectImageUrls(JsonLdProduct? product, IHtmlDocument doc)
     {
         var images = product?.Images.ToList() ?? [];
-        var ogImage = GetMetaContent(doc, "og:image");
+        var ogImage = OpenGraphExtractor.GetMetaContent(doc, "og:image");
         if (!string.IsNullOrWhiteSpace(ogImage) && !images.Contains(ogImage, StringComparer.OrdinalIgnoreCase))
         {
             images.Add(ogImage);
