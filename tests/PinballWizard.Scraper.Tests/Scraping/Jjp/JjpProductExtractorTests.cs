@@ -166,4 +166,24 @@ public sealed class JjpProductExtractorTests
         Assert.Throws<ArgumentNullException>(() => JjpProductExtractor.Extract(null!, SampleProductUrl));
         Assert.Throws<ArgumentNullException>(() => JjpProductExtractor.Extract("<html/>", null!));
     }
+
+    [Fact]
+    public void ExtractSlug_NullArg_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => JjpProductExtractor.ExtractSlug(null!));
+    }
+
+    [Theory]
+    [InlineData("https://schema.org/InStock", "in_stock")]
+    [InlineData("https://schema.org/OutOfStock", "out_of_stock")]
+    [InlineData("https://schema.org/PreOrder", "preorder")]
+    [InlineData("https://schema.org/Discontinued", "discontinued")]
+    [InlineData("https://schema.org/SomethingElse", "somethingelse")]
+    [InlineData("InStock", "in_stock")] // bare token also accepted
+    [InlineData(null, null)]
+    [InlineData("  ", null)]
+    public void NormalizeAvailability_HandlesAllSchemaOrgVariants(string? input, string? expected)
+    {
+        Assert.Equal(expected, JjpProductExtractor.NormalizeAvailability(input));
+    }
 }

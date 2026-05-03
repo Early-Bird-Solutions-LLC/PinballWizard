@@ -97,6 +97,7 @@ public static class JjpProductExtractor
     /// </summary>
     public static string? ExtractSlug(Uri productUrl)
     {
+        ArgumentNullException.ThrowIfNull(productUrl);
         var segments = productUrl.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         for (int i = 0; i < segments.Length - 1; i++)
         {
@@ -120,12 +121,18 @@ public static class JjpProductExtractor
         return images;
     }
 
-    private static string? NormalizeAvailability(string? schemaOrgAvailability)
+    /// <summary>
+    /// Normalises a Schema.org availability URL or token to a
+    /// short-form string (<c>in_stock</c>, <c>out_of_stock</c>,
+    /// <c>preorder</c>, <c>discontinued</c>). Returns null on blank
+    /// input. Mirrors <c>BofProductExtractor.NormalizeAvailability</c>
+    /// and <c>MultimorphicProductExtractor.NormalizeAvailability</c>.
+    /// </summary>
+    public static string? NormalizeAvailability(string? schemaOrgAvailability)
     {
         if (string.IsNullOrWhiteSpace(schemaOrgAvailability)) return null;
 
-        var trimmed = schemaOrgAvailability;
-        var lastSegment = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        var lastSegment = schemaOrgAvailability.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         return lastSegment?.ToLowerInvariant() switch
         {
             "instock" => "in_stock",

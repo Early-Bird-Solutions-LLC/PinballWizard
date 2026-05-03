@@ -9,7 +9,34 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`JjpProductExtractor.ExtractSlug` now guards against null input.**
+  Pre-existing drift surfaced by the `/local-review` of PR #43:
+  `BofProductExtractor.ExtractSlug` and
+  `MultimorphicProductExtractor.ExtractSlug` both call
+  `ArgumentNullException.ThrowIfNull(productUrl)` before parsing;
+  `JjpProductExtractor.ExtractSlug` did not, and would have NREd on a
+  null `Uri`. Added the guard plus a regression test
+  (`ExtractSlug_NullArg_Throws`) mirroring the BoF / Multimorphic
+  `ExtractSlug_NullArg_Throws` tests.
+
 ### Changed
+
+- **`JjpProductExtractor.NormalizeAvailability` is now `public`.** Same
+  drift root cause: `BofProductExtractor.NormalizeAvailability` and
+  `MultimorphicProductExtractor.NormalizeAvailability` are both
+  `public` because their tests exercise them directly;
+  `JjpProductExtractor.NormalizeAvailability` was `private` and had no
+  direct test coverage. Promoted to `public`, added a `[Theory]` with
+  8 `InlineData` cases mirroring `BofProductExtractor`'s
+  `NormalizeAvailability_HandlesAllSchemaOrgVariants` test (the JJP
+  fixture matches BoF's HTTPS-only Schema.org URLs since both consume
+  Shopify-style markup; Multimorphic's HTTP/HTTPS dual case isn't
+  applicable here). Net: +9 tests on JJP, sibling parity restored
+  across the three JSON-LD storefronts.
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
 
 - **Shared `OpenGraphExtractor` consolidates duplicated meta-content
   parsing.** JJP, BoF, and Multimorphic all shipped byte-identical
