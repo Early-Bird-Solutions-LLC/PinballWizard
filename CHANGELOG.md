@@ -9,6 +9,44 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Added
+
+- **`.NET Aspire` orchestration scaffold (`PinballWizard.AppHost` +
+  `PinballWizard.ServiceDefaults`).** Local dev now spins up the Cosmos
+  preview emulator (with persistent data volume + Data Explorer) via
+  `pwsh ./start-apphost.ps1` (or `dotnet run --project
+  src/PinballWizard.AppHost`), without requiring an Azure login.
+  `PinballWizard.AppHost`: Aspire 13.1.1 SDK, references the CLI for
+  source-gen of `Projects.PinballWizard_Cli`, declares a single Cosmos
+  resource using `RunAsPreviewEmulator()` (the Neighborli pattern that
+  works on .NET 10 — `ASPIRECOSMOSDB001` analyzer suppression is
+  scoped to the single using directive with a load-bearing comment),
+  and adds a single shared database `pinwiz`. Container creation
+  remains the application layer's responsibility per
+  `CosmosBootstrapper.EnsureCreatedAsync` so the container-create code
+  path is exercised in both local dev and Azure.
+  `PinballWizard.ServiceDefaults`: `IsAspireSharedProject=true`,
+  exposes `Extensions.AddServiceDefaults()` /
+  `ConfigureOpenTelemetry()` / `AddDefaultHealthChecks()` /
+  `MapDefaultEndpoints()`. Intentionally minimal v1 — only OpenTelemetry
+  (logs/metrics/traces with the OTLP exporter that Aspire's dashboard
+  injects via `OTEL_EXPORTER_OTLP_ENDPOINT`), service discovery,
+  standard HTTP resilience, and the `/healthz` + `/alive` endpoints.
+  Auth, Redis, HybridCache, problem-details, and Azure App Configuration
+  are deferred — they only matter once Phase 2 services land.
+  Cosmos preview emulator is the only resource declared today; AI
+  Search and Azure OpenAI have no emulator and are deferred until
+  Track D begins (matches the user's "use Azure where there isn't an
+  emulator" rule by simply not depending on those services in Phase 1).
+  This PR is a pure scaffold — the CLI does NOT yet call
+  `AddServiceDefaults()` or read the Aspire-injected Cosmos connection
+  string. That wiring lands in the follow-up PR alongside the three
+  pre-existing dead-config items surfaced by the Bicep deploy-prep
+  audit (`AddCosmosPersistence` never called, `AddOpdbIntegration`
+  never called, `PolitenessOverrides` field read by no scraper).
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
+
 ### Fixed
 
 - **`JjpProductExtractor.ExtractSlug` now guards against null input.**

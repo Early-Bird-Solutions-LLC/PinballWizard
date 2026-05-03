@@ -1,0 +1,37 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.1.1">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>9f2b7c1e-pinball-wizard-apphost-001</UserSecretsId>
+    <!--
+      Aspire AppHost dictates a number of analyzer rules that fire on the
+      generated DCP wiring code. The wider Directory.Build.props enforces
+      "warnings are errors"; we DO NOT relax that here. Instead, project-level
+      NoWarn entries below are reserved for the same per-rule justification
+      pattern used in Directory.Build.props.
+    -->
+
+    <!--
+      Aspire's AppHost SDK pulls RID-specific dashboard binaries
+      (Aspire.Dashboard.Sdk.linux-x64 / .win-x64 / .osx-arm64). The wider
+      Directory.Build.props enables locked-mode restore globally; locked
+      mode captures only the RID being restored, so a lock file generated
+      on a Windows dev box fails CI on Linux runners. We opt the AppHost
+      csproj out of lock-file restore — the AppHost is a dev orchestration
+      tool with no production runtime impact, so the slight reproducibility
+      relaxation is acceptable. The CLI / Core / Application / Infrastructure
+      projects (which DO ship to prod) keep locked-mode restore.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PinballWizard.Cli\PinballWizard.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.1.1 -->
+    <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.1" />
+  </ItemGroup>
+
+</Project>
