@@ -5,6 +5,10 @@
     <Project Path="src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <Project Path="src/PinballWizard.Cli/PinballWizard.Cli.csproj" />
   </Folder>
+  <Folder Name="/Aspire/">
+    <Project Path="src/PinballWizard.AppHost/PinballWizard.AppHost.csproj" />
+    <Project Path="src/PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/PinballWizard.Scraper.Tests/PinballWizard.Scraper.Tests.csproj" />
   </Folder>
