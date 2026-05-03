@@ -28,3 +28,10 @@ Thumbs.db
 
 # Bicep — local parameter overrides (never committed; deploy script auto-detects)
 *.local.bicepparam
+
+# Bicep — generated ARM templates. Source of truth is the .bicep files;
+# the compiled .json output is a build artifact (`az bicep build` /
+# Deploy-SharedResources.ps1 emit it during validation/deploy).
+infra/*.json
+infra/build/
+infra/**/build/

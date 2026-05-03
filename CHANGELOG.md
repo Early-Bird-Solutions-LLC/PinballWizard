@@ -11,6 +11,31 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **`--ensure-cosmos-containers` CLI flag for post-deploy smoke-tests.**
+  Resolves [`CosmosBootstrapper`](src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosBootstrapper.cs)
+  from DI and runs `EnsureCreatedAsync`: creates the configured Cosmos
+  database + every container in `CosmosOptions.Containers` if missing,
+  asserts existing containers' partition-key paths match (drift throws).
+  Idempotent — re-runs are no-ops. Returns exit code 2 with a clear
+  remediation message when Cosmos isn't configured (the
+  `CosmosBootstrapper` registration only happens when
+  `AddCosmosPersistence` was wired). Useful as the canonical
+  post-deploy smoke-test that the configured Cosmos endpoint +
+  Managed Identity / Aspire connection string actually work
+  end-to-end (`--status` reads only the local file catalog and does
+  NOT exercise Cosmos at all).
+- **`CosmosOptions.Containers` defaults to the canonical Phase 1
+  container list.** Was `[]` before — populated to `[machines (PK
+  /manufacturer), ingestion_sources (PK /partitionKey)]` per ADR
+  0011, matching the container names the existing
+  `MachineRepository` and `IngestionSourceRepository` registrations
+  already reference. Configuration binding REPLACES the list (does
+  not merge), so a future appsettings.json `Cosmos:Containers` entry
+  overrides these defaults entirely. +5 tests in
+  `CosmosOptionsTests` pinning the defaults so a drift between the
+  options list and the repository names trips a test rather than a
+  silent runtime failure.
+
 - **CLI consumes Aspire-orchestrated Cosmos when configured + OPDB sync via
   `--source opdb` + `IPerSourcePolitenessResolver` ends three pre-existing
   dead-config items.** Bundled fix for the three 🔴 findings from PR #53's

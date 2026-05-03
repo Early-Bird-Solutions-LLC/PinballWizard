@@ -72,6 +72,11 @@ var installPlaywrightOption = new Option<bool>("--install-playwright")
     Description = "Install Playwright browsers and exit"
 };
 
+var ensureCosmosContainersOption = new Option<bool>("--ensure-cosmos-containers")
+{
+    Description = "Run CosmosBootstrapper.EnsureCreatedAsync against the configured Cosmos account: creates the database + every container in CosmosOptions.Containers if missing, asserts partition-key paths match. Idempotent. Useful as a post-deploy smoke-test that the configured Cosmos endpoint + Managed Identity / Aspire connection string actually work end-to-end. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -81,6 +86,7 @@ rootCommand.Options.Add(buildCatalogOption);
 rootCommand.Options.Add(statusOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
+rootCommand.Options.Add(ensureCosmosContainersOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -92,6 +98,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var status = parseResult.GetValue(statusOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
+    var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -105,6 +112,28 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Build host with DI
     using var host = CreateHost(args);
     var orchestrator = host.Services.GetRequiredService<ScraperOrchestrator>();
+
+    // Handle --ensure-cosmos-containers (post-deploy Cosmos smoke-test).
+    // Resolves CosmosBootstrapper from DI; the bootstrapper is only registered
+    // when AddCosmosPersistence was wired (i.e., Cosmos config is present). A
+    // missing service indicates Cosmos is not configured — exit code 2 with a
+    // remediation message rather than an opaque DI failure.
+    if (ensureCosmos)
+    {
+        var bootstrapper = host.Services.GetService<CosmosBootstrapper>();
+        if (bootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-cosmos-containers requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        await bootstrapper.EnsureCreatedAsync(cancellationToken);
+        Console.WriteLine("Cosmos database + containers ensured.");
+        return;
+    }
 
     // Handle --status
     if (status)
