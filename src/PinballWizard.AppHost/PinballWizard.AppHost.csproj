@@ -10,6 +10,19 @@
       NoWarn entries below are reserved for the same per-rule justification
       pattern used in Directory.Build.props.
     -->
+
+    <!--
+      Aspire's AppHost SDK pulls RID-specific dashboard binaries
+      (Aspire.Dashboard.Sdk.linux-x64 / .win-x64 / .osx-arm64). The wider
+      Directory.Build.props enables locked-mode restore globally; locked
+      mode captures only the RID being restored, so a lock file generated
+      on a Windows dev box fails CI on Linux runners. We opt the AppHost
+      csproj out of lock-file restore — the AppHost is a dev orchestration
+      tool with no production runtime impact, so the slight reproducibility
+      relaxation is acceptable. The CLI / Core / Application / Infrastructure
+      projects (which DO ship to prod) keep locked-mode restore.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>
