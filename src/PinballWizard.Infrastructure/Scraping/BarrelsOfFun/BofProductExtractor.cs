@@ -1,9 +1,8 @@
-using System.Globalization;
-using System.Text.Json;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
+using PinballWizard.Infrastructure.Scraping.JsonLd;
 
 namespace PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 
@@ -15,12 +14,12 @@ namespace PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 /// DOM as last resort.
 /// </summary>
 /// <remarks>
-/// WooCommerce's JSON-LD nests price under
-/// <c>offers[].priceSpecification[].price</c> (per
-/// <c>UnitPriceSpecification</c>); Shopify (the JJP shape) puts price
-/// directly on <c>offers[].price</c>. This extractor reads both —
-/// nested wins if present, flat is the fallback — so the same code
-/// would work against another WooCommerce-on-WordPress storefront.
+/// JSON-LD parsing is delegated to <see cref="JsonLdProductParser"/>
+/// — the shared helper that handles both flat
+/// <c>offers[].price</c> and nested
+/// <c>offers[].priceSpecification</c> shapes (object or array) plus
+/// <c>@graph</c> wrapping. Same parser also powers JJP and (when
+/// PR #39 lands) Multimorphic.
 /// </remarks>
 public static class BofProductExtractor
 {
@@ -41,7 +40,7 @@ public static class BofProductExtractor
         var slug = ExtractSlug(productUrl);
         if (string.IsNullOrWhiteSpace(slug)) return null;
 
-        var product = FindFirstProductJsonLd(doc);
+        var product = JsonLdProductParser.FindFirstProduct(doc);
         var title = product?.Name
             ?? GetMetaContent(doc, "og:title")
             ?? doc.QuerySelector("h1")?.TextContent?.Trim();
@@ -125,152 +124,6 @@ public static class BofProductExtractor
         };
     }
 
-    private static JsonLdProduct? FindFirstProductJsonLd(IHtmlDocument doc)
-    {
-        foreach (var script in doc.QuerySelectorAll("script[type='application/ld+json']"))
-        {
-            var text = script.TextContent;
-            if (string.IsNullOrWhiteSpace(text)) continue;
-
-            JsonElement root;
-            try
-            {
-                using var parsed = JsonDocument.Parse(text);
-                root = parsed.RootElement.Clone();
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
-
-            // WooCommerce sometimes wraps JSON-LD in @graph; sometimes not.
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("@graph", out var graph) && graph.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in graph.EnumerateArray())
-                {
-                    if (TryReadProduct(item) is { } prod) return prod;
-                }
-            }
-            else if (root.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in root.EnumerateArray())
-                {
-                    if (TryReadProduct(item) is { } prod) return prod;
-                }
-            }
-            else
-            {
-                if (TryReadProduct(root) is { } prod) return prod;
-            }
-        }
-        return null;
-    }
-
-    private static JsonLdProduct? TryReadProduct(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object) return null;
-        if (!element.TryGetProperty("@type", out var typeProp)) return null;
-
-        var typeMatch = typeProp.ValueKind switch
-        {
-            JsonValueKind.String => string.Equals(typeProp.GetString(), "Product", StringComparison.OrdinalIgnoreCase),
-            JsonValueKind.Array => typeProp.EnumerateArray().Any(t =>
-                t.ValueKind == JsonValueKind.String
-                && string.Equals(t.GetString(), "Product", StringComparison.OrdinalIgnoreCase)),
-            _ => false,
-        };
-        if (!typeMatch) return null;
-
-        return new JsonLdProduct
-        {
-            Name = ReadString(element, "name"),
-            Description = ReadString(element, "description"),
-            Images = ReadImages(element),
-            Offers = ReadOffers(element),
-        };
-    }
-
-    private static List<string> ReadImages(JsonElement element)
-    {
-        var images = new List<string>();
-        if (!element.TryGetProperty("image", out var imageProp)) return images;
-
-        switch (imageProp.ValueKind)
-        {
-            case JsonValueKind.String:
-                if (imageProp.GetString() is { Length: > 0 } single) images.Add(single);
-                break;
-            case JsonValueKind.Array:
-                foreach (var item in imageProp.EnumerateArray())
-                {
-                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } s)
-                    {
-                        images.Add(s);
-                    }
-                }
-                break;
-        }
-        return images;
-    }
-
-    private static JsonLdOffers? ReadOffers(JsonElement element)
-    {
-        if (!element.TryGetProperty("offers", out var offers)) return null;
-
-        var first = offers.ValueKind switch
-        {
-            JsonValueKind.Object => offers,
-            JsonValueKind.Array => offers.EnumerateArray().FirstOrDefault(o => o.ValueKind == JsonValueKind.Object),
-            _ => default,
-        };
-        if (first.ValueKind != JsonValueKind.Object) return null;
-
-        return new JsonLdOffers
-        {
-            Price = ReadPriceFromOffer(first),
-            Availability = ReadString(first, "availability"),
-        };
-    }
-
-    private static string? ReadPriceFromOffer(JsonElement offer)
-    {
-        // Flat shape (Shopify): offers[].price
-        if (offer.TryGetProperty("price", out var direct))
-        {
-            if (FormatPrice(direct) is { } flat) return flat;
-        }
-
-        // Nested shape (WooCommerce): offers[].priceSpecification[].price
-        if (offer.TryGetProperty("priceSpecification", out var spec))
-        {
-            var pickedSpec = spec.ValueKind switch
-            {
-                JsonValueKind.Object => spec,
-                JsonValueKind.Array => spec.EnumerateArray().FirstOrDefault(s => s.ValueKind == JsonValueKind.Object),
-                _ => default,
-            };
-            if (pickedSpec.ValueKind == JsonValueKind.Object
-                && pickedSpec.TryGetProperty("price", out var nestedPrice))
-            {
-                return FormatPrice(nestedPrice);
-            }
-        }
-
-        return null;
-    }
-
-    private static string? FormatPrice(JsonElement price) => price.ValueKind switch
-    {
-        JsonValueKind.String => price.GetString(),
-        JsonValueKind.Number => price.GetDouble().ToString(CultureInfo.InvariantCulture),
-        _ => null,
-    };
-
-    private static string? ReadString(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-
     private static string? GetMetaContent(IHtmlDocument doc, string property)
     {
         var meta = doc.QuerySelector($"meta[property='{property}']")
@@ -287,19 +140,5 @@ public static class BofProductExtractor
             images.Add(ogImage);
         }
         return images;
-    }
-
-    private sealed class JsonLdProduct
-    {
-        public string? Name { get; init; }
-        public string? Description { get; init; }
-        public List<string> Images { get; init; } = [];
-        public JsonLdOffers? Offers { get; init; }
-    }
-
-    private sealed class JsonLdOffers
-    {
-        public string? Price { get; init; }
-        public string? Availability { get; init; }
     }
 }
