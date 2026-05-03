@@ -11,6 +11,43 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Family-wide scraper test infrastructure**: closes the recurring
+  ⚠️ finding from `/local-review` runs across PRs #38 / #39 / #40
+  that "no scraper-pipeline integration test asserts yield order,
+  provenance-field propagation, per-page failure isolation, or the
+  polite-gate routing invariants." Two shared fakes plus a
+  proof-of-concept test class.
+  `tests/PinballWizard.Scraper.Tests/Scraping/_TestInfra/FakePolitenessGate.cs`
+  — implements `IPolitenessGate`, records every Acquire/Report so
+  tests can assert the polite-scraping invariants are honored
+  end-to-end (including URL-equality between gate and wire so a
+  future re-canonicalisation refactor can't silently throttle a
+  different origin). Throws on demand via `ThrowOnAcquire` /
+  `ThrowOnReport` for testing the abort path.
+  `tests/PinballWizard.Scraper.Tests/Scraping/_TestInfra/QueueingHttpMessageHandler.cs`
+  — implements `HttpMessageHandler`, maps absolute URLs to
+  pre-canned responses; throws `UnexpectedRequestException` (with
+  the mapped-URL list in the message) on unmapped requests so a
+  regression that fetches the wrong URL fails loudly with a
+  diff-friendly error instead of a silent 404.
+  `tests/PinballWizard.Scraper.Tests/Scraping/ChicagoGaming/CgcGamePageScraperTests.cs`
+  — proof-of-concept against `CgcGamePageScraper` (picked because
+  it exercises BOTH `.Game` and `.Link` yields). 5 tests cover the
+  happy path with full provenance + politeness invariants, per-page
+  failure isolation with politeness invariants holding under
+  failure, discovery failure aborts the source only, and
+  `PolitenessException` propagation on both Acquire and Report
+  paths. **+5 tests (378 total).**
+  Backfill across the other 7 scrapers is intentionally deferred —
+  follow-up PRs can land each independently as scrapers are touched,
+  using this PR's tests as the template. The audit-flagged
+  invariants (yield order / provenance / politeness / failure
+  isolation) are now codified once and reusable.
+  Pre-push self-audit: `/local-review` (0 🔴 / 5 ⚠️ — all 5 fixed
+  in the same PR rather than deferred, since the proof-of-concept
+  becomes the template for ~7 future backfills and template gaps
+  multiply) plus the 7-item mechanical checklist (all pass).
+
 - **Chicago Gaming Company scraper (Phase 1.3.d)**: eighth manufacturer
   scraper, second to use a custom-CMS template (after AP). CGC ships
   "Remake" editions of classic Bally/Williams machines (Attack from
