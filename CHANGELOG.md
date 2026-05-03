@@ -169,6 +169,16 @@ catalog schema is not yet considered stable.
   Pre-push self-audit: 7-item mechanical checklist (all pass);
   `/local-review` deferred to the reviewer at merge time.
 
+- **Scraper-pipeline integration tests for Stern Manuals**: 5 tests
+  using the PR #41 template — happy-path with provenance + politeness
+  invariants, per-link failure isolation, discovery failure aborts the
+  source only, `PolitenessException` propagation on both Acquire and
+  Report paths. Single-yield-link scraper (manuals are documents, not
+  games) so tests assert `.Link` yield order with full provenance, no
+  `.Game` items. First non-Game-yielding scraper in the family
+  backfill. Pre-push self-audit: 7-item mechanical checklist (all
+  pass); `/local-review` deferred to the reviewer at merge time.
+
 - **Multimorphic scraper (Phase 1.3.c)**: seventh manufacturer
   scraper, third using JSON-LD product schema (after JJP and BoF).
   WordPress + WooCommerce; discovery walks the WP sitemap index
