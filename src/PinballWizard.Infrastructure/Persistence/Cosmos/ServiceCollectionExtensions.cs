@@ -60,12 +60,23 @@ public static class ServiceCollectionExtensions
 
             var clientOptions = new CosmosClientOptions
             {
-                ApplicationName = options.ApplicationName,
                 ApplicationPreferredRegions = [.. options.PreferredRegions],
                 Serializer = new SystemTextJsonCosmosSerializer(jsonOptions),
                 ConnectionMode = ConnectionMode.Direct,
                 ConsistencyLevel = ConsistencyLevel.Session,
             };
+
+            // CosmosClientOptions.ApplicationName is appended to the
+            // User-Agent header, and the HTTP-headers parser throws on
+            // empty/null values ('Application name "" is invalid' →
+            // 'The format of value "<null>" is invalid'). Only assign
+            // when the option is populated; CosmosOptions.ApplicationName
+            // defaults to null because it is genuinely optional per its
+            // docstring (helpful for diagnostics, not load-bearing).
+            if (!string.IsNullOrWhiteSpace(options.ApplicationName))
+            {
+                clientOptions.ApplicationName = options.ApplicationName;
+            }
 
             return new CosmosClient(options.AccountEndpoint, credential, clientOptions);
         });
