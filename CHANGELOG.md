@@ -130,6 +130,33 @@ catalog schema is not yet considered stable.
 
 ### Changed
 
+- **Bicep two-tier deploy + Azurite added to AppHost.** Cuts Phase 1
+  Azure spend from ~$150/mo (full platform) to ~$30/mo (Cosmos
+  serverless idle + Log Analytics 1 GB cap) by gating every resource
+  whose features haven't shipped yet behind a new
+  `deployPhase2 bool = false` parameter on
+  [`infra/main-shared.bicep`](infra/main-shared.bicep). Phase 1 deploy
+  provisions only Cosmos serverless + Log Analytics + Cosmos
+  diagnostic settings + the resource group; Phase 2 deploy (set
+  `deployPhase2 = true` in the bicepparam when RAG / Blazor / Admin
+  features start landing) adds App Insights, Key Vault, ACR Basic,
+  AI Search Basic, Azure OpenAI S0, Storage LRS + 3 blob containers
+  (`pinwiz-raw` / `pinwiz-processed` / `pinwiz-photos`), the matching
+  diagnostic settings, and the developer RBAC role assignments. All
+  Phase-2 resource-symbols use Bicep's null-conditional output form
+  (`keyVault.?name ?? ''`) so module outputs are valid both with and
+  without Phase 2 deployed. Both `infra/main-shared.dev.bicepparam`
+  and the gitignored `.local.` override declare the new parameter.
+  Aspire `PinballWizard.AppHost` adds an Azurite emulator
+  (`builder.AddAzureStorage("storage").RunAsEmulator()`) — local-dev
+  replacement for the deferred Storage account, so future Track D RAG
+  ingestion writes raw blobs to a local emulator without an AppHost
+  change. Persistent data volume mirrors the Cosmos pattern so seeded
+  blobs survive restarts. README gains a "Azure deploy — two-tier
+  (Phase 1 / Phase 2)" section.
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
+
 - **`JjpProductExtractor.NormalizeAvailability` is now `public`.** Same
   drift root cause: `BofProductExtractor.NormalizeAvailability` and
   `MultimorphicProductExtractor.NormalizeAvailability` are both
