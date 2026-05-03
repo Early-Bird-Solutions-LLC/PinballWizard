@@ -11,6 +11,47 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Chicago Gaming Company scraper (Phase 1.3.d)**: eighth manufacturer
+  scraper, second to use a custom-CMS template (after AP). CGC ships
+  "Remake" editions of classic Bally/Williams machines (Attack from
+  Mars, Cactus Canyon, Medieval Madness, Monster Bash, Pulp Fiction).
+  CGC's site is custom Nginx-served HTML — no WordPress, no Shopify,
+  no SPA, no JSON-LD. The scraper is a hybrid of two existing
+  templates:
+  - **Discovery** mirrors `BofCategoryClient`: fetches the
+    `/coinop/` index page, parses anchors, requires
+    single-segment-slug after the prefix to reject the
+    `/coinop/{slug}/update` and `/coinop/{slug}/update/mac`
+    sub-pages. The site's `sitemap.xml` is incomplete in practice
+    (omits Pulp Fiction and Cactus Canyon as of 2026-05) so the
+    index page is the canonical source.
+  - **Extraction** mirrors `ApGamePageExtractor`: page `<title>`
+    with the uniform `| Chicago Gaming Company` suffix stripped,
+    `<h1>` fallback, prettified-slug fallback. Same-host `.pdf`
+    links are extracted as `DiscoveredLink`s (manuals, brochures,
+    feature matrices, rules manuals, deposit agreements,
+    warranties — Pulp Fiction alone exposes 5).
+  `PinballWizard.Core/Configuration/ChicagoGamingOptions.cs`
+  (BaseUrl with required `www` subdomain, MachinesIndexPath,
+  GamePathPrefix; all `[Required]`).
+  `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.ChicagoGamingGamePage`.
+  `PinballWizard.Application/Sync/ScraperManufacturerKey.cs` adds
+  the `ChicagoGaming = "cgc"` constant + `game_cgc_*` prefix
+  dispatch — matches `OpdbMachineMapper.NormalizeManufacturerKey`
+  exactly.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["cgc"] = "Chicago Gaming"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/ChicagoGaming/`:
+  `CgcMenuClient`, `CgcGamePageExtractor`, `CgcGamePageScraper`,
+  `AddChicagoGamingScraping`. CLI: `--source cgc`. **+19 unit
+  tests.** Pre-push self-audit: `/local-review` (0 🔴 / 4 ⚠️ — all
+  deferred as family-wide test-infra polish or sibling parity)
+  plus 7-item mechanical checklist (all pass).
+  CGC's robots.txt blocks `/images` for the generic
+  `User-agent: *`; the scraper never fetches images, so the policy
+  is honored vacuously by the polite gate.
+
 - **Barrels of Fun scraper (Phase 1.3.b)**: sixth manufacturer
   scraper, second to consume JSON-LD `schema.org/Product` (after
   JJP). BoF sells through WooCommerce on a separate storefront

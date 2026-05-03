@@ -33,6 +33,9 @@ public static class ScraperManufacturerKey
     /// <summary>Manufacturer key for Barrels of Fun.</summary>
     public const string BarrelsOfFun = "barrelsoffun";
 
+    /// <summary>Manufacturer key for Chicago Gaming Company (CGC).</summary>
+    public const string ChicagoGaming = "cgc";
+
     /// <summary>
     /// Returns the manufacturer key for a <c>GameRecord</c> id.
     /// Returns null only if <paramref name="gameId"/> does not start
@@ -51,6 +54,7 @@ public static class ScraperManufacturerKey
         if (rest.StartsWith("spooky_", StringComparison.Ordinal)) return Spooky;
         if (rest.StartsWith("pinballbrothers_", StringComparison.Ordinal)) return PinballBrothers;
         if (rest.StartsWith("barrelsoffun_", StringComparison.Ordinal)) return BarrelsOfFun;
+        if (rest.StartsWith("cgc_", StringComparison.Ordinal)) return ChicagoGaming;
 
         // Stern was the original scraper and uses unprefixed game_{slug}.
         return Stern;
