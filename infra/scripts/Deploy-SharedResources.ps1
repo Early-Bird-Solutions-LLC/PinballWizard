@@ -40,7 +40,13 @@
     Azure CLI), pwsh 7+.
 #>
 
-[CmdletBinding(SupportsShouldProcess = $true)]
+# Note: NOT using SupportsShouldProcess=$true on [CmdletBinding(...)]. Doing so
+# reserves -WhatIf as a PowerShell common parameter, which collides with our
+# explicit [switch]$WhatIf below ('A parameter with the name "WhatIf" was
+# defined multiple times for the command'). The script does not call
+# $PSCmdlet.ShouldProcess() anywhere, so SupportsShouldProcess was dead anyway —
+# we keep the explicit switch and consume it via `if ($WhatIf)` at line ~175.
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('dev', 'prod')]
