@@ -174,6 +174,34 @@ catalog schema is not yet considered stable.
 
 ### Changed
 
+- **All NuGet packages bumped to latest stable.** Driven by the
+  Aspire dashboard's "Update now Aspire 13.2.4 is available" prompt
+  on the running emulator. Aspire 13.1.1 → 13.2.4 (`Aspire.AppHost.Sdk`,
+  `Aspire.Hosting.Azure.CosmosDB`, `Aspire.Hosting.Azure.Storage`,
+  `Aspire.Microsoft.Azure.Cosmos`). Aspire 13.2.4's transitive
+  `Microsoft.Extensions.Configuration.Binder >= 10.0.5` requirement
+  triggered locked-mode-restore failures, so all `Microsoft.Extensions.*`
+  packages bumped 10.0.4 → 10.0.7 and 10.4.0 → 10.5.0. Other bumps in
+  the same pass: `Azure.Identity` 1.13.1 → 1.21.0,
+  `Microsoft.Azure.Cosmos` 3.46.1 → 3.59.0,
+  `Microsoft.Extensions.ServiceDiscovery` 10.0.0 → 10.5.0,
+  `Microsoft.NET.Test.Sdk` 18.3.0 → 18.5.1, `Newtonsoft.Json` 13.0.3 →
+  13.0.4, `System.CommandLine` 2.0.4 → 2.0.7, `Microsoft.SourceLink.GitHub`
+  8.0.0 → 10.0.203.
+  **Microsoft.Playwright 1.12.0 → 1.59.0** — the major upgrade flagged
+  in `CLAUDE.md` ("4 years stale; plan calls for 1.49+; records
+  workaround is in place; upgrade is the proper fix"). Builds clean
+  against the existing scrapers (`GamePageScraper`,
+  `ServiceBulletinScraper`); the records-as-classes workaround in
+  `LinkRaw` / `EditionRaw` / `BulletinRaw` continues to work but is
+  now likely no longer required (a follow-up cleanup PR can revert
+  those to positional records once the scrapers are re-validated
+  end-to-end against the live Stern site under Playwright 1.59).
+  Tests: 503 / 503 passing across all bumps. No code changes
+  required — pure version-line edits.
+  Pre-push self-audit: 7-item mechanical (all pass); `/local-review`
+  skipped (pure version bump, no architectural surface added).
+
 - **Bicep two-tier deploy + Azurite added to AppHost.** Cuts Phase 1
   Azure spend from ~$150/mo (full platform) to ~$30/mo (Cosmos
   serverless idle + Log Analytics 1 GB cap) by gating every resource
