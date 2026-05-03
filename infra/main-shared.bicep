@@ -39,8 +39,11 @@ param location string = 'eastus2'
 @maxLength(10)
 param namePrefix string = 'pinwiz'
 
-@description('Object ID of the Entra principal that should receive RBAC roles on shared resources for development. Optional; if empty, no role assignments are created at deploy time.')
+@description('Object ID of the Entra principal that should receive RBAC roles on shared resources for development. Optional; if empty, no role assignments are created at deploy time. NOTE: ignored when deployPhase2=false — every RBAC assignment grants on a Phase 2 resource, so Phase 1 deploys never use this value.')
 param developerObjectId string = ''
+
+@description('When false (default), provisions ONLY Phase 1 resources (Cosmos serverless + Log Analytics + Cosmos diagnostic settings). Set true when Phase 2 features (RAG, Blazor Web, Admin) start landing — adds App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + 3 blob containers, and the matching diagnostic settings + developer RBAC. Phase 1 monthly spend is ~$30/mo (Cosmos serverless idle + Log Analytics 1GB cap); Phase 2 brings the platform to ~$150/mo even when idle. WARNING: flipping true->false on an existing deploy DELETES the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment if you need to test the Phase 1 baseline against a populated Phase 2 deploy.')
+param deployPhase2 bool = false
 
 // -----------------------------------------------------------------------------
 // Variables
@@ -79,19 +82,25 @@ module shared 'modules/shared.bicep' = {
     location: location
     tags: commonTags
     developerObjectId: developerObjectId
+    deployPhase2: deployPhase2
   }
 }
 
 // -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
+// Phase-2-only outputs are emitted as empty strings when deployPhase2=false so
+// downstream consumers (CI scripts, deploy hand-offs) can presence-check the
+// value rather than failing on a missing output.
 
 output resourceGroupName string = rg.name
 output cosmosAccountName string = shared.outputs.cosmosAccountName
+output cosmosAccountEndpoint string = shared.outputs.cosmosAccountEndpoint
+output logAnalyticsWorkspaceName string = shared.outputs.logAnalyticsWorkspaceName
+
 output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
 output openAiAccountName string = shared.outputs.openAiAccountName
 output storageAccountName string = shared.outputs.storageAccountName
-output logAnalyticsWorkspaceName string = shared.outputs.logAnalyticsWorkspaceName
 output appInsightsName string = shared.outputs.appInsightsName

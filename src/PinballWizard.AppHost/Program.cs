@@ -54,4 +54,22 @@ var cosmos = builder.AddAzureCosmosDB("cosmos")
 // them) is the same path exercised in local dev.
 _ = cosmos.AddCosmosDatabase("pinwiz");
 
+// Azure Storage via Azurite (the official Microsoft Storage emulator).
+// Local-dev replacement for the deployed Storage account that the Phase 2
+// Bicep gating defers (raw / processed / photos blob containers from
+// docs/infra_analysis.md §1). RunAsEmulator() launches the Azurite
+// container; the persistent data volume mirrors the Cosmos pattern so
+// seeded blobs survive AppHost restarts.
+//
+// No Phase 1 code consumes this connection yet — it is wired so future
+// services (Track D RAG ingestion writes raw blobs; Blazor reads photos)
+// pick it up without an AppHost change at the moment they need it.
+var storage = builder.AddAzureStorage("storage")
+    .RunAsEmulator(emulator =>
+    {
+        emulator.WithLifetime(ContainerLifetime.Persistent);
+        emulator.WithDataVolume();
+    });
+_ = storage.AddBlobs("blobs");
+
 await builder.Build().RunAsync().ConfigureAwait(false);

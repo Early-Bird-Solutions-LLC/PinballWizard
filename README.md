@@ -60,14 +60,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, conventions, and t
 
 ## Local development with .NET Aspire
 
-For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
+For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides) and Azurite-backed blob storage (used by future Track D RAG ingestion), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
 
 ```pwsh
-# Start the Cosmos preview emulator + Aspire dashboard
+# Start the Cosmos preview emulator + Azurite + Aspire dashboard
 pwsh ./start-apphost.ps1
 ```
 
-First run pulls ~3 GB of container images (the Cosmos preview emulator plus its bundled PostgreSQL); subsequent runs reuse the persistent data volume. Requires Docker Desktop and the .NET Aspire workload (`dotnet workload install aspire`).
+First run pulls ~3 GB of container images (the Cosmos preview emulator plus its bundled PostgreSQL, plus Azurite); subsequent runs reuse the persistent data volumes. Requires Docker Desktop and the .NET Aspire workload (`dotnet workload install aspire`).
 
 The dashboard runs at the URL printed in the AppHost output (default `https://localhost:17110`). Inspect the `cosmos` resource for the auto-generated connection string; copy it into a shell env var so the CLI can find the emulator:
 
@@ -84,7 +84,34 @@ dotnet run --project src/PinballWizard.Cli -- --source opdb
 
 When the CLI is run without `ConnectionStrings:cosmos` / `Cosmos:AccountEndpoint` set, Cosmos persistence and OPDB integration are skipped — the CLI falls back to the pure-scraper Phase 1 behavior, with the default per-source politeness resolver returning the global `Politeness` defaults for every host.
 
-AI Search and Azure OpenAI have no local emulator and are not part of the AppHost today; they land alongside Track D (event-driven RAG) when Phase 2 begins.
+AI Search and Azure OpenAI have no local emulator and are not part of the AppHost today; they land alongside Track D (event-driven RAG) when Phase 2 begins. Until then, the Bicep deploy is gated on the `deployPhase2` parameter (see below) so Phase 1 spend stays at ~$30/mo.
+
+## Azure deploy — two-tier (Phase 1 / Phase 2)
+
+The Bicep at [`infra/main-shared.bicep`](infra/main-shared.bicep) accepts a `deployPhase2 bool = false` parameter that gates everything beyond the Phase 1 minimum:
+
+| Phase 1 (default — `deployPhase2 = false`) | Phase 2 (set `deployPhase2 = true` when needed) |
+|---|---|
+| Cosmos DB Serverless (NoSQL API) | App Insights |
+| Log Analytics workspace | Key Vault |
+| Cosmos diagnostic settings → Log Analytics | Container Registry (Basic) |
+| Resource group | AI Search Basic |
+| | Azure OpenAI (S0) |
+| | Storage (LRS) + 3 blob containers (`pinwiz-raw` / `pinwiz-processed` / `pinwiz-photos`) |
+| | Diagnostic settings + developer RBAC for the above |
+
+Phase 1 spend: **~$30/mo** (Cosmos serverless idle + Log Analytics 1 GB cap). Phase 2 brings the platform to ~$150/mo even when idle.
+
+To deploy Phase 1 only:
+
+```pwsh
+pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev -WhatIf
+pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
+```
+
+When Phase 2 features start landing, set `deployPhase2 = true` in [`infra/main-shared.dev.bicepparam`](infra/main-shared.dev.bicepparam) (or the `.local.` override) and re-deploy. Phase 1 resources are unchanged; Phase 2 resources are added in-place.
+
+> **⚠️ The `deployPhase2` toggle is one-way safe.** Flipping `true → false` on an *existing* Phase 2 deploy will **delete** the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable, but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. To test the Phase 1 baseline against a populated Phase 2 deploy, use a separate environment (e.g., `-Environment dev2`) rather than toggling the existing one.
 
 ## CLI Flags
 

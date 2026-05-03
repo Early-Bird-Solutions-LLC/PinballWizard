@@ -40,6 +40,9 @@ param tags object
 @description('Object ID of the developer principal to grant RBAC at deploy time. If empty, role assignments are skipped.')
 param developerObjectId string
 
+@description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
+param deployPhase2 bool
+
 // -----------------------------------------------------------------------------
 // Naming
 // -----------------------------------------------------------------------------
@@ -81,7 +84,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (deployPhase2) {
   name: appInsightsName
   location: location
   tags: tags
@@ -141,7 +144,7 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-08-15' = {
 // Key Vault
 // -----------------------------------------------------------------------------
 
-resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = {
+resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = if (deployPhase2) {
   name: keyVaultName
   location: location
   tags: tags
@@ -166,7 +169,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = {
 // Container Registry (Basic)
 // -----------------------------------------------------------------------------
 
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = if (deployPhase2) {
   name: containerRegistryName
   location: location
   tags: tags
@@ -185,7 +188,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-pr
 // Azure AI Search (Basic)
 // -----------------------------------------------------------------------------
 
-resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = {
+resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = if (deployPhase2) {
   name: searchServiceName
   location: location
   tags: tags
@@ -214,7 +217,7 @@ resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = {
 // Azure OpenAI (Cognitive Services account; model deployments deferred)
 // -----------------------------------------------------------------------------
 
-resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPhase2) {
   name: openAiAccountName
   location: location
   tags: tags
@@ -239,7 +242,7 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
 // Storage Account (Standard LRS)
 // -----------------------------------------------------------------------------
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = if (deployPhase2) {
   name: storageAccountName
   location: location
   tags: tags
@@ -262,7 +265,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 }
 
 // Blob containers per docs/infra_analysis.md §1: pinwiz-raw, pinwiz-processed, pinwiz-photos.
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = if (deployPhase2) {
   parent: storage
   name: 'default'
   properties: {
@@ -273,7 +276,7 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   }
 }
 
-resource pinwizRawContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource pinwizRawContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
   parent: blobService
   name: 'pinwiz-raw'
   properties: {
@@ -281,7 +284,7 @@ resource pinwizRawContainer 'Microsoft.Storage/storageAccounts/blobServices/cont
   }
 }
 
-resource pinwizProcessedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource pinwizProcessedContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
   parent: blobService
   name: 'pinwiz-processed'
   properties: {
@@ -289,7 +292,7 @@ resource pinwizProcessedContainer 'Microsoft.Storage/storageAccounts/blobService
   }
 }
 
-resource pinwizPhotosContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource pinwizPhotosContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
   parent: blobService
   name: 'pinwiz-photos'
   properties: {
@@ -321,7 +324,7 @@ resource cosmosDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =
   }
 }
 
-resource keyVaultDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource keyVaultDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: keyVault
   name: 'send-to-law'
   properties: {
@@ -341,7 +344,7 @@ resource keyVaultDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'
   }
 }
 
-resource searchDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource searchDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: searchService
   name: 'send-to-law'
   properties: {
@@ -361,7 +364,7 @@ resource searchDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =
   }
 }
 
-resource openAiDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource openAiDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: openAi
   name: 'send-to-law'
   properties: {
@@ -381,7 +384,7 @@ resource openAiDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =
   }
 }
 
-resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: blobService
   name: 'send-to-law'
   properties: {
@@ -414,7 +417,7 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 
 var roleAssignmentPrincipalType = 'User'
 
-resource keyVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(developerObjectId)) {
+resource keyVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: keyVault
   name: guid(keyVault.id, developerObjectId, 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
   properties: {
@@ -424,7 +427,7 @@ resource keyVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
-resource acrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(developerObjectId)) {
+resource acrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: containerRegistry
   name: guid(containerRegistry.id, developerObjectId, '8311e382-0749-4cb8-b61a-304f252e45ec')
   properties: {
@@ -434,7 +437,7 @@ resource acrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!emp
   }
 }
 
-resource searchIndexContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(developerObjectId)) {
+resource searchIndexContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: searchService
   name: guid(searchService.id, developerObjectId, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
   properties: {
@@ -444,7 +447,7 @@ resource searchIndexContrib 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(developerObjectId)) {
+resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: openAi
   name: guid(openAi.id, developerObjectId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
   properties: {
@@ -454,7 +457,7 @@ resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!
   }
 }
 
-resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(developerObjectId)) {
+resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: storage
   name: guid(storage.id, developerObjectId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   properties: {
@@ -467,27 +470,28 @@ resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01'
 // -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
+// Phase-2-only outputs return empty strings when deployPhase2=false so callers
+// can presence-check rather than failing on a missing output.
 
 output cosmosAccountName string = cosmosAccount.name
 output cosmosAccountEndpoint string = cosmosAccount.properties.documentEndpoint
-
-output keyVaultName string = keyVault.name
-output keyVaultUri string = keyVault.properties.vaultUri
-
-output containerRegistryName string = containerRegistry.name
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer
-
-output searchServiceName string = searchService.name
-output searchServiceEndpoint string = 'https://${searchService.name}.search.windows.net'
-
-output openAiAccountName string = openAi.name
-output openAiEndpoint string = openAi.properties.endpoint
-
-output storageAccountName string = storage.name
-output storageBlobEndpoint string = storage.properties.primaryEndpoints.blob
-
 output logAnalyticsWorkspaceName string = logAnalytics.name
 output logAnalyticsWorkspaceId string = logAnalytics.id
 
-output appInsightsName string = appInsights.name
-output appInsightsConnectionString string = appInsights.properties.ConnectionString
+output keyVaultName string = keyVault.?name ?? ''
+output keyVaultUri string = keyVault.?properties.vaultUri ?? ''
+
+output containerRegistryName string = containerRegistry.?name ?? ''
+output containerRegistryLoginServer string = containerRegistry.?properties.loginServer ?? ''
+
+output searchServiceName string = searchService.?name ?? ''
+output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'https://${searchService.name}.search.windows.net'
+
+output openAiAccountName string = openAi.?name ?? ''
+output openAiEndpoint string = openAi.?properties.endpoint ?? ''
+
+output storageAccountName string = storage.?name ?? ''
+output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ?? ''
+
+output appInsightsName string = appInsights.?name ?? ''
+output appInsightsConnectionString string = appInsights.?properties.ConnectionString ?? ''
