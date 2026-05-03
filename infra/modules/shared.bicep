@@ -408,14 +408,29 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 // Developer RBAC (optional — only assigned if developerObjectId is provided)
 // -----------------------------------------------------------------------------
 // Built-in role definition IDs (subscription-scoped, identical across subscriptions):
-//   Key Vault Secrets Officer       — b86a8fe4-44ce-4948-aee5-eccb2c155cd7
-//   Cosmos DB Built-in Data Contrib — 00000000-0000-0000-0000-000000000002 (data-plane; assigned via az SQL role-assignment, not RBAC role-assignment — out of scope here)
+//   Key Vault Secrets Officer        — b86a8fe4-44ce-4948-aee5-eccb2c155cd7
 //   AcrPush                          — 8311e382-0749-4cb8-b61a-304f252e45ec
 //   Search Index Data Contributor    — 8ebe5a00-799e-43f5-93ac-243d3dce84a7
 //   Cognitive Services OpenAI User   — 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
 //   Storage Blob Data Contributor    — ba92f5b4-2d11-453d-a403-e96b0029c9fe
+// Cosmos DB data-plane role uses a SEPARATE namespace (sqlRoleAssignments under
+// the database account, not Microsoft.Authorization). The well-known
+// 'Cosmos DB Built-in Data Contributor' definition is 00000000-0000-0000-0000-000000000002.
+// Cosmos data-plane RBAC is Phase 1 (the developer needs read/write to the
+// containers `--ensure-cosmos-containers` creates), so this assignment gates
+// only on developerObjectId — NOT on deployPhase2.
 
 var roleAssignmentPrincipalType = 'User'
+
+resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (!empty(developerObjectId)) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, developerObjectId, '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: developerObjectId
+    scope: cosmosAccount.id
+  }
+}
 
 resource keyVaultSecretsOfficer 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: keyVault

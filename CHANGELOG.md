@@ -11,6 +11,25 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Cosmos data-plane RBAC for the developer principal in Bicep.**
+  Phase 1 deploys now grant `Cosmos DB Built-in Data Contributor`
+  (well-known role definition `00000000-0000-0000-0000-000000000002`)
+  scoped to the deployed Cosmos account, gated on
+  `!empty(developerObjectId)` — NOT on `deployPhase2`, since Cosmos
+  itself is Phase 1 and the developer needs read/write to the
+  containers `--ensure-cosmos-containers` creates. Closes the
+  out-of-scope note that lived at the top of the developer-RBAC
+  comment block ("data-plane; assigned via az SQL role-assignment,
+  not RBAC role-assignment — out of scope here") and replaces the
+  manual `az cosmosdb sql role assignment create` step that was
+  required after the first Phase 1 deploy. Cosmos data-plane uses a
+  SEPARATE Bicep type (`Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15`)
+  from the standard `Microsoft.Authorization/roleAssignments` used by
+  the other developer-RBAC entries; the comment block above the
+  assignments now flags that distinction. Idempotent re-deploy
+  against an existing Phase 1 account: only the new role assignment
+  changes; everything else is no-op.
+
 - **`--ensure-cosmos-containers` CLI flag for post-deploy smoke-tests.**
   Resolves [`CosmosBootstrapper`](src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosBootstrapper.cs)
   from DI and runs `EnsureCreatedAsync`: creates the configured Cosmos
