@@ -287,6 +287,7 @@ public sealed class ScraperOrchestrator
         ["ap"] = "American Pinball",
         ["spooky"] = "Spooky Pinball",
         ["pinballbrothers"] = "Pinball Brothers",
+        ["barrelsoffun"] = "Barrels of Fun",
     };
 
     /// <summary>

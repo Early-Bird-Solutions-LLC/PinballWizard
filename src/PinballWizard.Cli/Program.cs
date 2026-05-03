@@ -14,6 +14,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
@@ -25,7 +26,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, all",
     DefaultValueFactory = _ => "all"
 };
 
@@ -239,6 +240,11 @@ static IHost CreateHost(string[] args)
     // discovers games via the WP REST API and identifies them by the
     // `-pinball` slug suffix on top-level pages).
     builder.Services.AddPinballBrothersScraping(builder.Configuration);
+
+    // Barrels of Fun scraper (Phase 1.3 — WooCommerce on shop.kollectfun.com,
+    // discovers machines via the /product-category/machines/ category page
+    // and extracts JSON-LD product schema from each product page).
+    builder.Services.AddBarrelsOfFunScraping(builder.Configuration);
 
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();

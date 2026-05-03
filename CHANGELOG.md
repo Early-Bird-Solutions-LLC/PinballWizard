@@ -11,6 +11,50 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **Barrels of Fun scraper (Phase 1.3.b)**: sixth manufacturer
+  scraper, second to consume JSON-LD `schema.org/Product` (after
+  JJP). BoF sells through WooCommerce on a separate storefront
+  domain (`shop.kollectfun.com`); the marketing site
+  `www.barrelsoffun.com` has no products. Discovery is via the
+  `/product-category/machines/` HTML page — the canonical filter
+  for what counts as a pinball machine, since `/product/*` URL
+  space also contains apparel / parts / accessories that should
+  not pollute the catalog. (Same defence-in-depth pattern as
+  JJP's collection-handle filter shipped in PR #34.)
+  Per-product extraction parses JSON-LD which is sometimes
+  wrapped in `@graph` (Yoast / RankMath SEO plugins) and exposes
+  price under either the WooCommerce nested
+  `offers[].priceSpecification[].price` shape OR the flat Shopify
+  `offers[].price` shape — `BofProductExtractor` reads both, so
+  the same code would work against another WooCommerce-on-WordPress
+  storefront without modification.
+  `PinballWizard.Core/Configuration/BarrelsOfFunOptions.cs`
+  (BaseUrl, MachinesCategoryPath, ProductPathPrefix; all
+  `[Required]`).
+  `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.BarrelsOfFunProductPage`.
+  `PinballWizard.Application/Sync/ScraperManufacturerKey.cs` adds
+  the `BarrelsOfFun = "barrelsoffun"` constant + `game_barrelsoffun_*`
+  prefix dispatch — matches `OpdbMachineMapper.NormalizeManufacturerKey`
+  exactly so reconciled records land in the correct Cosmos partition.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["barrelsoffun"] = "Barrels of Fun"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/BarrelsOfFun/`:
+  `BofCategoryClient` (extends `PoliteScraperBase`; static
+  `ParseProductLinks` filters anchors to the configured
+  `/product/` prefix on the configured host, rejects sub-pages
+  like `/product/x/reviews`, dedups across fragment / query
+  variants); `BofProductExtractor` (pure-function HTML →
+  `GameRecord`, JSON-LD `Product` schema with both nested and
+  flat price shapes + `@graph` wrap support, og:title / og:image
+  / h1 fallbacks); `BofProductScraper` (extends `PoliteScraperBase`,
+  implements `ISourceScraper`, `TryExtractAsync` per-page
+  failure isolation matching JJP); `AddBarrelsOfFunScraping` DI
+  extension. CLI: `--source barrelsoffun`. **+33 unit tests
+  (347 total).** Pre-push self-audit: ran `/local-review` skill
+  (0 🔴 / 1 ⚠️ — defer-with-justification, sibling-parity gap)
+  plus the 7-item mechanical checklist (all pass).
+
 - **Pinball Brothers scraper (Phase 1.3.a)**: fifth manufacturer
   scraper, fourth in the WordPress-REST-API family. PB's site runs
   WordPress + Visual Composer with the WP REST API fully open at
