@@ -18,8 +18,7 @@ namespace PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 /// — the shared helper that handles both flat
 /// <c>offers[].price</c> and nested
 /// <c>offers[].priceSpecification</c> shapes (object or array) plus
-/// <c>@graph</c> wrapping. Same parser also powers JJP and (when
-/// PR #39 lands) Multimorphic.
+/// <c>@graph</c> wrapping. Same parser also powers JJP and Multimorphic.
 /// </remarks>
 public static class BofProductExtractor
 {

@@ -11,6 +11,31 @@ catalog schema is not yet considered stable.
 
 ### Changed
 
+- **`MultimorphicProductExtractor` adopts the shared
+  `JsonLdProductParser`.** Strict-subset follow-up to PR #42:
+  deletes the duplicated 140-line JSON-LD walker (`FindFirstProductJsonLd`,
+  `TryReadProduct`, `ReadImages`, `ReadOffers`, `ReadPriceFromOffer`,
+  `FormatPrice`, `ReadString`, plus the private `JsonLdProduct` /
+  `JsonLdOffers` nested types), adds
+  `using PinballWizard.Infrastructure.Scraping.JsonLd;`, and swaps
+  `FindFirstProductJsonLd(doc)` → `JsonLdProductParser.FindFirstProduct(doc)`.
+  Net change: 16 insertions / 173 deletions in
+  `MultimorphicProductExtractor.cs`. Behavior preserved — all 27
+  Multimorphic tests pass without modification, including the
+  simultaneous-flat-and-nested-price case which the shared parser
+  was already designed to cover (PR #42 explicitly verified this
+  before Multimorphic merged). The class-level remark that named a
+  "future PR" to extract the shared helper is replaced with a
+  forward reference to `JsonLdProductParser` mirroring the
+  `BofProductExtractor` template; `BofProductExtractor`'s docstring
+  loses its parenthetical "(when PR #39 lands)" qualifier now that
+  Multimorphic actually consumes the parser. Validates the shared
+  parser against a third storefront in production code (the test
+  suite already pinned every shape, but a third real consumer is the
+  signal that the abstraction generalizes cleanly).
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
+
 - **Shared `JsonLdProductParser` consolidates duplicated parsing
   across the manufacturer extractors.** JJP and BoF previously
   shipped near-identical 100-line copies of the JSON-LD walker; the
