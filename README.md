@@ -118,6 +118,7 @@ When Phase 2 features start landing, set `deployPhase2 = true` in [`infra/main-s
 | Flag | Purpose |
 |---|---|
 | `--source <manuals\|games\|bulletins\|jjp\|ap\|spooky\|pinballbrothers\|barrelsoffun\|cgc\|multimorphic\|opdb\|all>` | Restrict which source(s) to scrape. Default: `all`. `opdb` is special-cased — it does not yield scraped items but instead syncs the OPDB machine catalog into Cosmos via [`IOpdbSyncService`](src/PinballWizard.Application/Sync/IOpdbSyncService.cs). |
+| `--ensure-cosmos-containers` | Run [`CosmosBootstrapper.EnsureCreatedAsync`](src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosBootstrapper.cs) against the configured Cosmos account. Creates the `pinwiz` database + `machines` (PK `/manufacturer`) + `ingestion_sources` (PK `/partitionKey`) containers if missing per ADR 0011, asserts partition-key paths match. Idempotent. Useful as a post-deploy smoke-test that the configured Cosmos endpoint + Managed Identity / Aspire connection string actually work end-to-end. |
 | `--scrape-only` | Discover URLs and metadata only; don't download files. |
 | `--download` | Download new or changed files. |
 | `--download-all` | Force re-download of every known file. |

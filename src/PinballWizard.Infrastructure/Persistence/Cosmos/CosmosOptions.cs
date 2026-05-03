@@ -49,11 +49,23 @@ public sealed class CosmosOptions
     public string DatabaseName { get; init; } = "pinwiz";
 
     /// <summary>
-    /// Container name → partition key path mapping. The bootstrapper
+    /// Container name -> partition key path mapping. The bootstrapper
     /// uses this list to ensure each container exists with the correct
-    /// partition key on application startup.
+    /// partition key. Defaults match the canonical Phase 1 container
+    /// names the repositories already reference
+    /// (<see cref="MachineRepository"/> uses <c>machines</c> with
+    /// partition key <c>/manufacturer</c> per ADR 0011;
+    /// <see cref="IngestionSourceRepository"/> uses
+    /// <c>ingestion_sources</c> with partition key
+    /// <c>/partitionKey</c>). Configuration binding REPLACES the list
+    /// (does not merge), so adding a <c>Cosmos:Containers</c> entry to
+    /// configuration overrides these defaults entirely.
     /// </summary>
-    public IReadOnlyList<CosmosContainerOptions> Containers { get; init; } = [];
+    public IReadOnlyList<CosmosContainerOptions> Containers { get; init; } =
+    [
+        new() { Name = "machines", PartitionKeyPath = "/manufacturer" },
+        new() { Name = "ingestion_sources", PartitionKeyPath = "/partitionKey" },
+    ];
 
     /// <summary>
     /// Optional override for the application name reported on the
