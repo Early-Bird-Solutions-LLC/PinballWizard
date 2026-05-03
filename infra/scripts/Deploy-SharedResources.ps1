@@ -206,5 +206,36 @@ else {
         }
         Write-Host ''
         Write-Host "[5/5] Deployment complete. Deployment name: $deploymentName" -ForegroundColor Green
+
+        # Print Bicep outputs so the operator can copy the cosmosAccountEndpoint
+        # (and the other endpoints when Phase 2 lands) without a separate
+        # `az deployment sub show` call. Phase 2 outputs return empty strings
+        # when deployPhase2=false (the bicep null-conditional emit) — print
+        # only the non-empty values so Phase 1 deploys aren't noisy.
+        Write-Host ''
+        Write-Host '  Outputs:' -ForegroundColor Cyan
+        $outputsJson = az deployment sub show `
+            --name $deploymentName `
+            --query 'properties.outputs' `
+            -o json
+        if ($LASTEXITCODE -eq 0 -and $outputsJson) {
+            $outputs = $outputsJson | ConvertFrom-Json
+            foreach ($prop in $outputs.PSObject.Properties) {
+                $value = $prop.Value.value
+                if (-not [string]::IsNullOrEmpty([string]$value)) {
+                    Write-Host ("    {0,-30} {1}" -f $prop.Name, $value)
+                }
+            }
+            Write-Host ''
+            Write-Host '  Smoke-test (Cosmos via Managed Identity):' -ForegroundColor Cyan
+            $endpoint = $outputs.cosmosAccountEndpoint.value
+            if (-not [string]::IsNullOrEmpty([string]$endpoint)) {
+                Write-Host "    `$env:Cosmos__AccountEndpoint = '$endpoint'"
+                Write-Host '    dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers'
+            }
+        }
+        else {
+            Write-Host '    (failed to retrieve outputs; run az deployment sub show manually)' -ForegroundColor Yellow
+        }
     }
 }
