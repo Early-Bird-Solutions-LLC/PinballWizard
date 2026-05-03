@@ -5,6 +5,7 @@ using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
 
@@ -19,12 +20,12 @@ public static class ServiceCollectionExtensions
     /// Registers the Cosmos persistence layer:
     /// <list type="bullet">
     ///   <item>Binds <see cref="CosmosOptions"/> from configuration section <c>Cosmos</c> with validation.</item>
-    ///   <item>Registers <see cref="CosmosClient"/> as a singleton, authenticated via Managed Identity (<see cref="DefaultAzureCredential"/>).</item>
+    ///   <item>Registers <see cref="CosmosClient"/> as a singleton via <see cref="ServiceCollectionDescriptorExtensions.TryAdd"/>: when an external integration (e.g., .NET Aspire's <c>AddAzureCosmosClient("cosmos")</c>) has already registered a <see cref="CosmosClient"/>, that registration is preserved and this fallback is skipped. Otherwise a Managed-Identity-authenticated client is constructed from <see cref="CosmosOptions.AccountEndpoint"/>.</item>
     ///   <item>Registers per-entity <see cref="Container"/> wrappers as keyed services.</item>
     ///   <item>Registers <see cref="IMachineRepository"/> and <see cref="IIngestionSourceRepository"/>.</item>
     ///   <item>Registers <see cref="CosmosBootstrapper"/> for ensure-created use on startup.</item>
     /// </list>
-    /// Local-auth / connection-string paths are intentionally not supported — production deploys use Managed Identity per ADR 0009 spirit (no shared secrets in container env vars).
+    /// Local-auth / connection-string paths are intentionally not supported via the fallback — production deploys use Managed Identity per ADR 0009 spirit (no shared secrets in container env vars). The Aspire path covers local-emulator connection-string flow for development.
     /// </summary>
     public static IServiceCollection AddCosmosPersistence(this IServiceCollection services, IConfiguration configuration)
     {
@@ -37,11 +38,18 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+        services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
 
-        services.AddSingleton(sp =>
+        services.TryAddSingleton(sp =>
         {
             var options = sp.GetRequiredService<IOptions<CosmosOptions>>().Value;
+            if (string.IsNullOrWhiteSpace(options.AccountEndpoint))
+            {
+                throw new InvalidOperationException(
+                    "Cosmos:AccountEndpoint is not configured and no CosmosClient has been registered by an external integration. " +
+                    "Either set Cosmos:AccountEndpoint in configuration (Managed-Identity path), or register a CosmosClient via " +
+                    ".NET Aspire's AddAzureCosmosClient(\"cosmos\") before calling AddCosmosPersistence.");
+            }
             var credential = sp.GetRequiredService<TokenCredential>();
 
             var jsonOptions = new JsonSerializerOptions
@@ -62,7 +70,7 @@ public static class ServiceCollectionExtensions
             return new CosmosClient(options.AccountEndpoint, credential, clientOptions);
         });
 
-        services.AddSingleton<CosmosBootstrapper>();
+        services.TryAddSingleton<CosmosBootstrapper>();
 
         services.AddSingleton<IMachineRepository>(sp =>
         {

@@ -35,7 +35,8 @@ public sealed class OpdbClientTests : IDisposable
             politenessOptions,
             NullLogger<RobotsTxtCache>.Instance);
 
-        var gate = new PolitenessGate(_robotsCache, politenessOptions, NullLogger<PolitenessGate>.Instance);
+        var resolver = new DefaultPerSourcePolitenessResolver(politenessOptions);
+        var gate = new PolitenessGate(_robotsCache, resolver, NullLogger<PolitenessGate>.Instance);
 
         _httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://opdb.org/api/") };
 

@@ -290,6 +290,13 @@ public sealed class ScraperOrchestrator
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
         ["multimorphic"] = "Multimorphic",
+        // OPDB is special-cased: it doesn't yield ScrapedItems via ISourceScraper —
+        // it writes directly to IMachineRepository via IOpdbSyncService. The CLI's
+        // --source opdb branch dispatches to the sync service before ScrapeAsync is
+        // even called. The alias entry here exists so SourceAliasContractTests
+        // recognises "opdb" as a known source name; FilterScrapers will return
+        // an empty list for it, which is correct (orchestrator path is bypassed).
+        ["opdb"] = "OPDB",
     };
 
     /// <summary>

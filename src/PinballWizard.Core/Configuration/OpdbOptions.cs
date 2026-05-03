@@ -28,6 +28,15 @@ public sealed class OpdbOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "Opdb";
 
+    /// <summary>
+    /// Full configuration key for <see cref="BaseUrl"/>. Exposed so
+    /// callers (e.g., the CLI's gating logic that decides whether to
+    /// register the OPDB integration) can presence-check the key
+    /// without duplicating the <c>"Opdb:BaseUrl"</c> string and risking
+    /// a silent drift if the section is ever renamed.
+    /// </summary>
+    public const string BaseUrlKey = $"{SectionName}:{nameof(BaseUrl)}";
+
     /// <summary>OPDB API base URL. Defaults to the public production endpoint.</summary>
     [Required]
     [Url]

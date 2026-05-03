@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" Version="13.1.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.4" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.4" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.4" />
@@ -21,6 +22,7 @@
     <ProjectReference Include="../PinballWizard.Core/PinballWizard.Core.csproj" />
     <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
     <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
+    <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

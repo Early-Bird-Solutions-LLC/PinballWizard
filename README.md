@@ -58,11 +58,39 @@ Default behavior (no flags) is scrape + download for all sources. Outputs go to 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, conventions, and the quality bar.
 
+## Local development with .NET Aspire
+
+For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
+
+```pwsh
+# Start the Cosmos preview emulator + Aspire dashboard
+pwsh ./start-apphost.ps1
+```
+
+First run pulls ~3 GB of container images (the Cosmos preview emulator plus its bundled PostgreSQL); subsequent runs reuse the persistent data volume. Requires Docker Desktop and the .NET Aspire workload (`dotnet workload install aspire`).
+
+The dashboard runs at the URL printed in the AppHost output (default `https://localhost:17110`). Inspect the `cosmos` resource for the auto-generated connection string; copy it into a shell env var so the CLI can find the emulator:
+
+```pwsh
+$env:ConnectionStrings__cosmos = "<the-emulator-connection-string-from-the-dashboard>"
+$env:Opdb__BaseUrl = "https://opdb.org/api/"
+$env:Opdb__ApiToken = "<your-token>"  # get one at https://opdb.org/api by registering
+
+# Now run the CLI — it auto-detects Cosmos via ConnectionStrings:cosmos and
+# wires the persistence layer + OPDB integration + the Cosmos-backed
+# politeness-overrides resolver
+dotnet run --project src/PinballWizard.Cli -- --source opdb
+```
+
+When the CLI is run without `ConnectionStrings:cosmos` / `Cosmos:AccountEndpoint` set, Cosmos persistence and OPDB integration are skipped — the CLI falls back to the pure-scraper Phase 1 behavior, with the default per-source politeness resolver returning the global `Politeness` defaults for every host.
+
+AI Search and Azure OpenAI have no local emulator and are not part of the AppHost today; they land alongside Track D (event-driven RAG) when Phase 2 begins.
+
 ## CLI Flags
 
 | Flag | Purpose |
 |---|---|
-| `--source <manuals\|games\|bulletins\|all>` | Restrict which source(s) to scrape. Default: `all`. |
+| `--source <manuals\|games\|bulletins\|jjp\|ap\|spooky\|pinballbrothers\|barrelsoffun\|cgc\|multimorphic\|opdb\|all>` | Restrict which source(s) to scrape. Default: `all`. `opdb` is special-cased — it does not yield scraped items but instead syncs the OPDB machine catalog into Cosmos via [`IOpdbSyncService`](src/PinballWizard.Application/Sync/IOpdbSyncService.cs). |
 | `--scrape-only` | Discover URLs and metadata only; don't download files. |
 | `--download` | Download new or changed files. |
 | `--download-all` | Force re-download of every known file. |

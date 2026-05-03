@@ -18,7 +18,7 @@ namespace PinballWizard.Infrastructure.Scraping.Polite;
 public sealed class PolitenessGate : IPolitenessGate
 {
     private readonly RobotsTxtCache _robots;
-    private readonly PolitenessOptions _options;
+    private readonly IPerSourcePolitenessResolver _resolver;
     private readonly ILogger<PolitenessGate> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, OriginThrottle> _origins = new(StringComparer.OrdinalIgnoreCase);
@@ -31,15 +31,15 @@ public sealed class PolitenessGate : IPolitenessGate
     /// <summary>Initializes a new gate.</summary>
     public PolitenessGate(
         RobotsTxtCache robots,
-        IOptions<PolitenessOptions> options,
+        IPerSourcePolitenessResolver resolver,
         ILogger<PolitenessGate> logger,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(robots);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(logger);
         _robots = robots;
-        _options = options.Value;
+        _resolver = resolver;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -49,7 +49,9 @@ public sealed class PolitenessGate : IPolitenessGate
     {
         ArgumentNullException.ThrowIfNull(url);
 
-        if (_options.RespectRobotsTxt)
+        var effective = await _resolver.ResolveAsync(url, cancellationToken).ConfigureAwait(false);
+
+        if (effective.RespectRobotsTxt)
         {
             var allowed = await _robots.IsAllowedAsync(url, cancellationToken).ConfigureAwait(false);
             if (!allowed)
@@ -69,7 +71,7 @@ public sealed class PolitenessGate : IPolitenessGate
 
         try
         {
-            await WaitForDelayAsync(throttle, cancellationToken).ConfigureAwait(false);
+            await WaitForDelayAsync(throttle, effective.RequestDelayMs, cancellationToken).ConfigureAwait(false);
             return new Lease(throttle, _timeProvider);
         }
         catch
@@ -86,15 +88,16 @@ public sealed class PolitenessGate : IPolitenessGate
 
         if (statusCode == HttpStatusCode.TooManyRequests)
         {
+            var effective = await _resolver.ResolveAsync(url, cancellationToken).ConfigureAwait(false);
             var streak = Interlocked.Increment(ref _consecutiveTooManyRequests);
             _logger.LogWarning("Received 429 from {Url} (streak={Streak}/{Max}). Retry-After={RetryAfter}.",
-                url, streak, _options.Max429Streak, retryAfter);
+                url, streak, effective.Max429Streak, retryAfter);
 
-            if (streak > _options.Max429Streak)
+            if (streak > effective.Max429Streak)
             {
                 throw new PolitenessException(
                     PolitenessViolation.TooMany429Responses,
-                    $"Source {url.Host} returned 429 {streak} times in a row (max allowed: {_options.Max429Streak}). Aborting.",
+                    $"Source {url.Host} returned 429 {streak} times in a row (max allowed: {effective.Max429Streak}). Aborting.",
                     url);
             }
 
@@ -113,9 +116,9 @@ public sealed class PolitenessGate : IPolitenessGate
         // Other 4xx / 5xx: leave streak unchanged. Caller decides whether to retry.
     }
 
-    private async Task WaitForDelayAsync(OriginThrottle throttle, CancellationToken cancellationToken)
+    private async Task WaitForDelayAsync(OriginThrottle throttle, int requestDelayMs, CancellationToken cancellationToken)
     {
-        var delay = TimeSpan.FromMilliseconds(_options.RequestDelayMs);
+        var delay = TimeSpan.FromMilliseconds(requestDelayMs);
         var lastRequestAt = throttle.LastRequestAt;
         if (lastRequestAt is null)
         {

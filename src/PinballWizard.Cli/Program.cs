@@ -8,9 +8,12 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Provenance;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Integrations.Opdb;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -21,6 +24,7 @@ using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
+using PinballWizard.ServiceDefaults;
 using Polly;
 using Polly.Retry;
 
@@ -28,7 +32,8 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, opdb, all. " +
+                  "NOTE: 'all' runs every ISourceScraper but does NOT include 'opdb' — OPDB writes to IMachineRepository instead of yielding ScrapedItems and is special-cased; run --source opdb explicitly to sync the OPDB catalog.",
     DefaultValueFactory = _ => "all"
 };
 
@@ -108,6 +113,29 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --source opdb (sync OPDB → Cosmos). Special-cased rather than
+    // adapted into ISourceScraper because OPDB doesn't yield ScrapedItems —
+    // it writes directly to IMachineRepository.
+    if (string.Equals(source, "opdb", StringComparison.OrdinalIgnoreCase))
+    {
+        var sync = host.Services.GetService<IOpdbSyncService>();
+        if (sync is null)
+        {
+            Console.Error.WriteLine(
+                "OPDB sync requires Cosmos and OPDB configuration. Set ConnectionStrings:cosmos " +
+                "(or Cosmos:AccountEndpoint) AND Opdb:BaseUrl in appsettings.json, or run under Aspire.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var result = await sync.SyncAsync(cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"OPDB sync: fetched {result.Fetched}, inserted {result.Inserted}, " +
+                          $"updated {result.Updated}, skipped {result.Skipped}, " +
+                          $"duration {result.Duration.TotalSeconds:N1}s");
+        return;
+    }
+
     // Default behavior: if no action flags, do scrape + download
     if (!scrapeOnly && !download && !downloadAll && !buildCatalog)
     {
@@ -163,6 +191,13 @@ static IHost CreateHost(string[] args)
 {
     var builder = Host.CreateApplicationBuilder(args);
 
+    // Aspire shared defaults — OpenTelemetry (logs / metrics / traces with the
+    // OTLP exporter the AppHost dashboard injects via OTEL_EXPORTER_OTLP_ENDPOINT),
+    // service discovery, standard HTTP resilience, and health checks. When the CLI
+    // is launched standalone (no AppHost), these registrations are still safe — the
+    // OTLP exporter only activates when the env var is present.
+    builder.AddServiceDefaults();
+
     // Configuration
     builder.Services.Configure<ScraperSettings>(
         builder.Configuration.GetSection(ScraperSettings.SectionName));
@@ -184,6 +219,50 @@ static IHost CreateHost(string[] args)
     // HttpClient and scraper registrations below — the polite User-Agent is what the
     // typed clients pull as their default UA.
     builder.Services.AddPoliteScraping(builder.Configuration);
+
+    // Cosmos persistence — gated. When Aspire (or appsettings) provides a Cosmos
+    // connection, register the persistence layer + OPDB integration + the
+    // Cosmos-backed politeness-overrides resolver (which replaces the default
+    // resolver registered by AddPoliteScraping). When neither is present, the CLI
+    // runs as a pure scraper without Cosmos, OPDB, or per-source overrides — the
+    // behavior shipped through Phase 1.
+    //
+    // SECURITY NOTE: gating is by *presence* of the config key, NOT validation
+    // of the endpoint. An attacker who can already set env vars on this CLI
+    // process can already run arbitrary code; redirecting Cosmos reads is
+    // strictly weaker than RCE and is accepted in the project's threat model.
+    // The Cosmos:AccountEndpoint value comes from Bicep outputs in production
+    // (Managed-Identity path, no shared secret); the connection string for
+    // Aspire-managed local dev points at the loopback emulator.
+    var aspireConnection = builder.Configuration.GetConnectionString(CosmosOptions.CosmosConnectionName);
+    var managedIdentityEndpoint = builder.Configuration[CosmosOptions.AccountEndpointKey];
+    var cosmosWired = !string.IsNullOrWhiteSpace(aspireConnection)
+        || !string.IsNullOrWhiteSpace(managedIdentityEndpoint);
+    if (cosmosWired)
+    {
+        // Aspire's AddAzureCosmosClient registers a CosmosClient built from the
+        // ConnectionStrings:cosmos value (preview emulator locally / real account
+        // in Azure). When only Cosmos:AccountEndpoint is set (no Aspire), the
+        // call is skipped and AddCosmosPersistence's TryAddSingleton fallback
+        // builds a Managed-Identity-authenticated client instead.
+        if (!string.IsNullOrWhiteSpace(aspireConnection))
+        {
+            builder.AddAzureCosmosClient(CosmosOptions.CosmosConnectionName);
+        }
+        builder.Services.AddCosmosPersistence(builder.Configuration);
+        builder.Services.AddCosmosBackedPolitenessOverrides();
+    }
+
+    // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,
+    // which only exists when AddCosmosPersistence is wired; treat missing Cosmos
+    // wiring as missing-OPDB-wiring too (the --source opdb dispatch will print a
+    // clear error in that case).
+    var opdbWired = cosmosWired
+        && !string.IsNullOrWhiteSpace(builder.Configuration[OpdbOptions.BaseUrlKey]);
+    if (opdbWired)
+    {
+        builder.Services.AddOpdbIntegration(builder.Configuration);
+    }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
         .Get<PolitenessOptions>() ?? new PolitenessOptions();

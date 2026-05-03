@@ -11,6 +11,75 @@ catalog schema is not yet considered stable.
 
 ### Added
 
+- **CLI consumes Aspire-orchestrated Cosmos when configured + OPDB sync via
+  `--source opdb` + `IPerSourcePolitenessResolver` ends three pre-existing
+  dead-config items.** Bundled fix for the three 🔴 findings from PR #53's
+  Bicep deploy-prep audit (`AddCosmosPersistence` never called from
+  `Program.cs`, `AddOpdbIntegration` never called from `Program.cs`,
+  `IngestionSource.PolitenessOverrides` field read by no scraper).
+  - **Aspire wiring (`PinballWizard.Cli`).** `Program.cs` now calls
+    `builder.AddServiceDefaults()` (OTel + service discovery + standard
+    HTTP resilience + health checks). When the host configuration provides
+    a `cosmos` connection string (Aspire dashboard injects this when the
+    CLI is launched under the AppHost) OR a `Cosmos:AccountEndpoint`
+    (Managed-Identity path against a deployed Cosmos account), the CLI
+    additionally calls `builder.AddAzureCosmosClient("cosmos")` (Aspire),
+    `services.AddCosmosPersistence(builder.Configuration)`, and
+    `services.AddCosmosBackedPolitenessOverrides()`. When neither is
+    configured the registrations are skipped; the CLI continues to run
+    as a pure scraper with the default-only politeness resolver — Phase 1
+    behaviour preserved.
+  - **`AddCosmosPersistence` accepts an externally-registered
+    `CosmosClient`.** All registrations switched to
+    `TryAddSingleton`, so an Aspire-injected client (built from the
+    connection string for the local emulator) is preserved.
+    `CosmosOptions.AccountEndpoint` is now `string?` — required only when
+    the Managed-Identity fallback is in play. The fallback throws a
+    deliberate `InvalidOperationException` with a clear remediation
+    message if both registrations are absent and `AddCosmosPersistence`
+    is called.
+  - **OPDB CLI dispatch.** `--source opdb` is special-cased before the
+    scrape/download phases — it resolves `IOpdbSyncService` from DI and
+    invokes `SyncAsync`. Returns exit code 2 with a clear message when
+    OPDB / Cosmos aren't configured. `OPDB` is added to
+    `ScraperOrchestrator.SourceAliases` so `SourceAliasContractTests`
+    accepts the alias as known (`FilterScrapers` returns an empty list
+    for it, which is correct — orchestrator path is bypassed).
+  - **`IPerSourcePolitenessResolver` + two implementations + `PolitenessGate` rewire.**
+    New interface in `PinballWizard.Infrastructure.Scraping.Polite` that
+    returns the effective `PolitenessOptions` for a request URL.
+    `DefaultPerSourcePolitenessResolver` always returns the global
+    defaults (registered via `TryAddSingleton` by `AddPoliteScraping`).
+    `IngestionSourcePolitenessResolver` reads
+    `IngestionSource.PolitenessOverrides` from `IIngestionSourceRepository`
+    on first lookup and caches the resulting host → effective-options
+    map for the process lifetime; degrades safely to defaults when
+    Cosmos is unreachable so a transient outage never blocks scraping.
+    Wired by the new `AddCosmosBackedPolitenessOverrides` extension that
+    last-wins-replaces the default registration. `ApplyOverrides` is
+    pure-function and `public static` for direct test access. The
+    `PolitenessGate` constructor takes an
+    `IPerSourcePolitenessResolver` instead of `IOptions<PolitenessOptions>`
+    and consults it per-request for the effective delay and 429-streak
+    limit; the previously-cached `_options` field is removed.
+  - **Three test files updated** for the new `PolitenessGate` ctor
+    (PolitenessGateTests, OpdbSyncServiceTests, OpdbClientTests) — each
+    constructs a `DefaultPerSourcePolitenessResolver` from the existing
+    `Options.Create(politenessOptions)` and passes that to the gate.
+  - **+10 tests** in `IngestionSourcePolitenessResolverTests` pinning
+    `ApplyOverrides` math (null overrides return defaults unchanged;
+    each individual field override applies in isolation; UA suffix is
+    appended to defaults), host-keyed lookup (known host returns
+    overrides; unknown host returns defaults), graceful degradation
+    (repository throws → defaults returned), and load-once caching
+    (two `ResolveAsync` calls trigger one `StreamAllAsync` call).
+  - **README** gains a `Local development with .NET Aspire` section and
+    the `--source` flag table is updated to enumerate every manufacturer
+    scraper plus `opdb`. Pre-existing staleness in other sections (old
+    project name `PinballWizard.Scraper`) is left for a future docs PR.
+  - Pre-push self-audit: `/local-review` (results recorded in PR
+    description) plus the 7-item mechanical checklist (all pass).
+
 - **`.NET Aspire` orchestration scaffold (`PinballWizard.AppHost` +
   `PinballWizard.ServiceDefaults`).** Local dev now spins up the Cosmos
   preview emulator (with persistent data volume + Data Explorer) via

@@ -29,9 +29,10 @@ public sealed class PolitenessGateTests
     private static PolitenessGate CreateGate(PolitenessOptions? options = null, RobotsTxtCache? robots = null)
     {
         var opts = options ?? DefaultOptions;
+        var resolver = new DefaultPerSourcePolitenessResolver(Options.Create(opts));
         return new PolitenessGate(
             robots ?? CreateRobotsCache(),
-            Options.Create(opts),
+            resolver,
             NullLogger<PolitenessGate>.Instance);
     }
 
