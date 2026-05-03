@@ -16,6 +16,7 @@ using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 using PinballWizard.Infrastructure.Scraping.ChicagoGaming;
+using PinballWizard.Infrastructure.Scraping.Multimorphic;
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
@@ -27,7 +28,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, all",
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, all",
     DefaultValueFactory = _ => "all"
 };
 
@@ -251,6 +252,12 @@ static IHost CreateHost(string[] args)
     // discovers machines via the /coinop/ index page, extracts title from
     // page <title> with manufacturer suffix stripped, plus same-host PDFs).
     builder.Services.AddChicagoGamingScraping(builder.Configuration);
+
+    // Multimorphic scraper (Phase 1.3 — WordPress + WooCommerce, sitemap-first
+    // discovery filtered to /store/p3-game-kits/multimorphic-game-kits/, JSON-LD
+    // product schema; deliberately excludes 3rd-party kits which belong to
+    // their respective studios per OPDB attribution).
+    builder.Services.AddMultimorphicScraping(builder.Configuration);
 
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();

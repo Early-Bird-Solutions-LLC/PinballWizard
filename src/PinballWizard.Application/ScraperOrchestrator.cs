@@ -289,6 +289,7 @@ public sealed class ScraperOrchestrator
         ["pinballbrothers"] = "Pinball Brothers",
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
+        ["multimorphic"] = "Multimorphic",
     };
 
     /// <summary>

@@ -19,6 +19,7 @@ public sealed class ScraperManufacturerKeyTests
     [InlineData("game_pinballbrothers_queen", ScraperManufacturerKey.PinballBrothers)]
     [InlineData("game_barrelsoffun_jim-hensons-labyrinth", ScraperManufacturerKey.BarrelsOfFun)]
     [InlineData("game_cgc_medieval-madness", ScraperManufacturerKey.ChicagoGaming)]
+    [InlineData("game_multimorphic_lexy-lightspeed-escape-from-earth", ScraperManufacturerKey.Multimorphic)]
     [InlineData("game_stranger-things", ScraperManufacturerKey.Stern)]
     [InlineData("game_jurassic-park", ScraperManufacturerKey.Stern)]
     public void FromGameId_RecognisesAllManufacturerPrefixes(string gameId, string expected)

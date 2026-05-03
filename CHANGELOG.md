@@ -92,6 +92,48 @@ catalog schema is not yet considered stable.
   becomes the template for ~7 future backfills and template gaps
   multiply) plus the 7-item mechanical checklist (all pass).
 
+- **Multimorphic scraper (Phase 1.3.c)**: seventh manufacturer
+  scraper, third using JSON-LD product schema (after JJP and BoF).
+  WordPress + WooCommerce; discovery walks the WP sitemap index
+  (`/wp-sitemap.xml`) → product sub-sitemaps and filters URLs to
+  `/store/p3-game-kits/multimorphic-game-kits/{slug}/` only —
+  Multimorphic-published P3 game kits, not the third-party kits
+  (Drained, Princess Bride, Portal, etc.) sold through the same
+  storefront. Third-party kits belong to their originating
+  studios per OPDB attribution; running them through the
+  reconciler with `manufacturer = multimorphic` would land them in
+  the wrong Cosmos partition (see ADR 0011).
+  Multimorphic's JSON-LD ships **both** flat
+  `offers[].price` AND nested `offers[].priceSpecification` (as
+  an object, not an array — distinct from BoF), and uses
+  `http://schema.org/...` not `https://` for the availability URL
+  — `MultimorphicProductExtractor` handles every combination plus
+  `@graph` wrapping.
+  `PinballWizard.Core/Configuration/MultimorphicOptions.cs`
+  (BaseUrl, SitemapPath, MultimorphicGameKitsPathPrefix; all
+  `[Required]`).
+  `PinballWizard.Core/Models/Enums.cs` adds
+  `SourceType.MultimorphicProductPage`.
+  `PinballWizard.Application/Sync/ScraperManufacturerKey.cs` adds
+  the `Multimorphic = "multimorphic"` constant + `game_multimorphic_*`
+  prefix dispatch — matches `OpdbMachineMapper.NormalizeManufacturerKey`
+  exactly so reconciled records land in the correct Cosmos partition.
+  `PinballWizard.Application/ScraperOrchestrator.cs` adds the
+  `["multimorphic"] = "Multimorphic"` source-filter alias.
+  `PinballWizard.Infrastructure/Scraping/Multimorphic/`:
+  `MultimorphicSitemapClient` (extends `PoliteScraperBase`; static
+  parsing surface for the index walk + sub-sitemap URL filter
+  with sub-page rejection); `MultimorphicProductExtractor`
+  (pure-function HTML → `GameRecord`, JSON-LD-first with the
+  multi-shape parser noted above); `MultimorphicProductScraper`
+  (extends `PoliteScraperBase`, implements `ISourceScraper`,
+  `TryExtractAsync` per-page failure isolation matching JJP/BoF);
+  `AddMultimorphicScraping` DI extension. CLI:
+  `--source multimorphic`. **+28 unit tests.**
+  Pre-push self-audit: ran `/local-review` (0 🔴 / 1 ⚠️ —
+  family-wide test-infra gap deferred to a future cross-cutting
+  PR) plus the 7-item mechanical checklist (all pass).
+
 - **Chicago Gaming Company scraper (Phase 1.3.d)**: eighth manufacturer
   scraper, second to use a custom-CMS template (after AP). CGC ships
   "Remake" editions of classic Bally/Williams machines (Attack from
