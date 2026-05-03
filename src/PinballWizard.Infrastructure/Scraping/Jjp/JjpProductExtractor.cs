@@ -1,9 +1,8 @@
-using System.Globalization;
-using System.Text.Json;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
+using PinballWizard.Infrastructure.Scraping.JsonLd;
 
 namespace PinballWizard.Infrastructure.Scraping.Jjp;
 
@@ -19,6 +18,11 @@ namespace PinballWizard.Infrastructure.Scraping.Jjp;
 /// offers (with price + availability), and brand. That's our primary
 /// source. og:title / og:image / og:description are the secondary
 /// fallbacks. DOM scraping is the last resort.
+/// <para>
+/// JSON-LD parsing is delegated to
+/// <see cref="JsonLdProductParser"/> — the shared helper that also
+/// powers BoF and Multimorphic.
+/// </para>
 /// </remarks>
 public static class JjpProductExtractor
 {
@@ -41,22 +45,18 @@ public static class JjpProductExtractor
         var slug = ExtractSlug(productUrl);
         if (string.IsNullOrWhiteSpace(slug)) return null;
 
-        var jsonLdProduct = FindFirstProductJsonLd(doc);
-        var title = jsonLdProduct?.Name
+        var product = JsonLdProductParser.FindFirstProduct(doc);
+        var title = product?.Name
             ?? GetMetaContent(doc, "og:title")
             ?? doc.QuerySelector("h1")?.TextContent?.Trim();
 
         if (string.IsNullOrWhiteSpace(title)) return null;
 
-        var description = jsonLdProduct?.Description
-            ?? GetMetaContent(doc, "og:description");
-
-        var images = CollectImageUrls(jsonLdProduct, doc);
-
-        var availability = jsonLdProduct?.Offers?.Availability;
+        var description = product?.Description ?? GetMetaContent(doc, "og:description");
+        var images = CollectImageUrls(product, doc);
+        var availability = product?.Offers?.Availability;
         var status = NormalizeAvailability(availability);
-
-        var price = jsonLdProduct?.Offers?.Price;
+        var price = product?.Offers?.Price;
 
         var editions = price is not null
             ? new List<EditionInfo>
@@ -107,115 +107,6 @@ public static class JjpProductExtractor
         return null;
     }
 
-    private static JsonLdProduct? FindFirstProductJsonLd(IHtmlDocument doc)
-    {
-        foreach (var script in doc.QuerySelectorAll("script[type='application/ld+json']"))
-        {
-            var text = script.TextContent;
-            if (string.IsNullOrWhiteSpace(text)) continue;
-
-            JsonElement root;
-            try
-            {
-                using var parsed = JsonDocument.Parse(text);
-                root = parsed.RootElement.Clone();
-            }
-            catch (JsonException)
-            {
-                continue;
-            }
-
-            // Some Shopify themes wrap JSON-LD in an array; some don't.
-            if (root.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in root.EnumerateArray())
-                {
-                    if (TryReadProduct(item) is { } prod) return prod;
-                }
-            }
-            else
-            {
-                if (TryReadProduct(root) is { } prod) return prod;
-            }
-        }
-        return null;
-    }
-
-    private static JsonLdProduct? TryReadProduct(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object) return null;
-
-        if (!element.TryGetProperty("@type", out var typeProp)) return null;
-
-        var typeMatch = typeProp.ValueKind switch
-        {
-            JsonValueKind.String => string.Equals(typeProp.GetString(), "Product", StringComparison.OrdinalIgnoreCase),
-            JsonValueKind.Array => typeProp.EnumerateArray().Any(t => t.ValueKind == JsonValueKind.String && string.Equals(t.GetString(), "Product", StringComparison.OrdinalIgnoreCase)),
-            _ => false,
-        };
-        if (!typeMatch) return null;
-
-        var product = new JsonLdProduct
-        {
-            Name = element.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String ? name.GetString() : null,
-            Description = element.TryGetProperty("description", out var desc) && desc.ValueKind == JsonValueKind.String ? desc.GetString() : null,
-            Images = ReadImages(element),
-            Offers = ReadOffers(element),
-        };
-        return product;
-    }
-
-    private static List<string> ReadImages(JsonElement element)
-    {
-        var images = new List<string>();
-        if (!element.TryGetProperty("image", out var imageProp)) return images;
-
-        switch (imageProp.ValueKind)
-        {
-            case JsonValueKind.String:
-                if (imageProp.GetString() is { Length: > 0 } single) images.Add(single);
-                break;
-            case JsonValueKind.Array:
-                foreach (var item in imageProp.EnumerateArray())
-                {
-                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } s)
-                    {
-                        images.Add(s);
-                    }
-                }
-                break;
-            default:
-                break;
-        }
-        return images;
-    }
-
-    private static JsonLdOffers? ReadOffers(JsonElement element)
-    {
-        if (!element.TryGetProperty("offers", out var offers)) return null;
-
-        var first = offers.ValueKind switch
-        {
-            JsonValueKind.Object => offers,
-            JsonValueKind.Array => offers.EnumerateArray().FirstOrDefault(o => o.ValueKind == JsonValueKind.Object),
-            _ => default,
-        };
-        if (first.ValueKind != JsonValueKind.Object) return null;
-
-        return new JsonLdOffers
-        {
-            Price = first.TryGetProperty("price", out var price) ? FormatPrice(price) : null,
-            Availability = first.TryGetProperty("availability", out var av) && av.ValueKind == JsonValueKind.String ? av.GetString() : null,
-        };
-    }
-
-    private static string? FormatPrice(JsonElement price) => price.ValueKind switch
-    {
-        JsonValueKind.String => price.GetString(),
-        JsonValueKind.Number => price.GetDouble().ToString(CultureInfo.InvariantCulture),
-        _ => null,
-    };
-
     private static string? GetMetaContent(IHtmlDocument doc, string property)
     {
         var meta = doc.QuerySelector($"meta[property='{property}']")
@@ -249,19 +140,5 @@ public static class JjpProductExtractor
             "discontinued" => "discontinued",
             _ => lastSegment?.ToLowerInvariant(),
         };
-    }
-
-    private sealed class JsonLdProduct
-    {
-        public string? Name { get; init; }
-        public string? Description { get; init; }
-        public List<string> Images { get; init; } = [];
-        public JsonLdOffers? Offers { get; init; }
-    }
-
-    private sealed class JsonLdOffers
-    {
-        public string? Price { get; init; }
-        public string? Availability { get; init; }
     }
 }

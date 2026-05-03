@@ -9,6 +9,50 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Changed
+
+- **Shared `JsonLdProductParser` consolidates duplicated parsing
+  across the manufacturer extractors.** JJP and BoF previously
+  shipped near-identical 100-line copies of the JSON-LD walker; the
+  same pattern would have shipped a third time when PR #39
+  (Multimorphic) merges. Three storefronts is the threshold called
+  out in PR #38's review and PR #39's CHANGELOG note — extracting
+  now keeps the next storefront PR cheap.
+  `PinballWizard.Infrastructure/Scraping/JsonLd/`:
+  `JsonLdProductParser` (static; entry point `FindFirstProduct`,
+  type-matcher `ReadProduct` exposed for direct test access),
+  `JsonLdProduct` + `JsonLdOffer` (storefront-agnostic DTOs).
+  Container shapes: bare object / top-level array /
+  `@graph` wrapper. Price shapes: flat `offers[].price`
+  (Shopify) AND nested `offers[].priceSpecification` (object
+  or array — both WooCommerce dialects). Image shapes: string or
+  array. Type matching: `@type` as string or as array
+  containing `"Product"`. Malformed JSON-LD blocks fall
+  through to the next sibling block.
+  `JjpProductExtractor` and `BofProductExtractor` reduced from
+  ~270 / ~310 lines to ~140 / ~140 lines respectively (-300 lines
+  net) by delegating to the shared parser. Each kept its own
+  manufacturer-specific surface — slug-segment landmark, GameId
+  prefix, `DiscoveredOn` sentinel, OG/h1 fallbacks, Edition
+  construction. End-to-end behavior preserved: every pre-existing
+  test still passes without modification (one of them — JJP —
+  is now a strict-superset since its previous private parser did
+  not handle `@graph` wrapping; the shape doesn't appear on
+  Shopify so no real-world impact).
+  Multimorphic adoption is a strict-subset follow-up once PR #39
+  merges: delete the duplicated parser block, add the using,
+  swap one method call. Same parser already covers all
+  Multimorphic shapes including the simultaneous-flat-and-nested
+  case (verified by `JsonLdProductParserTests.FindFirstProduct_FlatAndNestedBothPresent_PrefersFlat`).
+  **+24 new tests** (399 + 3 robustness adds = 402 total) pinning
+  every shape, including empty `@graph` array fall-through,
+  empty-string-image filtering, and graph-without-Product
+  fall-through-to-sibling-script.
+  Pre-push self-audit: `/local-review` (0 🔴 / 2 ⚠️ — both fixed:
+  `JsonLdOffers` plural type renamed to `JsonLdOffer` (singular —
+  it holds one offer), plus the 3 robustness tests above) plus
+  the 7-item mechanical checklist (all pass).
+
 ### Added
 
 - **Family-wide scraper test infrastructure**: closes the recurring
