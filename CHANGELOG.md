@@ -11,6 +11,27 @@ catalog schema is not yet considered stable.
 
 ### Changed
 
+- **Shared `OpenGraphExtractor` consolidates duplicated meta-content
+  parsing.** JJP, BoF, and Multimorphic all shipped byte-identical
+  private `GetMetaContent` methods (read `meta[property=]` with a
+  `meta[name=]` fallback, return the trimmed `content` attribute);
+  three storefronts is the threshold called out in PR #38's review and
+  PR #43's CHANGELOG note for promoting a private helper to a shared
+  one. New namespace
+  `PinballWizard.Infrastructure.Scraping.OpenGraph` with a single
+  `OpenGraphExtractor` static class exposing `GetMetaContent(doc, property)`.
+  All three extractors switch from the private helper to the shared one;
+  net change is −30 lines across the three consumers / +63 lines for
+  the shared helper. Behavior preserved exactly — including the
+  `content=""` returns empty-string semantics that the consumer
+  fallback chains depend on (the `??` operator only triggers on null,
+  so changing the empty-string return would silently change downstream
+  fallback ordering). 12 new tests pin every shape: spec form vs loose
+  form vs both, missing meta, missing content attribute, empty content,
+  whitespace trimming, first-match-wins on duplicates, null guards.
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
+
 - **`MultimorphicProductExtractor` adopts the shared
   `JsonLdProductParser`.** Strict-subset follow-up to PR #42:
   deletes the duplicated 140-line JSON-LD walker (`FindFirstProductJsonLd`,
