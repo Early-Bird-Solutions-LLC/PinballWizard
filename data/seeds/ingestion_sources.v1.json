@@ -1,0 +1,83 @@
+[
+  {
+    "id": "stern",
+    "displayName": "Stern Pinball",
+    "scraperImplKey": "stern",
+    "baseUrl": "https://sternpinball.com/",
+    "enabled": true,
+    "cadence": "daily",
+    "politenessOverrides": null
+  },
+  {
+    "id": "jjp",
+    "displayName": "Jersey Jack Pinball",
+    "scraperImplKey": "jjp",
+    "baseUrl": "https://www.jerseyjackpinball.com/",
+    "enabled": true,
+    "cadence": "daily",
+    "politenessOverrides": null
+  },
+  {
+    "id": "ap",
+    "displayName": "American Pinball",
+    "scraperImplKey": "ap",
+    "baseUrl": "https://www.american-pinball.com/",
+    "enabled": true,
+    "cadence": "daily",
+    "politenessOverrides": null
+  },
+  {
+    "id": "spooky",
+    "displayName": "Spooky Pinball",
+    "scraperImplKey": "spooky",
+    "baseUrl": "https://www.spookypinball.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null
+  },
+  {
+    "id": "pinballbrothers",
+    "displayName": "Pinball Brothers",
+    "scraperImplKey": "pinballbrothers",
+    "baseUrl": "https://pinballbrothers.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null
+  },
+  {
+    "id": "barrelsoffun",
+    "displayName": "Barrels of Fun",
+    "scraperImplKey": "barrelsoffun",
+    "baseUrl": "https://shop.kollectfun.com/",
+    "enabled": true,
+    "cadence": "monthly",
+    "politenessOverrides": null
+  },
+  {
+    "id": "multimorphic",
+    "displayName": "Multimorphic",
+    "scraperImplKey": "multimorphic",
+    "baseUrl": "https://www.multimorphic.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null
+  },
+  {
+    "id": "cgc",
+    "displayName": "Chicago Gaming Company",
+    "scraperImplKey": "cgc",
+    "baseUrl": "https://chicago-gaming.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null
+  },
+  {
+    "id": "opdb",
+    "displayName": "Open Pinball Database (OPDB)",
+    "scraperImplKey": "opdb",
+    "baseUrl": "https://opdb.org/api/",
+    "enabled": true,
+    "cadence": "daily",
+    "politenessOverrides": null
+  }
+]

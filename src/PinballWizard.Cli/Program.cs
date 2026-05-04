@@ -77,6 +77,11 @@ var ensureCosmosContainersOption = new Option<bool>("--ensure-cosmos-containers"
     Description = "Run CosmosBootstrapper.EnsureCreatedAsync against the configured Cosmos account: creates the database + every container in CosmosOptions.Containers if missing, asserts partition-key paths match. Idempotent. Useful as a post-deploy smoke-test that the configured Cosmos endpoint + Managed Identity / Aspire connection string actually work end-to-end. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var seedIngestionSourcesOption = new Option<bool>("--seed-ingestion-sources")
+{
+    Description = "Read data/seeds/ingestion_sources.v1.json (relative to the current working directory, typically the repo root) and upsert each entry into the Cosmos ingestion_sources container. Idempotent: re-runs apply config field changes from the manifest while preserving runtime fields (LastRunAt, LastSuccessAt, totalDocumentsDiscovered, totalRunFailures) populated by actual scraper runs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -87,6 +92,7 @@ rootCommand.Options.Add(statusOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
+rootCommand.Options.Add(seedIngestionSourcesOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -99,6 +105,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
+    var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -132,6 +139,31 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         await bootstrapper.EnsureCreatedAsync(cancellationToken);
         Console.WriteLine("Cosmos database + containers ensured.");
+        return;
+    }
+
+    // Handle --seed-ingestion-sources (one-shot bootstrap for the
+    // ingestion_sources Cosmos container). Resolves IIngestionSourceSeeder
+    // from DI; the seeder is only registered when AddCosmosPersistence was
+    // wired (i.e., Cosmos config is present). Mirrors the
+    // --ensure-cosmos-containers exit-code-2 remediation pattern.
+    if (seedIngestionSources)
+    {
+        var seeder = host.Services.GetService<IIngestionSourceSeeder>();
+        if (seeder is null)
+        {
+            Console.Error.WriteLine(
+                "--seed-ingestion-sources requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var manifestPath = Path.Combine("data", "seeds", "ingestion_sources.v1.json");
+        var seedResult = await seeder.SeedAsync(manifestPath, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"Ingestion sources seeded: {seedResult.Inserted} inserted, " +
+                          $"{seedResult.Updated} updated, {seedResult.Total} total.");
         return;
     }
 
@@ -280,6 +312,12 @@ static IHost CreateHost(string[] args)
         }
         builder.Services.AddCosmosPersistence(builder.Configuration);
         builder.Services.AddCosmosBackedPolitenessOverrides();
+
+        // Ingestion-sources seeder. Application-layer service depending on
+        // IIngestionSourceRepository (registered by AddCosmosPersistence above);
+        // gated alongside Cosmos because there's nothing for it to write to
+        // without the repository.
+        builder.Services.AddTransient<IIngestionSourceSeeder, IngestionSourceSeeder>();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,
