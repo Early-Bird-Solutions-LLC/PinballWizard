@@ -119,7 +119,9 @@ problems. If you find none of consequence, say so explicitly.
 
 7. **Comments policy**: Comments should explain WHY, not WHAT. Stale
    "TODO: ..." pointing at fixed work? "This used to..." references?
-   XML docs missing on new public surface?
+   (Do NOT flag missing XML doc comments — see
+   `memory/feedback_no_xml_docs.md`; XML docs are explicitly out of
+   scope for this project.)
 
 8. **Security smells**: Any logging of secrets / tokens / connection
    strings / PII? Any raw input into SQL / command / shell paths

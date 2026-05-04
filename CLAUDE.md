@@ -2,174 +2,153 @@
 
 ## What This Is
 
-**PinballWizard** is a standalone scraper that crawls sternpinball.com to download and catalog every document (manuals, firmware, service bulletins, flyers, spec sheets) with rich provenance metadata. It's Phase 1 of a two-phase project — Phase 2 (future) adds a RAG pipeline for search and Q&A with source citations.
+**PinballWizard is a customer-facing showcase / reference application** that demonstrates Jim's ability to architect, build, ship, and operate an enterprise-class AI solution end-to-end. It will be shown to prospective Earlybird Solutions clients as proof of capability across Clean Architecture, .NET Aspire, Azure (Cosmos / AI Search / OpenAI / Container Apps), AAD identity, IaC, observability, polite-by-construction scraping, and event-driven RAG. **The pinball domain is the vehicle — the engineering rigor is the point.**
 
-This is a **personal hobby project** — completely separate from any professional work. No shared infrastructure, no shared code, its own repo and (eventually) its own Azure resource group (or its own domain within an existing one — see `docs/infra_analysis.md`).
+Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a polite, manufacturer-fanned-out scraper that crawls pinball-machine sources and persists into Cosmos with rich provenance metadata. **Phase 2** (in progress) adds an event-driven RAG pipeline with source-cited Q&A. See `project_phase2_architecture_decisions.md` for locked decisions and `project_phased_build_sequence.md` for the build order.
 
-## Architecture Overview
+**Hosted on the personal Earlybird Azure subscription** (sub `4dce9fdd-…`, tenant `9793cd0f-…`). Never linked to work tooling — see `feedback_personal_identity_only.md`. The personal-account constraint is administrative, not a quality posture: this is a reference app and is held to enterprise standards.
 
-### Three Data Sources
+## Showcase obligations (overriding guidance)
 
-| Source | URL | Rendering | Scraper | Notes |
-|---|---|---|---|---|
-| Manuals | `/manuals/` | Static HTML | `ManualsScraper` (HttpClient + AngleSharp) | ~148 PDFs, simplest source |
-| Game Pages | `/game/{slug}/` | Vue.js | `GamePageScraper` (Playwright) | ~80 games × 3 tabs each |
-| Service Bulletins | `/support/service-bulletins/` | Vue.js | `ServiceBulletinScraper` (Playwright) | ~100+ bulletins, scroll-to-load |
+Because this app is shown to potential customers, every PR must hold the bar a prospect would expect on day one of an engagement:
 
-Game slugs are discovered from three listing pages (`/games/`, `/games/archive/`, `/games/vault/`) by `GameListingScraper` before `GamePageScraper` visits each individual game page.
+- **No quick fixes / shortcuts.** If a proper IaC / DI / abstraction path exists, take it. Tactical hacks have no place in a reference app — ad-hoc CLI calls, hardcoded values, manual workarounds, copy-paste-with-drift, or "we'll clean it up later" all undermine the demo. If unsure, surface the trade-off explicitly per `c:\projects\CLAUDE.md` § "Quality-First Principle".
+- **Architecture must read cleanly.** Clean Architecture layering, ADRs for non-obvious decisions, named abstractions over implicit conventions. A senior architect skimming the repo should be able to trace any subsystem in under five minutes.
+- **Observability and operability are first-class.** OTel traces, structured logging, `/healthz` + `/alive`, friendly error messages with remediation, idempotent operations. The system should look healthy from a dashboard, not just from green tests.
+- **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires. Coverage is necessary but not sufficient — tests are documentation of intent.
+- **Documentation is part of the product.** README, ADRs, the spec docs (`docs/vision.md`, `docs/build-spec.md`, `docs/quality-spec.md`, `docs/guardrails.md`), this CLAUDE.md, the PR template, the `/local-review` skill — all of these are visible artifacts. Treat them as such. (XML doc comments on public surface are explicitly *not* part of the bar — see `feedback_no_xml_docs.md`.)
+- **Polite-by-construction is a marketing surface.** A scraper that visibly throttles itself, honors robots.txt unconditionally, and prefers OG / JSON-LD / sitemap over DOM hacks tells customers Jim writes code that respects external systems. See `feedback_polite_scraping.md`.
+- **Provenance is the AI story.** Every Phase 2 RAG answer ends with a clickable citation. The fidelity of that chain — through scraper → catalog → chunker → vector index → answer — is the differentiator vs. generic RAG demos.
+- **Cost discipline.** Budget cap is **$300–$400/mo**. A reference app that costs prospects nothing to evaluate is a feature.
 
-Each game page has three tabs that must be clicked and scraped separately:
-- **Promotional Materials** — flyers, feature matrices, videos
-- **Game Code** — firmware .zip/.spk files, READMEs
-- **Specs & Manual** — manuals, spec sheets
+When in doubt, ask: *would a sceptical prospective customer read this code, doc, or commit message and gain confidence, or lose it?*
 
-### Provenance Model (Core Design)
+## Architecture
 
-Every downloaded file gets a `DocumentRecord` that travels through the entire pipeline. This is the most important design decision in the project.
+### Solution layout (Clean Architecture + .NET Aspire)
 
-**Deterministic document IDs**: `SHA-256(canonical_file_url.ToLower())[0:16]` prefixed with `doc_`. The same PDF found on `/manuals/` AND `/game/stranger-things/` maps to ONE document with cross-references — not two duplicates.
-
-**Source attribution chain**: Every document carries:
-- `source.discovery_url` — the page we were on when we found this file
-- `source.discovery_context` — human-readable: "Game Page → Specs & Manual tab"
-- `source.file_url` — direct link to the file (this becomes the RAG citation URL)
-- `source.link_text` — the anchor text that linked to it
-- `source.source_type` — which scraper found it
-- `source.tab` — which tab (game pages only)
-- `game.*` — title, slug, edition, game_page_url
-- `classification.*` — document_type, content_categories, file_format
-- `timeline.*` — first_discovered, last_checked, last_downloaded, last_content_changed, version_count
-- `http.*` — ETag, Last-Modified (for conditional requests on subsequent runs)
-- `cross_references[]` — other pages where this same file URL was found
-
-**Why this matters**: When Phase 2's RAG system answers "The Stranger Things Pro uses Node 8 for the lower playfield 48V drivers," the response must include a clickable link to the exact source PDF and page on sternpinball.com. The provenance model makes this possible.
-
-See [docs/scraper_plan_v4.md](docs/scraper_plan_v4.md) for the full data model and rationale.
-
-### Conditional Downloads
-
-`FileDownloader` stores ETag and Last-Modified from each download in the document's `http` metadata. On subsequent runs, it sends `If-None-Match` / `If-Modified-Since` headers. A 304 response means no re-download needed. Content changes are detected by comparing SHA-256 hashes.
-
-### File Organization
-
-```
-data/
-├── downloads/
-│   ├── manuals/{filename}.pdf
-│   ├── games/{slug}/promotional/{filename}
-│   ├── games/{slug}/game-code/{filename}
-│   ├── games/{slug}/specs-manual/{filename}
-│   └── service-bulletins/{filename}.pdf
-├── metadata/
-│   ├── catalog.json          ← Master output: all DocumentRecords
-│   ├── games.json            ← Structured game metadata (editions, prices, features)
-│   ├── snapshots/            ← Point-in-time URL lists per source (NOT YET WIRED — see Current State)
-│   └── history/              ← Change logs between runs (NOT YET WIRED)
-└── logs/
+```text
+src/
+├── PinballWizard.Core            ← Domain entities, ISourceScraper, IngestionSource, no deps
+├── PinballWizard.Application     ← Orchestration, services, ScraperOrchestrator, no infra refs
+├── PinballWizard.Infrastructure  ← Scraping, Persistence, Integrations (Cosmos, OPDB, etc.)
+├── PinballWizard.Cli             ← entry point; conditional Aspire + Cosmos + OPDB wiring
+├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
+└── PinballWizard.ServiceDefaults ← Aspire shared OTel + health + service discovery + resilience
+tests/
+└── PinballWizard.Scraper.Tests   ← single test project, 507 tests, all manufacturers + Cosmos + OPDB
 ```
 
-### CLI
+ADRs live in [`docs/adr/`](docs/adr/) (0001–0011). The slnx is `PinballWizard.slnx`.
 
-```
-dotnet run -- [options]
+### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
 
---source <manuals|games|bulletins|all>    Which source(s) to scrape
---scrape-only                              Discover URLs + metadata, don't download
---download                                 Download new/changed files
---download-all                             Force re-download everything
---build-catalog                            Reconcile catalog with disk (clears File entry for missing files; preserves Timeline)
---status                                   Summary of tracked documents
---dry-run                                  Scrape but don't persist
---install-playwright                       Install Playwright browsers
---verbose                                  Debug logging
-```
+| Manufacturer | Source URL | Pattern | Notes |
+| --- | --- | --- | --- |
+| Stern (manuals) | `sternpinball.com/manuals/` | Static HTML (AngleSharp) | `ManualsScraper` |
+| Stern (game pages) | `sternpinball.com/game/{slug}/` | Vue.js (Playwright) | `GamePageScraper`, 3 tabs per game |
+| Stern (bulletins) | `sternpinball.com/support/service-bulletins/` | Vue.js (Playwright) | `ServiceBulletinScraper` |
+| Jersey Jack (JJP) | `jerseyjackpinball.com/collections/...` | WP-REST + JSON-LD | `JjpProductScraper` |
+| American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
+| Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
+| Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |
+| Barrels of Fun | `shop.kollectfun.com` | WooCommerce + JSON-LD | `BofProductScraper` |
+| Multimorphic | `multimorphic.com` | WP-REST + JSON-LD | `MultimorphicProductScraper` |
+| Chicago Gaming (CGC) | `chicago-gaming.com/coinop/` | Custom Nginx HTML | `CgcGamePageScraper` |
+| OPDB (canonical machine catalog) | `opdb.org/api/` | API; not a web scraper | `OpdbSyncService`, special-cased — writes `IMachineRepository` not `ScrapedItems` |
 
-Default (no flags) = scrape + download.
+Three storefronts (JJP / BoF / Multimorphic) share `JsonLdProductParser` + `OpenGraphExtractor` in `Infrastructure/Scraping/JsonLd/` and `Infrastructure/Scraping/OpenGraph/`. Drift across siblings is the silent failure mode — see PR self-audit § sibling-diff below.
 
-### DI / Service Registration
+### Polite-by-construction scraping (LOCKED — see `feedback_polite_scraping.md`)
 
-All services are registered in `Program.cs`:
-- `HttpClient` is configured via `AddHttpClient<T>` for both `ManualsScraper` and `FileDownloader`
-- `PlaywrightFactory` is singleton (one browser instance shared across scrapers)
-- Scrapers implement `ISourceScraper` and are registered as `IEnumerable<ISourceScraper>`
-- `ScraperSettings` is bound from `appsettings.json` section `"Scraper"` with `DATA_PATH` env var override for Docker
+- Every outbound HTTP request from a scraper routes through `IPolitenessGate` (acquire → wire → report).
+- Scrapers extend `PoliteScraperBase` and use `GetStringPolitelyAsync` / `SendPolitelyAsync`. **No bare `HttpClient.GetAsync`** in scraper code.
+- `IPerSourcePolitenessResolver` reads `IngestionSource.PolitenessOverrides` from Cosmos per-host, with safe degradation to `DefaultPerSourcePolitenessResolver` on Cosmos failure.
+- `robots.txt` is honored **unconditionally**. Sites with `Disallow: /` are skipped until polite outreach grants explicit permission. Pinside, Dutch Pinball: deferred indefinitely.
+- Prefer **machine-consumer metadata** (OG, JSON-LD, sitemap, robots) over rendered-DOM scraping where available — see `feedback_machine_consumer_metadata_first.md`.
+
+### Provenance model (LOCKED — see ADR 0002, ADR 0004)
+
+Every captured item carries a deterministic ID `SHA-256(canonical_url.ToLower())[0:16]` prefixed with `doc_` / `mch_`, and a full attribution chain: `source.discovery_url`, `source.discovery_context`, `source.file_url`, `source.link_text`, `source.source_type`, `source.tab` (game pages only), `game.{title,slug,edition,game_page_url}`, `classification.{document_type,content_categories,file_format}`, `timeline.{first_discovered,last_checked,last_downloaded,last_content_changed,version_count}`, `http.{etag,last_modified}`, `cross_references[]`.
+
+**Provenance is sacred** — any data path that drops `Source` / `DiscoveryUrl` / `DiscoveryContext` / `GameSlug` is a 🔴 in `/local-review`. The provenance chain is the foundation of Phase 2 RAG citations.
+
+### Cosmos persistence (LOCKED — see ADR 0011, PR #63)
+
+- **Schema CRUD** (database/container create/replace, partition-key checks, throughput) goes through ARM via `Azure.ResourceManager.CosmosDB`.
+- **Runtime item CRUD** (read/write documents) goes through the data-plane SDK `Microsoft.Azure.Cosmos`.
+- `ICosmosProvisioner` selects between `ArmCosmosProvisioner` (deployed Cosmos with AAD via `DefaultAzureCredential`, requires `Cosmos:AccountResourceId`) and `DataPlaneCosmosProvisioner` (Aspire emulator master-key auth).
+- **Cosmos containers are NOT in Bicep.** Runtime `--ensure-cosmos-containers` is the canonical creator; idempotent; verifies partition-key paths match.
+- Why: Cosmos data-plane RBAC genuinely does NOT model schema-mutation actions (Azure rejects `Microsoft.DocumentDB/databaseAccounts/sqlDatabases/*` at deploy validation). Custom roles can't grant `CreateDatabase`. Don't relitigate.
+
+### Aspire foundation
+
+- `PinballWizard.AppHost` (Aspire 13.2.4) orchestrates the **Cosmos preview emulator** (persistent volume + Data Explorer) and **Azurite** (Storage emulator) for local dev. `start-apphost.ps1` is the launcher.
+- CLI consumes Aspire-injected `ConnectionStrings:cosmos` when present; falls back to standalone scraper-only mode otherwise. Cosmos / OPDB / Cosmos-backed politeness DI is gated on `ConnectionStrings:cosmos` OR `Cosmos:AccountEndpoint` presence.
+- `PinballWizard.ServiceDefaults` exposes shared OTel + service discovery + standard HTTP resilience + `/healthz` + `/alive`.
+
+### Infrastructure deploy (Bicep, two-tier — see PR #56)
+
+- **Phase 1 (default):** Cosmos serverless + Log Analytics + Cosmos diagnostics. ~free idle, pay-per-RU.
+- **Phase 2 (gated on `deployPhase2 = true`):** App Insights + Key Vault + ACR + AI Search Basic + Azure OpenAI + Storage with blob containers + dev RBAC. Provisioned only when consuming features land. Budget cap **$300–$400/mo** total — see `project_phase2_architecture_decisions.md`.
+- Deploy script: `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev [-WhatIf]`. Outputs include `cosmosAccountEndpoint`, `cosmosAccountResourceId`, etc. — captured to stdout.
 
 ## Tech Stack
 
-- .NET 10, C# 14
-- AngleSharp 1.4.0 — HTML parsing for static pages
-- Microsoft.Playwright 1.12.0 — browser automation for Vue.js pages (**stale; planned upgrade to 1.49+**)
-- System.CommandLine 2.0.4 — CLI
-- Microsoft.Extensions.Hosting 10.0.4 — DI, configuration, logging
-- xUnit — testing
-- Docker + cron — deployment and scheduling
+- .NET 10 / C# 14 / `Directory.Build.props` enforces zero warnings as errors
+- **.NET Aspire 13.2.4** — local orchestration (AppHost + ServiceDefaults)
+- **Microsoft.Azure.Cosmos** — data-plane SDK (item CRUD)
+- **Azure.ResourceManager.CosmosDB** — ARM SDK (schema CRUD)
+- **Azure.Identity** — `DefaultAzureCredential` for AAD
+- **Microsoft.Extensions.\*** 10.5.0 — Hosting, DI, configuration, logging
+- **Microsoft.Extensions.Http.Resilience** 10.5.0 — standard HTTP resilience pipeline
+- AngleSharp — HTML parsing
+- Microsoft.Playwright 1.12.0 — Stern's Vue.js pages (stale, planned upgrade to 1.49+; records workaround in place)
+- System.CommandLine — CLI
+- xUnit + NSubstitute — testing
+- Docker + cron — Phase 1 deployment + scheduling
 
-## Current State
+## CLI
 
-Build is green. 7 tests pass. Live-site validation completed for 1 of 3 sources.
+```text
+dotnet run --project src/PinballWizard.Cli -- [options]
 
-### What works
-- **Manuals scraper** — validated against live site: 166 PDF links discovered (131 unique URLs, 35 cross-page duplicates)
-- **Game listing discovery** — 78 unique games across `/games/`, `/games/archive/`, `/games/vault/`
-- **Build & test pipeline** — `dotnet build` / `dotnet test` clean (1 nullable warning)
-- **Conditional download plumbing** — ETag/If-Modified-Since handling, SHA-256 streaming, size guard
-
-### Recently fixed (this session)
-1. ~~`GamePageScraper` returns 0 file links~~ — `LinkRaw`, `EditionRaw`, `BulletinRaw` converted from positional records to classes with init-able properties + `[JsonPropertyName]` attributes. Playwright 1.12.0's `Activator.CreateInstance` path now succeeds.
-2. ~~`--source games` filter~~ — `ScraperOrchestrator.FilterScrapers` now uses an explicit alias map for `manuals`/`games`/`bulletins` and warns on unknown filters.
-3. ~~`--build-catalog` dead code~~ — wired to `BuildCatalogAsync` which reconciles `DocumentRecord.File` entries against disk; preserves `Timeline.LastDownloadedAt` so a missing file is distinguishable from a never-downloaded one.
-4. ~~Non-atomic catalog writes~~ — `SaveCatalogAsync` / `SaveGameCatalogAsync` now write to `.tmp` then `File.Move` to prevent corruption on interruption.
-
-### Open bugs / gaps
-1. **Snapshot/history change-detection not wired** — `SourceSnapshot` and `ChangeEntry` types exist in `Models/Catalog.cs`, directories are created at startup, but no producers/consumers. The plan's `ChangeDetection/` folder was never built.
-2. **Playwright 1.12.0 is 4 years stale** — plan calls for 1.49+. Records workaround is in place; upgrade is the proper fix.
-3. **No HTTP retry/backoff** in `FileDownloader` — a 600+ file run will inevitably hit transient failures.
-4. **No concurrency guard on catalog writes** — overlapping cron runs could clobber each other (low risk for hobby use).
-5. **`GameReference.Title` is slug-cased** — never backfilled from `GameRecord` after merge. Manuals discovered for known games aren't cross-linked at all.
-
-### Not yet validated against live site
-- `ServiceBulletinScraper` (Playwright + scroll-to-load)
-- `GamePageScraper` (blocked on bug #1)
-- End-to-end download flow
-
-### Heuristics that need DOM-confirmation work
-- `GamePageScraper.ClickTabAsync` tab selectors are generic CSS patterns (`button:has-text(...)`, `[role='tab']:has-text(...)`, etc.); Stern's Vue.js components likely use specific class names
-- `GamePageScraper.ExtractEditionsAsync` JS targets `[class*="edition"]`, `[class*="model"]`, etc. — speculative until inspected against actual DOM
-- `ServiceBulletinScraper.ExtractBulletinsAsync` extracts dates and related-game text into the discovery context string only — never typed into model fields
-
-## Phase 2 Preview (NOT building yet)
-
-Phase 2 will add a RAG pipeline consuming this scraper's output:
-
-```
-catalog.json + downloaded files
-  → PDF text extraction (PdfPig)
-  → Page-aware chunking (2000 chars, 400 overlap, heading hierarchy)
-  → Embedding (text-embedding-3-large, 3072 dimensions)
-  → Vector index (PostgreSQL + pgvector)
-  → Hybrid search (BM25 + vector + semantic ranking)
-  → GPT completion with source citations
+--source <alias>            manuals | games | bulletins | jjp | ap | spooky |
+                            pinballbrothers | barrelsoffun | multimorphic |
+                            chicagogaming | opdb | all
+--scrape-only               Discover URLs + metadata, don't download
+--download                  Download new/changed files
+--download-all              Force re-download
+--build-catalog             Reconcile catalog vs disk (preserves Timeline.LastDownloadedAt)
+--status                    Summary of tracked documents (file catalog only; does NOT exercise Cosmos)
+--ensure-cosmos-containers  Post-deploy smoke-test: bootstraps DB + containers via the
+                            ICosmosProvisioner selected for the configured endpoint.
+                            Idempotent. Exit 2 + remediation if Cosmos isn't configured.
+--dry-run                   Scrape without persisting
+--install-playwright        Install Playwright browsers
+--verbose                   Debug logging
 ```
 
-Each chunk carries `document_id` → joins back to `catalog.json` → resolves to the full provenance chain → clickable citation in the RAG response.
+`SourceAliasContractTests` pins every `ISourceScraper.Name` to its `--source` alias. Adding a scraper without that test passing is a 🔴.
 
-**Infrastructure**: see `docs/infra_analysis.md` for the Phase 2 infrastructure plan (own resource group, pgvector-backed RAG by default).
+## Locked invariants (do not relitigate)
 
-Estimated Phase 2 cost: ~$32/mo baseline using the pgvector backend, plus per-query LLM usage. AI Search backend (optional) raises the baseline to ~$107/mo.
+1. **Provenance is sacred.** Every item must trace back to its source URL.
+2. **Polite-by-construction.** PoliteScraperBase + IPolitenessGate. No raw `HttpClient.GetAsync` in scrapers. robots.txt honored unconditionally.
+3. **Machine-consumer metadata first.** Exhaust OG / JSON-LD / sitemap / robots before DOM selectors.
+4. **Schema CRUD via ARM, item CRUD via data-plane SDK.** No Cosmos containers in Bicep.
+5. **Personal identity only.** Commits MUST show `94459922+jkeeley2073@users.noreply.github.com` (`git log -1 --format='%an <%ae>'`). Personal Earlybird Azure subscription only. No Azure DevOps integration ever.
+6. **PowerShell, not Git-Bash, for Cosmos resource IDs.** MSYS path translation rewrites `/subscriptions/...` to `C:/Program Files/Git/subscriptions/...`. Friendly-error guard catches it but PowerShell avoids the trip-up.
+7. **Phase 2 storage = AI Search Basic + Cosmos.** NOT pgvector / Postgres. NOT AI Search Standard. See `project_phase2_architecture_decisions.md`.
+8. **Catalog is the Phase 1↔Phase 2 contract.** `catalog.json` (file-system) and the Cosmos `machines` / `ingestion_sources` containers are the API boundary.
 
-## Design Documents
+## Documentation map
 
-See [`docs/`](docs/) for the full design documents:
-- [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — comprehensive project plan with data models, file organization, container setup, CLI spec
-- [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infrastructure analysis and Phase 2 integration strategy
+- [`docs/adr/`](docs/adr/) — 11 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation
+- [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — comprehensive Phase 1 design
+- [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infra plan + Phase 2 integration
 
-## Principles
-
-- **Provenance is sacred** — every piece of data must be traceable back to its source URL
-- **Deterministic IDs** — same input always produces same output, enables safe re-runs
-- **Conditional requests** — be polite to sternpinball.com, don't re-download unchanged files
-- **Catalog as contract** — `catalog.json` is the API boundary between Phase 1 (scraper) and Phase 2 (RAG)
-- **Hobby project** — keep it simple, no over-engineering, but do it right
+Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_03.md` (despite the name, includes the 2026-05-04 continuation through PR #63).
 
 ## PR self-audit (pre-push, BLOCKING)
 
