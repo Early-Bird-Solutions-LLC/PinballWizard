@@ -12,7 +12,7 @@ Every guardrail in this doc exists to keep these seven goals in alignment. If a 
 
 1. **Showcase outcome.** A prospect can land on the repo and/or `pinwiz.ai`, in 10 minutes, form a confident view that Earlybird Solutions can architect, build, ship, and operate enterprise-class AI solutions.
 2. **Quality bar.** Every artifact (code, test, doc, infra, commit, PR, deploy) holds up under senior-IC and senior-architect scrutiny.
-3. **Cost ceiling.** $300–$400/month steady-state, anomaly alarm at $300.
+3. **Cost ceiling.** $300–$400/month steady-state, anomaly alarm at $300. Implemented at the infrastructure level via the two-tier Bicep deploy gate per [ADR-0013](adr/0013-two-tier-bicep-deploy.md).
 4. **Politeness invariants.** Non-negotiable, visibly enforced in code, never traded for performance or completeness.
 5. **Provenance.** Every Wizard answer carries clickable citations end-to-end; no decoupling between answer and source.
 6. **Personal-account constraint.** Never linked to work tooling, identity, data, or infrastructure. Personal Earlybird Azure subscription only; personal-noreply git identity only.

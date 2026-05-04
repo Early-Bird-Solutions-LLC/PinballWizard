@@ -83,11 +83,9 @@ Schema CRUD (databases, containers, partition keys, throughput) goes through ARM
 - CLI consumes Aspire-injected `ConnectionStrings:cosmos` when present; falls back to standalone scraper-only mode otherwise. Cosmos / OPDB / Cosmos-backed politeness DI is gated on `ConnectionStrings:cosmos` OR `Cosmos:AccountEndpoint` presence.
 - `PinballWizard.ServiceDefaults` exposes shared OTel + service discovery + standard HTTP resilience + `/healthz` + `/alive`.
 
-### Infrastructure deploy (Bicep, two-tier — see PR #56)
+### Infrastructure deploy (Bicep, two-tier — see [ADR-0013](docs/adr/0013-two-tier-bicep-deploy.md))
 
-- **Phase 1 (default):** Cosmos serverless + Log Analytics + Cosmos diagnostics. ~free idle, pay-per-RU.
-- **Phase 2 (gated on `deployPhase2 = true`):** App Insights + Key Vault + ACR + AI Search Basic + Azure OpenAI + Storage with blob containers + dev RBAC. Provisioned only when consuming features land. Budget cap **$300–$400/mo** total — see `project_phase2_architecture_decisions.md`.
-- Deploy script: `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev [-WhatIf]`. Outputs include `cosmosAccountEndpoint`, `cosmosAccountResourceId`, etc. — captured to stdout.
+Bicep is split into two tiers gated by `deployPhase2 bool = false`. Phase 1 (default) provisions Cosmos serverless + Log Analytics + Cosmos diagnostics (~$30/mo idle). Phase 2 (`deployPhase2 = true`) adds App Insights, Key Vault, ACR, AI Search Basic, Azure OpenAI, Storage + blob containers, and developer RBAC (~$120/mo additional idle). Phase 2 ships when consuming features land, not preemptively. Full per-tier resource list, alternatives considered, and the destructive-toggle warning live in [ADR-0013](docs/adr/0013-two-tier-bicep-deploy.md). Deploy script: `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev [-WhatIf]`; outputs include `cosmosAccountEndpoint`, `cosmosAccountResourceId`, etc. (captured to stdout).
 
 ## Tech Stack
 

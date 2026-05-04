@@ -23,6 +23,7 @@ negative) it carries.
 | [0010](0010-personal-azure-subscription-only.md) | Personal Azure subscription only; hard guard at deploy time | Accepted |
 | [0011](0011-scraper-machine-reconciliation.md) | Manufacturer scraper data reconciles INTO OPDB-keyed Machines | Accepted |
 | [0012](0012-cosmos-arm-schema-data-plane-items.md) | Cosmos schema CRUD via ARM, item CRUD via data-plane SDK | Accepted |
+| [0013](0013-two-tier-bicep-deploy.md) | Two-tier Bicep deploy with `deployPhase2` gate | Accepted |
 
 ## Conventions
 
