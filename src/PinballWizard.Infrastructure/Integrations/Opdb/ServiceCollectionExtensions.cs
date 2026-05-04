@@ -38,6 +38,10 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(opdb.BaseUrl, UriKind.Absolute);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            // HttpClient.Timeout is the outer wall — the inner timing
+            // logic is the resilience handler's TotalRequestTimeout
+            // (configured in ServiceDefaults). Both must be generous
+            // enough for OPDB's `/api/export` bulk response.
             client.Timeout = TimeSpan.FromSeconds(opdb.HttpTimeoutSeconds);
         });
 

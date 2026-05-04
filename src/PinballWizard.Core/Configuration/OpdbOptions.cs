@@ -51,17 +51,15 @@ public sealed class OpdbOptions
     public string ApiToken { get; set; } = string.Empty;
 
     /// <summary>
-    /// Maximum number of machines fetched per page. OPDB caps this; we
-    /// pick 100 by default which matches the documented page limit.
-    /// </summary>
-    [Range(1, 1000)]
-    public int PageSize { get; set; } = 100;
-
-    /// <summary>
-    /// Per-request HTTP timeout in seconds. OPDB is generally fast but
-    /// the changelog and machines-list endpoints occasionally take a
-    /// few seconds for the largest pages.
+    /// Total HTTP timeout in seconds. Governs both the
+    /// <see cref="HttpClient.Timeout"/> on the typed OPDB client and the
+    /// <c>TotalRequestTimeout</c> on the OPDB-specific resilience handler.
+    /// OPDB's <c>/api/export</c> returns the entire machine catalog in a
+    /// single response (~2.4&#160;MB / ~2,360 records as of 2026-05-04) and
+    /// can take 30s+ when OPDB's CDN cache is cold or rate-limiting is in
+    /// effect; defaulting to 120s gives reasonable headroom while still
+    /// bounding hung calls.
     /// </summary>
     [Range(5, 600)]
-    public int HttpTimeoutSeconds { get; set; } = 60;
+    public int HttpTimeoutSeconds { get; set; } = 120;
 }

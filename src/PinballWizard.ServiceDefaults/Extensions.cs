@@ -49,7 +49,26 @@ public static class Extensions
 
         builder.Services.ConfigureHttpClientDefaults(http =>
         {
-            http.AddStandardResilienceHandler();
+            // The standard handler's defaults are aimed at typical
+            // service-to-service calls (30s total / 10s per attempt).
+            // PinballWizard hits two classes of endpoint that exceed
+            // those budgets: bulk catalog APIs (OPDB `/api/export`
+            // returns ~2.4 MB / ~2,360 records in one response and can
+            // take 30s+ when the upstream cache is cold) and Vue.js
+            // pages that wait for `networkidle` (Stern's game pages
+            // routinely take 15–25s). Bumping the defaults to 120s
+            // total / 50s per attempt gives both classes headroom while
+            // still bounding hung calls. Per-client overrides remain
+            // possible if a future endpoint needs different bounds.
+            http.AddStandardResilienceHandler(options =>
+            {
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(120);
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(50);
+                // Circuit breaker sampling duration must be >= 2 * AttemptTimeout
+                // (asserted by HttpStandardResilienceOptions.Validate). Default
+                // is 30s and would fail validation when AttemptTimeout > 15s.
+                options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(120);
+            });
             http.AddServiceDiscovery();
         });
 

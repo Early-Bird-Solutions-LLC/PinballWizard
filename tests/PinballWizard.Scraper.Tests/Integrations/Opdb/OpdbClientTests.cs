@@ -11,9 +11,10 @@ using Xunit;
 namespace PinballWizard.Scraper.Tests.Integrations.Opdb;
 
 /// <summary>
-/// Unit tests for <see cref="OpdbClient"/>: paging behavior, auth
-/// header application, single-machine 404 → null behavior. Routes
-/// through a stub <see cref="HttpMessageHandler"/> — no live network.
+/// Unit tests for <see cref="OpdbClient"/>: <c>/api/export</c> stream
+/// behavior, auth header application, single-machine 404 → null
+/// behavior. Routes through a stub <see cref="HttpMessageHandler"/> —
+/// no live network.
 /// </summary>
 public sealed class OpdbClientTests : IDisposable
 {
@@ -44,7 +45,6 @@ public sealed class OpdbClientTests : IDisposable
         {
             BaseUrl = "https://opdb.org/api/",
             ApiToken = "test-token",
-            PageSize = 2,
         });
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);
@@ -57,11 +57,15 @@ public sealed class OpdbClientTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamAllMachinesAsync_PagesUntilEmptyResponse()
+    public async Task StreamAllMachinesAsync_HitsExportEndpoint_NotPaginatedMachines()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=2", JsonArray(MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB")));
-        _handler.SetResponseFor("/api/machines?page=2&page_size=2", JsonArray(MachineJson("CCC-CCCCC")));
-        // No page 3 response — defaults to empty list
+        // Pins the corrected endpoint after the Item 4 hand-off finding
+        // (DL-0003): the live OPDB API returns 404 on /api/machines?page=...
+        // but 200 on /api/export. If a future refactor reaches for paging
+        // again, this test fails because no /api/machines?... response is
+        // stubbed and the export response is what /api/export expects.
+        _handler.SetResponseFor("/api/export",
+            JsonArray(MachineJson("AAA-AAAAA"), MachineJson("BBB-BBBBB"), MachineJson("CCC-CCCCC")));
 
         var collected = new List<OpdbMachineDto>();
         await foreach (var m in _client.StreamAllMachinesAsync(CancellationToken.None))
@@ -71,12 +75,30 @@ public sealed class OpdbClientTests : IDisposable
 
         Assert.Equal(3, collected.Count);
         Assert.Equal(["AAA-AAAAA", "BBB-BBBBB", "CCC-CCCCC"], collected.Select(m => m.OpdbId));
+
+        // Exactly one request — no pagination.
+        Assert.Single(_handler.Requests);
+        Assert.Equal("/api/export", _handler.Requests[0].RequestUri!.PathAndQuery);
+    }
+
+    [Fact]
+    public async Task StreamAllMachinesAsync_EmptyArray_YieldsNothing()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray());
+
+        var count = 0;
+        await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
+        {
+            count++;
+        }
+
+        Assert.Equal(0, count);
     }
 
     [Fact]
     public async Task StreamAllMachinesAsync_AppliesBearerToken()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=2", JsonArray());
+        _handler.SetResponseFor("/api/export", JsonArray());
 
         await foreach (var _ in _client.StreamAllMachinesAsync(CancellationToken.None))
         {

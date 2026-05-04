@@ -772,6 +772,7 @@
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Http": "[10.0.7, )",
+          "Microsoft.Extensions.Http.Resilience": "[10.5.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.7, )",

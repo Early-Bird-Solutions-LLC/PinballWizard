@@ -2,6 +2,15 @@
 
 *Researched 2026-05-01 against .NET 10 / Microsoft docs as of 2026-03-30.*
 
+> **Status (2026-05-04): research, not adopted as-is.** What actually shipped under `ServiceDefaults.AddServiceDefaults` is `AddStandardResilienceHandler` registered globally via `ConfigureHttpClientDefaults`, not the per-client custom `AddResilienceHandler` pipeline this doc recommends in the TL;DR. The standard handler's defaults were bumped from `30s/10s` (total/attempt) to `120s/50s` with `CircuitBreaker.SamplingDuration = 120s` to accommodate two endpoint classes that exceed the original Microsoft-default budgets:
+>
+> - OPDB `/api/export` — bulk catalog response (~2.4 MB / ~2,360 records as of 2026-05-04); cold-cache responses can take 30s+. See `decision-log.md` DL-0003.
+> - Stern Vue.js game / bulletin pages — `networkidle` waits routinely take 15–25s.
+>
+> **Consequence for `FileDownloader` (still has `client.Timeout = 300s`):** the per-attempt cap is now `50s` (was `10s` under the standard-handler default — strictly an improvement). The total-request budget is now `120s` (vs. the `300s` HttpClient outer wall — that wall is now soft-capped). For the file sizes Phase 1 actually downloads (most PDFs < 20 MB), `120s` is comfortably sufficient. If a future Phase surfaces 50 MB+ payloads, the right move is the per-client custom pipeline this research originally recommended (then we get to delete the global override). Until that surfaces, the global bump is the simplest fix that keeps both classes happy.
+>
+> The original recommendation below is preserved unchanged as the future-state direction; come back to it when per-client resilience tuning becomes necessary.
+
 ## TL;DR
 
 **Use `Microsoft.Extensions.Http.Resilience` v10.4.0 with a custom pipeline via `AddResilienceHandler(...)`** (not `AddStandardResilienceHandler` — its defaults are tuned for enterprise outbound calls and are wrong for a polite single-host scraper). Configure two strategies only: a per-host concurrency limiter (1–2) and a Polly retry strategy with exponential backoff + jitter and a `Retry-After`-aware delay. Skip circuit breaker, total-request timeout, and hedging — they are dead weight or actively harmful for this workload. Delete `IsRetryableStatus` / `IsRetryableException` / `ComputeDelay` / `TryGetRetryAfterMs` from `FileDownloader` after migration; the package replaces them.

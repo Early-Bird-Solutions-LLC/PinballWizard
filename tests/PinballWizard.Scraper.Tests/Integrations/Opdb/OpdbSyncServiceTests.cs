@@ -50,7 +50,6 @@ public sealed class OpdbSyncServiceTests : IDisposable
         {
             BaseUrl = "https://opdb.org/api/",
             ApiToken = "test-token",
-            PageSize = 100,
         });
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);
@@ -65,7 +64,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_NewMachine_InsertsAndCounts()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
 
@@ -86,7 +85,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_ExistingMachine_MergesAndUpdates()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var existing = new Machine
@@ -122,7 +121,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
             is_machine = false,
             manufacturer = new { manufacturer_id = 1, name = "Stern" },
         });
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", $"[{nonMachine}]");
+        _handler.SetResponseFor("/api/export", $"[{nonMachine}]");
 
         var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
@@ -138,7 +137,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunNewMachine_ProjectsInsertWithoutUpserting()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
 
@@ -165,7 +164,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_ApplyMode_RecordsSuccessfulRunResultOnIngestionSource()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
             MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
 
@@ -186,7 +185,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunMode_DoesNotRecordRunResultOnIngestionSource()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
@@ -203,7 +202,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_RecordRunResultThrows_DoesNotMaskOriginalSyncSuccess()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
@@ -230,7 +229,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // LastRunAt advances. This is the load-bearing assertion for the
         // most operationally important code path — operators look at the
         // dashboard precisely when runs are failing.
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var simulatedFailure = new InvalidOperationException("simulated cosmos read failure");
@@ -261,7 +260,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     [Fact]
     public async Task SyncAsync_DryRunExistingMachine_ProjectsUpdateWithoutUpserting()
     {
-        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+        _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
 
         var existing = new Machine

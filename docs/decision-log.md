@@ -54,6 +54,22 @@ The pattern's ERE validity check (sanitization.yml:109 — `printf '' \| grep -E
 
 **Related:** `.github/workflows/sanitization.yml` lines 87–119 (the rule definitions), `feedback_personal_identity_only.md` (the policy these rules enforce), `build-spec.md` Phase 2 § Hand-off outcomes (Item 9 status). PR #77 (the abandoned synthetic-commit attempt — closed without merge after the leak was caught; commits remain in GitHub reflog for ~90 days).
 
+## 2026-05-04 — OPDB integration uses `/api/export`, not paginated `/api/machines`
+
+**Decision:** `OpdbClient.StreamAllMachinesAsync` issues a single GET to `/api/export` and stream-parses the response array via `JsonSerializer.DeserializeAsyncEnumerable<OpdbMachineDto>`. The previously-shipped paginated implementation against `/api/machines?page=...&page_size=...` is removed, along with the now-unused `OpdbOptions.PageSize` property. The standard HTTP resilience handler in `ServiceDefaults` is bumped from 30s/10s (total/attempt) to 120s/50s with a 120s circuit-breaker sampling duration to accommodate the bulk-response endpoint.
+
+**Alternatives considered:**
+
+- Keep paginated `/api/machines?page=...` (PR `d9face6`'s shape). Rejected: the live OPDB API returns 404 on this URL — the endpoint does not exist. The PR `d9face6` unit tests pinned a self-defined contract (`SetResponseFor("/api/machines?page=1...")`) that the real API never honored; tests passed against a fiction.
+- Use `/api/changelog` for incremental sync. Rejected for v1: changelog is incremental (recent changes only) and tracking watermarks adds complexity. `/api/export` is simpler and idempotent, fitting Phase 1's "full re-sync each run" semantics. Changelog is a Phase 4+ optimization candidate when the scraper graduates from cron-driven to event-driven.
+- Per-client resilience override on `HttpStandardResilienceOptions` named `"OpdbClient-standard"`. Tried, did not take effect — the named-options key the standard handler uses when added via `ConfigureHttpClientDefaults` does not match the per-client name in the obvious way. Bumping the global default in `ServiceDefaults` is the simpler, deterministic fix; OPDB is not the only client that benefits (Stern Vue.js pages routinely take 15–25s with `networkidle` waits, well within the new 120s budget).
+
+**Rationale:** The Phase 2 § Scope Item 4 operational hand-off (OPDB sync against deployed Cosmos) was the first time the OPDB integration hit the live API. The bulletins/games hand-off (PR #75) had already surfaced the same failure pattern — unit tests pinning a self-defined contract that the real API doesn't honor. Same lesson; same shape of fix. The export endpoint is the canonical OPDB bulk catalog (~2.4&#160;MB / ~2,360 machines as of 2026-05-04 — note: prior build-spec estimate of "~12k machines" was off by ~5×; the actual count is ~2.4k).
+
+**Revisit when:** OPDB ships a paginated machines endpoint (would let us avoid bulk-loading the catalog on every sync), or a webhook / changelog-based incremental sync becomes the primary path (Phase 4+ event-driven RAG).
+
+**Related:** PR `d9face6` (original OPDB integration — superseded for the bulk-machines path by this decision), PR #76 (this fix). See also `OpdbClient.cs` xmldoc on `StreamAllMachinesAsync` for the Activator/streaming details and `tests/PinballWizard.Scraper.Tests/Integrations/Opdb/OpdbClientTests.cs` for the contract tests that now pin `/api/export`.
+
 ## 2026-05-04 — Stern Playwright DTOs stay as classes, not records
 
 **Decision:** `LinkRaw` (in `GamePageScraper`) and `BulletinRaw` (in `ServiceBulletinScraper`) — the DTO types Playwright deserializes `page.EvaluateAsync<T>()` results into — are `internal sealed class` with `[JsonPropertyName] public T Foo { get; set; }` properties. They are explicitly **not** positional records.
