@@ -22,4 +22,15 @@ public interface IIngestionSourceRepository : IRepository<IngestionSource>
     /// to run on a scheduled invocation.
     /// </summary>
     IAsyncEnumerable<IngestionSource> StreamEnabledAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Records a sync-run result against the source's accumulators:
+    /// updates <c>LastRunAt</c>; sets <c>LastSuccessAt</c> when
+    /// <see cref="IngestionSourceRunResult.Succeeded"/> is true (preserves
+    /// pre-existing <c>LastSuccessAt</c> on failure); accumulates into
+    /// <c>TotalDocumentsDiscovered</c>; increments <c>TotalRunFailures</c>
+    /// on a failed run. No-ops with a logged warning if the source isn't
+    /// seeded yet (so a run against an unknown source doesn't abort).
+    /// </summary>
+    Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken);
 }

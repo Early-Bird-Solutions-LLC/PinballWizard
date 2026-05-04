@@ -12,10 +12,13 @@ public sealed class IngestionSourceRepository : CosmosRepository<IngestionSource
 {
     private const string ConfigPartition = "config";
 
+    private readonly ILogger<IngestionSourceRepository> _logger;
+
     /// <summary>Initializes a new repository wrapping the <c>ingestion_sources</c> container.</summary>
     public IngestionSourceRepository(Container container, ILogger<IngestionSourceRepository> logger)
         : base(container, logger)
     {
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -33,4 +36,38 @@ public sealed class IngestionSourceRepository : CosmosRepository<IngestionSource
             parameters: null,
             partitionKey: ConfigPartition,
             cancellationToken: cancellationToken);
+
+    /// <inheritdoc />
+    public async Task RecordRunResultAsync(
+        string sourceId,
+        IngestionSourceRunResult result,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceId);
+        ArgumentNullException.ThrowIfNull(result);
+
+        var existing = await GetByIdAsync(sourceId, ConfigPartition, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            _logger.LogWarning(
+                "RecordRunResultAsync: ingestion source '{SourceId}' not found in Cosmos. " +
+                "The seeder may not have run; skipping the write-back rather than failing the sync. " +
+                "Re-run --seed-ingestion-sources to populate the missing entry.",
+                sourceId);
+            return;
+        }
+
+        existing.LastRunAt = result.RunAt;
+        if (result.Succeeded)
+        {
+            existing.LastSuccessAt = result.RunAt;
+        }
+        else
+        {
+            existing.TotalRunFailures++;
+        }
+        existing.TotalDocumentsDiscovered += result.DocumentsDiscovered;
+
+        await UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
 }
