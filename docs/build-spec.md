@@ -27,7 +27,7 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | --- | --- | --- |
 | 0 | Foundation — Clean Architecture, IaC, Aspire, Cosmos provisioning, workflow infrastructure | ✅ Complete |
 | 1 | Content ingestion pipeline — 8 manufacturers + OPDB, polite-by-construction, shared helpers, test infra | ✅ Complete |
-| 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | 🟡 In progress |
+| 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
 | 3 | AI & Integration layer — Semantic Kernel router, sub-agents, threshold-driven refusal, evaluation harness, external API clients (Pinball Map, IFPA, PinballPrices) | ⏳ Not started |
 | 4 | Event-driven RAG — Cosmos Change Feed Function, PdfPig text extraction, page-aware chunking, embedding, AI Search index + facets, citation-accuracy eval | ⏳ Not started |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
@@ -193,7 +193,7 @@ None — this is the foundation phase.
 
 ## Phase 2 — Runtime validation
 
-**Status:** 🟡 In progress
+**Status:** ✅ Complete (2026-05-04 — code work; operational hand-offs deferred per § Retrospective)
 **Sequence position:** Last validation phase before Phase 3 (AI / Integration) and Phase 4 (RAG) work begins. Builds on Phase 0 (deployed Cosmos foundation) and Phase 1 (10 ISourceScrapers). Phase 3 / 4 / 5 each provision their own Phase 2 Bicep resources when their consuming features land.
 **Demonstrable artifact:** Deployed Cosmos in the personal Earlybird subscription with the `ingestion_sources` container seeded (one document per registered scraper) and the OPDB machine catalog (~12k machines) upserted into the `machines` container via the data-plane SDK with AAD authentication. Operational metrics for the OPDB sync run (request count, duration, RU consumption, error rate) emitted through OpenTelemetry and visible in Log Analytics. Two formal ADRs (0012, 0013) promote the load-bearing locked invariants from CLAUDE.md / memory into the canonical ADR record. Two known-stale items (Playwright 1.12.0, Dependabot deprecated-path PRs) closed; Stern Playwright scraper-pipeline test asymmetry resolved one way or the other (built or permanently documented).
 
@@ -353,6 +353,37 @@ Phase-specific risks (cross-cutting risks live in `guardrails.md` § Risk regist
 | P2-R6 | OTel instrumentation conflicts with `ServiceDefaults` pattern when Phase 3 lands | Confirm `ServiceDefaults` exposes the right OTel hooks before instrumenting; if not, factor cleanly so Phase 3 inherits the pattern |
 | P2-R7 | `--seed-ingestion-sources` CLI command becomes another piece of dead config if no test exercises it end-to-end | Idempotency test (run twice, assert no diff); behavior test against `IIngestionSourceRepository` covering insert + idempotent update paths |
 | P2-R8 | "Document the asymmetry" route ((ii)) for Stern Playwright tests is taken without a documentation-pinning test, the README rots, the asymmetry becomes invisible again | If (ii) chosen, the documentation-pinning test (`Stern_Playwright_Pipeline_Test_Asymmetry_IsAcknowledged`) is non-optional; without it the resolution doesn't qualify as "resolved" |
+
+### Retrospective
+
+Phase 2 shipped 10 PRs across 3 waves between 2026-05-04 (Wave 1 launch) and 2026-05-04 (Wave 3 close — single-day pace, owed to the substantive prep work in the spec system). PR sequence: #65 (ADR-0012), #66 (ADR-0013), #67 (parallelism plan), #68 (work-email denylist), #69 (seed `ingestion_sources`), #70 (Stern asymmetry), #71 (OPDB `--dry-run` code), #72 (Playwright records revert), #73 (OTel groundwork), plus the gh-action-only #11/#12/#13/#16 closes (deprecated-path Dependabots) and the in-flight #5/#6/#7/#8/#9 merges (clean GitHub Actions bumps). Test count: 507 (Phase 2 entry) → 533 (Phase 2 exit), +26 over the phase.
+
+**The audit gates earned their keep, repeatedly.** `/local-review` caught a real 🔴 finding on every substantive code PR:
+
+- **PR #69** (seed manifest) — caught the **CGC manufacturer-key drift**: the manifest used `"chicagogaming"` for both `id` and `scraperImplKey`, but the canonical key everywhere else (`ScraperManufacturerKey`, `OpdbMachineMapper` normalization, `ScraperOrchestrator.SourceAliases`, the `--source cgc` CLI alias) is `"cgc"`. Fixed pre-push.
+- **PR #71** (OPDB `--dry-run`) — caught the **boolean-trap signature**: `bool dryRun` would be opaque at every call site. Refactored to `OpdbSyncMode { Apply, DryRun }` enum pre-push, since the interface change was breaking that PR anyway.
+- **PR #72** (Playwright records revert) — caught the **Href nullability lie**: a positional record with `string Href` doesn't match System.Text.Json's missing-field semantics (STJ assigns `null`, not `""`); tightened to `string?` and added a 6-test deserialization pin so JsonPropertyName typos surface at build time, not as "0 results discovered" against the live site.
+- **PR #73** (OTel groundwork) — caught the **missing failure-path test**: the most operationally important code path (failed runs are when operators check the dashboard) had no coverage. Added a test using `NSubstitute.ThrowsAsync` to exercise the catch + finally path.
+
+**The Wave 1 audit-gap on PR #68 was a process failure**, surfaced and recovered. I rationalized the work-email denylist as "workflow YAML, not C# code" and skipped `/local-review`, then ran it retroactively when challenged. The retroactive review caught a real ⚠️ (grep exit-2 silent swallow on a malformed regex pattern) that landed as a follow-up commit before merge. Lesson: **the audit-skip carve-out is for doc-only PRs and pure dependency bumps. CI workflow changes that add new behavior count as additive code; run the audit.** This lesson is now baked into `feedback_pr_links_explicit.md` (the user-feedback memory written immediately after) and the `/local-review` skill's "When to invoke" section.
+
+**Item 6 (Playwright bump) collapsed scope-wise during execution.** The package version had already been bumped to 1.59.0 in PR #61 (`feat(deps) bump all NuGet packages to latest stable`) during Phase 0 deploy-iteration; Wave 2's "scope item 6" reduced to the records-workaround revert. Build-spec was updated in PR #72 to reflect this; lesson for future phases: re-verify the build-spec assumptions against the actual repo state when starting a wave, not just at phase entry.
+
+**Operational hand-offs deferred (functional Phase 2 close vs. live-validated Phase 2 close).** Three operational tasks intentionally fall outside this phase's PR scope:
+
+1. **Item 4 — OPDB sync against deployed Cosmos.** Set `Cosmos__AccountEndpoint` + `Cosmos__AccountResourceId` + `Opdb__BaseUrl` + `Opdb__ApiToken` (PowerShell, not Git-Bash); run `--source opdb --dry-run` for projection; inspect output; run `--source opdb` for real; verify ~12k machines in Cosmos `machines` container with full provenance.
+2. **Item 6 — Stern Playwright live-site validation.** Run `--source games` and `--source bulletins` against `sternpinball.com`; confirm non-zero `ScrapedItem` yields; spot-check provenance fields. The records revert is best-effort verified by the build + 6 STJ deserialization tests; the live-site validation is the final check.
+3. **Item 9 — Work-email denylist secret + synthetic-token verification.** Set `WORK_EMAIL_PATTERN` repo secret in Settings → Secrets and variables → Actions; push two synthetic test commits (one with the work-email pattern, one with the personal-email pattern); confirm both fail CI on the corresponding sanitization rule; delete the throwaway branches.
+
+Each hand-off, when executed, gets captured as a comment on this Retrospective (or a follow-up entry in `decision-log.md`) so the operational evidence joins the code evidence in the project record.
+
+**Patterns established in Phase 2 that Phase 3 / 4 / 5 inherit:**
+
+- **`PinballWizardTelemetry`** as the single project-wide Meter + ActivitySource. Phase 3 / 4 / 5 services add their counters / activities under `pinwiz.<domain>.<operation>.<measure>` rather than creating per-domain Meters. Documented in `docs/observability.md`.
+- **`IngestionSourceIds`** as the single source of truth for source-id literals. Phase 3 manufacturer scrapers add constants here; the seed manifest references the same values.
+- **`IIngestionSourceRepository.RecordRunResultAsync(sourceId, result, ct)`** as the per-run write-back pattern. Apply-mode runs record; dry-run skips; cancellation skips. Documented in `docs/observability.md` § "IngestionSource write-back".
+- **The boolean-trap-to-enum refactor pattern** when interface changes are already breaking. Future scope items that propose `bool xMode` parameters should default to enum from the start.
+- **`InternalsVisibleTo` for test-pinning of internal types**. PR #72 introduced this for `LinkRaw` / `BulletinRaw` STJ deserialization tests; Phase 3 / 4 / 5 services that need to pin internal contracts inherit the pattern.
 
 ---
 
