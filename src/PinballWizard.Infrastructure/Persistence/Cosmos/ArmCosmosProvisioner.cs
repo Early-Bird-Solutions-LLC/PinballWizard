@@ -61,8 +61,15 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
         ArgumentNullException.ThrowIfNull(containers);
 
-        _logger.LogInformation("Ensuring Cosmos database '{Database}' via ARM at {AccountResourceId}.",
-            databaseName, _accountResourceId);
+        // Log only the account name, not the full ARM resource ID (which
+        // includes the subscription ID + resource group). The subscription ID
+        // is a public identifier per ADR 0010, but log telemetry is shared
+        // more broadly than this repo (App Insights / Log Analytics) and
+        // CodeQL flags ResourceId-substring values as a sensitive-data
+        // smell. The account name is sufficient for the operator-facing
+        // diagnostic.
+        _logger.LogInformation("Ensuring Cosmos database '{Database}' via ARM on account '{AccountName}'.",
+            databaseName, _accountResourceId.Name);
 
         var account = _armClient.GetCosmosDBAccountResource(_accountResourceId);
         var databases = account.GetCosmosDBSqlDatabases();
