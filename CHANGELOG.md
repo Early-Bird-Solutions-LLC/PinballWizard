@@ -9,6 +9,73 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Changed
+
+- **`CosmosBootstrapper` schema CRUD routes through ARM, not the
+  data plane (supersedes PR #62).** PR #62 attempted to fix the
+  `--ensure-cosmos-containers` 403 against deployed Cosmos by
+  defining a custom Cosmos data-plane role with the wildcard
+  `Microsoft.DocumentDB/databaseAccounts/sqlDatabases/*`. Azure
+  rejected the deploy with "the provided data action string does
+  not correspond to any valid SQL data action" — confirming that
+  Cosmos's data-plane RBAC genuinely does NOT model
+  schema-mutation actions, regardless of role definition. PR #62
+  was therefore non-functional code in `main`; the deploy never
+  actually applied.
+  This PR re-architects schema bootstrap to use Azure Resource
+  Manager (the management plane) instead of attempting to extend
+  data-plane RBAC. New abstractions in
+  `PinballWizard.Infrastructure.Persistence.Cosmos`:
+  `ICosmosProvisioner` (single method, ensures database +
+  containers), `ArmCosmosProvisioner` (uses
+  `Azure.ResourceManager.CosmosDB` against the management
+  endpoint; required for deployed Cosmos), and
+  `DataPlaneCosmosProvisioner` (uses the existing
+  `Microsoft.Azure.Cosmos` SDK; works for the Aspire preview
+  emulator where the master-key connection string permits
+  data-plane schema CRUD). `CosmosBootstrapper` now delegates to
+  the provisioner; the runtime selection happens in
+  `AddCosmosPersistence` based on whether
+  `Cosmos:AccountResourceId` is set (ARM path) or absent
+  (data-plane path).
+  Bicep changes: PR #62's invalid `cosmosDeveloperRole` resource
+  is removed; the role assignment reverts to the well-known
+  `Cosmos DB Built-in Data Contributor`
+  (`00000000-0000-0000-0000-000000000002`), which is correct for
+  runtime data-plane operations (item CRUD, query, change feed —
+  what `MachineRepository` / `IngestionSourceRepository` /
+  `OpdbSyncService` actually exercise). The developer's
+  subscription Owner inheritance covers ARM in dev; the
+  production runtime principal will need `Cosmos DB Operator`
+  (`230815da-be43-4aae-9cb4-875f7bd000aa`) at account scope when
+  Phase 2 ships.
+  New configuration: `Cosmos:AccountResourceId` (`string?`).
+  Source it from the Bicep output `cosmosAccountResourceId` and
+  set as `Cosmos__AccountResourceId` env var alongside
+  `Cosmos__AccountEndpoint` for deployed-Cosmos workflows. README
+  gains a "Running against deployed Cosmos" subsection
+  documenting the dual env-var dance.
+  Re-deploy: `pwsh ./infra/scripts/Deploy-SharedResources.ps1
+  -Environment dev` (rolls back PR #62's broken role definition;
+  the original built-in role assignment from PR #60 is preserved
+  since it never actually changed in Azure — the PR #62 deploy
+  failed mid-flight). Then: set both env vars and re-run
+  `--ensure-cosmos-containers`.
+  Bicep also exposes the new `cosmosAccountResourceId` output
+  (passed through from `modules/shared.bicep` to the
+  subscription-scoped `main-shared.bicep`) so operators can copy
+  the value into `$env:Cosmos__AccountResourceId` after deploy
+  without needing the `az cosmosdb show ... --query id` lookup
+  the README documents as a manual fallback.
+  Tests: 503 → 507 (`CosmosProvisionerSelectionTests` covers
+  ARM-vs-data-plane provisioner registration based on
+  `AccountResourceId` presence, plus a friendly-error test that
+  pins the remediation message when an operator pastes the
+  `documentEndpoint` URL into `Cosmos:AccountResourceId` instead
+  of the ARM resource ID).
+  Pre-push self-audit: `/local-review` (results recorded in PR
+  description) plus the 7-item mechanical checklist (all pass).
+
 ### Fixed
 
 - **Cosmos data-plane developer role now permits database/container

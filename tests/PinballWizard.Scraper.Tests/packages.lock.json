@@ -143,6 +143,23 @@
           "Azure.Core": "1.53.0"
         }
       },
+      "Azure.ResourceManager": {
+        "type": "Transitive",
+        "resolved": "1.13.2",
+        "contentHash": "+jFLIfQgrVjxMpFClUBS8/zPLiRMJ49UgdkrFH/wU74DCABmZs71n1K9sq6MuAz6hR0wJJsDP4Pxaz0iVwyzVg==",
+        "dependencies": {
+          "Azure.Core": "1.47.1"
+        }
+      },
+      "Azure.ResourceManager.CosmosDB": {
+        "type": "Transitive",
+        "resolved": "1.4.0",
+        "contentHash": "iiFabxRmYIQ6nMhztYDCdlqrx/2fADfMR9zWChICw9bqxGFhU3S0FvuPcVkm549GYP1NwoVTIJYU3e5/Ssgang==",
+        "dependencies": {
+          "Azure.Core": "1.50.0",
+          "Azure.ResourceManager": "1.13.2"
+        }
+      },
       "Castle.Core": {
         "type": "Transitive",
         "resolved": "5.1.1",
@@ -732,6 +749,7 @@
         "dependencies": {
           "AngleSharp": "[1.4.0, )",
           "Azure.Identity": "[1.21.0, )",
+          "Azure.ResourceManager.CosmosDB": "[1.4.0, )",
           "Microsoft.Azure.Cosmos": "[3.59.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
