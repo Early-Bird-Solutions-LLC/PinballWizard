@@ -194,11 +194,12 @@ public sealed class IngestionSourceSeederTests : IDisposable
 
     // ── Production manifest sanity check ─────────────────────────────────
     // Pins that the actual data/seeds/ingestion_sources.v1.json deserializes
-    // and contains the 9 expected manufacturer entries. Catches manifest
-    // edits that break the schema before they ship.
+    // and contains the expected entries. Catches manifest edits that break
+    // the schema before they ship. Phase 3 Wave 1 added "pinballmap" as
+    // the 10th entry.
 
     [Fact]
-    public void ProductionManifest_DeserializesCleanlyAndContainsNineEntries()
+    public void ProductionManifest_DeserializesCleanlyAndContainsExpectedEntries()
     {
         var repoRoot = FindRepoRoot();
         var manifestPath = Path.Combine(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
@@ -208,15 +209,18 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(9, seeds!.Count);
+        Assert.Equal(10, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
         // CGC stays as "cgc" — matches the existing --source cgc CLI filter.
+        // "pinballmap" is the Phase 3 Wave 1 addition (read-side API client,
+        // no ISourceScraper, no --source alias — its key is used by
+        // RecordRunResultAsync only).
         var expectedIds = new[]
         {
             "stern", "jjp", "ap", "spooky", "pinballbrothers",
-            "barrelsoffun", "multimorphic", "cgc", "opdb",
+            "barrelsoffun", "multimorphic", "cgc", "opdb", "pinballmap",
         };
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
