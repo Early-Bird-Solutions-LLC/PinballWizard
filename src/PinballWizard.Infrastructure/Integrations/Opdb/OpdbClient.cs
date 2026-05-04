@@ -54,41 +54,130 @@ public sealed class OpdbClient : PoliteScraperBase
     /// OPDB exposes the complete machine catalog via a single bulk
     /// endpoint, <c>/api/export</c>, which returns one large JSON
     /// array of every machine. There is no paginated <c>/api/machines</c>
-    /// endpoint (404 against the live API) — the original assumption
-    /// in PR <c>d9face6</c> was incorrect and surfaced by the Phase 2
-    /// Item 4 operational hand-off; see <c>docs/decision-log.md</c>
-    /// DL-0003. The response is consumed via
-    /// <see cref="JsonSerializer.DeserializeAsyncEnumerable{T}(System.IO.Stream, JsonSerializerOptions, CancellationToken)"/>
-    /// so the JSON array is streamed element-by-element rather than
-    /// fully buffered (the export is ~2.4&#160;MB / ~2,360 machines as of
-    /// 2026-05-04, comfortably small but no reason to materialize all
-    /// at once).
+    /// endpoint (404 against the live API) — see DL-0003.
+    /// <para>
+    /// Cache behavior: when <see cref="OpdbOptions.ExportCachePath"/> is
+    /// set and a fresh cache file exists (modified within
+    /// <see cref="OpdbOptions.ExportCacheTtlSeconds"/>), this method
+    /// streams from the cache instead of hitting the network. OPDB's
+    /// published policy on <c>/api/export</c> is once-per-hour; the
+    /// cache eliminates the rate-limit problem for any repeat call
+    /// within the TTL window. Cache miss: fetch + buffer + write to
+    /// disk + yield from memory. Persist failures degrade gracefully
+    /// (logged, fetch still succeeds).
+    /// </para>
     /// </remarks>
     public async IAsyncEnumerable<OpdbMachineDto> StreamAllMachinesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var sourceStream = await OpenExportStreamAsync(cancellationToken).ConfigureAwait(false);
+
+        await using (sourceStream)
+        {
+            await foreach (var dto in JsonSerializer
+                .DeserializeAsyncEnumerable<OpdbMachineDto>(sourceStream, JsonOptions, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                if (dto is not null)
+                {
+                    yield return dto;
+                }
+            }
+        }
+    }
+
+    private async Task<Stream> OpenExportStreamAsync(CancellationToken cancellationToken)
+    {
+        // Cache hit short-circuit. When the cache path is configured AND
+        // the file is fresh enough (mtime within TTL), open it for streaming
+        // and return — no network call. Disabling the cache (empty path) or
+        // setting Ttl=0 forces the network path. The mtime is set by
+        // File.WriteAllBytesAsync below on the previous fetch.
+        var cachePath = _options.ExportCachePath;
+        var ttl = TimeSpan.FromSeconds(_options.ExportCacheTtlSeconds);
+        if (!string.IsNullOrWhiteSpace(cachePath) && ttl > TimeSpan.Zero && File.Exists(cachePath))
+        {
+            var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath);
+            if (age < ttl)
+            {
+                Logger.LogInformation(
+                    "OPDB: using cached export from {Path} (age {AgeSeconds:N0}s, ttl {TtlSeconds:N0}s).",
+                    cachePath, age.TotalSeconds, ttl.TotalSeconds);
+                try
+                {
+                    return File.OpenRead(cachePath);
+                }
+                catch (IOException ex)
+                {
+                    // Cache file unreadable (locked, permission flip, etc.).
+                    // Fall through to the network path; do NOT delete the
+                    // file — the next clean fetch will overwrite it
+                    // atomically below. Logging at warning is enough.
+                    Logger.LogWarning(
+                        ex,
+                        "OPDB: cache file at {Path} could not be opened; falling back to network fetch.",
+                        cachePath);
+                }
+            }
+            else
+            {
+                Logger.LogInformation(
+                    "OPDB: cache at {Path} is stale (age {AgeSeconds:N0}s > ttl {TtlSeconds:N0}s); refetching.",
+                    cachePath, age.TotalSeconds, ttl.TotalSeconds);
+            }
+        }
+
+        // Cache miss / disabled: fetch from network, buffer, persist
+        // best-effort, return a memory stream over the buffer.
         var url = new Uri(new Uri(_options.BaseUrl, UriKind.Absolute), "export");
         Logger.LogDebug("OPDB: fetching catalog from {Url}", url);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        ApplyAuth(request);
-
-        using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        await using var stream = await response.Content
-            .ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        await foreach (var dto in JsonSerializer
-            .DeserializeAsyncEnumerable<OpdbMachineDto>(stream, JsonOptions, cancellationToken)
-            .ConfigureAwait(false))
+        byte[] bytes;
+        using (var request = new HttpRequestMessage(HttpMethod.Get, url))
         {
-            if (dto is not null)
+            ApplyAuth(request);
+            using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cachePath))
+        {
+            // Atomic write: write to a sibling `.tmp` file, then `File.Move`
+            // it into the final path with overwrite. Crashes / power loss
+            // mid-write leave the prior cache file intact; the consumer
+            // never sees a torn JSON. The .tmp file is also cleaned up if
+            // the move fails (best-effort).
+            var tmpPath = cachePath + ".tmp";
+            try
             {
-                yield return dto;
+                var dir = Path.GetDirectoryName(cachePath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                await File.WriteAllBytesAsync(tmpPath, bytes, cancellationToken).ConfigureAwait(false);
+                File.Move(tmpPath, cachePath, overwrite: true);
+                Logger.LogInformation(
+                    "OPDB: persisted export cache to {Path} ({Bytes:N0} bytes).",
+                    cachePath, bytes.Length);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Cache persist is best-effort. A write failure (path
+                // unwritable, disk full, etc.) is logged but not fatal —
+                // the caller still gets the in-memory response. Best-effort
+                // cleanup of the temp file in case the failure was at the
+                // Move step.
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ignore */ }
+                Logger.LogWarning(
+                    ex,
+                    "OPDB: failed to persist export cache to {Path}; the in-memory response is unaffected.",
+                    cachePath);
             }
         }
+
+        return new MemoryStream(bytes, writable: false);
     }
 
     /// <summary>

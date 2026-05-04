@@ -62,4 +62,35 @@ public sealed class OpdbOptions
     /// </summary>
     [Range(5, 600)]
     public int HttpTimeoutSeconds { get; set; } = 120;
+
+    /// <summary>
+    /// On-disk cache path for the <c>/api/export</c> response. Set to a
+    /// relative path under the project root (default
+    /// <c>data/cache/opdb-export.json</c>) or an absolute path for
+    /// production deployments. Empty / whitespace disables the cache —
+    /// every call hits the network. The cache stores the raw OPDB
+    /// response body verbatim; freshness is judged by file modification
+    /// time vs <see cref="ExportCacheTtlSeconds"/>.
+    /// </summary>
+    /// <remarks>
+    /// OPDB's published policy on <c>/api/export</c> is "once per hour"
+    /// (https://opdb.org/api). Re-running the sync within the hour
+    /// without a cache produces hard 429s and can cascade into a
+    /// multi-hour cooldown. The cache eliminates the rate-limit problem
+    /// for any repeat invocation within the TTL window — debug runs,
+    /// dry-runs, and applies all share the same fetch.
+    /// </remarks>
+    public string ExportCachePath { get; set; } = "data/cache/opdb-export.json";
+
+    /// <summary>
+    /// Time-to-live for the on-disk export cache, in seconds. Default
+    /// 3600 (1 hour) matches OPDB's published once-per-hour policy on
+    /// <c>/api/export</c>; setting longer is fine (the catalog rarely
+    /// changes within a day) but shorter risks tripping the rate limit.
+    /// Set to 0 to force every call to bypass the cache (the file is
+    /// still written on success, so a subsequent run with a non-zero
+    /// TTL can use it).
+    /// </summary>
+    [Range(0, 86400)]
+    public int ExportCacheTtlSeconds { get; set; } = 3600;
 }
