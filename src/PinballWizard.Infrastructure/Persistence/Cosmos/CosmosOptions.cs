@@ -30,6 +30,13 @@ public sealed class CosmosOptions
     public const string CosmosConnectionName = "cosmos";
 
     /// <summary>
+    /// Full configuration key for <see cref="AccountResourceId"/>. Exposed
+    /// alongside <see cref="AccountEndpointKey"/> so CLI hosts can
+    /// presence-check both without duplicating the section strings.
+    /// </summary>
+    public const string AccountResourceIdKey = $"{SectionName}:{nameof(AccountResourceId)}";
+
+    /// <summary>
     /// Cosmos account endpoint URL — sourced from the Bicep output
     /// <c>cosmosAccountEndpoint</c> when running against a deployed
     /// Cosmos account. Optional when an <see cref="Microsoft.Azure.Cosmos.CosmosClient"/>
@@ -40,6 +47,22 @@ public sealed class CosmosOptions
     /// </summary>
     [Url]
     public string? AccountEndpoint { get; init; }
+
+    /// <summary>
+    /// ARM resource ID of the Cosmos account, sourced from the Bicep
+    /// output <c>cosmosAccountResourceId</c>. Required when
+    /// <see cref="CosmosBootstrapper"/> runs against deployed Cosmos
+    /// because schema bootstrap (database / container CRUD) goes
+    /// through the ARM SDK — Cosmos's data-plane RBAC does not grant
+    /// schema-mutation actions, regardless of role definition.
+    /// Format:
+    /// <c>/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.DocumentDB/databaseAccounts/{name}</c>.
+    /// Leave null when running against the Aspire preview emulator —
+    /// the emulator authenticates the SDK with the master key in the
+    /// connection string, which permits data-plane schema CRUD without
+    /// any ARM round-trip.
+    /// </summary>
+    public string? AccountResourceId { get; init; }
 
     /// <summary>
     /// Database name within the account. Defaults to <c>pinwiz</c>;

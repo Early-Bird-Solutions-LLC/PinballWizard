@@ -96,6 +96,7 @@ module shared 'modules/shared.bicep' = {
 output resourceGroupName string = rg.name
 output cosmosAccountName string = shared.outputs.cosmosAccountName
 output cosmosAccountEndpoint string = shared.outputs.cosmosAccountEndpoint
+output cosmosAccountResourceId string = shared.outputs.cosmosAccountResourceId
 output logAnalyticsWorkspaceName string = shared.outputs.logAnalyticsWorkspaceName
 
 output keyVaultName string = shared.outputs.keyVaultName

@@ -11,6 +11,17 @@
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
+         CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
+         genuinely does not include `sqlDatabases/write` (and there is no valid
+         wildcard that covers it; PR #62 attempted `sqlDatabases/*` and Azure's
+         deploy-time validation rejected it as "not a valid SQL data action").
+         Schema bootstrap therefore uses ARM, which checks Azure RBAC — satisfied
+         in dev by the developer's subscription Owner inheritance and in prod by
+         the production identity holding `Cosmos DB Operator` at account scope.
+         The data-plane SDK (Microsoft.Azure.Cosmos) below remains the canonical
+         path for runtime item CRUD. -->
+    <PackageReference Include="Azure.ResourceManager.CosmosDB" Version="1.4.0" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.59.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />

@@ -84,6 +84,19 @@ dotnet run --project src/PinballWizard.Cli -- --source opdb
 
 When the CLI is run without `ConnectionStrings:cosmos` / `Cosmos:AccountEndpoint` set, Cosmos persistence and OPDB integration are skipped — the CLI falls back to the pure-scraper Phase 1 behavior, with the default per-source politeness resolver returning the global `Politeness` defaults for every host.
 
+### Running against deployed Cosmos
+
+When the CLI authenticates to a deployed Cosmos account via Managed Identity (or, in dev, your own `az login` token via `DefaultAzureCredential`), schema bootstrap (`--ensure-cosmos-containers`) goes through Azure Resource Manager — Cosmos's data-plane RBAC genuinely does NOT model schema-mutation actions, regardless of role definition. Set both env vars:
+
+```pwsh
+$env:Cosmos__AccountEndpoint   = az cosmosdb show -n <account> -g <rg> --query documentEndpoint -o tsv
+$env:Cosmos__AccountResourceId = az cosmosdb show -n <account> -g <rg> --query id              -o tsv
+
+dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers
+```
+
+`Cosmos:AccountResourceId` is the Bicep output `cosmosAccountResourceId` and selects the ARM-backed `ICosmosProvisioner` at DI-resolution time. Leave it unset for the Aspire emulator path (where the master-key connection string permits data-plane schema CRUD without ARM). The principal making the ARM call needs Azure RBAC write permissions on the account — subscription Owner inheritance covers the developer in dev; the production runtime principal needs `Cosmos DB Operator` (or equivalent) at account scope.
+
 AI Search and Azure OpenAI have no local emulator and are not part of the AppHost today; they land alongside Track D (event-driven RAG) when Phase 2 begins. Until then, the Bicep deploy is gated on the `deployPhase2` parameter (see below) so Phase 1 spend stays at ~$30/mo.
 
 ## Azure deploy — two-tier (Phase 1 / Phase 2)
