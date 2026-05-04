@@ -29,6 +29,11 @@ jobs:
 
       - name: Run sanitization scan
         shell: bash
+        env:
+          # Pattern stored as a repo secret so the actual work-email pattern
+          # never appears in this public workflow file. See the rule below
+          # and docs/build-spec.md Phase 2 § Scope item 9.
+          WORK_EMAIL_PATTERN: ${{ secrets.WORK_EMAIL_PATTERN }}
         run: |
           set -u
 
@@ -85,6 +90,33 @@ jobs:
           # email instead.
           run_rule "Personal email (jim@earlybird*)"   "-i" "jim@earlybird"
           run_rule "Personal domain (@earlybirdsolutions)" "-i" "@earlybirdsolutions"
+
+          # Work-email proactive denylist — pattern stored in the
+          # WORK_EMAIL_PATTERN repo secret so the actual pattern never
+          # appears in this public file. Skipped (with a warning, not a
+          # failure) when the secret isn't configured, so the workflow
+          # doesn't break for forks or before initial setup. To enable:
+          # repo Settings → Secrets and variables → Actions → New
+          # repository secret, name "WORK_EMAIL_PATTERN", value an
+          # ERE regex (e.g., "@workdomain\.com" or "firstname\.lastname@").
+          if [ -n "${WORK_EMAIL_PATTERN:-}" ]; then
+            # Pre-validate the pattern is a valid ERE before run_rule is
+            # invoked. grep -E exits 2 on a malformed pattern, but the
+            # `|| true` inside run_rule masks exit 2 as "no match" —
+            # silently disabling the rule. Catch malformed patterns here
+            # so a typo in the secret fails the workflow with a clear
+            # error rather than silently passing.
+            printf '' | grep -E "$WORK_EMAIL_PATTERN" >/dev/null 2>&1
+            pattern_rc=$?
+            if [ "$pattern_rc" -eq 2 ]; then
+              echo "::error title=Sanitization failure: Work email rule misconfigured::WORK_EMAIL_PATTERN is not a valid extended regex (grep -E exit 2). Re-set the secret with a valid ERE; remember to escape regex metacharacters like '.' as '\\.'."
+              fail=1
+            else
+              run_rule "Work email (secret-sourced)" "-i" "$WORK_EMAIL_PATTERN"
+            fi
+          else
+            echo "::warning title=Work email rule skipped::WORK_EMAIL_PATTERN secret not configured. Set it in repo settings to enable proactive blocking. Personal-email rules above continue to run regardless."
+          fi
 
           # Common credential / key markers (case-insensitive).
           run_rule "PEM private key header"           "-i" "BEGIN.*PRIVATE.*KEY"
