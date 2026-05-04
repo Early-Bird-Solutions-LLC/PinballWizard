@@ -11,9 +11,11 @@ public static class OpdbMachineMapper
 {
     /// <summary>
     /// Maps a single OPDB record to a <see cref="Machine"/>. Returns
-    /// null if the record is missing required fields (no OPDB ID, no
-    /// manufacturer name, or <see cref="OpdbMachineDto.IsMachine"/> is
-    /// false). Sync orchestrator counts those as "skipped".
+    /// null if the record is not a base machine (alias, missing OPDB ID,
+    /// or missing manufacturer name). Aliases (variant/LE editions) are
+    /// folded into their base machine's <see cref="Machine.Editions"/>
+    /// list by <see cref="MapToEdition"/> in a second pass. Sync
+    /// orchestrator counts non-mappable records as "skipped".
     /// </summary>
     public static Machine? Map(OpdbMachineDto dto, DateTimeOffset now)
     {
@@ -74,6 +76,73 @@ public static class OpdbMachineMapper
     }
 
     /// <summary>
+    /// Detects an OPDB alias record. OPDB aliases are variant editions
+    /// (LE / Premium / collector cuts) of a base machine; they share the
+    /// first two OPDB ID segments with their base and add a third. OPDB
+    /// flags them with <c>is_alias=true</c> and omits <c>is_machine</c>
+    /// entirely, so checking either signal independently is brittle: this
+    /// helper requires <see cref="OpdbMachineDto.IsAlias"/>=true OR a
+    /// 3-segment OPDB ID, which catches both signals.
+    /// </summary>
+    public static bool IsAlias(OpdbMachineDto dto)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        if (dto.IsAlias) return true;
+        if (string.IsNullOrWhiteSpace(dto.OpdbId)) return false;
+        return CountSegments(dto.OpdbId) >= 3;
+    }
+
+    /// <summary>
+    /// Returns the base machine's OPDB ID for an alias record by stripping
+    /// the third (alias) segment. For example,
+    /// <c>GRoz4-MrRPw-A97X1</c> → <c>GRoz4-MrRPw</c>. Returns null if the
+    /// supplied OPDB ID does not have three segments (i.e., is not an alias
+    /// in the OPDB sense).
+    /// </summary>
+    public static string? GetBaseMachineOpdbId(string aliasOpdbId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(aliasOpdbId);
+
+        var firstHyphen = aliasOpdbId.IndexOf('-', StringComparison.Ordinal);
+        if (firstHyphen < 0) return null;
+        var secondHyphen = aliasOpdbId.IndexOf('-', firstHyphen + 1);
+        if (secondHyphen < 0) return null;
+        return aliasOpdbId[..secondHyphen];
+    }
+
+    /// <summary>
+    /// Maps an alias <see cref="OpdbMachineDto"/> to a
+    /// <see cref="MachineEdition"/> suitable for appending to the base
+    /// machine's <see cref="Machine.Editions"/>. Returns null if the
+    /// alias's name is missing (no edition name to extract).
+    /// </summary>
+    /// <remarks>
+    /// Edition-name extraction strategy: aliases are conventionally named
+    /// <c>{Base Title} ({Edition Name})</c> — e.g.,
+    /// <c>"Batman 66 (Super LE)"</c>. The parenthetical suffix is the
+    /// edition name. If no parenthetical is present (rare in current OPDB
+    /// data), the full name is used as the edition name.
+    /// </remarks>
+    public static MachineEdition? MapToEdition(OpdbMachineDto alias)
+    {
+        ArgumentNullException.ThrowIfNull(alias);
+
+        var fullName = alias.Name;
+        if (string.IsNullOrWhiteSpace(fullName)) return null;
+
+        return new MachineEdition
+        {
+            Name = ExtractEditionName(fullName),
+            Description = fullName,
+            OpdbAliasId = alias.OpdbId,
+            OpdbSourceUrl = string.IsNullOrWhiteSpace(alias.OpdbId)
+                ? null
+                : $"https://opdb.org/machines/{alias.OpdbId}",
+        };
+    }
+
+    /// <summary>
     /// Merges fresh OPDB data onto an existing <see cref="Machine"/>
     /// without disturbing fields the project owns (manufacturer slugs,
     /// editions, first-seen timestamp). Used on sync upsert when a
@@ -121,5 +190,30 @@ public static class OpdbMachineMapper
     {
         var chars = raw.Where(c => char.IsLetterOrDigit(c)).ToArray();
         return chars.Length > 0 ? new string(chars) : "unknown";
+    }
+
+    private static int CountSegments(string opdbId)
+    {
+        var count = 1;
+        foreach (var c in opdbId)
+        {
+            if (c == '-') count++;
+        }
+        return count;
+    }
+
+    private static string ExtractEditionName(string fullName)
+    {
+        // OPDB convention: "{Base Title} ({Edition Name})". Take the inner
+        // text of the *last* parenthesized group — covers titles that
+        // themselves contain parens (rare but seen in the catalog).
+        var openIdx = fullName.LastIndexOf('(');
+        var closeIdx = fullName.LastIndexOf(')');
+        if (openIdx >= 0 && closeIdx > openIdx + 1)
+        {
+            var inner = fullName[(openIdx + 1)..closeIdx].Trim();
+            if (!string.IsNullOrWhiteSpace(inner)) return inner;
+        }
+        return fullName.Trim();
     }
 }

@@ -179,4 +179,117 @@ public sealed class OpdbMachineMapperTests
         Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
         ManufactureDate = manufactureDate,
     };
+
+    // ── Alias detection / base-id extraction / edition mapping ──────────
+
+    [Theory]
+    [InlineData("GRoz4-MrRPw-A97X1", true)]   // 3-segment OPDB ID
+    [InlineData("G50L9-MDxXD", false)]         // 2-segment (base machine)
+    [InlineData("PARTIAL", false)]             // No hyphens (degenerate)
+    public void IsAlias_ByOpdbIdSegmentCount_ClassifiesCorrectly(string opdbId, bool expected)
+    {
+        var dto = new OpdbMachineDto { OpdbId = opdbId, IsMachine = true };
+        Assert.Equal(expected, OpdbMachineMapper.IsAlias(dto));
+    }
+
+    [Fact]
+    public void IsAlias_IsAliasFlag_OverridesSegmentCount()
+    {
+        // OPDB sometimes flags an alias with is_alias=true even on a
+        // 2-segment ID (rare but possible). Honor the flag.
+        var dto = new OpdbMachineDto { OpdbId = "GRBN-MQR4P", IsAlias = true };
+        Assert.True(OpdbMachineMapper.IsAlias(dto));
+    }
+
+    [Fact]
+    public void IsAlias_MissingOpdbId_NotAnAlias()
+    {
+        var dto = new OpdbMachineDto { IsMachine = true };
+        Assert.False(OpdbMachineMapper.IsAlias(dto));
+    }
+
+    [Theory]
+    [InlineData("GRoz4-MrRPw-A97X1", "GRoz4-MrRPw")]
+    [InlineData("G43W4-MrRpw-AOPQR", "G43W4-MrRpw")]
+    public void GetBaseMachineOpdbId_ThreeSegmentInput_StripsAliasSegment(string aliasId, string expectedBaseId)
+    {
+        Assert.Equal(expectedBaseId, OpdbMachineMapper.GetBaseMachineOpdbId(aliasId));
+    }
+
+    [Theory]
+    [InlineData("G50L9-MDxXD")]   // Already a base machine (2 segments)
+    [InlineData("PARTIAL")]        // No hyphens
+    public void GetBaseMachineOpdbId_NotAnAlias_ReturnsNull(string opdbId)
+    {
+        Assert.Null(OpdbMachineMapper.GetBaseMachineOpdbId(opdbId));
+    }
+
+    [Theory]
+    [InlineData("Batman 66 (Super LE)", "Super LE")]
+    [InlineData("AC/DC (Let There Be Rock LE)", "Let There Be Rock LE")]
+    [InlineData("AC/DC (Back In Black LE)", "Back In Black LE")]
+    [InlineData("Pulp Fiction (LE)", "LE")]
+    public void MapToEdition_ParenthesizedSuffix_IsExtractedAsEditionName(string aliasFullName, string expectedEditionName)
+    {
+        var alias = new OpdbMachineDto
+        {
+            OpdbId = "GROUP-MACHINE-ALIAS",
+            IsAlias = true,
+            Name = aliasFullName,
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+        };
+
+        var edition = OpdbMachineMapper.MapToEdition(alias);
+
+        Assert.NotNull(edition);
+        Assert.Equal(expectedEditionName, edition!.Name);
+        Assert.Equal(aliasFullName, edition.Description);
+    }
+
+    [Fact]
+    public void MapToEdition_PreservesProvenance_OpdbAliasIdAndSourceUrl()
+    {
+        // Per the project's "provenance is sacred" invariant, the alias's
+        // OPDB record identity must survive the mapping to MachineEdition
+        // — Phase 2 RAG citations need to point at the alias's OPDB page,
+        // not the base machine's. A future regression that drops these
+        // fields fails this test.
+        var alias = new OpdbMachineDto
+        {
+            OpdbId = "GRBN-MQR4P-A97X1",
+            IsAlias = true,
+            Name = "Stranger Things (Premium LE)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+        };
+
+        var edition = OpdbMachineMapper.MapToEdition(alias);
+
+        Assert.NotNull(edition);
+        Assert.Equal("GRBN-MQR4P-A97X1", edition!.OpdbAliasId);
+        Assert.Equal("https://opdb.org/machines/GRBN-MQR4P-A97X1", edition.OpdbSourceUrl);
+    }
+
+    [Fact]
+    public void MapToEdition_NoParens_FallsBackToFullName()
+    {
+        var alias = new OpdbMachineDto
+        {
+            OpdbId = "GROUP-MACHINE-ALIAS",
+            IsAlias = true,
+            Name = "Some LE Variant",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+        };
+
+        var edition = OpdbMachineMapper.MapToEdition(alias);
+
+        Assert.NotNull(edition);
+        Assert.Equal("Some LE Variant", edition!.Name);
+    }
+
+    [Fact]
+    public void MapToEdition_MissingName_ReturnsNull()
+    {
+        var alias = new OpdbMachineDto { OpdbId = "GROUP-MACHINE-ALIAS", IsAlias = true };
+        Assert.Null(OpdbMachineMapper.MapToEdition(alias));
+    }
 }

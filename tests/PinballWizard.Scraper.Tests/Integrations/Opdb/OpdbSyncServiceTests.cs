@@ -294,6 +294,240 @@ public sealed class OpdbSyncServiceTests : IDisposable
         Assert.Equal(NowFixed, existing.LastSeenAt);
     }
 
+    // ── Aliases as editions (two-pass flow) ──────────────────────────────
+
+    [Fact]
+    public async Task SyncAsync_AliasWithExistingBase_AppendsEditionAndUpsertsBase()
+    {
+        // Pass 1 inserts the base machine; pass 2 appends the alias as an
+        // edition and upserts the base again. Buffer ordering is exercised
+        // because the alias precedes the base in the response.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)"),
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        // Pass 1's read returns null so the base is created; pass 2's read
+        // returns the freshly-created base. NSubstitute can't naturally
+        // chain like that without test plumbing; we substitute
+        // GetByOpdbIdAsync to dynamically return whatever was last
+        // upserted.
+        Machine? lastUpserted = null;
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
+            .Returns(_ => lastUpserted);
+        _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
+            .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(2, result.Fetched);
+        Assert.Equal(1, result.Inserted);
+        Assert.Equal(0, result.Updated);
+        Assert.Equal(0, result.Skipped);
+        Assert.Equal(1, result.AliasesAppended);
+        Assert.Equal(0, result.AliasesOrphaned);
+
+        // Two upserts: one for pass-1 base insert, one for pass-2 edition append.
+        await _repository.Received(2).UpsertAsync(
+            Arg.Is<Machine>(m => m.Id == "GRBN-MQR4P"),
+            Arg.Any<CancellationToken>());
+
+        // The final upsert has Editions populated with the parsed edition.
+        Assert.NotNull(lastUpserted);
+        Assert.Single(lastUpserted!.Editions);
+        Assert.Equal("Premium LE", lastUpserted.Editions[0].Name);
+        Assert.Equal("Stranger Things (Premium LE)", lastUpserted.Editions[0].Description);
+    }
+
+    [Fact]
+    public async Task SyncAsync_AliasWithoutBase_CountedAsOrphaned_AndNotUpserted()
+    {
+        // The alias has no base machine in the response — its base would
+        // have been a separate record but isn't there. The alias is
+        // counted as orphaned and no upsert happens for it.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GRBN-XYZ99-AABCD", manufacturer: "Stern Pinball, Inc.", name: "Phantom (LE)")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Fetched);
+        Assert.Equal(0, result.Inserted);
+        Assert.Equal(0, result.Updated);
+        Assert.Equal(0, result.Skipped);
+        Assert.Equal(0, result.AliasesAppended);
+        Assert.Equal(1, result.AliasesOrphaned);
+
+        await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_AliasReRunWithSameAliasId_IsIdempotent()
+    {
+        // Re-running the sync with the same alias should NOT duplicate the
+        // edition — the replace-by-OpdbAliasId guard handles re-runs. The
+        // existing edition was last seen with a stale description; the
+        // re-run should refresh both the description AND the source URL
+        // without doubling the editions list.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)")));
+
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Stranger Things",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+            Editions =
+            [
+                new MachineEdition
+                {
+                    Name = "Premium LE",
+                    Description = "STALE DESCRIPTION — should be replaced",
+                    OpdbAliasId = "GRBN-MQR4P-A97X1",
+                    OpdbSourceUrl = "https://opdb.org/machines/GRBN-MQR4P-A97X1",
+                },
+            ],
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.AliasesAppended);
+        Assert.Single(existing.Editions); // Still 1, not 2.
+        Assert.Equal("Premium LE", existing.Editions[0].Name);
+        Assert.Equal("Stranger Things (Premium LE)", existing.Editions[0].Description); // Refreshed.
+        Assert.Equal("GRBN-MQR4P-A97X1", existing.Editions[0].OpdbAliasId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_AliasReRunOnLegacyEdition_DedupesByName()
+    {
+        // Legacy data path: an edition pre-dating this PR has Name set but
+        // OpdbAliasId is null. Re-running the sync should still deduplicate
+        // against it (replacing the legacy name-only entry with the
+        // OpdbAliasId-bearing version). Without this fallback, every alias
+        // run on legacy data would double the editions list.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)")));
+
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Stranger Things",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+            Editions = [new MachineEdition { Name = "Premium LE" }], // No OpdbAliasId — pre-dates this PR.
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.AliasesAppended);
+        Assert.Single(existing.Editions);
+        Assert.Equal("GRBN-MQR4P-A97X1", existing.Editions[0].OpdbAliasId); // Provenance now populated.
+    }
+
+    [Fact]
+    public async Task SyncAsync_AliasMissingManufacturer_CountedAsSkippedNotOrphaned()
+    {
+        // An alias missing manufacturer can't compute its partition key,
+        // so the lookup against the base machine is impossible. Counted as
+        // skipped (not orphaned — orphaned implies "we looked, didn't find
+        // it"; skipped means "we couldn't even look").
+        var aliasWithoutManufacturer = JsonSerializer.Serialize(new
+        {
+            opdb_id = "GRBN-MQR4P-A97X1",
+            is_alias = true,
+            name = "Stranger Things (Premium LE)",
+        });
+        _handler.SetResponseFor("/api/export", $"[{aliasWithoutManufacturer}]");
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Fetched);
+        Assert.Equal(0, result.AliasesAppended);
+        Assert.Equal(0, result.AliasesOrphaned);
+        Assert.Equal(1, result.Skipped);
+        await _repository.DidNotReceive().GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_AliasLookupThrows_SkipsBadAliasAndContinues()
+    {
+        // Per-alias exception isolation: if the Cosmos lookup for one
+        // alias throws, the remaining aliases must still be processed.
+        // The bad alias is counted as `skipped` and logged at warning
+        // level; the run completes successfully overall.
+        //
+        // Test shape: two aliases, one pointing at a base in pass-1's
+        // response (succeeds) and one pointing at a phantom base whose
+        // lookup throws. Pass-1 never queries the phantom (it's not in
+        // the response), so the throw only fires in pass-2 — isolating
+        // the assertion to the alias-loop catch.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-OK000", manufacturer: "Stern Pinball, Inc.", name: "Good Title (Pro)", commonName: "Good Title"),
+            AliasJson("GRBN-OK000-AYYYY", manufacturer: "Stern Pinball, Inc.", name: "Good Title (LE)"),
+            AliasJson("GRBN-PHANTOM-AXXXX", manufacturer: "Stern Pinball, Inc.", name: "Phantom (LE)")));
+
+        Machine? lastOkUpserted = null;
+        _repository.GetByOpdbIdAsync("GRBN-OK000", "stern", Arg.Any<CancellationToken>())
+            .Returns(_ => lastOkUpserted);
+        _repository.GetByOpdbIdAsync("GRBN-PHANTOM", "stern", Arg.Any<CancellationToken>())
+            .Returns<Machine?>(_ => throw new InvalidOperationException("simulated cosmos read failure"));
+        _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var m = call.Arg<Machine>();
+                lastOkUpserted = m;
+                return m;
+            });
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(3, result.Fetched);
+        Assert.Equal(1, result.Inserted);              // Pass-1 inserted GRBN-OK000.
+        Assert.Equal(1, result.AliasesAppended);       // OK alias appended.
+        Assert.Equal(0, result.AliasesOrphaned);
+        Assert.Equal(1, result.Skipped);               // Phantom alias caught, counted skipped.
+        Assert.NotNull(lastOkUpserted);
+        Assert.Single(lastOkUpserted!.Editions);
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRunAlias_ProjectsAppendWithoutUpserting()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GRBN-MQR4P-A97X1", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Premium LE)"),
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        Machine? lastUpserted = null;
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
+            .Returns(_ => lastUpserted);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        Assert.Equal(1, result.Inserted);
+        Assert.Equal(0, result.AliasesAppended); // Pass 2 in dry-run can't see the pass-1 insert (it wasn't upserted), so the alias is orphaned.
+        Assert.Equal(1, result.AliasesOrphaned);
+
+        // The load-bearing assertion: NO writes occur in dry-run mode for
+        // either pass, even though the alias would have appended an edition.
+        await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
     private static string MachineJson(string opdbId, string manufacturer, string name, string commonName) =>
         JsonSerializer.Serialize(new
         {
@@ -301,6 +535,15 @@ public sealed class OpdbSyncServiceTests : IDisposable
             is_machine = true,
             name,
             common_name = commonName,
+            manufacturer = new { manufacturer_id = 1, name = manufacturer },
+        });
+
+    private static string AliasJson(string opdbId, string manufacturer, string name) =>
+        JsonSerializer.Serialize(new
+        {
+            opdb_id = opdbId,
+            is_alias = true,
+            name,
             manufacturer = new { manufacturer_id = 1, name = manufacturer },
         });
 

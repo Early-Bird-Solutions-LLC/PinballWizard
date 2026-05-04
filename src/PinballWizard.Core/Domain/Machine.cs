@@ -103,4 +103,27 @@ public sealed class MachineEdition
     /// <summary>Edition-unique features called out by the manufacturer.</summary>
     [JsonPropertyName("uniqueFeatures")]
     public List<string> UniqueFeatures { get; set; } = [];
+
+    /// <summary>
+    /// OPDB's canonical 3-segment ID for this edition (e.g.,
+    /// <c>GRBN-MQR4P-A97X1</c>). Populated when the edition originated from
+    /// an OPDB alias record; null for editions sourced from manufacturer
+    /// scrapers or hand-authored data. Carrying the alias ID forward
+    /// preserves the provenance chain — the Phase 2 RAG layer cites this
+    /// ID via <see cref="OpdbSourceUrl"/> when answering edition-specific
+    /// questions ("what's the difference between Stranger Things Premium
+    /// LE and Pro?").
+    /// </summary>
+    [JsonPropertyName("opdbAliasId")]
+    public string? OpdbAliasId { get; set; }
+
+    /// <summary>
+    /// OPDB record URL for this edition (e.g.,
+    /// <c>https://opdb.org/machines/GRBN-MQR4P-A97X1</c>). Populated
+    /// alongside <see cref="OpdbAliasId"/>. The base machine's
+    /// <c>OpdbSourceUrl</c> on <see cref="Machine"/> covers the parent
+    /// record; this field covers the alias.
+    /// </summary>
+    [JsonPropertyName("opdbSourceUrl")]
+    public string? OpdbSourceUrl { get; set; }
 }

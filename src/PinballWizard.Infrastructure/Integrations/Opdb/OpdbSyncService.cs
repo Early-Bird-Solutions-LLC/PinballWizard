@@ -63,8 +63,21 @@ public sealed class OpdbSyncService : IOpdbSyncService
         var inserted = 0;
         var updated = 0;
         var skipped = 0;
+        var aliasesAppended = 0;
+        var aliasesOrphaned = 0;
         var runStartedAt = _timeProvider.GetUtcNow();
         Exception? failure = null;
+
+        // Aliases (variant / LE editions) are buffered during the first pass
+        // and applied as a second pass after every base machine is upserted.
+        // Two-pass is necessary because OPDB streams aliases interleaved with
+        // their base machines and we cannot assume any ordering — an alias
+        // may arrive before its parent. Buffering only the alias DTOs (not
+        // the full export) keeps memory bounded: ~205 aliases as of
+        // 2026-05-04, each a small DTO with ~10 fields, peak well under
+        // 1 MB. Base machines are not buffered — they're upserted as they
+        // stream past, so pass-2 always sees them in Cosmos.
+        var aliasBuffer = new List<OpdbMachineDto>();
 
         if (isDryRun)
         {
@@ -77,9 +90,19 @@ public sealed class OpdbSyncService : IOpdbSyncService
 
         try
         {
+            // ── Pass 1 — base machines ──────────────────────────────────
+            // Aliases are buffered for pass 2. Buffering happens BEFORE
+            // the Cosmos round-trip to avoid spending RUs on a read we
+            // know will not be used in this pass.
             await foreach (var dto in _client.StreamAllMachinesAsync(cancellationToken).ConfigureAwait(false))
             {
                 fetched++;
+
+                if (OpdbMachineMapper.IsAlias(dto))
+                {
+                    aliasBuffer.Add(dto);
+                    continue;
+                }
 
                 var now = _timeProvider.GetUtcNow();
                 var mapped = OpdbMachineMapper.Map(dto, now);
@@ -115,8 +138,100 @@ public sealed class OpdbSyncService : IOpdbSyncService
 
                 if (fetched % 100 == 0)
                 {
-                    _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped).",
-                        fetched, inserted, updated, skipped);
+                    _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped, {AliasesBuffered} aliases buffered).",
+                        fetched, inserted, updated, skipped, aliasBuffer.Count);
+                }
+            }
+
+            // ── Pass 2 — aliases as editions ────────────────────────────
+            // Each alias appends one MachineEdition to its base machine's
+            // Editions list, then upserts the base. Aliases whose base is
+            // not in the repository are counted as orphaned and logged
+            // (typically because the base record was filtered earlier in
+            // pass 1 — missing manufacturer, etc.).
+            //
+            // Per-alias exception isolation: a single malformed alias (bad
+            // mapping, transient Cosmos read failure, etc.) MUST NOT abort
+            // the remainder of the buffer — the daily catalog refresh
+            // shouldn't lose 158 aliases because alias 47 has a corrupt
+            // name. Each iteration is wrapped in a try/catch that logs +
+            // increments `skipped`; OperationCanceledException bypasses the
+            // catch and propagates so caller-driven cancellation still
+            // works.
+            //
+            // Idempotency: re-runs of the sync would otherwise duplicate
+            // editions on every pass. The append step removes any existing
+            // edition whose `OpdbAliasId` matches the new one (more precise
+            // than name-matching, since OPDB can rename an edition without
+            // changing its alias ID — the canonical record stays the
+            // same). For legacy editions that pre-date this PR (no
+            // OpdbAliasId set), fall back to Name match.
+            //
+            // Note: pass-2 does NOT bump `LastSeenAt` on the base machine.
+            // LastSeenAt tracks "OPDB confirmed this base record exists";
+            // an alias is a different record and has its own confirmation
+            // signal via `OpdbAliasId` on the appended edition.
+            var aliasIndex = 0;
+            foreach (var aliasDto in aliasBuffer)
+            {
+                aliasIndex++;
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(aliasDto.OpdbId)) { skipped++; continue; }
+
+                    var baseId = OpdbMachineMapper.GetBaseMachineOpdbId(aliasDto.OpdbId);
+                    if (string.IsNullOrWhiteSpace(baseId) || aliasDto.Manufacturer is null || string.IsNullOrWhiteSpace(aliasDto.Manufacturer.Name))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(aliasDto.Manufacturer.ShortName ?? aliasDto.Manufacturer.Name);
+                    var baseMachine = await _machines.GetByOpdbIdAsync(baseId, partitionKey, cancellationToken).ConfigureAwait(false);
+                    if (baseMachine is null)
+                    {
+                        aliasesOrphaned++;
+                        _logger.LogWarning("OPDB sync: alias '{AliasOpdbId}' has no base machine '{BaseOpdbId}' in repository — orphaned (likely the base was filtered out earlier).",
+                            aliasDto.OpdbId, baseId);
+                        continue;
+                    }
+
+                    var edition = OpdbMachineMapper.MapToEdition(aliasDto);
+                    if (edition is null) { skipped++; continue; }
+
+                    baseMachine.Editions.RemoveAll(e =>
+                        (!string.IsNullOrWhiteSpace(edition.OpdbAliasId)
+                         && string.Equals(e.OpdbAliasId, edition.OpdbAliasId, StringComparison.OrdinalIgnoreCase))
+                        || (string.IsNullOrWhiteSpace(e.OpdbAliasId)
+                            && string.Equals(e.Name, edition.Name, StringComparison.OrdinalIgnoreCase)));
+                    baseMachine.Editions.Add(edition);
+
+                    if (!isDryRun)
+                    {
+                        await _machines.UpsertAsync(baseMachine, cancellationToken).ConfigureAwait(false);
+                    }
+                    aliasesAppended++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception aliasEx)
+                {
+                    skipped++;
+                    _logger.LogWarning(
+                        aliasEx,
+                        "OPDB sync: failed to process alias '{AliasOpdbId}'; counted as skipped. Subsequent aliases continue.",
+                        aliasDto.OpdbId);
+                }
+
+                if (aliasIndex % 50 == 0)
+                {
+                    _logger.LogInformation(
+                        "OPDB sync alias progress: processed {Processed}/{Total} aliases ({Appended} appended, {Orphaned} orphaned, {Skipped} skipped).",
+                        aliasIndex, aliasBuffer.Count, aliasesAppended, aliasesOrphaned, skipped);
                 }
             }
         }
@@ -197,20 +312,22 @@ public sealed class OpdbSyncService : IOpdbSyncService
             Inserted = inserted,
             Updated = updated,
             Skipped = skipped,
+            AliasesAppended = aliasesAppended,
+            AliasesOrphaned = aliasesOrphaned,
             Duration = stopwatch.Elapsed,
         };
 
         if (isDryRun)
         {
             _logger.LogInformation(
-                "OPDB sync complete (DRY RUN — no writes performed) in {ElapsedMs} ms: {Fetched} fetched, would-insert {Inserted}, would-update {Updated}, {Skipped} skipped.",
-                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped);
+                "OPDB sync complete (DRY RUN — no writes performed) in {ElapsedMs} ms: {Fetched} fetched, would-insert {Inserted}, would-update {Updated}, {Skipped} skipped, {AliasesAppended} aliases-as-editions ({AliasesOrphaned} orphaned).",
+                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped, aliasesAppended, aliasesOrphaned);
         }
         else
         {
             _logger.LogInformation(
-                "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped.",
-                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped);
+                "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped, {AliasesAppended} aliases-as-editions ({AliasesOrphaned} orphaned).",
+                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped, aliasesAppended, aliasesOrphaned);
         }
 
         return result;
