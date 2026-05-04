@@ -100,7 +100,20 @@ jobs:
           # repository secret, name "WORK_EMAIL_PATTERN", value an
           # ERE regex (e.g., "@workdomain\.com" or "firstname\.lastname@").
           if [ -n "${WORK_EMAIL_PATTERN:-}" ]; then
-            run_rule "Work email (secret-sourced)" "-i" "$WORK_EMAIL_PATTERN"
+            # Pre-validate the pattern is a valid ERE before run_rule is
+            # invoked. grep -E exits 2 on a malformed pattern, but the
+            # `|| true` inside run_rule masks exit 2 as "no match" —
+            # silently disabling the rule. Catch malformed patterns here
+            # so a typo in the secret fails the workflow with a clear
+            # error rather than silently passing.
+            printf '' | grep -E "$WORK_EMAIL_PATTERN" >/dev/null 2>&1
+            pattern_rc=$?
+            if [ "$pattern_rc" -eq 2 ]; then
+              echo "::error title=Sanitization failure: Work email rule misconfigured::WORK_EMAIL_PATTERN is not a valid extended regex (grep -E exit 2). Re-set the secret with a valid ERE; remember to escape regex metacharacters like '.' as '\\.'."
+              fail=1
+            else
+              run_rule "Work email (secret-sourced)" "-i" "$WORK_EMAIL_PATTERN"
+            fi
           else
             echo "::warning title=Work email rule skipped::WORK_EMAIL_PATTERN secret not configured. Set it in repo settings to enable proactive blocking. Personal-email rules above continue to run regardless."
           fi
