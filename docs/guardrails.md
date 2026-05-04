@@ -48,7 +48,7 @@ When refused, the idea goes to the deferred-features list with a note. Don't los
 
 Some decisions are explicitly **not relitigated** without surfacing the change. The current list (replicated from CLAUDE.md and memory):
 
-- ARM for Cosmos schema CRUD; data-plane SDK for item CRUD. Containers not in Bicep.
+- ARM for Cosmos schema CRUD; data-plane SDK for item CRUD. Containers not in Bicep. ([ADR-0012](adr/0012-cosmos-arm-schema-data-plane-items.md))
 - AI Search Basic + Cosmos Serverless (not pgvector, not Postgres, not AI Search Standard).
 - MudBlazor strict (not MUI, Radzen, Syncfusion, hand-rolled).
 - Microsoft Entra External ID for both admin RBAC (v1) and end-user social login (when passport ships).

@@ -21,6 +21,8 @@ negative) it carries.
 | [0008](0008-mudblazor-strict.md) | MudBlazor strict — single UI component library | Accepted |
 | [0009](0009-entra-external-id-admin-rbac-v1.md) | Microsoft Entra External ID for admin RBAC in v1 | Accepted |
 | [0010](0010-personal-azure-subscription-only.md) | Personal Azure subscription only; hard guard at deploy time | Accepted |
+| [0011](0011-scraper-machine-reconciliation.md) | Manufacturer scraper data reconciles INTO OPDB-keyed Machines | Accepted |
+| [0012](0012-cosmos-arm-schema-data-plane-items.md) | Cosmos schema CRUD via ARM, item CRUD via data-plane SDK | Accepted |
 
 ## Conventions
 
