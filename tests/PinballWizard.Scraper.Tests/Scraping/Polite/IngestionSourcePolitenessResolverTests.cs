@@ -187,6 +187,9 @@ public sealed class IngestionSourcePolitenessResolverTests
             string? partitionKey,
             CancellationToken cancellationToken)
             => throw new NotImplementedException();
+
+        public Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken)
+            => throw new NotImplementedException();
     }
 
     private sealed class ThrowingRepository(Exception toThrow) : IIngestionSourceRepository
@@ -213,6 +216,9 @@ public sealed class IngestionSourcePolitenessResolverTests
             IReadOnlyDictionary<string, object>? parameters,
             string? partitionKey,
             CancellationToken cancellationToken)
+            => throw toThrow;
+
+        public Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken)
             => throw toThrow;
     }
 }

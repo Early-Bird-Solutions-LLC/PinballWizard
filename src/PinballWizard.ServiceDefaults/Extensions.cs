@@ -78,16 +78,26 @@ public static class Extensions
             logging.IncludeScopes = true;
         });
 
+        // Project-wide Meter + ActivitySource name. Mirrors the constants
+        // on PinballWizard.Application.Observability.PinballWizardTelemetry —
+        // duplicated as a literal here (not a typed reference) to avoid a
+        // ServiceDefaults → Application project reference, which would
+        // invert the layering. See docs/observability.md for the contract.
+        const string PinballWizardMeterName = "PinballWizard";
+        const string PinballWizardSourceName = "PinballWizard";
+
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics =>
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddMeter(PinballWizardMeterName);
             })
             .WithTracing(tracing =>
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
+                    .AddSource(PinballWizardSourceName)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation();
             });

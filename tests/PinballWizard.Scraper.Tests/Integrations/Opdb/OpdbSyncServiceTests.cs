@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
@@ -27,6 +28,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     private readonly HttpClient _httpClient;
     private readonly OpdbClient _client;
     private readonly IMachineRepository _repository = Substitute.For<IMachineRepository>();
+    private readonly IIngestionSourceRepository _ingestionSources = Substitute.For<IIngestionSourceRepository>();
     private static readonly DateTimeOffset NowFixed = new(2026, 5, 2, 12, 0, 0, TimeSpan.Zero);
     private readonly TimeProvider _time = new FakeTimeProvider(NowFixed);
 
@@ -70,7 +72,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
@@ -98,7 +100,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -122,7 +124,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
         _handler.SetResponseFor("/api/machines?page=1&page_size=100", $"[{nonMachine}]");
 
-        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -143,7 +145,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         // Counters reflect what WOULD have been written.
@@ -157,6 +159,102 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _repository.Received(2).GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         // The load-bearing assertion: NO writes occur in dry-run mode.
+        await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_ApplyMode_RecordsSuccessfulRunResultOnIngestionSource()
+    {
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
+            MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        await _ingestionSources.Received(1).RecordRunResultAsync(
+            "opdb",
+            Arg.Is<IngestionSourceRunResult>(r =>
+                r.Succeeded
+                && r.RunAt == NowFixed
+                && r.DocumentsDiscovered == 2),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRunMode_DoesNotRecordRunResultOnIngestionSource()
+    {
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        // Dry-run should NOT touch the IngestionSource document — operator-visible
+        // "last run" timestamps shouldn't reflect projection runs.
+        await _ingestionSources.DidNotReceive().RecordRunResultAsync(
+            Arg.Any<string>(), Arg.Any<IngestionSourceRunResult>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_RecordRunResultThrows_DoesNotMaskOriginalSyncSuccess()
+    {
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        // Write-back fails — the sync itself succeeded, so the failure must be
+        // logged but not surfaced as an exception to the caller.
+        _ingestionSources
+            .When(x => x.RecordRunResultAsync(Arg.Any<string>(), Arg.Any<IngestionSourceRunResult>(), Arg.Any<CancellationToken>()))
+            .Do(_ => throw new InvalidOperationException("simulated cosmos hiccup"));
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Fetched);
+        Assert.Equal(1, result.Inserted);
+    }
+
+    [Fact]
+    public async Task SyncAsync_ApplyMode_RepositoryThrows_RecordsFailedRunResultThenRethrows()
+    {
+        // Failure-path test: when the sync loop throws, the finally block
+        // must still record a write-back with Succeeded=false so the
+        // operator-visible TotalRunFailures counter is incremented and
+        // LastRunAt advances. This is the load-bearing assertion for the
+        // most operationally important code path — operators look at the
+        // dashboard precisely when runs are failing.
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        var simulatedFailure = new InvalidOperationException("simulated cosmos read failure");
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(simulatedFailure);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+
+        var actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None));
+        Assert.Same(simulatedFailure, actual);
+
+        // Despite the exception, the write-back fired with Succeeded=false.
+        // DocumentsDiscovered=0 because the failure happened on the first
+        // record before any insert/update increment ran.
+        await _ingestionSources.Received(1).RecordRunResultAsync(
+            IngestionSourceIds.Opdb,
+            Arg.Is<IngestionSourceRunResult>(r =>
+                !r.Succeeded
+                && r.RunAt == NowFixed
+                && r.DocumentsDiscovered == 0),
+            Arg.Any<CancellationToken>());
+
+        // No actual machine writes — the failure cut the loop short.
         await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
     }
 
@@ -177,7 +275,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
