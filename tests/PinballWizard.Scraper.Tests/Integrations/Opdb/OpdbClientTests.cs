@@ -45,6 +45,10 @@ public sealed class OpdbClientTests : IDisposable
         {
             BaseUrl = "https://opdb.org/api/",
             ApiToken = "test-token",
+            // Cache disabled for these tests — they pin network contract
+            // behavior, not the cache layer. Cache-specific tests in
+            // OpdbExportCacheTests use temp paths.
+            ExportCachePath = "",
         });
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);

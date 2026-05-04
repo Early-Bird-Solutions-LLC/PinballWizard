@@ -30,6 +30,23 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-04 — OPDB `/api/export` gets an on-disk cache + per-source politeness override
+
+**Decision:** `OpdbClient.StreamAllMachinesAsync` now consults a configurable on-disk cache (default path `data/cache/opdb-export.json`, default TTL 1 hour) before issuing a network request. On cache hit the network is bypassed entirely; on cache miss the response is buffered, persisted to disk best-effort, and returned via a memory stream. The `opdb` ingestion-source seed manifest gains an explicit politeness override (`requestDelayMs: 10000` — 10s between successive OPDB requests) replacing the previous `null`.
+
+**Alternatives considered:**
+
+- Honor `X-RateLimit-Remaining: 0` proactively in `IPolitenessGate` (refuse to issue the next outbound request when the response indicates we're at the cap). Rejected for v1: the gate would still need to know when the window resets, which OPDB doesn't communicate via `X-RateLimit-Reset` or `Retry-After`. Inferred reset windows are guesswork; the cache is a more reliable answer.
+- Use HTTP `If-None-Match` / ETag to send a conditional request and let OPDB return `304 Not Modified`. Rejected: OPDB's `200` response on `/api/export` doesn't include `ETag` or `Last-Modified` headers (verified live). With nothing to validate against, the cache must be time-based.
+- Per-source politeness override only (no on-disk cache). Rejected as insufficient: `requestDelayMs` is a between-requests floor, not a between-`/api/export`-calls floor. It would over-throttle small endpoints (`/api/machines/{id}`) without solving the export-specific 1/hour rule.
+- Set `requestDelayMs: 3600000` (1 hour) to forcibly limit OPDB to 1 request per hour. Rejected: over-throttles `GetMachineAsync` and any future small-endpoint calls. The cache eliminates the export-specific problem; 10s is a reasonable floor for the other endpoints.
+
+**Rationale:** OPDB's published policy on `/api/export` is "once per hour" (<https://opdb.org/api>). Today's session burned 5+ export requests across debugging, dry-run, and apply attempts — each retry within the same hour returned 429, cascading into multi-hour cooldowns. The cache makes the rate limit a non-issue: any repeat invocation within the TTL (default 1 hour) reads the persisted body. Cache-miss writes happen best-effort with graceful degradation if the path is unwritable. The 10s `requestDelayMs` for OPDB is conservative — well under the documented 6-per-window throttle on smaller endpoints, but enough that adjacent calls don't thrash.
+
+**Revisit when:** OPDB starts sending `X-RateLimit-Reset` or `Retry-After` headers (would let us replace the time-based cache with an event-driven backoff), or starts sending `ETag` on `/api/export` (would let us upgrade cache freshness checks to conditional GETs). Or if a future Phase 3+ AI feature needs sub-hour OPDB freshness — at which point shorten the TTL or add a CLI flag to bypass the cache.
+
+**Related:** PR #76 (the `/api/export` fix this caches), PR #79 (the alias→edition fold whose 165 successful appends already exercise the export endpoint), the operator burn observed in this session's hand-off run (5+ export hits in ~3 hours).
+
 ## 2026-05-04 — Sanitization rules (Item 9) verified locally, not via synthetic-commit CI run
 
 **Decision:** Phase 2 § Scope Item 9 hand-off ("synthetic-token verification") for the sanitization workflow's three email-rule branches is closed via local `grep -E -i` verification rather than via two synthetic test commits pushed to throwaway branches as originally specified in `build-spec.md`.
