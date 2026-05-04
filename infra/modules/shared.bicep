@@ -414,19 +414,58 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 //   Cognitive Services OpenAI User   — 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
 //   Storage Blob Data Contributor    — ba92f5b4-2d11-453d-a403-e96b0029c9fe
 // Cosmos DB data-plane role uses a SEPARATE namespace (sqlRoleAssignments under
-// the database account, not Microsoft.Authorization). The well-known
-// 'Cosmos DB Built-in Data Contributor' definition is 00000000-0000-0000-0000-000000000002.
-// Cosmos data-plane RBAC is Phase 1 (the developer needs read/write to the
-// containers `--ensure-cosmos-containers` creates), so this assignment gates
+// the database account, not Microsoft.Authorization). The built-in
+// 'Cosmos DB Built-in Data Contributor' (00000000-0000-0000-0000-000000000002)
+// covers reads/writes against EXISTING databases and containers but does NOT
+// include the `sqlDatabases/write` action required to CREATE databases — so
+// `dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers`
+// (the canonical post-deploy smoke-test from PR #57) 403s when the operator
+// has only the built-in role.
+//
+// We define a custom role definition that adds the missing data-plane CRUD
+// actions for databases/containers/items via the `sqlDatabases/*` wildcard.
+// This is the documented Cosmos pattern for ensuring `--ensure-cosmos-containers`
+// is self-sufficient against deployed Cosmos.
+//
+// Cosmos data-plane RBAC is Phase 1 (the developer needs read/write AND
+// create-rights for `--ensure-cosmos-containers`), so this assignment gates
 // only on developerObjectId — NOT on deployPhase2.
 
 var roleAssignmentPrincipalType = 'User'
 
+resource cosmosDeveloperRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleDefinitions@2024-08-15' = if (!empty(developerObjectId)) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'developer-data-contributor')
+  properties: {
+    roleName: 'PinWiz Developer Data Contributor'
+    type: 'CustomRole'
+    assignableScopes: [
+      cosmosAccount.id
+    ]
+    permissions: [
+      {
+        dataActions: [
+          // readMetadata is the catch-all for account-level metadata reads;
+          // the built-in Data Contributor includes it and we preserve it.
+          'Microsoft.DocumentDB/databaseAccounts/readMetadata'
+          // sqlDatabases/* covers ALL data-plane actions under any database
+          // in this account: database create/replace/delete, container
+          // create/replace/delete, item CRUD, query, change feed. This is
+          // intentionally broad — the developer principal needs to bootstrap
+          // the entire schema via `--ensure-cosmos-containers` and then
+          // exercise all runtime paths.
+          'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/*'
+        ]
+      }
+    ]
+  }
+}
+
 resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (!empty(developerObjectId)) {
   parent: cosmosAccount
-  name: guid(cosmosAccount.id, developerObjectId, '00000000-0000-0000-0000-000000000002')
+  name: guid(cosmosAccount.id, developerObjectId, cosmosDeveloperRole.id)
   properties: {
-    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    roleDefinitionId: cosmosDeveloperRole.id
     principalId: developerObjectId
     scope: cosmosAccount.id
   }

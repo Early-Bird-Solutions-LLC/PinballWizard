@@ -9,6 +9,42 @@ catalog schema is not yet considered stable.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cosmos data-plane developer role now permits database/container
+  creation, fixing `--ensure-cosmos-containers` against deployed
+  Cosmos.** PR #60 added the well-known `Cosmos DB Built-in Data
+  Contributor` role (`00000000-0000-0000-0000-000000000002`) for the
+  developer principal, but the built-in role's `dataActions` cover
+  only `containers/*` and `containers/items/*` — they do NOT include
+  `sqlDatabases/write` (database creation). The first end-to-end run
+  of `--ensure-cosmos-containers` against the live deploy
+  (`pinwiz-shared-dev-20260503122213`) hit `Forbidden (403); SubStatus
+  5300` at `POST /dbs` for exactly that reason. (The diagnostic was
+  separately confirmed by reading the role definition's `dataActions`
+  list.) The fix replaces the built-in role assignment with a custom
+  Cosmos `sqlRoleDefinitions` resource, `PinWiz Developer Data
+  Contributor`, whose `dataActions` are `readMetadata` plus the
+  account-wide wildcard `Microsoft.DocumentDB/databaseAccounts/sqlDatabases/*`
+  — covering database create/replace/delete, container CRUD, item
+  CRUD, query, and change-feed in one declaration. Custom role is the
+  Microsoft-documented Cosmos pattern for this exact scenario; the
+  alternative (granting the ARM `Cosmos DB Operator` role) was
+  rejected because Operator's scope extends to operations like
+  account delete, which is broader than the developer needs and
+  splits the auth model across two planes. Re-deploy
+  (`pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev`)
+  applies the change; the orphaned built-in role assignment from
+  PR #60 is left in place by Bicep (different resource name via
+  `guid()`) — it's a strict subset of the new custom role and is
+  harmless, but can be cleaned manually with
+  `az cosmosdb sql role assignment delete` if desired. After the
+  re-deploy, `--ensure-cosmos-containers` succeeds end-to-end against
+  deployed Cosmos and is once again the canonical post-deploy
+  smoke-test PR #57 designed it to be. Pre-push self-audit:
+  `/local-review` (results recorded in PR description) plus the
+  7-item mechanical checklist (all pass).
+
 ### Added
 
 - **Cosmos data-plane RBAC for the developer principal in Bicep.**
