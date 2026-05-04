@@ -24,6 +24,11 @@ negative) it carries.
 | [0011](0011-scraper-machine-reconciliation.md) | Manufacturer scraper data reconciles INTO OPDB-keyed Machines | Accepted |
 | [0012](0012-cosmos-arm-schema-data-plane-items.md) | Cosmos schema CRUD via ARM, item CRUD via data-plane SDK | Accepted |
 | [0013](0013-two-tier-bicep-deploy.md) | Two-tier Bicep deploy with `deployPhase2` gate | Accepted |
+| [0014](0014-microsoft-foundry-orchestration.md) | Microsoft Foundry as the AI orchestration platform | Accepted |
+| [0015](0015-cost-routing-and-semantic-cache.md) | Cost routing — per-Foundry-agent model selection + per-call ceiling + LRU cache | Accepted |
+| [0016](0016-evaluation-harness.md) | Evaluation harness — custom citation-accuracy on top of Foundry primitives | Accepted |
+| [0017](0017-confidence-threshold-refusal.md) | Confidence-threshold refusal — geometric-mean composite + categorized refusals | Accepted |
+| [0018](0018-prompt-management.md) | Prompt management — code-resource agent definitions, version-stamped, never the Foundry portal | Accepted |
 
 ## Conventions
 
