@@ -28,7 +28,7 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 0 | Foundation — Clean Architecture, IaC, Aspire, Cosmos provisioning, workflow infrastructure | ✅ Complete |
 | 1 | Content ingestion pipeline — 8 manufacturers + OPDB, polite-by-construction, shared helpers, test infra | ✅ Complete |
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
-| 3 | AI & Integration layer — Semantic Kernel router, sub-agents, threshold-driven refusal, evaluation harness, external API clients (Pinball Map, IFPA, PinballPrices) | ⏳ Not started |
+| 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ⏳ Not started |
 | 4 | Event-driven RAG — Cosmos Change Feed Function, PdfPig text extraction, page-aware chunking, embedding, AI Search index + facets, citation-accuracy eval | ⏳ Not started |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
 | 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ⏳ Not started |
@@ -270,7 +270,7 @@ Explicitly out of scope. Each crosses into a later phase or is deferred per `gua
 
 - **Flipping `deployPhase2 = true`** — defer to whichever phase first needs Phase 2 resources (Phase 3 if Azure OpenAI lands first; Phase 4 if AI Search lands first)
 - **App Insights / Key Vault / ACR / AI Search Basic / Azure OpenAI / Storage with blob containers** — Phase 2 Bicep, gated, not provisioned in this phase
-- **Any Phase 3 work** — Semantic Kernel router, sub-agents, threshold-driven refusal, evaluation harness, external API clients (Pinball Map, IFPA, PinballPrices) all live in Phase 3
+- **Any Phase 3 work** — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client all live in Phase 3 (IFPA + PinballPrices deferred to the Valuation-feature phase)
 - **Any Phase 4 work** — Cosmos Change Feed Function, PdfPig text extraction, page-aware chunking, embedding, AI Search index + facets, citation-accuracy eval all live in Phase 4
 - **Any Phase 5 work** — Blazor + MudBlazor frontend, Entra External ID auth, admin control plane, traffic-attribution middleware all live in Phase 5
 - **Cost-dashboard polish** — Phase 6 work; Phase 2 only emits raw OTel metrics
@@ -398,10 +398,202 @@ Each hand-off, when executed, gets captured as a comment on this Retrospective (
 ## Phase 3 — AI & Integration layer
 
 **Status:** ⏳ Not started
-**Sequence position:** Depends on Phase 2 (Cosmos runtime validated); unblocks much of Phase 4 (Wizard answer pipeline) and parts of Phase 5 (admin telemetry on AI calls).
-**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation.*
+**Sequence position:** Depends on Phase 2 (deployed Cosmos validated; OPDB catalog populated; `ingestion_sources` seeded; `PinballWizardTelemetry` + `IngestionSourceIds` patterns; `IIngestionSourceRepository.RecordRunResultAsync` shipped; ADR-0013 governing the Bicep gate). Unblocks Phase 4 (RAG retrieval feeds the same orchestrator), parts of Phase 5 (admin dashboards consume Phase 3 telemetry), and Phase 6 (operability runbooks for AI calls).
+**Demonstrable artifact:** `dotnet run --project src/PinballWizard.Cli -- --ask "Who manufactured Foo Fighters?"` returns a cited `WizardAnswer` end-to-end against a deployed Azure AI Foundry project: question → `IAiRouter` (Foundry agent client via `Azure.AI.Projects`) → routed Foundry agent (`Repair` / `Rules` / `Valuation`) → grounded reply citing OPDB machine records (RAG corpus is Phase 4; Phase 3 grounds against OPDB only). Refusal-with-explanation when confidence is below threshold. A first eval-set run produces a baseline citation-accuracy + refusal-rate JSON report. A live Pinball Map probe returns enabled-location data. Five new ADRs (0014–0018) capture orchestration / cost / eval / refusal / prompt-management decisions. **Phase 3 is also a reference architecture for client engagements** — the Foundry-native pattern is what Earlybird Solutions recommends to prospects, and PinballWizard is the working example.
 
-> Will cover: Semantic Kernel router design, sub-agent contracts (Valuation / Rules / Repair), threshold-driven refusal, prompt management strategy, evaluation harness design, cost-routing logic (gpt-4o-mini default, gpt-4.1 escalation), in-process LRU semantic cache, external API clients (Pinball Map, IFPA, PinballPrices).
+### Scope
+
+In rough sequencing order. Items are sized to fit ~1–2 PRs each; conflict surfaces are called out so the wave plan can pack them.
+
+1. **ADR-0014 — Orchestration framework choice (Microsoft Foundry).** Promote the architectural decision into the canonical record. **This decision supersedes the prior Semantic-Kernel framing in `project_phase2_architecture_decisions.md` (memory, 2026-05-02);** memory entry gets a supersession note. Captures: Microsoft Foundry chosen via `Azure.AI.Projects` 1.2.0-beta.5 (Foundry Agent SDK) over Semantic Kernel, raw `Azure.AI.OpenAI` chat-completions, and LangChain.NET / AutoGen; rationale = "PinballWizard is the reference architecture Earlybird Solutions recommends to clients; we showcase the recommended approach, not an alternative" (per `vision.md` showcase positioning); `IAiRouter` orchestrator delegates to Foundry agents (`Valuation`, `Rules`, `Repair`) defined in code via `AgentsClient` + agent-from-definition pattern; agent definitions live in code (not Foundry portal) so they're diffable and PR-reviewable; `DefaultAzureCredential` for auth. Trade-off explicitly recorded: Semantic Kernel is the right call for projects optimizing showcase-of-craft-only without the client-recommendation lens; Foundry is the right call when the architecture itself is the deliverable. Files: [`docs/adr/0014-microsoft-foundry-orchestration.md`](adr/0014-microsoft-foundry-orchestration.md), [`docs/adr/README.md`](adr/README.md) index update.
+
+2. **ADR-0015 — Cost-routing strategy (per-agent model selection + per-call ceiling).** Documents: per-Foundry-agent model defaults (`gpt-4o-mini` on the classifier + simple-grounding paths for ~80–85% of calls, `gpt-4.1` on the escalation agent for ~15–20%); the escalation trigger (classifier confidence < threshold, sub-agent self-reported uncertainty, explicit "complex" intent classification); the $400/mo hard cap and $300/mo anomaly alarm enforcement (per-call cost tagging in OTel, daily KQL aggregation against Log Analytics); the per-call cost ceiling (refuse rather than retry past N escalations); and the in-process LRU semantic-cache cap (~512 entries, key = SHA-256 of normalized prompt + agent ID; cached at the `IAiRouter` layer above Foundry — Foundry agents themselves are stateless w.r.t. cache). Cross-references the Foundry agent-`Models` configuration shape (per-agent deployment names + provider per agent). Files: [`docs/adr/0015-cost-routing-and-semantic-cache.md`](adr/0015-cost-routing-and-semantic-cache.md).
+
+3. **ADR-0016 — Evaluation harness design (custom citation-accuracy on Foundry eval primitives).** Defines: held-out eval-set shape (~30 questions distributed across the three sub-agents), ground-truth schema (question + expected_sub_agent + expected_citation_set + acceptable_refusal_flag), the `dotnet run -- --eval` CLI mode that runs each question through `IAiRouter` (i.e., through real Foundry agents), citation-precision / citation-recall / refusal-precision / refusal-recall metrics computed in code, baseline + delta reporting (JSON output committed alongside ground-truth so trend is git-history-grep-able), the deploy gate at 5% citation-accuracy regression per [`guardrails.md`](guardrails.md) § Run-time triggers. **Foundry's own eval flows (Foundry portal evaluators) are NOT used for the citation-accuracy metric** — that metric is custom and the harness needs git-diffable JSON output for the showcase narrative; Foundry-portal eval results are not natively committable. Foundry's content-safety + agent-thread telemetry IS leveraged where it doesn't conflict with the custom-metric requirement. Files: [`docs/adr/0016-evaluation-harness.md`](adr/0016-evaluation-harness.md).
+
+4. **ADR-0017 — Confidence-threshold refusal strategy.** Documents: confidence as the geometric mean of (retrieval similarity score, agent self-reported confidence — derived from response logprobs where Foundry exposes them, otherwise from agent-prompt-coerced "rate your confidence 0-1" suffix, citation-coverage ratio); the threshold value (initial draft 0.65 — calibrated against the eval set in scope item 13 before locking); the refusal response shape ("I don't know" + reason category + invitation to rephrase + escalation hint); the safety-invariant framing (refusal is a feature, not a failure; never silently fabricate when confidence < threshold per `guardrails.md` goal #5 provenance). The refusal logic wraps Foundry agent responses in `IAiRouter`; Foundry agents themselves don't natively support threshold-driven refusal. Files: [`docs/adr/0017-confidence-threshold-refusal.md`](adr/0017-confidence-threshold-refusal.md).
+
+5. **ADR-0018 — Prompt management strategy (code-resource agent definitions, not Foundry portal).** Documents: per-Foundry-agent system prompts in `src/PinballWizard.Application/Ai/Agents/{Valuation,Rules,Repair,Router}.md` (Markdown, embedded as resources via `<EmbeddedResource>` in the Application csproj); agent definitions constructed in code by the `IFoundryAgentFactory` reading the embedded prompt at startup and registering the agent against the deployed Foundry project (`AgentsClient.CreateAgentAsync(name, model, instructions)`); prompt-version constant compiled into the binary (`PromptVersion = "v1.2026.05"`), version surfaced as an OTel tag on every AI call AND included in the Foundry agent metadata; prompt-change PRs require an eval-set re-run + result comparison in the PR description. Alternatives considered + rejected: **Foundry portal prompt flow** (rejected — not git-diffable, breaks the showcase-narrative requirement that every architectural decision is visible in the repo; portal-defined agents reduce reviewability); hard-coded strings (no diffability, no version surface); Cosmos-backed editable prompts (operability complexity not justified for v1). Files: [`docs/adr/0018-prompt-management.md`](adr/0018-prompt-management.md).
+
+6. **Bicep `deployPhase2 = true` flip + Foundry project provisioning.** Update `infra/main-shared.dev.bicepparam` to `deployPhase2 = true`. **Add to the Phase 2 Bicep block:** Microsoft AI Foundry hub + project resource (`Microsoft.CognitiveServices/accounts` of kind `AIServices` + project sub-resource), with connections to Azure OpenAI (already provisioned in the existing Phase 2 block), AI Search Basic (already provisioned, Foundry uses it for agentic retrieval if `UseFoundryIq=true`), and Cosmos (data-plane connection for grounding lookups). Foundry project requires a developer-principal RBAC assignment (`Cognitive Services User` + `Azure AI Developer`) — extends the existing Phase 2 RBAC pattern. Apply via `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev`. Smoke test (analogous to Phase 0's `--ensure-cosmos-containers`): a new `--ensure-azure-foundry` CLI flag that uses `Azure.AI.Projects` to connect to the deployed Foundry project, list registered agents, and verify the connection to Azure OpenAI is healthy; idempotent; exit code 2 with remediation hint when Foundry isn't configured. Files: `infra/main-shared.dev.bicepparam`, `infra/main-shared.bicep` (extend Phase 2 block with Foundry resources), [`src/PinballWizard.Cli/Program.cs`](../src/PinballWizard.Cli/Program.cs), new `src/PinballWizard.Application/Ai/Diagnostics/AzureFoundrySmokeProbe.cs`, new `src/PinballWizard.Core/Configuration/AiFoundryOptions.cs` (shape: `ProjectEndpoint`, `DeploymentName`, `EmbeddingDeploymentName`, optional `GuardrailName`, per-agent `Models` config map). Lands in Wave 1 — independent of code work since it's IaC + a dedicated CLI flag, and downstream Phase 3 code won't merge to `main` without a working Foundry project to test against.
+
+7. **`IAiRouter` + Foundry agent client skeleton.** Implement: `IAiRouter.AnswerAsync(string question, CancellationToken)` returning `WizardAnswer` (text + citations + sub_agent_used + confidence + escalated_bool); `IFoundryAgentFactory` wraps `Azure.AI.Projects.AgentsClient` with `DefaultAzureCredential`, registers/upserts the four agents (`Router`, `Valuation`, `Rules`, `Repair`) on first call from their embedded-resource prompts, caches agent IDs for the process lifetime; agent invocation goes through Foundry threads (one thread per question for Phase 3 simplicity — multi-turn deferred to Phase 5+); in-process LRU semantic cache (`SemanticAnswerCache : IAnswerCache`) at the router layer keyed on normalized-prompt SHA + agent ID; cost-attribution Activity tags (`pinwiz.ai.tokens.input` / `output` / `escalated_bool` / `sub_agent` / `prompt_version` / `model_deployment`). The router's classification step is a single `Router` Foundry agent invocation (running on `gpt-4o-mini`) that returns one of the three labels (or "unknown" → refusal path). Files: new `src/PinballWizard.Application/Ai/{IAiRouter,AiRouter,IFoundryAgentFactory,FoundryAgentFactory,SemanticAnswerCache,AiOptions}.cs`, agent prompt files at `Ai/Agents/{Router,Valuation,Rules,Repair}.md` (the prompt files are introduced as scaffolding here; their *content* fills out in scope item 8); OTel instruments under `pinwiz.ai.*` in [`PinballWizardTelemetry`](../src/PinballWizard.Application/Observability/PinballWizardTelemetry.cs).
+
+8. **Foundry sub-agent definitions grounded against OPDB.** Each sub-agent's prompt + grounding wiring is filled out: the `Router` agent classifies; the three task agents (`Valuation`, `Rules`, `Repair`) each receive a `(question, retrieved_documents)` tuple where `retrieved_documents` comes from `IMachineRepository.QueryByTitleNormalizedAsync` (Phase 3 grounding source — RAG arrives in Phase 4 and replaces the grounding source without changing the agent's prompt contract). Sub-agent reply contract: `SubAgentReply(string answer, IReadOnlyList<Citation> citations, double selfReportedConfidence)`. Stub answers in Phase 3 are templated wraps around grounding facts plus an LLM polish via the Foundry agent. Files: fill out content in `Ai/Agents/{Valuation,Rules,Repair}.md`; new `Ai/SubAgents/{ValuationAgent,RulesAgent,RepairAgent}.cs` thin C# wrappers that bind a Foundry agent ID to the typed `(question, grounding) → SubAgentReply` contract. Depends on: scope item 7.
+
+9. **Confidence-threshold refusal implementation (wraps Foundry responses).** Implement the geometric-mean confidence calculation per ADR-0017; threshold consulted before returning `SubAgentReply` to the user; below-threshold path returns a `WizardAnswer` with `IsRefusal = true` plus a category enum (`InsufficientGrounding`, `OutOfScope`, `LowModelConfidence`, `CostCeilingHit`). Threshold value defaults to ADR-0017's locked value (0.65 initial — calibrated in scope item 13). Telemetry: `pinwiz.ai.refusals` counter tagged with category + sub_agent. The refusal logic lives in `IAiRouter` (between Foundry-agent response and caller); Foundry agents are not modified. Files: `src/PinballWizard.Application/Ai/Confidence/{ConfidenceCalculator,RefusalCategory}.cs`, integrated into `AiRouter.cs`. Depends on: scope items 7 + 8.
+
+10. **Pinball Map external API client (only external API in Phase 3).** Implement `IPinballMapClient` extending `PoliteScraperBase` with a per-source politeness override entry in `data/seeds/ingestion_sources.v1.json` (new row id `pinballmap`, `requestDelayMs: 5000` initial — calibrated against any 429 events at H3). Bulk export endpoint pattern (Pinball Map publishes per-region JSON exports at `pinballmap.com/api/v1/region/{region}/locations.json`); apply the same on-disk cache + atomic-write pattern as [`OpdbClient.OpenExportStreamAsync`](../src/PinballWizard.Infrastructure/Integrations/Opdb/OpdbClient.cs) (1-hour TTL, `data/cache/pinballmap-{region}.json`). Live-API contract test (per DL-0002 lesson) exercising the production code path against the live endpoint, gated by the `PINBALL_WIZARD_LIVE_CONTRACT_TESTS=1` env var. Adds `IngestionSourceIds.PinballMap = "pinballmap"`. Records run results via `IIngestionSourceRepository.RecordRunResultAsync`. Files: new `src/PinballWizard.Infrastructure/Integrations/PinballMap/{PinballMapClient,PinballMapLocationDto,ServiceCollectionExtensions}.cs`, `src/PinballWizard.Core/Configuration/PinballMapOptions.cs`, update `IngestionSourceIds.cs` and `data/seeds/ingestion_sources.v1.json`, new `tests/.../PinballMapClientTests.cs` + `PinballMapClientLiveContractTests.cs`. Depends on: nothing in Phase 3 (independent of AI code paths). **IFPA + PinballPrices clients deferred** to the phase that ships Valuation as a real feature.
+
+11. **Cost-attribution telemetry + per-call budget pin.** Add OTel instruments to `PinballWizardTelemetry`: `pinwiz.ai.tokens.input` / `output` (counters tagged with `model`, `sub_agent`, `prompt_version`), `pinwiz.ai.cost_usd_cents` (counter computed from Azure OpenAI per-1k-token rates locked in `AiOptions.PricingTable`), `pinwiz.ai.cache.hits` / `misses`, `pinwiz.ai.escalations`, `pinwiz.ai.duration_ms` (histogram). A per-call cost ceiling (default $0.10) refuses to escalate further and returns a refusal with category `CostCeilingHit`. Daily aggregate query template added to [`docs/observability.md`](observability.md) so the $300/mo anomaly alarm has a known KQL shape. Files: extend `PinballWizardTelemetry.cs`, `AiOptions.cs` for `PricingTable` + `PerCallCostCeilingUsdCents`, append section to `docs/observability.md`. Depends on: scope item 7.
+
+12. **Evaluation harness skeleton + ground-truth manifest.** Implement: `dotnet run --project src/PinballWizard.Cli -- --eval` reads `data/eval/wizard.v1.jsonl` (eval set), runs each question through `IAiRouter`, writes `data/eval/results/wizard.{timestamp}.json` containing per-question (predicted_sub_agent, predicted_citations, citations_precision, citations_recall, refused_bool, total_cost_cents, duration_ms) + aggregate metrics. The eval set seed starts at ~30 questions hand-curated from OPDB machine descriptions, distributed ~10 per sub-agent. The harness deliberately mocks neither Azure OpenAI nor the repository — it runs against the real deployed account so its cost shows up in the daily budget aggregation. Files: new `src/PinballWizard.Application/Ai/Evaluation/{IEvaluationHarness,EvaluationHarness,EvalResult}.cs`, `data/eval/wizard.v1.jsonl`, `data/eval/README.md` (documents the OPDB-citable bias per P3-R8), `--eval` CLI flag in `Program.cs`, new `tests/.../EvaluationHarnessTests.cs` (smoke-tests JSONL parser + result serialization, not the real run). Depends on: scope items 7+8+9.
+
+13. **First eval-set baseline run + threshold calibration.** **Operational hand-off (H2), not a PR.** Run `--eval` against the deployed Azure OpenAI; capture `data/eval/results/wizard.{timestamp}.json` as the v1 baseline; commit it (the JSON, not just a count) so future runs can `git diff` the metrics file. Use the baseline distribution to calibrate the confidence threshold from ADR-0017's draft 0.65 to whatever value yields target precision/recall (initial target: ≥0.7 citation precision, ≥0.6 recall, ≤20% over-eager refusal rate). If calibration moves the threshold, ADR-0017 gets a follow-up entry (or supersession) recording the post-calibration value. Cost projection: per-eval-run cost × expected runs per month (eval re-runs trigger on every prompt change per ADR-0018) ≤ ~$5/mo. Outputs land in the Phase 3 Retrospective.
+
+14. **`docs/observability.md` + risk-register update + locked-decisions promotion.** Update `docs/observability.md` with the `pinwiz.ai.*` and `pinwiz.pinballmap.*` instrument inventory (mirrors the `pinwiz.opdb.sync.*` section established in Phase 2 PR #73). Update `docs/guardrails.md` § Locked decisions with: Microsoft Foundry orchestration locked (ADR-0014), per-agent model selection w/ gpt-4o-mini default + gpt-4.1 escalation locked (ADR-0015), confidence-threshold refusal mandatory (ADR-0017), code-resource agent definitions over portal prompt flow (ADR-0018). Update risk register: R1 mitigation moves to "in progress" once the thin Wizard slice ships, R5 mitigation gains the per-call cost ceiling reference. CLAUDE.md collapses any inline AI-architecture rationale to ADR pointers. Files: `docs/observability.md`, `docs/guardrails.md`, `CLAUDE.md`. Depends on: ADRs 0014–0018 committed.
+
+### Key decisions
+
+- **ADRs 0014 + 0015 + 0016 + 0017 + 0018 are this phase's headline decisions** (see § Scope items 1–5 for what they cover).
+- **Phase 3 owns the `deployPhase2 = true` flip** per [ADR-0013](adr/0013-two-tier-bicep-deploy.md) § Operational discipline. Phase 4 inherits the now-deployed AI Search + Storage; subsequent phases inherit App Insights + Key Vault + ACR. Cost step from ~$30/mo → ~$150/mo idle is accepted at this gate.
+- **External API surface in Phase 3 = Pinball Map only.** IFPA + PinballPrices defer to the phase that ships Valuation as a real feature; `Valuation` sub-agent in Phase 3 is a stub that grounds against OPDB machine records and admits low confidence on price questions.
+- **Wizard slice grounds against OPDB only** (not RAG). Phase 4 RAG retrieval implements `IRetriever` with the same return shape (`IReadOnlyList<RetrievedDocument>`); sub-agent contracts don't change.
+- **Live-API contract validation is non-optional** for Pinball Map (per Phase 2 lessons DL-0002 / DL-0003): contract tests exercise the production code path against the live endpoint, not self-defined StubHandler fictions.
+- **Prompt-version is an OTel tag on every AI call** — when an answer regresses, the prompt-version + git history resolve which prompt change caused it.
+- **Eval-set baseline is committed** (JSON file), not just measured. Future PRs that move the metrics show up as `git diff` lines on the baseline file.
+
+### Exit criteria
+
+All must be true to declare Phase 3 complete:
+
+- [ ] ADRs 0014, 0015, 0016, 0017, 0018 committed; [`docs/adr/README.md`](adr/README.md) indexes them; `CLAUDE.md` and `docs/guardrails.md` § Locked decisions reference the relevant ADRs (no inline duplicates of the rationale)
+- [ ] `infra/main-shared.dev.bicepparam` has `deployPhase2 = true`; Foundry hub + project added to the Phase 2 Bicep block; deploy applied successfully against the personal Earlybird subscription; `--ensure-azure-foundry` smoke-test verifies the four agents are registered and the Azure OpenAI connection is healthy
+- [ ] `IAiRouter` + three sub-agents (`Valuation`, `Rules`, `Repair`) implemented and registered in DI; classification → routing → grounded reply works for at least one canonical question per sub-agent
+- [ ] In-process LRU semantic cache integrated; `pinwiz.ai.cache.hits` increments on a repeat-question test
+- [ ] Confidence-threshold refusal path implemented; below-threshold questions return `IsRefusal = true` with a category; ≥80% of OOS questions in the eval set are refused (not silently fabricated)
+- [ ] Pinball Map client extends `PoliteScraperBase`; new `IngestionSourceIds.PinballMap` constant; new row in `data/seeds/ingestion_sources.v1.json` (10 rows total); seeder applies cleanly; live-API contract test passes against `pinballmap.com`
+- [ ] Cost-attribution telemetry visible in Log Analytics + App Insights; daily KQL aggregation template documented in `docs/observability.md`; per-call cost ceiling enforced (refusal with `CostCeilingHit` on synthetic loop test)
+- [ ] Evaluation harness ships; `--eval` CLI flag works; `data/eval/wizard.v1.jsonl` committed (≥30 questions); first baseline run captured at `data/eval/results/wizard.{timestamp}.json` and committed
+- [ ] Confidence threshold calibrated against the baseline; ADR-0017 records the locked post-calibration value
+- [ ] `docs/observability.md` updated with `pinwiz.ai.*` + `pinwiz.pinballmap.*` instrument inventory
+- [ ] Build green, all tests green, zero warnings; existing Phase 0/1/2 tests still pass
+- [ ] All seven main goals in `guardrails.md` re-checked against current state — alignment confirmed
+- [ ] Cost-burn snapshot taken: dev subscription monthly run-rate after Phase 2 stack provisioned ≤ $200/mo idle; eval-run cost projection ≤ $5/mo
+- [ ] Phase 3 § Retrospective populated; risk register reviewed
+- [ ] User confirms Phase 3 exit (single confirmed event per `guardrails.md` § Per-phase gate)
+
+### Dependencies
+
+- Phase 2 complete (deployed Cosmos validated; OPDB catalog populated; `ingestion_sources` seeded; `PinballWizardTelemetry` + `IngestionSourceIds` patterns; `IIngestionSourceRepository.RecordRunResultAsync` shipped; ADR-0013 governing the Bicep gate)
+- Personal Earlybird Azure subscription accessible; `az login` works; tenant + subscription IDs match the deploy script guard
+- Azure OpenAI quota available in the chosen region (East US 2) for `gpt-4o-mini` + `gpt-4.1` + `text-embedding-3-large` deployments
+- PowerShell available locally (per Phase 2 hand-off lesson — Git-Bash mangles the resource ID env vars)
+
+### Non-goals
+
+Explicitly out of scope. Each crosses into a later phase or is deferred:
+
+- **AI Search index population, vectorization, semantic ranker config, page-aware chunking, PdfPig text extraction** — Phase 4 owns the RAG corpus
+- **IFPA + PinballPrices API clients** — defer to the phase that ships Valuation as a real feature
+- **Public Wizard chat UI, MudBlazor frontend, Entra External ID auth** — Phase 5
+- **Application Insights dashboards, alert routing, runbooks, SLO definitions** — Phase 6 (Phase 3 emits raw OTel; Phase 6 makes them actionable)
+- **Multi-instance ACA deployment, Redis-backed cache, distributed semantic cache** — locked deferral per Phase 2 architecture decisions
+- **Custom embedding fine-tuning** — locked deferral
+- **Eval-set expansion to manuals / bulletins / rules-text ground-truth** — Phase 4 (depends on RAG corpus)
+
+### Parallelism plan
+
+The 12 PR-bearing scope items (ADRs 1–5 batched, items 6, 7–9, 10, 11, 12, 14) split into a small ADR-first wave, a substantive code wave, and a closing instrumentation/eval wave. Item 13 is operational hand-off, not a PR.
+
+#### Dependency core (sequential)
+
+`ADRs 0014–0018 → item 6 → item 7 → items 8 → 9 → items 11/12 → item 13 → item 14`
+
+- **ADRs → item 6** — the smoke-probe presumes the deployment shape from the ADRs.
+- **item 6 → item 7** — `IAiRouter` integration tests need a deployed Azure OpenAI.
+- **item 7 → items 8 → 9** — sub-agents and confidence calculation hang off the router skeleton; both file-conflict on `AiRouter.cs`.
+- **items 8/9 → item 11** — telemetry instruments fire from inside the router + sub-agents.
+- **items 11/12 → item 13** — eval baseline run requires telemetry + harness in place.
+- **item 13 → item 14** — observability.md + locked-decisions update reference the calibrated values.
+
+#### Independent surface (parallel-safe)
+
+- **Item 10 (Pinball Map client)** is independent of every AI scope item — different files (`Infrastructure/Integrations/PinballMap/`), no overlap with `Application/Ai/`. Worktree-isolated `general-purpose` subagent dispatch (matches Phase 1 PRs #44–50 pattern).
+- **Item 6 (Bicep flip + smoke probe)** has no code-file conflict with items 7+ (different CLI flag, different namespace). Can run concurrent with items 7+ except deploy hand-off must precede their merge.
+
+#### Recommended waves (respecting `guardrails.md` § Parallelism ceiling 2–3 PRs in flight)
+
+**Wave 0** (1 PR, sequential, before any code) — this PR. Drafts the Phase 3 build-spec section so all subsequent PRs have a target.
+
+**Wave 1** (3 PRs in flight):
+
+- **PR 1** — ADRs 0014/0015/0016/0017/0018 batched (5 ADRs, one PR). Explicit user confirmation per `guardrails.md` § Decision framework before commit.
+- **PR 2** — Bicep flip + Foundry provisioning + `--ensure-azure-foundry` smoke probe (item 6). Surfaces deploy hand-off mid-wave.
+- **PR 3** — Pinball Map client + seed manifest update + live-contract test (item 10). Worktree-isolated subagent.
+
+After Wave 1: deploy hand-off **H1** (Bicep apply + Azure OpenAI smoke probe execution against the deployed account) lands as an operational task, not a PR.
+
+**Wave 2** (sequential, file conflicts on `AiRouter.cs`):
+
+- **PR 4** — `IAiRouter` skeleton + `IFoundryAgentFactory` (registers Router/Valuation/Rules/Repair against the deployed Foundry project) + LRU cache + classification routing (item 7). Load-bearing PR of the phase.
+- **PR 5** — stub sub-agent implementations + their prompts (item 8). Sequenced after PR 4 (file conflict).
+- **PR 6** — Confidence calculation + refusal categories + threshold gate (item 9). Sequenced after PR 5 (file conflict).
+
+**Wave 3** (2 PRs in flight + 1 hand-off):
+
+- **PR 7** — Cost-attribution telemetry + per-call ceiling + observability.md instrument inventory (item 11).
+- **PR 8** — Evaluation harness + `--eval` CLI flag + ground-truth manifest seed (item 12).
+
+After Wave 3: operational hand-off **H2** (first eval-set baseline run + threshold calibration; item 13).
+
+**Wave 4** (1 PR):
+
+- **PR 9** — observability.md + guardrails.md § Locked decisions + CLAUDE.md updates (item 14); ADR-0017 supersession entry if calibration moved the threshold.
+
+#### Sizing
+
+| Wave | PRs | Operational hand-offs | Parallelism |
+| --- | --- | --- | --- |
+| Wave 0 | 1 (this PR) | 0 | n/a |
+| Wave 1 | 3 (ADRs batched, Bicep+probe, Pinball Map) | H1 (Bicep apply + smoke probe) | 3-way parallel; PR 3 worktree-isolated |
+| Wave 2 | 3 (router, sub-agents, confidence) | 0 | Sequential PR 4→5→6 (file conflicts on `AiRouter.cs`) |
+| Wave 3 | 2 (telemetry, eval harness) | H2 (eval baseline + threshold calibration) | 2-way parallel |
+| Wave 4 | 1 (locked-decisions + observability docs) | 0 | n/a |
+| **Total** | **~10 PRs** | **3 hand-offs** | |
+
+**H3** (Pinball Map live-API probe baseline) is independent of Wave 4: run live-contract test, spot-check provenance, record observed `requestDelayMs` floor against any 429 events.
+
+#### Conventions for this phase
+
+- **The ADR batch PR (Wave 1 PR 1)** still gets explicit user confirmation per `guardrails.md` § Decision framework before commit; ADRs are append-only and a wrong one is expensive to reverse.
+- **PR 3 (Pinball Map)** is the canonical worktree-isolated `general-purpose` subagent dispatch in this phase, matching the Phase 1 PRs #44–50 pattern.
+- **Hand-off H1's smoke probe is the Phase 0 `--ensure-cosmos-containers` analog.** When the Bicep apply succeeds but a misconfigured deployment name would silently break Phase 3 code, the smoke probe catches it before any AI PR merges.
+- **Hand-off H2's baseline run cost** is captured as part of the Phase 3 retrospective; treat the eval baseline JSON as a load-bearing artifact (not a throwaway).
+- **`/local-review` and the 7-item self-audit run on every PR in Phase 3** including the ADR batch (ADRs that reshape locked decisions are not the doc-only exemption).
+- **Live-contract test (PR 3)** does not run on every CI build (it would hammer Pinball Map); gated by an environment variable `PINBALL_WIZARD_LIVE_CONTRACT_TESTS=1`, run locally pre-merge and on a manually-triggered CI workflow.
+
+### Risks
+
+Phase-specific risks (cross-cutting risks live in `guardrails.md` § Risk register; this phase materially mitigates R1 and R5):
+
+| ID | Risk | Mitigation |
+| --- | --- | --- |
+| P3-R1 | Azure OpenAI quota in the chosen region rejects deployment creation | Pre-flight `az cognitiveservices account deployment list` + `az cognitiveservices usage list` before Bicep apply; if quota insufficient, request increase via portal (1–2 day turnaround) before Wave 1 closes |
+| P3-R2 | Bicep flip deletes Phase 2 resources unexpectedly (the destructive-toggle warning in ADR-0013) | The flip is `false → true` in Phase 3 (additive). The destructive direction (`true → false`) is not part of any Phase 3 scope item; documented warning in `infra/main-shared.bicep` line 45 stands |
+| P3-R3 | First eval-set run reveals the confidence threshold is badly miscalibrated (e.g., 80% over-eager refusal or 80% silent fabrication) | The calibration step (item 13) is itself the mitigation; ADR-0017's locked value is provisional until item 13 closes. If calibration cannot find a threshold meeting target precision/recall, the sub-agent boundaries (Open question 1) are the next thing to revisit |
+| P3-R4 | `Azure.AI.Projects` is at preview (1.2.0-beta.5 from APS.Atlas reference); breaking changes between betas could land mid-Phase-3 | Pin to a specific version in `Directory.Packages.props`; locked-mode CI restore catches drift; integration tests against deployed Foundry catch behavioral regressions; plan a Phase 3.x bump audit when the SDK reaches GA |
+| P3-R5 | Pinball Map API contract differs from documented shape (per DL-0002 lesson) | Live-contract test (PR 3) is non-optional; runs against the live endpoint pre-merge. Same lesson Phase 2 surfaced for OPDB |
+| P3-R6 | Per-call cost ceiling fires on legitimate complex queries, returning premature refusal | Default ceiling `$0.10` is generous (~10k tokens at gpt-4.1 prices); telemetry tracks `CostCeilingHit` rate so calibration data is available; raise ceiling if rate >5% on the eval set |
+| P3-R7 | In-process LRU cache evicts hot entries on each ACA scale event (not a Phase 3 problem yet, but a Phase 5+ surprise waiting) | Document the v1 limit in ADR-0015; the deferred-Redis revisit trigger is "multi-instance ACA + cache-hit-rate justifies"; Phase 6 SLO work re-checks cache hit rate |
+| P3-R8 | Eval-set ground truth biases toward "OPDB-citable simple lookups" — gives false confidence about the harder questions Phase 4 will surface | Document the bias in `data/eval/README.md`; Phase 4 grows the set against manuals/bulletins/rules. Treat Phase 3 eval baseline as a regression-detection floor, not a coverage ceiling |
+| P3-R9 | Prompt change lands without an eval-set re-run, regressing citation accuracy silently | PR template gains a "Prompt change? eval-set re-run attached?" check; ADR-0018 § Operational discipline section documents the requirement. Belt-and-suspenders: prompt-version OTel tag means a regression in production logs identifies the offending PR |
+
+### Open design questions (resolved in-flight, not blocking the plan)
+
+1. **Sub-agent routing rules.** Initial keyword-classifier draft documented in PR 4's `Router.md`; locked by Wave 2 close after PR 5 stubs validate the boundaries. Initial draft:
+   - **Valuation** — `(price|worth|value|sell|buy|trade-in)` against a known machine; Phase 3 stub returns "I can give you the manufacturer/year/theme, but live-pricing requires an integration that ships in a later phase" with OPDB citation.
+   - **Rules** — `(rules|gameplay|mode|combo|jackpot|wizard mode|skill shot)` against a known machine; Phase 3 grounds against any rules-text in OPDB descriptions.
+   - **Repair** — `(broken|fix|replace|service bulletin|coil|switch|opto|node)`; Phase 3 grounds against OPDB description + Stern service-bulletin titles already in the repository.
+   - Default routing: ambiguous or out-of-scope → refusal with category `OutOfScope`.
+2. **Confidence threshold value.** ADR-0017 ships at 0.65 draft; H2 calibration sets the locked value. If the calibrated value moves >0.05, ADR-0017 gets a supersession or follow-up entry.
+3. **Eval-set size + ground-truth source.** Initial seed: ~30 questions, 10 per sub-agent, hand-curated by reviewing 50 random OPDB machines and writing one factual question per machine for which the OPDB record itself is the ground-truth citation. This biases toward simple lookups (regression detection floor, not coverage). Phase 4 grows the set when RAG ground-truth (manuals, bulletins, rules) becomes citable.
+4. **Pinball Map cache strategy.** Per-region JSON exports, 1-hour TTL (mirrors OPDB). Initial regions: 5 US regions for showcase; global export deferred until traffic justifies it. Lock during PR 3.
+5. **Prompt management — file-per-agent vs single config.** ADR-0018 locks file-per-agent embedded resources. Prompt-versioning scheme: explicit `PromptVersion` constant (operator readability over automation; bumped manually in the same commit as the prompt change). Lock at ADR-0018.
+
+### Operational hand-offs
+
+Three operational tasks intentionally fall outside this phase's PR scope (mirroring Phase 2's pattern of separating functional close from live-validated close):
+
+1. **H1 — Bicep `deployPhase2 = true` apply + Foundry smoke probe.** Run `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev` after the Bicep param flip merges; verify Azure OpenAI account, AI Search, Storage, ACR, App Insights, Key Vault, **Foundry hub + project** all provisioned per ADR-0013's (extended) table. Run `dotnet run --project src/PinballWizard.Cli -- --ensure-azure-foundry`; expected output: `Foundry project verified: 4 agents registered (Router, Valuation, Rules, Repair); OpenAI connection healthy.`
+2. **H2 — First eval-set baseline run + confidence-threshold calibration.** Set Azure OpenAI env vars (PowerShell, not Git-Bash); run `dotnet run -- --eval`; capture `data/eval/results/wizard.{timestamp}.json`; commit it as the v1 baseline; calibrate confidence threshold; if the locked value moves >0.05 from ADR-0017's draft, append a supersession entry. Cost: ≤ $0.50 per run × ~5 runs during calibration ≤ $2.50 total.
+3. **H3 — Pinball Map live-API probe baseline.** Run the live-contract test against `pinballmap.com` post-merge; verify response shape matches DTOs; spot-check 3 returned locations for full provenance preservation; record observed `requestDelayMs` floor (server stops 429ing) so the seed-manifest override is grounded in measurement, not guess.
+
+Each hand-off, when executed, gets captured as a comment on the Phase 3 § Retrospective (or a follow-up entry in `decision-log.md`) so the operational evidence joins the code evidence in the project record. Per Phase 2 lesson DL-0003, hand-offs may surface regressions that block phase exit until fixed; budget for it.
+
+### Retrospective
+
+*Populated at phase completion.*
 
 ---
 
