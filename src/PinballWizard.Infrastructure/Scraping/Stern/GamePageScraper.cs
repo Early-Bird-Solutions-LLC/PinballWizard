@@ -303,10 +303,21 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
         return false;
     }
 
-    private sealed class LinkRaw
-    {
-        [JsonPropertyName("href")] public string Href { get; set; } = "";
-        [JsonPropertyName("text")] public string? Text { get; set; }
-        [JsonPropertyName("isDownload")] public bool IsDownload { get; set; }
-    }
+    // Positional record for the JS-evaluation result. PR #34 converted this
+    // to a class-with-init-properties as a workaround for Playwright 1.12.0,
+    // which used Activator.CreateInstance(type) (no parameterless ctor on
+    // positional records → throws). Playwright 1.59.0 (PR #61) deserializes
+    // via System.Text.Json, which supports positional records natively.
+    //
+    // `Href` is `string?` because System.Text.Json assigns null when the JSON
+    // omits the property — the JS push at line ~280 always emits href but a
+    // hostile / unexpected DOM could shape-shift; the downstream
+    // IsNullOrWhiteSpace guard at line ~250 handles both null and empty.
+    // `internal` (not `private`) so SternPlaywrightRecordDeserializationTests
+    // in the test assembly can pin the System.Text.Json deserialization path
+    // Playwright invokes.
+    internal sealed record LinkRaw(
+        [property: JsonPropertyName("href")] string? Href,
+        [property: JsonPropertyName("text")] string? Text,
+        [property: JsonPropertyName("isDownload")] bool IsDownload);
 }

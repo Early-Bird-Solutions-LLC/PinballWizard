@@ -211,11 +211,18 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
         return links;
     }
 
-    private sealed class BulletinRaw
-    {
-        [JsonPropertyName("href")] public string Href { get; set; } = "";
-        [JsonPropertyName("text")] public string? Text { get; set; }
-        [JsonPropertyName("date")] public string? Date { get; set; }
-        [JsonPropertyName("relatedGames")] public string? RelatedGames { get; set; }
-    }
+    // Positional record for the JS-evaluation result. PR #34 converted this
+    // to a class-with-init-properties as a workaround for Playwright 1.12.0;
+    // Playwright 1.59.0 (PR #61) deserializes via System.Text.Json, which
+    // supports positional records natively. See the matching LinkRaw record
+    // in GamePageScraper.cs for the full historical reasoning. `Href` is
+    // `string?` to match the System.Text.Json contract on missing fields;
+    // the downstream IsNullOrWhiteSpace guard handles both null and empty.
+    // `internal` (not `private`) so SternPlaywrightRecordDeserializationTests
+    // in the test assembly can pin the deserialization path.
+    internal sealed record BulletinRaw(
+        [property: JsonPropertyName("href")] string? Href,
+        [property: JsonPropertyName("text")] string? Text,
+        [property: JsonPropertyName("date")] string? Date,
+        [property: JsonPropertyName("relatedGames")] string? RelatedGames);
 }

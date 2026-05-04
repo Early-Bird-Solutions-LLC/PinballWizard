@@ -42,4 +42,14 @@
     <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Tests pin the System.Text.Json deserialization contract for the
+         private DTO records used by the Stern Playwright scrapers
+         (LinkRaw, BulletinRaw). These records are deserialized by
+         Playwright via STJ; the tests catch JsonPropertyName typos and
+         missing-field semantics that would otherwise only surface as
+         "0 results" against the live site. -->
+    <InternalsVisibleTo Include="PinballWizard.Scraper.Tests" />
+  </ItemGroup>
+
 </Project>
