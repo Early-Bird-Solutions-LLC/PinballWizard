@@ -43,12 +43,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Tests pin the System.Text.Json deserialization contract for the
-         private DTO records used by the Stern Playwright scrapers
-         (LinkRaw, BulletinRaw). These records are deserialized by
-         Playwright via STJ; the tests catch JsonPropertyName typos and
-         missing-field semantics that would otherwise only surface as
-         "0 results" against the live site. -->
+    <!-- Tests pin the deserialization contract for the internal DTO classes
+         used by the Stern Playwright scrapers (LinkRaw, BulletinRaw).
+         Playwright's EvaluateArgumentValueConverter calls
+         Activator.CreateInstance(t) and assigns properties one by one;
+         the contract test asserts a public parameterless ctor exists,
+         that JsonPropertyName attributes match the JS-side keys, and that
+         every property is settable. JsonPropertyName typos / accidental
+         readonly-property changes / accidental positional-record reverts
+         would otherwise only surface as "0 results" against the live site.
+         See docs/decision-log.md DL-0002 for the full history. -->
     <InternalsVisibleTo Include="PinballWizard.Scraper.Tests" />
   </ItemGroup>
 

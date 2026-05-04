@@ -303,21 +303,25 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
         return false;
     }
 
-    // Positional record for the JS-evaluation result. PR #34 converted this
-    // to a class-with-init-properties as a workaround for Playwright 1.12.0,
-    // which used Activator.CreateInstance(type) (no parameterless ctor on
-    // positional records → throws). Playwright 1.59.0 (PR #61) deserializes
-    // via System.Text.Json, which supports positional records natively.
+    // Class-with-settable-properties (not a positional record) because
+    // Playwright's EvaluateAsync<T> deserializer (EvaluateArgumentValueConverter
+    // .ToExpectedType, both in 1.12.0 and 1.59.0 confirmed) calls
+    // Activator.CreateInstance(t) and then assigns properties one by one.
+    // Positional records have no parameterless ctor, so Activator throws.
     //
-    // `Href` is `string?` because System.Text.Json assigns null when the JSON
-    // omits the property — the JS push at line ~280 always emits href but a
-    // hostile / unexpected DOM could shape-shift; the downstream
-    // IsNullOrWhiteSpace guard at line ~250 handles both null and empty.
-    // `internal` (not `private`) so SternPlaywrightRecordDeserializationTests
-    // in the test assembly can pin the System.Text.Json deserialization path
-    // Playwright invokes.
-    internal sealed record LinkRaw(
-        [property: JsonPropertyName("href")] string? Href,
-        [property: JsonPropertyName("text")] string? Text,
-        [property: JsonPropertyName("isDownload")] bool IsDownload);
+    // PR #72 attempted to revert this to a positional record on the assumption
+    // that Playwright 1.59 had switched to System.Text.Json deserialization;
+    // that assumption was wrong (live-site validation surfaced
+    // MissingMethodException at sternpinball.com against the bulletins page).
+    // See docs/decision-log.md DL-0002.
+    //
+    // `internal` (not `private`) so SternPlaywrightDtoActivatorContractTests
+    // in the test assembly can assert the parameterless-ctor + property-name
+    // contract that Playwright's deserializer enforces at runtime.
+    internal sealed class LinkRaw
+    {
+        [JsonPropertyName("href")] public string Href { get; set; } = "";
+        [JsonPropertyName("text")] public string? Text { get; set; }
+        [JsonPropertyName("isDownload")] public bool IsDownload { get; set; }
+    }
 }
