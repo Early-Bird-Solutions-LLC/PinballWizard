@@ -211,18 +211,26 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
         return links;
     }
 
-    // Positional record for the JS-evaluation result. PR #34 converted this
-    // to a class-with-init-properties as a workaround for Playwright 1.12.0;
-    // Playwright 1.59.0 (PR #61) deserializes via System.Text.Json, which
-    // supports positional records natively. See the matching LinkRaw record
-    // in GamePageScraper.cs for the full historical reasoning. `Href` is
-    // `string?` to match the System.Text.Json contract on missing fields;
-    // the downstream IsNullOrWhiteSpace guard handles both null and empty.
-    // `internal` (not `private`) so SternPlaywrightRecordDeserializationTests
-    // in the test assembly can pin the deserialization path.
-    internal sealed record BulletinRaw(
-        [property: JsonPropertyName("href")] string? Href,
-        [property: JsonPropertyName("text")] string? Text,
-        [property: JsonPropertyName("date")] string? Date,
-        [property: JsonPropertyName("relatedGames")] string? RelatedGames);
+    // Class-with-settable-properties (not a positional record) because
+    // Playwright's EvaluateAsync<T> deserializer (EvaluateArgumentValueConverter
+    // .ToExpectedType, both in 1.12.0 and 1.59.0 confirmed) calls
+    // Activator.CreateInstance(t) and then assigns properties one by one.
+    // Positional records have no parameterless ctor, so Activator throws.
+    //
+    // PR #72 attempted to revert this to a positional record on the assumption
+    // that Playwright 1.59 had switched to System.Text.Json deserialization;
+    // that assumption was wrong (live-site validation surfaced
+    // MissingMethodException at sternpinball.com against the bulletins page).
+    // See docs/decision-log.md DL-0002.
+    //
+    // `internal` (not `private`) so SternPlaywrightDtoActivatorContractTests
+    // in the test assembly can assert the parameterless-ctor + property-name
+    // contract that Playwright's deserializer enforces at runtime.
+    internal sealed class BulletinRaw
+    {
+        [JsonPropertyName("href")] public string Href { get; set; } = "";
+        [JsonPropertyName("text")] public string? Text { get; set; }
+        [JsonPropertyName("date")] public string? Date { get; set; }
+        [JsonPropertyName("relatedGames")] public string? RelatedGames { get; set; }
+    }
 }

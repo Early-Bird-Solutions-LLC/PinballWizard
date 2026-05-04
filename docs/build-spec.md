@@ -372,10 +372,14 @@ Phase 2 shipped 10 PRs across 3 waves between 2026-05-04 (Wave 1 launch) and 202
 **Operational hand-offs deferred (functional Phase 2 close vs. live-validated Phase 2 close).** Three operational tasks intentionally fall outside this phase's PR scope:
 
 1. **Item 4 — OPDB sync against deployed Cosmos.** Set `Cosmos__AccountEndpoint` + `Cosmos__AccountResourceId` + `Opdb__BaseUrl` + `Opdb__ApiToken` (PowerShell, not Git-Bash); run `--source opdb --dry-run` for projection; inspect output; run `--source opdb` for real; verify ~12k machines in Cosmos `machines` container with full provenance.
-2. **Item 6 — Stern Playwright live-site validation.** Run `--source games` and `--source bulletins` against `sternpinball.com`; confirm non-zero `ScrapedItem` yields; spot-check provenance fields. The records revert is best-effort verified by the build + 6 STJ deserialization tests; the live-site validation is the final check.
+2. **Item 6 — Stern Playwright live-site validation.** Run `--source games` and `--source bulletins` against `sternpinball.com`; confirm non-zero `ScrapedItem` yields; spot-check provenance fields. ~~The records revert is best-effort verified by the build + 6 STJ deserialization tests; the live-site validation is the final check.~~ **Outcome: surfaced regression — see § Hand-off outcomes below.**
 3. **Item 9 — Work-email denylist secret + synthetic-token verification.** Set `WORK_EMAIL_PATTERN` repo secret in Settings → Secrets and variables → Actions; push two synthetic test commits (one with the work-email pattern, one with the personal-email pattern); confirm both fail CI on the corresponding sanitization rule; delete the throwaway branches.
 
 Each hand-off, when executed, gets captured as a comment on this Retrospective (or a follow-up entry in `decision-log.md`) so the operational evidence joins the code evidence in the project record.
+
+**Hand-off outcomes (post-Phase-2-close):**
+
+- **Item 6 — Stern Playwright live-site validation, run 2026-05-04: surfaced a regression in PR #72.** The bulletins scrape against `sternpinball.com` threw `MissingMethodException: Cannot dynamically create an instance of type '…+BulletinRaw'. Reason: No parameterless constructor defined.` Stack trace pinpointed `Microsoft.Playwright.Transport.Converters.EvaluateArgumentValueConverter.ToExpectedType` calling `Activator.CreateInstance(t)`, confirming Playwright 1.59 still uses Activator-based deserialization (not STJ as PR #72 had assumed). Fix: revert `LinkRaw` and `BulletinRaw` to `internal sealed class` with `[JsonPropertyName] public T Foo { get; set; }` properties; replace the wrong-pathed `SternPlaywrightRecordDeserializationTests` (which pinned STJ) with `SternPlaywrightDtoActivatorContractTests` (which pins what Playwright actually requires: parameterless ctor + settable properties + JsonPropertyName mapping). Decision recorded in `decision-log.md` DL-0002 (2026-05-04). **Lesson: contract tests must exercise the production code path. The PR #72 STJ tests passed because positional records do satisfy STJ — but Playwright never invokes STJ, so the tests pinned the wrong contract. The audit gates and unit tests both gave green; only the live-site validation revealed the bug. Phase 3 / 4 / 5: when adding "deserialization contract" tests, verify the test invokes the same deserializer the production code does, not a parallel one with similar-but-different semantics.**
 
 **Patterns established in Phase 2 that Phase 3 / 4 / 5 inherit:**
 
@@ -383,7 +387,7 @@ Each hand-off, when executed, gets captured as a comment on this Retrospective (
 - **`IngestionSourceIds`** as the single source of truth for source-id literals. Phase 3 manufacturer scrapers add constants here; the seed manifest references the same values.
 - **`IIngestionSourceRepository.RecordRunResultAsync(sourceId, result, ct)`** as the per-run write-back pattern. Apply-mode runs record; dry-run skips; cancellation skips. Documented in `docs/observability.md` § "IngestionSource write-back".
 - **The boolean-trap-to-enum refactor pattern** when interface changes are already breaking. Future scope items that propose `bool xMode` parameters should default to enum from the start.
-- **`InternalsVisibleTo` for test-pinning of internal types**. PR #72 introduced this for `LinkRaw` / `BulletinRaw` STJ deserialization tests; Phase 3 / 4 / 5 services that need to pin internal contracts inherit the pattern.
+- **`InternalsVisibleTo` for test-pinning of internal types**. PR #72 introduced this for `LinkRaw` / `BulletinRaw` deserialization tests; Phase 3 / 4 / 5 services that need to pin internal contracts inherit the pattern. (PR #72's *test contents* were superseded by `SternPlaywrightDtoActivatorContractTests` after the Item 6 hand-off — see § Hand-off outcomes — but the `InternalsVisibleTo` plumbing itself remained the right mechanism.)
 
 ---
 
