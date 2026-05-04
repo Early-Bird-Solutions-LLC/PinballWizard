@@ -279,6 +279,66 @@ Explicitly out of scope. Each crosses into a later phase or is deferred per `gua
 - **CLI added to AppHost orchestration with `WithExplicitStart()`** — UX nicety carried forward from Phase 0; Phase 5 or later
 - **`MachineRepository` integration tests against deployed Cosmos** (Testcontainers or real-deploy variant) — defer; Phase 4 owns
 
+### Parallelism plan
+
+The seven remaining scope items (after ADRs 0012 + 0013 shipped) have a small dependency core (3 → 4 → 5) and a large independent surface (6, 7, 8, 9). For one-developer-plus-AI execution at the established 2–3-active-PRs ceiling, three waves capture the parallelism.
+
+#### Dependency core (sequential)
+
+`3 → 4 → 5`:
+
+- **3 → 4** — loose. Item 4 doesn't strictly need item 3's seed to *run*, but item 4's run updates `lastRunAt` / counter fields on the OPDB row in `ingestion_sources` (per § Exit criteria). Without item 3, the write-back path has no destination. Pragmatically, 3 lands before 4.
+- **4 → 5** — file conflict. Both touch `OpdbSyncService`; sequencing avoids merge pain. Item 5's instrumentation also benefits from a real OPDB run (item 4's operational hand-off) being available to instrument and verify against.
+
+#### Independent surface (parallel-safe)
+
+Items 6, 7, 8, 9 are independent of each other and of 3 / 4 / 5:
+
+| # | Files touched |
+| --- | --- |
+| 6 — Playwright bump | `Directory.Packages.props` + possibly Stern records reverts |
+| 7 — Dependabot triage | None (pure GitHub PR triage on existing Dependabot PRs) |
+| 8 — Stern asymmetry (route ii) | New `tests/.../README.md` + new pinning test (no Playwright code) |
+| 9 — Work-email denylist | `.github/workflows/sanitization.yml` |
+
+#### Recommended waves
+
+**Wave 1** (open simultaneously, ~3 PRs in flight):
+
+- **Item 9** — Work-email denylist. Smallest. ~5 minutes of YAML editing in `.github/workflows/sanitization.yml`.
+- **Item 7 round 1** — Dependabot triage: close the 4 deprecated-path PRs (`#11 / #12 / #13 / #16`). Pure GitHub action, no code change.
+- **Item 3** — Seed `ingestion_sources`. Substantive engineering: CLI seeder command + JSON manifest at `data/seeds/ingestion_sources.v1.json` + idempotency tests.
+
+No file conflicts within Wave 1.
+
+**Wave 2** (after Wave 1 merges, ~2–3 PRs in flight):
+
+- **Item 6** — Playwright 1.49+ bump. `Directory.Packages.props` change + Stern validation against live site + records-workaround removal-or-comment per item 6 spec.
+- **Item 8** — Stern Playwright asymmetry (route ii). New `tests/.../README.md` + `Stern_Playwright_Pipeline_Test_Asymmetry_IsAcknowledged` pinning test. Land after item 6 if either touches the same Stern-area code; otherwise concurrent.
+- **Item 4** — OPDB sync against deployed Cosmos. Code part (PR): implement `--dry-run` semantics for `OpdbSyncService` + tests. Operational part (hand-off, **not a PR**): env-var setup → dry-run pass → verify counts → real run → verify Cosmos state. The operational run is captured in the Phase 2 retrospective + against § Exit criteria.
+- **Item 7 round 2** — Merge the clean Dependabot bumps (`#15` Test.Sdk + `#5–#9` GitHub Actions) in dependency order between Wave 2 PRs. Sequence the merges to avoid lockfile churn; do not batch-merge.
+
+**Wave 3** (after Wave 2 merges):
+
+- **Item 5** — OTel groundwork. Instrumentation pattern in `OpdbSyncService` + repository tags + new `docs/observability.md` describing the metric inventory. Must come after item 4 (file conflict) and benefits from item 4's operational run as the first real telemetry source to instrument and verify against.
+
+#### Sizing
+
+| Wave | PRs | Operational hand-offs |
+| --- | --- | --- |
+| Wave 1 | 3 | 0 |
+| Wave 2 | 3 + 1 sequenced Dependabot batch | 1 (OPDB sync against deployed Cosmos) |
+| Wave 3 | 1 (or 1 + 1 if dashboard work is split out) | 0 |
+| **Total** | **~8–10** | **1** |
+
+Matches the earlier 8–12 ballpark, skewing low.
+
+#### Conventions for this phase
+
+- **Item 4's operational run is not a PR.** It's a phase-retrospective hand-off: env vars set, command run, Cosmos state verified, output captured. The phase-exit checklist already includes the relevant § Exit criteria entries (machines container populated; per-source counter write-back); the hand-off satisfies them.
+- **Item 7 (triage) PRs** (closes + clean merges) get brief PR descriptions, no `/local-review` (per [`guardrails.md`](guardrails.md) § Per-PR gate exemption — "Doc-only PRs and pure dependency bumps may skip").
+- **`docs/observability.md`** (created in Wave 3) defines the OTel inventory pattern that Phase 3 / 4 / 5 inherit. Worth doing carefully rather than fast — operability is one of the seven main goals per [`guardrails.md`](guardrails.md).
+
 ### Risks
 
 Phase-specific risks (cross-cutting risks live in `guardrails.md` § Risk register):
