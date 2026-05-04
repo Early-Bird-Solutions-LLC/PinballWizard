@@ -79,7 +79,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/guardrails.md`](docs/guardrails.md) | Meta-spec — seven main goals, scope discipline, decision framework, phase gates, risk register, escalation triggers, monthly self-evaluation |
 | [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria; Phase 0/1 retrospectives; Phase 2 fully spec'd; Phases 3–7+ scaffolded |
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0011 committed; 0012 / 0013 in flight per Phase 2 scope) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0013 committed) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
 
@@ -89,26 +89,26 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | --- | --- | --- |
 | 0 — Foundation (Clean Architecture + IaC + Aspire + Cosmos provisioning) | ✅ Complete | Deployed to personal Earlybird Azure subscription; smoke-test passes end-to-end via `ArmCosmosProvisioner` |
 | 1 — Content ingestion pipeline (8 manufacturers + OPDB) | ✅ Complete | 10 `ISourceScraper` implementations; polite-by-construction; shared JSON-LD + Open Graph parsers; family-wide test infra |
-| 2 — Runtime validation | 🟡 In progress | ADRs 0012/0013, `ingestion_sources` seed, OPDB sync against deployed Cosmos, OTel groundwork, work-email denylist, Playwright bump, Dependabot triage, Stern Playwright asymmetry resolution |
+| 2 — Runtime validation | ✅ Complete | ADRs 0012/0013 promoted, `ingestion_sources` seeded, OPDB sync against deployed Cosmos populated 2,154 base machines + 165 alias-editions, OTel groundwork, work-email denylist, Playwright 1.59 bump, Dependabot triage, Stern Playwright asymmetry documented |
 | 3 — AI & Integration layer | ⏳ Not started | Semantic Kernel router, sub-agents, threshold-driven refusal, evaluation harness, external API clients |
 | 4 — Event-driven RAG | ⏳ Not started | Cosmos Change Feed Function → PdfPig → chunking → embedding → AI Search index + facets |
 | 5 — Blazor + MudBlazor frontend | ⏳ Not started | Public Wizard chat, faceted browse, admin control plane, Entra auth, traffic-attribution middleware |
 | 6 — Operability + launch readiness | ⏳ Not started | SLOs, dashboards, runbooks, DR drill, threat model, accessibility audit, performance audit |
 | 7+ — Post-launch features | ⏳ Deferred | Strategy Tracker, OCR score capture, Dream Game generator |
 
-**Tests:** 507 passing across foundation + scrapers + Cosmos + OPDB integration. Build runs clean with `TreatWarningsAsErrors`.
+**Tests:** 566 passing across foundation + scrapers + Cosmos + OPDB integration. Build runs clean with `TreatWarningsAsErrors`.
 
 ## Tech stack
 
 - **.NET 10 / C# 14**, `Directory.Build.props` enforcing zero warnings as errors
 - **.NET Aspire 13.2** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
 - **Azure** — Cosmos DB Serverless, AI Search Basic, Azure OpenAI, Container Apps, Container Registry, Storage, Key Vault, Application Insights, Log Analytics
-- **Microsoft.Azure.Cosmos** (data-plane SDK) + **Azure.ResourceManager.CosmosDB** (ARM SDK) — split per ADR-0012 (in flight): schema CRUD via ARM, item CRUD via data-plane SDK
+- **Microsoft.Azure.Cosmos** (data-plane SDK) + **Azure.ResourceManager.CosmosDB** (ARM SDK) — split per [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md): schema CRUD via ARM, item CRUD via data-plane SDK
 - **[Microsoft.Playwright](https://playwright.dev/dotnet/)** — browser automation for Vue.js scraper targets
 - **[AngleSharp](https://anglesharp.github.io/)** — HTML parsing for static pages
 - **[System.CommandLine](https://learn.microsoft.com/en-us/dotnet/standard/commandline/)** — CLI surface
 - **xUnit + NSubstitute** — testing
-- **Bicep** — infrastructure as code, two-tier deploy gating per ADR-0013 (in flight)
+- **Bicep** — infrastructure as code, two-tier deploy gating per [ADR-0013](docs/adr/0013-two-tier-bicep-deploy.md)
 - **Cloudflare Pro** (Phase 5+) — DNS + CDN + managed WAF + Bot Fight + DDoS
 
 ## Quickstart
@@ -220,10 +220,10 @@ src/
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← OTel + service discovery + HTTP resilience + health checks
 tests/
-└── PinballWizard.Scraper.Tests   ← Single test project — 507 tests covering scrapers, Cosmos, OPDB, contract tests
+└── PinballWizard.Scraper.Tests   ← Single test project — 566 tests covering scrapers, Cosmos, OPDB, contract tests
 docs/
 ├── vision.md / guardrails.md / build-spec.md / quality-spec.md
-├── adr/ (0001–0011 plus 0012 / 0013 in flight)
+├── adr/ (0001–0013)
 ├── decision-log.md
 ├── scraper_plan_v4.md (Phase 1 historical design)
 ├── infra_analysis.md (Azure infra plan)
