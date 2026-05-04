@@ -23,6 +23,19 @@ public sealed class OpdbMachineDto
     [JsonPropertyName("is_machine")]
     public bool IsMachine { get; init; }
 
+    /// <summary>
+    /// Whether this record represents an alias (variant / LE edition) of a
+    /// base machine. Aliases share the first two OPDB ID segments with their
+    /// base machine and add a third (e.g., base <c>GRoz4-MrRPw</c>, alias
+    /// <c>GRoz4-MrRPw-A97X1</c>). OPDB sets <c>is_alias=true</c> on aliases
+    /// and omits <c>is_machine</c> entirely, so an alias deserializes with
+    /// <see cref="IsMachine"/>=<c>false</c> and <see cref="IsAlias"/>=
+    /// <c>true</c>. The sync service folds aliases into the base machine's
+    /// <c>Editions</c> list.
+    /// </summary>
+    [JsonPropertyName("is_alias")]
+    public bool IsAlias { get; init; }
+
     /// <summary>Full name including edition suffix (e.g., "Stranger Things (Pro)").</summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }

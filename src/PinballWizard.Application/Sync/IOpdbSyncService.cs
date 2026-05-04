@@ -62,6 +62,22 @@ public sealed record OpdbSyncResult
     /// <summary>Number of records skipped because they failed validation or mapping.</summary>
     public required int Skipped { get; init; }
 
+    /// <summary>
+    /// Number of OPDB alias records (variant / LE editions) folded into
+    /// their base machine's <c>Editions</c> list. In dry-run mode this is
+    /// the projected count; in apply mode it is the actual count of
+    /// editions appended (one per alias whose base machine was found).
+    /// </summary>
+    public required int AliasesAppended { get; init; }
+
+    /// <summary>
+    /// Number of OPDB alias records whose base machine was NOT found in
+    /// the repository — most commonly because the base record was filtered
+    /// out earlier in the same sync (missing manufacturer, etc.). Logged
+    /// at warning level when non-zero.
+    /// </summary>
+    public required int AliasesOrphaned { get; init; }
+
     /// <summary>Wall-clock duration of the sync.</summary>
     public required TimeSpan Duration { get; init; }
 }
