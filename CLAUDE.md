@@ -36,10 +36,10 @@ src/
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← Aspire shared OTel + health + service discovery + resilience
 tests/
-└── PinballWizard.Scraper.Tests   ← single test project, 507 tests, all manufacturers + Cosmos + OPDB
+└── PinballWizard.Scraper.Tests   ← single test project, 566 tests, all manufacturers + Cosmos + OPDB
 ```
 
-ADRs live in [`docs/adr/`](docs/adr/) (0001–0011). The slnx is `PinballWizard.slnx`.
+ADRs live in [`docs/adr/`](docs/adr/) (0001–0013). The slnx is `PinballWizard.slnx`.
 
 ### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
 
@@ -97,7 +97,7 @@ Bicep is split into two tiers gated by `deployPhase2 bool = false`. Phase 1 (def
 - **Microsoft.Extensions.\*** 10.5.0 — Hosting, DI, configuration, logging
 - **Microsoft.Extensions.Http.Resilience** 10.5.0 — standard HTTP resilience pipeline
 - AngleSharp — HTML parsing
-- Microsoft.Playwright 1.12.0 — Stern's Vue.js pages (stale, planned upgrade to 1.49+; records workaround in place)
+- Microsoft.Playwright 1.59.0 — Stern's Vue.js pages. DTOs (`LinkRaw`, `BulletinRaw`) stay as `internal sealed class` with `[JsonPropertyName]` properties because Playwright's `EvaluateArgumentValueConverter` deserializes via `Activator.CreateInstance` + property setters, not STJ — see [DL-0002](docs/decision-log.md) and `SternPlaywrightDtoActivatorContractTests`.
 - System.CommandLine — CLI
 - xUnit + NSubstitute — testing
 - Docker + cron — Phase 1 deployment + scheduling
@@ -109,7 +109,7 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 
 --source <alias>            manuals | games | bulletins | jjp | ap | spooky |
                             pinballbrothers | barrelsoffun | multimorphic |
-                            chicagogaming | opdb | all
+                            cgc | opdb | all
 --scrape-only               Discover URLs + metadata, don't download
 --download                  Download new/changed files
 --download-all              Force re-download
@@ -118,7 +118,11 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 --ensure-cosmos-containers  Post-deploy smoke-test: bootstraps DB + containers via the
                             ICosmosProvisioner selected for the configured endpoint.
                             Idempotent. Exit 2 + remediation if Cosmos isn't configured.
---dry-run                   Scrape without persisting
+--seed-ingestion-sources    Upsert `data/seeds/ingestion_sources.v1.json` into the
+                            ingestion_sources Cosmos container. Idempotent. Canonical
+                            seeder — do not seed via portal or `az cosmosdb` ad-hoc.
+--dry-run                   Scrape without persisting (OPDB sync respects this via
+                            OpdbSyncMode.DryRun: logs fetch + would-write counts only).
 --install-playwright        Install Playwright browsers
 --verbose                   Debug logging
 ```
@@ -138,11 +142,12 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 
 ## Documentation map
 
-- [`docs/adr/`](docs/adr/) — 11 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation
+- [`docs/adr/`](docs/adr/) — 13 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation, Cosmos ARM-vs-data-plane split (0012), two-tier Bicep deploy gate (0013)
+- [`docs/vision.md`](docs/vision.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/quality-spec.md`](docs/quality-spec.md), [`docs/decision-log.md`](docs/decision-log.md) — canonical spec system (vision / rules / phased plan / quality gates / sub-ADR decisions)
 - [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — comprehensive Phase 1 design
 - [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infra plan + Phase 2 integration
 
-Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_03.md` (despite the name, includes the 2026-05-04 continuation through PR #63).
+Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_04_evening_phase2_close.md` (Phase 2 operationally closed; OPDB cache + per-source politeness shipped through PR #80).
 
 ## PR self-audit (pre-push, BLOCKING)
 
