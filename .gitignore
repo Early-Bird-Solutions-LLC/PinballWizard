@@ -20,7 +20,15 @@ publish/
 .idea/
 
 # Data (Docker volume — not checked in)
-data/
+# Exception: data/seeds/ is checked-in seed input (manifests consumed by
+# CLI seeder commands, e.g. --seed-ingestion-sources reads
+# data/seeds/ingestion_sources.v1.json). Runtime output (downloads,
+# metadata, logs, snapshots, history) stays ignored.
+# NOTE: pattern is `data/*` (not `data/`) so the parent isn't excluded —
+# git can't re-include children whose parent directory is ignored.
+data/*
+!data/seeds/
+!data/seeds/**
 
 # OS
 .DS_Store
