@@ -189,11 +189,21 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        var result = await sync.SyncAsync(cancellationToken);
+        var mode = dryRun ? OpdbSyncMode.DryRun : OpdbSyncMode.Apply;
+        var result = await sync.SyncAsync(mode, cancellationToken);
         Console.WriteLine();
-        Console.WriteLine($"OPDB sync: fetched {result.Fetched}, inserted {result.Inserted}, " +
-                          $"updated {result.Updated}, skipped {result.Skipped}, " +
-                          $"duration {result.Duration.TotalSeconds:N1}s");
+        if (dryRun)
+        {
+            Console.WriteLine($"OPDB sync (DRY RUN — no writes): fetched {result.Fetched}, " +
+                              $"would-insert {result.Inserted}, would-update {result.Updated}, " +
+                              $"skipped {result.Skipped}, duration {result.Duration.TotalSeconds:N1}s");
+        }
+        else
+        {
+            Console.WriteLine($"OPDB sync: fetched {result.Fetched}, inserted {result.Inserted}, " +
+                              $"updated {result.Updated}, skipped {result.Skipped}, " +
+                              $"duration {result.Duration.TotalSeconds:N1}s");
+        }
         return;
     }
 

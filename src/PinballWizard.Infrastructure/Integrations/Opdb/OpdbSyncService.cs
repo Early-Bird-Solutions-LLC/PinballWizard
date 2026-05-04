@@ -43,15 +43,23 @@ public sealed class OpdbSyncService : IOpdbSyncService
     }
 
     /// <inheritdoc />
-    public async Task<OpdbSyncResult> SyncAsync(CancellationToken cancellationToken)
+    public async Task<OpdbSyncResult> SyncAsync(OpdbSyncMode mode, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         var fetched = 0;
         var inserted = 0;
         var updated = 0;
         var skipped = 0;
+        var isDryRun = mode == OpdbSyncMode.DryRun;
 
-        _logger.LogInformation("OPDB sync starting...");
+        if (isDryRun)
+        {
+            _logger.LogInformation("OPDB sync starting (DRY RUN — fetch only, no Cosmos writes)...");
+        }
+        else
+        {
+            _logger.LogInformation("OPDB sync starting...");
+        }
 
         await foreach (var dto in _client.StreamAllMachinesAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -65,16 +73,27 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 continue;
             }
 
+            // Read existing in both modes — the read is required to
+            // distinguish projected-insert from projected-update counts.
             var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, cancellationToken).ConfigureAwait(false);
             if (existing is null)
             {
-                await _machines.UpsertAsync(mapped, cancellationToken).ConfigureAwait(false);
+                if (!isDryRun)
+                {
+                    await _machines.UpsertAsync(mapped, cancellationToken).ConfigureAwait(false);
+                }
                 inserted++;
             }
             else
             {
+                // Merge runs in both modes: in dry-run the mutated `existing`
+                // is discarded by the GC, but performing the merge confirms
+                // the mapping itself doesn't throw on real OPDB data.
                 OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now);
-                await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+                if (!isDryRun)
+                {
+                    await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+                }
                 updated++;
             }
 
@@ -96,9 +115,18 @@ public sealed class OpdbSyncService : IOpdbSyncService
             Duration = stopwatch.Elapsed,
         };
 
-        _logger.LogInformation(
-            "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped.",
-            stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped);
+        if (isDryRun)
+        {
+            _logger.LogInformation(
+                "OPDB sync complete (DRY RUN — no writes performed) in {ElapsedMs} ms: {Fetched} fetched, would-insert {Inserted}, would-update {Updated}, {Skipped} skipped.",
+                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "OPDB sync complete in {ElapsedMs} ms: {Fetched} fetched, {Inserted} inserted, {Updated} updated, {Skipped} skipped.",
+                stopwatch.ElapsedMilliseconds, fetched, inserted, updated, skipped);
+        }
 
         return result;
     }

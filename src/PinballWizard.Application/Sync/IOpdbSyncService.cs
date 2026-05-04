@@ -18,7 +18,31 @@ public interface IOpdbSyncService
     /// Runs a full sync from OPDB into the machine repository. Returns
     /// a summary of the operation for telemetry / logging.
     /// </summary>
-    Task<OpdbSyncResult> SyncAsync(CancellationToken cancellationToken);
+    Task<OpdbSyncResult> SyncAsync(OpdbSyncMode mode, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Mode flag for <see cref="IOpdbSyncService.SyncAsync"/>. Avoids the
+/// "boolean trap" at call sites — a stray <c>true</c> at a SyncAsync
+/// call is opaque, while <see cref="DryRun"/> is self-documenting.
+/// </summary>
+public enum OpdbSyncMode
+{
+    /// <summary>
+    /// Real run: fetches the OPDB catalog and applies all inserts/updates
+    /// to the machine repository. Counters in <see cref="OpdbSyncResult"/>
+    /// reflect actual writes performed.
+    /// </summary>
+    Apply,
+
+    /// <summary>
+    /// Dry-run: fetches the OPDB catalog and projects insert/update/skip
+    /// counts as if they were applied — but performs no Cosmos writes.
+    /// Reads still happen (required to distinguish projected-insert from
+    /// projected-update). Use to validate Cosmos connectivity, OPDB data
+    /// quality, and projected RU consumption before a real run.
+    /// </summary>
+    DryRun,
 }
 
 /// <summary>

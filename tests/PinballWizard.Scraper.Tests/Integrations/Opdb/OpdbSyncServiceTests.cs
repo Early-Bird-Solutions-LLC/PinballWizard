@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Integrations.Opdb;
@@ -70,7 +71,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
-        var result = await sync.SyncAsync(CancellationToken.None);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
         Assert.Equal(2, result.Inserted);
@@ -98,7 +99,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
         var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
-        var result = await sync.SyncAsync(CancellationToken.None);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
         Assert.Equal(0, result.Inserted);
@@ -122,12 +123,78 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines?page=1&page_size=100", $"[{nonMachine}]");
 
         var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
-        var result = await sync.SyncAsync(CancellationToken.None);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
         Assert.Equal(0, result.Inserted);
         Assert.Equal(0, result.Updated);
         Assert.Equal(1, result.Skipped);
+    }
+
+    // ── Dry-run mode ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SyncAsync_DryRunNewMachine_ProjectsInsertWithoutUpserting()
+    {
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things"),
+            MachineJson("XYZ", manufacturer: "Jersey Jack Pinball", name: "Wonka", commonName: "Wonka")));
+
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+        _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        // Counters reflect what WOULD have been written.
+        Assert.Equal(2, result.Fetched);
+        Assert.Equal(2, result.Inserted);
+        Assert.Equal(0, result.Updated);
+        Assert.Equal(0, result.Skipped);
+
+        // Reads must still happen — they're how we distinguish projected
+        // insert from projected update.
+        await _repository.Received(2).GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // The load-bearing assertion: NO writes occur in dry-run mode.
+        await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRunExistingMachine_ProjectsUpdateWithoutUpserting()
+    {
+        _handler.SetResponseFor("/api/machines?page=1&page_size=100", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Old Title",
+            FirstSeenAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            LastSeenAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var sync = new OpdbSyncService(_client, _repository, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        Assert.Equal(1, result.Fetched);
+        Assert.Equal(0, result.Inserted);
+        Assert.Equal(1, result.Updated);
+        Assert.Equal(0, result.Skipped);
+
+        await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+
+        // Merge MUST still run in dry-run (per the documented contract on
+        // OpdbSyncMode.DryRun). The substituted repository handed back a
+        // reference to `existing`; the service mutated it in place even
+        // though it didn't persist. If a future refactor wraps the merge
+        // call in `if (!isDryRun)`, this assertion fails — forcing a
+        // re-read of the contract.
+        Assert.Equal("Stranger Things", existing.Title);
+        Assert.Equal(NowFixed, existing.LastSeenAt);
     }
 
     private static string MachineJson(string opdbId, string manufacturer, string name, string commonName) =>
