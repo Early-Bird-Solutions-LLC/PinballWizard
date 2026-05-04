@@ -73,13 +73,9 @@ Every captured item carries a deterministic ID `SHA-256(canonical_url.ToLower())
 
 **Provenance is sacred** — any data path that drops `Source` / `DiscoveryUrl` / `DiscoveryContext` / `GameSlug` is a 🔴 in `/local-review`. The provenance chain is the foundation of Phase 2 RAG citations.
 
-### Cosmos persistence (LOCKED — see ADR 0011, PR #63)
+### Cosmos persistence (LOCKED — see [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md))
 
-- **Schema CRUD** (database/container create/replace, partition-key checks, throughput) goes through ARM via `Azure.ResourceManager.CosmosDB`.
-- **Runtime item CRUD** (read/write documents) goes through the data-plane SDK `Microsoft.Azure.Cosmos`.
-- `ICosmosProvisioner` selects between `ArmCosmosProvisioner` (deployed Cosmos with AAD via `DefaultAzureCredential`, requires `Cosmos:AccountResourceId`) and `DataPlaneCosmosProvisioner` (Aspire emulator master-key auth).
-- **Cosmos containers are NOT in Bicep.** Runtime `--ensure-cosmos-containers` is the canonical creator; idempotent; verifies partition-key paths match.
-- Why: Cosmos data-plane RBAC genuinely does NOT model schema-mutation actions (Azure rejects `Microsoft.DocumentDB/databaseAccounts/sqlDatabases/*` at deploy validation). Custom roles can't grant `CreateDatabase`. Don't relitigate.
+Schema CRUD (databases, containers, partition keys, throughput) goes through ARM via `Azure.ResourceManager.CosmosDB`; runtime item CRUD goes through the data-plane SDK `Microsoft.Azure.Cosmos`. `ICosmosProvisioner` selects `ArmCosmosProvisioner` (deployed Cosmos, AAD via `DefaultAzureCredential`, keyed off `Cosmos:AccountResourceId`) vs `DataPlaneCosmosProvisioner` (Aspire emulator, master-key auth). Containers are not in Bicep — runtime `--ensure-cosmos-containers` is the canonical creator. Full rationale, alternatives considered (including the failed PR #62 custom-RBAC attempt), and operational consequences (two role assignments in two independent RBAC systems) live in [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md).
 
 ### Aspire foundation
 
@@ -136,7 +132,7 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 1. **Provenance is sacred.** Every item must trace back to its source URL.
 2. **Polite-by-construction.** PoliteScraperBase + IPolitenessGate. No raw `HttpClient.GetAsync` in scrapers. robots.txt honored unconditionally.
 3. **Machine-consumer metadata first.** Exhaust OG / JSON-LD / sitemap / robots before DOM selectors.
-4. **Schema CRUD via ARM, item CRUD via data-plane SDK.** No Cosmos containers in Bicep.
+4. **Schema CRUD via ARM, item CRUD via data-plane SDK.** No Cosmos containers in Bicep. ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md))
 5. **Personal identity only.** Commits MUST show `94459922+jkeeley2073@users.noreply.github.com` (`git log -1 --format='%an <%ae>'`). Personal Earlybird Azure subscription only. No Azure DevOps integration ever.
 6. **PowerShell, not Git-Bash, for Cosmos resource IDs.** MSYS path translation rewrites `/subscriptions/...` to `C:/Program Files/Git/subscriptions/...`. Friendly-error guard catches it but PowerShell avoids the trip-up.
 7. **Phase 2 storage = AI Search Basic + Cosmos.** NOT pgvector / Postgres. NOT AI Search Standard. See `project_phase2_architecture_decisions.md`.
