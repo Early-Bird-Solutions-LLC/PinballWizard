@@ -147,7 +147,7 @@ Living list. Format: `ID | description | severity | likelihood | mitigation | la
 | R1 | Showcase narrative undersold while AI tracks (C/D/E) unstarted | High | Certain (current state) | README rewrite + thin Wizard slice as early Phase 4 milestone | 2026-05-04 |
 | R2 | Stale Playwright 1.12.0 dependency carries records workaround | Medium | Certain | Phase 2.x scheduled upgrade to 1.49+ | 2026-05-04 |
 | R3 | Open Dependabot PRs against deprecated path send "unmaintained" signal | Low | Certain | Triage pass; close deprecated-path PRs, merge clean ones | 2026-05-04 |
-| R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Known | Either Playwright-route test infra or documented asymmetry note | 2026-05-04 |
+| R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Resolved (route ii) | Documented asymmetry in [`tests/PinballWizard.Scraper.Tests/README.md`](../tests/PinballWizard.Scraper.Tests/README.md) § "Stern Playwright asymmetry"; pinned by `SternPlaywrightAsymmetryDocumentationTests`. Revisit when a Playwright-route test fixture lands. | 2026-05-04 |
 | R5 | AI Search + OpenAI cost overrun if usage scales unexpectedly | High | Possible | Cost alerts at $300; per-feature attribution in quality-spec; LRU cache + threshold-driven refusal | 2026-05-04 |
 | R6 | Indefinite schedule drift without urgency forcing function | Medium | Possible | Phase gates + per-phase exit checklist; monthly self-evaluation per this doc | 2026-05-04 |
 | R7 | Quality-gate erosion (deferred ⚠️ becomes routine) | Medium | Possible | Monthly review of `/local-review` outcomes; ratchet rule: never lower a gate | 2026-05-04 |
