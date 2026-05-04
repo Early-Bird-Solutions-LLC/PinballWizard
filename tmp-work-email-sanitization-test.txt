@@ -1,0 +1,11 @@
+Synthetic test for the WORK_EMAIL_PATTERN sanitization rule (Item 9
+hand-off, Phase 2 § Scope, 2026-05-04). This file contains a string that
+matches the pattern stored in the WORK_EMAIL_PATTERN repo secret. The
+sanitization workflow is expected to fail CI on the "Work email
+(secret-sourced)" rule when this file is present.
+
+Trigger string: jkeeley@distilledtech.com
+
+After CI confirms the failure, this branch is deleted (local + remote)
+and no PR is opened. The point of the exercise is to verify that the
+proactive denylist is wired correctly, not to merge anything.
