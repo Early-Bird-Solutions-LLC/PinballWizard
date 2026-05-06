@@ -11,6 +11,13 @@
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.4.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- Azure.AI.Projects 2.0 is GA (April 2026) and is the data-plane SDK
+         for the Foundry project endpoint per ADR-0014. Phase 3 PR 2a uses
+         it for the post-deploy smoke probe (AzureFoundrySmokeProbe);
+         Wave 2 PR 4 will add Microsoft.Agents.AI.Foundry (preview, the
+         Microsoft Agent Framework wrapper) for IAiRouter + agent
+         construction via AsAIAgent. -->
+    <PackageReference Include="Azure.AI.Projects" Version="2.0.1" />
     <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
          CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
          genuinely does not include `sqlDatabases/write` (and there is no valid
