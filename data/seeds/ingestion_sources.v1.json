@@ -81,5 +81,16 @@
     "politenessOverrides": {
       "requestDelayMs": 10000
     }
+  },
+  {
+    "id": "pinballmap",
+    "displayName": "Pinball Map (pinballmap.com)",
+    "scraperImplKey": "pinballmap",
+    "baseUrl": "https://pinballmap.com/api/v1/",
+    "enabled": true,
+    "cadence": "daily",
+    "politenessOverrides": {
+      "requestDelayMs": 5000
+    }
   }
 ]

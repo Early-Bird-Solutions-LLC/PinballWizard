@@ -13,6 +13,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.Opdb;
+using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
@@ -341,6 +342,17 @@ static IHost CreateHost(string[] args)
     if (opdbWired)
     {
         builder.Services.AddOpdbIntegration(builder.Configuration);
+    }
+
+    // Pinball Map integration — gated on PinballMap:BaseUrl. Phase 3 Wave 1
+    // ships the read-side client (region locations on demand). Unlike OPDB
+    // there is no batch sync that writes to a repository, so the wiring is
+    // independent of Cosmos — a downstream consumer (Wizard answer flow,
+    // future location-aware features) injects the client directly.
+    var pinballMapWired = !string.IsNullOrWhiteSpace(builder.Configuration[PinballMapOptions.BaseUrlKey]);
+    if (pinballMapWired)
+    {
+        builder.Services.AddPinballMapIntegration(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)

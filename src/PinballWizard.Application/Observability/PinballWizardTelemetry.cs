@@ -53,7 +53,34 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of an OPDB sync run in milliseconds.");
 
+    // ── Pinball Map fetch instrumentation ────────────────────────────────
+    // Pinball Map fetches are per-region (1 fetch = 1 region's locations),
+    // not bulk-streamed like OPDB. Counters carry a `cache_outcome`
+    // attribute (hit | miss | refresh) so dashboards can observe how
+    // often the on-disk cache spares the network.
+
+    public static readonly Counter<long> PinballMapFetched = Meter.CreateCounter<long>(
+        "pinwiz.pinballmap.fetched",
+        unit: "{region}",
+        description: "Pinball Map region-locations fetches across all calls (cache hits + misses).");
+
+    public static readonly Counter<long> PinballMapLocations = Meter.CreateCounter<long>(
+        "pinwiz.pinballmap.locations",
+        unit: "{location}",
+        description: "Locations returned by Pinball Map fetches. Useful for capacity planning vs API growth.");
+
+    public static readonly Counter<long> PinballMapFailed = Meter.CreateCounter<long>(
+        "pinwiz.pinballmap.failed",
+        unit: "{fetch}",
+        description: "Pinball Map fetches that aborted with an exception.");
+
+    public static readonly Histogram<double> PinballMapFetchDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.pinballmap.fetch.duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Pinball Map region fetch in milliseconds.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
+    public const string PinballMapFetchActivity = "pinwiz.pinballmap.fetch";
 }

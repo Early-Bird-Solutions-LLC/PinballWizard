@@ -13,4 +13,5 @@ namespace PinballWizard.Application.Persistence;
 public static class IngestionSourceIds
 {
     public const string Opdb = "opdb";
+    public const string PinballMap = "pinballmap";
 }
