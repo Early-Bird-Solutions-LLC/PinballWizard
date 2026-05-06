@@ -58,6 +58,11 @@ var keyVaultName             = '${namePrefix}-kv-${environment}-${uniqueSuffix}'
 var containerRegistryName    = '${namePrefix}acr${environment}${uniqueSuffix}' // ACR: alphanumeric only, lowercased
 var searchServiceName        = '${namePrefix}-search-${environment}-${uniqueSuffix}'
 var openAiAccountName        = '${namePrefix}-openai-${environment}-${uniqueSuffix}'
+var foundryAccountName       = '${namePrefix}-foundry-${environment}-${uniqueSuffix}'
+var foundryProjectName       = 'pinwiz-wizard'
+var foundryChatDeploymentName       = 'gpt-4o-mini'
+var foundryChatHeavyDeploymentName  = 'gpt-4-1' // Foundry deployment names disallow '.'; the "1" suffix maps to the gpt-4.1 model.
+var foundryEmbeddingDeploymentName  = 'text-embedding-3-large'
 var storageAccountName       = take(toLower('${namePrefix}st${environment}${uniqueSuffix}'), 24) // Storage: <=24 chars, alphanumeric
 var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
@@ -239,6 +244,136 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPh
 }
 
 // -----------------------------------------------------------------------------
+// Microsoft AI Foundry — account (kind=AIServices) + project + model deployments
+// -----------------------------------------------------------------------------
+// Per ADR-0014, Phase 3 introduces Foundry as the AI orchestration platform.
+// The Foundry resource is a single Microsoft.CognitiveServices/accounts of
+// kind=AIServices with allowProjectManagement=true, hosting a project as a
+// child resource, plus model deployments as additional child resources.
+// Hub-based projects (the older Microsoft.MachineLearningServices/workspaces
+// shape) are discontinued in Azure.AI.Projects 2.0 (April 2026 GA) — the new
+// project-endpoint shape is consumed via AIProjectClient(new Uri(endpoint)).
+//
+// Note: this is additive alongside the existing kind=OpenAI account above.
+// Phase 3 only consumes the Foundry account (the OpenAI account stays for
+// backward compatibility with anything that may have depended on its
+// resource ID; a future PR can remove it once nothing references it).
+//
+// Endpoint format consumed by AzureFoundrySmokeProbe + IAiRouter:
+//   https://<customSubDomainName>.services.ai.azure.com/api/projects/<project-name>
+
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (deployPhase2) {
+  name: foundryAccountName
+  location: location
+  tags: tags
+  kind: 'AIServices'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    allowProjectManagement: true
+    customSubDomainName: foundryAccountName
+    defaultProject: foundryProjectName
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+  }
+}
+
+resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = if (deployPhase2) {
+  parent: foundry
+  name: foundryProjectName
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    displayName: 'Pinball Wizard'
+    description: 'Phase 3 Wizard orchestrator (ADR-0014). Hosts Wizard / Valuation / Rules / Repair agents constructed via Microsoft Agent Framework Responses Agent pattern.'
+  }
+}
+
+// Model deployments live on the Foundry account (not the project) per the
+// Microsoft.CognitiveServices/accounts/deployments contract. Per ADR-0015,
+// gpt-4o-mini is the default for the Wizard / Valuation / Rules agents
+// (~80–85% of routed calls); gpt-4.1 is the escalation tier used by the
+// Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
+// 3072 dimensions is the locked embedding choice from
+// project_phase2_architecture_decisions.md.
+//
+// IMPORTANT: deployment capacity is in 1k-tokens-per-minute units and
+// counts against per-region quota. Defaults below are conservative; bump
+// via the bicepparam files if rate-limit is hit during eval-set runs.
+
+resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+  parent: foundry
+  name: foundryChatDeploymentName
+  sku: {
+    name: 'GlobalStandard'
+    capacity: 50
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'gpt-4o-mini'
+      version: '2024-07-18'
+    }
+    raiPolicyName: 'Microsoft.DefaultV2'
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
+resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+  parent: foundry
+  name: foundryChatHeavyDeploymentName
+  sku: {
+    name: 'GlobalStandard'
+    capacity: 20
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'gpt-4.1'
+      version: '2025-04-14'
+    }
+    raiPolicyName: 'Microsoft.DefaultV2'
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+  // Serialize after the chat deployment to avoid cross-deployment
+  // capacity contention during create.
+  dependsOn: [
+    foundryChatDeployment
+  ]
+}
+
+resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+  parent: foundry
+  name: foundryEmbeddingDeploymentName
+  sku: {
+    name: 'Standard'
+    capacity: 50
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: 'text-embedding-3-large'
+      version: '1'
+    }
+    raiPolicyName: 'Microsoft.DefaultV2'
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+  dependsOn: [
+    foundryChatHeavyDeployment
+  ]
+}
+
+// -----------------------------------------------------------------------------
 // Storage Account (Standard LRS)
 // -----------------------------------------------------------------------------
 
@@ -384,6 +519,26 @@ resource openAiDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =
   }
 }
 
+resource foundryDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
+  scope: foundry
+  name: 'send-to-law'
+  properties: {
+    workspaceId: logAnalytics.id
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
 resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: blobService
   name: 'send-to-law'
@@ -413,6 +568,8 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 //   Search Index Data Contributor    — 8ebe5a00-799e-43f5-93ac-243d3dce84a7
 //   Cognitive Services OpenAI User   — 5e0bd9bd-7b93-4f28-af87-19fc36ad61bd
 //   Storage Blob Data Contributor    — ba92f5b4-2d11-453d-a403-e96b0029c9fe
+//   Azure AI User                    — 53ca6127-db72-4b80-b1b0-d745d6d5456d
+//   Azure AI Project Manager         — eadc314b-1a2d-4efa-be10-5d325db5065e
 // Cosmos DB data-plane role uses a SEPARATE namespace (sqlRoleAssignments under
 // the database account, not Microsoft.Authorization). The well-known
 // 'Cosmos DB Built-in Data Contributor' definition is 00000000-0000-0000-0000-000000000002
@@ -487,6 +644,32 @@ resource openAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (d
   }
 }
 
+// Foundry RBAC: developer needs both `Cognitive Services OpenAI User` (for
+// runtime model invocations against the chat / embedding deployments hosted
+// on the Foundry account) and `Azure AI User` (for project-scoped operations
+// — listing agents, threads, evaluations). Per ADR-0014, runtime auth is
+// DefaultAzureCredential against the project endpoint; these are the
+// matching deploy-time grants.
+resource foundryOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
+  scope: foundry
+  name: guid(foundry.id, developerObjectId, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: developerObjectId
+    principalType: roleAssignmentPrincipalType
+  }
+}
+
+resource foundryAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
+  scope: foundry
+  name: guid(foundry.id, developerObjectId, '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: developerObjectId
+    principalType: roleAssignmentPrincipalType
+  }
+}
+
 resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
   scope: storage
   name: guid(storage.id, developerObjectId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
@@ -523,6 +706,17 @@ output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'h
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''
+
+// Foundry outputs. The project endpoint URL is the canonical value
+// consumed by AiFoundryOptions.ProjectEndpoint (per ADR-0014). Operators
+// set $env:AiFoundry__ProjectEndpoint from `foundryProjectEndpoint` for
+// the --ensure-azure-foundry smoke test and Wave 2 PR 4 IAiRouter.
+output foundryAccountName string = foundry.?name ?? ''
+output foundryProjectName string = empty(foundry.?name ?? '') ? '' : foundryProjectName
+output foundryProjectEndpoint string = empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}'
+output foundryChatDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatDeploymentName
+output foundryChatHeavyDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatHeavyDeploymentName
+output foundryEmbeddingDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryEmbeddingDeploymentName
 
 output storageAccountName string = storage.?name ?? ''
 output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ?? ''
