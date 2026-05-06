@@ -12,6 +12,7 @@ using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -83,6 +84,11 @@ var seedIngestionSourcesOption = new Option<bool>("--seed-ingestion-sources")
     Description = "Read data/seeds/ingestion_sources.v1.json (relative to the current working directory, typically the repo root) and upsert each entry into the Cosmos ingestion_sources container. Idempotent: re-runs apply config field changes from the manifest while preserving runtime fields (LastRunAt, LastSuccessAt, totalDocumentsDiscovered, totalRunFailures) populated by actual scraper runs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
+{
+    Description = "Post-deploy smoke-test for the Azure AI Foundry project (ADR-0014): connects via DefaultAzureCredential, enumerates model deployments, asserts the configured chat (AiFoundry:ChatDeploymentName) and embedding (AiFoundry:EmbeddingDeploymentName) deployments are present. Idempotent. Requires AiFoundry:ProjectEndpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -94,6 +100,7 @@ rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
+rootCommand.Options.Add(ensureAzureFoundryOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -107,6 +114,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
+    var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -165,6 +173,37 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine();
         Console.WriteLine($"Ingestion sources seeded: {seedResult.Inserted} inserted, " +
                           $"{seedResult.Updated} updated, {seedResult.Total} total.");
+        return;
+    }
+
+    // Handle --ensure-azure-foundry (post-deploy Foundry smoke-test, ADR-0014).
+    // Resolves IAzureFoundrySmokeProbe from DI; the probe is only registered
+    // when AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
+    // is set). Mirrors the --ensure-cosmos-containers exit-code-2 remediation
+    // pattern.
+    if (ensureAzureFoundry)
+    {
+        var probe = host.Services.GetService<IAzureFoundrySmokeProbe>();
+        if (probe is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-azure-foundry requires AI Foundry to be configured. Set " +
+                $"{AiFoundryOptions.ProjectEndpointKey} (the deployed Foundry project endpoint URL, e.g. " +
+                "https://<account>.services.ai.azure.com/api/projects/<project>).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var result = await probe.ProbeAsync(cancellationToken);
+        if (!result.Success)
+        {
+            Console.Error.WriteLine($"Azure Foundry smoke probe failed: {result.Error}");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(
+            $"Azure Foundry deployments verified: chat + embedding deployments present at {result.FoundProjectEndpoint}.");
         return;
     }
 
@@ -353,6 +392,17 @@ static IHost CreateHost(string[] args)
     if (pinballMapWired)
     {
         builder.Services.AddPinballMapIntegration(builder.Configuration);
+    }
+
+    // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint
+    // (ADR-0014). Phase 3 PR 2a ships the smoke probe only; Wave 2 PR 4
+    // adds IFoundryAgentFactory + IAiRouter on top. Treat absence as a
+    // valid configuration in Phase 0/1/2 (no AI surface needed) and in
+    // Aspire-emulator local dev (no Foundry to connect to).
+    var foundryWired = !string.IsNullOrWhiteSpace(builder.Configuration[AiFoundryOptions.ProjectEndpointKey]);
+    if (foundryWired)
+    {
+        builder.Services.AddAzureFoundryIntegration(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
