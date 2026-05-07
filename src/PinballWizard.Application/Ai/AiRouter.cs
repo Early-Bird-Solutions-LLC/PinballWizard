@@ -3,6 +3,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Confidence;
+using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
 
@@ -31,6 +32,8 @@ public sealed partial class AiRouter : IAiRouter
     private readonly ISemanticAnswerCache _cache;
     private readonly IAgentPromptProvider _promptProvider;
     private readonly IConfidenceCalculator _confidenceCalculator;
+    private readonly ITokenUsageReader _tokenUsageReader;
+    private readonly IAiCostCalculator _costCalculator;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
 
@@ -39,6 +42,8 @@ public sealed partial class AiRouter : IAiRouter
         ISemanticAnswerCache cache,
         IAgentPromptProvider promptProvider,
         IConfidenceCalculator confidenceCalculator,
+        ITokenUsageReader tokenUsageReader,
+        IAiCostCalculator costCalculator,
         IOptions<AiFoundryOptions> options,
         ILogger<AiRouter> logger)
     {
@@ -46,6 +51,8 @@ public sealed partial class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(promptProvider);
         ArgumentNullException.ThrowIfNull(confidenceCalculator);
+        ArgumentNullException.ThrowIfNull(tokenUsageReader);
+        ArgumentNullException.ThrowIfNull(costCalculator);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -53,6 +60,8 @@ public sealed partial class AiRouter : IAiRouter
         _cache = cache;
         _promptProvider = promptProvider;
         _confidenceCalculator = confidenceCalculator;
+        _tokenUsageReader = tokenUsageReader;
+        _costCalculator = costCalculator;
         _options = options.Value;
         _logger = logger;
     }
@@ -74,12 +83,14 @@ public sealed partial class AiRouter : IAiRouter
         PinballWizardTelemetry.AiCacheMisses.Add(1);
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
+        var wizardModel = ResolveAgentModel(AgentName.Wizard);
         var startedAt = DateTimeOffset.UtcNow;
 
         string responseText;
+        AgentResponse? response;
         try
         {
-            var response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
+            response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             responseText = response?.Text ?? string.Empty;
         }
@@ -91,6 +102,67 @@ public sealed partial class AiRouter : IAiRouter
 
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
+
+        // Cost attribution per ADR-0015. ITokenUsageReader returns null
+        // when usage isn't yet exposed by Microsoft.Agents.AI (1.4.0
+        // does not standardize a Usage property — see issue #2688).
+        // When null, AiCostCalculator returns 0 cents and the ceiling
+        // check below is a no-op; cost telemetry stays at zero until
+        // a real reader is wired (a one-class change in a follow-up PR
+        // when the SDK exposes usage). The pricing + ceiling machinery
+        // is in place so the surface is stable across the swap.
+        double costUsdCents = 0.0;
+        if (response is not null)
+        {
+            var usage = _tokenUsageReader.TryRead(response, wizardModel);
+            if (usage is not null)
+            {
+                costUsdCents = _costCalculator.ComputeUsdCents(usage);
+                if (costUsdCents > 0)
+                {
+                    PinballWizardTelemetry.AiCostUsdCents.Add(
+                        (long)Math.Ceiling(costUsdCents),
+                        new KeyValuePair<string, object?>("model", wizardModel),
+                        new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard),
+                        new KeyValuePair<string, object?>("prompt_version", promptVersion));
+                }
+            }
+        }
+
+        // Per-call cost ceiling (ADR-0015). Phase 3 single-shot model:
+        // one user-question = one agent.RunAsync that may include
+        // function-tool loops the framework drives internally. We
+        // measure cost AFTER the call; if the cumulative cost
+        // exceeded the ceiling, mark the response as a refusal with
+        // RefusalCategory.CostCeilingHit. Phase 5+ multi-turn will
+        // also check before continuing the next turn; the ceiling
+        // value (PerCallCostCeilingUsdCents) carries forward unchanged.
+        if (costUsdCents > _options.PerCallCostCeilingUsdCents)
+        {
+            PinballWizardTelemetry.AiRefusals.Add(
+                1,
+                new KeyValuePair<string, object?>("refusal_category", RefusalCategory.CostCeilingHit.ToString()),
+                new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard));
+
+            _logger.LogInformation(
+                "AiRouter refused on cost ceiling: cost={CostUsdCents:F2}c ceiling={Ceiling}c model={Model}",
+                costUsdCents,
+                _options.PerCallCostCeilingUsdCents,
+                wizardModel);
+
+            var ceilingAnswer = new WizardAnswer(
+                Text: BuildRefusalText(RefusalCategory.CostCeilingHit),
+                Citations: Array.Empty<Citation>(),
+                SubAgentUsed: AgentName.Wizard,
+                Confidence: 0.0,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.CostCeilingHit,
+                PromptVersion: promptVersion,
+                FoundryThreadId: null);
+            _cache.Store(normalized, promptVersion, ceilingAnswer);
+            return ceilingAnswer;
+        }
 
         var citations = ExtractCitationsFromText(responseText);
         var signals = _confidenceCalculator.Compute(responseText, citations);
@@ -209,5 +281,13 @@ public sealed partial class AiRouter : IAiRouter
     private static string Normalize(string question)
     {
         return question.Trim().ToLowerInvariant();
+    }
+
+    private string ResolveAgentModel(string agentName)
+    {
+        return _options.AgentModels.TryGetValue(agentName, out var model)
+            && !string.IsNullOrWhiteSpace(model)
+            ? model
+            : _options.ChatDeploymentName;
     }
 }
