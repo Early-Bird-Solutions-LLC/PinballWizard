@@ -70,7 +70,7 @@ all*; layering "how grounded" comes later.
 
 ### Calibration
 
-H3 baseline (build-spec.md § Phase 4 scope item 23) measures
+H3 baseline (build-spec.md § Phase 4 scope item 24) measures
 `over_eager_refusal_rate{category=no_citation}` against the eval
 set. Target: ≤ 20% (matches [ADR-0017](0017-confidence-threshold-refusal.md)'s
 over-eager-refusal target).
@@ -145,8 +145,15 @@ ADR-0023 makes the gate enforceable.
   internally, the trace shows zero successful tool results, and
   the gate refuses with `NoCitation`. Correct posture (no
   citation = refuse) but indistinguishable from agent behavior.
-  Revisit if tool-error refusals become a noticeable subset of
-  `NoCitation` refusals.
+  **Mitigation:** build-spec § Phase 4 scope item 25
+  (observability.md update) adds a `pinwiz.ai.tool_errors_total`
+  counter tagged with `tool=searchCorpus|getMachineByTitle` so
+  the two failure modes are distinguishable in production. A
+  spike in `pinwiz.ai.refusals_total{category=no_citation}`
+  correlated with `pinwiz.ai.tool_errors_total` indicates tool
+  errors; a spike with no correlation indicates agent-doesn't-
+  call-tool. Revisit if the correlation is noisy or the
+  distinction is needed at finer granularity.
 - **Increases refusal rate at H2 / H3 vs. Phase 3 H2 baseline.**
   Expected; the H2 baseline (`citation_precision = 0.133`) was
   artificially propped up by regex acceptance of hallucinated
@@ -181,8 +188,9 @@ ADR-0023 makes the gate enforceable.
   refusal-category surface and over-eager-refusal target
 - [ADR-0022](0022-citation-extraction.md) — provides the
   structural citation input this guardrail enforces
-- [build-spec.md § Phase 4](../build-spec.md) — scope items 5,
-  22, H3
+- [build-spec.md § Phase 4](../build-spec.md) — scope items 5
+  (this ADR), 23 (citation-required guardrail implementation),
+  24 (H3 final eval + threshold calibration)
 - [guardrails.md](../guardrails.md) goal #5 — provenance / refusal
   invariant
 - [vision.md](../vision.md) — "refuse rather than fabricate"

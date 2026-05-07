@@ -41,7 +41,7 @@ corpus shapes.
 
 ### Cross-encoder layer (second stage) is deferred behind an H3 quality gate
 
-If H3 final eval baseline (build-spec.md § Phase 4 scope item 23)
+If H3 final eval baseline (build-spec.md § Phase 4 scope item 24)
 reports `citation_precision < 0.65` AND ≥30% of refusals trace
 back to retrieval-side root causes (analyzed via the per-question
 trace correlation in eval results), implementation lands in
@@ -70,23 +70,13 @@ cross-encoder:
   on the top-K vector+semantic results before returning to
   `IAiRouter`
 - Configuration: `Rag:CrossEncoder:Enabled` flag; default
-  `false` until H3 gate triggers, then `true`. Off-by-default
-  preserves Phase 4 cost projection without an ADR amendment.
-
-### Alternatives evaluated for the locked path
-
-- **Self-hosted BGE-Reranker on ACA**. Rejected — adds GPU
-  compute cost (~$200–$400/mo), operational burden (model
-  versioning, container rebuilds), and runs counter to the
-  managed-Azure showcase posture per
-  [ADR-0014](0014-microsoft-foundry-orchestration.md).
-- **Foundry-hosted reranker model deployment** (similar to
-  `text-embedding-3-large`). Reserved as a fallback path: if
-  Microsoft ships a first-class reranker model on Foundry by
-  H3, it preempts Cohere. Cost projection comparable.
-- **No cross-encoder at all (semantic ranker only forever).**
-  Rejected — the H3 gate exists to determine if this is
-  acceptable; without the gate the question stays open.
+  `false` until H3 gate triggers, then `true`. **The flag is
+  part of the deferred implementation surface, not Phase 4 v1
+  code.** Phase 4 v1 has zero `Rag:CrossEncoder:*` reads —
+  the flag and its options class land in the same PR as the
+  Cohere integration code if/when the gate triggers. Reviewers
+  running the dead-config grep should treat this ADR as the
+  documentation that explains why no Phase 4 v1 reads exist.
 
 ## Consequences
 
@@ -127,6 +117,8 @@ cross-encoder:
 
 ## Alternatives considered
 
+**Phase 4 stance — should we ship this layer now?**
+
 - **Implement cross-encoder layer in Phase 4 unconditionally.**
   Rejected — adds scope to Phase 4 without evidence it's needed;
   Phase 4 already grew by bulletins (decision 2026-05-07);
@@ -134,13 +126,30 @@ cross-encoder:
 - **Hard defer to Phase 4.5 with no Phase 4 ADR.** Rejected —
   the *decision* to defer is itself architectural; without an
   ADR the decision is invisible to a reviewer 6 months later.
+- **Add a re-ranking layer that's "off by default but
+  configurable on" to test in dev.** Acceptable as part of the
+  locked implementation path (above); not the primary v1
+  stance.
+
+**Implementation choice — when the gate triggers, what do we
+use?**
+
+- **Self-hosted BGE-Reranker on ACA.** Rejected — adds GPU
+  compute cost (~$200–$400/mo), operational burden (model
+  versioning, container rebuilds), and runs counter to the
+  managed-Azure showcase posture per
+  [ADR-0014](0014-microsoft-foundry-orchestration.md).
+- **Foundry-hosted reranker model deployment** (similar to
+  `text-embedding-3-large`). Reserved as a fallback path: if
+  Microsoft ships a first-class reranker model on Foundry by
+  H3, it preempts Cohere. Cost projection comparable.
 - **Use Foundry's connection abstraction for self-hosted
   reranker.** Rejected as initial path — operational burden
   doesn't justify the marginal gain over Cohere's managed
   service for v1.
-- **Add a re-ranking layer that's "off by default but configurable
-  on" to test in dev.** Acceptable as part of the locked
-  implementation path (above); not the primary v1 stance.
+- **No cross-encoder at all (semantic ranker only forever).**
+  Rejected — the H3 gate exists to determine if this is
+  acceptable; without the gate the question stays open.
 
 ## References
 
@@ -151,8 +160,9 @@ cross-encoder:
 - [ADR-0022](0022-citation-extraction.md) — citations downstream
   of the re-ranked retrieval set
 - [build-spec.md § Phase 4](../build-spec.md) — H3 gate; risk
-  P4-R7 (semantic ranker A/B); scope item 23 (final eval
-  calibration)
+  P4-R7 (semantic ranker A/B); scope item 24 (H3 final eval +
+  threshold calibration evaluating the ADR-0024 cross-encoder
+  gate)
 - [build-spec.md § Phase 4.5](../build-spec.md) — owns
   implementation if H3 gate triggers and Phase 4 closeout
   defers

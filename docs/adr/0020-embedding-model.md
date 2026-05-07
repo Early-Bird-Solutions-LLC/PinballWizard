@@ -122,7 +122,8 @@ Phase 4.5 owns the decision; Phase 4 records the trip-wire here.
   tokenizer alignment
 - [ADR-0021](0021-ai-search-index-schema.md) — vector field
   configuration and schema budget
-- [build-spec.md § Phase 4](../build-spec.md) — scope items 2, 15;
-  cost projection P4-R3
+- [build-spec.md § Phase 4](../build-spec.md) — scope items 2, 15
+  (chunker tokenizer alignment), 16 (embedding pipeline); cost
+  projection P4-R3
 - [build-spec.md § Phase 4.5](../build-spec.md) — full-corpus
   scale considerations

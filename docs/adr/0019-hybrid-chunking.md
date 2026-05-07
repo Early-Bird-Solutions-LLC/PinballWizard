@@ -127,6 +127,6 @@ Phase 3's OPDB-URL-only citations.
   the chunk fields land
 - [ADR-0022](0022-citation-extraction.md) — how chunk metadata
   becomes a Wizard citation
-- [build-spec.md § Phase 4](../build-spec.md) — scope items 1, 14
+- [build-spec.md § Phase 4](../build-spec.md) — scope items 1, 15
 - [guardrails.md](../guardrails.md) goal #5 — provenance / page
   anchors as the showcase differentiator

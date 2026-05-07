@@ -34,6 +34,7 @@ negative) it carries.
 | [0021](0021-ai-search-index-schema.md) | AI Search index schema for Phase 4 RAG (`pinwiz-rag-v1`) | Accepted |
 | [0022](0022-citation-extraction.md) | Tool-call-trace citation extraction (replaces regex over agent prose) | Accepted |
 | [0023](0023-citation-required-guardrail.md) | Citation-required guardrail — refuse when no citation can be attached | Accepted |
+| [0024](0024-two-stage-reranking.md) | Two-stage re-ranking — AI Search semantic ranker now, cross-encoder layer deferred behind H3 gate | Accepted |
 
 ## Conventions
 

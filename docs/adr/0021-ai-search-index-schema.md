@@ -172,7 +172,9 @@ operationally simple.
   citation surface
 - [ADR-0023](0023-citation-required-guardrail.md) — empty
   retrieval set ⇒ refusal
-- [build-spec.md § Phase 4](../build-spec.md) — scope items 3,
-  14, 15
+- [build-spec.md § Phase 4](../build-spec.md) — scope items 3
+  (this ADR), 16 (embedding pipeline + index population), 18
+  (Change Feed Function ingests into this schema), 20 (query
+  client consumes this schema)
 - [build-spec.md § Phase 4.5](../build-spec.md) — schema's
   forward-compatibility design intent

@@ -42,7 +42,7 @@ version):
    URL is a citation. Provenance: OPDB record retrieved during
    the turn.
 2. **For each call to `searchCorpus`** (added in [build-spec.md §
-   Phase 4](../build-spec.md) scope item 20): if the tool
+   Phase 4](../build-spec.md) scope item 21): if the tool
    returned `RetrievedChunk[]` items with non-empty `document_url`
    + `page_start` / `page_end`, each chunk produces a citation.
    Multiple chunks from the same `document_id` collapse into a
@@ -66,7 +66,7 @@ the legacy extractor can be removed.
 ### Migration
 
 Phase 3's `OpdbUrlCitationExtractor` is retired in [build-spec.md
-§ Phase 4](../build-spec.md) scope item 9. Existing tests against
+§ Phase 4](../build-spec.md) scope item 10. Existing tests against
 it stay if they pass against the new impl; otherwise they're
 deleted with a one-line note (no parallel-test farm). Citations
 are the load-bearing artifact for `citation_precision` /
@@ -157,7 +157,8 @@ impact of the swap directly.
   schema feeds the citation surface
 - [ADR-0023](0023-citation-required-guardrail.md) — pairs with
   this ADR for the structural "every answer cites" invariant
-- [build-spec.md § Phase 4](../build-spec.md) — scope items 4, 9,
-  20
+- [build-spec.md § Phase 4](../build-spec.md) — scope items 4
+  (this ADR), 10 (tool-trace extractor implementation), 21
+  (`searchCorpus` tool that feeds citations)
 - Phase 3 retrospective lesson 5 — the gap that motivated this
   ADR
