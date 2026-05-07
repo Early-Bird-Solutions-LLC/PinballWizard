@@ -105,3 +105,13 @@ output searchServiceName string = shared.outputs.searchServiceName
 output openAiAccountName string = shared.outputs.openAiAccountName
 output storageAccountName string = shared.outputs.storageAccountName
 output appInsightsName string = shared.outputs.appInsightsName
+
+// Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
+// operators export as $env:AiFoundry__ProjectEndpoint for the
+// --ensure-azure-foundry smoke probe and Wave 2 PR 4 IAiRouter.
+output foundryAccountName string = shared.outputs.foundryAccountName
+output foundryProjectName string = shared.outputs.foundryProjectName
+output foundryProjectEndpoint string = shared.outputs.foundryProjectEndpoint
+output foundryChatDeploymentName string = shared.outputs.foundryChatDeploymentName
+output foundryChatHeavyDeploymentName string = shared.outputs.foundryChatHeavyDeploymentName
+output foundryEmbeddingDeploymentName string = shared.outputs.foundryEmbeddingDeploymentName
