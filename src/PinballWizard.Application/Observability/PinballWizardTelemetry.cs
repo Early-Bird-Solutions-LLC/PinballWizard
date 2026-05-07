@@ -79,8 +79,48 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single Pinball Map region fetch in milliseconds.");
 
+    // ── AI orchestrator instrumentation (ADR-0015) ───────────────────────
+    // Foundry's SDK auto-emits OTel spans on the Azure.AI.Projects.*
+    // activity source (enabled in ServiceDefaults via the GenAI tracing
+    // app-context switch) carrying gen_ai.* semantic-convention attributes
+    // for token counts, per-call latency, and per-call model identity.
+    // The pinwiz.ai.* instruments below add ONLY what auto-emission
+    // doesn't cover — anything that lives in our IAiRouter wrapper above
+    // the Foundry agents.
+
+    public static readonly Counter<long> AiCacheHits = Meter.CreateCounter<long>(
+        "pinwiz.ai.cache.hits",
+        unit: "{question}",
+        description: "User-questions answered from the in-process LRU semantic cache without invoking Foundry agents (per ADR-0015).");
+
+    public static readonly Counter<long> AiCacheMisses = Meter.CreateCounter<long>(
+        "pinwiz.ai.cache.misses",
+        unit: "{question}",
+        description: "User-questions that missed the cache and were dispatched to the Wizard agent.");
+
+    public static readonly Counter<long> AiCostUsdCents = Meter.CreateCounter<long>(
+        "pinwiz.ai.cost_usd_cents",
+        unit: "USD-cents",
+        description: "Estimated USD-cents accumulated by AI calls. Computed from token counts × AiOptions.PricingTable. Drives the per-call cost ceiling and the daily anomaly aggregation in docs/observability.md.");
+
+    public static readonly Counter<long> AiRefusals = Meter.CreateCounter<long>(
+        "pinwiz.ai.refusals",
+        unit: "{question}",
+        description: "User-questions that ended in a refusal. Tagged with refusal_category (InsufficientGrounding | OutOfScope | LowModelConfidence | CostCeilingHit | HarmfulContent) so dashboards can distinguish retrieval drift from out-of-scope from safety blocks (per ADR-0017).");
+
+    public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
+        "pinwiz.ai.escalations",
+        unit: "{question}",
+        description: "User-questions where the Wizard routed to a heavy-tier sub-agent (gpt-4.1) after the initial light-tier (gpt-4o-mini) result fell below the confidence threshold (per ADR-0015).");
+
+    public static readonly Histogram<double> AiDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.ai.duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single user-question round-trip through IAiRouter (cache lookup + Foundry agent invocation + post-process). Complements per-call gen_ai.* durations from auto-emitted spans.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
     public const string PinballMapFetchActivity = "pinwiz.pinballmap.fetch";
+    public const string AiRouterActivity = "pinwiz.ai.router";
 }
