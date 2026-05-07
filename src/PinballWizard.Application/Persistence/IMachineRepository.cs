@@ -24,4 +24,12 @@ public interface IMachineRepository : IRepository<Machine>
     /// what they already know about.
     /// </summary>
     IAsyncEnumerable<Machine> StreamByManufacturerAsync(string manufacturer, CancellationToken cancellationToken);
+
+    // Cross-partition case-insensitive title lookup, introduced in
+    // Phase 3 Wave 2 PR 5 as the backing store for the
+    // getMachineByTitle Foundry function tool (per ADR-0014). Returns
+    // 0..N machines whose Title equals the argument under
+    // STRINGEQUALS-with-case-insensitive comparison; the function tool
+    // typically takes the first match.
+    IAsyncEnumerable<Machine> QueryByTitleAsync(string title, CancellationToken cancellationToken);
 }

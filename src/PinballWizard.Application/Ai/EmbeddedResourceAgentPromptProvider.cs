@@ -13,7 +13,7 @@ namespace PinballWizard.Application.Ai;
 // "v1.2026.05" (Wave 2 launch).
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v1.2026.05";
+    public const string CurrentPromptVersion = "v2.2026.05";
 
     private readonly Dictionary<string, string> _prompts;
 
