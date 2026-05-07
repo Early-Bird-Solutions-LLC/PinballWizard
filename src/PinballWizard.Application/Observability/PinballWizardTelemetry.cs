@@ -118,9 +118,43 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single user-question round-trip through IAiRouter (cache lookup + Foundry agent invocation + post-process). Complements per-call gen_ai.* durations from auto-emitted spans.");
 
+    // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
+    // The Phase 3 evaluation harness emits these instruments; Phase 6
+    // dashboards aggregate them as a "metric trajectory" surface alongside
+    // the committed JSON results. Counters carry no required attributes —
+    // a single eval run is the natural unit; per-evaluator scores live in
+    // the committed JSON rather than as metrics (per-question-per-run
+    // metric cardinality would explode unhelpfully).
+
+    public static readonly Counter<long> EvalRuns = Meter.CreateCounter<long>(
+        "pinwiz.eval.runs",
+        unit: "{run}",
+        description: "Evaluation harness runs that completed (regardless of pass/fail).");
+
+    public static readonly Counter<long> EvalRunsFailed = Meter.CreateCounter<long>(
+        "pinwiz.eval.runs.failed",
+        unit: "{run}",
+        description: "Evaluation harness runs that aborted with an exception before producing a result file.");
+
+    public static readonly Counter<long> EvalQuestionsScored = Meter.CreateCounter<long>(
+        "pinwiz.eval.questions.scored",
+        unit: "{question}",
+        description: "Per-question evaluations completed (success + per-question failure both increment).");
+
+    public static readonly Counter<long> EvalEvaluatorRegistrations = Meter.CreateCounter<long>(
+        "pinwiz.eval.evaluator.registrations",
+        unit: "{registration}",
+        description: "Custom evaluator versions upserted into the Foundry project. Idempotent on every harness run; the counter increments per registration attempt regardless of whether the version already existed.");
+
+    public static readonly Histogram<double> EvalQuestionDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.eval.question.duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single eval question (IAiRouter dispatch + scoring) in milliseconds.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
     public const string PinballMapFetchActivity = "pinwiz.pinballmap.fetch";
     public const string AiRouterActivity = "pinwiz.ai.router";
+    public const string EvalRunActivity = "pinwiz.eval.run";
 }

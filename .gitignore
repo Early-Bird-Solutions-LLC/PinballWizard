@@ -24,11 +24,17 @@ publish/
 # CLI seeder commands, e.g. --seed-ingestion-sources reads
 # data/seeds/ingestion_sources.v1.json). Runtime output (downloads,
 # metadata, logs, snapshots, history) stays ignored.
+# Exception: data/eval/ is checked-in eval ground-truth + committed
+# results JSON per ADR-0016 — the metric trajectory is visible in
+# `git log` so a prospect reviewing the repo sees the same trend a
+# CI dashboard would.
 # NOTE: pattern is `data/*` (not `data/`) so the parent isn't excluded —
 # git can't re-include children whose parent directory is ignored.
 data/*
 !data/seeds/
 !data/seeds/**
+!data/eval/
+!data/eval/**
 
 # OS
 .DS_Store

@@ -1,0 +1,2 @@
+# Reserved for committed eval-result JSON files per ADR-0016.
+# H2 hand-off (build-spec scope item 13) writes the v1 baseline here.
