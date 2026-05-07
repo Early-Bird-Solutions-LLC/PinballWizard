@@ -62,4 +62,32 @@ public sealed class AiFoundryOptions
     // gets a follow-up entry recording the post-calibration value.
     [Range(0.0, 1.0)]
     public double ConfidenceThreshold { get; set; } = 0.65;
+
+    // USD-cent pricing per 1k input + output tokens, keyed by deployment
+    // name (per ADR-0015's per-agent model selection). Populated with
+    // 2026 May Azure OpenAI public pricing for the deployments shipped
+    // by the H1 hand-off (gpt-4o-mini, gpt-4-1, text-embedding-3-large);
+    // operators override via configuration when prices change. Empty
+    // dictionary disables cost attribution (cost_usd_cents always 0).
+    public Dictionary<string, ModelPricing> PricingTable { get; init; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // gpt-4o-mini GlobalStandard: $0.15 / 1M input ≈ 0.015 cents/1k;
+        // $0.60 / 1M output ≈ 0.060 cents/1k.
+        ["gpt-4o-mini"] = new ModelPricing(InputCentsPer1K: 0.015, OutputCentsPer1K: 0.060),
+        // gpt-4.1 GlobalStandard (deployment name 'gpt-4-1' due to
+        // Foundry's no-dot rule): $2.00 / 1M input ≈ 0.20 cents/1k;
+        // $8.00 / 1M output ≈ 0.80 cents/1k.
+        ["gpt-4-1"] = new ModelPricing(InputCentsPer1K: 0.20, OutputCentsPer1K: 0.80),
+        // text-embedding-3-large Standard: $0.13 / 1M tokens ≈ 0.013
+        // cents/1k. Embeddings have no "output" token concept; we
+        // record the same rate on both fields so the cost calculator
+        // is uniform.
+        ["text-embedding-3-large"] = new ModelPricing(InputCentsPer1K: 0.013, OutputCentsPer1K: 0.013),
+    };
 }
+
+// Per-deployment pricing fact, keyed by deployment name in
+// AiFoundryOptions.PricingTable. USD cents per 1,000 tokens (industry
+// units; Microsoft publishes pricing per 1M tokens, our config converts
+// down to keep the cost-counter values readable in dashboards).
+public sealed record ModelPricing(double InputCentsPer1K, double OutputCentsPer1K);
