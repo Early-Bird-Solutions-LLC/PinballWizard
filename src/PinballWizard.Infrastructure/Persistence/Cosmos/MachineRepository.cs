@@ -30,4 +30,24 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             partitionKey: manufacturer,
             cancellationToken: cancellationToken);
     }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<Machine> QueryByTitleAsync(string title, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+
+        // STRINGEQUALS with the third argument true performs a
+        // case-insensitive comparison server-side, so "foo fighters"
+        // matches a stored "Foo Fighters" without the function tool
+        // having to know which casing was used by OPDB. Cross-partition
+        // (partitionKey: null) — the function tool doesn't know the
+        // manufacturer up front. At ~2,400 machines the RU cost of a
+        // cross-partition equality match is small (single-digit RU
+        // typical for sub-thousand-row scans).
+        return StreamAsync(
+            "SELECT * FROM c WHERE STRINGEQUALS(c.title, @title, true)",
+            parameters: new Dictionary<string, object> { ["title"] = title },
+            partitionKey: null,
+            cancellationToken: cancellationToken);
+    }
 }

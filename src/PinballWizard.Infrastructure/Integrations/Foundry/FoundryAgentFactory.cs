@@ -1,9 +1,11 @@
 using Azure.AI.Projects;
 using Azure.Identity;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Infrastructure.Integrations.Foundry;
@@ -25,6 +27,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
 {
     private readonly AiFoundryOptions _options;
     private readonly IAgentPromptProvider _promptProvider;
+    private readonly MachineGroundingTool _machineGroundingTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -32,14 +35,17 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
     public FoundryAgentFactory(
         IOptions<AiFoundryOptions> options,
         IAgentPromptProvider promptProvider,
+        MachineGroundingTool machineGroundingTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(promptProvider);
+        ArgumentNullException.ThrowIfNull(machineGroundingTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
         _promptProvider = promptProvider;
+        _machineGroundingTool = machineGroundingTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -83,6 +89,15 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         var projectClient = new AIProjectClient(endpoint, new DefaultAzureCredential());
         var result = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
+        // The getMachineByTitle function tool is shared across all four
+        // agents per ADR-0014. Microsoft.Extensions.AI.AIFunctionFactory
+        // wraps the typed C# method into an AIFunction with auto-generated
+        // JSON schema (from [Description] attributes on the method + its
+        // arguments). Wave 2 PR 5 attaches it; Phase 4 will add a
+        // searchCorpus sibling for RAG retrieval.
+        var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
+        AITool[] toolsForAllAgents = [getMachineByTitle];
+
         foreach (var name in AgentName.All)
         {
             var instructions = _promptProvider.GetPrompt(name);
@@ -90,14 +105,16 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
             var agent = projectClient.AsAIAgent(
                 model: model,
                 name: name,
-                instructions: instructions);
+                instructions: instructions,
+                tools: toolsForAllAgents);
             result[name] = agent;
 
             _logger.LogInformation(
-                "Constructed Foundry AIAgent (Responses Agent): name={AgentName} model={Model} promptVersion={PromptVersion}",
+                "Constructed Foundry AIAgent (Responses Agent): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount}",
                 name,
                 model,
-                _promptProvider.PromptVersion);
+                _promptProvider.PromptVersion,
+                toolsForAllAgents.Length);
         }
 
         return result;
