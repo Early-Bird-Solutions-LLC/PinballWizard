@@ -30,6 +30,28 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-07 — Foundry deploy is two-pass + AI Search deferred from H1
+
+**Decision:** The Phase 3 H1 hand-off (per [build-spec.md § Phase 3 § Operational hand-offs](../docs/build-spec.md)) is a **two-pass deploy**, gated by two new Bicep params on `infra/modules/shared.bicep` (and piped through `infra/main-shared.bicep`):
+
+- `deployFoundryModelDeployments` (default `true`) — set `false` on the FIRST deploy of a fresh Foundry account; flip `true` on a subsequent deploy.
+- `deployAiSearch` (default `true`) — set `false` until Phase 4 RAG actually consumes AI Search, OR when the chosen region is at SKU capacity.
+
+H1 succeeded 2026-05-07 against `pinwiz-foundry-dev-hlpz4` / project `pinwiz-wizard`; smoke probe (`--ensure-azure-foundry`) verified the chat (`gpt-4o-mini`) + embedding (`text-embedding-3-large`) deployments are live; the `gpt-4-1` heavy deployment also provisioned cleanly (deployment name uses `-1` not `.1` because Foundry rejects `.` in deployment names; the underlying model is `gpt-4.1`).
+
+**Alternatives considered:**
+
+- **One-shot deploy of (account + project + 3 model deployments)**, originally specified in PR #86. Rejected: failed validation with `InvalidResourceProperties — Policy evaluation returned compliance: for model gpt-4o-mini/2024-07-18 with error:` (the `compliance` and `error` fields were both empty in the API response). Empirically: a fresh `Microsoft.CognitiveServices/accounts` of kind `AIServices` doesn't have its account-scoped Responsible-AI (RAI) policy infrastructure in place at validation time, and the model-deployment validator references it. Splitting the deploy into (1) account + project, (2) model deployments lets the RAI infrastructure initialize between passes.
+- **Setting `raiPolicyName: 'Microsoft.DefaultV2'` explicitly** on the deployments. Tried, did not fix the issue (same empty-error validation failure). The default RAI policy attaches automatically once the account is materialized; specifying it on a fresh account doesn't bridge the validation gap.
+- **Switching region** away from East US 2. Rejected: ADR-0005 locks East US 2; switching the entire deploy is a bigger architecture change than splitting one deploy into two.
+- **Including AI Search in the H1 deploy** anyway. Rejected: the H1 attempt failed with `InsufficientResourcesAvailable` for `Microsoft.Search/searchServices` Basic SKU in East US 2. Phase 3 doesn't actually consume AI Search (Phase 4 RAG does), so deferring it via `deployAiSearch=false` saves ~$74/mo idle and unblocks H1 without compromising functionality. Phase 4 will flip it true when capacity allows or when the region is moved.
+
+**Rationale:** Foundry's account-scoped RAI policy is a runtime-initialized component, not an ARM-template artifact. Bicep's incremental deploy mode handles the two-pass pattern cleanly: pass 2 detects the already-deployed account/project and only adds the model deployments. The pattern is documented in the param descriptions on `shared.bicep`. The `deployAiSearch` gate is a separate concern — it lets the operator skip AI Search when (a) Phase 4 hasn't started consuming it, or (b) the region is at SKU capacity. Both are situational; both have a clear default (`true`) that drops away naturally for steady-state operation.
+
+**Revisit when:** Foundry's ARM contract changes such that fresh accounts bootstrap their RAI policy synchronously (would let us collapse to one-pass; revisit when Microsoft documents `Microsoft.CognitiveServices/accounts/deployments` validation as account-creation-aware). Or when Phase 4 RAG starts consuming AI Search — at that point flip `deployAiSearch=true` and re-deploy. If East US 2 is still capacity-constrained at Phase 4 launch, consider moving AI Search alone to East US (cross-region search-from-app is supported with a small latency penalty) rather than relocating the full stack.
+
+**Related:** PR #86 (Foundry Bicep), this PR (the two-pass split + AI Search gate), [build-spec.md § Phase 3 § Operational hand-offs](../docs/build-spec.md), [ADR-0014](../docs/adr/0014-microsoft-foundry-orchestration.md), [ADR-0013](../docs/adr/0013-two-tier-bicep-deploy.md).
+
 ## 2026-05-04 — OPDB `/api/export` gets an on-disk cache + per-source politeness override
 
 **Decision:** `OpdbClient.StreamAllMachinesAsync` now consults a configurable on-disk cache (default path `data/cache/opdb-export.json`, default TTL 1 hour) before issuing a network request. On cache hit the network is bypassed entirely; on cache miss the response is buffered, persisted to disk best-effort, and returned via a memory stream. The `opdb` ingestion-source seed manifest gains an explicit politeness override (`requestDelayMs: 10000` — 10s between successive OPDB requests) replacing the previous `null`.

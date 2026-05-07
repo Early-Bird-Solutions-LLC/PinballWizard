@@ -45,6 +45,12 @@ param developerObjectId string = ''
 @description('When false (default), provisions ONLY Phase 1 resources (Cosmos serverless + Log Analytics + Cosmos diagnostic settings). Set true when Phase 2 features (RAG, Blazor Web, Admin) start landing — adds App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + 3 blob containers, and the matching diagnostic settings + developer RBAC. Phase 1 monthly spend is ~$30/mo (Cosmos serverless idle + Log Analytics 1GB cap); Phase 2 brings the platform to ~$150/mo even when idle. WARNING: flipping true->false on an existing deploy DELETES the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment if you need to test the Phase 1 baseline against a populated Phase 2 deploy.')
 param deployPhase2 bool = false
 
+@description('When true (default), the Foundry account also ships the chat / chat-heavy / embedding model deployments. Set false on the FIRST deploy of a fresh Foundry account — Azure validates each model deployment against the account-scoped RAI (Responsible AI) policy infrastructure, which does not exist yet on a brand-new account, so a one-shot deploy of (account + project + deployments) fails policy validation. Operational pattern: deploy with deployFoundryModelDeployments=false, then re-deploy with deployFoundryModelDeployments=true once the account is ready (typically within minutes of the first deploy completing). Has no effect when deployPhase2=false.')
+param deployFoundryModelDeployments bool = true
+
+@description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
+param deployAiSearch bool = true
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -83,6 +89,8 @@ module shared 'modules/shared.bicep' = {
     tags: commonTags
     developerObjectId: developerObjectId
     deployPhase2: deployPhase2
+    deployFoundryModelDeployments: deployFoundryModelDeployments
+    deployAiSearch: deployAiSearch
   }
 }
 
