@@ -29,7 +29,8 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 1 | Content ingestion pipeline — 8 manufacturers + OPDB, polite-by-construction, shared helpers, test infra | ✅ Complete |
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
 | 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
-| 4 | Event-driven RAG — Cosmos Change Feed Function, PdfPig text extraction, page-aware chunking, embedding, AI Search index + facets, citation-accuracy eval | ⏳ Not started |
+| 4 | Event-driven RAG — full architecture against a curated 7-machine subset; hybrid chunking; AI Search index with semantic ranker + page-anchor citations; tool-call-trace citation extraction; citation-required guardrail | ⏳ Not started |
+| 4.5 | Manuals corpus expansion — same architecture, all Phase 1 manuals; long-tail PDF edge cases + OCR decision | ⏳ Not started |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
 | 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ⏳ Not started |
 | 7+ | Post-launch features — Strategy Tracker, OCR score capture, Dream Game generator, Trade Matchmaker, tournament push | ⏳ Deferred to post-launch decision |
@@ -640,25 +641,262 @@ Phase 3 shipped 10 PRs across 4 waves between 2026-05-04 (Wave 0 build-spec draf
 
 ---
 
-## Phase 4 — Event-driven RAG
+## Phase 4 — Event-driven RAG (curated subset)
 
 **Status:** ⏳ Not started
-**Sequence position:** Depends on Phase 2 (deployed Cosmos with data) and Phase 3 (orchestrator). The Wizard's answer pipeline lives here.
-**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation.*
+**Sequence position:** Depends on Phase 2 (deployed Cosmos with OPDB catalog populated) and Phase 3 (orchestrator + four agents + eval harness + observability surface). Unblocks Phase 4.5 (corpus expansion — mechanical re-application of the proven architecture) and the public-facing Wizard surface in Phase 5 (Blazor frontend depends on Wizard answers carrying real RAG citations).
+**Demonstrable artifact:** `dotnet run --project src/PinballWizard.Cli -- --ask "How many modes does Godzilla (Premium) have?"` returns a `WizardAnswer` end-to-end against a deployed AI Search Basic index populated with chunks from the curated 7-machine subset (manuals + service bulletins + metadata cards). The answer carries a citation traceable to a specific page in the source PDF (e.g. `Stern Godzilla Manual p.42–43` for rules questions; `Stern Service Bulletin SB-XXXX` for repair questions) — the page anchor is the differentiator vs. Phase 3's OPDB-URL-only citations. When no chunk in the index matches with sufficient confidence, the Wizard refuses with category `NoCitation` per the citation-required guardrail (ADR-0023). Connected-agents wiring lets the Wizard route Repair / Rules / Valuation questions to sub-agents structurally (not via prompt-only instructions). H3 eval baseline rerun shows substantial citation-accuracy improvement vs. Phase 3 H2 (`citation_precision=0.133`); intermediate eval H2 captures the post-A-track lift, final eval H3 captures the post-RAG lift. Six new ADRs (0019–0024) capture chunking / embedding / index-schema / citation-extraction / citation-required / re-ranking decisions. **Phase 4 is also a reference architecture for client RAG engagements** — the hybrid-chunker + page-anchor-citation + citation-required-guardrail stack is what Earlybird Solutions recommends to prospects whose use case is document-grounded Q&A.
 
-> Will cover: Cosmos Change Feed Function design, PdfPig text extraction, page-aware chunking strategy (size, overlap, heading awareness, metadata-card synthesis), embedding model rationale (text-embedding-3-large @ 3072d), AI Search index schema with facets, semantic ranker config, re-ranking strategy, SHA-driven idempotency, citation-accuracy evaluation framework with held-out query set.
+### Scope
 
-### Inherited Phase 3 follow-ups (drive Phase 4 § Scope when drafted)
+In rough sequencing order. Items are sized to fit ~1–2 PRs each; conflict surfaces are called out so the wave plan can pack them. Track designators (A / B / C / D) align with the Phase 4 parallel execution plan held in memory — A = AI orchestrator hardening (inherited Phase 3 follow-ups), B = RAG ingestion pipeline, C = RAG retrieval + Wizard integration, D = Eval re-runs.
 
-These five items rolled forward from Phase 3's H2 baseline run. They block the citation-accuracy metric from producing meaningful regression signal until they're addressed; Phase 4's first scope items pick them up:
+1. **ADR-0019 — Hybrid chunking strategy.** Token-budgeted chunks (~512 tokens, ~10% overlap) within heading-bounded sections; PdfPig outline as section delimiter (with no-outline fallback to fixed-size windowing); page numbers + section heading preserved as chunk metadata. Citations resolve as `manual.pdf p.42–43`. Rationale: page-aware-only gives uneven chunks; token-budgeted-only gives multi-page citation spans; hybrid gives both clean citations AND even chunks. Files: [`docs/adr/0019-hybrid-chunking.md`](adr/0019-hybrid-chunking.md), [`docs/adr/README.md`](adr/README.md) index update.
 
-1. **Connected-agents wiring on the Wizard** — pull Valuation/Rules/Repair into the Wizard's tool surface via `AsAIFunction()`-equivalent OR migrate to Foundry's portal-side connected-agents primitive. Without this, the Wizard's "dispatch to sub-agent" prompt instructions are non-functional and many in-scope questions refuse with the agent's OutOfScope text.
-2. **Re-curate `data/eval/wizard.v1.jsonl` against deployed Cosmos OPDB IDs** — the H2 ground-truth uses subagent-curated IDs that don't match the deployed catalog. A small script that queries `IMachineRepository.QueryByTitleAsync` per question and writes the actual OPDB ID into `expected_citation_set` is sufficient.
-3. **Replace `NullTokenUsageReader` with a real impl** — pending [agent-framework#2688](https://github.com/microsoft/agent-framework/issues/2688). The `IAiCostCalculator` + `pinwiz.ai.cost_usd_cents` machinery is in place from PR 7; the swap is a single class change.
-4. **Read `WizardAnswer.SubAgentUsed` from Foundry's connected-agents trace correlation** — currently the PR 4 placeholder of always "Wizard". Lands alongside item 1.
-5. **Replace the OPDB-URL regex citation extraction with proper tool-call trace inspection** — when Foundry exposes the agent's tool-call result trace, citations come from the actual tool result rather than from regex-matching URLs in the answer text. Cleaner; doesn't depend on the agent being verbose enough to embed URLs.
+2. **ADR-0020 — Embedding model confirmation.** `text-embedding-3-large` @ 3072d. Confirms ADR-0014's draft choice against PdfPig output dimensions and AI Search Basic vector field constraints (15K dims max — well under). Per-call cost: ~$0.13 / 1M tokens. Pre-flight cost projection for the curated subset (~7 manuals × ~150 pages avg × ~500 tokens/page = ~525K tokens → ~$0.07 first run). Files: [`docs/adr/0020-embedding-model.md`](adr/0020-embedding-model.md).
 
-H3 (Pinball Map live-API probe baseline) is a Phase 3 operator follow-up, not a Phase 4 scope item — listed in the Phase 3 § Retrospective.
+3. **ADR-0021 — AI Search index schema.** Vector field `content_embedding` (3072d, HNSW); semantic ranker enabled (Phase 4 default per the design conversation); faceted fields `manufacturer` / `machine_title` / `document_type` / `page_number` / `section_heading`; highlighting on `content` for retrieved-chunk display; index name `pinwiz-rag-v1` with versioning strategy (new `vN+1` index on schema-breaking change, dual-read during cutover). Records the `document_type` enum: `manual` / `service_bulletin` / `metadata_card` — Phase 4 populates all three for the curated subset's Stern machines (manual + service bulletins + metadata card); non-Stern manufacturers populate `manual` + `metadata_card`; bulletin coverage for non-Stern manufacturers extends in Phase 4.5. Files: [`docs/adr/0021-ai-search-index-schema.md`](adr/0021-ai-search-index-schema.md).
+
+4. **ADR-0022 — Tool-call-trace citation extraction.** Replaces the Phase 3 OPDB-URL regex (lesson 5 of Phase 3 retrospective). The `searchCorpus` tool returns `RetrievedChunk[]` with stable IDs; the orchestrator tracks the retrieval set per turn; citations = retrieval set ∩ what the agent referenced (via tool-call trace inspection on the agent's `AgentResponse`). No regex over agent prose. `getMachineByTitle` results union into the same citation surface so Phase 3's grounding path keeps working. Files: [`docs/adr/0022-citation-extraction.md`](adr/0022-citation-extraction.md).
+
+5. **ADR-0023 — Citation-required guardrail.** When zero citations attach to an answer, refuse rather than answer. Combines with ADR-0017's confidence threshold — confidence-below-threshold OR no-citation both refuse, but with distinct categories. New refusal category `NoCitation` distinguishes from `InsufficientGrounding` (the latter means retrieval returned chunks but their similarity scores were below threshold; the former means retrieval returned nothing OR the agent's answer didn't reference any retrieved chunk). Calibration: post-H3 baseline. Files: [`docs/adr/0023-citation-required-guardrail.md`](adr/0023-citation-required-guardrail.md).
+
+6. **ADR-0024 — Two-stage re-ranking strategy.** AI Search's built-in semantic ranker (enabled by ADR-0021) is the Phase 4 v1 re-rank layer. Cross-encoder layer (Cohere Rerank via Foundry connection) is implementation-deferred behind an H3 quality gate (`citation_precision < 0.65` AND ≥30% of refusals trace to retrieval-side root causes). Locked path means the decision is recorded now even if code lands in a Phase 4 fix-up PR or Phase 4.5. Cost framework: ~$30/mo at high volume; well within cap. Files: [`docs/adr/0024-two-stage-reranking.md`](adr/0024-two-stage-reranking.md).
+
+7. **Curated subset slate documentation + PDF coverage verification.** Document the 7-machine slate in `data/phase4/curated-subset.v1.json` (slate manifest): Stern Godzilla (Premium), Stern Foo Fighters (LE), JJP Toy Story 4 (Standard), AP Galactic Tank Force (Standard), Spooky Halloween (Hellraiser), CGC Attack from Mars (Remake), PB Queen (LE). Verification script (`tools/phase4/VerifyCuratedSubsetCoverage.csx`) confirms each machine has ≥1 manual PDF in the deployed `scraped_documents` Cosmos container before downstream items consume; for the two Stern machines (Godzilla + Foo Fighters), additionally records bulletin coverage (≥1 service bulletin expected per machine — Stern's `ServiceBulletinScraper` populated `scraped_documents` in Phase 1). Alternates documented per slot for swap-on-miss. Coverage rationale recorded: 6 of 8 Phase 1 manufacturer scrapers exercised; 5 modern + 1 remake-of-classic + 1 European boutique; sub-agent question surface (rules / repair / valuation) covered with bulletin-grounded Repair quality on Stern machines. Files: new `data/phase4/curated-subset.v1.json`, `tools/phase4/VerifyCuratedSubsetCoverage.csx`, append to `docs/build-spec.md` § Phase 4 § Scope item 7.
+
+8. **(A1) Connected-agents wiring on Wizard** — *inherited Phase 3 follow-up #1.* Wire Valuation / Rules / Repair sub-agents into the Wizard's tool surface via `AsAIFunction()`-equivalent (Microsoft Agent Framework primitive — exposes a sub-agent as a function tool the parent agent can call) — OR migrate to Foundry's portal-side connected-agents primitive (decision recorded as a follow-up entry to ADR-0014 + ADR-0018 in scope item 5's PR or its own micro-PR). Without this, the Wizard's "dispatch to sub-agent" prompt instructions remain non-functional and Phase 3 H2's `subagent_accuracy=0.033` does not move. Files: `src/PinballWizard.Application/Ai/FoundryAgentFactory.cs` (modified to attach connected-agent function tools to the Wizard); potential new `src/PinballWizard.Application/Ai/ConnectedAgentsBinder.cs`; ADR follow-up file. Depends on: ADRs 0019–0024 batch.
+
+9. **(A5) Re-curate `data/eval/wizard.v1.jsonl` against deployed Cosmos** — *inherited Phase 3 follow-up #2.* Small script (`tools/eval/Recurate.csx`) queries `IMachineRepository.QueryByTitleNormalizedAsync` per question and writes the actual deployed-catalog OPDB ID into `expected_citation_set`. Records the recuration timestamp + deployed-Cosmos snapshot ID in the ground-truth file metadata so future audits can trace provenance. Files: new `tools/eval/Recurate.csx`; updated `data/eval/wizard.v1.jsonl`; appended note in `data/eval/README.md`. Depends on: nothing in Phase 4 (data + script change; runs as worktree-isolated subagent).
+
+10. **(A2) Tool-call-trace citation extraction** — *inherited Phase 3 follow-up #5.* Implements ADR-0022. New `ICitationExtractor` abstraction; `ToolTraceCitationExtractor` impl reads citations from `AgentResponse`'s tool-call trace. Existing `OpdbUrlCitationExtractor` retired (its tests stay as historical regression coverage if they pass against the new impl; otherwise deleted with a note). Telemetry: `pinwiz.ai.citations.extracted_total{source=tool_trace|regex_legacy}` so the cutover is observable. Files: new `src/PinballWizard.Application/Ai/Citations/{ICitationExtractor,ToolTraceCitationExtractor}.cs`; `AiRouter.cs` integrated; `OpdbUrlCitationExtractor.cs` retired. Depends on: scope item 8.
+
+11. **(A3) Read `WizardAnswer.SubAgentUsed` from Foundry connected-agents trace** — *inherited Phase 3 follow-up #4.* Reads the actual sub-agent that fielded a question from the agent thread's tool-call trace correlation (added structurally by scope item 8). Replaces the PR 4 placeholder of always "Wizard". Files: `AiRouter.cs` modified; `WizardAnswer.cs` schema unchanged (already has `SubAgentUsed`). Depends on: scope item 8.
+
+12. **(A4) `NullTokenUsageReader` → real impl** — *inherited Phase 3 follow-up #3, conditional.* Pending [agent-framework#2688](https://github.com/microsoft/agent-framework/issues/2688). If the SDK exposes Usage on `AgentResponse` during Phase 4, swap the abstraction (single-class change). Otherwise defer to Phase 5+ when the SDK lands the surface. Tracked here so the abstraction's lifecycle is documented; the swap is **not** a Phase 4 exit criterion.
+
+13. **(B2 / H1) Bicep `deployAiSearch=true` flip + apply.** **Operational hand-off (H1), not a PR — but the param flip itself is a 1-line PR.** PR: update `infra/main-shared.dev.bicepparam` to `deployAiSearch = true`. Hand-off: pre-flight re-check East US 2 AI Search Basic capacity via portal; if still constrained, relocate AI Search to a sibling region (East US, Central US — Phase 1 Cosmos location stays unchanged; cross-region search-from-app latency penalty is small per Phase 3 lesson 3). Apply `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev`. New `--ensure-ai-search` CLI flag (sibling to Phase 3's `--ensure-azure-foundry`) verifies the index endpoint is reachable and the configured deployment has the expected SKU. Files (PR): `infra/main-shared.dev.bicepparam`, `src/PinballWizard.Cli/Program.cs` (new flag), `src/PinballWizard.Infrastructure/Integrations/AiSearch/{IAzureAiSearchSmokeProbe,AzureAiSearchSmokeProbe}.cs`. Records observed apply timestamp in `decision-log.md`. Depends on: nothing in Phase 4 code (infra-only).
+
+14. **(B3) PdfPig wrapper + text-extraction service.** New `IDocumentTextExtractor` abstraction in Application; `PdfPigDocumentTextExtractor` impl in Infrastructure via `UglyToad.PdfPig` 0.1.x; returns `ExtractedDocument { Text, Pages[], Outline[] }`. Pure unit-testable; no Cosmos / AI Search deps. Edge-case handling for encrypted / scanned / OCR-needed PDFs — those return `ExtractionStatus.OcrRequired` (Phase 4.5 owns the OCR fallback decision; Phase 4 logs and skips, treating it as a known coverage gap). Tests against fixture PDFs from the curated subset (committed to `tests/fixtures/phase4/` — small-file representatives of both manuals and Stern bulletins, not the full documents). Files: new `src/PinballWizard.Application/Rag/Extraction/{IDocumentTextExtractor,ExtractedDocument,ExtractionStatus}.cs`, `src/PinballWizard.Infrastructure/Rag/Extraction/PdfPigDocumentTextExtractor.cs`, `tests/PinballWizard.Scraper.Tests/Rag/PdfPigDocumentTextExtractorTests.cs`; `UglyToad.PdfPig` pinned in `Directory.Packages.props`.
+
+15. **(B4) Hybrid chunker.** Implements ADR-0019 — token-budgeted chunks within heading-bounded sections; PdfPig outline as section delimiter; page numbers + section heading preserved as chunk metadata. Pure transform — no infra. Token counting via `Microsoft.ML.Tokenizers` (`Tiktoken` BPE for `cl100k_base`, matching the embedding model's tokenizer). Stern service bulletins are typically short PDFs without rich outlines; the no-outline fallback applies. Files: new `src/PinballWizard.Application/Rag/Chunking/{IChunker,HybridChunker,Chunk}.cs`; tests with fixture documents covering: short doc (single section, bulletin-shaped), long doc (many sections, manual-shaped), chapter-style outline, no-outline fallback, table-of-contents-only outline. Depends on: scope item 14.
+
+16. **(B5) Embedding pipeline + AI Search index population.** Combines `text-embedding-3-large` client (`Azure.AI.OpenAI` 2.x — already in Infrastructure from Phase 3) + AI Search upsert + SHA-driven idempotency. New `IRagIndexer` abstraction; `AiSearchRagIndexer` impl. Index schema definition in code (`AiSearchIndexSchema.cs` per ADR-0021); first-run index creation via `Azure.Search.Documents.Indexes.SearchIndexClient`. Idempotency: chunk ID = SHA-256(machine_id ‖ document_id ‖ page_range ‖ chunk_index) — re-indexing the same content is a no-op. Files: new `src/PinballWizard.Application/Rag/Indexing/{IRagIndexer,RagIndexerOptions}.cs`, `src/PinballWizard.Infrastructure/Rag/Indexing/{AiSearchRagIndexer,AiSearchIndexSchema,EmbeddingClientWrapper}.cs`. Depends on: H1 (AI Search deployed) + scope items 14 + 15.
+
+17. **(B7) Metadata-card synthesis (OPDB records → chunks).** Synthesizes a metadata card per machine from its `Machine` Cosmos record (`{title, manufacturer, year, theme, designers, OPDB URL, edition list, image URL}` → ~150 token chunk). Cards live in the same AI Search index alongside PDF chunks, with `document_type=metadata_card` for filterable retrieval. Provides retrieval coverage even for machines without an indexed manual (Phase 4.5 fills the manual coverage; Phase 4 ensures every machine in the curated subset has at least the metadata card alongside its PDF chunks). Files: new `src/PinballWizard.Application/Rag/MetadataCardSynthesizer.cs`; integrated into the Cosmos Change Feed Function (scope item 18). Depends on: scope item 16.
+
+18. **(B6) Cosmos Change Feed Function on `machines` / `scraped_documents`.** New Functions project `src/PinballWizard.Functions.Rag` consuming Cosmos Change Feed via the Azure Functions Cosmos trigger. On `machines` change → metadata-card synthesis → embed → upsert. On `scraped_documents` change with `document_type` ∈ {`manual`, `service_bulletin`} AND machine in curated subset → PdfPig extract → chunk → embed → upsert. Idempotent via SHA-256(content) → skip if unchanged. Curated-subset filter via configuration `Rag:CuratedSubsetMachineIds[]` from `data/phase4/curated-subset.v1.json` — Phase 4.5 removes the filter for full corpus expansion AND extends bulletin ingestion to non-Stern manufacturers. Bicep additions for the Function App (Phase 2 stack already has Storage + ACR; this extends with the App resource). Files: new `src/PinballWizard.Functions.Rag/{Program.cs,RagIngestionFunction.cs,host.json,Configuration/RagIngestionOptions.cs}`; `infra/modules/shared.bicep` Phase 2 block extended; integration test gated on `PINBALL_WIZARD_LIVE_RAG_TESTS=1`. Depends on: scope items 16 + 17.
+
+19. **(D1 / H2) Intermediate eval baseline rerun.** **Operational hand-off (H2), not a PR.** After scope items 8+9+10+11 land (the four Phase 3 follow-ups + ADR batch), re-run `--eval`. Expect citation_precision substantially higher than 0.133 (target ≥0.30 just from the inherited follow-ups; Phase 4 retrieval lands the rest). Records intermediate baseline JSON in `data/eval/results/wizard.{timestamp}.intermediate.json`. **Threshold calibration is deferred until H3** — H2 measures the lift from connected-agents + tool-trace citations + re-curated ground truth without confounding from new retrieval surface. Outputs land in the Phase 4 § Retrospective.
+
+20. **(C1) AI Search query client + hybrid retrieval.** New `IRagRetriever` abstraction in Application; `AiSearchRagRetriever` impl in Infrastructure using hybrid (semantic + keyword + vector) retrieval per ADR-0021. Returns `IReadOnlyList<RetrievedChunk>` with score, source URL, page numbers, section heading, machine context. Can be coded in parallel with scope items 16–18 by mocking the index for unit tests; integration tests gate on H1 + scope item 18 having populated the index. Files: new `src/PinballWizard.Application/Ai/Retrieval/{IRagRetriever,RetrievedChunk,RetrievalOptions}.cs`, `src/PinballWizard.Infrastructure/Rag/Retrieval/AiSearchRagRetriever.cs`; live integration tests gated on `PINBALL_WIZARD_LIVE_RAG_TESTS=1`.
+
+21. **(C2) Wizard retrieval integration (`searchCorpus` function tool).** Wires `IRagRetriever` into the Wizard's tool surface as `searchCorpus` — the Phase 4 companion to Phase 3's `getMachineByTitle`. Same function-tool contract per ADR-0014 (typed C# function decorated for the Microsoft Agent Framework). Sub-agents can call either or both per their prompts; `Repair.md` / `Rules.md` / `Valuation.md` get prompt updates in this PR teaching them to call `searchCorpus` for grounded answers. Tool result feeds the citation extractor (scope item 10). Files: new `src/PinballWizard.Application/Ai/Tools/{SearchCorpusTool,SearchCorpusResult}.cs`; tool wiring in `FoundryAgentFactory`; prompt updates in `Ai/Agents/{Repair,Rules,Valuation}.md`. Depends on: scope items 10 + 20.
+
+22. **(C3) Citation-coverage measurement.** New evaluator `CitationCoverageEvaluator` measuring whether the answer's claims are supported by the retrieved chunks (semantic similarity between answer sentences and retrieved chunks via the same embedding model). Per ADR-0022, this complements citation_precision/recall — coverage is *"did the model use what it was given?"*. Adds new aggregate metric `citation_coverage` to the eval JSON. Files: new `src/PinballWizard.Application/Ai/Evaluation/Evaluators/CitationCoverageEvaluator.cs`; `EvaluationHarness.cs` aggregator extended. Depends on: scope item 21.
+
+23. **(C4) Citation-required guardrail.** Implements ADR-0023 — when zero citations attach to an answer, refuse rather than answer. New refusal category `NoCitation` extends the existing 5-category enum from Phase 3 to 6. Applies after the agent response and after the `ICitationExtractor` runs but before the response returns to the caller. Telemetry: `pinwiz.ai.refusals_total{category=no_citation}`. Files: `AiRouter.cs` integrated; `RefusalCategory.cs` extended; `ConfidenceCalculator.cs` unchanged (NoCitation is a separate gate from confidence threshold). Depends on: scope items 10 + 21.
+
+24. **(D2 / H3) Final eval baseline + threshold calibration.** **Operational hand-off (H3), not a PR.** After scope items 21+22+23 land, re-run `--eval`. Capture final baseline JSON at `data/eval/results/wizard.{timestamp}.phase4.json`. Calibrate the confidence threshold (ADR-0017) and the citation-required threshold (ADR-0023) against the data. **Also evaluates the ADR-0024 cross-encoder gate** (`citation_precision < 0.65` AND ≥30% retrieval-side refusals) — if triggered, schedule a Phase 4 fix-up PR or defer to Phase 4.5 per the ADR. If thresholds move >0.05, ADR follow-up entries record the post-calibration values. Outputs land in the Phase 4 § Retrospective. Cost projection: per-eval-run cost × ~3 calibration runs ≤ ~$5 total.
+
+25. **`docs/observability.md` + `docs/guardrails.md` § Locked decisions update + Phase 4 retrospective close + README + vision.md per-phase-close review.** Update `docs/observability.md` with new instruments: `pinwiz.rag.indexing_duration_ms` (histogram), `pinwiz.rag.indexed_chunks_total` (counter, tagged with `document_type`), `pinwiz.rag.retrieval_duration_ms` (histogram), `pinwiz.rag.retrieval_score_distribution` (histogram), `pinwiz.ai.citations.extracted_total` (counter, tagged with `source=tool_trace|regex_legacy` for cutover observability), `pinwiz.ai.refusals_total{category=no_citation}` (extended counter), `pinwiz.ai.tool_errors_total` (counter, tagged with `tool=searchCorpus|getMachineByTitle` — distinguishes tool-error refusals from agent-didn't-call-tool refusals per ADR-0023 § Negative consequences). Update `docs/guardrails.md` § Locked decisions with: hybrid chunking locked (ADR-0019), embedding model confirmed (ADR-0020), AI Search index schema locked (ADR-0021), tool-call-trace citation extraction locked (ADR-0022), citation-required guardrail mandatory (ADR-0023), two-stage re-ranking strategy locked (ADR-0024). Phase 4 § Retrospective populated; § Status flips ✅; § Exit criteria boxes checked. Per the new `guardrails.md` § Per-phase gate item shipped in W0-3 (if shipped), README.md + docs/vision.md per-phase-close review runs as part of this PR. CLAUDE.md collapses any inline RAG-architecture rationale to ADR pointers. Files: `docs/observability.md`, `docs/guardrails.md`, `docs/build-spec.md` § Phase 4 retrospective, `README.md`, `docs/vision.md`, `CLAUDE.md`. Depends on: H3 complete.
+
+### Key decisions
+
+- **ADRs 0019 + 0020 + 0021 + 0022 + 0023 + 0024 are this phase's headline decisions** (see § Scope items 1–6 for what they cover).
+- **Phase 4 ships the full RAG architecture against a curated 7-machine subset; corpus expansion is Phase 4.5 work.** Decision recorded in the design conversation 2026-05-07. Rationale: prospects evaluating the architecture want to see it work end-to-end (chunking, embedding, page-anchor citations, citation-required guardrail) — not "10 manuals indexed vs. all manuals indexed." Phase 4.5 is mechanical re-application; Phase 4 is the architectural showcase.
+- **Service bulletins are in scope for Phase 4 on the curated subset's Stern machines** (Godzilla + Foo Fighters). Stern's `ServiceBulletinScraper` already populated `scraped_documents` in Phase 1; the index schema (ADR-0021) reserves `document_type=service_bulletin`; the Change Feed Function (scope item 18) extends its trigger to include bulletins. Rationale: Repair sub-agent quality at launch hinges on bulletin grounding, and the cost to fold in is negligible (~$0.02 incremental embedding cost; +1–2 PRs of work). Decision recorded in the design conversation 2026-05-07 in response to the customer-quality re-evaluation. Phase 4.5 extends bulletin coverage to non-Stern manufacturers.
+- **Two-stage re-ranking decision is locked, implementation is gated.** Per ADR-0024, AI Search semantic ranker is v1; Cohere Rerank cross-encoder is the locked-path second stage but implementation defers behind H3 quality gate. Decision recorded so the architectural ceiling isn't compromised by silent under-engineering.
+- **Phase 4 owns the `deployAiSearch=true` flip** — inherited from Phase 3 H1's deferral (East US 2 capacity exhaustion). Sibling-region relocation is the documented fallback if East US 2 is still constrained.
+- **Connected-agents wiring is the first scope item, not buried mid-phase** — Phase 3 H2 baseline showed `subagent_accuracy=0.033` because the Wizard's "dispatch to sub-agent" prompt instructions are non-functional without structural wiring. This is the single highest-leverage fix.
+- **Tool-call-trace citation extraction replaces regex** — Phase 3 lesson 5. Citations come from the actual `searchCorpus` / `getMachineByTitle` tool-call results, not from regex-matching URLs in agent prose.
+- **Citation-required guardrail is a NEW invariant** — extends the Phase 3 confidence-threshold refusal pattern. The architectural promise (per `vision.md`) is *"refuse rather than fabricate"*; ADR-0023 makes "every answer cites a source, or refuses" structurally true rather than instruction-only.
+- **Index schema versioning via index-name suffix** — `pinwiz-rag-v1`; schema-breaking changes spin up `v2` with dual-read during cutover. Avoids in-place migration risk on a multi-GB index.
+- **Eval-set baseline is committed at every operational hand-off** — H2 (intermediate, post-A-track) and H3 (final, post-RAG). Future PRs that move metrics show up as `git diff` lines on the baseline files.
+
+### Exit criteria
+
+All must be true to declare Phase 4 complete:
+
+- [ ] ADRs 0019, 0020, 0021, 0022, 0023, 0024 committed; [`docs/adr/README.md`](adr/README.md) indexes them; `CLAUDE.md` and `docs/guardrails.md` § Locked decisions reference the relevant ADRs (no inline duplicates of the rationale)
+- [ ] `data/phase4/curated-subset.v1.json` slate manifest committed; `tools/phase4/VerifyCuratedSubsetCoverage.csx` confirms each machine has ≥1 manual PDF in deployed `scraped_documents`; for Stern machines (Godzilla + Foo Fighters), also confirms ≥1 service bulletin
+- [ ] All four inherited Phase 3 follow-ups closed: connected-agents wired (item 8), tool-trace citation extraction (item 10), eval ground-truth re-curated (item 9), `SubAgentUsed` reads from Foundry trace (item 11). Item 12 (`NullTokenUsageReader` real impl) tracked; closure is conditional on agent-framework#2688
+- [ ] `infra/main-shared.dev.bicepparam` has `deployAiSearch = true`; deploy applied successfully against the personal Earlybird subscription (East US 2 or sibling region per H1 hand-off); `--ensure-ai-search` smoke-test verifies the search service is provisioned and the configured index endpoint is reachable
+- [ ] Curated 7-machine subset successfully indexed end-to-end: each machine has metadata-card chunks + manual chunks (≥1 each) in the deployed `pinwiz-rag-v1` index; for Stern machines, additionally has service-bulletin chunks (≥1 per machine); index document count matches the expected total within ±5% (allowing for chunking variance)
+- [ ] Cosmos Change Feed Function deployed and idempotent: re-running ingestion against the same source data produces zero new index documents; new source data triggers chunk-level upserts within ≤5 minutes of Cosmos write
+- [ ] Wizard retrieval integration ships: `dotnet run -- --ask "<curated subset question>"` returns a `WizardAnswer` with ≥1 page-anchored citation from the deployed AI Search index; the citation traces to a real chunk that actually contains the answer
+- [ ] Citation-required guardrail implemented: questions about machines NOT in the curated subset (e.g., "How do I service a Bally Eight Ball Deluxe?") refuse with category `NoCitation`, not silent fabrication
+- [ ] H2 intermediate eval baseline captured at `data/eval/results/wizard.{timestamp}.intermediate.json` and committed; `citation_precision ≥ 0.30` (vs. Phase 3 H2's 0.133); `subagent_accuracy ≥ 0.50` (vs. Phase 3 H2's 0.033)
+- [ ] H3 final eval baseline captured at `data/eval/results/wizard.{timestamp}.phase4.json` and committed; `citation_precision ≥ 0.50` against ground truth that includes both OPDB-citable lookups AND curated-subset manual lookups
+- [ ] Confidence threshold (ADR-0017) and citation-required threshold (ADR-0023) calibrated against H3 baseline; ADR follow-ups record any post-calibration value movement
+- [ ] `docs/observability.md` updated with `pinwiz.rag.*` instrument inventory + `pinwiz.ai.citations.extracted_total` cutover instrument
+- [ ] Build green, all tests green, zero warnings; existing Phase 0/1/2/3 tests still pass
+- [ ] All seven main goals in `guardrails.md` re-checked against current state — alignment confirmed
+- [ ] Cost-burn snapshot taken: dev subscription monthly run-rate after AI Search Basic provisioned ≤ $250/mo idle (Phase 3's ~$150/mo + AI Search Basic ~$74/mo + Function App ~$10/mo); first-run embedding cost ≤ $5; eval-rerun cost projection ≤ $5/mo
+- [ ] README.md + docs/vision.md per-phase-close review completed (per W0-3 enhancement to guardrails.md § Per-phase gate, if shipped); customer-facing claims accurate to Phase 4 reality
+- [ ] Phase 4 § Retrospective populated; risk register reviewed; rolled-forward follow-ups documented under Phase 4.5 or § Deferred features
+- [ ] User confirms Phase 4 exit (single confirmed event per `guardrails.md` § Per-phase gate)
+
+### Dependencies
+
+- Phase 3 complete (orchestrator, four Foundry agents, eval harness, observability surface, ADR-0014 + ADR-0017 + ADR-0018 in force)
+- Personal Earlybird Azure subscription accessible; `az login` works; tenant + subscription IDs match the deploy-script guard
+- AI Search Basic capacity available in East US 2 OR a sibling region (East US, Central US) — pre-flight check via portal before H1
+- Azure OpenAI quota for `text-embedding-3-large` in the chosen region (already provisioned in Phase 3 H1)
+- PowerShell available locally (Phase 2 lesson — Git-Bash mangles Cosmos resource ID env vars)
+- `agent-framework` package version that exposes `AsAIFunction()` (or equivalent connected-agents primitive); pre-flight verify in the package version pinned in `Directory.Packages.props`
+
+### Non-goals
+
+Explicitly out of scope. Each crosses into a later phase or is deferred:
+
+- **Full manuals corpus ingestion** — Phase 4.5 owns. Decision recorded in Key decisions above; placeholder section below.
+- **Bulletin coverage for non-Stern manufacturers** — Phase 4 indexes Stern bulletins for the curated subset's two Stern machines (Godzilla + Foo Fighters); Phase 4.5 extends to other manufacturers as part of corpus expansion. The index schema (ADR-0021) supports any `document_type=service_bulletin` source — the limit is which scrapers populated bulletin records in Phase 1
+- **OCR fallback for scanned / encrypted PDFs** — Phase 4 logs `ExtractionStatus.OcrRequired` and skips. Phase 4.5 makes the OCR-vs-defer decision (Azure Document Intelligence vs. accepting a small coverage gap)
+- **Cross-encoder re-ranker (Cohere Rerank) implementation** — locked path documented in ADR-0024; implementation deferred behind H3 quality gate. May land as a Phase 4 fix-up PR if H3 triggers, otherwise Phase 4.5
+- **Public Wizard chat UI, MudBlazor frontend, Entra External ID auth** — Phase 5
+- **Application Insights dashboards, alert routing, runbooks, SLO definitions for RAG** — Phase 6 (Phase 4 emits raw OTel; Phase 6 makes them actionable)
+- **Multi-instance ACA deployment, Redis-backed cache, distributed retrieval cache** — locked deferral per Phase 2 architecture decisions
+- **Custom embedding fine-tuning** — locked deferral
+- **Multi-language support for retrieval** — out of scope; manuals are English-only
+- **Streaming response from Wizard during retrieval** — Phase 5 (Blazor frontend) owns the streaming UX; Phase 4 returns the full `WizardAnswer` in one shot
+
+### Parallelism plan
+
+The 25 scope items split into a doc-only Wave 0, a parallel Wave 1 spanning A-track and B-track foundations, a Wave 2 that combines A-track completion with B-track core ingestion, two retrieval-focused waves, and a closing eval + retrospective wave. Three operational hand-offs (H1 / H2 / H3) punctuate the sequence. Net: ~15–18 PRs + 3 hand-offs across 6 waves.
+
+#### Dependency core (sequential)
+
+`(W0) ADRs 0019–0024 → (W1) item 8 → items 10 + 11 → (W1) H1 → (W1) item 14 → (W2) item 15 → item 16 → items 17/18 → (W3) item 20 → (W4) item 21 → items 22/23 → H3 → (W5) item 25`
+
+- **W0 → W1** — ADRs lock the design decisions; A-track items 8–11 reference them; B-track item 13 (Bicep flip) references ADR-0021's index-schema design.
+- **Item 8 → items 10 + 11** — connected-agents wiring is the structural prerequisite for tool-trace citation extraction and for reading `SubAgentUsed` from the trace.
+- **H1 → item 16** — embedding pipeline + AI Search index population needs the AI Search service to exist.
+- **Item 14 → item 15 → item 16 → items 17/18** — extraction → chunking → indexing → orchestrator (Change Feed Function + metadata-card synthesis).
+- **Items 16/17/18 → item 20** — query client integration tests need a populated index.
+- **Items 20 + 10 → item 21** — Wizard retrieval integration combines retrieval with citation extraction.
+- **Items 21 → 22/23** — citation coverage and citation-required guardrail wrap the retrieval pipeline.
+- **Item 23 → H3** — final eval needs all retrieval + guardrail surfaces in place.
+- **H3 → item 25** — observability + locked-decisions + retrospective references calibrated values.
+
+#### Independent surface (parallel-safe)
+
+- **Item 9 (eval re-curation)** is independent of every other Phase 4 item — script + data-file change. Worktree-isolated `general-purpose` subagent dispatch (matches Phase 3 PR 8 pattern).
+- **Item 13 (Bicep flip)** has no code-file conflict with A-track — different namespace, different repo area. Can run concurrent with items 8+ except H1 hand-off must precede item 16's merge.
+- **Item 20 (AI Search query client)** can be coded in parallel with item 16 by mocking the index for unit tests; integration tests gate on item 18 landing.
+- **Items 22 + 23** can run in parallel — citation-coverage is a new evaluator (touches Application/Ai/Evaluation/), citation-required guardrail extends `RefusalCategory` and `AiRouter` (touches Application/Ai/). Some `AiRouter.cs` conflict but small.
+
+#### Recommended waves (respecting `guardrails.md` § Parallelism ceiling 2–3 PRs in flight)
+
+**Wave 0** (1–3 PRs, doc-only; sequential ahead of code) — drafts Phase 4 § Scope (this PR), batches ADRs 0019–0024 (one PR), optionally enhances `guardrails.md` § Per-phase gate with a README-claim review item (W0-3, lesson from PR #94).
+
+**Wave 1** (4–5 PRs in flight) — A-track inherited follow-ups + B-track foundations:
+
+- **PR W1-1 (item 8, A1)** — Connected-agents wiring on Wizard.
+- **PR W1-2 (item 10, A2)** — Tool-call-trace citation extraction (sequenced after W1-1 file conflict on `AiRouter.cs`).
+- **PR W1-3 (item 9, A5)** — Eval re-curation (worktree-isolated subagent; no code-file conflict).
+- **PR W1-4 (item 13, B2)** — Bicep `deployAiSearch=true` flip (1-line param change).
+- **PR W1-5 (item 14, B3)** — PdfPig wrapper + text-extraction service.
+
+Mid-Wave 1 (after PR W1-4 merges): deploy hand-off **H1** (Bicep apply + AI Search smoke probe). H1 unblocks W2-3 (item 16 — embedding pipeline + index population needs the AI Search service to exist).
+
+**Wave 2** (3–4 PRs in flight + 1 hand-off) — A-track completion + B-track core ingestion + intermediate eval:
+
+- **PR W2-1 (item 11, A3)** — Read `SubAgentUsed` from Foundry trace (sequenced after W1-1; small change).
+- **PR W2-2 (item 15, B4)** — Hybrid chunker.
+- **PR W2-3 (item 16, B5)** — Embedding pipeline + AI Search index population (sequenced after H1 + W2-2 file conflicts).
+- **PR W2-4 (item 7)** — Curated subset slate manifest + verification script (can land any time in Wave 1 or 2; sequenced into Wave 2 to keep Wave 1 focused on inherited follow-ups).
+
+After Wave 2: operational hand-off **H2** (intermediate eval baseline rerun).
+
+**Wave 3** (3 PRs in flight) — RAG ingestion finishing + retrieval client:
+
+- **PR W3-1 (item 17, B7)** — Metadata-card synthesis.
+- **PR W3-2 (item 18, B6)** — Cosmos Change Feed Function — trigger covers `manual` + `service_bulletin` for curated subset (sequenced after W3-1 file conflicts on the Functions project).
+- **PR W3-3 (item 20, C1)** — AI Search query client + hybrid retrieval (parallel via mocked index).
+
+**Wave 4** (3 PRs in flight) — Wizard retrieval integration + guardrail:
+
+- **PR W4-1 (item 21, C2)** — Wizard retrieval integration (`searchCorpus` tool).
+- **PR W4-2 (item 22, C3)** — Citation-coverage measurement.
+- **PR W4-3 (item 23, C4)** — Citation-required guardrail (sequenced after W4-1 file conflicts).
+
+After Wave 4: operational hand-off **H3** (final eval baseline + threshold calibration; also evaluates ADR-0024 cross-encoder gate).
+
+**Wave 5** (1 PR + 0–1 fix-up) — closeout:
+
+- **PR W5-1 (item 25)** — observability.md + guardrails.md § Locked decisions + Phase 4 § Retrospective + README/vision.md per-phase-close review.
+- **(Conditional) PR W5-2** — Cohere Rerank integration if H3 triggered the ADR-0024 gate. Otherwise rolls into Phase 4.5.
+
+#### Sizing
+
+| Wave | PRs | Operational hand-offs | Parallelism |
+| --- | --- | --- | --- |
+| Wave 0 | 1–3 (Phase 4 § Scope, ADRs batched, optional guardrails enhancement) | 0 | Doc-only; subagent-friendly |
+| Wave 1 | 4–5 (connected-agents, tool-trace citations, eval re-curation, Bicep flip, PdfPig) | H1 (Bicep apply + AI Search smoke probe) | A-track + B-track in parallel; W1-3 worktree-isolated |
+| Wave 2 | 3–4 (`SubAgentUsed`, chunker, indexer, slate manifest) | H2 (intermediate eval baseline) | Sequential where `AiRouter.cs` conflicts |
+| Wave 3 | 3 (metadata-card, Change Feed Function, query client) | 0 | Some sequencing on Functions project |
+| Wave 4 | 3 (retrieval integration, coverage evaluator, citation-required guardrail) | H3 (final eval + threshold calibration) | Sequential where `AiRouter.cs` conflicts |
+| Wave 5 | 1 + (0–1 conditional) (closeout + optional cross-encoder fix-up) | 0 | n/a |
+| **Total** | **~15–18 PRs** | **3 hand-offs** | |
+
+#### Conventions for this phase
+
+- **The ADR batch PR (Wave 0)** still gets explicit user confirmation per `guardrails.md` § Decision framework before commit; ADRs are append-only and a wrong one is expensive to reverse. Each of the 6 ADRs may split into its own PR if scope-sized.
+- **`/local-review` and the 7-item self-audit run on every PR in Phase 4** including the ADR batch and eval-data-only PRs — Phase 3 retrospective showed audits caught real 🔴 findings on every substantive PR.
+- **Worktree-isolated `general-purpose` subagents** are the canonical pattern for item 9 (eval re-curation) and the Wave 0 ADRs — independent surfaces with no main-context dependencies.
+- **Hand-off H1's Bicep apply** uses the two-pass deploy pattern from Phase 3 lesson 2 if any new Foundry resources are added (none expected, but the pattern is in place).
+- **Live integration tests gated by `PINBALL_WIZARD_LIVE_RAG_TESTS=1`** are required for items 18 (Change Feed Function) and 20 (query client) — DL-0002 + DL-0003 lessons honored. CI runs them via a manually-triggered workflow, not on every push.
+
+### Risks
+
+Phase-specific risks (cross-cutting risks live in `guardrails.md` § Risk register; this phase materially mitigates the citation-fabrication risk):
+
+| ID | Risk | Mitigation |
+| --- | --- | --- |
+| P4-R1 | East US 2 AI Search Basic capacity still exhausted at H1 (recurrence of Phase 3 H1's `InsufficientResourcesAvailable`) | Pre-flight portal check before H1; sibling-region fallback (East US, Central US) documented; Phase 1 Cosmos location stays unchanged either way |
+| P4-R2 | Connected-agents primitive (`AsAIFunction()`-equivalent) not exposed in the pinned `agent-framework` version, OR Foundry portal-side connected-agents primitive doesn't fit the code-resource ADR-0018 pattern | Pre-flight verify the package version exposes the primitive before W1-1; if neither path works, surface as a Phase 4 blocker requiring upstream issue resolution before the phase can ship. Both paths are tracked in the ADR follow-up to ADR-0014 + ADR-0018 |
+| P4-R3 | Embedding cost for the curated subset exceeds projection (e.g., manual page count is 3× expected, or chunking explodes due to fixture variation) | Pre-flight estimate against the 7 machines: ~$0.07 first run at projected token count; $5 hard ceiling per single ingestion run; halt and re-estimate if exceeded |
+| P4-R4 | PdfPig fails on a curated-subset PDF (encrypted, scanned, or complex layout breaks extraction) | `ExtractionStatus.OcrRequired` path logs and skips; if a curated-subset machine fails extraction, swap for the documented alternate per item 7's slot. Phase 4.5 owns the OCR-fallback decision so Phase 4 isn't blocked by long-tail edge cases |
+| P4-R5 | Cosmos Change Feed Function exhibits at-least-once delivery semantics that produce duplicate index documents | SHA-driven idempotency on chunk ID makes upserts safe; integration test exercises the duplicate-write scenario; Cosmos lease-container manages checkpoint correctly per Functions Cosmos trigger contract |
+| P4-R6 | Citation-required guardrail too aggressive — refuses on legitimately answerable questions where the agent's answer is correct but didn't structurally cite | H3 calibration adjusts the citation-required threshold; refusal-correctness metric in eval harness tracks the false-refusal rate; if rate > 20%, threshold relaxes or the citation extractor's logic widens (e.g., accept retrieved chunks that semantically match the answer even if the agent didn't explicitly mention them) |
+| P4-R7 | AI Search semantic ranker yields worse results than vector-only retrieval on the curated subset's content shape | A/B test as part of H2 — measure citation_precision with semantic ranker on vs. off; lock the better config in ADR-0021 follow-up. Default to ON per the design conversation; flip if data warrants |
+| P4-R8 | Phase 4 eval ground truth still biases toward simple lookups; H3 numbers don't generalize to harder questions Phase 5 will surface from public users | Document the bias in `data/eval/README.md` (already noted there from Phase 3); Phase 5 user feedback grows the eval set against real-traffic queries; treat Phase 4 H3 as a regression-detection floor, not a coverage ceiling |
+| P4-R9 | RAG infra cost burn (AI Search Basic + Function App + embedding re-runs) pushes monthly run-rate past $300/mo cap before Phase 5 starts billing public traffic | Daily cost-aggregation KQL (Phase 3 pattern) tracks against $300 anomaly alarm; if AI Search Basic + Function ⩾ $200/mo and Phase 5 isn't imminent, consider stopping the Function App between dev sessions (Cosmos + AI Search idle costs are unavoidable) |
+
+### Open design questions (resolved in-flight, not blocking the plan)
+
+1. **Connected-agents primitive choice — `AsAIFunction()` vs. Foundry portal-side connected agents.** ADR follow-up to ADR-0014 + ADR-0018 records the decision. Default-favor `AsAIFunction()` to keep agent definitions code-resourced per ADR-0018; flip to Foundry portal-side only if `AsAIFunction()` blocks on the SDK surface.
+2. **Index name + versioning strategy.** ADR-0021 ships at `pinwiz-rag-v1`; schema-breaking changes spin up `v2` with dual-read during cutover. Lock during PR W1-3.
+3. **Whether to vectorize the manufacturer / theme / year fields too** (to support filter-with-vector hybrid queries on those facets). Default-no in v1 schema (those fields stay as `Edm.String` filterable + facetable); revisit in Phase 4.5 if user-traffic queries demonstrate need.
+4. **Fallback when retrieval returns nothing for a known-good machine** (e.g., user asks a Godzilla question but `searchCorpus` returns 0 chunks — should the Wizard fall back to `getMachineByTitle` for the metadata-card path?). Default-yes: the function tools are independent and the Wizard's prompt should call both. Lock during PR W4-1.
+5. **Citation-coverage threshold value.** ADR-0023 ships with a draft threshold (e.g., 0.30 cosine similarity between answer sentences and retrieved chunks); H3 calibration sets the locked value. If the calibrated value moves >0.05, ADR-0023 gets a supersession or follow-up entry.
+6. **Whether bulletin coverage extends to non-Stern manufacturers in Phase 4** (Phase 4 ingests Stern bulletins for the curated subset's two Stern machines; other manufacturers' bulletin scrapers are a Phase 4.5 question). Default-no for Phase 4: limit bulletin scope to what Stern's `ServiceBulletinScraper` already delivered. If JJP / AP / Spooky / CGC / PB ship bulletin-shaped sources and adding them is a one-PR scrape-and-feed-the-Function change, consider folding mid-flight.
+7. **ADR-0024 cross-encoder gate trigger.** Default cross-encoder NOT implemented in Phase 4 v1; H3 measures `citation_precision` and refusal-cause distribution; if gate triggers, schedule Cohere Rerank integration as a Phase 4 fix-up PR or roll into Phase 4.5 per the ADR. Locking the trigger empirically — no opinion-driven debate.
+
+### Operational hand-offs
+
+Three operational tasks intentionally fall outside this phase's PR scope (mirroring Phase 2/3 patterns of separating functional close from live-validated close):
+
+1. **H1 — `deployAiSearch=true` Bicep apply + AI Search smoke probe.** After PR W1-4 merges, pre-flight East US 2 AI Search Basic capacity via portal; if constrained, edit Bicep param to relocate AI Search to a sibling region. Run `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev`. Verify via `dotnet run --project src/PinballWizard.Cli -- --ensure-ai-search`. Expected output: `AI Search verified: pinwiz-search-dev-XXXX provisioned in <region>; index endpoint reachable; SKU=basic.` Captures the apply timestamp + region in `decision-log.md` ([DL] entry).
+2. **H2 — Intermediate eval baseline rerun.** After W2-1 + W2-4 (and the inherited follow-ups in Wave 1) land, set Azure OpenAI env vars (PowerShell, not Git-Bash); run `dotnet run -- --eval`; capture `data/eval/results/wizard.{timestamp}.intermediate.json`; commit it. Threshold calibration deferred until H3. Cost: ≤ $0.50 for the single eval run.
+3. **H3 — Final eval baseline + threshold calibration.** After PR W4-3 merges, run `dotnet run -- --eval`; capture `data/eval/results/wizard.{timestamp}.phase4.json`; commit it; calibrate confidence threshold (ADR-0017) and citation-required threshold (ADR-0023) against the data; if either moves >0.05, append ADR follow-up entries. Cost: ≤ $0.50 per run × ~3 calibration runs ≤ $2 total.
+
+Each hand-off, when executed, gets captured as a comment on the Phase 4 § Retrospective so the operational evidence joins the code evidence in the project record. Per Phase 2/3 lesson DL-0003, hand-offs may surface regressions that block phase exit until fixed; budget for it.
+
+### Retrospective
+
+*To be populated at phase completion.*
+
+---
+
+## Phase 4.5 — Manuals corpus expansion
+
+**Status:** ⏳ Not started
+**Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they can run concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
+**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation. The headline artifact should be: every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged).*
+
+> Will cover: removing the `Rag:CuratedSubsetMachineIds[]` filter on the Cosmos Change Feed Function; long-tail PDF edge cases (encrypted, scanned, complex layouts) and the OCR fallback decision (Azure Document Intelligence vs. defer); per-manufacturer chunking-quality spot-check (Stern manuals vs. JJP manuals vs. CGC remake docs); bounded long-tail failure handling + triage runbook; embedding cost projection vs. $300–$400/mo cap (full corpus run is ~50–100× the curated-subset cost — pre-flight estimate before flipping the filter); extending bulletin coverage to non-Stern manufacturers (Phase 4 indexed Stern bulletins for the curated subset's two Stern machines; Phase 4.5 brings JJP / AP / Spooky / CGC / PB bulletin sources online if available); Phase 4 patterns (hybrid chunker, AI Search index v1, citation-required guardrail, ADR-0024 re-rank stack) re-validated against full corpus before declaring expansion complete; conditional Cohere Rerank cross-encoder integration if H3 triggered the gate but the implementation rolled here.
 
 ---
 
@@ -730,6 +968,10 @@ This section catalogues every feature explicitly deferred. New deferrals append 
 | Tier 2 boutiques (Riot, Quetzal, Suncoast, etc.) | Phase 1 | Smaller catalogs; integrate as time permits | v2 — opportunistic |
 | YouTube auto-captions | Phase 7+ | Own ingestion pipeline | v2 — when content gap warrants |
 | XML doc comments on public surface | Quality-spec drafting (2026-05-04) | User finds them not worth the trouble; project doesn't ship a public NuGet package | A public NuGet package ships |
+| Full manuals corpus ingestion | Phase 4 architecture lock (2026-05-07) | Curated 7-machine subset proves the architecture; mechanical expansion deferred to Phase 4.5 to avoid long-tail PDF edge cases bogging the showcase | Phase 4 Wave 5 closeout — Phase 4.5 promotes back into in-scope |
+| Bulletin coverage for non-Stern manufacturers | Phase 4 architecture lock (2026-05-07; partial-promotion) | Phase 4 ingests Stern bulletins for the curated subset's two Stern machines (Stern's `ServiceBulletinScraper` already populated `scraped_documents`); JJP / AP / Spooky / CGC / PB bulletin sources extend in Phase 4.5 alongside corpus expansion | Phase 4.5 |
+| OCR fallback for scanned / encrypted PDFs | Phase 4 architecture lock (2026-05-07) | Phase 4 logs `ExtractionStatus.OcrRequired` and skips; long-tail edge cases shouldn't block the architectural showcase | Phase 4.5 makes the OCR-vs-defer decision (Azure Document Intelligence vs. accepting a coverage gap) |
+| Cross-encoder re-ranker (Cohere Rerank) implementation | Phase 4 architecture lock (2026-05-07) | ADR-0024 locks the path; AI Search semantic ranker is the v1 re-rank layer; cross-encoder gates on H3 quality data (`citation_precision < 0.65` AND ≥30% retrieval-side refusals) | Phase 4 H3 — if gate triggers, ships as Phase 4 fix-up PR or rolls into Phase 4.5 |
 
 ---
 
