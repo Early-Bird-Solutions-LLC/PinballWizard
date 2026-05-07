@@ -54,4 +54,12 @@ public sealed class AiFoundryOptions
     // entries is sufficient for v1 single-instance scale.
     [Range(0, 10000)]
     public int SemanticCacheMaxEntries { get; set; } = 512;
+
+    // Below this confidence score, IAiRouter returns a refusal rather
+    // than the agent's text. Per ADR-0017 the initial draft is 0.65;
+    // calibrated against the eval-set at H2 hand-off (scope item 13).
+    // If the calibrated value moves >0.05 from this draft, ADR-0017
+    // gets a follow-up entry recording the post-calibration value.
+    [Range(0.0, 1.0)]
+    public double ConfidenceThreshold { get; set; } = 0.65;
 }

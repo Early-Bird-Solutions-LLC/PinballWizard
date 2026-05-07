@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Tools;
 
 namespace PinballWizard.Application.Ai;
@@ -20,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IAgentPromptProvider, EmbeddedResourceAgentPromptProvider>();
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
         services.TryAddSingleton<MachineGroundingTool>();
+        services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.TryAddSingleton<IAiRouter, AiRouter>();
 
         return services;
