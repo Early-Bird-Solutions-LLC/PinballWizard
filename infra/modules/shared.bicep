@@ -43,6 +43,12 @@ param developerObjectId string
 @description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
 param deployPhase2 bool
 
+@description('When true (default), the Foundry account also ships the chat / chat-heavy / embedding model deployments. Set false on the FIRST deploy of a fresh Foundry account — Azure validates each model deployment against the account-scoped RAI (Responsible AI) policy infrastructure, which does not exist yet on a brand-new account, so a one-shot deploy of (account + project + deployments) fails policy validation. Operational pattern: deploy with deployFoundryModelDeployments=false, then re-deploy with deployFoundryModelDeployments=true once the account is ready (typically within minutes of the first deploy completing). Has no effect when deployPhase2=false.')
+param deployFoundryModelDeployments bool = true
+
+@description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
+param deployAiSearch bool = true
+
 // -----------------------------------------------------------------------------
 // Naming
 // -----------------------------------------------------------------------------
@@ -193,7 +199,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-pr
 // Azure AI Search (Basic)
 // -----------------------------------------------------------------------------
 
-resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = if (deployPhase2) {
+resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = if (deployPhase2 && deployAiSearch) {
   name: searchServiceName
   location: location
   tags: tags
@@ -311,7 +317,7 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
 // counts against per-region quota. Defaults below are conservative; bump
 // via the bicepparam files if rate-limit is hit during eval-set runs.
 
-resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatDeploymentName
   sku: {
@@ -324,12 +330,11 @@ resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments
       name: 'gpt-4o-mini'
       version: '2024-07-18'
     }
-    raiPolicyName: 'Microsoft.DefaultV2'
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
 }
 
-resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatHeavyDeploymentName
   sku: {
@@ -342,7 +347,6 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
       name: 'gpt-4.1'
       version: '2025-04-14'
     }
-    raiPolicyName: 'Microsoft.DefaultV2'
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
   // Serialize after the chat deployment to avoid cross-deployment
@@ -352,7 +356,7 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
   ]
 }
 
-resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2) {
+resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryEmbeddingDeploymentName
   sku: {
@@ -365,7 +369,6 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
       name: 'text-embedding-3-large'
       version: '1'
     }
-    raiPolicyName: 'Microsoft.DefaultV2'
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
   dependsOn: [
@@ -479,7 +482,7 @@ resource keyVaultDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview'
   }
 }
 
-resource searchDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
+resource searchDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2 && deployAiSearch) {
   scope: searchService
   name: 'send-to-law'
   properties: {
@@ -624,7 +627,7 @@ resource acrPush 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (depl
   }
 }
 
-resource searchIndexContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
+resource searchIndexContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch && !empty(developerObjectId)) {
   scope: searchService
   name: guid(searchService.id, developerObjectId, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
   properties: {
