@@ -122,6 +122,7 @@ A phase is "complete" only when all of:
 - [ ] Risk register reviewed; risks resolved or rolled forward with current mitigation
 - [ ] Decision log entries for any non-trivial sub-ADR-threshold decisions
 - [ ] Cost-burn snapshot taken; under budget
+- [ ] **README.md and `docs/vision.md` per-phase-close review** — every customer-facing claim is checked against the phase's actual deliverables. No aspirational language for shipped features; no overclaim of capability that the H-test data doesn't support; new known-limitations entries added if the phase exposed them. *(Lesson: post-Phase-3-close audit (PR #94) caught README/vision overclaims that PR-time review missed — twice running. Per-phase audit catches what per-PR audit misses.)*
 - [ ] Memory handoff written so the next session can resume cleanly
 
 Phase exit is a single user-confirmed event. Don't soft-transition.
