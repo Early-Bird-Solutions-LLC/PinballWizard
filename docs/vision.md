@@ -6,7 +6,7 @@ The pinball domain is the vehicle. The engineering is the point.
 
 ## What this app is
 
-A polite, manufacturer-agnostic content-ingestion pipeline feeding an event-driven, source-citing RAG platform, fronted by a Blazor + MudBlazor application with administrative tooling, hosted on Azure Container Apps behind Cloudflare Pro. Public users ask the Wizard questions about pinball machines and get answers that always cite the original manuals, schematics, and bulletins on the manufacturers' own sites — never hallucinated, never decoupled from source. Authenticated users (when passport features ship) can track their gameplay, refine strategy with the Wizard, and capture scores via OCR.
+A polite, manufacturer-agnostic content-ingestion pipeline feeding an event-driven, source-citing RAG platform, fronted by a Blazor + MudBlazor application with administrative tooling, hosted on Azure Container Apps behind Cloudflare Pro. Public users ask the Wizard questions about pinball machines and get answers that cite original manuals, schematics, and bulletins on the manufacturers' own sites when grounding is available — refusing rather than fabricating when it isn't. Authenticated users (when passport features ship) can track their gameplay, refine strategy with the Wizard, and capture scores via OCR.
 
 Every architectural decision is justified in an ADR. Every PR clears a two-step pre-push audit (qualitative critique + mechanical checklist). Every external request is throttled, identified, and respectful of robots.txt by construction. The code, infrastructure, tests, and documentation are all part of what's being demonstrated — not just the runtime behavior.
 
@@ -15,7 +15,7 @@ Every architectural decision is justified in an ADR. Every PR clears a two-step 
 Capabilities a prospect can verify directly, mapped to Earlybird Solutions service areas:
 
 - **Cloud-native architecture (Azure + .NET Aspire).** Container Apps, Cosmos Serverless, AI Search Basic, Azure OpenAI, Functions on Cosmos Change Feed, Aspire-orchestrated local development that mirrors production.
-- **AI engineering.** Retrieval-augmented generation with provenance-preserving chunking, hybrid (semantic + keyword) search, threshold-driven refusal, sub-agent routing (Valuation / Rules / Repair), evaluation harness with held-out queries and citation-accuracy scoring.
+- **AI engineering.** Retrieval-augmented generation with provenance-preserving chunking, hybrid (semantic + keyword) search, threshold-driven refusal, sub-agent surface scaffolded in Phase 3 with structural connected-agents wiring landing in Phase 4, evaluation harness with held-out queries and citation-accuracy scoring.
 - **Clean Architecture and engineering discipline.** Core / Application / Infrastructure / Web layering enforced by architecture fitness tests, behavior-asserting test culture validated by mutation testing, ADRs for non-obvious decisions, two-step pre-push audit on every PR.
 - **Identity, access, and admin separation.** Microsoft Entra External ID with admin RBAC from day one, social-login federations (Google, Apple, Discord) for end-user features when those features ship.
 - **Infrastructure-as-code and operability.** Bicep with two-tier deploy gating, ARM-vs-data-plane Cosmos abstraction, OpenTelemetry, structured logging, defined SLOs, runbooks, cost dashboards, periodic disaster-recovery drills.
