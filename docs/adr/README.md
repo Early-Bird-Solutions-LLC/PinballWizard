@@ -29,6 +29,11 @@ negative) it carries.
 | [0016](0016-evaluation-harness.md) | Evaluation harness — custom citation-accuracy on top of Foundry primitives | Accepted |
 | [0017](0017-confidence-threshold-refusal.md) | Confidence-threshold refusal — geometric-mean composite + categorized refusals | Accepted |
 | [0018](0018-prompt-management.md) | Prompt management — code-resource agent definitions, version-stamped, never the Foundry portal | Accepted |
+| [0019](0019-hybrid-chunking.md) | Hybrid chunking — token-budgeted windows within heading-bounded sections | Accepted |
+| [0020](0020-embedding-model.md) | Embedding model — `text-embedding-3-large` @ 3072 dimensions | Accepted |
+| [0021](0021-ai-search-index-schema.md) | AI Search index schema for Phase 4 RAG (`pinwiz-rag-v1`) | Accepted |
+| [0022](0022-citation-extraction.md) | Tool-call-trace citation extraction (replaces regex over agent prose) | Accepted |
+| [0023](0023-citation-required-guardrail.md) | Citation-required guardrail — refuse when no citation can be attached | Accepted |
 
 ## Conventions
 
