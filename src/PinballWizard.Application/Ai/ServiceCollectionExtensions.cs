@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Evaluation.Evaluators;
 using PinballWizard.Application.Ai.Tools;
 
 namespace PinballWizard.Application.Ai;
@@ -26,6 +27,17 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
         services.TryAddSingleton<IAiCostCalculator, AiCostCalculator>();
         services.TryAddSingleton<IAiRouter, AiRouter>();
+
+        // Evaluation harness evaluators (ADR-0016). Pure deterministic
+        // logic — singletons. Registered alongside the router so
+        // anywhere the router is wired, the eval primitives are
+        // available too. The IEvaluationHarness implementation that
+        // composes them lives in Infrastructure (depends on
+        // Azure.AI.Projects for evaluator-definition registration).
+        services.TryAddSingleton<CitationPrecisionEvaluator>();
+        services.TryAddSingleton<CitationRecallEvaluator>();
+        services.TryAddSingleton<SubagentAccuracyEvaluator>();
+        services.TryAddSingleton<RefusalCorrectnessEvaluator>();
 
         return services;
     }

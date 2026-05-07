@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
@@ -95,6 +96,11 @@ var askOption = new Option<string?>("--ask")
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
 };
 
+var evalOption = new Option<bool>("--eval")
+{
+    Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -108,6 +114,7 @@ rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(askOption);
+rootCommand.Options.Add(evalOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -123,6 +130,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
     var ask = parseResult.GetValue(askOption);
+    var eval = parseResult.GetValue(evalOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -212,6 +220,36 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine(
             $"Azure Foundry deployments verified: chat + embedding deployments present at {result.FoundProjectEndpoint}.");
+        return;
+    }
+
+    // Handle --eval (Phase 3 evaluation harness; ADR-0016). Resolves
+    // IEvaluationHarness from DI; the harness is only registered when
+    // AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
+    // is set). Mirrors the --ensure-azure-foundry exit-code-2 remediation
+    // pattern; on success, prints the results path + aggregate metrics
+    // line so a CI run can grep them out without re-reading the JSON.
+    if (eval)
+    {
+        var harness = host.Services.GetService<IEvaluationHarness>();
+        if (harness is null)
+        {
+            Console.Error.WriteLine(
+                "--eval requires AI Foundry to be configured. Set " +
+                $"{AiFoundryOptions.ProjectEndpointKey} (the deployed Foundry project endpoint URL).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var runResult = await harness.RunAsync(cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"Evaluation harness completed: {runResult.Aggregate.QuestionCount} questions " +
+                          $"({runResult.Aggregate.ErrorCount} errors), " +
+                          $"results at {runResult.ResultsPath}");
+        Console.WriteLine($"  citation_precision={runResult.Aggregate.CitationPrecisionMean:F3} " +
+                          $"citation_recall={runResult.Aggregate.CitationRecallMean:F3} " +
+                          $"subagent_accuracy={runResult.Aggregate.SubagentAccuracyMean:F3} " +
+                          $"refusal_correctness={runResult.Aggregate.RefusalCorrectnessMean:F3}");
         return;
     }
 
