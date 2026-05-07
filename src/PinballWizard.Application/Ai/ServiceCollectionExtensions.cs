@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Application.Ai.Confidence;
+using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
 using PinballWizard.Application.Ai.Tools;
 
@@ -23,6 +24,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
+        services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
+        services.TryAddSingleton<IAiCostCalculator, AiCostCalculator>();
         services.TryAddSingleton<IAiRouter, AiRouter>();
 
         // Evaluation harness evaluators (ADR-0016). Pure deterministic

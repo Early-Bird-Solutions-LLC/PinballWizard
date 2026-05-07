@@ -110,11 +110,66 @@ When emitting a metric or activity, prefer these attribute keys to maximize cros
 
 OTel semantic conventions (`db.*`, `messaging.*`, `http.*`) cover their respective surfaces — no need to re-invent. Use those for the kinds of operations they cover; use `pinwiz.*` for project-specific concepts (sync runs, citations, refusals, etc.).
 
+## AI orchestrator instruments (Phase 3)
+
+Per [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md), the AI surface uses a **lean, Foundry-OTel-aware** pattern: token counts + per-call latencies + per-call model identity flow via Foundry's auto-emitted spans on the `Azure.AI.Projects.*` activity source (enabled in `ServiceDefaults.ConfigureOpenTelemetry` via the `Azure.Experimental.EnableGenAITracing` switch). The `pinwiz.ai.*` instruments below add **only what auto-emission doesn't cover**:
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.ai.cache.hits` | Counter | (none) | User-questions answered from the in-process LRU semantic cache without invoking Foundry |
+| `pinwiz.ai.cache.misses` | Counter | (none) | User-questions that missed the cache |
+| `pinwiz.ai.cost_usd_cents` | Counter | `model`, `sub_agent`, `prompt_version` | Estimated USD cents per call. Computed from token counts × `AiFoundryOptions.PricingTable`; drives the per-call ceiling (`AiFoundryOptions.PerCallCostCeilingUsdCents`) and the daily anomaly alarm. **Currently relies on `ITokenUsageReader` returning a `TokenUsage` snapshot — `NullTokenUsageReader` (default) returns null until `Microsoft.Agents.AI` exposes a stable Usage surface (issue #2688), so cost reads as 0 cents in Phase 3.** |
+| `pinwiz.ai.refusals` | Counter | `refusal_category`, `sub_agent` | Refusals tagged with category (`InsufficientGrounding` / `OutOfScope` / `LowModelConfidence` / `CostCeilingHit` / `HarmfulContent` per ADR-0017). A spike on a single category points at a specific failure mode |
+| `pinwiz.ai.escalations` | Counter | (none) | User-questions where the Wizard routed from light-tier to heavy-tier (gpt-4o-mini → gpt-4.1) |
+| `pinwiz.ai.duration_ms` | Histogram | (none) | User-question wall-clock; complements per-call `gen_ai.*` durations from auto-emitted spans |
+
+Activity (trace) name: `pinwiz.ai.router`.
+
+### Inherited Foundry attributes (do NOT duplicate as `pinwiz.ai.*`)
+
+Foundry's SDK emits OTel spans with these standard `gen_ai.*` semantic-convention attributes:
+
+- `gen_ai.system="azure.ai.foundry"`
+- `gen_ai.request.model` / `gen_ai.response.model`
+- `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens`
+- `gen_ai.operation.name` (`chat`, `embed_documents`, etc.)
+- `gen_ai.tool.call.name` / `gen_ai.tool.call.id` (function-tool invocations)
+- `gen_ai.thread.id` (Foundry thread / conversation correlation)
+
+Phase 6 dashboards query these alongside `pinwiz.ai.*` to correlate user-question metrics with per-call mechanics.
+
+## Daily AI cost aggregation (Phase 6 deploy gate)
+
+The $300/mo anomaly alarm (per [`guardrails.md`](guardrails.md) goal #3 + § Run-time triggers) needs a stable KQL query shape Phase 6 alert rules can pin against. Template captured here so the alert query doesn't drift across phases:
+
+```kusto
+// Daily AI cost in USD cents, broken down by model + sub-agent.
+// Source: pinwiz.ai.cost_usd_cents counter
+//   (custom-metric pipeline → Application Insights customMetrics,
+//   post-deployPhase2). Switch the table to AppMetrics if querying
+//   Log Analytics directly.
+let WindowStart = ago(1d);
+customMetrics
+| where timestamp >= WindowStart
+| where name == "pinwiz.ai.cost_usd_cents"
+| extend model    = tostring(customDimensions.model)
+| extend subAgent = tostring(customDimensions.sub_agent)
+| extend version  = tostring(customDimensions.prompt_version)
+| summarize totalCents = sum(value)
+    by model, subAgent, version, bin(timestamp, 1d)
+| extend usd = totalCents / 100.0
+| project timestamp, model, subAgent, version, totalCents, usd
+| order by timestamp desc, usd desc
+```
+
+Aggregate-monthly view (alerting on the $300/mo threshold) sums per-day rows × 30. Phase 6 wires that as a scheduled alert rule against this base query.
+
 ## Deferred to later phases
 
 - **Cosmos RU charge capture** (`pinwiz.cosmos.write.ru_charge`) — Phase 6 (operability). Requires either a `MeteredMachineRepository` decorator or an inline RU-capture helper in repositories. Best designed once real production traffic gives signal on which operations dominate RU consumption. Tracked under Phase 6 § Cost quality.
 - **Per-scraper run metrics** (`pinwiz.scrape.<source>.*`) — Phase 3+. Lands when manufacturer scrapers gain ACA Job execution and the orchestrator-from-IngestionSource path comes online.
-- **Wizard-side metrics** (`pinwiz.wizard.query.*`) — Phase 4 (RAG). Latency, citation count, refusal rate, retrieval-quality evals.
+- **Real `ITokenUsageReader` impl** — pending Microsoft Agent Framework exposing a Usage surface on `AgentResponse` (issue #2688). `NullTokenUsageReader` is the default; cost telemetry stays at 0 cents until the impl swap. The pricing + ceiling enforcement machinery is in place (this PR) so the swap is a one-class change.
+- **Wizard-side retrieval metrics** (`pinwiz.wizard.retrieval.*`) — Phase 4 (RAG). Cosine similarity, retrieved-chunk count, citation-text-coverage.
 
 ## Update triggers
 
