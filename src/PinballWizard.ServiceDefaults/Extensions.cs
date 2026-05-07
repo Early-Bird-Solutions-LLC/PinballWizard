@@ -91,6 +91,14 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
+        // Per ADR-0014 + ADR-0015, enable Foundry's auto-emitted GenAI
+        // OTel spans on the Azure.AI.Projects.* activity source. This
+        // switch must be set BEFORE any AIProjectClient is constructed,
+        // so it fires here at host-builder configuration time. The
+        // companion env var AZURE_EXPERIMENTAL_ENABLE_GENAI_TRACING also
+        // works; the switch takes precedence per the SDK docs.
+        AppContext.SetSwitch("Azure.Experimental.EnableGenAITracing", true);
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
@@ -117,6 +125,9 @@ public static class Extensions
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
                     .AddSource(PinballWizardSourceName)
+                    // Foundry SDK auto-emits spans here when the
+                    // EnableGenAITracing switch is on (set above).
+                    .AddSource("Azure.AI.Projects.*")
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation();
             });

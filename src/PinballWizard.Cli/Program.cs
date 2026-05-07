@@ -6,6 +6,7 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application;
+using PinballWizard.Application.Ai;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
@@ -89,6 +90,11 @@ var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
     Description = "Post-deploy smoke-test for the Azure AI Foundry project (ADR-0014): connects via DefaultAzureCredential, enumerates model deployments, asserts the configured chat (AiFoundry:ChatDeploymentName) and embedding (AiFoundry:EmbeddingDeploymentName) deployments are present. Idempotent. Requires AiFoundry:ProjectEndpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
 };
 
+var askOption = new Option<string?>("--ask")
+{
+    Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -101,6 +107,7 @@ rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
+rootCommand.Options.Add(askOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -115,6 +122,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
+    var ask = parseResult.GetValue(askOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -204,6 +212,31 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine(
             $"Azure Foundry deployments verified: chat + embedding deployments present at {result.FoundProjectEndpoint}.");
+        return;
+    }
+
+    // Handle --ask (Phase 3 thin Wizard slice; ADR-0014). Resolves
+    // IAiRouter from DI; the router is only registered when
+    // AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
+    // is set). PR 4 ships the skeleton; PR 5/6 add sub-agent grounding +
+    // confidence-driven refusal.
+    if (!string.IsNullOrWhiteSpace(ask))
+    {
+        var router = host.Services.GetService<IAiRouter>();
+        if (router is null)
+        {
+            Console.Error.WriteLine(
+                "--ask requires AI Foundry to be configured. Set " +
+                $"{AiFoundryOptions.ProjectEndpointKey} (the deployed Foundry project endpoint URL).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var answer = await router.AnswerAsync(ask, cancellationToken);
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            answer,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        Console.WriteLine(json);
         return;
     }
 

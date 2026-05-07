@@ -18,6 +18,15 @@
          Microsoft Agent Framework wrapper) for IAiRouter + agent
          construction via AsAIAgent. -->
     <PackageReference Include="Azure.AI.Projects" Version="2.0.1" />
+    <!-- Microsoft.Agents.AI.Foundry is the Foundry-specific provider for
+         the Microsoft Agent Framework. It exposes AIProjectClient.AsAIAgent
+         (the Responses Agent extension) which the FoundryAgentFactory
+         uses to construct the four AIAgent instances per ADR-0014. GA
+         at 1.4.0 — better than the "preview" status assumed at ADR-0014
+         drafting time. P3-R4 narrows further: now both the data-plane
+         SDK (Azure.AI.Projects) AND the Microsoft Agent Framework
+         providers are GA. -->
+    <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.4.0" />
     <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
          CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
          genuinely does not include `sqlDatabases/write` (and there is no valid

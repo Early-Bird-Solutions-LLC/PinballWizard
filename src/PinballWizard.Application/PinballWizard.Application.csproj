@@ -9,8 +9,24 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Microsoft.Agents.AI is the core abstraction layer for the Microsoft
+         Agent Framework (GA 1.0 shipped 2026-04-03 per ADR-0014). The
+         AIAgent type used by IAiRouter lives here. The Foundry-specific
+         provider (Microsoft.Agents.AI.Foundry, preview) is referenced
+         from Infrastructure since it pulls in Azure.AI.Projects. -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.4.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Per ADR-0018, sub-agent prompts live as embedded resources;
+         IFoundryAgentFactory reads them at startup to construct each
+         AIAgent via AIProjectClient.AsAIAgent. The Wizard / Valuation /
+         Rules / Repair markdown files in Ai/Agents/ ship inside the
+         compiled assembly so a single deploy carries the prompts. -->
+    <EmbeddedResource Include="Ai\Agents\*.md" />
   </ItemGroup>
 
   <ItemGroup>
