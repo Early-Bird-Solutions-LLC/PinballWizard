@@ -8,7 +8,7 @@
 > **An enterprise AI reference application by Earlybird Solutions** — demonstrating end-to-end architecture, build, and operation of a modern Azure + .NET Aspire AI platform.
 > The pinball domain is the vehicle. The engineering is the point.
 
-PinballWizard is a polite, manufacturer-agnostic content-ingestion pipeline feeding an event-driven, source-citing RAG platform. Public users ask the Wizard questions about pinball machines and get answers that always cite the original manuals, schematics, and bulletins on the manufacturers' own sites — never hallucinated, never decoupled from source.
+PinballWizard is a polite, manufacturer-agnostic content-ingestion pipeline feeding an event-driven, source-citing RAG platform. Public users ask the Wizard questions about pinball machines and get answers that cite original manuals, schematics, and bulletins on the manufacturers' own sites when grounding is available — refusing rather than fabricating when it isn't. Threshold-driven refusal (per [ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)) is the safety invariant; citations are the differentiator.
 
 Every architectural decision is justified in an [ADR](docs/adr/). Every PR clears a two-step pre-push audit (qualitative critique + mechanical checklist). Every external request is throttled, identified, and respectful of `robots.txt` by construction.
 
@@ -79,7 +79,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/guardrails.md`](docs/guardrails.md) | Meta-spec — seven main goals, scope discipline, decision framework, phase gates, risk register, escalation triggers, monthly self-evaluation |
 | [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria; Phase 0/1 retrospectives; Phase 2 fully spec'd; Phases 3–7+ scaffolded |
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0013 committed) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0018 committed) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
 
@@ -90,13 +90,23 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | 0 — Foundation (Clean Architecture + IaC + Aspire + Cosmos provisioning) | ✅ Complete | Deployed to personal Earlybird Azure subscription; smoke-test passes end-to-end via `ArmCosmosProvisioner` |
 | 1 — Content ingestion pipeline (8 manufacturers + OPDB) | ✅ Complete | 10 `ISourceScraper` implementations; polite-by-construction; shared JSON-LD + Open Graph parsers; family-wide test infra |
 | 2 — Runtime validation | ✅ Complete | ADRs 0012/0013 promoted, `ingestion_sources` seeded, OPDB sync against deployed Cosmos populated 2,154 base machines + 165 alias-editions, OTel groundwork, work-email denylist, Playwright 1.59 bump, Dependabot triage, Stern Playwright asymmetry documented |
-| 3 — AI & Integration layer | ⏳ Not started | Semantic Kernel router, sub-agents, threshold-driven refusal, evaluation harness, external API clients |
+| 3 — AI & Integration layer | ✅ Complete | Microsoft Foundry orchestration ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) on `Microsoft.Agents.AI` 1.4.0 GA; four-agent surface (Wizard / Valuation / Rules / Repair) with `getMachineByTitle` function tool; confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)); cost routing + LRU semantic cache ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)); evaluation harness via Foundry `EvaluationClient` ([ADR-0016](docs/adr/0016-evaluation-harness.md)); H2 baseline captured. See [Phase 3 known limitations](#phase-3--current-capability-honest-read) for what's scaffolded vs. fully wired |
 | 4 — Event-driven RAG | ⏳ Not started | Cosmos Change Feed Function → PdfPig → chunking → embedding → AI Search index + facets |
 | 5 — Blazor + MudBlazor frontend | ⏳ Not started | Public Wizard chat, faceted browse, admin control plane, Entra auth, traffic-attribution middleware |
 | 6 — Operability + launch readiness | ⏳ Not started | SLOs, dashboards, runbooks, DR drill, threat model, accessibility audit, performance audit |
 | 7+ — Post-launch features | ⏳ Deferred | Strategy Tracker, OCR score capture, Dream Game generator |
 
-**Tests:** 566 passing across foundation + scrapers + Cosmos + OPDB integration. Build runs clean with `TreatWarningsAsErrors`.
+**Tests:** 687 passing across foundation + scrapers + Cosmos + OPDB integration + Foundry orchestration + evaluation harness. Build runs clean with `TreatWarningsAsErrors`.
+
+### Phase 3 — current capability honest read
+
+Phase 3 closed operationally on 2026-05-07 ([PR #93](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/93)) with the Wizard answering end-to-end against deployed Foundry. The H2 evaluation baseline ([`data/eval/results/wizard.20260507T162529Z.json`](data/eval/results/wizard.20260507T162529Z.json)) surfaced three gaps that Phase 4 inherits as its first scope items:
+
+- **Connected-agents dispatch is scaffolded, not wired.** The Wizard prompt routes classification questions to Valuation / Rules / Repair sub-agents, but the structural dispatch primitive isn't in place yet — the agent either calls `getMachineByTitle` directly or refuses with its own OutOfScope text. Sub-agent routing as a *runtime mechanism* lands in Phase 4.
+- **Citation precision is the regression-detection floor, not absolute performance.** H2 baseline scored `citation_precision = 0.133`. The metric is floored by two upstream gaps: (a) citations are extracted by regexing OPDB URLs out of the agent's response prose (a Phase 3 placeholder; tool-call-trace inspection replaces it in Phase 4), and (b) eval ground-truth OPDB IDs were curated from machine titles rather than verified against the deployed catalog. Both are Phase 4 scope.
+- **RAG corpus ships in Phase 4.** Phase 3 grounds against the OPDB catalog only. Manuals / bulletins / rules-text retrieval lands when the Cosmos Change Feed → PdfPig → chunking → AI Search index pipeline ships in Phase 4.
+
+Threshold-driven refusal (ADR-0017's draft 0.65) and the evaluation harness itself ARE shipped and exercised. The full retrospective lives at [`docs/build-spec.md`](docs/build-spec.md) § Phase 3 § Retrospective.
 
 ## Tech stack
 
@@ -220,10 +230,10 @@ src/
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← OTel + service discovery + HTTP resilience + health checks
 tests/
-└── PinballWizard.Scraper.Tests   ← Single test project — 566 tests covering scrapers, Cosmos, OPDB, contract tests
+└── PinballWizard.Scraper.Tests   ← Single test project — 687 tests covering scrapers, Cosmos, OPDB, Foundry, evaluators, contract tests
 docs/
 ├── vision.md / guardrails.md / build-spec.md / quality-spec.md
-├── adr/ (0001–0013)
+├── adr/ (0001–0018)
 ├── decision-log.md
 ├── scraper_plan_v4.md (Phase 1 historical design)
 ├── infra_analysis.md (Azure infra plan)

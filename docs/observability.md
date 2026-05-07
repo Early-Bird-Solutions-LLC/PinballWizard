@@ -29,13 +29,27 @@ All counters carry a `pinwiz.opdb.sync.mode` attribute — `"apply"` for real ru
 
 **Emission cadence:** all counters and the histogram emit a single observation **per run** (in the `finally` block of `OpdbSyncService.SyncAsync`). Per-record observations would multiply observation overhead and balloon cardinality without operational benefit at the current 9-source scale. When per-source metrics become valuable (Phase 3+), add a `pinwiz.source` attribute rather than fanning into per-source instruments.
 
+### Pinball Map fetch (Phase 3)
+
+Pinball Map fetches are per-region (1 fetch = 1 region's locations), not bulk-streamed like OPDB. Counters carry a `cache_outcome` attribute (`hit` / `miss` / `refresh`) so dashboards can observe how often the on-disk cache spares the network — the politeness story for Pinball Map is partially told through this attribute.
+
+| Instrument | Type | Unit | Description |
+| --- | --- | --- | --- |
+| `pinwiz.pinballmap.fetched` | Counter\<long> | `{region}` | Pinball Map region-locations fetches across all calls (cache hits + misses) |
+| `pinwiz.pinballmap.locations` | Counter\<long> | `{location}` | Locations returned by Pinball Map fetches. Useful for capacity planning vs API growth |
+| `pinwiz.pinballmap.failed` | Counter\<long> | `{fetch}` | Pinball Map fetches that aborted with an exception |
+| `pinwiz.pinballmap.fetch.duration_ms` | Histogram\<double> | `ms` | Wall-clock duration of a single Pinball Map region fetch in milliseconds |
+
+**Emission cadence:** one observation per region-fetch invocation. The `cache_outcome` attribute lets dashboards distinguish miss-driven network load (the polite-by-construction signal) from refresh-driven load (cache-eviction policy signal). A spike in `cache_outcome="miss"` without a corresponding spike in `cache_outcome="refresh"` indicates either cache-storage pressure or new-region adoption — both worth alerting on.
+
 ## Activity inventory
 
 | Activity name | Source | Captured tags |
 | --- | --- | --- |
 | `pinwiz.opdb.sync` | `PinballWizard` | `pinwiz.opdb.sync.mode`, `pinwiz.opdb.sync.fetched`, `pinwiz.opdb.sync.inserted`, `pinwiz.opdb.sync.updated`, `pinwiz.opdb.sync.skipped`, `pinwiz.opdb.sync.duration_ms`. On exception: `ActivityStatusCode.Error` + the exception's `Message` |
+| `pinwiz.pinballmap.fetch` | `PinballWizard` | `pinwiz.pinballmap.region`, `pinwiz.pinballmap.locations`, `pinwiz.pinballmap.fetch.duration_ms`. On exception: `ActivityStatusCode.Error` + the exception's `Message`. `ActivityKind.Client` (outbound HTTP) |
 
-Activities cover one OPDB sync invocation end-to-end. The trace tags duplicate the per-run metric observations so a trace alone tells the run's full story without joining against the metric stream.
+Activities cover one OPDB sync invocation or one Pinball Map region fetch end-to-end. The trace tags duplicate the per-run / per-fetch metric observations so a trace alone tells the operation's full story without joining against the metric stream.
 
 ## IngestionSource write-back
 
