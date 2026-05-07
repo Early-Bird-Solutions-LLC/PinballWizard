@@ -56,6 +56,10 @@ Some decisions are explicitly **not relitigated** without surfacing the change. 
 - Robots.txt honored unconditionally — sites declaring `Disallow: /` are skipped without a polite-outreach grant.
 - Provenance is sacred; any data path that drops `Source` / `DiscoveryUrl` / `DiscoveryContext` / `GameSlug` is a 🔴.
 - Cosmos partition keys per ADR 0011; no per-PR re-decisioning.
+- Microsoft Foundry orchestration (Microsoft Agent Framework + `Azure.AI.Projects` 2.0 GA) — Responses Agent pattern, function tools for catalog grounding, OTel auto-emission. Reference architecture for client engagements. ([ADR-0014](adr/0014-microsoft-foundry-orchestration.md))
+- Per-`AIAgent` model selection: gpt-4o-mini default for Wizard / Valuation / Rules; gpt-4.1 for Repair + escalation tier. In-process LRU semantic cache (~512 entries, prompt-version-keyed). Per-call cost ceiling enforced. ([ADR-0015](adr/0015-cost-routing-and-semantic-cache.md))
+- Confidence-threshold refusal mandatory — geometric-mean composite of (retrieval similarity, model self-reported, citation coverage); below-threshold returns a categorized refusal rather than fabricating. Threshold default 0.65. ([ADR-0017](adr/0017-confidence-threshold-refusal.md))
+- Code-resource agent definitions (Markdown prompts as `<EmbeddedResource>` in the Application csproj, constructed via `AIProjectClient.AsAIAgent`) — NOT Foundry portal prompt flow. Diffability + reviewability + atomic prompt+code commits. ([ADR-0018](adr/0018-prompt-management.md))
 
 To relitigate any of these: stop work on whatever surfaced the conflict, write a one-paragraph "why this is being reopened" message to the user, and **wait for an explicit yes before proceeding**. Do not soft-erode a locked decision through a series of small concessions.
 

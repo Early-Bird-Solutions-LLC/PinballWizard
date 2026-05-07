@@ -30,6 +30,27 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-07 — Phase 3 H2 eval baseline captured; ConfidenceThreshold stays at ADR-0017's draft 0.65
+
+**Decision:** The Phase 3 H2 hand-off (build-spec § Phase 3 § Operational hand-offs item 2) ran against deployed Foundry and produced a v1 baseline at `data/eval/results/wizard.20260507T162529Z.json`. Aggregate metrics: `citation_precision=0.133`, `citation_recall=0.133`, `subagent_accuracy=0.033`, `refusal_correctness=0.300`. **`AiFoundryOptions.ConfidenceThreshold` is NOT moved from [ADR-0017](adr/0017-confidence-threshold-refusal.md)'s draft value of 0.65.** ADR-0017 is unchanged.
+
+**Alternatives considered:**
+
+- **Lower the threshold to ~0.20** so the current geomean composite (~0.277 for citation-less answers; up to ~0.55 for cited answers) crosses it. Rejected: the threshold's purpose is to refuse fabrication when grounding is missing. Lowering it to make refusal-rate look better would silently allow ungrounded answers — exactly the failure mode ADR-0017's safety invariant exists to prevent. The H2 metrics are floored not because the threshold is wrong, but because upstream surfaces aren't producing the citations the threshold expects.
+- **Mark ADR-0017 as "calibration deferred to Phase 4"** with a follow-up entry. Considered. The follow-up framing is correct (calibration *is* deferred), but ADR-0017 itself doesn't change — the threshold value, the geometric-mean composition, the refusal-shape contract, and the "calibrated when a real baseline exists" criterion all stay. A follow-up on ADR-0017 would be redundant with this decision-log entry.
+- **Treat the H2 baseline as the v1 reference and call it done.** Selected. The 0.133 / 0.133 / 0.033 / 0.300 numbers ARE the regression-detection floor as specified in ADR-0016 — any Phase 4 number above them is improvement; the absolute numbers are meaningless until the upstream gaps close.
+
+**Rationale:** The H2 baseline surfaced two upstream gaps (documented in [build-spec.md § Phase 3 § Retrospective](build-spec.md) lessons 4 + 5) that floor every metric:
+
+1. **Connected-agents dispatch is non-functional.** `Wizard.md` instructs the Wizard to dispatch to Valuation/Rules/Repair, but `FoundryAgentFactory` constructs all four agents as standalone `AIAgent` instances with only `getMachineByTitle` attached — no actual sub-agent dispatch wiring. The Wizard either calls the function tool directly (and answers as itself, with `WizardAnswer.SubAgentUsed = "Wizard"` per the PR 4 placeholder, scoring 0 on subagent_accuracy unless the ground-truth expected "Wizard") OR refuses with the agent's own OutOfScope text (scoring 0 on citation_precision/recall).
+2. **Eval ground-truth OPDB IDs aren't verified against deployed Cosmos.** PR 8's subagent curated plausible OPDB-format IDs from machine titles, but the deployed catalog has different actual IDs. When the agent successfully calls `getMachineByTitle("Godzilla")` it gets the catalog's record (e.g., a Sega 1998 entry instead of the Stern 2021 entry the ground-truth expected); citation_precision / citation_recall score 0 on a structurally-correct lookup.
+
+Calibrating the threshold against a baseline that's floored by upstream gaps would tune for the gap, not the steady-state behavior. The right path is fix the gaps in Phase 4 then re-run the eval; if the post-fix baseline meets the ADR-0017 calibration target (citation_precision ≥ 0.7, recall ≥ 0.6, over-eager-refusal ≤ 20%) at 0.65, no calibration is needed; if not, calibrate at that point.
+
+**Revisit when:** Phase 4 ships items 1 + 2 from [build-spec.md § Phase 4 § Inherited Phase 3 follow-ups](build-spec.md) (connected-agents wiring + eval ground-truth re-curation). Re-run `--eval` against deployed Foundry; if calibrated value moves >0.05 from 0.65, append a follow-up to ADR-0017 recording the post-calibration value.
+
+**Related:** PR #93 (Phase 3 closeout, this PR), [build-spec.md § Phase 3 § Retrospective](build-spec.md), [ADR-0017](adr/0017-confidence-threshold-refusal.md), [ADR-0016](adr/0016-evaluation-harness.md), [`data/eval/results/wizard.20260507T162529Z.json`](../data/eval/results/wizard.20260507T162529Z.json).
+
 ## 2026-05-07 — Foundry deploy is two-pass + AI Search deferred from H1
 
 **Decision:** The Phase 3 H1 hand-off (per [build-spec.md § Phase 3 § Operational hand-offs](../docs/build-spec.md)) is a **two-pass deploy**, gated by two new Bicep params on `infra/modules/shared.bicep` (and piped through `infra/main-shared.bicep`):

@@ -36,7 +36,7 @@ src/
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← Aspire shared OTel + health + service discovery + resilience
 tests/
-└── PinballWizard.Scraper.Tests   ← single test project, 566 tests, all manufacturers + Cosmos + OPDB
+└── PinballWizard.Scraper.Tests   ← single test project, 687 tests, all manufacturers + Cosmos + OPDB + AI orchestration
 ```
 
 ADRs live in [`docs/adr/`](docs/adr/) (0001–0013). The slnx is `PinballWizard.slnx`.
@@ -139,15 +139,19 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 6. **PowerShell, not Git-Bash, for Cosmos resource IDs.** MSYS path translation rewrites `/subscriptions/...` to `C:/Program Files/Git/subscriptions/...`. Friendly-error guard catches it but PowerShell avoids the trip-up.
 7. **Phase 2 storage = AI Search Basic + Cosmos.** NOT pgvector / Postgres. NOT AI Search Standard. See `project_phase2_architecture_decisions.md`.
 8. **Catalog is the Phase 1↔Phase 2 contract.** `catalog.json` (file-system) and the Cosmos `machines` / `ingestion_sources` containers are the API boundary.
+9. **Microsoft Foundry orchestration.** Microsoft Agent Framework Responses Agent pattern (`AIProjectClient.AsAIAgent`); function tools via `AIFunctionFactory.Create`; OTel auto-emission on `Azure.AI.Projects.*`. ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md))
+10. **Per-`AIAgent` model selection + per-call cost ceiling.** gpt-4o-mini default; gpt-4.1 for Repair / escalation. In-process LRU semantic cache; ceiling enforced as a refusal category. ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md))
+11. **Confidence-threshold refusal mandatory.** Geometric-mean composite of (retrieval, model self-reported, citation coverage); below-threshold returns a categorized refusal, never a fabrication. Threshold default 0.65. ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md))
+12. **Code-resource agent definitions.** Markdown prompts as `<EmbeddedResource>` in the Application csproj; constructed via `AsAIAgent`; never the Foundry portal. ([ADR-0018](docs/adr/0018-prompt-management.md))
 
 ## Documentation map
 
-- [`docs/adr/`](docs/adr/) — 13 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation, Cosmos ARM-vs-data-plane split (0012), two-tier Bicep deploy gate (0013)
+- [`docs/adr/`](docs/adr/) — 18 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation, Cosmos ARM-vs-data-plane split (0012), two-tier Bicep deploy gate (0013), Microsoft Foundry orchestration (0014), per-agent cost routing + LRU cache (0015), evaluation harness via Foundry EvaluationClient (0016), confidence-threshold refusal (0017), code-resource prompt management (0018)
 - [`docs/vision.md`](docs/vision.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/quality-spec.md`](docs/quality-spec.md), [`docs/decision-log.md`](docs/decision-log.md) — canonical spec system (vision / rules / phased plan / quality gates / sub-ADR decisions)
 - [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — comprehensive Phase 1 design
 - [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infra plan + Phase 2 integration
 
-Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_04_evening_phase2_close.md` (Phase 2 operationally closed; OPDB cache + per-source politeness shipped through PR #80).
+Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_07_phase3_close.md` (Phase 3 operationally closed; Wizard end-to-end against deployed Foundry; H2 eval baseline captured; five Phase 4 follow-ups identified).
 
 ## PR self-audit (pre-push, BLOCKING)
 
