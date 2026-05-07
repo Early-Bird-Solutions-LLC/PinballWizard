@@ -1,0 +1,650 @@
+{
+  "evaluation_id": "pinwiz-eval-20260507T162529Z",
+  "started_at": "2026-05-07T16:25:29.6810567+00:00",
+  "completed_at": "2026-05-07T16:27:24.2341161+00:00",
+  "ground_truth_path": "data/eval/wizard.v1.jsonl",
+  "results_path": "data/eval/results\\wizard.20260507T162529Z.json",
+  "prompt_version": "v2.2026.05",
+  "aggregate": {
+    "question_count": 30,
+    "error_count": 0,
+    "citation_precision_mean": 0.13333333333333333,
+    "citation_recall_mean": 0.13333333333333333,
+    "subagent_accuracy_mean": 0.03333333333333333,
+    "refusal_correctness_mean": 0.3
+  },
+  "questions": [
+    {
+      "id": "ev-rules-0001",
+      "question": "What manufacturer makes the Foo Fighters pinball machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-MQR4P"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 7868.0679,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0002",
+      "question": "Tell me about the Stranger Things pinball game by Stern.",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-LWPLB"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3581.3689,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0003",
+      "question": "What is the theme of the Godzilla pinball machine from Stern?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRB7K-MD0OJ"
+      ],
+      "predicted_citation_set": [
+        "G5po2-MeP6B"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Godzilla pinball machine from Sega, released in 1998, has a theme centered around monsters and movies. For more details, you can check the [OPDB page](https://opdb.org/machines/G5po2-MeP6B).",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 4002.4786,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0004",
+      "question": "Who designed the Stern Iron Maiden pinball machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBE-MNWBO"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 4656.0252,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0005",
+      "question": "When was Jersey Jack\u0027s The Wizard of Oz pinball released?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRB6Q-MQpVk"
+      ],
+      "predicted_citation_set": [
+        "G4xyR-MJ2v0"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "Jersey Jack\u0027s **The Wizard of Oz** pinball machine was released in **2013**. You can find more details on its editions and themes at the [OPDB source](https://opdb.org/machines/G4xyR-MJ2v0).",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 3840.9639,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0006",
+      "question": "What designers worked on Jersey Jack\u0027s Dialed In pinball?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR1pe-MOdjE"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3351.1172,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0007",
+      "question": "What is the Beatles pinball machine and who makes it?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRZBR-MQjXk"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3587.2934,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0008",
+      "question": "Tell me about the AC/DC pinball machine by Stern.",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GREw9-MdRy7"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3774.1993,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0009",
+      "question": "What pinball machine has the Metallica theme made by Stern?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "G4M3K-MZP74"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3758.4814,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0010",
+      "question": "Tell me about Stern\u0027s Rush pinball machine.",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR3DN-MJYO0"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3410.1002,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0001",
+      "question": "How much does the Stern Foo Fighters Pro edition cost?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-MQR4P"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3401.1225,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0002",
+      "question": "What editions are available for Stern\u0027s Stranger Things pinball?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-LWPLB"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3332.607,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0003",
+      "question": "Is Jersey Jack\u0027s Dialed In! still available new?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR1pe-MOdjE"
+      ],
+      "predicted_citation_set": [
+        "G4X2l-MYepl"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "\u0022Dialed In!\u0022 was released by Jersey Jack Pinball in 2017. It has Limited Edition (LE) and Collector\u0027s Edition (CE) variants. As for current availability, manufacturers often discontinue production after a certain period, and new units may be hard to find.\n\nFor the most current purchase options, it would be best to check with authorized retailers or Jersey Jack\u0027s official website. You can find more details about the machine [here](https://opdb.org/machines/G4X2l-MYepl).",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 4143.6081,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0004",
+      "question": "What does the Premium edition of Stern Godzilla retail for?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRB7K-MD0OJ"
+      ],
+      "predicted_citation_set": [
+        "G5po2-MeP6B"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I don\u0027t have specific pricing information for the Premium edition of Stern\u0027s Godzilla yet. However, the machine you referenced appears to be from Sega, which manufactured a different Godzilla pinball machine in 1998. You can find more information about that version [here](https://opdb.org/machines/G5po2-MeP6B).\n\nFor the latest retail price on Stern\u0027s Godzilla, I recommend checking reputable pinball dealers or online marketplaces, as prices can vary based on condition and demand.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 5861.1281,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0005",
+      "question": "What\u0027s the resale value trend for old AC/DC pinball machines?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 1654.4016,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0006",
+      "question": "Tell me what editions of Stern Iron Maiden exist.",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBE-MNWBO"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3690.6988,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0007",
+      "question": "How much is The Wizard of Oz Limited Edition pinball?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR6Q-MQpVk"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3566.0901,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0008",
+      "question": "Where can I find the current price of Stern\u0027s Beatles Gold edition?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRZBR-MQjXk"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3680.7419,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0009",
+      "question": "What\u0027s the original retail price of the Rush pinball machine?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR3DN-MJYO0"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 4026.0696,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0010",
+      "question": "How much does it cost to ship a pinball machine across the country?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 1746.9444,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0001",
+      "question": "What troubleshooting docs are available for the Foo Fighters pinball machine?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-MQR4P"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3584.7779,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0002",
+      "question": "Where do I find the manual for Stern\u0027s Stranger Things pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBN-LWPLB"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3613.371,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0003",
+      "question": "My Godzilla pinball flippers feel weak \u2014 what should I check?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRB7K-MD0OJ"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 I don\u0027t have grounded data to answer that question yet.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 5143.959,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0004",
+      "question": "Are there service bulletins for Stern Iron Maiden?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRBE-MNWBO"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3639.6718,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0005",
+      "question": "What service documents exist for The Wizard of Oz pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR6Q-MQpVk"
+      ],
+      "predicted_citation_set": [
+        "G4xyR-MJ2v0"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "For \u0022The Wizard of Oz\u0022 pinball machine, manufactured by Jersey Jack Pinball in 2013, specific service documents might not be aggregated in one place, but typically, you can look for the following types of documents:\n\n1. **Service Manual** - Covers operational functions, maintenance procedures, and troubleshooting tips.\n2. **Schematics** - Diagrams showing the electronic circuitry and physical connections.\n3. **Parts List** - A detailed breakdown of components used in the machine.\n4. **Firmware Updates** - Information on any software updates available for the machine.\n\nFor comprehensive details and to check for the availability of these documents, you can refer to the [OPDB page for The Wizard of Oz](https://opdb.org/machines/G4xyR-MJ2v0). Local pinball services or forums may also have valuable resources and community support for service documents.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 4939.4668,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0006",
+      "question": "How do I fix a stuck ball on the AC/DC pinball machine?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GREw9-MdRy7"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 4464.5544,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0007",
+      "question": "My Beatles pinball won\u0027t start up \u2014 where do I begin troubleshooting?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GRZBR-MQjXk"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 5530.6129,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0008",
+      "question": "Are there any known issues with the Stern Rush pinball machine?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GR3DN-MJYO0"
+      ],
+      "predicted_citation_set": [],
+      "acceptable_refusal": false,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 0
+      },
+      "duration_ms": 3354.8719,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0009",
+      "question": "Can you fix my car\u0027s transmission?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 1667.1555,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0010",
+      "question": "What\u0027s the weather like in Tokyo today?",
+      "expected_sub_agent": "Wizard",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1
+      },
+      "duration_ms": 1632.0352,
+      "error": null
+    }
+  ]
+}

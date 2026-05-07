@@ -28,7 +28,7 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 0 | Foundation — Clean Architecture, IaC, Aspire, Cosmos provisioning, workflow infrastructure | ✅ Complete |
 | 1 | Content ingestion pipeline — 8 manufacturers + OPDB, polite-by-construction, shared helpers, test infra | ✅ Complete |
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
-| 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ⏳ Not started |
+| 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
 | 4 | Event-driven RAG — Cosmos Change Feed Function, PdfPig text extraction, page-aware chunking, embedding, AI Search index + facets, citation-accuracy eval | ⏳ Not started |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
 | 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ⏳ Not started |
@@ -397,7 +397,7 @@ Each hand-off, when executed, gets captured as a comment on this Retrospective (
 
 ## Phase 3 — AI & Integration layer
 
-**Status:** ⏳ Not started
+**Status:** ✅ Complete (2026-05-07 — code work; H2 baseline run captured the upstream gaps that Phase 4 inherits; see § Retrospective)
 **Sequence position:** Depends on Phase 2 (deployed Cosmos validated; OPDB catalog populated; `ingestion_sources` seeded; `PinballWizardTelemetry` + `IngestionSourceIds` patterns; `IIngestionSourceRepository.RecordRunResultAsync` shipped; ADR-0013 governing the Bicep gate). Unblocks Phase 4 (RAG retrieval feeds the same orchestrator), parts of Phase 5 (admin dashboards consume Phase 3 telemetry), and Phase 6 (operability runbooks for AI calls).
 **Demonstrable artifact:** `dotnet run --project src/PinballWizard.Cli -- --ask "Who manufactured Foo Fighters?"` returns a cited `WizardAnswer` end-to-end against a deployed Azure AI Foundry project: question → `IAiRouter` (Foundry agent client via `Azure.AI.Projects`) → routed Foundry agent (`Repair` / `Rules` / `Valuation`) → grounded reply citing OPDB machine records (RAG corpus is Phase 4; Phase 3 grounds against OPDB only). Refusal-with-explanation when confidence is below threshold. A first eval-set run produces a baseline citation-accuracy + refusal-rate JSON report. A live Pinball Map probe returns enabled-location data. Five new ADRs (0014–0018) capture orchestration / cost / eval / refusal / prompt-management decisions. **Phase 3 is also a reference architecture for client engagements** — the Foundry-native pattern is what Earlybird Solutions recommends to prospects, and PinballWizard is the working example.
 
@@ -599,7 +599,44 @@ Each hand-off, when executed, gets captured as a comment on the Phase 3 § Retro
 
 ### Retrospective
 
-*Populated at phase completion.*
+Phase 3 shipped 10 PRs across 4 waves between 2026-05-04 (Wave 0 build-spec draft) and 2026-05-07 (Wave 4 closeout). PR sequence: #82 (build-spec § Phase 3 draft), #84 (ADRs 0014–0018 batch), #85 (Wave 1 PR 2a — `AzureFoundrySmokeProbe`), #83 (Wave 1 PR 3 — Pinball Map client, worktree-isolated subagent), #86 (Wave 1 PR 2b — Bicep + `deployPhase2 = true` flip), #90 (H1 fix-up — `deployFoundryModelDeployments` + `deployAiSearch` gates), #87 (Wave 2 PR 4 — `IAiRouter` skeleton), #88 (Wave 2 PR 5 — sub-agent prompts + `getMachineByTitle`), #89 (Wave 2 PR 6 — confidence + refusal + citations), #91 (Wave 3 PR 7 — cost telemetry), #92 (Wave 3 PR 8 — eval harness, worktree-isolated subagent), and this PR (Wave 4 PR 9). Test count: 566 (Phase 2 exit) → 687 (Phase 3 exit), +121 over the phase.
+
+**The audit gates earned their keep.** `/local-review` caught at least one real 🔴 finding on every substantive code PR; sibling-diff against PR 2a's `AzureFoundrySmokeProbe` shape kept the smoke-probe pattern consistent across the Foundry surface; the 7-item self-audit caught the Wizard.md prompt content gap that PR 5 filled (PR 4 placeholder prompts would have shipped with no real classification routing without the gate).
+
+**Five Phase 3 lessons that Phase 4 inherits:**
+
+1. **The Microsoft Agent Framework's Foundry GA shipped while we were drafting.** ADR-0014 was authored expecting `Microsoft.Agents.AI.Foundry` to be preview throughout Phase 3. The package shipped at GA 1.4.0 (2026-04-03) with `Azure.AI.Projects` 2.0.1 GA (2026-04-23). The reduction in preview-SDK risk (P3-R4) was a happy surprise; what wasn't was that the actual public type for agent responses is `AgentResponse`, not `AgentRunResponse` as the Microsoft Learn docs suggested at PR 4 drafting time. The bug surfaced at PR 7 build time (compile error); fix was a one-line type rename. **Phase 4: when the SDK exposes a stable token-usage surface (`Microsoft.Extensions.AI.UsageDetails` or whatever it lands as), swap `NullTokenUsageReader` for a real impl** — the abstraction is in place; the swap is a single class change.
+
+2. **Foundry's account-scoped Responsible-AI policy isn't ARM-template-baked.** A one-shot deploy of `(account + project + 3 model deployments)` failed validation with `InvalidResourceProperties — Policy evaluation returned compliance:` (empty error fields) because a fresh `Microsoft.CognitiveServices/accounts` of kind `AIServices` doesn't have its RAI infrastructure initialized at deploy-validation time. The fix was a two-pass deploy gated by `deployFoundryModelDeployments` (pass 1: account + project; pass 2: deployments after the account materialized). Documented in [DL 2026-05-07](decision-log.md). **Phase 4: future Foundry projects use the two-pass pattern by default.**
+
+3. **East US 2 capacity for AI Search Basic was exhausted on H1 day.** Azure returned `InsufficientResourcesAvailable` for `Microsoft.Search/searchServices` — a region-specific transient capacity issue. AI Search isn't consumed by Phase 3 (Phase 4 RAG is the consumer), so the H1 fix-up shipped a `deployAiSearch` gate with default `true` and a local override to `false` until Phase 4 needs it. **Phase 4: when AI Search becomes load-bearing, flip `deployAiSearch=true`. If East US 2 is still capacity-constrained at that point, consider single-region-relocation of AI Search to a sibling region (East US, Central US) with cross-region search-from-app — the latency penalty is small and the architecture supports it.**
+
+4. **The Microsoft Agent Framework's connected-agents primitive is non-functional in our current `FoundryAgentFactory` wiring.** The H2 baseline run revealed that the Wizard agent refuses many in-scope questions because its prompt assumes it can dispatch to the Valuation/Rules/Repair sub-agents but `FoundryAgentFactory` constructs all four agents as standalone `AIAgent` instances with only the `getMachineByTitle` function tool attached — the sub-agents aren't wired as connected agents on the Wizard. The Wizard either calls the function tool directly (and answers itself, getting credit toward citation_precision) or refuses with its own OutOfScope text (citation_precision = 0 for those). Result: H2 baseline metrics — `citation_precision=0.133`, `citation_recall=0.133`, `subagent_accuracy=0.033`, `refusal_correctness=0.300`. **Phase 4 first scope item must be the connected-agents wiring fix** — pulling sub-agents into the Wizard's tool surface via `AsAIFunction()`-equivalent, OR migrating to Foundry's portal-side connected-agents primitive (with the trade-off recorded in a follow-up to ADR-0018).
+
+5. **Eval ground-truth OPDB IDs need to be verified against the deployed Cosmos catalog before they're authoritative.** PR 8's subagent curated plausible OPDB-format IDs from machine titles, but the deployed Cosmos catalog contains the actual OPDB IDs — the two don't match. When the agent successfully calls `getMachineByTitle("Godzilla")` and gets back the catalog's record, it cites that ID — but `expected_citation_set` in the ground-truth has a different one, so the precision/recall scores 0 even on a correct lookup. **Phase 4: re-curate `data/eval/wizard.v1.jsonl` using a script that queries the deployed Cosmos catalog for each title and writes the actual OPDB ID into `expected_citation_set`. Until then, the H2 baseline (`citation_precision=0.133`) is the regression-detection floor — any Phase 4 number above that is improvement, but the absolute number is meaningless until the ground truth is fixed.**
+
+**H1 / H2 / H3 outcomes:**
+
+- **H1 — Bicep `deployPhase2 = true` apply + Foundry smoke probe:** ✅ Succeeded 2026-05-07T14:54Z (pass 1) + 2026-05-07T15:00Z (pass 2). `pinwiz-foundry-dev-hlpz4/pinwiz-wizard` provisioned end-to-end; `gpt-4o-mini` + `gpt-4-1` + `text-embedding-3-large` deployments live; `--ensure-azure-foundry` smoke probe verified the chat + embedding deployments are present. AI Search deferred via `deployAiSearch=false` per the H1 fix-up; Phase 4 unblocks it.
+- **H2 — First eval-set baseline run + confidence-threshold calibration:** ✅ Run completed 2026-05-07T16:25Z; baseline JSON committed at `data/eval/results/wizard.20260507T162529Z.json`. Aggregate metrics: `citation_precision=0.133`, `citation_recall=0.133`, `subagent_accuracy=0.033`, `refusal_correctness=0.300`. **Threshold NOT moved from ADR-0017's draft 0.65** — calibration would require a working baseline that's not artificially floored by the connected-agents-wiring gap (lesson 4 above) and the eval ground-truth ID gap (lesson 5). Threshold stays at 0.65; ADR-0017 is unchanged. Decision recorded in [DL 2026-05-07 — Phase 3 H2 baseline + threshold-not-moved](decision-log.md).
+- **H3 — Pinball Map live-API probe baseline:** ⏳ Deferred to operator availability; not on the Phase 3 critical path. PR 3's `PinballMapClientLiveContractTests` is gated behind `PINBALL_WIZARD_LIVE_CONTRACT_TESTS=1` and runs cleanly when invoked; the operator validation step is a logged tail-end of Phase 3 rather than a phase blocker.
+
+**Patterns established in Phase 3 that Phase 4 / 5 / 6 inherit:**
+
+- **Microsoft Agent Framework Responses Agent pattern (`AsAIAgent`)** for code-defined agents per ADR-0014 + ADR-0018. Phase 4 RAG-grounded answers reuse the same factory.
+- **Function tools via `AIFunctionFactory.Create`** with `[Description]`-decorated methods. Phase 4 adds `searchCorpus` (RAG retrieval) with the same shape as `getMachineByTitle`.
+- **Confidence-driven refusal at the IAiRouter layer** above Foundry agents, with a 5-category enum that distinguishes retrieval / scope / model / cost / safety failure modes. Phase 4 RAG retrieval makes the `RetrievalSimilarity` signal real (replaces the 0.5/1.0 stub).
+- **Two-pass Bicep deploy + sub-gate params (`deployFoundryModelDeployments`, `deployAiSearch`)** as the operational shape for new Foundry-stack environments.
+- **OTel GenAI semantic conventions inherited from auto-emission**, with `pinwiz.ai.*` adding only what auto-emission doesn't cover. Phase 6 dashboards query both surfaces correlated by trace ID.
+- **Eval harness via Foundry `EvaluationClient`** (with custom code-based evaluators as the Phase 3 runtime + Python specs for future Foundry-side registration when `AAIP001` flips public). Phase 4 grows the eval set against manuals + service bulletins.
+
+**Operational follow-ups (rolled forward to Phase 4):**
+
+- Wire connected agents on the Wizard via `AsAIFunction`-equivalent (lesson 4 above) — Phase 4 first scope item.
+- Re-curate `data/eval/wizard.v1.jsonl` against deployed Cosmos OPDB IDs (lesson 5 above) — Phase 4 second scope item.
+- Replace `NullTokenUsageReader` with a real impl when `Microsoft.Agents.AI` exposes Usage on `AgentResponse` ([microsoft/agent-framework#2688](https://github.com/microsoft/agent-framework/issues/2688)) — Phase 4+ as the SDK lands the surface.
+- Read `WizardAnswer.SubAgentUsed` from Foundry's connected-agents trace correlation rather than the PR 4 placeholder of always "Wizard" — Phase 4 alongside the connected-agents wiring fix.
+- Run H3 (Pinball Map live-API probe baseline) at operator convenience — `PINBALL_WIZARD_LIVE_CONTRACT_TESTS=1` against `pinballmap.com`.
 
 ---
 
@@ -610,6 +647,18 @@ Each hand-off, when executed, gets captured as a comment on the Phase 3 § Retro
 **Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation.*
 
 > Will cover: Cosmos Change Feed Function design, PdfPig text extraction, page-aware chunking strategy (size, overlap, heading awareness, metadata-card synthesis), embedding model rationale (text-embedding-3-large @ 3072d), AI Search index schema with facets, semantic ranker config, re-ranking strategy, SHA-driven idempotency, citation-accuracy evaluation framework with held-out query set.
+
+### Inherited Phase 3 follow-ups (drive Phase 4 § Scope when drafted)
+
+These five items rolled forward from Phase 3's H2 baseline run. They block the citation-accuracy metric from producing meaningful regression signal until they're addressed; Phase 4's first scope items pick them up:
+
+1. **Connected-agents wiring on the Wizard** — pull Valuation/Rules/Repair into the Wizard's tool surface via `AsAIFunction()`-equivalent OR migrate to Foundry's portal-side connected-agents primitive. Without this, the Wizard's "dispatch to sub-agent" prompt instructions are non-functional and many in-scope questions refuse with the agent's OutOfScope text.
+2. **Re-curate `data/eval/wizard.v1.jsonl` against deployed Cosmos OPDB IDs** — the H2 ground-truth uses subagent-curated IDs that don't match the deployed catalog. A small script that queries `IMachineRepository.QueryByTitleAsync` per question and writes the actual OPDB ID into `expected_citation_set` is sufficient.
+3. **Replace `NullTokenUsageReader` with a real impl** — pending [agent-framework#2688](https://github.com/microsoft/agent-framework/issues/2688). The `IAiCostCalculator` + `pinwiz.ai.cost_usd_cents` machinery is in place from PR 7; the swap is a single class change.
+4. **Read `WizardAnswer.SubAgentUsed` from Foundry's connected-agents trace correlation** — currently the PR 4 placeholder of always "Wizard". Lands alongside item 1.
+5. **Replace the OPDB-URL regex citation extraction with proper tool-call trace inspection** — when Foundry exposes the agent's tool-call result trace, citations come from the actual tool result rather than from regex-matching URLs in the answer text. Cleaner; doesn't depend on the agent being verbose enough to embed URLs.
+
+H3 (Pinball Map live-API probe baseline) is a Phase 3 operator follow-up, not a Phase 4 scope item — listed in the Phase 3 § Retrospective.
 
 ---
 
