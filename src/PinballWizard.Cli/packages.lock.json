@@ -177,6 +177,14 @@
           "Azure.ResourceManager": "1.13.2"
         }
       },
+      "Azure.Search.Documents": {
+        "type": "Transitive",
+        "resolved": "11.7.0",
+        "contentHash": "48yBLnsf8SSgowe/OQDCNg9+G9WjzRmLX6Bghjlshxu+5Mhh4maTXvSWKi4o568ZqV6GoOYhiKPbCm/QYoufwA==",
+        "dependencies": {
+          "Azure.Core": "1.49.0"
+        }
+      },
       "Azure.Storage.Blobs": {
         "type": "Transitive",
         "resolved": "12.26.0",
@@ -944,6 +952,7 @@
           "Azure.AI.Projects": "[2.0.1, )",
           "Azure.Identity": "[1.21.0, )",
           "Azure.ResourceManager.CosmosDB": "[1.4.0, )",
+          "Azure.Search.Documents": "[11.7.0, )",
           "Microsoft.Agents.AI.Foundry": "[1.4.0, )",
           "Microsoft.Azure.Cosmos": "[3.59.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.7, )",

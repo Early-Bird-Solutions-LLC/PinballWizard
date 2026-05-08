@@ -27,6 +27,15 @@
          SDK (Azure.AI.Projects) AND the Microsoft Agent Framework
          providers are GA. -->
     <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.4.0" />
+    <!-- Azure.Search.Documents is the data-plane SDK for Azure AI Search.
+         Phase 4 W1-4 uses it for the post-deploy smoke probe
+         (AzureAiSearchSmokeProbe — verifies endpoint reachability + AAD
+         auth via DefaultAzureCredential). Wave 2 W2-3 extends consumption
+         for index creation + document upsert (AiSearchRagIndexer per
+         ADR-0021); Wave 3 W3-3 adds hybrid-retrieval queries via
+         AiSearchRagRetriever. The 11.7.0 line is the GA major covering
+         the v2024+ semantic-ranker + vector-field surface ADR-0021 locks. -->
+    <PackageReference Include="Azure.Search.Documents" Version="11.7.0" />
     <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
          CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
          genuinely does not include `sqlDatabases/write` (and there is no valid

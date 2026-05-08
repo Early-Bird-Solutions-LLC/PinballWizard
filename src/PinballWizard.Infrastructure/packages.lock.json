@@ -39,6 +39,15 @@
           "Azure.ResourceManager": "1.13.2"
         }
       },
+      "Azure.Search.Documents": {
+        "type": "Direct",
+        "requested": "[11.7.0, )",
+        "resolved": "11.7.0",
+        "contentHash": "48yBLnsf8SSgowe/OQDCNg9+G9WjzRmLX6Bghjlshxu+5Mhh4maTXvSWKi4o568ZqV6GoOYhiKPbCm/QYoufwA==",
+        "dependencies": {
+          "Azure.Core": "1.49.0"
+        }
+      },
       "Microsoft.Agents.AI.Foundry": {
         "type": "Direct",
         "requested": "[1.4.0, )",

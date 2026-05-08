@@ -14,6 +14,7 @@ using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
@@ -91,6 +92,11 @@ var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
     Description = "Post-deploy smoke-test for the Azure AI Foundry project (ADR-0014): connects via DefaultAzureCredential, enumerates model deployments, asserts the configured chat (AiFoundry:ChatDeploymentName) and embedding (AiFoundry:EmbeddingDeploymentName) deployments are present. Idempotent. Requires AiFoundry:ProjectEndpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
 };
 
+var ensureAiSearchOption = new Option<bool>("--ensure-ai-search")
+{
+    Description = "Post-deploy smoke-test for the Azure AI Search service backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetServiceStatistics to confirm endpoint reachability + AAD auth. The configured index (AiSearch:IndexName, default pinwiz-rag-v1) does NOT need to exist yet — Wave 2 W2-3 creates it. Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
+};
+
 var askOption = new Option<string?>("--ask")
 {
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
@@ -113,6 +119,7 @@ rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
+rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 
@@ -129,6 +136,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
+    var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
 
@@ -220,6 +228,38 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine(
             $"Azure Foundry deployments verified: chat + embedding deployments present at {result.FoundProjectEndpoint}.");
+        return;
+    }
+
+    // Handle --ensure-ai-search (post-deploy AI Search smoke-test, ADR-0021,
+    // Phase 4 W1-4). Resolves IAzureAiSearchSmokeProbe from DI; the probe
+    // is only registered when AddAzureAiSearchIntegration was wired (i.e.,
+    // AiSearch:Endpoint is set). Mirrors the --ensure-azure-foundry
+    // exit-code-2 remediation pattern.
+    if (ensureAiSearch)
+    {
+        var probe = host.Services.GetService<IAzureAiSearchSmokeProbe>();
+        if (probe is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-ai-search requires Azure AI Search to be configured. Set " +
+                $"{AiSearchOptions.EndpointKey} (the deployed search service endpoint URL, e.g. " +
+                "https://pinwiz-search-dev-XXXX.search.windows.net).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var result = await probe.ProbeAsync(cancellationToken);
+        if (!result.Success)
+        {
+            Console.Error.WriteLine($"Azure AI Search smoke probe failed: {result.Error}");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(
+            $"Azure AI Search verified: endpoint reachable at {result.FoundEndpoint} " +
+            $"(expected index: {result.ExpectedIndexName}; index creation lands in Wave 2 W2-3).");
         return;
     }
 
@@ -474,6 +514,19 @@ static IHost CreateHost(string[] args)
     if (foundryWired)
     {
         builder.Services.AddAzureFoundryIntegration(builder.Configuration);
+    }
+
+    // Azure AI Search integration — gated on AiSearch:Endpoint (ADR-0021,
+    // Phase 4 W1-4). Phase 4 ships the smoke probe at this gate; Wave 2
+    // W2-3 extends consumption for index creation + document upsert,
+    // Wave 3 W3-3 adds hybrid retrieval. Treat absence as a valid
+    // configuration in Phase 0/1/2/3 (no RAG retrieval surface) and in
+    // local dev before the H1 hand-off (deployAiSearch may still be false
+    // in main-shared.dev.local.bicepparam to defer Basic-SKU cost).
+    var aiSearchWired = !string.IsNullOrWhiteSpace(builder.Configuration[AiSearchOptions.EndpointKey]);
+    if (aiSearchWired)
+    {
+        builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
