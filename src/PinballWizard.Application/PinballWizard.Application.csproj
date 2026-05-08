@@ -54,4 +54,12 @@
     <ProjectReference Include="../PinballWizard.Core/PinballWizard.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Internal members (e.g. SearchCorpusTool's TopK clamping
+         constants) are exposed to the test project for behavior
+         pinning. Mirrors the same line in PinballWizard.Infrastructure
+         and PinballWizard.Core. -->
+    <InternalsVisibleTo Include="PinballWizard.Scraper.Tests" />
+  </ItemGroup>
+
 </Project>

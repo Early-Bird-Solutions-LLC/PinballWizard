@@ -14,9 +14,18 @@ namespace PinballWizard.Application.Ai;
 // content. Bumped to "v3.2026.05" with Phase 4 W1-1 connected-agents
 // wiring (Wizard.md now references Valuation/Rules/Repair as connected
 // sub-agent function tools the LLM dispatches to via tool calls).
+// Bumped to "v4.2026.05" with Phase 4 W4-1 searchCorpus tool wiring:
+// all four agents gain searchCorpus(); Repair/Rules retrieve from the
+// AI Search index instead of refusing on Phase-4-RAG-not-yet-shipped;
+// Wizard learns a fallback searchCorpus() call when sub-agents
+// indicate missing grounding. Pairs with ADR-0023 citation-required
+// guardrail (W4-3) shipping in a follow-up. The cache key in
+// AiRouter.cs:89 is (normalized, promptVersion); leaving the constant
+// at v3 would serve stale Phase-3-style refusals from cache for any
+// normalized question that had hit cache before this PR.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v3.2026.05";
+    public const string CurrentPromptVersion = "v4.2026.05";
 
     private readonly Dictionary<string, string> _prompts;
 
