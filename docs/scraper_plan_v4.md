@@ -1,5 +1,7 @@
 # Stern Pinball Content Scraper — Project Plan (v4)
 
+> **Status: HISTORICAL (Phase 1 design, drafted before Phase 2 architecture pivot).** This document is preserved for reference only — it captures the original Phase 1 design when the deploy target was a self-hosted Docker container with cron-driven scraping and the catalog was a local `catalog.json` file. The Phase 2 architecture decisions ([memory: `project_phase2_architecture_decisions.md`](https://github.com/Early-Bird-Solutions-LLC/PinballWizard) — locked 2026-05-02) pivoted to **Azure Container Apps + Cosmos DB + AI Search Basic** with ACA Jobs replacing cron and Cosmos `ingestion_sources` replacing per-source config. **For current canonical guidance see [`docs/vision.md`](vision.md), [`docs/guardrails.md`](guardrails.md), [`docs/build-spec.md`](build-spec.md), [`docs/quality-spec.md`](quality-spec.md), and the ADR set under [`docs/adr/`](adr/).**
+
 ## Vision
 
 Build **The Pinball Wizard** — a RAG-powered knowledge base that knows everything about pinball: rules, parts, maintenance, schematics, firmware, service procedures, and more. Every answer the system provides must be **attributed to its source** with a clickable link back to the original document and page on sternpinball.com.
