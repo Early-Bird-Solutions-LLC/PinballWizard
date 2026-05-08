@@ -1,5 +1,9 @@
 # Engineering Standards — PinballWizard
 
+> **Status: HISTORICAL (Phase 1 design draft).** This document captured the engineering standards as drafted during Phase 1 when PinballWizard was a single-container Docker scraper. The same engineering bar still applies — it just lives elsewhere now: [`docs/vision.md`](vision.md) records the showcase posture, [`docs/guardrails.md`](guardrails.md) records the locked rules (polite scraping, provenance, personal-identity-only, etc.), [`docs/build-spec.md`](build-spec.md) records the per-phase scope and exit criteria, [`docs/quality-spec.md`](quality-spec.md) records the per-phase quality gates, and [`docs/decision-log.md`](decision-log.md) records sub-ADR decisions. ADRs under [`docs/adr/`](adr/) capture architectural decisions with significant trade-offs. **For current canonical guidance, read those files instead of this one** — they reflect the Phase 2 architecture pivot to Azure Container Apps + Cosmos + AI Search and the showcase quality bar that supersedes the Phase 1 framing below.
+
+---
+
 > This document defines the engineering standards for PinballWizard. While this is a personal hobby project, the codebase doubles as a public portfolio piece. Every choice should hold up to the kind of scrutiny a senior engineer at a prospective client would apply when reviewing the repository on GitHub.
 >
 > **The bar:** a reviewer who clones this repo on a fresh machine should see that (1) it works on the first try, (2) the code reads cleanly with consistent conventions, (3) the testing is real and meaningful, and (4) operational concerns — logging, errors, configuration, security, observability — have been thought through. Nothing here is enterprise-for-its-own-sake. Every standard exists to serve clarity, correctness, or reviewer confidence.

@@ -144,7 +144,7 @@ For end-to-end local dev with Cosmos persistence (required for OPDB sync and per
 pwsh ./start-apphost.ps1
 ```
 
-First run pulls ~3 GB of container images (Cosmos preview emulator + bundled PostgreSQL + Azurite); subsequent runs reuse persistent volumes. Requires Docker Desktop and the .NET Aspire workload (`dotnet workload install aspire`).
+First run pulls ~3 GB of container images (Cosmos preview emulator + Azurite); subsequent runs reuse persistent volumes. Requires Docker Desktop (for the emulator containers) and the .NET Aspire workload (`dotnet workload install aspire`).
 
 The dashboard runs at the URL printed in the AppHost output (default `https://localhost:17110`). Inspect the `cosmos` resource for the auto-generated connection string; copy it into a shell env var:
 
@@ -244,15 +244,12 @@ infra/
 └── scripts/Deploy-SharedResources.ps1
 ```
 
-## Docker
+## Deploy targets
 
-The image bundles the scraper, Playwright Chromium, and cron. The included `crontab` runs each source's discovery on a staggered daily schedule and a download pass shortly after, writing all output to a mounted `/data` volume.
+- **Local dev** — `pwsh ./start-apphost.ps1` brings up the Aspire orchestrator (Cosmos preview emulator + Azurite for blob storage), and the CLI auto-detects the emulator via `ConnectionStrings:cosmos`. See [Local development with .NET Aspire](#local-development-with-net-aspire) above.
+- **Production** — Azure Container Apps. Each manufacturer scraper runs as an ACA Job on its own per-origin schedule (politeness is per-origin); the Wizard chat surface runs as an ACA App. Deploy via [`infra/scripts/Deploy-SharedResources.ps1`](infra/scripts/Deploy-SharedResources.ps1) — see [Azure deploy — two-tier (Phase 1 / Phase 2)](#azure-deploy--two-tier-phase-1--phase-2) above. Phase 2 architecture decisions (ACA + AI Search Basic + Cosmos Serverless + Cloudflare Pro) are locked in [`docs/build-spec.md`](docs/build-spec.md) § Phase 2 and the project's memory record.
 
-```bash
-docker compose up --build
-```
-
-The data volume mounts at `./data` on the host by default — see `docker-compose.yml` to relocate it.
+The original Phase 1 design called for a self-hosted Docker container with cron-driven scraping. That design was superseded when Phase 2 architecture decisions pivoted to Azure Container Apps, where ACA Jobs replace cron and per-Job scaling replaces in-container concurrency. The Phase 1 historical design lives at [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) for reference.
 
 ## Contributing
 
