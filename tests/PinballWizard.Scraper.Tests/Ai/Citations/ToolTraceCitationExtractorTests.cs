@@ -151,6 +151,50 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_SameUrlInDtoAndSubAgentText_Deduplicates()
+    {
+        // Cross-channel dedup: the Wizard called getMachineByTitle (which
+        // returned the structured DTO) AND dispatched Valuation (whose
+        // text reply also embedded the same OPDB URL). The single shared
+        // seenUrls set in the extractor collapses these to one citation.
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        const string subAgentTextWithSameUrl =
+            "Premium Godzilla cited at https://opdb.org/machines/GRBE-MJL05";
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_1", dto)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_2", subAgentTextWithSameUrl)]));
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Single(citations);
+    }
+
+    [Fact]
+    public void Extract_MultipleFunctionResultsInSingleMessage_AllProcessed()
+    {
+        // Microsoft.Agents.AI / Microsoft.Extensions.AI can pack multiple
+        // FunctionResultContent into a single ChatMessage.Contents list
+        // (one tool message containing N tool returns). The extractor's
+        // inner `foreach (var content in message.Contents)` must visit
+        // every entry.
+        var godzilla = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var fooFighters = SampleGroundingDto(opdbId: "GRD8-MQR2N", title: "Foo Fighters (LE)");
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [
+                new FunctionResultContent("call_1", godzilla),
+                new FunctionResultContent("call_2", fooFighters)
+            ]));
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c => c.MachineId == "GRBE-MJL05");
+        Assert.Contains(citations, c => c.MachineId == "GRD8-MQR2N");
+    }
+
+    [Fact]
     public void Extract_WizardOuterTextWithUrl_NotCounted()
     {
         // The Wizard's final text mentions an OPDB URL but no

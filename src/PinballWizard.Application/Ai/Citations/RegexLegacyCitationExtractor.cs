@@ -5,7 +5,7 @@ namespace PinballWizard.Application.Ai.Citations;
 
 // Phase 3 citation extractor: scans the agent's final response text for
 // OPDB machine URLs via regex. Retained behind AiFoundryOptions
-// .RetainRegexCutover for the cutover observability window per ADR-0022
+// .RetainRegexCitationCutover for the cutover observability window per ADR-0022
 // § Telemetry — its citation count is emitted under
 // pinwiz.ai.citations.extracted_total{source=regex_legacy} alongside
 // the new ToolTraceCitationExtractor's tool_trace count, so a behavioral
