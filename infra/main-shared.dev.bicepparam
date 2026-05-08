@@ -42,3 +42,20 @@ param developerObjectId = ''
 // separate environment to test the Phase 1 baseline against a populated
 // Phase 2 deploy.
 param deployPhase2 = true
+
+// Phase 4 W1-4 gate. AI Search Basic provisioning was deferred via the
+// `deployAiSearch=false` override in main-shared.dev.local.bicepparam
+// during Phase 3's H1 fix-up (East US 2 capacity exhausted on H1 day,
+// 2026-05-07; Phase 3 doesn't consume AI Search so the override saved
+// ~$74/mo idle until Phase 4 needs it). Phase 4 RAG ingestion (W2-3
+// embedding pipeline + W3-2 Cosmos Change Feed Function) is the
+// consumer; flipping this committed param to `true` makes the
+// committed intent explicit. Operator follow-up: remove the
+// `param deployAiSearch = false` line from main-shared.dev.local.bicepparam
+// so the committed `true` here takes effect (otherwise the local
+// override still wins and the deploy still skips AI Search). Pre-flight
+// East US 2 AI Search Basic capacity via portal before applying; if
+// still constrained, relocate AI Search to a sibling region (East US,
+// Central US — Phase 1 Cosmos location stays unchanged) per Phase 3
+// lesson 3.
+param deployAiSearch = true
