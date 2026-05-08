@@ -1,7 +1,7 @@
-using System.Text.RegularExpressions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Observability;
@@ -13,27 +13,28 @@ namespace PinballWizard.Application.Ai;
 //   PR 4 — skeleton: cache lookup + Wizard agent invocation + cache write,
 //          with placeholder Confidence=1.0 / IsRefusal=false.
 //   PR 5 — sub-agent prompts + getMachineByTitle function tool.
-//   PR 6 — THIS PR. Wires confidence calculation + refusal categories
-//          per ADR-0017. Citations extracted from the agent's text by
-//          regex-matching OPDB URLs (the Phase 3 grounding surface);
-//          the function tool's result already flows through the agent's
-//          prompt instruction "cite the OPDB source URL", so the URL
-//          appears in the answer text whenever grounding fired. PR 7+
-//          may switch to reading Foundry's tool-call trace directly for
-//          stricter extraction; the API contract here doesn't change.
-public sealed partial class AiRouter : IAiRouter
+//   PR 6 — wires confidence calculation + refusal categories per
+//          ADR-0017.
+// Phase 4:
+//   W1-1 — connected sub-agents wired via AsAIFunction() in
+//          FoundryAgentFactory; the Wizard now structurally dispatches
+//          to Valuation/Rules/Repair as function tools.
+//   W1-2 — THIS PR. Replaces the inline regex over Wizard prose with
+//          ToolTraceCitationExtractor reading citations from the
+//          AgentResponse's tool-call result trace per ADR-0022. The
+//          legacy regex extractor runs in parallel for cutover
+//          observability (pinwiz.ai.citations.extracted_total{source=...})
+//          until H2 confirms parity-or-better; then it gets deleted.
+public sealed class AiRouter : IAiRouter
 {
-    // OPDB machine record URL — used both as the citation marker and
-    // as the lookup key (the {id} segment is the OpdbId on Machine).
-    [GeneratedRegex(@"https://opdb\.org/machines/(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex OpdbMachineUrlRegex();
-
     private readonly IFoundryAgentFactory _agentFactory;
     private readonly ISemanticAnswerCache _cache;
     private readonly IAgentPromptProvider _promptProvider;
     private readonly IConfidenceCalculator _confidenceCalculator;
     private readonly ITokenUsageReader _tokenUsageReader;
     private readonly IAiCostCalculator _costCalculator;
+    private readonly ToolTraceCitationExtractor _toolTraceExtractor;
+    private readonly RegexLegacyCitationExtractor _regexLegacyExtractor;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
 
@@ -44,6 +45,8 @@ public sealed partial class AiRouter : IAiRouter
         IConfidenceCalculator confidenceCalculator,
         ITokenUsageReader tokenUsageReader,
         IAiCostCalculator costCalculator,
+        ToolTraceCitationExtractor toolTraceExtractor,
+        RegexLegacyCitationExtractor regexLegacyExtractor,
         IOptions<AiFoundryOptions> options,
         ILogger<AiRouter> logger)
     {
@@ -53,6 +56,8 @@ public sealed partial class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(confidenceCalculator);
         ArgumentNullException.ThrowIfNull(tokenUsageReader);
         ArgumentNullException.ThrowIfNull(costCalculator);
+        ArgumentNullException.ThrowIfNull(toolTraceExtractor);
+        ArgumentNullException.ThrowIfNull(regexLegacyExtractor);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -62,6 +67,8 @@ public sealed partial class AiRouter : IAiRouter
         _confidenceCalculator = confidenceCalculator;
         _tokenUsageReader = tokenUsageReader;
         _costCalculator = costCalculator;
+        _toolTraceExtractor = toolTraceExtractor;
+        _regexLegacyExtractor = regexLegacyExtractor;
         _options = options.Value;
         _logger = logger;
     }
@@ -164,7 +171,28 @@ public sealed partial class AiRouter : IAiRouter
             return ceilingAnswer;
         }
 
-        var citations = ExtractCitationsFromText(responseText);
+        var citations = _toolTraceExtractor.Extract(response);
+        PinballWizardTelemetry.AiCitationsExtracted.Add(
+            citations.Count,
+            new KeyValuePair<string, object?>("source", _toolTraceExtractor.SourceTag));
+
+        if (_options.RetainRegexCitationCutover)
+        {
+            // ADR-0022 cutover observability: the regex extractor runs
+            // in parallel during the Phase 4 cutover window so a
+            // behavioral regression in the new tool-trace extractor
+            // would surface in pinwiz.ai.citations.extracted_total
+            // {source=regex_legacy} before H3 baseline. The legacy
+            // count is telemetry-only — only the tool-trace extractor's
+            // citations populate the WizardAnswer. After H2 confirms
+            // parity-or-better, the legacy extractor + this flag get
+            // deleted in a follow-up PR.
+            var legacyCitations = _regexLegacyExtractor.Extract(response);
+            PinballWizardTelemetry.AiCitationsExtracted.Add(
+                legacyCitations.Count,
+                new KeyValuePair<string, object?>("source", _regexLegacyExtractor.SourceTag));
+        }
+
         var signals = _confidenceCalculator.Compute(responseText, citations);
         var confidence = signals.Composite();
 
@@ -220,46 +248,6 @@ public sealed partial class AiRouter : IAiRouter
 
         _cache.Store(normalized, promptVersion, answer);
         return answer;
-    }
-
-    private static IReadOnlyList<Citation> ExtractCitationsFromText(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return Array.Empty<Citation>();
-        }
-
-        // The four agent prompts (per Wave 2 PR 5) instruct every reply
-        // to cite the OPDB source URL the function tool returned. So
-        // every successful grounded answer contains at least one
-        // https://opdb.org/machines/<id> URL. We extract those URLs as
-        // citations. PR 7+ may switch to reading the agent's tool-call
-        // trace directly for stricter extraction.
-        var matches = OpdbMachineUrlRegex().Matches(text);
-        if (matches.Count == 0)
-        {
-            return Array.Empty<Citation>();
-        }
-
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var citations = new List<Citation>(matches.Count);
-        foreach (Match match in matches)
-        {
-            var url = match.Value;
-            if (!seen.Add(url))
-            {
-                continue;
-            }
-
-            var opdbId = match.Groups["id"].Value;
-            citations.Add(new Citation(
-                Title: $"OPDB record {opdbId}",
-                SourceUrl: url,
-                MachineId: opdbId,
-                DocumentChunkId: null));
-        }
-
-        return citations;
     }
 
     private static string BuildRefusalText(RefusalCategory category) => category switch

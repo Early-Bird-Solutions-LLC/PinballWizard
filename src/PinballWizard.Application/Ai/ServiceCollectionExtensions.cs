@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
@@ -26,6 +27,17 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
         services.TryAddSingleton<IAiCostCalculator, AiCostCalculator>();
+
+        // Citation extractors (ADR-0022). Both impls register concretely
+        // (not via ICitationExtractor) — AiRouter ctor takes them by
+        // concrete type because the cutover semantics aren't symmetric
+        // (tool-trace is the authoritative source; regex_legacy is
+        // telemetry-only). Once the cutover flag is removed in a
+        // follow-up PR, RegexLegacyCitationExtractor + this registration
+        // both go away and AiRouter takes ICitationExtractor.
+        services.TryAddSingleton<ToolTraceCitationExtractor>();
+        services.TryAddSingleton<RegexLegacyCitationExtractor>();
+
         services.TryAddSingleton<IAiRouter, AiRouter>();
 
         // Evaluation harness evaluators (ADR-0016). Pure deterministic

@@ -63,6 +63,17 @@ public sealed class AiFoundryOptions
     [Range(0.0, 1.0)]
     public double ConfidenceThreshold { get; set; } = 0.65;
 
+    // Phase 4 W1-2 cutover flag (ADR-0022). When true, the legacy regex
+    // citation extractor runs in parallel with the tool-trace extractor;
+    // its citation count is emitted under
+    // pinwiz.ai.citations.extracted_total{source=regex_legacy} alongside
+    // the tool_trace count. Default true so the cutover window has
+    // observability data; flipped to false in a follow-up PR after H2
+    // baseline confirms the tool-trace extractor produces parity-or-better
+    // citation_precision, at which point RegexLegacyCitationExtractor +
+    // this flag are both deleted.
+    public bool RetainRegexCitationCutover { get; set; } = true;
+
     // USD-cent pricing per 1k input + output tokens, keyed by deployment
     // name (per ADR-0015's per-agent model selection). Populated with
     // 2026 May Azure OpenAI public pricing for the deployments shipped
