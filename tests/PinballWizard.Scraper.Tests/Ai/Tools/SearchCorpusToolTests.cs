@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Observability;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests.Ai.Tools;
@@ -234,5 +237,117 @@ public sealed class SearchCorpusToolTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             new SearchCorpusTool(null!, NullLogger<SearchCorpusTool>.Instance));
+    }
+
+    // ── pinwiz.ai.tool_duration_ms emission ──────────────────────────────
+    // The tool wraps Stopwatch.StartNew + try/finally around its body so
+    // every invocation (success, empty result, transport-error catch path)
+    // produces exactly one tool_duration_ms sample tagged tool=searchCorpus.
+    // Failure latency is operationally meaningful — slow-then-empty and
+    // fast-then-empty need different alerts — so the test asserts emission
+    // on both the success path and the catch path.
+
+    [Fact]
+    public async Task SearchCorpusAsync_Success_EmitsToolDurationMs_TaggedSearchCorpus()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns([SampleChunk()]);
+
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = NewTool(retriever);
+            await tool.SearchCorpusAsync("q", null, null, null, CancellationToken.None);
+        }
+
+        AssertOurToolEmittedAtLeastOnce(samples);
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_RetrieverThrows_StillEmitsToolDurationMs()
+    {
+        // The empty-result fail-closed posture (ADR-0023 § Negative
+        // consequence #3) returns from the catch block. Stopwatch must
+        // still close in the outer finally so operators can observe
+        // failure latency, not just success latency.
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ =>
+                throw new InvalidOperationException("simulated AI Search outage"));
+
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = NewTool(retriever);
+            var result = await tool.SearchCorpusAsync("q", null, null, null, CancellationToken.None);
+            Assert.Empty(result.Hits);
+        }
+
+        AssertOurToolEmittedAtLeastOnce(samples);
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_WhitespaceQuery_DoesNotEmitToolDurationMs()
+    {
+        // Empty-query short-circuit fires BEFORE the Stopwatch starts, so
+        // dashboards don't see noise samples for prompts the orchestrator
+        // accidentally produced. This is the stated design — keep it
+        // pinned so a future refactor doesn't quietly add a cardinality
+        // dimension to the no-op path.
+        var retriever = Substitute.For<IRagRetriever>();
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = NewTool(retriever);
+            await tool.SearchCorpusAsync("   ", null, null, null, CancellationToken.None);
+        }
+
+        Assert.DoesNotContain(samples, s => s.ToolTag == SearchCorpusTool.ToolTagValue);
+    }
+
+    // The instrument is a single process-global Meter, so emissions from
+    // MachineGroundingToolTests running in parallel with this class land
+    // in our listener too. We assert only on emissions tagged with this
+    // tool's name — that's what the test actually cares about. We also
+    // do NOT assert sample count == 1, because in parallel test runs
+    // the same tool may emit again from concurrent test executions; the
+    // emission *contract* is "tool fires this metric on every call" and
+    // a Contains assertion captures that without coupling to scheduler.
+    private static void AssertOurToolEmittedAtLeastOnce(
+        IEnumerable<(double Value, string? ToolTag)> samples)
+    {
+        Assert.Contains(
+            samples,
+            s => s.ToolTag == SearchCorpusTool.ToolTagValue && s.Value >= 0);
+    }
+
+    private static ConcurrentBag<(double Value, string? ToolTag)> CollectToolDurationSamples(out MeterListener listener)
+    {
+        // Force `PinballWizardTelemetry`'s static cctor to complete first
+        // so the instrument exists when we wire the listener. Explicitly
+        // enabling the named instrument after `Start()` is more
+        // deterministic than the `InstrumentPublished` delivery path.
+        // ConcurrentBag is required because parallel test classes that
+        // emit to the same process-global Meter cause concurrent
+        // measurement callbacks on this listener.
+        var samples = new ConcurrentBag<(double Value, string? ToolTag)>();
+        var l = new MeterListener();
+        l.SetMeasurementEventCallback<double>((_, value, tags, _) =>
+        {
+            string? toolTag = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "tool")
+                {
+                    toolTag = t.Value as string;
+                }
+            }
+            samples.Add((value, toolTag));
+        });
+        l.Start();
+        l.EnableMeasurementEvents(PinballWizardTelemetry.AiToolDurationMs);
+        listener = l;
+        return samples;
     }
 }

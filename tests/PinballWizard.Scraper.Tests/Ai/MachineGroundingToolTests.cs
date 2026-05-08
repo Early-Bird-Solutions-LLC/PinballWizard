@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using Xunit;
@@ -118,6 +121,116 @@ public sealed class MachineGroundingToolTests
         var repo = Substitute.For<IMachineRepository>();
         Assert.Throws<ArgumentNullException>(() =>
             new MachineGroundingTool(repo, null!));
+    }
+
+    // ── pinwiz.ai.tool_duration_ms emission ──────────────────────────────
+    // Stopwatch + try/finally produce exactly one tool_duration_ms sample
+    // per invocation, tagged tool=getMachineByTitle. The whitespace-input
+    // short-circuit fires before the Stopwatch starts so no-op prompts
+    // don't poison the latency distribution.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_Match_EmitsToolDurationMs_TaggedGetMachineByTitle()
+    {
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(NewMachine("GRBN-MQR4P", "Foo Fighters", 2023)));
+
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+        }
+
+        AssertOurToolEmittedAtLeastOnce(samples);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_NoMatch_StillEmitsToolDurationMs()
+    {
+        // The "no match" path returns null but spends real wall-clock on
+        // the repository query. Latency is still operationally meaningful
+        // — slow misses are a different signal from fast misses — so the
+        // emission must fire here too.
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("nonexistent", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            var result = await tool.GetMachineByTitleAsync("nonexistent", CancellationToken.None);
+            Assert.Null(result);
+        }
+
+        AssertOurToolEmittedAtLeastOnce(samples);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_WhitespaceTitle_DoesNotEmitToolDurationMs()
+    {
+        // Whitespace short-circuit fires before Stopwatch.StartNew, so
+        // dashboards don't see noise samples for inputs the orchestrator
+        // accidentally produced. Pinned so a future refactor doesn't add
+        // a no-op-path sample inadvertently.
+        var repo = Substitute.For<IMachineRepository>();
+        var samples = CollectToolDurationSamples(out var listener);
+        using (listener)
+        {
+            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            await tool.GetMachineByTitleAsync("   ", CancellationToken.None);
+        }
+
+        Assert.DoesNotContain(samples, s => s.ToolTag == MachineGroundingTool.ToolTagValue);
+    }
+
+    // The instrument is a single process-global Meter, so emissions from
+    // SearchCorpusToolTests running in parallel with this class will land
+    // in our listener too. We assert only on emissions tagged with this
+    // tool's name — that's what the test actually cares about. We also
+    // do NOT assert sample count == 1, because in parallel test runs
+    // the same tool may emit again from concurrent test executions; the
+    // emission *contract* is "tool fires this metric on every call" and
+    // a Contains assertion captures that without coupling to scheduler.
+    private static void AssertOurToolEmittedAtLeastOnce(
+        IEnumerable<(double Value, string? ToolTag)> samples)
+    {
+        Assert.Contains(
+            samples,
+            s => s.ToolTag == MachineGroundingTool.ToolTagValue && s.Value >= 0);
+    }
+
+    private static ConcurrentBag<(double Value, string? ToolTag)> CollectToolDurationSamples(out MeterListener listener)
+    {
+        // Force `PinballWizardTelemetry`'s static cctor to complete first
+        // so the instrument exists when we wire the listener. Explicitly
+        // enabling the named instrument after `Start()` is more
+        // deterministic than relying on the `InstrumentPublished` delivery
+        // path. ConcurrentBag handles the concurrency: parallel test
+        // classes that emit to the same process-global Meter cause
+        // concurrent measurement callbacks on this listener (each test
+        // class emits to AiToolDurationMs from its own threads), so the
+        // sample collection must be thread-safe.
+        var samples = new ConcurrentBag<(double Value, string? ToolTag)>();
+        var l = new MeterListener();
+        l.SetMeasurementEventCallback<double>((_, value, tags, _) =>
+        {
+            string? toolTag = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "tool")
+                {
+                    toolTag = t.Value as string;
+                }
+            }
+            samples.Add((value, toolTag));
+        });
+        l.Start();
+        l.EnableMeasurementEvents(PinballWizardTelemetry.AiToolDurationMs);
+        listener = l;
+        return samples;
     }
 
     private static Machine NewMachine(string id, string title, int year) => new()

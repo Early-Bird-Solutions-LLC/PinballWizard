@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 
@@ -30,6 +32,12 @@ public sealed class MachineGroundingTool
         _logger = logger;
     }
 
+    // Tool tag value emitted on `pinwiz.ai.tool_duration_ms` and (when the
+    // tool gains a catch boundary) `pinwiz.ai.tool_errors_total`. Matches
+    // the JSON-Schema function name the Microsoft Agent Framework derives
+    // from this method, so dashboards and prompts agree on the label.
+    internal const string ToolTagValue = "getMachineByTitle";
+
     [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, and OPDB source URL — everything you need to ground an answer about that machine. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
         [Description("The pinball-machine title to look up, case-insensitive (for example: 'Foo Fighters', 'Stranger Things', 'Godzilla').")] string title,
@@ -40,40 +48,51 @@ public sealed class MachineGroundingTool
             return null;
         }
 
-        Machine? match = null;
-        await foreach (var machine in _machines.QueryByTitleAsync(title, cancellationToken).ConfigureAwait(false))
+        var stopwatch = Stopwatch.StartNew();
+        try
         {
-            // Take the first match; if multiple machines share a title
-            // (rare — typically only when one manufacturer re-issues an
-            // old title), the agent gets the first OPDB-ordered hit.
-            // PR 6 may extend the tool to return up-to-N matches if eval
-            // surfaces ambiguity issues.
-            match = machine;
-            break;
-        }
+            Machine? match = null;
+            await foreach (var machine in _machines.QueryByTitleAsync(title, cancellationToken).ConfigureAwait(false))
+            {
+                // Take the first match; if multiple machines share a title
+                // (rare — typically only when one manufacturer re-issues an
+                // old title), the agent gets the first OPDB-ordered hit.
+                // PR 6 may extend the tool to return up-to-N matches if eval
+                // surfaces ambiguity issues.
+                match = machine;
+                break;
+            }
 
-        if (match is null)
+            if (match is null)
+            {
+                _logger.LogDebug("MachineGroundingTool: no match for title '{Title}'.", title);
+                return null;
+            }
+
+            var editions = match.Editions
+                .Select(e => new MachineEditionGroundingDto(
+                    Name: e.Name,
+                    Msrp: e.Msrp,
+                    Availability: e.Availability,
+                    Description: e.Description))
+                .ToList();
+
+            return new MachineGroundingDto(
+                OpdbId: match.Id,
+                Title: match.Title,
+                Manufacturer: match.ManufacturerDisplayName,
+                Year: match.Year,
+                Themes: match.Themes.AsReadOnly(),
+                Designers: match.Designers.AsReadOnly(),
+                OpdbSourceUrl: match.OpdbSourceUrl,
+                Editions: editions);
+        }
+        finally
         {
-            _logger.LogDebug("MachineGroundingTool: no match for title '{Title}'.", title);
-            return null;
+            stopwatch.Stop();
+            PinballWizardTelemetry.AiToolDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("tool", ToolTagValue));
         }
-
-        var editions = match.Editions
-            .Select(e => new MachineEditionGroundingDto(
-                Name: e.Name,
-                Msrp: e.Msrp,
-                Availability: e.Availability,
-                Description: e.Description))
-            .ToList();
-
-        return new MachineGroundingDto(
-            OpdbId: match.Id,
-            Title: match.Title,
-            Manufacturer: match.ManufacturerDisplayName,
-            Year: match.Year,
-            Themes: match.Themes.AsReadOnly(),
-            Designers: match.Designers.AsReadOnly(),
-            OpdbSourceUrl: match.OpdbSourceUrl,
-            Editions: editions);
     }
 }

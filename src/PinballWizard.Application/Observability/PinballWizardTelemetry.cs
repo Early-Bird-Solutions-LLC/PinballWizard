@@ -128,6 +128,11 @@ public static class PinballWizardTelemetry
         unit: "{call}",
         description: "Function-tool calls that surfaced an exception inside the tool's catch boundary (the tool returned an empty result rather than rethrowing — see ADR-0023 § Negative consequence #3). Tagged with `tool` (searchCorpus | getMachineByTitle). Distinguishes retrieval-side failures (which become NoCitation refusals) from agent-didn't-call-tool refusals — both can produce empty citation sets but operationally they need different alerts.");
 
+    public static readonly Histogram<double> AiToolDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.ai.tool_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Foundry function-tool invocation, measured at the tool's outer boundary (input normalization + downstream call + post-processing into the model-facing DTO). Tagged with `tool` (searchCorpus | getMachineByTitle). Pair with `pinwiz.rag.retrieval_duration_ms` to isolate per-tool overhead from retrieval-side latency on the searchCorpus path. Drives the §7.1 architecture-v2 user-delight revisit triggers (200ms p95 structured-records latency for getMachineByTitle, 500ms cold-start for searchCorpus). The brainstorm's `cache_state` tag was dropped: the LRU semantic cache (per ADR-0015) wraps IAiRouter ABOVE the tools, so when a tool fires the cache state is structurally always 'miss-path' — that signal lives on `pinwiz.ai.cache.{hits,misses}` instead.");
+
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6
     // dashboards aggregate them as a "metric trajectory" surface alongside
