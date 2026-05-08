@@ -30,7 +30,16 @@ public enum DocumentType
     SpecSheet,
     FeatureMatrix,
     Readme,
-    Other
+    Other,
+
+    /// <summary>
+    /// Synthesized metadata card produced from a <c>Machine</c> Cosmos
+    /// record by Phase 4 W3-1's <c>MetadataCardSynthesizer</c>. Cards
+    /// are not PDF-derived; <c>page_start</c> / <c>page_end</c> default
+    /// to 0 in the index. Per ADR-0021, this enum value projects to the
+    /// snake-case index value <c>metadata_card</c>.
+    /// </summary>
+    MetadataCard,
 }
 
 /// <summary>
