@@ -219,9 +219,9 @@ The user gets a single response that combines manufacturer guidance, community w
 
 ### 6.2 Implementation
 
-Claude with tool use, via the Anthropic API. Tools are defined in code and registered with the agent at session start. The agent runs in a dedicated API service (likely separate from the existing JungleTech API App for clean boundaries — see §15).
+Microsoft Foundry with the Microsoft Agent Framework (per ADR-0014); models served via Foundry's MaaS catalog so the agent stack is model-agnostic (Claude, Cohere, etc. reachable through the same orchestration layer per `CLAUDE.md` § Phase 2 Preview). Tools are defined in code and registered with the agent at session start. The agent runs in a dedicated API service (separate from the scraper CLI for clean boundaries — see §15).
 
-**Why Claude:** mature tool use, long context windows for multi-tool sessions, vision support for image input.
+**Why Foundry:** enterprise-class showcase posture, first-party Azure integration, OTel auto-emission on `Azure.AI.Projects.*`, managed evaluation surface, AAD-native identity, and per-agent model selection (ADR-0015) for cost-tiered routing.
 
 ---
 
@@ -327,7 +327,7 @@ The Azure resources catalogued in `infra_analysis.md` remain valid. Additions an
 - **More PostgreSQL tables** — structured records, media metadata, user profiles, conversation state, provenance graph. The B1ms server is sized appropriately; storage growth is the only meaningful cost change.
 - **Redis (optional)** — for live data caching. Can start without it (PostgreSQL with TTL works) and add only if measured latency demands it.
 - **Anthropic API account** — for Claude with tool use. Existing Azure OpenAI usage may shift partly to Anthropic depending on whether we want model + tool use + vision on one provider.
-- **No new resource group** — runs alongside existing JungleTech infrastructure (per `infra_analysis.md` §5 Option A).
+- **No new resource group** — runs in the existing personal Earlybird Azure subscription (per `infra_analysis.md`).
 
 **Cost impact:** Token usage per query rises noticeably under the agent model — multi-tool reasoning is more tokens than pure RAG. Worth budgeting for. Infrastructure cost is essentially flat.
 
@@ -368,7 +368,7 @@ Acknowledged trade-offs:
 
 ## 15. Open Questions
 
-- **API service separation.** Does the wizard share the existing JungleTech API App, or get its own service? Probably its own — clean boundary, independent deployment cadence.
+- **API service separation.** Does the wizard share the existing scraper CLI host, or get its own dedicated API service? Probably its own — clean boundary, independent deployment cadence, distinct scaling profile.
 - **Tool framework choice.** Use the Anthropic SDK directly, or adopt Semantic Kernel / LangChain for tool orchestration? Direct SDK is simpler; framework gives optionality.
 - **Vector store choice.** Stick with pgvector throughout, or use AI Search for the heavy hybrid retrieval and pgvector for everything else? `infra_analysis.md` already supports both — defer the decision.
 - **Memory consent and clarity.** Long-term memory is powerful but needs explicit user-facing controls — what is stored, how to view it, how to delete.
