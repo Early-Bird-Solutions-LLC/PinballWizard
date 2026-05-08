@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Rag.Extraction;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Outline;
@@ -8,9 +9,10 @@ namespace PinballWizard.Infrastructure.Rag.Extraction;
 
 // Phase 4 W1-5 PDF text extractor backed by UglyToad.PdfPig (ADR-0019).
 // Returns per-page text + outline for the hybrid chunker (W2-2) to
-// consume; surfaces edge cases (encrypted / scanned / malformed) as
-// `ExtractionStatus` values rather than exceptions so the Cosmos Change
-// Feed Function (W3-2) can log + skip without try/catch.
+// consume; surfaces edge cases (encrypted / scanned / malformed /
+// size-exceeded) as `ExtractionStatus` values rather than exceptions
+// so the Cosmos Change Feed Function (W3-2) can log + skip without
+// try/catch.
 //
 // PdfPig is a pure-sync API; the public ExtractAsync wraps the parse in
 // `Task.Run` so a CancellationToken can interrupt waiting workers (the
@@ -18,27 +20,42 @@ namespace PinballWizard.Infrastructure.Rag.Extraction;
 // cancellation surface — but for typical manual PDFs parse is sub-second).
 public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor
 {
-    // Heuristic floor for "this document yielded no extractable text" —
-    // treated as scanned-image-only and routed to ExtractionStatus.OcrRequired.
-    // 32 chars covers an empty document with metadata-only headers/footers
-    // PdfPig sometimes emits; well under what any real manual page produces.
-    // Hardcoded for Phase 4's curated subset (~10 PDFs, all known-good
-    // modern manuals); revisit-as-PdfExtractionOptions when the Phase 4.5
-    // corpus expansion exposes edge cases (e.g., one-line bulletins that
-    // are legitimate but short).
-    private const int OcrRequiredCharFloor = 32;
-
+    private readonly PdfExtractionOptions _options;
     private readonly ILogger<PdfPigDocumentTextExtractor> _logger;
 
-    public PdfPigDocumentTextExtractor(ILogger<PdfPigDocumentTextExtractor> logger)
+    public PdfPigDocumentTextExtractor(
+        IOptions<PdfExtractionOptions> options,
+        ILogger<PdfPigDocumentTextExtractor> logger)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+        _options = options.Value ?? throw new ArgumentException(
+            "PdfExtractionOptions instance was null inside IOptions wrapper.", nameof(options));
         _logger = logger;
     }
 
     public Task<ExtractedDocument> ExtractAsync(Stream pdfStream, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(pdfStream);
+
+        // Stream-size guard runs before Task.Run so an oversized
+        // input rejects synchronously without dispatching a worker
+        // thread that's just going to bounce. PdfPig requires a
+        // seekable stream for cross-reference parsing, so seekable
+        // streams are the typical case; non-seekable streams skip
+        // the size check and fall through to the Malformed path
+        // when PdfPig's parser hits its first non-rewindable read.
+        if (pdfStream.CanSeek && pdfStream.Length > _options.MaxStreamBytes)
+        {
+            var bytes = pdfStream.Length;
+            _logger.LogWarning(
+                "PDF stream length {StreamBytes} exceeds MaxStreamBytes={MaxStreamBytes}; rejecting before parse.",
+                bytes, _options.MaxStreamBytes);
+            return Task.FromResult(ExtractedDocument.Failure(
+                ExtractionStatus.SizeExceeded,
+                $"PDF stream length {bytes} bytes exceeds MaxStreamBytes={_options.MaxStreamBytes}; rejected to bound memory usage. Increase Rag:PdfExtraction:MaxStreamBytes if the input is legitimately this large."));
+        }
+
         return Task.Run(() => Extract(pdfStream), cancellationToken);
     }
 
@@ -79,11 +96,11 @@ public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor
             // (near-)empty text. Route to OcrRequired so the orchestrator
             // skips chunking + indexing; Phase 4.5 owns the OCR-fallback
             // decision per Phase 4 § Deferred features index.
-            if (allText.Length < OcrRequiredCharFloor)
+            if (allText.Length < _options.OcrRequiredCharFloor)
             {
                 _logger.LogInformation(
-                    "PDF parsed but yielded {Length} chars across {PageCount} pages; classifying as OcrRequired.",
-                    allText.Length, document.NumberOfPages);
+                    "PDF parsed but yielded {Length} chars across {PageCount} pages (floor={Floor}); classifying as OcrRequired.",
+                    allText.Length, document.NumberOfPages, _options.OcrRequiredCharFloor);
                 return ExtractedDocument.Failure(
                     ExtractionStatus.OcrRequired,
                     $"Document parsed but yielded only {allText.Length} chars across {document.NumberOfPages} pages — likely scanned-image-only. OCR fallback is Phase 4.5.");
