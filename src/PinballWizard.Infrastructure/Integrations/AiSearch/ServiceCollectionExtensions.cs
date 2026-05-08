@@ -1,5 +1,6 @@
 using Azure.Identity;
 using Azure.Search.Documents;
+using Azure.Search.Documents.Indexes;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,7 +8,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Rag.Indexing;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 
 namespace PinballWizard.Infrastructure.Integrations.AiSearch;
@@ -22,11 +25,12 @@ public static class ServiceCollectionExtensions
     // be configured (the Azure OpenAI account endpoint is derived from
     // it); the CLI gate enforces that.
     //
-    // Phase 4 W1-4 shipped the smoke probe; Wave 3 W3-3 adds
+    // Phase 4 W1-4 shipped the smoke probe; Wave 3 W3-3 added
     // IRagRetriever for the hybrid-retrieval query path; Wave 2 W2-3
-    // will extend this method again to wire IRagIndexer + the
-    // SearchIndexClient registrations consumed by the embedding
-    // pipeline.
+    // adds IChunkEmbedder + IRagIndexer + RagIndexBootstrapper for
+    // the embedding pipeline + index population. The SearchIndexClient
+    // (index management) is registered alongside the SearchClient
+    // (data plane) — both share the same endpoint + credential.
     public static IServiceCollection AddAzureAiSearchIntegration(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -45,7 +49,11 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IAzureAiSearchSmokeProbe, AzureAiSearchSmokeProbe>();
 
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
+        services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
+        services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);
+        services.TryAddSingleton(BuildSearchIndexClient);
+        services.TryAddSingleton<RagIndexBootstrapper>();
 
         return services;
     }
@@ -85,6 +93,63 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IQueryEmbedder>(),
             sp.GetRequiredService<IOptions<AiSearchOptions>>(),
             sp.GetRequiredService<ILogger<AiSearchRagRetriever>>());
+    }
+
+    // Symmetric to `BuildQueryEmbedder` — derives the Azure OpenAI
+    // account endpoint from the Foundry project endpoint, then wraps
+    // the embedding deployment for batch use by the indexer (W2-3).
+    // Kept as a separate factory rather than sharing one
+    // `EmbeddingClient` instance across both embedders because the
+    // SDK's client is documented as cheap to construct and using
+    // distinct logger instances keeps the read- and write-path
+    // signals separate in tracing.
+    private static AzureOpenAIChunkEmbedder BuildChunkEmbedder(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var foundryOptions = sp.GetRequiredService<IOptions<AiFoundryOptions>>().Value;
+
+        if (string.IsNullOrWhiteSpace(foundryOptions.ProjectEndpoint))
+        {
+            throw new InvalidOperationException(
+                $"IChunkEmbedder requires {AiFoundryOptions.ProjectEndpointKey} to be configured " +
+                $"(the Azure OpenAI account endpoint is derived from it). " +
+                $"Wire AddAzureFoundryIntegration before AddAzureAiSearchIntegration.");
+        }
+
+        var openAiAccountEndpoint = DeriveAccountEndpoint(foundryOptions.ProjectEndpoint);
+        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, new DefaultAzureCredential());
+        var embeddingClient = openAiClient.GetEmbeddingClient(aiSearchOptions.EmbeddingDeploymentName);
+
+        return new AzureOpenAIChunkEmbedder(
+            embeddingClient,
+            sp.GetRequiredService<ILogger<AzureOpenAIChunkEmbedder>>());
+    }
+
+    // SearchIndexClient is the management-plane surface (create /
+    // get / delete index, list synonyms, etc.). Distinct from
+    // `SearchClient` (the data plane: query, upload, delete docs).
+    // Shared by `RagIndexBootstrapper` and `AzureAiSearchSmokeProbe`
+    // so both reach the same service via one credential.
+    private static SearchIndexClient BuildSearchIndexClient(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        return new SearchIndexClient(
+            new Uri(aiSearchOptions.Endpoint),
+            new DefaultAzureCredential());
+    }
+
+    private static AiSearchRagIndexer BuildRagIndexer(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.IndexName,
+            new DefaultAzureCredential());
+
+        return new AiSearchRagIndexer(
+            searchClient,
+            sp.GetRequiredService<IChunkEmbedder>(),
+            sp.GetRequiredService<ILogger<AiSearchRagIndexer>>());
     }
 
     // Foundry's project endpoint URL has the shape

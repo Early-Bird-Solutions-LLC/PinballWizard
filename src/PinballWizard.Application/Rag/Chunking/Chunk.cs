@@ -38,6 +38,7 @@ public sealed record Chunk(
 // remain in chunk text, just not as section boundaries.
 public sealed record ChunkRequest(
     string MachineId,
+    string MachineTitle,
     string Manufacturer,
     string DocumentId,
     string DocumentUrl,

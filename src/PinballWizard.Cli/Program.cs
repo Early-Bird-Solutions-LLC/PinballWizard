@@ -19,6 +19,7 @@ using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
+using PinballWizard.Infrastructure.Rag.Indexing;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -97,6 +98,11 @@ var ensureAiSearchOption = new Option<bool>("--ensure-ai-search")
     Description = "Post-deploy smoke-test for the Azure AI Search service backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetServiceStatistics to confirm endpoint reachability + AAD auth. The configured index (AiSearch:IndexName, default pinwiz-rag-v1) does NOT need to exist yet — Wave 2 W2-3 creates it. Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
 };
 
+var ensureRagIndexOption = new Option<bool>("--ensure-rag-index")
+{
+    Description = "Idempotently creates the Phase 4 RAG index (ADR-0021, default name `pinwiz-rag-v1`) on the configured Azure AI Search service if it does not yet exist. No-op when the index is already present — schema mutations follow the v1→v2 cutover documented in ADR-0021 § Versioning strategy, not in-place updates. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the create call fails."
+};
+
 var askOption = new Option<string?>("--ask")
 {
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
@@ -120,6 +126,7 @@ rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
+rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 
@@ -137,6 +144,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
+    var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
 
@@ -260,6 +268,32 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine(
             $"Azure AI Search verified: endpoint reachable at {result.FoundEndpoint} " +
             $"(expected index: {result.ExpectedIndexName}; index creation lands in Wave 2 W2-3).");
+        return;
+    }
+
+    // Handle --ensure-rag-index (post-deploy AI Search RAG-index ensure-create,
+    // ADR-0021, Phase 4 W2-3). Resolves RagIndexBootstrapper from DI; the
+    // bootstrapper is only registered when AddAzureAiSearchIntegration was
+    // wired (i.e., AiSearch:Endpoint is set). Mirrors the
+    // --ensure-cosmos-containers / --ensure-ai-search exit-code-2 remediation
+    // pattern.
+    if (ensureRagIndex)
+    {
+        var bootstrapper = host.Services.GetService<RagIndexBootstrapper>();
+        if (bootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-rag-index requires Azure AI Search to be configured. Set " +
+                $"{AiSearchOptions.EndpointKey} (the deployed search service endpoint URL, e.g. " +
+                "https://pinwiz-search-dev-XXXX.search.windows.net).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var bootstrapResult = await bootstrapper.EnsureCreatedAsync(cancellationToken);
+        Console.WriteLine(bootstrapResult.Created
+            ? $"AI Search RAG index created: {bootstrapResult.IndexName}"
+            : $"AI Search RAG index already present: {bootstrapResult.IndexName}");
         return;
     }
 
