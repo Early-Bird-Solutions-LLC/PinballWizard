@@ -39,6 +39,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
     private readonly AiFoundryOptions _options;
     private readonly IAgentPromptProvider _promptProvider;
     private readonly MachineGroundingTool _machineGroundingTool;
+    private readonly SearchCorpusTool _searchCorpusTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -47,16 +48,19 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         IOptions<AiFoundryOptions> options,
         IAgentPromptProvider promptProvider,
         MachineGroundingTool machineGroundingTool,
+        SearchCorpusTool searchCorpusTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(promptProvider);
         ArgumentNullException.ThrowIfNull(machineGroundingTool);
+        ArgumentNullException.ThrowIfNull(searchCorpusTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
         _promptProvider = promptProvider;
         _machineGroundingTool = machineGroundingTool;
+        _searchCorpusTool = searchCorpusTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -100,27 +104,42 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         var projectClient = new AIProjectClient(endpoint, new DefaultAzureCredential());
         var result = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
-        // The getMachineByTitle function tool is shared across all four
-        // agents per ADR-0014. Microsoft.Extensions.AI.AIFunctionFactory
-        // wraps the typed C# method into an AIFunction with auto-generated
-        // JSON schema (from [Description] attributes on the method + its
-        // arguments). Phase 4 will add a searchCorpus sibling for RAG
-        // retrieval (build-spec § Phase 4 scope item 21).
+        // The getMachineByTitle + searchCorpus function tools are shared
+        // across all four agents per ADR-0014.
+        // Microsoft.Extensions.AI.AIFunctionFactory wraps the typed C#
+        // methods into AIFunctions with auto-generated JSON schema (from
+        // [Description] attributes on the method + its arguments).
+        // searchCorpus is added in this PR (Phase 4 W4-1, build-spec §
+        // scope item 21) — RAG retrieval over the AI Search index
+        // defined by ADR-0021. Both tools are attached to every agent
+        // so any sub-agent's prompt can use either grounding surface
+        // as fits its question.
+        //
+        // The same AIFunction instance is shared across every agent
+        // (see subAgentTools / wizardTools below) — the underlying
+        // tool objects (MachineGroundingTool, SearchCorpusTool) are
+        // stateless singletons so concurrent invocations across agents
+        // are safe.
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
+        var searchCorpus = AIFunctionFactory.Create(_searchCorpusTool.SearchCorpusAsync);
 
         // Two-pass construction (Phase 4 W1-1):
-        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
-        //            getMachineByTitle. They never dispatch to peers
-        //            so they don't need each other's function-tool
-        //            wrappers.
-        //   Pass 2 — Wizard gets getMachineByTitle PLUS each sub-agent
-        //            wrapped via AIAgent.AsAIFunction(). The function
-        //            name defaults to the AIAgent's name (passed to
-        //            AsAIAgent), which matches the routing table in
-        //            Wizard.md.
-        AITool[] subAgentTools = [getMachineByTitle];
+        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get
+        //            getMachineByTitle + searchCorpus. They never
+        //            dispatch to peers so they don't need each other's
+        //            function-tool wrappers.
+        //   Pass 2 — Wizard gets both grounding tools PLUS each
+        //            sub-agent wrapped via AIAgent.AsAIFunction(). The
+        //            function name defaults to the AIAgent's name
+        //            (passed to AsAIAgent), which matches the routing
+        //            table in Wizard.md.
+        AITool[] subAgentTools = [getMachineByTitle, searchCorpus];
         var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
-        var wizardTools = new List<AITool>(subAgentNames.Length + 1) { getMachineByTitle };
+        var wizardTools = new List<AITool>(subAgentNames.Length + 2)
+        {
+            getMachineByTitle,
+            searchCorpus,
+        };
 
         foreach (var name in subAgentNames)
         {
