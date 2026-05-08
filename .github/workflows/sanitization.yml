@@ -106,8 +106,23 @@ jobs:
             # silently disabling the rule. Catch malformed patterns here
             # so a typo in the secret fails the workflow with a clear
             # error rather than silently passing.
-            printf '' | grep -E "$WORK_EMAIL_PATTERN" >/dev/null 2>&1
-            pattern_rc=$?
+            #
+            # The `|| pattern_rc=$?` is required because the shell runs
+            # under `bash -e -o pipefail` (the GitHub Actions default
+            # for `shell: bash`). On a well-formed but non-matching
+            # pattern, `grep -E` exits with rc=1 against empty stdin —
+            # pipefail surfaces that as the pipeline's exit code, and
+            # errexit then aborts the script BEFORE the `pattern_rc=$?`
+            # capture line can run. The `|| pattern_rc=$?` makes the
+            # validation part of an `||`-list, which errexit explicitly
+            # skips per the bash manual, while still capturing the exit
+            # code for the malformed-pattern check below. Without this
+            # bypass, every scan after this block (Work email, PEM,
+            # RSA, Slack, GitHub PAT, AWS, credential assignments)
+            # silently never runs — the failure mode this guard exists
+            # to prevent, except worse because it's unobservable.
+            pattern_rc=0
+            printf '' | grep -E "$WORK_EMAIL_PATTERN" >/dev/null 2>&1 || pattern_rc=$?
             if [ "$pattern_rc" -eq 2 ]; then
               echo "::error title=Sanitization failure: Work email rule misconfigured::WORK_EMAIL_PATTERN is not a valid extended regex (grep -E exit 2). Re-set the secret with a valid ERE; remember to escape regex metacharacters like '.' as '\\.'."
               fail=1
