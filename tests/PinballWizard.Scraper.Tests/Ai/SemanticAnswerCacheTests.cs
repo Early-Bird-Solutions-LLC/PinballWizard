@@ -20,7 +20,7 @@ public sealed class SemanticAnswerCacheTests
     {
         return new WizardAnswer(
             Text: text,
-            Citations: Array.Empty<Citation>(),
+            Citations: [],
             SubAgentUsed: AgentName.Wizard,
             Confidence: 1.0,
             Escalated: false,

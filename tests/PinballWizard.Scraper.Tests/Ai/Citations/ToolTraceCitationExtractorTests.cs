@@ -75,10 +75,10 @@ public sealed class ToolTraceCitationExtractorTests
             Title: "Foo",
             Manufacturer: "Stern",
             Year: 2021,
-            Themes: Array.Empty<string>(),
-            Designers: Array.Empty<string>(),
+            Themes: [],
+            Designers: [],
             OpdbSourceUrl: null,
-            Editions: Array.Empty<MachineEditionGroundingDto>());
+            Editions: []);
         var response = BuildAgentResponseWithToolResult(
             functionName: "getMachineByTitle",
             result: dto);
@@ -219,10 +219,10 @@ public sealed class ToolTraceCitationExtractorTests
             Title: title,
             Manufacturer: "Stern",
             Year: 2021,
-            Themes: Array.Empty<string>(),
-            Designers: Array.Empty<string>(),
+            Themes: [],
+            Designers: [],
             OpdbSourceUrl: $"https://opdb.org/machines/{opdbId}",
-            Editions: Array.Empty<MachineEditionGroundingDto>());
+            Editions: []);
     }
 
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)

@@ -30,6 +30,47 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-08 — Latest .NET / C# 14 features audit; collection-expression sweep
+
+**Decision:** Audit the codebase for adoption of the latest stable .NET 10 / C# 14 language and library features. Two material findings, one obvious-win modernization landed, the rest of the codebase already on the current idiom.
+
+**Findings:**
+
+1. **Already current** (no change needed):
+   - `<TargetFramework>net10.0</TargetFramework>` solution-wide via [`Directory.Build.props:13`](Directory.Build.props#L13).
+   - `<LangVersion>latest</LangVersion>` opts every project into C# 14 ([`Directory.Build.props:16`](Directory.Build.props#L16)).
+   - SDK pinned to `10.0.100` with `rollForward: latestFeature` in [`global.json`](../global.json) — picks up minor SDK bumps automatically.
+   - **File-scoped namespaces** everywhere — zero `namespace X { }` block forms across `src/` and `tests/` (verified by grep).
+   - **Records used liberally** — every immutable data carrier uses `public sealed record` (positional or with-init). 20+ types audited.
+   - **No `string.Format` calls** — every formatted string uses interpolation (`$"..."`).
+   - **No sync-over-async smells** — zero `.Result` / `.GetAwaiter().GetResult()` in production code paths.
+   - **No `Dictionary<,>()` empty-initializer sites** that would benefit from collection expressions (the dictionaries that exist are intentionally constructed with capacity hints, custom comparers, or item lists that don't target-type cleanly to `[]`).
+   - **`async`/`await` patterns** consistently use `ConfigureAwait(false)` in Infrastructure, `await using` for `IAsyncDisposable`, and `CancellationToken` plumbed through.
+
+2. **Modernized in this PR:**
+   - **`Array.Empty<T>()` → `[]`** — 32 sites across 14 files. Collection expressions (C# 12+) target-type to the same allocation-free empty collection that `Array.Empty<T>()` produced, but read more contemporary and compose better with future collection-expression patterns. Applies in record positional args, method returns, `??` null-coalesce defaults, and ternary expressions.
+   - **CA1859 fix surfaced by the sweep** — two private static helpers in Infrastructure (`EvaluationHarness.ExtractCitationIds`, `PdfPigDocumentTextExtractor.ExtractOutline`) returned `IReadOnlyList<T>` but only ever produced concrete `List<T>` internally. The analyzer was previously masked by the mixed-type `Array.Empty<T>()` (`T[]`) early-return; replacing with `[]` (target-typed to `List<T>` matching the other branch) made CA1859 fire. Promoted the return types to `List<T>` per the analyzer's recommendation. No public API impact (both are private).
+
+**Deferred (not modernized in this PR; documented for future review):**
+
+- **`new List<T>()` empty-initializer sites (~51)** — could become `[]` target-typed to `List<T>` in C# 12+. Mostly benign, but per-site target-type analysis is needed (e.g., `var x = new List<T>();` doesn't target-type — `var x = []` is invalid; would need `List<T> x = []`). Stylistic upgrade with low per-site value; defer to a future style sweep if/when the team adopts a collection-expression-first conventions doc.
+- **`using (var x = ...) { ... }` statement form (4 sites in `FileDownloader.cs` / `OpdbClient.cs` / `PinballMapClient.cs`)** — could become `using var x = ...;` declarations (C# 8) where the scope ends at the enclosing method block. The 4 sites are inside `async`/`await using` blocks where the scope-management is intentional (the resource needs to dispose mid-method, not at method end). Keep as-is.
+- **C# 14 `field` keyword for backing-field-only auto-property bodies** — searched; no current properties have explicit backing fields that the `field` keyword would simplify. Adopt if a future property needs `set`/`init` validation that requires the backing-field reference.
+- **Primary constructors on classes with multiple readonly fields** — possible refactor for `AiRouter` / `ConfidenceCalculator` / similar. Stylistic; defer until the showcase `customer-facing read-clean` posture surfaces a specific class where the primary-ctor form materially improves readability vs. the explicit ctor with `ArgumentNullException.ThrowIfNull` guards.
+- **Required members on options classes** — `AiSearchOptions.Endpoint`, `AiFoundryOptions.ProjectEndpoint` could be `required` to fail-fast at construction rather than `[Url]` + `Validate(...)` at startup. The current pattern (data annotations + `ValidateOnStart`) gives clearer diagnostics than the `required` violation message. Keep as-is.
+
+**Rationale:** The codebase was already drafted against C# 14 / .NET 10 from project inception (Phase 0 set the LangVersion=latest + net10.0 baseline). The remaining modernization opportunities are stylistic refinements rather than missing-feature gaps. The `Array.Empty<T>()` → `[]` sweep is the one universally-applicable upgrade — every site target-types correctly, every site reads better, no behaviour change. The CA1859 fix is a correctness improvement that would have been surfaced by any code review against current analyzer rules. Deferred items are tracked here so a future reader knows what was considered and consciously deferred vs. simply overlooked.
+
+**Verification:**
+
+- `dotnet build PinballWizard.slnx` — 0 warnings, 0 errors after both the sweep and the CA1859 fixes.
+- `dotnet test` — 807/807 passing; zero behaviour change (collection expressions and `Array.Empty<T>()` produce equivalent empty-collection allocations under target-typing).
+- Tests + production code identically modernized so no asymmetric idiom drift between layers.
+
+**Revisit when:** A new C# version (15+) ships with materially-relevant features (e.g., the C# 14 `extensions` blocks could simplify some scraper-helper namespaces if the language committee finalizes that surface), or when a code review on a new PR surfaces a specific old-idiom site that would read better under a current feature. The deferred list above is the natural starting point for any future "modernization round 2" PR.
+
+**Related:** PR (this one) — Array.Empty sweep + CA1859 fixes; [`Directory.Build.props`](../Directory.Build.props) (LangVersion + TargetFramework baseline); [`global.json`](../global.json) (SDK pin).
+
 ## 2026-05-08 — Foundry stack on latest GA (verified) + provider-agnostic query embedding via IQueryEmbedder
 
 **Decision:** Three architectural facts confirmed and one new abstraction locked, surfaced during PR review of Phase 4 W3-3 (the AI Search hybrid-retrieval query client):

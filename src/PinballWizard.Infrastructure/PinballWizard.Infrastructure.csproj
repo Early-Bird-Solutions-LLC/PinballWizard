@@ -9,15 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AngleSharp" Version="1.4.0" />
-    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="AngleSharp" />
+    <PackageReference Include="Azure.Identity" />
     <!-- Azure.AI.Projects 2.0 is GA (April 2026) and is the data-plane SDK
          for the Foundry project endpoint per ADR-0014. Phase 3 PR 2a uses
          it for the post-deploy smoke probe (AzureFoundrySmokeProbe);
          Wave 2 PR 4 will add Microsoft.Agents.AI.Foundry (preview, the
          Microsoft Agent Framework wrapper) for IAiRouter + agent
          construction via AsAIAgent. -->
-    <PackageReference Include="Azure.AI.Projects" Version="2.0.1" />
+    <PackageReference Include="Azure.AI.Projects" />
     <!-- Microsoft.Agents.AI.Foundry is the Foundry-specific provider for
          the Microsoft Agent Framework. It exposes AIProjectClient.AsAIAgent
          (the Responses Agent extension) which the FoundryAgentFactory
@@ -26,7 +26,7 @@
          drafting time. P3-R4 narrows further: now both the data-plane
          SDK (Azure.AI.Projects) AND the Microsoft Agent Framework
          providers are GA. -->
-    <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.4.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Foundry" />
     <!-- Azure.Search.Documents is the data-plane SDK for Azure AI Search.
          Phase 4 W1-4 uses it for the post-deploy smoke probe
          (AzureAiSearchSmokeProbe — verifies endpoint reachability + AAD
@@ -35,7 +35,7 @@
          ADR-0021); Wave 3 W3-3 adds hybrid-retrieval queries via
          AiSearchRagRetriever. The 11.7.0 line is the GA major covering
          the v2024+ semantic-ranker + vector-field surface ADR-0021 locks. -->
-    <PackageReference Include="Azure.Search.Documents" Version="11.7.0" />
+    <PackageReference Include="Azure.Search.Documents" />
     <!-- Azure.AI.OpenAI 2.x wraps the OpenAI 2.x client with Azure
          AAD auth + Foundry-hosted-deployment routing. Phase 4 W3-3
          (AiSearchRagRetriever) uses AzureOpenAIClient.GetEmbeddingClient
@@ -43,7 +43,7 @@
          W2-3 will reuse the same embedding surface for indexing-side
          vectorization. Constructed with DefaultAzureCredential — no
          API key in code or config. -->
-    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.AI.OpenAI" />
     <!-- PdfPig (namespace UglyToad.PdfPig) is the pure-managed PDF reader
          used by Phase 4 W1-5's PdfPigDocumentTextExtractor. Reads text +
          outline from PDF streams; no native dependencies; compatible
@@ -52,7 +52,7 @@
          is minimal but sufficient for unit-test fixtures. Wave 2 W2-2
          (HybridChunker) consumes the extractor's output but doesn't
          take a direct dep. -->
-    <PackageReference Include="PdfPig" Version="0.1.14" />
+    <PackageReference Include="PdfPig" />
     <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
          CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
          genuinely does not include `sqlDatabases/write` (and there is no valid
@@ -63,20 +63,20 @@
          the production identity holding `Cosmos DB Operator` at account scope.
          The data-plane SDK (Microsoft.Azure.Cosmos) below remains the canonical
          path for runtime item CRUD. -->
-    <PackageReference Include="Azure.ResourceManager.CosmosDB" Version="1.4.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.59.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Playwright" Version="1.59.0" />
+    <PackageReference Include="Azure.ResourceManager.CosmosDB" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Microsoft.Playwright" />
     <!-- Microsoft.Azure.Cosmos uses Newtonsoft.Json internally for some
          connection-management paths. Our SystemTextJsonCosmosSerializer
          handles document (de)serialization, but the SDK's transitive check
          still requires Newtonsoft to be explicitly versioned. -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Newtonsoft.Json" />
   </ItemGroup>
 
   <ItemGroup>

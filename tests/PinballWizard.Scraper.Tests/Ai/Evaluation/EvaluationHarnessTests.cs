@@ -98,7 +98,7 @@ public sealed class EvaluationHarnessTests
         fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new WizardAnswer(
                 Text: "I don't know — that's outside the pinball domain.",
-                Citations: Array.Empty<Citation>(),
+                Citations: [],
                 SubAgentUsed: "Wizard",
                 Confidence: 0.1,
                 Escalated: false,

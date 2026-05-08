@@ -174,7 +174,7 @@ public sealed class AiRouter : IAiRouter
 
             var ceilingAnswer = new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.CostCeilingHit),
-                Citations: Array.Empty<Citation>(),
+                Citations: [],
                 SubAgentUsed: subAgentUsed,
                 Confidence: 0.0,
                 Escalated: false,
@@ -233,7 +233,7 @@ public sealed class AiRouter : IAiRouter
 
             answer = new WizardAnswer(
                 Text: BuildRefusalText(category),
-                Citations: Array.Empty<Citation>(),
+                Citations: [],
                 SubAgentUsed: subAgentUsed,
                 Confidence: confidence,
                 Escalated: false,

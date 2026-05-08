@@ -140,11 +140,11 @@ public sealed class PdfPigDocumentTextExtractor : IDocumentTextExtractor
     // with Level tracking so the W2-2 chunker can pick its preferred
     // section-delimiter granularity (top-level only vs. all-levels)
     // per ADR-0019's hybrid-chunking design.
-    private static IReadOnlyList<OutlineEntry> ExtractOutline(PdfDocument document)
+    private static List<OutlineEntry> ExtractOutline(PdfDocument document)
     {
         if (!document.TryGetBookmarks(out var bookmarks) || bookmarks is null)
         {
-            return Array.Empty<OutlineEntry>();
+            return [];
         }
 
         var entries = new List<OutlineEntry>();

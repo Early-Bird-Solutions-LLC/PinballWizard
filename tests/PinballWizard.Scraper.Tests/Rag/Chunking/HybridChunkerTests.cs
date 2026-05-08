@@ -570,12 +570,12 @@ public sealed class HybridChunkerTests
         IReadOnlyList<ExtractedPage>? pages = null,
         IReadOnlyList<OutlineEntry>? outline = null)
     {
-        var pageList = pages ?? Array.Empty<ExtractedPage>();
+        var pageList = pages ?? [];
         return new ExtractedDocument(
             Status: status,
             Text: string.Join("\n", pageList.Select(p => p.Text)),
             Pages: pageList,
-            Outline: outline ?? Array.Empty<OutlineEntry>(),
+            Outline: outline ?? [],
             Error: null);
     }
 

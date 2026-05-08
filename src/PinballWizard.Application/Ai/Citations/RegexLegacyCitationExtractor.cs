@@ -28,13 +28,13 @@ public sealed partial class RegexLegacyCitationExtractor : ICitationExtractor
         var text = response?.Text;
         if (string.IsNullOrWhiteSpace(text))
         {
-            return Array.Empty<Citation>();
+            return [];
         }
 
         var matches = OpdbMachineUrlRegex().Matches(text);
         if (matches.Count == 0)
         {
-            return Array.Empty<Citation>();
+            return [];
         }
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

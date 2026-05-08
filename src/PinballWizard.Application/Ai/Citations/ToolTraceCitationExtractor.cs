@@ -47,7 +47,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     {
         if (response is null)
         {
-            return Array.Empty<Citation>();
+            return [];
         }
 
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -58,9 +58,9 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // null would bubble an NPE out of AiRouter (the call site sits
         // outside the wizard.RunAsync try/catch). Hardened symmetrically
         // with SubAgentTraceReader in W2-1.
-        foreach (var message in response.Messages ?? Array.Empty<ChatMessage>())
+        foreach (var message in response.Messages ?? [])
         {
-            foreach (var content in message.Contents ?? Array.Empty<AIContent>())
+            foreach (var content in message.Contents ?? [])
             {
                 if (content is not FunctionResultContent functionResult)
                 {
@@ -71,7 +71,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             }
         }
 
-        return citations.Count == 0 ? Array.Empty<Citation>() : citations;
+        return citations.Count == 0 ? [] : citations;
     }
 
     private static void ExtractFromFunctionResult(
