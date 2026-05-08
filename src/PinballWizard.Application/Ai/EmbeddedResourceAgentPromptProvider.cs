@@ -9,11 +9,14 @@ namespace PinballWizard.Application.Ai;
 // dictionary is read-only afterward.
 //
 // PromptVersion is bumped manually in this constant in the same commit
-// as any prompt-content change (per ADR-0018). Phase 3 starts at
-// "v1.2026.05" (Wave 2 launch).
+// as any prompt-content change (per ADR-0018). Phase 3 launched at
+// "v1.2026.05" (Wave 2). Bumped to "v2.2026.05" with sub-agent prompt
+// content. Bumped to "v3.2026.05" with Phase 4 W1-1 connected-agents
+// wiring (Wizard.md now references Valuation/Rules/Repair as connected
+// sub-agent function tools the LLM dispatches to via tool calls).
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v2.2026.05";
+    public const string CurrentPromptVersion = "v3.2026.05";
 
     private readonly Dictionary<string, string> _prompts;
 
