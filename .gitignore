@@ -58,3 +58,9 @@ Thumbs.db
 infra/*.json
 infra/build/
 infra/**/build/
+
+# Operator-driven log outputs from manual H1/H2/H3 chain runs (Bicep
+# apply, OPDB sync, recuration dry-runs, eval baseline runs, etc.).
+# These are local diagnostic artifacts; the canonical results are the
+# committed JSON files under data/eval/results/ per ADR-0016.
+*.log
