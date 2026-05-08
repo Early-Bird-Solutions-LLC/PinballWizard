@@ -36,6 +36,15 @@
          AiSearchRagRetriever. The 11.7.0 line is the GA major covering
          the v2024+ semantic-ranker + vector-field surface ADR-0021 locks. -->
     <PackageReference Include="Azure.Search.Documents" Version="11.7.0" />
+    <!-- PdfPig (namespace UglyToad.PdfPig) is the pure-managed PDF reader
+         used by Phase 4 W1-5's PdfPigDocumentTextExtractor. Reads text +
+         outline from PDF streams; no native dependencies; compatible
+         with the showcase posture (no GPL/AGPL like iText 7 community
+         license). 0.1.x is the current stable line; the writer surface
+         is minimal but sufficient for unit-test fixtures. Wave 2 W2-2
+         (HybridChunker) consumes the extractor's output but doesn't
+         take a direct dep. -->
+    <PackageReference Include="PdfPig" Version="0.1.14" />
     <!-- Azure.ResourceManager.CosmosDB drives ARM (control-plane) database/container
          CRUD for `CosmosBootstrapper.EnsureCreatedAsync`. Cosmos's data-plane RBAC
          genuinely does not include `sqlDatabases/write` (and there is no valid
