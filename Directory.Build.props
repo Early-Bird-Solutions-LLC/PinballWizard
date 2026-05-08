@@ -61,8 +61,11 @@
     <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CA1707</NoWarn>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.203" PrivateAssets="All" />
-  </ItemGroup>
+  <!--
+    Microsoft.SourceLink.GitHub is wired as a GlobalPackageReference in
+    Directory.Packages.props so every project picks it up automatically
+    — no per-project PackageReference needed. The version pin lives
+    centrally with all other package versions.
+  -->
 
 </Project>

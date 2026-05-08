@@ -14,10 +14,10 @@
          AIAgent type used by IAiRouter lives here. The Foundry-specific
          provider (Microsoft.Agents.AI.Foundry, preview) is referenced
          from Infrastructure since it pulls in Azure.AI.Projects. -->
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.4.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Agents.AI" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
 
     <!-- Microsoft.ML.Tokenizers + Cl100kBase data package power the
          Phase 4 hybrid chunker (ADR-0019). cl100k_base is the BPE
@@ -28,8 +28,8 @@
          vocab as an embedded resource that
          `TiktokenTokenizer.CreateForEncoding("cl100k_base")` discovers
          via assembly load; both packages are required at runtime. -->
-    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-    <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" />
+    <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" />
 
     <!-- Microsoft.ML.Tokenizers 2.0.0 transitively pulls
          Microsoft.Bcl.Memory 9.0.4, which has a high-severity vuln
@@ -38,7 +38,7 @@
          override is package-version-floor; remove it once
          Microsoft.ML.Tokenizers ships a release that depends on
          Bcl.Memory >= 10.x. -->
-    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Bcl.Memory" />
   </ItemGroup>
 
   <ItemGroup>
