@@ -20,6 +20,12 @@
           "Microsoft.ML.Tokenizers": "2.0.0"
         }
       },
+      "Microsoft.Bcl.Memory": {
+        "type": "Direct",
+        "requested": "[10.0.7, )",
+        "resolved": "10.0.7",
+        "contentHash": "+0MJLOVIO64hZuP8vwdIBbF8QmOw8ZK/1PXq6h+981OrRaWo6e8PmUajbEO7fuKfmaDxasxj0sQPZJI3Dewpig=="
+      },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "Direct",
         "requested": "[10.0.7, )",
@@ -45,6 +51,28 @@
           "Microsoft.Extensions.Primitives": "10.0.7"
         }
       },
+      "Microsoft.ML.Tokenizers": {
+        "type": "Direct",
+        "requested": "[2.0.0, )",
+        "resolved": "2.0.0",
+        "contentHash": "+b8lT4cLLO/sBR2hjvE/qG6qrZG15h7/PBvnIrzTh4xDaAxdHUY6449rC+1pHzQUsBiCHZVbj+VMn+xS0sL7TA==",
+        "dependencies": {
+          "Google.Protobuf": "3.30.2"
+        }
+      },
+      "Microsoft.ML.Tokenizers.Data.Cl100kBase": {
+        "type": "Direct",
+        "requested": "[2.0.0, )",
+        "resolved": "2.0.0",
+        "contentHash": "APL8S3FFDesfAMBACeVhRjFLMEEavCVgExPvmM1JkC4u+iiQOiqmOS47bN0n4iKM8k/yYhxd3bBVB3uKo6CCGg==",
+        "dependencies": {
+          "Google.Protobuf": "3.30.2",
+          "Microsoft.Bcl.AsyncInterfaces": "9.0.4",
+          "Microsoft.Bcl.HashCode": "6.0.0",
+          "Microsoft.Bcl.Memory": "9.0.4",
+          "Microsoft.ML.Tokenizers": "2.0.0"
+        }
+      },
       "Microsoft.SourceLink.GitHub": {
         "type": "Direct",
         "requested": "[10.0.203, )",
@@ -68,6 +96,16 @@
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "10.5.0"
         }
+      },
+      "Microsoft.Bcl.AsyncInterfaces": {
+        "type": "Transitive",
+        "resolved": "9.0.4",
+        "contentHash": "9VGI5kxIvrNG2mqLQZnUR6y/3fcnygD8eNpHR+CqfbnIXvea6nehnYknDKQTxZVPMpzpNca+7DxLBmpdB3q0Bw=="
+      },
+      "Microsoft.Bcl.HashCode": {
+        "type": "Transitive",
+        "resolved": "6.0.0",
+        "contentHash": "GI4jcoi6eC9ZhNOQylIBaWOQjyGaR8T6N3tC1u8p3EXfndLCVNNWa+Zp+ocjvvS3kNBN09Zma2HXL0ezO0dRfw=="
       },
       "Microsoft.Build.Tasks.Git": {
         "type": "Transitive",
@@ -140,14 +178,6 @@
         "contentHash": "Vth/omSCX2vR0JabzSRU/hdPhr0CvUVZlaS2lJPWHrEwvak8ntrQLDtLMtMiWKSvviGBe/WmjUW8gA3qqn9tjw==",
         "dependencies": {
           "Microsoft.Extensions.AI.Abstractions": "9.5.0"
-        }
-      },
-      "Microsoft.ML.Tokenizers": {
-        "type": "Transitive",
-        "resolved": "2.0.0",
-        "contentHash": "+b8lT4cLLO/sBR2hjvE/qG6qrZG15h7/PBvnIrzTh4xDaAxdHUY6449rC+1pHzQUsBiCHZVbj+VMn+xS0sL7TA==",
-        "dependencies": {
-          "Google.Protobuf": "3.30.2"
         }
       },
       "Microsoft.SourceLink.Common": {
