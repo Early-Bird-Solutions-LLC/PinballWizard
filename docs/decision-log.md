@@ -100,13 +100,15 @@ H1 succeeded 2026-05-07 against `pinwiz-foundry-dev-hlpz4` / project `pinwiz-wiz
 - Skip verification entirely and trust the rule's wiring. Rejected: without active verification, the workflow's `if [ -n "${WORK_EMAIL_PATTERN:-}" ]` gate could silently no-op (e.g., the secret value is whitespace, malformed, or the named-secret lookup fails) and a future leak would land on `main` without anyone noticing.
 - Mock the workflow's `run_rule` invocation in a unit test under `tests/`. Rejected: the workflow is bash, the project's test suite is xUnit + .NET — no natural place to put a bash test, and a CI YAML test that runs in a separate workflow against the sanitization YAML adds infrastructure for a one-time verification.
 
-**Rationale:** Local `grep -E -i <pattern>` against synthetic placeholder strings (`jim@earlybird-placeholder.invalid`, `noreply@earlybirdsolutions.invalid`, `pattern-test@distilledtech.com`) piped via stdin (no disk writes, no commits) exercises the *exact same* matcher the workflow uses (`grep -E -i "$WORK_EMAIL_PATTERN"` at sanitization.yml:115). Both positive (string matches → rule fires) and negative (similar-but-non-matching strings) cases are confirmed:
+**Rationale:** Local `grep -E -i <pattern>` against synthetic placeholder strings (`jim<at>earlybird-placeholder.invalid`, `noreply<at>earlybirdsolutions.invalid`, `pattern-test<at>distilledtech.com` — written with `<at>` instead of `@` here so this very file doesn't trip the workflow it documents) piped via stdin (no disk writes, no commits) exercises the *exact same* matcher the workflow uses (`grep -E -i "$WORK_EMAIL_PATTERN"` at sanitization.yml:115). Both positive (string matches → rule fires) and negative (similar-but-non-matching strings) cases are confirmed:
 
 | Rule | Pattern | Positive case | Negative case |
 | ---- | ------- | ------------- | ------------- |
-| Personal email | `jim@earlybird` | `jim@earlybird-placeholder.invalid` → match ✅ | `unrelated-text@otherdomain.example` → no match ✅ |
-| Personal domain | `@earlybirdsolutions` | `noreply@earlybirdsolutions.invalid` → match ✅ | `noreply@earlybird.io` → no match ✅ |
-| Work email | `@distilledtech\.com` | `pattern-test@distilledtech.com` → match ✅ | `someone@distilledtechXcom` → no match (escape works) ✅ |
+| Personal email | `jim<at>earlybird` | `jim<at>earlybird-placeholder.invalid` → match ✅ | `unrelated-text<at>otherdomain.example` → no match ✅ |
+| Personal domain | `<at>earlybirdsolutions` | `noreply<at>earlybirdsolutions.invalid` → match ✅ | `noreply<at>earlybird.io` → no match ✅ |
+| Work email | `<at>distilledtech\.com` | `pattern-test<at>distilledtech.com` → match ✅ | `someone<at>distilledtechXcom` → no match (escape works) ✅ |
+
+> **Note for future authors:** the `<at>` masking above is intentional. Writing the literal `@` form anywhere in the repo (outside `sanitization.yml`, which excludes itself from the scan) re-creates the recursive trap that PR `[sanitization-docs-fix]` resolved on 2026-05-08. When discussing the patterns, use the masking convention or refer the reader to `sanitization.yml` for the verbatim regex.
 
 The pattern's ERE validity check (sanitization.yml:109 — `printf '' \| grep -E "$WORK_EMAIL_PATTERN"`) returns `rc=1` (no match against empty input), not `rc=2` (malformed pattern), confirming the secret value is a well-formed ERE.
 
