@@ -23,6 +23,17 @@ namespace PinballWizard.Infrastructure.Integrations.Foundry;
 // ADR-0015. The Repair agent ships with an AgentModels override to
 // gpt-4-1 (the deployment name; the underlying model is gpt-4.1 — '.'
 // is disallowed in deployment names).
+//
+// Connected-agents wiring (Phase 4 W1-1, build-spec § Phase 4 scope
+// item 8 / inherited Phase 3 follow-up #1):
+// Sub-agents (Valuation / Rules / Repair) are constructed first, then
+// wrapped as AIFunction tools via AIAgent.AsAIFunction(). The Wizard
+// is constructed last with the three sub-agent function tools attached
+// alongside getMachineByTitle. This makes the Wizard.md prompt's
+// "dispatch to connected sub-agent" instructions structurally
+// functional — the LLM picks the matching sub-agent function and
+// Microsoft Agent Framework drives the call with full thread context
+// preservation. Closes the Phase 3 H2 gap (subagent_accuracy=0.033).
 public sealed class FoundryAgentFactory : IFoundryAgentFactory
 {
     private readonly AiFoundryOptions _options;
@@ -93,29 +104,61 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         // agents per ADR-0014. Microsoft.Extensions.AI.AIFunctionFactory
         // wraps the typed C# method into an AIFunction with auto-generated
         // JSON schema (from [Description] attributes on the method + its
-        // arguments). Wave 2 PR 5 attaches it; Phase 4 will add a
-        // searchCorpus sibling for RAG retrieval.
+        // arguments). Phase 4 will add a searchCorpus sibling for RAG
+        // retrieval (build-spec § Phase 4 scope item 21).
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
-        AITool[] toolsForAllAgents = [getMachineByTitle];
 
-        foreach (var name in AgentName.All)
+        // Two-pass construction (Phase 4 W1-1):
+        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
+        //            getMachineByTitle. They never dispatch to peers
+        //            so they don't need each other's function-tool
+        //            wrappers.
+        //   Pass 2 — Wizard gets getMachineByTitle PLUS each sub-agent
+        //            wrapped via AIAgent.AsAIFunction(). The function
+        //            name defaults to the AIAgent's name (passed to
+        //            AsAIAgent), which matches the routing table in
+        //            Wizard.md.
+        AITool[] subAgentTools = [getMachineByTitle];
+        var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
+        var wizardTools = new List<AITool>(subAgentNames.Length + 1) { getMachineByTitle };
+
+        foreach (var name in subAgentNames)
         {
             var instructions = _promptProvider.GetPrompt(name);
             var model = ResolveModel(name);
-            var agent = projectClient.AsAIAgent(
+            var subAgent = projectClient.AsAIAgent(
                 model: model,
                 name: name,
                 instructions: instructions,
-                tools: toolsForAllAgents);
-            result[name] = agent;
+                tools: subAgentTools);
+            result[name] = subAgent;
+            wizardTools.Add(subAgent.AsAIFunction());
 
             _logger.LogInformation(
-                "Constructed Foundry AIAgent (Responses Agent): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount}",
+                "Constructed Foundry AIAgent (Responses Agent, sub-agent): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount}",
                 name,
                 model,
                 _promptProvider.PromptVersion,
-                toolsForAllAgents.Length);
+                subAgentTools.Length);
         }
+
+        var wizardInstructions = _promptProvider.GetPrompt(AgentName.Wizard);
+        var wizardModel = ResolveModel(AgentName.Wizard);
+        var wizardTooling = wizardTools.ToArray();
+        var wizard = projectClient.AsAIAgent(
+            model: wizardModel,
+            name: AgentName.Wizard,
+            instructions: wizardInstructions,
+            tools: wizardTooling);
+        result[AgentName.Wizard] = wizard;
+
+        _logger.LogInformation(
+            "Constructed Foundry AIAgent (Responses Agent, Wizard with connected sub-agents): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount} subAgents={SubAgents}",
+            AgentName.Wizard,
+            wizardModel,
+            _promptProvider.PromptVersion,
+            wizardTooling.Length,
+            string.Join(",", subAgentNames));
 
         return result;
     }
