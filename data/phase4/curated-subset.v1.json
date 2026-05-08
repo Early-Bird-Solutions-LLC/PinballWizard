@@ -1,0 +1,80 @@
+{
+  "manifestVersion": "v1",
+  "createdAt": "2026-05-08",
+  "purpose": "Phase 4 ships the full RAG architecture against this curated 7-machine subset; corpus expansion is Phase 4.5 work. The slate spans every in-scope manufacturer scraper so the showcase demonstrates retrieval breadth (not just Stern) on day one. Verified by tools/phase4/VerifyCuratedSubsetCoverage.csx.",
+  "specReferences": {
+    "buildSpec": "docs/build-spec.md § Phase 4 scope item 7",
+    "exitCriterion": "Each machine has ≥1 manual PDF in deployed scraped_documents; Stern machines (Godzilla + Foo Fighters) additionally have ≥1 service bulletin.",
+    "phase45": "Phase 4.5 corpus expansion removes the curated-subset filter and extends bulletin ingestion to non-Stern manufacturers."
+  },
+  "documentTypes": {
+    "_casingNote": "Manifest uses PascalCase to match the source-side `PinballWizard.Core.Models.DocumentType` enum and the Phase 1 file-system catalog's `classification.document_type` values (`Manual`, `ServiceBulletin`). ADR-0021's AI Search index field is lowercase snake_case (`manual`, `service_bulletin`, `metadata_card`); that translation happens at indexing time, downstream of this manifest.",
+    "Manual": "Owner / operator / repair manual PDF — primary source for rules, mode descriptions, parts lists, and wiring diagrams.",
+    "ServiceBulletin": "Stern's per-issue advisory PDFs (SB-####). Repair sub-agent quality at launch hinges on bulletin grounding for the curated Stern slate."
+  },
+  "machines": [
+    {
+      "title": "Godzilla",
+      "edition": "Premium",
+      "manufacturer": "Stern Pinball",
+      "manufacturerSlug": "stern",
+      "year": 2021,
+      "expectedDocumentTypes": ["Manual", "ServiceBulletin"],
+      "rationale": "The marquee Stern title for the showcase — deep mode rules, broad public familiarity, rich service-bulletin history. Godzilla Premium also drives the Phase 3 H2 OPDB-disambiguation hardening fixture (Stern 2021 vs. Sega 1998)."
+    },
+    {
+      "title": "Foo Fighters",
+      "edition": "LE",
+      "manufacturer": "Stern Pinball",
+      "manufacturerSlug": "stern",
+      "year": 2023,
+      "expectedDocumentTypes": ["Manual", "ServiceBulletin"],
+      "rationale": "Recent Stern release — confirms the slate spans both established (Godzilla) and current production titles. LE edition exercises the alias-edition path through Cosmos."
+    },
+    {
+      "title": "Toy Story 4",
+      "edition": null,
+      "manufacturer": "Jersey Jack Pinball",
+      "manufacturerSlug": "jjp",
+      "year": 2024,
+      "expectedDocumentTypes": ["Manual"],
+      "rationale": "JJP's 2024 release — covers the WP-REST + JSON-LD scraper path. JJP doesn't publish service bulletins on the manufacturer site, so the slate's bulletin coverage is Stern-only by design."
+    },
+    {
+      "title": "Galactic Tank Force",
+      "edition": null,
+      "manufacturer": "American Pinball",
+      "manufacturerSlug": "ap",
+      "year": 2023,
+      "expectedDocumentTypes": ["Manual"],
+      "rationale": "American Pinball's flagship recent title — covers the DOM-heuristic scraper path."
+    },
+    {
+      "title": "Halloween",
+      "edition": "Hellraiser",
+      "manufacturer": "Spooky Pinball",
+      "manufacturerSlug": "spooky",
+      "year": 2024,
+      "expectedDocumentTypes": ["Manual"],
+      "rationale": "Spooky's 2024 horror-themed flagship — covers the boutique-manufacturer scraper path. Spooky's outline-poor manuals exercise the chunker's no-outline fallback (ADR-0019)."
+    },
+    {
+      "title": "Attack from Mars",
+      "edition": "Remake",
+      "manufacturer": "Chicago Gaming Company",
+      "manufacturerSlug": "cgc",
+      "year": 2017,
+      "expectedDocumentTypes": ["Manual"],
+      "rationale": "CGC's flagship remake — covers the custom-Nginx scraper path. CGC remake docs frequently lack rich PDF outlines, exercising the chunker's no-outline fallback alongside Spooky."
+    },
+    {
+      "title": "Queen",
+      "edition": "LE",
+      "manufacturer": "Pinball Brothers",
+      "manufacturerSlug": "pinballbrothers",
+      "year": 2023,
+      "expectedDocumentTypes": ["Manual"],
+      "rationale": "Pinball Brothers' Queen LE — covers the WP-REST + slug-filter scraper path. Rounds out the seven-machine slate at one machine per in-scope manufacturer beyond Stern's two."
+    }
+  ]
+}
