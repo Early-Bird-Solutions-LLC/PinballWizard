@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Pre-push hook: block direct pushes to protected branches.
+#
+# Activate once per clone:
+#   bash scripts/setup-hooks.sh
+#
+# This is client-side enforcement. The same rule should also be configured
+# server-side via GitHub branch protection, but a local hook gives faster
+# feedback and works offline.
+
+set -euo pipefail
+
+PROTECTED='^(refs/heads/)?(main|master|develop|development)$'
+remote="$1"
+url="$2"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if [[ "$remote_ref" =~ $PROTECTED ]]; then
+        branch="${remote_ref#refs/heads/}"
+        echo "✗ Direct push to '$branch' on $remote is blocked." >&2
+        echo "" >&2
+        echo "  Open a pull request instead:" >&2
+        echo "    git checkout -b Dev-MyChange" >&2
+        echo "    git push -u origin Dev-MyChange" >&2
+        echo "    gh pr create" >&2
+        echo "" >&2
+        echo "  To bypass for an emergency (e.g. fixing CI on main), run:" >&2
+        echo "    git push --no-verify $remote $local_ref:$remote_ref" >&2
+        exit 1
+    fi
+done
+
+exit 0
