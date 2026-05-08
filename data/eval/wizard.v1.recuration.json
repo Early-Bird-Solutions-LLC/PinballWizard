@@ -1,0 +1,179 @@
+{
+  "recurated_at_utc": "2026-05-08T12:20:20.2519733+00:00",
+  "cosmos_endpoint": "https://pinwiz-cosmos-dev-hlpz4.documents.azure.com:443/",
+  "cosmos_database": "pinwiz",
+  "cosmos_container": "machines",
+  "jsonl_sha256_before": "b99fdb0fcac3a800",
+  "script_sha256": "e5cfa10ba34aaefd",
+  "counts": {
+    "processed": 30,
+    "recurated": 0,
+    "unchanged": 8,
+    "skipped_out_of_scope": 4,
+    "skipped_no_match": 18
+  },
+  "outcomes": [
+    {
+      "id": "ev-rules-0001",
+      "curated_title": "Foo Fighters",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0002",
+      "curated_title": "Stranger Things",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0003",
+      "curated_title": "Godzilla",
+      "resolved_manufacturer": "sega",
+      "resolved_opdb_id": "G5po2-MeP6B",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-rules-0004",
+      "curated_title": "Iron Maiden",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0005",
+      "curated_title": "The Wizard of Oz",
+      "resolved_manufacturer": "jjp",
+      "resolved_opdb_id": "G4xyR-MJ2v0",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-rules-0006",
+      "curated_title": "Dialed In!",
+      "resolved_manufacturer": "jjp",
+      "resolved_opdb_id": "G4X2l-MYepl",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-rules-0007",
+      "curated_title": "The Beatles",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0008",
+      "curated_title": "AC/DC",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0009",
+      "curated_title": "Metallica",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-rules-0010",
+      "curated_title": "Rush",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0001",
+      "curated_title": "Foo Fighters",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0002",
+      "curated_title": "Stranger Things",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0003",
+      "curated_title": "Dialed In!",
+      "resolved_manufacturer": "jjp",
+      "resolved_opdb_id": "G4X2l-MYepl",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-valuation-0004",
+      "curated_title": "Godzilla",
+      "resolved_manufacturer": "sega",
+      "resolved_opdb_id": "G5po2-MeP6B",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-valuation-0005",
+      "status": "out_of_scope"
+    },
+    {
+      "id": "ev-valuation-0006",
+      "curated_title": "Iron Maiden",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0007",
+      "curated_title": "The Wizard of Oz",
+      "resolved_manufacturer": "jjp",
+      "resolved_opdb_id": "G4xyR-MJ2v0",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-valuation-0008",
+      "curated_title": "The Beatles",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0009",
+      "curated_title": "Rush",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-valuation-0010",
+      "status": "out_of_scope"
+    },
+    {
+      "id": "ev-repair-0001",
+      "curated_title": "Foo Fighters",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0002",
+      "curated_title": "Stranger Things",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0003",
+      "curated_title": "Godzilla",
+      "resolved_manufacturer": "sega",
+      "resolved_opdb_id": "G5po2-MeP6B",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-repair-0004",
+      "curated_title": "Iron Maiden",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0005",
+      "curated_title": "The Wizard of Oz",
+      "resolved_manufacturer": "jjp",
+      "resolved_opdb_id": "G4xyR-MJ2v0",
+      "status": "unchanged"
+    },
+    {
+      "id": "ev-repair-0006",
+      "curated_title": "AC/DC",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0007",
+      "curated_title": "The Beatles",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0008",
+      "curated_title": "Rush",
+      "status": "no_match"
+    },
+    {
+      "id": "ev-repair-0009",
+      "status": "out_of_scope"
+    },
+    {
+      "id": "ev-repair-0010",
+      "status": "out_of_scope"
+    }
+  ]
+}

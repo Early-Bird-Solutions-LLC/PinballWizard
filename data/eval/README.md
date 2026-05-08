@@ -110,3 +110,52 @@ the `AAIP001` experimental diagnostic and the operations-client method
 is non-public); a future SDK version will flip the harness's planned-
 registration noop into a real round-trip without changing
 `IEvaluationHarness` or the results JSON shape.
+
+## Phase 4 W1-3 — recuration against deployed Cosmos (2026-05-08)
+
+The v1 ground-truth shipped in Phase 3 PR 8 was hand-curated by a
+subagent against plausible OPDB-format ids ("GRBN-MQR4P", etc.). The
+deployed Cosmos catalog contains the **actual** OPDB ids and they did
+not match — the Phase 3 H2 baseline (`citation_precision=0.133`) was
+artificially floored because every successful tool call cited a real
+id while `expected_citation_set` held a fictional one. See Phase 3
+retrospective lesson 5 in
+[`docs/build-spec.md`](../../docs/build-spec.md) and
+[`docs/build-spec.md`](../../docs/build-spec.md) § Phase 4 § Scope
+item 9 for the spec.
+
+Recuration is performed by [`tools/eval/Recurate.csx`](../../tools/eval/Recurate.csx),
+a `dotnet-script` tool that queries the deployed Cosmos `machines`
+container for each question's curated machine title and rewrites
+`expected_citation_set` with the actual document id. The script reads
+its question→title map from
+[`tools/eval/wizard.v1.titles.json`](../../tools/eval/wizard.v1.titles.json)
+and writes a provenance side-car at
+[`data/eval/wizard.v1.recuration.json`](wizard.v1.recuration.json)
+recording the recuration timestamp, Cosmos endpoint, jsonl SHA before
+recuration, script SHA, and per-question outcome.
+
+**First recuration run (2026-05-08):** 8 of 30 questions resolved
+to an actual deployed-Cosmos id (Godzilla, The Wizard of Oz, Dialed
+In!). 18 questions did not resolve — their reference machines (Foo
+Fighters, Stranger Things, Iron Maiden, The Beatles, AC/DC,
+Metallica, Rush) are absent from the current OPDB sync's view of the
+catalog or appear only as edition-suffixed records ("AC/DC (Pro)").
+Their `expected_citation_set` was left untouched per the script's
+no-fabrication contract. 4 out-of-scope rows were skipped (correct).
+
+The 18 unresolved questions are an honest signal, not a bug: until
+the deployed catalog actually contains a record the agent could cite,
+those questions cannot drive a non-zero `citation_precision` and
+keeping the fictional ids in `expected_citation_set` makes that
+visible in the metric. Phase 4 follow-up — once the catalog is
+re-synced or the questions are re-targeted at machines that ARE in
+the catalog, re-run the script. It is idempotent: a re-run that
+finds no new matches produces zero diffs.
+
+**Operational note for future recurations:** ensure `az login` is
+active on the personal Earlybird subscription before invoking the
+script; the script authenticates via `DefaultAzureCredential` to
+mirror the production wiring. Always run with `--dry-run` first to
+review proposed changes; the dry run prints the same per-question
+table as the live run but writes nothing.
