@@ -103,7 +103,7 @@ public static class EvalQuestionParser
             // tolerate null deserialization (older curator lines that
             // leave it implicit) by substituting an empty list — that
             // matches the acceptable_refusal=true semantic.
-            var citations = question.ExpectedCitationSet ?? Array.Empty<string>();
+            var citations = question.ExpectedCitationSet ?? [];
             results.Add(question with { ExpectedCitationSet = citations });
         }
 

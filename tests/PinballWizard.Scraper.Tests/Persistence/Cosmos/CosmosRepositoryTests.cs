@@ -224,7 +224,7 @@ public sealed class CosmosRepositoryTests
         QueryDefinition? capturedQuery = null;
         _container
             .GetItemQueryIterator<TestEntity>(Arg.Do<QueryDefinition>(q => capturedQuery = q), Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<TestEntity>([Array.Empty<TestEntity>()]));
+            .Returns(new FakeFeedIterator<TestEntity>([[]]));
 
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal)
         {
@@ -254,7 +254,7 @@ public sealed class CosmosRepositoryTests
         QueryRequestOptions? capturedOptions = null;
         _container
             .GetItemQueryIterator<TestEntity>(Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Do<QueryRequestOptions>(o => capturedOptions = o))
-            .Returns(new FakeFeedIterator<TestEntity>([Array.Empty<TestEntity>()]));
+            .Returns(new FakeFeedIterator<TestEntity>([[]]));
 
         await foreach (var _ in _repository.StreamAsync("SELECT * FROM c", parameters: null, partitionKey: null, CancellationToken.None))
         {

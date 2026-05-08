@@ -22,8 +22,8 @@ public sealed record ExtractedDocument(
     public static ExtractedDocument Failure(ExtractionStatus status, string error) => new(
         Status: status,
         Text: string.Empty,
-        Pages: Array.Empty<ExtractedPage>(),
-        Outline: Array.Empty<OutlineEntry>(),
+        Pages: [],
+        Outline: [],
         Error: error);
 }
 

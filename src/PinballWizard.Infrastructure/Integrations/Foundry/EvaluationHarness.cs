@@ -235,7 +235,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var durationMs = stopwatch.Elapsed.TotalMilliseconds;
 
         var predictedCitations = answer is null
-            ? Array.Empty<string>()
+            ? []
             : ExtractCitationIds(answer.Citations);
         var predictedSubAgent = answer?.SubAgentUsed ?? string.Empty;
         var predictedRefusal = answer?.IsRefusal ?? false;
@@ -262,11 +262,11 @@ public sealed class EvaluationHarness : IEvaluationHarness
             Error: error);
     }
 
-    private static IReadOnlyList<string> ExtractCitationIds(IReadOnlyList<Citation> citations)
+    private static List<string> ExtractCitationIds(IReadOnlyList<Citation> citations)
     {
         if (citations.Count == 0)
         {
-            return Array.Empty<string>();
+            return [];
         }
 
         var ids = new List<string>(citations.Count);

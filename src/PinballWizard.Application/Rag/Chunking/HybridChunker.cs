@@ -76,13 +76,13 @@ public sealed class HybridChunker : IChunker
             _logger.LogDebug(
                 "Chunk called with non-Success ExtractedDocument (Status={Status}); returning empty.",
                 document.Status);
-            return Array.Empty<Chunk>();
+            return [];
         }
 
         if (document.Pages.Count == 0)
         {
             _logger.LogDebug("Chunk called with zero pages; returning empty.");
-            return Array.Empty<Chunk>();
+            return [];
         }
 
         var strippedPages = StripRepeatingHeadersFooters(document.Pages);
@@ -93,7 +93,7 @@ public sealed class HybridChunker : IChunker
             _logger.LogInformation(
                 "Document {DocumentId} produced zero non-empty sections after header/footer strip; emitting no chunks.",
                 request.DocumentId);
-            return Array.Empty<Chunk>();
+            return [];
         }
 
         var chunks = new List<Chunk>(capacity: sections.Count * 2);
@@ -202,7 +202,7 @@ public sealed class HybridChunker : IChunker
             }
             var nonEmpty = pages.Where(p => !string.IsNullOrWhiteSpace(p.Text)).ToList();
             return nonEmpty.Count == 0
-                ? Array.Empty<Section>()
+                ? []
                 : new[] { new Section(string.Empty, nonEmpty) };
         }
 

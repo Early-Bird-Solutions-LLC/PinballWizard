@@ -54,9 +54,9 @@ public static class SubAgentTraceReader
         // outside the wizard.RunAsync try/catch). Sibling
         // ToolTraceCitationExtractor was hardened symmetrically in the
         // same PR.
-        foreach (var message in response.Messages ?? Array.Empty<ChatMessage>())
+        foreach (var message in response.Messages ?? [])
         {
-            foreach (var content in message.Contents ?? Array.Empty<AIContent>())
+            foreach (var content in message.Contents ?? [])
             {
                 if (content is not FunctionCallContent call)
                 {
