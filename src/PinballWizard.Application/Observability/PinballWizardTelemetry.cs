@@ -123,6 +123,11 @@ public static class PinballWizardTelemetry
         unit: "{citation}",
         description: "Citations attached to a Wizard answer. Tagged with source (tool_trace | regex_legacy) per ADR-0022 — during the Phase 4 cutover both extractors run; tool_trace is the primary and regex_legacy runs in parallel for behavioral comparison. The relative counts surface drift before the H3 eval baseline rerun.");
 
+    public static readonly Counter<long> AiToolErrors = Meter.CreateCounter<long>(
+        "pinwiz.ai.tool_errors_total",
+        unit: "{call}",
+        description: "Function-tool calls that surfaced an exception inside the tool's catch boundary (the tool returned an empty result rather than rethrowing — see ADR-0023 § Negative consequence #3). Tagged with `tool` (searchCorpus | getMachineByTitle). Distinguishes retrieval-side failures (which become NoCitation refusals) from agent-didn't-call-tool refusals — both can produce empty citation sets but operationally they need different alerts.");
+
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6
     // dashboards aggregate them as a "metric trajectory" surface alongside

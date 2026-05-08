@@ -212,6 +212,142 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Empty(citations);
     }
 
+    [Fact]
+    public void Extract_SearchCorpusResult_ProducesOneCitationPerDocumentId()
+    {
+        // Per ADR-0022 § Algorithm step 2: multiple chunks from the
+        // same document collapse to one citation. Two chunks from
+        // doc_x and one from doc_y → exactly two citations.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_x", documentUrl: "https://example/manual_x.pdf",
+                      machineId: "GRBE-MJL05", section: "Section A", pageStart: 1, pageEnd: 1),
+            SampleHit(documentId: "doc_x", documentUrl: "https://example/manual_x.pdf",
+                      machineId: "GRBE-MJL05", section: "Section B", pageStart: 5, pageEnd: 6),
+            SampleHit(documentId: "doc_y", documentUrl: "https://example/bulletin_y.pdf",
+                      machineId: "GRBE-MJL05", section: "Bulletin Top", pageStart: 1, pageEnd: 1),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c => c.SourceUrl == "https://example/manual_x.pdf");
+        Assert.Contains(citations, c => c.SourceUrl == "https://example/bulletin_y.pdf");
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_TitleCarriesPageRangeAndSection()
+    {
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      machineTitle: "Godzilla (Premium)", section: "Coil Replacement",
+                      pageStart: 12, pageEnd: 14),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Contains("Godzilla (Premium)", citation.Title);
+        Assert.Contains("Coil Replacement", citation.Title);
+        Assert.Contains("12", citation.Title);
+        Assert.Contains("14", citation.Title);
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_SinglePage_TitleUsesSinglePageForm()
+    {
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      pageStart: 7, pageEnd: 7),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Contains("p. 7", citation.Title);
+        Assert.DoesNotContain("p. 7–7", citation.Title);
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_PopulatesDocumentChunkIdAndMachineId()
+    {
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      machineId: "GRBE-MJL05"),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("doc_a", citation.DocumentChunkId);
+        Assert.Equal("GRBE-MJL05", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_EmptyHits_NoCitations()
+    {
+        var response = BuildAgentResponseWithToolResult("searchCorpus", new SearchCorpusResult([]));
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_BlankUrl_Skipped()
+    {
+        // Defensive: an indexer bug could produce empty document_url;
+        // the extractor must not produce a citation with empty SourceUrl.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: ""),
+            SampleHit(documentId: "doc_b", documentUrl: "https://example/ok.pdf"),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("https://example/ok.pdf", citation.SourceUrl);
+    }
+
+    [Fact]
+    public void Extract_GetMachineByTitleAndSearchCorpus_BothChannels_UnionsCitations()
+    {
+        // End-to-end shape: the Wizard's trace contains both an OPDB
+        // grounding result AND a corpus retrieval. Both surface as
+        // citations; the seenUrls dedup is keyed by SourceUrl, so a
+        // distinct OPDB URL and a distinct manual URL count separately.
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      machineId: "GRBE-MJL05"),
+        ]);
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_1", dto)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_2", corpus)]));
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c => c.SourceUrl == "https://opdb.org/machines/GRBE-MJL05");
+        Assert.Contains(citations, c => c.SourceUrl == "https://example/manual.pdf");
+    }
+
+    private static SearchCorpusHit SampleHit(
+        string documentId,
+        string documentUrl,
+        string machineId = "GRBE-MJL05",
+        string machineTitle = "Godzilla (Premium)",
+        string section = "Section",
+        int pageStart = 1,
+        int pageEnd = 1)
+    {
+        return new SearchCorpusHit(
+            MachineId: machineId,
+            MachineTitle: machineTitle,
+            DocumentId: documentId,
+            DocumentUrl: documentUrl,
+            DocumentType: "manual",
+            PageStart: pageStart,
+            PageEnd: pageEnd,
+            SectionHeading: section,
+            Content: "chunk content");
+    }
+
     private static MachineGroundingDto SampleGroundingDto(string opdbId, string title)
     {
         return new MachineGroundingDto(
