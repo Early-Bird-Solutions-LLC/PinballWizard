@@ -19,12 +19,18 @@ namespace PinballWizard.Application.Ai;
 //   W1-1 — connected sub-agents wired via AsAIFunction() in
 //          FoundryAgentFactory; the Wizard now structurally dispatches
 //          to Valuation/Rules/Repair as function tools.
-//   W1-2 — THIS PR. Replaces the inline regex over Wizard prose with
+//   W1-2 — Replaces the inline regex over Wizard prose with
 //          ToolTraceCitationExtractor reading citations from the
 //          AgentResponse's tool-call result trace per ADR-0022. The
 //          legacy regex extractor runs in parallel for cutover
 //          observability (pinwiz.ai.citations.extracted_total{source=...})
 //          until H2 confirms parity-or-better; then it gets deleted.
+//   W2-1 — THIS PR. Reads SubAgentUsed from the AgentResponse's
+//          tool-call trace via SubAgentTraceReader, replacing the
+//          PR 4 always-"Wizard" placeholder. Closes Phase 3 follow-up
+//          #4 — the eval surface can now distinguish Wizard direct
+//          answers from sub-agent dispatch, which the H2 baseline's
+//          subagent_accuracy=0.033 made measurably visible.
 public sealed class AiRouter : IAiRouter
 {
     private readonly IFoundryAgentFactory _agentFactory;
@@ -110,6 +116,14 @@ public sealed class AiRouter : IAiRouter
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
 
+        // W2-1: which sub-agent (if any) the Wizard dispatched to.
+        // Read once from the trace and reused at every downstream
+        // attribution site (cost telemetry, refusal telemetry, and
+        // the WizardAnswer.SubAgentUsed field). Falls back to
+        // AgentName.Wizard when no sub-agent function call appears —
+        // the Wizard answered directly without delegating.
+        var subAgentUsed = SubAgentTraceReader.Read(response);
+
         // Cost attribution per ADR-0015. ITokenUsageReader returns null
         // when usage isn't yet exposed by Microsoft.Agents.AI (1.4.0
         // does not standardize a Usage property — see issue #2688).
@@ -130,7 +144,7 @@ public sealed class AiRouter : IAiRouter
                     PinballWizardTelemetry.AiCostUsdCents.Add(
                         (long)Math.Ceiling(costUsdCents),
                         new KeyValuePair<string, object?>("model", wizardModel),
-                        new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard),
+                        new KeyValuePair<string, object?>("sub_agent", subAgentUsed),
                         new KeyValuePair<string, object?>("prompt_version", promptVersion));
                 }
             }
@@ -149,18 +163,19 @@ public sealed class AiRouter : IAiRouter
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
                 new KeyValuePair<string, object?>("refusal_category", RefusalCategory.CostCeilingHit.ToString()),
-                new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard));
+                new KeyValuePair<string, object?>("sub_agent", subAgentUsed));
 
             _logger.LogInformation(
-                "AiRouter refused on cost ceiling: cost={CostUsdCents:F2}c ceiling={Ceiling}c model={Model}",
+                "AiRouter refused on cost ceiling: cost={CostUsdCents:F2}c ceiling={Ceiling}c model={Model} subAgent={SubAgent}",
                 costUsdCents,
                 _options.PerCallCostCeilingUsdCents,
-                wizardModel);
+                wizardModel,
+                subAgentUsed);
 
             var ceilingAnswer = new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.CostCeilingHit),
                 Citations: Array.Empty<Citation>(),
-                SubAgentUsed: AgentName.Wizard,
+                SubAgentUsed: subAgentUsed,
                 Confidence: 0.0,
                 Escalated: false,
                 IsRefusal: true,
@@ -204,13 +219,14 @@ public sealed class AiRouter : IAiRouter
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
                 new KeyValuePair<string, object?>("refusal_category", category.ToString()),
-                new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard));
+                new KeyValuePair<string, object?>("sub_agent", subAgentUsed));
 
             _logger.LogInformation(
-                "AiRouter refused below-threshold answer: confidence={Confidence:F3} threshold={Threshold:F3} category={Category} signals=[r={R:F2} m={M:F2} c={C:F2}]",
+                "AiRouter refused below-threshold answer: confidence={Confidence:F3} threshold={Threshold:F3} category={Category} subAgent={SubAgent} signals=[r={R:F2} m={M:F2} c={C:F2}]",
                 confidence,
                 _options.ConfidenceThreshold,
                 category,
+                subAgentUsed,
                 signals.RetrievalSimilarity,
                 signals.ModelSelfReported,
                 signals.CitationCoverage);
@@ -218,7 +234,7 @@ public sealed class AiRouter : IAiRouter
             answer = new WizardAnswer(
                 Text: BuildRefusalText(category),
                 Citations: Array.Empty<Citation>(),
-                SubAgentUsed: AgentName.Wizard,
+                SubAgentUsed: subAgentUsed,
                 Confidence: confidence,
                 Escalated: false,
                 IsRefusal: true,
@@ -228,16 +244,21 @@ public sealed class AiRouter : IAiRouter
         }
         else
         {
-            // PR 6 placeholder: SubAgentUsed remains "Wizard" until a
-            // future PR reads Foundry's connected-agent trace
-            // correlation. The Wizard prompt's routing happens inside
-            // Foundry's agent dispatch, so the user-question layer
-            // sees "Wizard" answered (which is true at the orchestrator
-            // level even when a sub-agent did the heavy lift).
+            // Debug-level (not Info) so per-question log volume stays
+            // bounded; correlates a single answer's sub-agent to the
+            // citations it produced when triaging an outlier vs.
+            // the OTel-tagged metrics. Mirrors the refusal paths'
+            // observability posture.
+            _logger.LogDebug(
+                "AiRouter answered: subAgent={SubAgent} confidence={Confidence:F3} citations={CitationCount}",
+                subAgentUsed,
+                confidence,
+                citations.Count);
+
             answer = new WizardAnswer(
                 Text: responseText,
                 Citations: citations,
-                SubAgentUsed: AgentName.Wizard,
+                SubAgentUsed: subAgentUsed,
                 Confidence: confidence,
                 Escalated: false,
                 IsRefusal: false,
