@@ -18,42 +18,32 @@ Every architectural decision is justified in an [ADR](docs/adr/). Every PR clear
 
 ## Architecture at a glance
 
-```text
-   Manufacturer sites          OPDB API
-   (Stern, JJP, AP, Spooky,    (canonical machine catalog)
-    Pinball Brothers, BoF,
-    Multimorphic, CGC)
-          │                       │
-          ▼                       ▼
-    Polite scrapers ──────────────┘
-    (PoliteScraperBase + IPolitenessGate +
-     RobotsTxtCache; robots.txt honored unconditionally)
-          │
-          ▼
-       Cosmos DB ──── Change Feed ───► Azure Function
-       (machines,                       (PdfPig + chunking
-        ingestion_sources)               + embedding)
-          │                                  │
-          │                                  ▼
-          │                              AI Search Basic
-          │                              (hybrid + semantic ranker)
-          │                                  │
-          └─────────► Wizard router ◄────────┘
-                      (Semantic Kernel +
-                       sub-agents + threshold-driven refusal)
-                              │
-                              ▼
-                      Blazor + MudBlazor
-                      (Wizard chat with source citations,
-                       admin RBAC via Entra External ID)
-                              │
-                              ▼
-                       Cloudflare Pro edge
-                       (DNS + CDN + WAF + Bot Fight)
-                              │
-                              ▼
-                          pinwiz.ai
+```mermaid
+graph TB
+    Mfg(Manufacturer sites)
+    OPDB(OPDB API)
+    Scrapers[Polite scrapers]
+    Cosmos[(Cosmos DB)]
+    Func[Change Feed Function]
+    Search[(AI Search Basic)]
+    Wizard[Wizard router]
+    UI[Blazor + MudBlazor]
+    CF(Cloudflare Pro edge)
+    Site([pinwiz.ai])
+
+    Mfg --> Scrapers
+    OPDB --> Scrapers
+    Scrapers --> Cosmos
+    Cosmos -->|Change Feed| Func
+    Func --> Search
+    Cosmos --> Wizard
+    Search --> Wizard
+    Wizard --> UI
+    UI --> CF
+    CF --> Site
 ```
+
+Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines` and `ingestion_sources`; the Change Feed Function does PdfPig extraction + chunking + embedding into AI Search (hybrid + semantic ranker). The Wizard router (Semantic Kernel + sub-agents + threshold-driven refusal) drives the Blazor + MudBlazor chat surface with source citations and admin RBAC via Entra External ID. Cloudflare Pro provides DNS + CDN + WAF + Bot Fight.
 
 Phase 1 (scrapers + Cosmos persistence + Aspire foundation + ARM-backed deploy) is complete and validated end-to-end against deployed Azure infrastructure. Phases 2–6 are scaffolded in [`docs/build-spec.md`](docs/build-spec.md) with concrete exit criteria.
 
