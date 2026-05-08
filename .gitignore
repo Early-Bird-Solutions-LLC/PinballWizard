@@ -8,12 +8,15 @@ publish/
 .vscode/
 .claude/
 # Project-scoped skills + commands are checked in (they apply for every
-# contributor); everything else under .claude/ — runtime history,
-# scheduled-task locks, machine-local settings — stays ignored.
+# contributor); the shared settings.json (allowlist) is also checked in
+# so every clone gets the same baseline. Everything else under .claude/
+# — runtime history, scheduled-task locks, per-user settings.local.json
+# — stays ignored.
 !.claude/skills/
 !.claude/skills/**
 !.claude/commands/
 !.claude/commands/**
+!.claude/settings.json
 *.user
 *.suo
 *.DotSettings.user
