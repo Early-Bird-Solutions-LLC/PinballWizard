@@ -89,23 +89,26 @@ Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloud
 
 ## 3. Data flow (RAG pipeline)
 
-```text
-pinball-scraper (ACA Job, daily 03:00)
-    ↓ writes
-pinball-raw/        ← Scraper output (PDFs, ZIPs, SPKs) + catalog.json + games.json
-    ↓ trigger
-pinball-indexer (ACA Job, daily 03:30 — SHA-driven idempotent)
-    ↓ PdfPig text extraction → page-aware chunking (2000 chars / 400 overlap)
-    ↓ + metadata-card chunk per game (synthesized prose)
-[Azure OpenAI: text-embedding-3-large]
-    ↓
-[Azure AI Search Basic — index: pinball_chunks]
-    ↑ hybrid search + semantic ranker
-pinball-api (ACA App)
-    ↓ POST /query
-[Azure OpenAI: gpt-4o-mini default → gpt-4.1 escalation]
-    ↓
-Razor UI ← attributed response w/ clickable sternpinball.com citations
+```mermaid
+graph TB
+    Scraper[pinball-scraper ACA Job<br/>daily 03:00]
+    Raw[(pinball-raw blob<br/>PDFs/ZIPs/SPKs + catalog.json + games.json)]
+    Indexer[pinball-indexer ACA Job<br/>daily 03:30, SHA-driven idempotent]
+    Chunker[PdfPig extract<br/>page-aware chunking 2000/400<br/>+ metadata-card chunk per game]
+    Embed(Azure OpenAI<br/>text-embedding-3-large)
+    Search[(Azure AI Search Basic<br/>index: pinball_chunks)]
+    Api(pinball-api ACA App)
+    Completion(Azure OpenAI<br/>gpt-4o-mini default<br/>gpt-4.1 escalation)
+    UI[Razor UI<br/>attributed response + citations]
+
+    Scraper -->|writes| Raw
+    Raw -->|trigger| Indexer
+    Indexer --> Chunker
+    Chunker --> Embed
+    Embed --> Search
+    Api -->|POST /query, hybrid + semantic| Search
+    Api --> Completion
+    Completion --> UI
 ```
 
 API and indexer share the same AI Search index. There is no alternative backend.
@@ -116,36 +119,56 @@ API and indexer share the same AI Search index. There is no alternative backend.
 
 ### 4.1 Ingestion pipeline
 
-```text
-Scraper Output (Phase 1, ACA Job)   Indexer (Phase 2, ACA Job)
-─────────────────────────────       ──────────────────────────
-catalog.json ─────────────────────► CatalogParser (reads catalog.json from blob)
-games.json   ─────────────────────► PdfChunker (PdfPig → page-aware chunks,
-downloads/   ─────────────────────►              2000 chars / 400 overlap,
-                                                 metadata-card chunks per game)
-                                    EmbeddingService (text-embedding-3-large)
-                                    ProvenanceMapper (chunk → document_id → catalog)
-                                    AiSearchIndexer (upsert into pinball_chunks)
-                                    SHA-driven idempotency: skip unchanged docs
+```mermaid
+graph LR
+    subgraph Phase1[Scraper Output - Phase 1, ACA Job]
+        Catalog[catalog.json]
+        Games[games.json]
+        Downloads[downloads/]
+    end
+
+    subgraph Phase2[Indexer - Phase 2, ACA Job]
+        Parser[CatalogParser<br/>reads catalog.json from blob]
+        Chunker[PdfChunker<br/>PdfPig page-aware chunks<br/>2000 chars / 400 overlap<br/>+ metadata-card chunk per game]
+        Embed[EmbeddingService<br/>text-embedding-3-large]
+        Mapper[ProvenanceMapper<br/>chunk to document_id to catalog]
+        Indexer[AiSearchIndexer<br/>upsert into pinball_chunks<br/>SHA-driven idempotency]
+    end
+
+    Catalog --> Parser
+    Games --> Chunker
+    Downloads --> Chunker
+    Parser --> Chunker
+    Chunker --> Embed
+    Embed --> Mapper
+    Mapper --> Indexer
 ```
 
 ### 4.2 Query pipeline
 
-```text
-User: "What's the wiring for Stranger Things trough opto?"
+```mermaid
+graph TB
+    User([User question])
+    Api(POST /query<br/>pinball-api ACA App)
+    Embed[EmbeddingService<br/>embed query, text-embedding-3-large]
+    Search[(AI Search<br/>hybrid + semantic ranker)]
+    Threshold{semantic_score >= 0.6?}
+    Refusal([No-answer response<br/>+ sternpinball.com search link])
+    Provenance[ProvenanceMapper<br/>document_id to full attribution]
+    Completion(CompletionService<br/>gpt-4o-mini default<br/>gpt-4.1 escalation)
+    Answer([Answer + citations<br/>clickable source links])
 
-  → POST /query (pinball-api ACA App)
-      ├── EmbeddingService → embed query (text-embedding-3-large)
-      ├── SearchService → AI Search hybrid search + semantic ranker
-      │     Returns: [chunk_id, document_id, page_range, score, semantic_score]
-      ├── ThresholdGate → if top semantic_score < 0.6, return "no answer found"
-      │                   with sternpinball.com search link (no hallucination)
-      ├── ProvenanceMapper → resolve document_id → full attribution chain
-      │     Returns: file_url, discovery_url, game, edition, doc_type
-      └── CompletionService → router (gpt-4o-mini default,
-                                       gpt-4.1 escalation on hard queries)
-            Returns: answer + citations with clickable sternpinball.com links
+    User --> Api
+    Api --> Embed
+    Embed --> Search
+    Search --> Threshold
+    Threshold -->|No| Refusal
+    Threshold -->|Yes| Provenance
+    Provenance --> Completion
+    Completion --> Answer
 ```
+
+Example query: *"What's the wiring for Stranger Things trough opto?"* — embedding + hybrid retrieval returns top-K chunks; the threshold gate enforces refuse-rather-than-fabricate; provenance lookup populates the citation; the completion router picks model tier per query difficulty.
 
 ### 4.3 Search index schema (Azure AI Search)
 
@@ -196,19 +219,28 @@ view that gets rebuilt from scratch if anything goes wrong.
 
 ### 4.4 RAG attribution chain (end-to-end)
 
+```mermaid
+graph TB
+    Q([User question])
+    Embed[Embed query<br/>text-embedding-3-large]
+    Search[(AI Search<br/>hybrid + semantic ranker<br/>top-K chunks)]
+    Provenance[Each chunk carries denormalized provenance<br/>file_url, discovery_url, game_slug, game_title,<br/>edition, document_type, page_start/end]
+    Response([Answer + citation<br/>no join needed])
+
+    Q --> Embed
+    Embed --> Search
+    Search --> Provenance
+    Provenance --> Response
+```
+
+Example response format:
+
 ```text
-User question
-  → embed (text-embedding-3-large)
-  → AI Search hybrid + semantic ranker → top-K chunks
-  → each chunk carries denormalized provenance (no join needed):
-      file_url, discovery_url, game_slug, game_title, edition, document_type, page_start/end
+"The trough opto board uses a 12V supply with..."
 
-Response format:
-  "The trough opto board uses a 12V supply with..."
-
-  Source: Stranger Things Pro Manual, pp. 23-24
-     Direct link: https://sternpinball.com/wp-content/.../StrangerThings_Pro_web.pdf
-     Found at: https://sternpinball.com/game/stranger-things/ → Specs & Manual tab
+Source: Stranger Things Pro Manual, pp. 23-24
+   Direct link: https://sternpinball.com/wp-content/.../StrangerThings_Pro_web.pdf
+   Found at: https://sternpinball.com/game/stranger-things/ → Specs & Manual tab
 ```
 
 ---

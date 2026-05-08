@@ -61,22 +61,26 @@ Both are **small, focused PRs**. They unblock everything downstream, so they shi
 
 ## 3. Critical path
 
-```
-Track A.1 (hygiene + ADRs) ─────────────────────────────────────────────────────►
-                                                                                 
-Gate 1 (Cosmos schema) ────┬──► Track C (AI/Integration) ──────────────────────►
-                           │                                                     
-                           ├──► Track D (Event-driven RAG) ────────────────────►
-                           │                                                     
-                           └──► Track E (Frontend) ───────────────────────────►
-                                                                                 
-Gate 2 (PoliteScraper) ────┬──► Track B-JJP    ─────────────────────────────►   
-                           ├──► Track B-AP     ─────────────────────────────►   
-                           └──► Track B-Spooky ─────────────────────────────►   
-                                                                                 
-Track B-OPDB (independent of both gates) ──────────────────────────────────►    
-                                                                                 
-Track A.2-A.4 (Bicep, CI enhancements) (mostly parallel with everything) ───►   
+```mermaid
+graph LR
+    A1[Track A.1<br/>hygiene + ADRs]
+    G1[Gate 1<br/>Cosmos schema]
+    G2[Gate 2<br/>PoliteScraper]
+    TC[Track C<br/>AI/Integration]
+    TD[Track D<br/>Event-driven RAG]
+    TE[Track E<br/>Frontend]
+    BJ[Track B-JJP]
+    BA[Track B-AP]
+    BS[Track B-Spooky]
+    BO[Track B-OPDB<br/>independent of both gates]
+    A24[Track A.2-A.4<br/>Bicep, CI enhancements<br/>mostly parallel with everything]
+
+    G1 --> TC
+    G1 --> TD
+    G1 --> TE
+    G2 --> BJ
+    G2 --> BA
+    G2 --> BS
 ```
 
 **The critical path is:** Gate 1 → Track D → Track E (RAG-backed Wizard answering real questions in the public UI). Optimizing **that** path is what minimizes time-to-public-launch.
