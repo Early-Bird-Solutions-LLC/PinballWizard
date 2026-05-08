@@ -159,3 +159,72 @@ script; the script authenticates via `DefaultAzureCredential` to
 mirror the production wiring. Always run with `--dry-run` first to
 review proposed changes; the dry run prints the same per-question
 table as the live run but writes nothing.
+
+### Hardening (2026-05-08) — manufacturer-aware skip-on-mismatch
+
+A spot-check of the W1-3 first run revealed a silent failure mode:
+the 3 Godzilla questions in the eval set are intended for **Stern's
+2021 Godzilla**, but the deployed Cosmos catalog only contains
+**Sega's 1998 Godzilla**. The first version of the recuration script
+issued `SELECT TOP 1 c.id ... STRINGEQUALS(c.title, 'Godzilla', true)`
+and took the first hit blindly — recording the Sega record's id under
+each Godzilla question's `expected_citation_set`. The agent's correct
+answer (about Stern 2021) would have failed eval because its citation
+wouldn't match the (incorrect) Sega ground truth. Same risk class
+exists for any title shared across manufacturers/eras (e.g. multiple
+Star Trek records, multiple Avengers).
+
+The hardening (this PR):
+
+- [`tools/eval/wizard.v1.titles.json`](../../tools/eval/wizard.v1.titles.json)
+  gains an `expected_manufacturer` column (lowercase string matching
+  the deployed catalog's `manufacturer` partition value — e.g.
+  `stern`, `jjp`, `sega`, `americanpinball`). All 30 rows are
+  curated; out-of-scope rows have `expected_manufacturer=null` to
+  match their `machine_title=null`.
+- [`tools/eval/Recurate.csx`](../../tools/eval/Recurate.csx) now
+  queries Cosmos for **all** title matches (not `TOP 1`), then walks
+  the result set and picks the first hit whose `manufacturer`
+  matches `expected_manufacturer` (case-insensitive). If no hit
+  matches, the row is skipped with a new `mfg_mismatch` outcome and
+  the JSONL is left untouched. If `expected_manufacturer` is null on
+  an in-scope row, the script falls back to first-hit-wins and logs
+  a "manufacturer-unconstrained" warning so a future audit can
+  tighten the side-car.
+- The recuration manifest's `counts` block gains
+  `skipped_mfg_mismatch` and `manufacturer_unconstrained` fields;
+  per-row outcomes carry `expected_manufacturer` alongside
+  `resolved_manufacturer` for full audit trail.
+
+**Dry-run verification (2026-05-08):** running
+`dotnet script tools/eval/Recurate.csx -- --dry-run` against the
+same deployed Cosmos endpoint as the W1-3 first run produces:
+
+```text
+Questions processed:           30
+Recurated (id changed):        0
+Unchanged (id matched):        5    (3× The Wizard of Oz, 2× Dialed In!)
+Skipped (out-of-scope):        4    (correct refusals)
+Skipped (no Cosmos hit):       18   (Foo Fighters / Stranger Things /
+                                     Iron Maiden / The Beatles /
+                                     AC/DC / Metallica / Rush —
+                                     Stern catalog absent from
+                                     current OPDB sync)
+Skipped (mfg mismatch):        3    (Godzilla ×3 — expected stern,
+                                     catalog has sega)
+Manufacturer-unconstrained:    0
+```
+
+The 3 Godzilla rows are now correctly flagged rather than silently
+taking Sega's id. The 5 JJP rows resolve identically to the W1-3
+first run (JJP is the only manufacturer that holds those titles).
+
+**Important — this PR ships hardening only.** The live (non-dry-run)
+script was deliberately NOT re-run, because the OPDB sync
+investigation that's looking into why Stern's modern catalog is
+missing from the deployed Cosmos is still open. Running the live
+script before that investigation closes would compound the
+catalog-state issue. The next live recuration run is sequenced after
+the OPDB sync investigation closes; until then, the W1-3 first run's
+artifacts (`data/eval/wizard.v1.jsonl` and
+`data/eval/wizard.v1.recuration.json`) remain authoritative.

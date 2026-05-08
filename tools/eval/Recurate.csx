@@ -15,16 +15,26 @@
 //
 // WHAT IT DOES
 //   For each row in data/eval/wizard.v1.jsonl:
-//     1. Looks up the question's curated machine title in
-//        tools/eval/wizard.v1.titles.json (the side-car).
+//     1. Looks up the question's curated machine title AND the curated
+//        expected_manufacturer in tools/eval/wizard.v1.titles.json
+//        (the side-car).
 //     2. If the title is null (out-of-scope rows; acceptable_refusal=true)
 //        the row's expected_citation_set is left untouched and the row is
 //        recorded as "skipped (out-of-scope)" in the summary.
 //     3. Otherwise queries the deployed Cosmos `machines` container via
 //        IMachineRepository.QueryByTitleAsync semantics — i.e. case-
-//        insensitive STRINGEQUALS on c.title — and reads back the actual
-//        OPDB id (the Cosmos document id).
-//     4. Replaces the row's expected_citation_set with [actualOpdbId].
+//        insensitive STRINGEQUALS on c.title.
+//     4. If expected_manufacturer is non-null, walks the result set and
+//        picks the first hit whose `manufacturer` matches (case-
+//        insensitive). If no hit matches, the row is skipped with status
+//        `mfg_mismatch` and the JSONL is left untouched — this is the
+//        2026-05-08 hardening that catches the silent-mis-match failure
+//        mode where a title is shared across manufacturers (e.g.
+//        Stern's 2021 Godzilla vs. Sega's 1998 Godzilla).
+//     5. If expected_manufacturer is null on an in-scope row, falls back
+//        to first-hit-wins and logs a "manufacturer-unconstrained"
+//        warning so a future audit can tighten the side-car.
+//     6. Replaces the row's expected_citation_set with [actualOpdbId].
 //
 // OUTPUTS
 //   - data/eval/wizard.v1.jsonl              : updated in place (preserves
@@ -168,14 +178,17 @@ string jsonlContentBefore = File.ReadAllText(jsonlPath);
 string jsonlSha = ShortSha256(jsonlContentBefore);
 
 var titlesDoc = JsonDocument.Parse(File.ReadAllText(titlesPath));
-var titleMap = new Dictionary<string, string?>(StringComparer.Ordinal);
+var titleMap = new Dictionary<string, TitleSidecarEntry>(StringComparer.Ordinal);
 foreach (var entry in titlesDoc.RootElement.GetProperty("questions").EnumerateArray())
 {
     string id = entry.GetProperty("id").GetString()!;
     string? title = entry.TryGetProperty("machine_title", out var tEl) && tEl.ValueKind == JsonValueKind.String
         ? tEl.GetString()
         : null;
-    titleMap[id] = title;
+    string? expectedMfg = entry.TryGetProperty("expected_manufacturer", out var mEl) && mEl.ValueKind == JsonValueKind.String
+        ? mEl.GetString()
+        : null;
+    titleMap[id] = new TitleSidecarEntry(title, expectedMfg);
 }
 
 Console.WriteLine($"Recuration script v1 — {(dryRun ? "DRY RUN" : "LIVE")}");
@@ -236,7 +249,7 @@ Console.WriteLine();
 var lines = File.ReadAllLines(jsonlPath);
 var rewritten = new List<string>(lines.Length);
 var outcomes = new List<RecurationOutcome>();
-int processed = 0, recurated = 0, unchanged = 0, skippedOos = 0, skippedNoMatch = 0;
+int processed = 0, recurated = 0, unchanged = 0, skippedOos = 0, skippedNoMatch = 0, skippedMfgMismatch = 0, mfgUnconstrained = 0;
 var stopwatch = Stopwatch.StartNew();
 
 // UnsafeRelaxedJsonEscaping preserves apostrophes / ampersands / em-dashes
@@ -281,33 +294,67 @@ for (int i = 0; i < lines.Length; i++)
 
     processed++;
 
-    if (!titleMap.TryGetValue(row.Id, out var curatedTitle))
+    if (!titleMap.TryGetValue(row.Id, out var sidecar))
     {
         Console.WriteLine($"  [{row.Id}] no entry in titles side-car — leaving unchanged");
-        outcomes.Add(new RecurationOutcome(row.Id, null, null, null, "missing_in_titles_sidecar"));
+        outcomes.Add(new RecurationOutcome(row.Id, null, null, null, null, "missing_in_titles_sidecar"));
         rewritten.Add(raw);
         unchanged++;
         continue;
     }
 
+    string? curatedTitle = sidecar.MachineTitle;
+    string? expectedMfg = sidecar.ExpectedManufacturer;
+
     if (curatedTitle is null)
     {
         Console.WriteLine($"  [{row.Id}] out-of-scope (machine_title=null) — leaving expected_citation_set as-is ([{string.Join(",", row.ExpectedCitationSet)}])");
-        outcomes.Add(new RecurationOutcome(row.Id, null, null, null, "out_of_scope"));
+        outcomes.Add(new RecurationOutcome(row.Id, null, null, null, null, "out_of_scope"));
         rewritten.Add(raw);
         skippedOos++;
         continue;
     }
 
-    var (actualOpdbId, resolvedManufacturer) = await LookupOpdbIdByTitle(container, curatedTitle, default);
+    var hits = await QueryHitsByTitle(container, curatedTitle, default);
 
-    if (actualOpdbId is null)
+    if (hits.Count == 0)
     {
         Console.WriteLine($"  [{row.Id}] title='{curatedTitle}' NOT FOUND in deployed Cosmos — leaving unchanged");
-        outcomes.Add(new RecurationOutcome(row.Id, curatedTitle, null, null, "no_match"));
+        outcomes.Add(new RecurationOutcome(row.Id, curatedTitle, expectedMfg, null, null, "no_match"));
         rewritten.Add(raw);
         skippedNoMatch++;
         continue;
+    }
+
+    string? actualOpdbId;
+    string? resolvedManufacturer;
+
+    if (expectedMfg is null)
+    {
+        // Manufacturer-unconstrained — fall back to first-hit-wins and
+        // log a warning so a future audit can tighten the side-car.
+        var firstHit = hits[0];
+        actualOpdbId = firstHit.Id;
+        resolvedManufacturer = firstHit.Manufacturer;
+        mfgUnconstrained++;
+        Console.WriteLine($"  [{row.Id}] WARNING: manufacturer-unconstrained (expected_manufacturer is null in side-car) — first-hit-wins picked '{actualOpdbId}' (mfg={resolvedManufacturer}); consider adding expected_manufacturer to wizard.v1.titles.json");
+    }
+    else
+    {
+        var match = hits.FirstOrDefault(h =>
+            string.Equals(h.Manufacturer, expectedMfg, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+        {
+            string returnedMfgs = string.Join(", ",
+                hits.Select(h => h.Manufacturer ?? "<null>").Distinct(StringComparer.OrdinalIgnoreCase));
+            Console.WriteLine($"  [{row.Id}] MFG_MISMATCH: title='{curatedTitle}' returned {hits.Count} hit(s) under mfg(s) [{returnedMfgs}] but expected_manufacturer='{expectedMfg}' — leaving unchanged");
+            outcomes.Add(new RecurationOutcome(row.Id, curatedTitle, expectedMfg, null, null, "mfg_mismatch"));
+            rewritten.Add(raw);
+            skippedMfgMismatch++;
+            continue;
+        }
+        actualOpdbId = match.Id;
+        resolvedManufacturer = match.Manufacturer;
     }
 
     string oldCitations = "[" + string.Join(",", row.ExpectedCitationSet) + "]";
@@ -315,7 +362,7 @@ for (int i = 0; i < lines.Length; i++)
     string verdict = oldCitations == newCitations ? "(unchanged)" : "(updated)";
     Console.WriteLine($"  [{row.Id}] title='{curatedTitle}' → {actualOpdbId} (mfg={resolvedManufacturer}) {verdict}");
 
-    outcomes.Add(new RecurationOutcome(row.Id, curatedTitle, resolvedManufacturer, actualOpdbId,
+    outcomes.Add(new RecurationOutcome(row.Id, curatedTitle, expectedMfg, resolvedManufacturer, actualOpdbId,
         oldCitations == newCitations ? "unchanged" : "recurated"));
 
     if (oldCitations != newCitations)
@@ -337,12 +384,14 @@ stopwatch.Stop();
 
 Console.WriteLine();
 Console.WriteLine("Summary");
-Console.WriteLine($"  Questions processed:      {processed}");
-Console.WriteLine($"  Recurated (id changed):   {recurated}");
-Console.WriteLine($"  Unchanged (id matched):   {unchanged}");
-Console.WriteLine($"  Skipped (out-of-scope):   {skippedOos}");
-Console.WriteLine($"  Skipped (no Cosmos hit):  {skippedNoMatch}");
-Console.WriteLine($"  Elapsed:                  {stopwatch.Elapsed.TotalSeconds:F1}s");
+Console.WriteLine($"  Questions processed:           {processed}");
+Console.WriteLine($"  Recurated (id changed):        {recurated}");
+Console.WriteLine($"  Unchanged (id matched):        {unchanged}");
+Console.WriteLine($"  Skipped (out-of-scope):        {skippedOos}");
+Console.WriteLine($"  Skipped (no Cosmos hit):       {skippedNoMatch}");
+Console.WriteLine($"  Skipped (mfg mismatch):        {skippedMfgMismatch}");
+Console.WriteLine($"  Manufacturer-unconstrained:    {mfgUnconstrained}");
+Console.WriteLine($"  Elapsed:                       {stopwatch.Elapsed.TotalSeconds:F1}s");
 Console.WriteLine();
 
 if (skippedNoMatch > 0)
@@ -351,6 +400,22 @@ if (skippedNoMatch > 0)
     Console.WriteLine("Investigate before treating this as a clean baseline:");
     Console.WriteLine("  - is the title in tools/eval/wizard.v1.titles.json the canonical OPDB title?");
     Console.WriteLine("  - is the deployed catalog populated (run --source opdb if missing)?");
+    Console.WriteLine();
+}
+
+if (skippedMfgMismatch > 0)
+{
+    Console.WriteLine("WARNING: one or more curated titles returned hits under a manufacturer that did not match expected_manufacturer.");
+    Console.WriteLine("These rows were left unchanged (no_match-equivalent). Investigate before treating this as a clean baseline:");
+    Console.WriteLine("  - is the deployed catalog missing the expected manufacturer's record (e.g. Stern's modern catalog absent)?");
+    Console.WriteLine("  - or is expected_manufacturer in tools/eval/wizard.v1.titles.json wrong for this question?");
+    Console.WriteLine();
+}
+
+if (mfgUnconstrained > 0)
+{
+    Console.WriteLine("NOTE: one or more in-scope rows have expected_manufacturer=null in the side-car and fell back to first-hit-wins.");
+    Console.WriteLine("Tighten wizard.v1.titles.json by adding the expected manufacturer for each warned row.");
     Console.WriteLine();
 }
 
@@ -373,7 +438,7 @@ var recuration = new RecurationManifest(
     CosmosContainer: CosmosContainer,
     JsonlSha256Before: jsonlSha,
     ScriptSha256: scriptSha,
-    Counts: new RecurationCounts(processed, recurated, unchanged, skippedOos, skippedNoMatch),
+    Counts: new RecurationCounts(processed, recurated, unchanged, skippedOos, skippedNoMatch, skippedMfgMismatch, mfgUnconstrained),
     Outcomes: outcomes
 );
 
@@ -389,28 +454,25 @@ Console.WriteLine($"Wrote: {recurationPath}");
 
 // ---- Helpers ---------------------------------------------------------------
 
-static async Task<(string? Id, string? Manufacturer)> LookupOpdbIdByTitle(Container container, string title, CancellationToken ct)
+static async Task<List<TitleHitWithManufacturer>> QueryHitsByTitle(Container container, string title, CancellationToken ct)
 {
     // Mirrors IMachineRepository.QueryByTitleAsync — case-insensitive
-    // STRINGEQUALS on c.title, cross-partition. Returns the first match's
-    // document id (which is the OPDB id per Machine.Id semantics) plus
-    // the resolved manufacturer for audit-trail purposes (the curator
-    // does not know which manufacturer-partition OPDB filed a given
-    // machine under — for example Stern's Godzilla 2021 lives under the
-    // `sega` partition because OPDB inherits the original Sega-era
-    // record's manufacturer key).
-    var query = new QueryDefinition("SELECT TOP 1 c.id, c.manufacturer FROM c WHERE STRINGEQUALS(c.title, @title, true)")
+    // STRINGEQUALS on c.title, cross-partition. Returns all hits for
+    // the title so the caller can pick the one that matches the
+    // expected manufacturer; titles like "Godzilla" exist under
+    // multiple manufacturer partitions (Stern 2021 vs Sega 1998) and
+    // the W1-3 hardening (2026-05-08) requires walking the full result
+    // set rather than blindly taking the first hit.
+    var query = new QueryDefinition("SELECT c.id, c.manufacturer FROM c WHERE STRINGEQUALS(c.title, @title, true)")
         .WithParameter("@title", title);
+    var results = new List<TitleHitWithManufacturer>();
     using var iter = container.GetItemQueryIterator<TitleHitWithManufacturer>(query);
     while (iter.HasMoreResults)
     {
         var page = await iter.ReadNextAsync(ct);
-        foreach (var hit in page)
-        {
-            return (hit.Id, hit.Manufacturer);
-        }
+        results.AddRange(page);
     }
-    return (null, null);
+    return results;
 }
 
 static string ShortSha256(string content)
@@ -438,9 +500,12 @@ public sealed record TitleHitWithManufacturer(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("manufacturer")] string? Manufacturer);
 
+public sealed record TitleSidecarEntry(string? MachineTitle, string? ExpectedManufacturer);
+
 public sealed record RecurationOutcome(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("curated_title")] string? CuratedTitle,
+    [property: JsonPropertyName("expected_manufacturer")] string? ExpectedManufacturer,
     [property: JsonPropertyName("resolved_manufacturer")] string? ResolvedManufacturer,
     [property: JsonPropertyName("resolved_opdb_id")] string? ResolvedOpdbId,
     [property: JsonPropertyName("status")] string Status);
@@ -450,7 +515,9 @@ public sealed record RecurationCounts(
     [property: JsonPropertyName("recurated")] int Recurated,
     [property: JsonPropertyName("unchanged")] int Unchanged,
     [property: JsonPropertyName("skipped_out_of_scope")] int SkippedOutOfScope,
-    [property: JsonPropertyName("skipped_no_match")] int SkippedNoMatch);
+    [property: JsonPropertyName("skipped_no_match")] int SkippedNoMatch,
+    [property: JsonPropertyName("skipped_mfg_mismatch")] int SkippedMfgMismatch,
+    [property: JsonPropertyName("manufacturer_unconstrained")] int ManufacturerUnconstrained);
 
 public sealed record RecurationManifest(
     [property: JsonPropertyName("recurated_at_utc")] string RecuratedAtUtc,
