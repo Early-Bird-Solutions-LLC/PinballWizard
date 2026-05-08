@@ -18,6 +18,27 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
+
+    <!-- Microsoft.ML.Tokenizers + Cl100kBase data package power the
+         Phase 4 hybrid chunker (ADR-0019). cl100k_base is the BPE
+         tokenizer used by `text-embedding-3-large` (ADR-0020) — pinning
+         it here means chunk token counts match what the embedding model
+         actually sees, so 512-token chunks don't quietly become 600+
+         once they hit the embedder. The data package ships the BPE
+         vocab as an embedded resource that
+         `TiktokenTokenizer.CreateForEncoding("cl100k_base")` discovers
+         via assembly load; both packages are required at runtime. -->
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers.Data.Cl100kBase" Version="2.0.0" />
+
+    <!-- Microsoft.ML.Tokenizers 2.0.0 transitively pulls
+         Microsoft.Bcl.Memory 9.0.4, which has a high-severity vuln
+         (GHSA-73j8-2gch-69rq). Direct-pin to 10.0.7 to override the
+         transitive resolution and clear the NU1903 build break. The
+         override is package-version-floor; remove it once
+         Microsoft.ML.Tokenizers ships a release that depends on
+         Bcl.Memory >= 10.x. -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
