@@ -12,10 +12,13 @@ You need:
 ```bash
 git clone https://github.com/Early-Bird-Solutions-LLC/PinballWizard.git
 cd PinballWizard
+bash scripts/setup-hooks.sh    # activate the pre-push hook (one-time)
 dotnet restore
 dotnet build
 dotnet test
 ```
+
+`scripts/setup-hooks.sh` points your local git config at `.githooks/` and installs a `pre-push` hook that blocks direct pushes to `main` / `master` / `develop`. This is local enforcement of the branch-protection convention; the same rule should also be enabled server-side via GitHub branch protection. The hook is idempotent — safe to re-run.
 
 The `GamePageScraper` and `ServiceBulletinScraper` use Playwright. After your first build, install the Chromium browser binary once:
 
