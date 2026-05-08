@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Observability;
@@ -40,6 +41,13 @@ public sealed class SearchCorpusTool
     internal const int TopKCeiling = 20;
     internal const int TopKDefault = 8;
 
+    // Tool tag value emitted on `pinwiz.ai.tool_duration_ms` and
+    // `pinwiz.ai.tool_errors_total`. Matches the JSON-Schema function
+    // name the Microsoft Agent Framework derives from this method, so
+    // dashboards, prompts, and the MachineGroundingTool sibling all
+    // agree on the label.
+    internal const string ToolTagValue = "searchCorpus";
+
     private readonly IRagRetriever _retriever;
     private readonly ILogger<SearchCorpusTool> _logger;
 
@@ -69,69 +77,88 @@ public sealed class SearchCorpusTool
             return new SearchCorpusResult([]);
         }
 
-        var clampedTopK = ClampTopK(topK);
-        var options = new RetrievalOptions(
-            TopK: clampedTopK,
-            MachineId: NormalizeOptional(machineId),
-            DocumentType: NormalizeOptional(documentType));
-
-        IReadOnlyList<RetrievedChunk> chunks;
+        // Outer Stopwatch + try/finally measures per-tool latency
+        // including the catch path (ADR-0023 fail-closed-on-transport-
+        // error path). Failure latency is operationally meaningful —
+        // a slow-then-empty response and a fast-then-empty response
+        // need different alerts. The retrieval-only timing lives on
+        // `pinwiz.rag.retrieval_duration_ms` separately so dashboards
+        // can subtract retrieval latency from tool latency to surface
+        // tool-side overhead drift.
+        var stopwatch = Stopwatch.StartNew();
         try
         {
-            chunks = await _retriever
-                .RetrieveAsync(query, options, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Cancellation is the caller's intent — propagate.
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // Transport-level failures (auth, network, AI Search 5xx)
-            // are caught + surfaced as empty so the model can't loop
-            // on a transient failure. The tool-errors counter (per
-            // ADR-0023 § Negative consequence #3) tags by `tool` so
-            // operator dashboards distinguish retrieval-side failures
-            // from agent-didn't-call-tool cases — both produce empty
-            // citation sets but they need different alerts.
-            PinballWizardTelemetry.AiToolErrors.Add(1,
-                new KeyValuePair<string, object?>("tool", "searchCorpus"));
-            _logger.LogWarning(
-                ex,
-                "SearchCorpusTool: retriever threw — returning empty result. query length={QueryLength} machineId={MachineId} documentType={DocumentType} topK={TopK}",
+            var clampedTopK = ClampTopK(topK);
+            var options = new RetrievalOptions(
+                TopK: clampedTopK,
+                MachineId: NormalizeOptional(machineId),
+                DocumentType: NormalizeOptional(documentType));
+
+            IReadOnlyList<RetrievedChunk> chunks;
+            try
+            {
+                chunks = await _retriever
+                    .RetrieveAsync(query, options, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is the caller's intent — propagate.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Transport-level failures (auth, network, AI Search 5xx)
+                // are caught + surfaced as empty so the model can't loop
+                // on a transient failure. The tool-errors counter (per
+                // ADR-0023 § Negative consequence #3) tags by `tool` so
+                // operator dashboards distinguish retrieval-side failures
+                // from agent-didn't-call-tool cases — both produce empty
+                // citation sets but they need different alerts.
+                PinballWizardTelemetry.AiToolErrors.Add(1,
+                    new KeyValuePair<string, object?>("tool", ToolTagValue));
+                _logger.LogWarning(
+                    ex,
+                    "SearchCorpusTool: retriever threw — returning empty result. query length={QueryLength} machineId={MachineId} documentType={DocumentType} topK={TopK}",
+                    query.Length,
+                    options.MachineId ?? "(any)",
+                    options.DocumentType ?? "(any)",
+                    options.TopK);
+                return new SearchCorpusResult([]);
+            }
+
+            var hits = new List<SearchCorpusHit>(capacity: chunks.Count);
+            foreach (var chunk in chunks)
+            {
+                hits.Add(new SearchCorpusHit(
+                    MachineId: chunk.MachineId,
+                    MachineTitle: chunk.MachineTitle,
+                    DocumentId: chunk.DocumentId,
+                    DocumentUrl: chunk.DocumentUrl,
+                    DocumentType: chunk.DocumentType,
+                    PageStart: chunk.PageStart,
+                    PageEnd: chunk.PageEnd,
+                    SectionHeading: chunk.SectionHeading,
+                    Content: chunk.Content));
+            }
+
+            _logger.LogDebug(
+                "SearchCorpusTool: query length={QueryLength} hits={HitCount} machineId={MachineId} documentType={DocumentType} topK={TopK}",
                 query.Length,
+                hits.Count,
                 options.MachineId ?? "(any)",
                 options.DocumentType ?? "(any)",
                 options.TopK);
-            return new SearchCorpusResult([]);
-        }
 
-        var hits = new List<SearchCorpusHit>(capacity: chunks.Count);
-        foreach (var chunk in chunks)
+            return new SearchCorpusResult(hits);
+        }
+        finally
         {
-            hits.Add(new SearchCorpusHit(
-                MachineId: chunk.MachineId,
-                MachineTitle: chunk.MachineTitle,
-                DocumentId: chunk.DocumentId,
-                DocumentUrl: chunk.DocumentUrl,
-                DocumentType: chunk.DocumentType,
-                PageStart: chunk.PageStart,
-                PageEnd: chunk.PageEnd,
-                SectionHeading: chunk.SectionHeading,
-                Content: chunk.Content));
+            stopwatch.Stop();
+            PinballWizardTelemetry.AiToolDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("tool", ToolTagValue));
         }
-
-        _logger.LogDebug(
-            "SearchCorpusTool: query length={QueryLength} hits={HitCount} machineId={MachineId} documentType={DocumentType} topK={TopK}",
-            query.Length,
-            hits.Count,
-            options.MachineId ?? "(any)",
-            options.DocumentType ?? "(any)",
-            options.TopK);
-
-        return new SearchCorpusResult(hits);
     }
 
     internal static int ClampTopK(int? requested)

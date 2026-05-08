@@ -109,4 +109,16 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalDurationMs.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalScoreDistribution.Name);
     }
+
+    // Per-tool latency histogram. Drives the §7.1 architecture-v2 user-
+    // delight revisit triggers (200ms p95 structured-records latency,
+    // 500ms cold-start for searchCorpus). Same name/unit pinning posture
+    // as the OPDB and RAG suites above.
+
+    [Fact]
+    public void AiToolDurationMsHistogram_HasExpectedNameAndUnit()
+    {
+        Assert.Equal("pinwiz.ai.tool_duration_ms", PinballWizardTelemetry.AiToolDurationMs.Name);
+        Assert.Equal("ms", PinballWizardTelemetry.AiToolDurationMs.Unit);
+    }
 }
