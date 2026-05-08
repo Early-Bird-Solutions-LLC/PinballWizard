@@ -53,9 +53,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var citations = new List<Citation>();
 
-        foreach (var message in response.Messages)
+        // Null-coalesce both collections: Microsoft.Agents.AI 1.4.0
+        // returns non-null in practice, but a malformed trace returning
+        // null would bubble an NPE out of AiRouter (the call site sits
+        // outside the wizard.RunAsync try/catch). Hardened symmetrically
+        // with SubAgentTraceReader in W2-1.
+        foreach (var message in response.Messages ?? Array.Empty<ChatMessage>())
         {
-            foreach (var content in message.Contents)
+            foreach (var content in message.Contents ?? Array.Empty<AIContent>())
             {
                 if (content is not FunctionResultContent functionResult)
                 {
