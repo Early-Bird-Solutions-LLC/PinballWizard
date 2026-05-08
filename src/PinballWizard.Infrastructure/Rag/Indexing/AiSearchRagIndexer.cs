@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,6 +7,7 @@ using Azure.Search.Documents;
 using Azure.Search.Documents.Models;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
 
@@ -72,6 +74,16 @@ public sealed class AiSearchRagIndexer : IRagIndexer
         }
 
         ValidateOptions(options);
+
+        // Stopwatch wraps the full UpsertAsync body so the histogram captures
+        // user-felt latency including embed-TPM throttling, semaphore waits,
+        // and per-batch upload — not just one SDK call. Emitted in `finally`
+        // so cancellation + transport failures both surface a duration
+        // sample (failures still count as latency the operator paid for).
+        var stopwatch = Stopwatch.StartNew();
+        var documentTypeTag = new KeyValuePair<string, object?>(
+            "document_type",
+            request.DocumentType.ToString());
 
         // Materialize chunk → document mappings up front so the
         // batch-worker code path is purely SDK / I/O, not derivation.
@@ -197,15 +209,42 @@ public sealed class AiSearchRagIndexer : IRagIndexer
             }
         });
 
-        await Task.WhenAll(batchTasks).ConfigureAwait(false);
+        try
+        {
+            await Task.WhenAll(batchTasks).ConfigureAwait(false);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            // Emit duration regardless of success/failure — operators paid
+            // for the latency either way and the histogram should reflect
+            // both shapes. Tag by document_type so dashboards can compare
+            // bulletin-shaped (small, fast) vs. manual-shaped (large,
+            // slower) ingest cost on the same axis.
+            PinballWizardTelemetry.RagIndexingDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                documentTypeTag);
+        }
+
+        // Increment indexed-chunk counter only on success — failures
+        // surface as IndexUpsertResult.Failures and are intentionally NOT
+        // counted as "indexed" (the whole point of the per-doc result
+        // surfacing is to distinguish success volume from attempt volume).
+        if (indexedTotal > 0)
+        {
+            PinballWizardTelemetry.RagIndexedChunks.Add(
+                indexedTotal,
+                documentTypeTag);
+        }
 
         _logger.LogInformation(
-            "RAG index upsert: document={DocumentId} chunks={ChunkCount} indexed={Indexed} failed={Failed} batches={BatchCount}",
+            "RAG index upsert: document={DocumentId} chunks={ChunkCount} indexed={Indexed} failed={Failed} batches={BatchCount} duration={DurationMs:F1}ms",
             request.DocumentId,
             chunks.Count,
             indexedTotal,
             failures.Count,
-            batches.Count);
+            batches.Count,
+            stopwatch.Elapsed.TotalMilliseconds);
 
         return new IndexUpsertResult(indexedTotal, failures);
     }

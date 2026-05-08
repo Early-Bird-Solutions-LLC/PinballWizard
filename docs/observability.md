@@ -139,6 +139,19 @@ Per [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md), the AI surface uses
 
 Activity (trace) name: `pinwiz.ai.router`.
 
+## RAG indexing + retrieval instruments (Phase 4)
+
+Per [ADR-0021](adr/0021-ai-search-index-schema.md), the Phase 4 RAG surface uses Azure AI Search Basic with hybrid retrieval (BM25 + vector + semantic ranking). The `pinwiz.rag.*` instruments below cover both write-side (indexer, W2-3) and read-side (retriever, W3-3) — measured at each component's outer boundary so dashboards see user-felt latency including embed-TPM throttling on the write side and query-embedding cost on the read side.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.rag.indexing_duration_ms` | Histogram | `document_type` | Per-`UpsertAsync` wall-clock — embed batch + AI Search upsert + per-batch result aggregation. Tag breakdown lets dashboards compare bulletin-shaped (small, fast) vs. manual-shaped (large, slower) ingest cost on the same axis. Drives capacity planning at Phase 4.5 corpus scaling vs. the curated-subset baseline. |
+| `pinwiz.rag.indexed_chunks_total` | Counter | `document_type` | Chunks successfully upserted. Per-doc failures (length-exceeded, schema validation) surface as `IndexUpsertResult.Failures` and are NOT counted here — only successes increment, so the counter is the canonical "ingestion volume" signal for dashboards. |
+| `pinwiz.rag.retrieval_duration_ms` | Histogram | (none) | Per-`RetrieveAsync` wall-clock — query embedding + AI Search hybrid query + post-filter mapping. The §7.1 user-delight reference for the corpus-search path. Pair with `pinwiz.ai.tool_duration_ms` (next observability batch) to see retrieval vs. tool overhead. |
+| `pinwiz.rag.retrieval_score_distribution` | Histogram | `score_source` | Per-result score sample: `semantic` when AI Search semantic ranker engaged, `bm25` when fallback to keyword, `fallback_zero` when both null. Surfaces drift between eval-baseline retrieval distribution and production-traffic retrieval distribution; informs the [ADR-0024](adr/0024-two-stage-reranking.md) cross-encoder gate trigger and [ADR-0017](adr/0017-confidence-threshold-refusal.md) confidence-threshold recalibration window. |
+
+Pre-filter sampling intentional — `retrieval_score_distribution` records the full distribution AI Search produced, not just the post-`MinimumScore` shape. Post-filter chunk count is reflected in the per-call log statement, not in this histogram.
+
 ### Inherited Foundry attributes (do NOT duplicate as `pinwiz.ai.*`)
 
 Foundry's SDK emits OTel spans with these standard `gen_ai.*` semantic-convention attributes:
@@ -183,7 +196,8 @@ Aggregate-monthly view (alerting on the $300/mo threshold) sums per-day rows × 
 - **Cosmos RU charge capture** (`pinwiz.cosmos.write.ru_charge`) — Phase 6 (operability). Requires either a `MeteredMachineRepository` decorator or an inline RU-capture helper in repositories. Best designed once real production traffic gives signal on which operations dominate RU consumption. Tracked under Phase 6 § Cost quality.
 - **Per-scraper run metrics** (`pinwiz.scrape.<source>.*`) — Phase 3+. Lands when manufacturer scrapers gain ACA Job execution and the orchestrator-from-IngestionSource path comes online.
 - **Real `ITokenUsageReader` impl** — pending Microsoft Agent Framework exposing a Usage surface on `AgentResponse` (issue #2688). `NullTokenUsageReader` is the default; cost telemetry stays at 0 cents until the impl swap. The pricing + ceiling enforcement machinery is in place (this PR) so the swap is a one-class change.
-- **Wizard-side retrieval metrics** (`pinwiz.wizard.retrieval.*`) — Phase 4 (RAG). Cosine similarity, retrieved-chunk count, citation-text-coverage.
+- **Per-tool latency histogram** (`pinwiz.ai.tool_duration_ms`) — Phase 4 follow-up. Tagged by `tool` (searchCorpus | getMachineByTitle | future tools) to surface per-tool latency for the §7.1 user-delight revisit triggers (200ms p95 structured-records, 500ms cold-start cache). Sequenced after PR #120 (W4-1) merges so the wiring can touch SearchCorpusTool alongside MachineGroundingTool in one PR.
+- **AI Search index size + document count** (`pinwiz.search.index_size_bytes`, `pinwiz.search.index_documents_total`) — Phase 4 follow-up. Periodic-sampler emission rather than hot-path; drives the §7.1 AI Search Basic-vs-Standard 1.5 GB trip-wire trigger.
 
 ## Update triggers
 
