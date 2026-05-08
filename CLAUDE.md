@@ -148,10 +148,23 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 
 - [`docs/adr/`](docs/adr/) — 18 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation, Cosmos ARM-vs-data-plane split (0012), two-tier Bicep deploy gate (0013), Microsoft Foundry orchestration (0014), per-agent cost routing + LRU cache (0015), evaluation harness via Foundry EvaluationClient (0016), confidence-threshold refusal (0017), code-resource prompt management (0018)
 - [`docs/vision.md`](docs/vision.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/quality-spec.md`](docs/quality-spec.md), [`docs/decision-log.md`](docs/decision-log.md) — canonical spec system (vision / rules / phased plan / quality gates / sub-ADR decisions)
-- [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — comprehensive Phase 1 design
-- [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infra plan + Phase 2 integration
+- [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — Phase 1 scraper design (Stern only)
+- [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infrastructure reference architecture (RAG-only mental model superseded by `architecture-v2.md`)
+- [`docs/knowledge-sources.md`](docs/knowledge-sources.md) — knowledge domains the wizard should cover, sources, and acquisition strategy
+- [`docs/architecture-v2.md`](docs/architecture-v2.md) — agent-orchestrated polymorphic knowledge layer (supersedes the pure-RAG Phase 2 design)
+- [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) — coding, testing, and operational standards
 
 Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_07_phase3_close.md` (Phase 3 operationally closed; Wizard end-to-end against deployed Foundry; H2 eval baseline captured; five Phase 4 follow-ups identified).
+
+## Phase 2 Preview (NOT building yet)
+
+The authoritative forward-direction design is [`docs/architecture-v2.md`](docs/architecture-v2.md) — an agent-orchestrated polymorphic knowledge layer over four data shapes (unstructured text, structured records, live data, multimedia). Pure-RAG was the wrong frame for the Wizard's full scope; v2 reframes the system as a tool-using agent where RAG search is one tool among many. The original RAG pipeline survives as the `search_corpus` tool within the broader registry.
+
+**Implementation-layer reconciliation.** v2 is the conceptual vision. The shipped implementation honors it via Microsoft Foundry + Microsoft Agent Framework (ADR-0014), AI Search Basic + Cosmos (ADR-0021), and Microsoft.Extensions.AI function tools (`getMachineByTitle`, `searchCorpus`). Foundry is the locked enterprise orchestration layer — this is a customer-facing showcase of enterprise-class architecture, and Foundry's first-party Azure integration, identity story, observability, and managed-evaluation surface are precisely what prospects evaluate the reference app against. Storage stays AI Search + Cosmos (not pgvector / PostgreSQL).
+
+**Model-agnostic by construction, not vendor-locked.** Foundry is the orchestration layer; the *models* served through it are pluggable. ADR-0015 already encodes per-agent model selection via `AiFoundryOptions.AgentModels[<agent_name>]` (today: `gpt-4o-mini` default, `gpt-4.1` for Repair / escalation). Embedding providers sit behind the `IQueryEmbedder` / `IChunkEmbedder` Application abstractions so a future ADR can swap to Cohere Embed or another model without touching the retriever or indexer. **Anthropic Claude is reachable through Foundry's MaaS catalog** — choosing Claude for one or more agents is a configuration change (deployment + `AgentModels` override) plus the cost-table update, not a re-architecture. Same for any future model the project decides fits a particular agent's reasoning profile better than the current pick. The architectural commitment is to Foundry; the model commitment is "use what makes sense, swap when it stops making sense." Where the v2 doc references "Phase 2," our build-spec phasing has Phase 2 closed and Phase 4 current — read the v2 doc as forward direction past Phase 4.
+
+**Cost.** Infrastructure cost envelope is unchanged at the $300–$400/mo cap (see `infra_analysis.md`). Per-query LLM token costs will be **higher** under the agent model — multi-tool reasoning (parallel tool calls, iterative tool-result synthesis) consumes more tokens than single-pass RAG. Budget for the upward token trajectory; the per-call cost ceiling per ADR-0015 already absorbs the worst case before it becomes a runaway.
 
 ## PR self-audit (pre-push, BLOCKING)
 
