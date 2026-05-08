@@ -1,7 +1,9 @@
+using System.Diagnostics.Metrics;
 using Azure.Search.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Core.Models;
@@ -176,6 +178,87 @@ public sealed class AiSearchRagIndexerTests
         var expectedId = AiSearchRagIndexer.ComputeChunkId(
             SampleRequest.MachineId, SampleRequest.DocumentId, 42, 43, 7);
         Assert.Equal(expectedId, doc.ChunkId);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_EmbedderMismatch_StillEmitsIndexingDurationSample()
+    {
+        // The Stopwatch + try/finally placement is the wiring at risk
+        // of regression: a future refactor could move the timing
+        // outside the failure path and silently zero the histogram on
+        // every error path. Verify a single emission lands on
+        // RagIndexingDurationMs even when the work throws.
+        var embedder = Substitute.For<IChunkEmbedder>();
+        embedder
+            .EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(
+                [new ReadOnlyMemory<float>([1f, 2f, 3f])]));
+
+        var sut = NewIndexer(embedder);
+
+        var samples = new List<(double Value, string? DocumentTypeTag)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
+        {
+            string? docTypeTag = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "document_type")
+                {
+                    docTypeTag = t.Value as string;
+                }
+            }
+            samples.Add((value, docTypeTag));
+        });
+        listener.Start();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.UpsertAsync(
+                SampleRequest,
+                [MakeChunk(0), MakeChunk(1)], // count mismatch with single-vector embedder
+                new RagIndexerOptions(),
+                CancellationToken.None));
+
+        var sample = Assert.Single(samples);
+        Assert.True(sample.Value >= 0.0);
+        Assert.Equal("Manual", sample.DocumentTypeTag);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_EmptyChunks_DoesNotEmitAnyDurationSample()
+    {
+        // Empty-chunks short-circuits BEFORE the stopwatch starts —
+        // the histogram should NOT receive a sample for a zero-work
+        // call. Verifying this avoids polluting dashboards with
+        // misleadingly-fast samples on no-op invocations.
+        var embedder = Substitute.For<IChunkEmbedder>();
+        var sut = NewIndexer(embedder);
+
+        var samples = new List<double>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
+            samples.Add(value));
+        listener.Start();
+
+        var result = await sut.UpsertAsync(
+            SampleRequest, [], new RagIndexerOptions(), CancellationToken.None);
+
+        Assert.Equal(0, result.Indexed);
+        Assert.Empty(samples);
     }
 
     [Fact]

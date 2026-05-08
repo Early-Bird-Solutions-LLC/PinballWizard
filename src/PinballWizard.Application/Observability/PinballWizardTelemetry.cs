@@ -161,6 +161,38 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single eval question (IAiRouter dispatch + scoring) in milliseconds.");
 
+    // ── RAG indexing + retrieval instrumentation (build-spec § Phase 4 ─
+    // scope item 25, ADR-0021). The four `pinwiz.rag.*` instruments below
+    // were promised in the observability spec when the indexer (W2-3) and
+    // retriever (W3-3) were specified; both shipped without them. Wiring
+    // them now closes the gap-closure half of the observability follow-up
+    // tracked at memory/project_observability_followup_per_tool_metrics.md.
+    //
+    // The `pinwiz.search.index_size_bytes` + `index_documents_total` gauges
+    // identified in the brainstorm half of that follow-up are deferred to
+    // a future Phase 2 batch — they need a periodic sampler rather than
+    // hot-path emission, so the wiring shape is different.
+
+    public static readonly Histogram<double> RagIndexingDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.indexing_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single `IRagIndexer.UpsertAsync` call — embed batch + AI Search upsert + per-batch result aggregation. Measured at the indexer's outer boundary, so it captures total user-felt latency including embed-TPM throttling. Useful for capacity planning at Phase 4.5 corpus scaling vs. the curated-subset baseline.");
+
+    public static readonly Counter<long> RagIndexedChunks = Meter.CreateCounter<long>(
+        "pinwiz.rag.indexed_chunks_total",
+        unit: "{chunk}",
+        description: "Chunks successfully upserted into the AI Search index. Tagged with `document_type` (Manual | ServiceBulletin | MetadataCard) so dashboards can break down ingestion volume by source type — Stern bulletins should ramp first, then non-Stern manuals as Phase 4.5 expansion lands. Per-doc-failure counts (length-exceeded, schema validation) surface as `IndexUpsertResult.Failures` and are NOT counted here; only successes increment.");
+
+    public static readonly Histogram<double> RagRetrievalDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.retrieval_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single `IRagRetriever.RetrieveAsync` call — query embedding + AI Search hybrid query + post-filter mapping. Measured at the retriever's outer boundary so it captures total user-felt retrieval latency (the §7.1 user-delight reference for the corpus-search path). Pair with `pinwiz.ai.tool_duration_ms` once the latter ships to see how much of the searchCorpus tool budget is retrieval vs. tool overhead.");
+
+    public static readonly Histogram<double> RagRetrievalScoreDistribution = Meter.CreateHistogram<double>(
+        "pinwiz.rag.retrieval_score_distribution",
+        unit: "{score}",
+        description: "Per-result re-rank or BM25 score sampled on every `IRagRetriever.RetrieveAsync` result. Tagged with `score_source` (`semantic` when AI Search semantic ranker engaged | `bm25` when fallback to keyword score | `fallback_zero` when both null). Surfaces drift between the eval-baseline retrieval distribution and production-traffic retrieval distribution — informs the ADR-0024 cross-encoder gate trigger and the ADR-0017 confidence-threshold recalibration window.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
