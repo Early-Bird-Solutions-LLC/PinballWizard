@@ -72,4 +72,41 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.OpdbSyncFailed.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.OpdbSyncDurationMs.Name);
     }
+
+    // RAG indexing + retrieval instruments per build-spec § Phase 4 scope
+    // item 25 + ADR-0021. Same name/unit pinning posture as the OPDB
+    // suite above — drift here zeroes Phase 4 RAG dashboards silently.
+
+    [Fact]
+    public void RagIndexingInstruments_HaveExpectedNamesAndUnits()
+    {
+        Assert.Equal("pinwiz.rag.indexing_duration_ms", PinballWizardTelemetry.RagIndexingDurationMs.Name);
+        Assert.Equal("ms", PinballWizardTelemetry.RagIndexingDurationMs.Unit);
+
+        Assert.Equal("pinwiz.rag.indexed_chunks_total", PinballWizardTelemetry.RagIndexedChunks.Name);
+        Assert.Equal("{chunk}", PinballWizardTelemetry.RagIndexedChunks.Unit);
+    }
+
+    [Fact]
+    public void RagRetrievalInstruments_HaveExpectedNamesAndUnits()
+    {
+        Assert.Equal("pinwiz.rag.retrieval_duration_ms", PinballWizardTelemetry.RagRetrievalDurationMs.Name);
+        Assert.Equal("ms", PinballWizardTelemetry.RagRetrievalDurationMs.Unit);
+
+        Assert.Equal("pinwiz.rag.retrieval_score_distribution", PinballWizardTelemetry.RagRetrievalScoreDistribution.Name);
+        Assert.Equal("{score}", PinballWizardTelemetry.RagRetrievalScoreDistribution.Unit);
+    }
+
+    [Fact]
+    public void AllRagInstruments_HavePinwizRagPrefix()
+    {
+        // Dashboard wildcard query `pinwiz.rag.*` should reach every Phase
+        // 4 RAG instrument. Drift on the prefix breaks the dashboard
+        // taxonomy — catch it here.
+        var prefix = "pinwiz.rag.";
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagIndexingDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagIndexedChunks.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalScoreDistribution.Name);
+    }
 }
