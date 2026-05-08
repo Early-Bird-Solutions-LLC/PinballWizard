@@ -30,9 +30,15 @@ jobs:
       - name: Run sanitization scan
         shell: bash
         env:
-          # Pattern stored as a repo secret so the actual work-email pattern
-          # never appears in this public workflow file. See the rule below
-          # and docs/build-spec.md Phase 2 § Scope item 9.
+          # Patterns stored as repo secrets so the actual matched strings
+          # never appear in this public workflow file. The personal-identity
+          # secret is the OR-ed ERE for the maintainer's personal email and
+          # domain (e.g. `name@host|@domain`). The work-email secret is the
+          # proactive denylist for the maintainer's work email. Both rules
+          # warn-and-skip when their secret is unset so a fresh fork can run
+          # the workflow without immediate setup. See the rules below and
+          # docs/build-spec.md Phase 2 § Scope item 9.
+          PERSONAL_IDENTITY_PATTERN: ${{ secrets.PERSONAL_IDENTITY_PATTERN }}
           WORK_EMAIL_PATTERN: ${{ secrets.WORK_EMAIL_PATTERN }}
         run: |
           set -u
@@ -81,57 +87,75 @@ jobs:
             echo "::endgroup::"
           }
 
+          # Wrap a secret-sourced rule with ERE validation + skip-when-unset.
+          # Both PERSONAL_IDENTITY_PATTERN and WORK_EMAIL_PATTERN flow through
+          # this helper.
+          #
+          # When the secret is unset: emit a warning and return (so a fresh
+          # fork doesn't fail before the maintainer wires the secret).
+          #
+          # When the secret is set: pre-validate the pattern is a valid ERE
+          # before run_rule is invoked. grep -E exits 2 on a malformed
+          # pattern, but the `|| true` inside run_rule masks exit 2 as
+          # "no match" — silently disabling the rule. Catch malformed
+          # patterns here so a typo in the secret fails the workflow with a
+          # clear error rather than silently passing.
+          #
+          # The `|| pattern_rc=$?` is required because the shell runs under
+          # `bash -e -o pipefail` (the GitHub Actions default for
+          # `shell: bash`). On a well-formed but non-matching pattern,
+          # `grep -E` exits with rc=1 against empty stdin — pipefail
+          # surfaces that as the pipeline's exit code, and errexit then
+          # aborts the script BEFORE the `pattern_rc=$?` capture line can
+          # run. The `|| pattern_rc=$?` makes the validation part of an
+          # `||`-list, which errexit explicitly skips per the bash manual,
+          # while still capturing the exit code for the malformed-pattern
+          # check below. Without this bypass, every scan after this block
+          # (PEM, RSA, Slack, GitHub PAT, AWS, credential assignments)
+          # silently never runs — the failure mode this guard exists to
+          # prevent, except worse because it's unobservable.
+          run_secret_rule() {
+            local label="$1"
+            local secret_name="$2"
+            local pattern="$3"
+
+            if [ -z "${pattern:-}" ]; then
+              echo "::warning title=Sanitization rule skipped: $label::$secret_name secret not configured. Set it in repo settings (Settings → Secrets and variables → Actions) to enable proactive blocking. Other rules continue to run regardless."
+              return
+            fi
+
+            local pattern_rc=0
+            printf '' | grep -E "$pattern" >/dev/null 2>&1 || pattern_rc=$?
+            if [ "$pattern_rc" -eq 2 ]; then
+              echo "::error title=Sanitization rule misconfigured: $label::$secret_name is not a valid extended regex (grep -E exit 2). Re-set the secret with a valid ERE; remember to escape regex metacharacters like '.' as '\\.'."
+              fail=1
+              return
+            fi
+
+            run_rule "$label" "-i" "$pattern"
+          }
+
           # --- Rules -----------------------------------------------------------
 
           # Prior client name, scrubbed once already; must not return.
           run_rule "Prior client name (JungleTech)" "-i" "JungleTech"
 
-          # User's personal email — committed code must use the GitHub noreply
-          # email instead.
-          run_rule "Personal email (jim@earlybird*)"   "-i" "jim@earlybird"
-          run_rule "Personal domain (@earlybirdsolutions)" "-i" "@earlybirdsolutions"
+          # Personal-identity denylist — OR-ed ERE for the maintainer's
+          # personal email + domain, stored in the PERSONAL_IDENTITY_PATTERN
+          # repo secret so the actual matched strings never appear in this
+          # public workflow file. Committed code must use the GitHub noreply
+          # email instead. To enable: repo Settings → Secrets and variables
+          # → Actions → New repository secret, name PERSONAL_IDENTITY_PATTERN,
+          # value an ERE regex (e.g., "name@host|@domain").
+          run_secret_rule "Personal identity (secret-sourced)" "PERSONAL_IDENTITY_PATTERN" "${PERSONAL_IDENTITY_PATTERN:-}"
 
           # Work-email proactive denylist — pattern stored in the
           # WORK_EMAIL_PATTERN repo secret so the actual pattern never
-          # appears in this public file. Skipped (with a warning, not a
-          # failure) when the secret isn't configured, so the workflow
-          # doesn't break for forks or before initial setup. To enable:
-          # repo Settings → Secrets and variables → Actions → New
-          # repository secret, name "WORK_EMAIL_PATTERN", value an
-          # ERE regex (e.g., "@workdomain\.com" or "firstname\.lastname@").
-          if [ -n "${WORK_EMAIL_PATTERN:-}" ]; then
-            # Pre-validate the pattern is a valid ERE before run_rule is
-            # invoked. grep -E exits 2 on a malformed pattern, but the
-            # `|| true` inside run_rule masks exit 2 as "no match" —
-            # silently disabling the rule. Catch malformed patterns here
-            # so a typo in the secret fails the workflow with a clear
-            # error rather than silently passing.
-            #
-            # The `|| pattern_rc=$?` is required because the shell runs
-            # under `bash -e -o pipefail` (the GitHub Actions default
-            # for `shell: bash`). On a well-formed but non-matching
-            # pattern, `grep -E` exits with rc=1 against empty stdin —
-            # pipefail surfaces that as the pipeline's exit code, and
-            # errexit then aborts the script BEFORE the `pattern_rc=$?`
-            # capture line can run. The `|| pattern_rc=$?` makes the
-            # validation part of an `||`-list, which errexit explicitly
-            # skips per the bash manual, while still capturing the exit
-            # code for the malformed-pattern check below. Without this
-            # bypass, every scan after this block (Work email, PEM,
-            # RSA, Slack, GitHub PAT, AWS, credential assignments)
-            # silently never runs — the failure mode this guard exists
-            # to prevent, except worse because it's unobservable.
-            pattern_rc=0
-            printf '' | grep -E "$WORK_EMAIL_PATTERN" >/dev/null 2>&1 || pattern_rc=$?
-            if [ "$pattern_rc" -eq 2 ]; then
-              echo "::error title=Sanitization failure: Work email rule misconfigured::WORK_EMAIL_PATTERN is not a valid extended regex (grep -E exit 2). Re-set the secret with a valid ERE; remember to escape regex metacharacters like '.' as '\\.'."
-              fail=1
-            else
-              run_rule "Work email (secret-sourced)" "-i" "$WORK_EMAIL_PATTERN"
-            fi
-          else
-            echo "::warning title=Work email rule skipped::WORK_EMAIL_PATTERN secret not configured. Set it in repo settings to enable proactive blocking. Personal-email rules above continue to run regardless."
-          fi
+          # appears in this public file. To enable: repo Settings → Secrets
+          # and variables → Actions → New repository secret, name
+          # WORK_EMAIL_PATTERN, value an ERE regex (e.g.,
+          # "@workdomain\.com" or "firstname\.lastname@").
+          run_secret_rule "Work email (secret-sourced)" "WORK_EMAIL_PATTERN" "${WORK_EMAIL_PATTERN:-}"
 
           # Common credential / key markers (case-insensitive).
           run_rule "PEM private key header"           "-i" "BEGIN.*PRIVATE.*KEY"
