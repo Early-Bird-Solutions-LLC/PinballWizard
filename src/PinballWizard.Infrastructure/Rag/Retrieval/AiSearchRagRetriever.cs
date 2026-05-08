@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Text;
 using Azure.Search.Documents;
 using Azure.Search.Documents.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Infrastructure.Rag.Retrieval;
@@ -52,38 +54,90 @@ public sealed class AiSearchRagRetriever : IRagRetriever
         ArgumentException.ThrowIfNullOrWhiteSpace(queryText);
         ArgumentNullException.ThrowIfNull(options);
 
-        var queryVector = await _queryEmbedder
-            .EmbedAsync(queryText, cancellationToken)
-            .ConfigureAwait(false);
-
-        var searchOptions = BuildSearchOptions(queryVector, options);
-
-        var response = await _searchClient
-            .SearchAsync<RetrievedChunkDocument>(queryText, searchOptions, cancellationToken)
-            .ConfigureAwait(false);
-
-        var chunks = new List<RetrievedChunk>(capacity: options.TopK);
-        await foreach (var result in response.Value.GetResultsAsync().ConfigureAwait(false))
+        // Stopwatch wraps embed + AI Search + result mapping so the
+        // histogram captures user-felt retrieval latency. Emitted in
+        // `finally` so cancellation and transport failures still surface
+        // a duration sample.
+        var stopwatch = Stopwatch.StartNew();
+        try
         {
-            var score = ResolveScore(result);
-            if (score < options.MinimumScore)
+            var queryVector = await _queryEmbedder
+                .EmbedAsync(queryText, cancellationToken)
+                .ConfigureAwait(false);
+
+            var searchOptions = BuildSearchOptions(queryVector, options);
+
+            var response = await _searchClient
+                .SearchAsync<RetrievedChunkDocument>(queryText, searchOptions, cancellationToken)
+                .ConfigureAwait(false);
+
+            var chunks = new List<RetrievedChunk>(capacity: options.TopK);
+            await foreach (var result in response.Value.GetResultsAsync().ConfigureAwait(false))
             {
-                continue;
+                // Sample the per-result score before the minimum-score
+                // filter so dashboards see the full distribution AI Search
+                // produced — not just the post-filter shape. This is the
+                // signal ADR-0024's cross-encoder gate references.
+                EmitScoreSample(result);
+
+                var score = ResolveScore(result);
+                if (score < options.MinimumScore)
+                {
+                    continue;
+                }
+
+                chunks.Add(MapToChunk(result.Document, score));
             }
 
-            chunks.Add(MapToChunk(result.Document, score));
+            _logger.LogInformation(
+                "RAG retrieval: query length={QueryLength}, returned {ChunkCount} chunks above minimum score {MinimumScore} (top {TopK}, machine={MachineFilter}, document_type={DocumentTypeFilter}, duration={DurationMs:F1}ms).",
+                queryText.Length,
+                chunks.Count,
+                options.MinimumScore,
+                options.TopK,
+                options.MachineId ?? "(any)",
+                options.DocumentType ?? "(any)",
+                stopwatch.Elapsed.TotalMilliseconds);
+
+            return chunks;
         }
+        finally
+        {
+            stopwatch.Stop();
+            PinballWizardTelemetry.RagRetrievalDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds);
+        }
+    }
 
-        _logger.LogInformation(
-            "RAG retrieval: query length={QueryLength}, returned {ChunkCount} chunks above minimum score {MinimumScore} (top {TopK}, machine={MachineFilter}, document_type={DocumentTypeFilter}).",
-            queryText.Length,
-            chunks.Count,
-            options.MinimumScore,
-            options.TopK,
-            options.MachineId ?? "(any)",
-            options.DocumentType ?? "(any)");
+    // Emit a score sample for a single AI Search result. Tag with
+    // `score_source` so dashboards can stratify the distribution by
+    // whether the semantic re-ranker engaged or BM25 was the only
+    // signal. `fallback_zero` covers the edge case where neither score
+    // is present (the SDK guarantees Score, but defensive against trace
+    // shape changes in future SDK bumps).
+    private static void EmitScoreSample(SearchResult<RetrievedChunkDocument> result)
+    {
+        var rerankerScore = result.SemanticSearch?.RerankerScore;
+        var bm25Score = result.Score;
 
-        return chunks;
+        if (rerankerScore is double rerank)
+        {
+            PinballWizardTelemetry.RagRetrievalScoreDistribution.Record(
+                rerank,
+                new KeyValuePair<string, object?>("score_source", "semantic"));
+        }
+        else if (bm25Score is double bm25)
+        {
+            PinballWizardTelemetry.RagRetrievalScoreDistribution.Record(
+                bm25,
+                new KeyValuePair<string, object?>("score_source", "bm25"));
+        }
+        else
+        {
+            PinballWizardTelemetry.RagRetrievalScoreDistribution.Record(
+                0.0,
+                new KeyValuePair<string, object?>("score_source", "fallback_zero"));
+        }
     }
 
     private SearchOptions BuildSearchOptions(
