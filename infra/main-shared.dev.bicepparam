@@ -16,6 +16,15 @@ param environment = 'dev'
 param location = 'eastus2'
 param namePrefix = 'pinwiz'
 
+// Region for the AI Search service. Defaults to East US 2 (matching `location`)
+// for normal capacity conditions. Override in main-shared.dev.local.bicepparam
+// to a sibling region (e.g., 'eastus') when East US 2 returns
+// `InsufficientResourcesAvailable` on Basic-SKU search service creation —
+// Phase 3 lesson 3. The rest of the stack stays in `location`; only AI Search
+// relocates. Cross-region traffic at Phase 4's curated-subset volume is
+// negligible.
+param searchLocation = 'eastus2'
+
 // Optional: Entra Object ID of the developer principal to grant deploy-time RBAC.
 // Leave empty to skip role assignments (assignments can be made manually later
 // via `az role assignment create`).

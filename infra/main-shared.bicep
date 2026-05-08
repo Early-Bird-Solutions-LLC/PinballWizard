@@ -34,6 +34,9 @@ param environment string
 @description('Azure region for all shared resources. Locked to East US 2 per docs/infra_analysis.md.')
 param location string = 'eastus2'
 
+@description('Azure region for the AI Search service. Defaults to `location` (one region for the whole stack). Override to a sibling region when the primary region is at capacity for the Basic SKU (`InsufficientResourcesAvailable`). Phase 3 lesson 3 documents the East US 2 to East US relocation pattern; cross-region traffic between AI Search and the rest of the stack is comfortable for Phase 4 curated-subset workload (negligible egress at expected volume). Revisit if Phase 4.5 corpus scaling materializes the cost.')
+param searchLocation string = location
+
 @description('Resource name prefix. Lower-case, no spaces. Defaults to "pinwiz".')
 @minLength(3)
 @maxLength(10)
@@ -86,6 +89,7 @@ module shared 'modules/shared.bicep' = {
     namePrefix: namePrefix
     environment: environment
     location: location
+    searchLocation: searchLocation
     tags: commonTags
     developerObjectId: developerObjectId
     deployPhase2: deployPhase2

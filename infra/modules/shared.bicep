@@ -34,6 +34,9 @@ param environment string
 @description('Azure region. Inherits from main-shared.bicep.')
 param location string
 
+@description('Azure region for the AI Search service. Inherits from main-shared.bicep; may differ from `location` to route around regional Basic-SKU capacity exhaustion (Phase 3 lesson 3). Has no effect when deployAiSearch=false.')
+param searchLocation string
+
 @description('Common tags applied to every resource.')
 param tags object
 
@@ -201,7 +204,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-pr
 
 resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = if (deployPhase2 && deployAiSearch) {
   name: searchServiceName
-  location: location
+  location: searchLocation
   tags: tags
   sku: {
     name: 'basic'
