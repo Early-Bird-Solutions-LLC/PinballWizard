@@ -21,6 +21,7 @@ public sealed class HybridChunkerTests
 {
     private static readonly ChunkRequest ManualRequest = new(
         MachineId: "mch_godzilla",
+        MachineTitle: "Godzilla (Premium)",
         Manufacturer: "Stern Pinball",
         DocumentId: "doc_godzilla_manual",
         DocumentUrl: "https://sternpinball.com/wp-content/uploads/godzilla_manual.pdf",
@@ -28,6 +29,7 @@ public sealed class HybridChunkerTests
 
     private static readonly ChunkRequest BulletinRequest = new(
         MachineId: "mch_godzilla",
+        MachineTitle: "Godzilla (Premium)",
         Manufacturer: "Stern Pinball",
         DocumentId: "doc_godzilla_sb_001",
         DocumentUrl: "https://sternpinball.com/wp-content/uploads/sb_001.pdf",
