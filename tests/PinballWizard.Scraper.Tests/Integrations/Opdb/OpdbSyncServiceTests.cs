@@ -439,6 +439,52 @@ public sealed class OpdbSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncAsync_AliasBlankShortName_FallsThroughToFullManufacturerName()
+    {
+        // Sibling drift of OpdbMachineMapper.FirstNonBlank applied to the
+        // alias pass-2 path. Before the fix, a `?? ` chain on
+        // `aliasDto.Manufacturer.ShortName ?? aliasDto.Manufacturer.Name`
+        // preserved an empty ShortName as `""`, which then tripped
+        // NormalizeManufacturerKey's blank-input guard with an
+        // ArgumentException — caught by the per-alias try/catch on
+        // OpdbSyncService (counted as skipped). The fix uses
+        // FirstNonBlank so a blank ShortName falls through to the
+        // verified-non-blank Name. This test pins that the alias is
+        // folded as an edition (not silently dropped) when OPDB returns
+        // ShortName="".
+        var baseJson = MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla");
+        var aliasWithBlankShortName = JsonSerializer.Serialize(new
+        {
+            opdb_id = "GweeP-MW95j-AvariantX",
+            is_alias = true,
+            name = "Godzilla (Limited Edition)",
+            manufacturer = new
+            {
+                manufacturer_id = 1,
+                name = "Stern Pinball, Inc.",
+                shortname = "",  // blank, must NOT be promoted to the partition key
+            },
+        });
+        _handler.SetResponseFor("/api/export", JsonArray(baseJson, aliasWithBlankShortName));
+
+        Machine? lastUpserted = null;
+        _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
+            .Returns(_ => lastUpserted);
+        _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
+            .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        var snapshot = $"AliasesAppended={result.AliasesAppended} AliasesOrphaned={result.AliasesOrphaned} Skipped={result.Skipped} Inserted={result.Inserted}";
+        Assert.True(result.AliasesAppended == 1, snapshot);
+        Assert.True(result.AliasesOrphaned == 0, snapshot);
+        Assert.True(result.Skipped == 0, snapshot);
+        Assert.Single(lastUpserted!.Editions);
+        Assert.Equal("Limited Edition", lastUpserted.Editions[0].Name);
+    }
+
+    [Fact]
     public async Task SyncAsync_AliasMissingManufacturer_CountedAsSkippedNotOrphaned()
     {
         // An alias missing manufacturer can't compute its partition key,

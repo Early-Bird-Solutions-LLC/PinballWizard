@@ -175,13 +175,19 @@ public static class OpdbMachineMapper
     // or null if every candidate is null/empty/whitespace. C#'s null-
     // coalescing operator (??) preserves empty strings — `null ?? "" ??
     // fallback` evaluates to `""`, not `fallback`. OPDB's /api/export
-    // returns some modern Stern records (e.g., GweeP-MW95j Godzilla Pro
-    // 2021) with empty `name` strings, which previously produced empty
-    // titles in Cosmos and broke title-keyed grounding lookups
-    // (IMachineRepository.QueryByTitleAsync). This helper makes the
-    // fallback chain treat blanks the same as nulls so the documented
-    // OpdbId fallback actually fires.
-    private static string? FirstNonBlank(params string?[] candidates)
+    // returns some modern Stern records (e.g., GweeP-MW95j — an OPDB
+    // ID for Godzilla Pro 2021) with empty `name` strings, which
+    // previously produced empty titles in Cosmos and broke title-keyed
+    // grounding lookups (IMachineRepository.QueryByTitleAsync). This
+    // helper makes the fallback chain treat blanks the same as nulls
+    // so the documented OpdbId fallback actually fires.
+    //
+    // Visibility: internal so OpdbSyncService can use it on the alias
+    // pass-2 path (the alias's ShortName/Name fallback has the same
+    // bug shape, surfaced as a logged exception when the
+    // resolved-blank manufacturer key fails NormalizeManufacturerKey's
+    // ArgumentException.ThrowIfNullOrWhiteSpace gate).
+    internal static string? FirstNonBlank(params string?[] candidates)
     {
         foreach (var candidate in candidates)
         {
