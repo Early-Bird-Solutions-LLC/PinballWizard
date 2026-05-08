@@ -31,6 +31,10 @@ publish/
 # results JSON per ADR-0016 — the metric trajectory is visible in
 # `git log` so a prospect reviewing the repo sees the same trend a
 # CI dashboard would.
+# Exception: data/phase4/ is the Phase 4 curated-subset slate manifest
+# per build-spec § Phase 4 scope item 7 — declarative documentation of
+# the showcase's 7-machine intent set, consumed by
+# tools/phase4/VerifyCuratedSubsetCoverage.csx.
 # NOTE: pattern is `data/*` (not `data/`) so the parent isn't excluded —
 # git can't re-include children whose parent directory is ignored.
 data/*
@@ -38,6 +42,8 @@ data/*
 !data/seeds/**
 !data/eval/
 !data/eval/**
+!data/phase4/
+!data/phase4/**
 
 # OS
 .DS_Store
