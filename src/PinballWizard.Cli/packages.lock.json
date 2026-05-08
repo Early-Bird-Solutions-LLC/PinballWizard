@@ -118,6 +118,15 @@
           "OpenAI": "2.9.1"
         }
       },
+      "Azure.AI.OpenAI": {
+        "type": "Transitive",
+        "resolved": "2.1.0",
+        "contentHash": "doixr3tcsIcdzbzF9NxKt+6U0NKj6aPeOCPYONPsWjyf3gxVndVJAdjPcVdqeR/3vcRHXRgGnGlv+iXx5jMA4g==",
+        "dependencies": {
+          "Azure.Core": "1.44.1",
+          "OpenAI": "2.1.0"
+        }
+      },
       "Azure.AI.Projects": {
         "type": "Transitive",
         "resolved": "2.0.1",
@@ -974,6 +983,7 @@
         "type": "Project",
         "dependencies": {
           "AngleSharp": "[1.4.0, )",
+          "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
           "Azure.Identity": "[1.21.0, )",
           "Azure.ResourceManager.CosmosDB": "[1.4.0, )",

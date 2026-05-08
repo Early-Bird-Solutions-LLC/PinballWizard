@@ -36,6 +36,14 @@
          AiSearchRagRetriever. The 11.7.0 line is the GA major covering
          the v2024+ semantic-ranker + vector-field surface ADR-0021 locks. -->
     <PackageReference Include="Azure.Search.Documents" Version="11.7.0" />
+    <!-- Azure.AI.OpenAI 2.x wraps the OpenAI 2.x client with Azure
+         AAD auth + Foundry-hosted-deployment routing. Phase 4 W3-3
+         (AiSearchRagRetriever) uses AzureOpenAIClient.GetEmbeddingClient
+         to embed query text against text-embedding-3-large per ADR-0020;
+         W2-3 will reuse the same embedding surface for indexing-side
+         vectorization. Constructed with DefaultAzureCredential — no
+         API key in code or config. -->
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
     <!-- PdfPig (namespace UglyToad.PdfPig) is the pure-managed PDF reader
          used by Phase 4 W1-5's PdfPigDocumentTextExtractor. Reads text +
          outline from PDF streams; no native dependencies; compatible

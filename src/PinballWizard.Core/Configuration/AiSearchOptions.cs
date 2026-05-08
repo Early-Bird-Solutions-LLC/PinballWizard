@@ -32,4 +32,23 @@ public sealed class AiSearchOptions
     // expected index name but does NOT require it to exist (W2-3 creates
     // the index after the embedding pipeline lands).
     public string IndexName { get; set; } = "pinwiz-rag-v1";
+
+    // Semantic-ranker configuration name attached to the index by
+    // ADR-0021 § Semantic ranker configuration. The retriever (W3-3)
+    // names this when issuing semantic queries; the indexer (W2-3)
+    // creates it on the index. Versioned alongside the index — a
+    // schema-breaking index swap (`pinwiz-rag-v1` → `…-v2`) implies a
+    // matching semantic-config swap.
+    public string SemanticConfigName { get; set; } = "pinwiz-rag-semantic-v1";
+
+    // Embedding deployment name on the configured Azure OpenAI account
+    // (ADR-0020 — `text-embedding-3-large` @ 3072d). Defaults to
+    // `text-embedding-3-large`, matching `AiFoundryOptions.EmbeddingDeploymentName`
+    // — the retriever and the indexer (W2-3) embed against the same
+    // model; mismatched dimensions mean retrieval misses every chunk.
+    // Held on `AiSearchOptions` rather than borrowed from
+    // `AiFoundryOptions` so an environment that points at a different
+    // Foundry deployment for embeddings (e.g., a regional fallback)
+    // can override here without affecting agent dispatch.
+    public string EmbeddingDeploymentName { get; set; } = "text-embedding-3-large";
 }

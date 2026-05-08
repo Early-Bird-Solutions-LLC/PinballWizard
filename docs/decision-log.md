@@ -30,6 +30,37 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-08 — Foundry stack on latest GA (verified) + provider-agnostic query embedding via IQueryEmbedder
+
+**Decision:** Three architectural facts confirmed and one new abstraction locked, surfaced during PR review of Phase 4 W3-3 (the AI Search hybrid-retrieval query client):
+
+1. **Foundry stack is on the latest GA, project-endpoint surface only (verification, no change).** PinballWizard's AI orchestration uses `Azure.AI.Projects` 2.0.1 (GA April 2026) + `Microsoft.Agents.AI.Foundry` 1.4.0 (GA), constructing agents via `AIProjectClient.AsAIAgent(...)`. **Hub-based projects are NOT used and never were** — `AiFoundryOptions.ProjectEndpoint` ([src/PinballWizard.Core/Configuration/AiFoundryOptions.cs:17-22](../src/PinballWizard.Core/Configuration/AiFoundryOptions.cs#L17-L22)) accepts only the `*.services.ai.azure.com/api/projects/<project>` shape; connection strings and hub URLs are explicitly out per [ADR-0014 § Decision lines 148-150](adr/0014-microsoft-foundry-orchestration.md#L148-L150).
+
+2. **Chat / agent layer is already provider-agnostic via deployment-name indirection (verification, no change).** [`AiFoundryOptions.AgentModels`](../src/PinballWizard.Core/Configuration/AiFoundryOptions.cs#L41-L44) is a string-keyed deployment-name dictionary; [`FoundryAgentFactory.ConstructAgents:128-132`](../src/PinballWizard.Infrastructure/Integrations/Foundry/FoundryAgentFactory.cs#L128-L132) calls `projectClient.AsAIAgent(model: deploymentName, ...)` where `model` is an opaque deployment-name string. Foundry MaaS hosts Anthropic Claude (Sonnet/Opus), Mistral, Cohere, Meta Llama, and OpenAI on the same `chat.completions` consumer surface. Swapping the Wizard or any sub-agent to e.g. `claude-sonnet-4-5` is config-only: register the deployment in the Foundry portal, set `AgentModels:Wizard=claude-sonnet-4-5` in app config, and add a matching row to [`AiFoundryOptions.PricingTable`](../src/PinballWizard.Core/Configuration/AiFoundryOptions.cs#L83-L97) for cost attribution. **No code changes** to support multi-provider chat.
+
+3. **Embedding layer is now provider-agnostic via `IQueryEmbedder` abstraction (NEW).** Phase 4 W3-3 introduces [`Application/Ai/Retrieval/IQueryEmbedder`](../src/PinballWizard.Application/Ai/Retrieval/IQueryEmbedder.cs) with default impl [`Infrastructure/Rag/Retrieval/AzureOpenAIQueryEmbedder`](../src/PinballWizard.Infrastructure/Rag/Retrieval/AzureOpenAIQueryEmbedder.cs) wrapping `OpenAI.Embeddings.EmbeddingClient`. `AiSearchRagRetriever` depends on the abstraction, not the SDK type. A future ADR can swap to Cohere Embed (Foundry-MaaS-hosted) or any other provider by registering an alternative `IQueryEmbedder` impl without touching the retriever or its tests. The vector dimensionality must match the AI Search index's `content_embedding` field (3072d under [ADR-0021](adr/0021-ai-search-index-schema.md)); a dimension-changing swap is a schema-breaking ADR-0021 v1→v2 cutover.
+
+**Alternatives considered:**
+
+- **Bind retriever directly to `EmbeddingClient`** (the original W3-3 design before user feedback at PR review). Rejected: locks the embedding layer to one SDK type with no abstraction seam. Future provider swap would require touching three files (retriever ctor + DI + live test) instead of one (new `IQueryEmbedder` impl + DI swap). Violates the project's "no quick fixes" + customer-facing-showcase posture.
+
+- **Add a richer `IEmbeddingService` covering both query-side and document-side embedding** (anticipating W2-3 indexer territory). Rejected for now: speculative beyond W3-3's immediate consumer. When W2-3 lands, it can either share `IQueryEmbedder` (the same shape works for batched documents) or extend with a sibling abstraction; today's commit reserves the simpler surface for the actual consumer rather than designing for hypothetical use.
+
+- **Defer the abstraction until a non-OpenAI embedding need is concrete.** Rejected: the cost of adding it now is ~30 LoC (one interface + one wrapper); the cost of bolting it on later is a refactor that touches the retriever's ctor + DI + tests + any other future consumers. The architectural-affordance argument is also material — the showcase code now visibly reads as "embedding is one of several swappable pieces" rather than "embedding is OpenAI."
+
+**Rationale:** Multi-provider chat is already the default state thanks to Foundry MaaS mechanics — the `AgentModels` indirection makes provider choice a config concern. Multi-provider embedding requires a code seam; adding it now while the retriever surface is being shaped is cheap and matches the project's quality bar. The verification of (1) and (2) prevents future-Claude (and prospective customers reading the code) from re-litigating "are we on hub-or-project Foundry?" and "is the chat layer locked to OpenAI?" — questions surfaced at PR review and which deserve a permanent answer in the canonical decision record rather than living only in PR conversation.
+
+**Verification evidence:**
+
+- Foundry-latest: [`PinballWizard.Infrastructure.csproj:20`](../src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj#L20) (`Azure.AI.Projects` 2.0.1) + [line 29](../src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj#L29) (`Microsoft.Agents.AI.Foundry` 1.4.0).
+- Project-endpoint-only: [`AiFoundryOptions.ProjectEndpointKey` constant + `[Url]` attribute](../src/PinballWizard.Core/Configuration/AiFoundryOptions.cs#L15-L22); [ADR-0014 line 148-150](adr/0014-microsoft-foundry-orchestration.md).
+- Chat-provider-agnostic: [`FoundryAgentFactory.ConstructAgents:128-132,148-152`](../src/PinballWizard.Infrastructure/Integrations/Foundry/FoundryAgentFactory.cs) — `model:` is an opaque deployment-name string in every `AsAIAgent` call.
+- Embedding-abstraction: [`AiSearchRagRetriever:28-46`](../src/PinballWizard.Infrastructure/Rag/Retrieval/AiSearchRagRetriever.cs) depends on `IQueryEmbedder`, not `EmbeddingClient`.
+
+**Revisit when:** A non-OpenAI embedding model (e.g. Cohere Embed) becomes a concrete requirement — at that point register a sibling `IQueryEmbedder` impl, expose the choice via an option (e.g. `AiSearchOptions.EmbeddingProvider`), and ensure the W2-3 indexer uses the same impl so retriever-side and indexer-side dimensionality stays aligned. Or if Foundry deprecates / re-shapes its project-endpoint surface (currently GA — unlikely in the Phase 4 horizon).
+
+**Related:** PR (this one) — Phase 4 W3-3 AiSearchRagRetriever; [ADR-0014](adr/0014-microsoft-foundry-orchestration.md) (Foundry orchestration); [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md) § Per-`AIAgent` model selection (deployment-name indirection); [ADR-0020](adr/0020-embedding-model.md) (text-embedding-3-large @ 3072d locked); [ADR-0021](adr/0021-ai-search-index-schema.md) § Schema (content_embedding 3072d).
+
 ## 2026-05-07 — Phase 3 H2 eval baseline captured; ConfidenceThreshold stays at ADR-0017's draft 0.65
 
 **Decision:** The Phase 3 H2 hand-off (build-spec § Phase 3 § Operational hand-offs item 2) ran against deployed Foundry and produced a v1 baseline at `data/eval/results/wizard.20260507T162529Z.json`. Aggregate metrics: `citation_precision=0.133`, `citation_recall=0.133`, `subagent_accuracy=0.033`, `refusal_correctness=0.300`. **`AiFoundryOptions.ConfidenceThreshold` is NOT moved from [ADR-0017](adr/0017-confidence-threshold-refusal.md)'s draft value of 0.65.** ADR-0017 is unchanged.
