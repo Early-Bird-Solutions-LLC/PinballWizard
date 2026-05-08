@@ -26,14 +26,14 @@ public static class OpdbMachineMapper
         if (dto.Manufacturer is null || string.IsNullOrWhiteSpace(dto.Manufacturer.Name)) return null;
 
         var manufacturerName = dto.Manufacturer.Name;
-        var manufacturerKey = NormalizeManufacturerKey(dto.Manufacturer.ShortName ?? manufacturerName);
+        var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(dto.Manufacturer.ShortName, manufacturerName)!);
 
         return new Machine
         {
             Id = dto.OpdbId,
             PartitionKey = manufacturerKey,
             ManufacturerDisplayName = manufacturerName,
-            Title = dto.CommonName ?? dto.Name ?? dto.OpdbId,
+            Title = FirstNonBlank(dto.CommonName, dto.Name) ?? dto.OpdbId,
             Year = ParseYear(dto.ManufactureDate),
             Designers = dto.Designers.Where(d => !string.IsNullOrWhiteSpace(d.Name)).Select(d => d.Name!).ToList(),
             Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList(),
@@ -155,7 +155,7 @@ public static class OpdbMachineMapper
 
         if (dto.Manufacturer?.Name is { } mfgName) existing.ManufacturerDisplayName.GetType(); // no-op: ManufacturerDisplayName is init-only and rarely changes
 
-        existing.Title = dto.CommonName ?? dto.Name ?? existing.Title;
+        existing.Title = FirstNonBlank(dto.CommonName, dto.Name) ?? existing.Title;
         existing.Year = ParseYear(dto.ManufactureDate) ?? existing.Year;
 
         if (dto.Designers.Count > 0)
@@ -169,6 +169,31 @@ public static class OpdbMachineMapper
         }
 
         existing.LastSeenAt = now;
+    }
+
+    // Returns the first argument that is non-null AND non-whitespace,
+    // or null if every candidate is null/empty/whitespace. C#'s null-
+    // coalescing operator (??) preserves empty strings — `null ?? "" ??
+    // fallback` evaluates to `""`, not `fallback`. OPDB's /api/export
+    // returns some modern Stern records (e.g., GweeP-MW95j — an OPDB
+    // ID for Godzilla Pro 2021) with empty `name` strings, which
+    // previously produced empty titles in Cosmos and broke title-keyed
+    // grounding lookups (IMachineRepository.QueryByTitleAsync). This
+    // helper makes the fallback chain treat blanks the same as nulls
+    // so the documented OpdbId fallback actually fires.
+    //
+    // Visibility: internal so OpdbSyncService can use it on the alias
+    // pass-2 path (the alias's ShortName/Name fallback has the same
+    // bug shape, surfaced as a logged exception when the
+    // resolved-blank manufacturer key fails NormalizeManufacturerKey's
+    // ArgumentException.ThrowIfNullOrWhiteSpace gate).
+    internal static string? FirstNonBlank(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate)) return candidate;
+        }
+        return null;
     }
 
     private static int? ParseYear(string? manufactureDate)

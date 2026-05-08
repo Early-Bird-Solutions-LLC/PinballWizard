@@ -86,6 +86,79 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal("Foo Bar (Pro)", machine!.Title);
     }
 
+    // OPDB regression: /api/export returns some modern Stern records
+    // (e.g., GweeP-MW95j Godzilla Pro 2021) with empty/whitespace `name`
+    // and `common_name`. The original `?? ?? OpdbId` chain preserved
+    // empty strings, producing empty titles in Cosmos and breaking
+    // IMachineRepository.QueryByTitleAsync grounding lookups. The new
+    // FirstNonBlank helper treats blanks the same as nulls so the
+    // documented OpdbId fallback fires.
+    [Theory]
+    [InlineData(null, "")]
+    [InlineData("", null)]
+    [InlineData("", "")]
+    [InlineData("   ", "   ")]
+    [InlineData("\t", "\n")]
+    public void Map_BlankCommonNameAndName_FallsBackToOpdbId(string? commonName, string? name)
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            Name = name,
+            CommonName = commonName,
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc.", ShortName = "Stern" },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(machine);
+        Assert.Equal("GweeP-MW95j", machine!.Title);
+    }
+
+    [Fact]
+    public void Map_BlankCommonName_FallsThroughToName()
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            CommonName = "",
+            Name = "Godzilla (Pro)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(machine);
+        Assert.Equal("Godzilla (Pro)", machine!.Title);
+    }
+
+    [Fact]
+    public void Map_BlankShortName_FallsBackToFullManufacturerName()
+    {
+        // Defense-in-depth: same `??` empty-string risk in the
+        // manufacturer-key chain. ShortName="" should not produce
+        // partition-key="" → "unknown"; it should fall through to the
+        // full manufacturer name.
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            CommonName = "Godzilla",
+            Manufacturer = new OpdbManufacturerDto
+            {
+                Name = "Stern Pinball, Inc.",
+                ShortName = "",
+            },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(machine);
+        Assert.Equal("stern", machine!.PartitionKey);
+    }
+
     [Theory]
     [InlineData("Stern Pinball, Inc.", "stern")]
     [InlineData("Jersey Jack Pinball", "jjp")]
@@ -119,6 +192,40 @@ public sealed class OpdbMachineMapperTests
         var machine = OpdbMachineMapper.Map(dto, NowFixed);
         Assert.NotNull(machine);
         Assert.Equal(2017, machine!.Year);
+    }
+
+    [Fact]
+    public void MergeOpdbFieldsInto_BlankCommonNameAndName_PreservesExistingTitle()
+    {
+        // Same FirstNonBlank fix on the merge path — a re-sync where
+        // OPDB's /api/export now returns blanks for `name` /
+        // `common_name` must not wipe a title that's already populated.
+        // Without the fix, `dto.CommonName ?? dto.Name ?? existing.Title`
+        // evaluated to `""` when either was empty, silently corrupting
+        // the catalog on subsequent runs.
+        var existing = new Machine
+        {
+            Id = "GweeP-MW95j",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla (Pro)",
+            Year = 2021,
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+
+        var fresh = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            CommonName = "",
+            Name = "   ",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
+        };
+
+        OpdbMachineMapper.MergeOpdbFieldsInto(existing, fresh, NowFixed);
+
+        Assert.Equal("Godzilla (Pro)", existing.Title);
     }
 
     [Fact]

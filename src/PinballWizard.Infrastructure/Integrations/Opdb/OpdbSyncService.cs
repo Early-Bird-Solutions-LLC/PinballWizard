@@ -188,7 +188,15 @@ public sealed class OpdbSyncService : IOpdbSyncService
                         continue;
                     }
 
-                    var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(aliasDto.Manufacturer.ShortName ?? aliasDto.Manufacturer.Name);
+                    // Same blank-string fallback shape the OpdbMachineMapper handles
+                    // for base machines — see OpdbMachineMapper.FirstNonBlank. OPDB's
+                    // /api/export emits some alias records with ShortName="" (empty
+                    // string), which previously fell through `??` as a literal "" and
+                    // tripped NormalizeManufacturerKey's blank-input guard, dropping
+                    // the alias as a logged sync skip. The Manufacturer.Name presence
+                    // check at line 185 already guarantees Name is non-blank.
+                    var partitionKey = OpdbMachineMapper.NormalizeManufacturerKey(
+                        OpdbMachineMapper.FirstNonBlank(aliasDto.Manufacturer.ShortName, aliasDto.Manufacturer.Name)!);
                     var baseMachine = await _machines.GetByOpdbIdAsync(baseId, partitionKey, cancellationToken).ConfigureAwait(false);
                     if (baseMachine is null)
                     {
