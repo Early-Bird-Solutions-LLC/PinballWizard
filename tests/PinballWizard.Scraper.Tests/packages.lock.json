@@ -771,6 +771,11 @@
           "System.ClientModel": "1.10.0"
         }
       },
+      "PdfPig": {
+        "type": "Transitive",
+        "resolved": "0.1.14",
+        "contentHash": "V2Anq0Yvyn3bGGG8WCQxqEAshG0KHIehB0QOotCz14vTkEk1PR3ErPOSmbnEsyOewhdF3G5XpQHywK2L50Xu+A=="
+      },
       "Polly.Core": {
         "type": "Transitive",
         "resolved": "8.4.2",
@@ -945,6 +950,7 @@
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.7, )",
           "Microsoft.Playwright": "[1.59.0, )",
           "Newtonsoft.Json": "[13.0.4, )",
+          "PdfPig": "[0.1.14, )",
           "PinballWizard.Application": "[1.0.0, )",
           "PinballWizard.Core": "[1.0.0, )"
         }
