@@ -260,4 +260,4 @@ This is a personal showcase project; external contributions aren't expected, but
 
 ## License
 
-No license file yet; reach out before reusing.
+[MIT](LICENSE) — Copyright (c) 2026 Early Bird Solutions LLC.
