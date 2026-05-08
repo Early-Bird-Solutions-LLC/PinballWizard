@@ -11,8 +11,9 @@ public sealed class EmbeddedResourceAgentPromptProviderTests
         var provider = new EmbeddedResourceAgentPromptProvider();
 
         // Each of the four agents must have a non-empty prompt loaded
-        // from the embedded resource. PR 4 placeholder content is
-        // sufficient; PR 5 fills with real instructions.
+        // from the embedded resource. Pins the resource-name → AgentName
+        // mapping so a missing or misnamed .md file fails fast at
+        // construction rather than at first GetAgent call.
         Assert.NotEmpty(provider.GetPrompt(AgentName.Wizard));
         Assert.NotEmpty(provider.GetPrompt(AgentName.Valuation));
         Assert.NotEmpty(provider.GetPrompt(AgentName.Rules));
