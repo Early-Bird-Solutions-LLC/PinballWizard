@@ -118,6 +118,11 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single user-question round-trip through IAiRouter (cache lookup + Foundry agent invocation + post-process). Complements per-call gen_ai.* durations from auto-emitted spans.");
 
+    public static readonly Counter<long> AiCitationsExtracted = Meter.CreateCounter<long>(
+        "pinwiz.ai.citations.extracted_total",
+        unit: "{citation}",
+        description: "Citations attached to a Wizard answer. Tagged with source (tool_trace | regex_legacy) per ADR-0022 — during the Phase 4 cutover both extractors run; tool_trace is the primary and regex_legacy runs in parallel for behavioral comparison. The relative counts surface drift before the H3 eval baseline rerun.");
+
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6
     // dashboards aggregate them as a "metric trajectory" surface alongside
