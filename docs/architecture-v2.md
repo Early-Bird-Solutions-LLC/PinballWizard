@@ -35,7 +35,7 @@ The wizard's front door is an **orchestrating agent** (Claude, with tool use) th
 
 ```mermaid
 graph TB
-    User[User input — text, voice, image] --> Agent[Orchestrating Agent<br/>Claude with tool use]
+    User[User input — text, voice, image] --> Agent[Orchestrating Agent<br/>Microsoft Agent Framework<br/>model-agnostic via Foundry MaaS]
     Agent --> Tools{Tool Registry}
     Tools --> CorpusSearch[search_corpus]
     Tools --> GameLookup[get_game / compare_editions]
@@ -74,27 +74,27 @@ This is not RAG with extra steps. The mental model is fundamentally different.
 
 **What goes here:** Manuals (PDF), service bulletins, code release notes, articles, forum posts, podcast transcripts, video transcripts, callout transcripts, technique guides.
 
-**Storage:** PostgreSQL with pgvector (text + embedding) plus AI Search for hybrid retrieval (BM25 + vector + semantic ranking + Cohere reranking).
+**Storage:** Azure AI Search (Basic SKU) for hybrid retrieval — BM25 + vector + semantic ranking per ADR-0021. Cohere rerank is gated behind H3 quality data per ADR-0024. The `pinwiz-rag-v1` index holds embedded chunks plus the metadata fields the citation surface needs (`document_url`, `page_start` / `page_end`, `section_heading`).
 
 **Tools that hit this:** `search_corpus`, `get_document`, `get_document_section`, `find_failure_modes` (with quality weighting).
 
-**Provenance:** Each chunk carries `document_id` linking back to a `DocumentRecord` (the model defined in Phase 1 — `scraper_plan_v4.md`).
+**Provenance:** Each chunk carries `document_id` linking back to a `ScrapedDocument` (the model shipped in Phase 1 — `scraper_plan_v4.md`).
 
-### 4.2 Structured records (relational store)
+### 4.2 Structured records (Cosmos DB)
 
 **What goes here:** Game catalog, manufacturer registry, designer/artist/programmer registry, parts catalog, player profiles (static bio data).
 
-**Storage:** PostgreSQL relational tables. No embedding for these records — they are queried directly.
+**Storage:** Azure Cosmos DB (NoSQL) — schema CRUD via ARM, item CRUD via the data-plane SDK per ADR-0012. No embedding for these records; they are queried directly. JOIN-heavy lookups (`compare_games`, `find_games`, `get_designer`) are served via Cosmos cross-partition queries — see §7.1 for the explicit Cosmos-vs-relational tradeoff and the 200 ms p95 trigger that re-opens the call.
 
 **Tools that hit this:** `get_game`, `compare_games`, `compare_editions`, `find_games`, `get_designer`, `get_artist`, `get_player`, `find_part`, `get_compatible_parts`.
 
-**Provenance:** Each record tracks `source` (where the data was scraped from) and `last_updated`.
+**Provenance:** Each record tracks `source.discovery_url`, `source.discovery_context`, and `timeline.last_seen_at` per ADR-0002 / ADR-0004 — provenance is embedded, not a separate graph.
 
 ### 4.3 Live data (API tools)
 
 **What goes here:** IFPA rankings, in-progress tournament standings, upcoming/recent tournaments, marketplace listings.
 
-**Storage:** None canonical. A thin caching layer with short TTLs may be added if measured latency demands it; otherwise live data has no persistent home.
+**Storage:** None canonical. An in-memory LRU cache with short TTLs (mirroring the ADR-0015 semantic-cache pattern) may be added if measured latency demands it; otherwise live data has no persistent home. Redis is deferred per §7.1 until the API goes multi-instance OR cold-start latency on IFPA exceeds ~500 ms.
 
 **Tools that hit this:** `get_player_ranking`, `get_tournament_live`, `find_tournaments`, `get_market_listings`.
 
@@ -104,7 +104,7 @@ This is not RAG with extra steps. The mental model is fundamentally different.
 
 **What goes here:** Schematic images (extracted from manuals or scanned separately), gameplay video clips with timestamps, callout audio (deferred per `knowledge-sources.md` §7).
 
-**Storage:** Azure Blob for the media itself; PostgreSQL for metadata (which game, which system, page reference, video timestamp, embedding of caption/transcript for searchability).
+**Storage:** Azure Blob for the media itself; Azure Cosmos DB for the metadata records (which game, which system, page reference, video timestamp). Caption / transcript text gets indexed into the AI Search corpus per §4.1 so it's searchable alongside the rest of the unstructured-text surface.
 
 **Tools that hit this:** `get_schematic`, `get_video_clip`, `get_callout_context` (text only initially).
 
@@ -229,16 +229,34 @@ Microsoft Foundry with the Microsoft Agent Framework (per ADR-0014); models serv
 
 | Store | Tech | Holds | Notes |
 |---|---|---|---|
-| Text corpus | PostgreSQL + pgvector + AI Search | Embedded chunks with metadata | Hybrid retrieval (BM25 + vector + semantic + Cohere rerank) per `infra_analysis.md` |
-| Structured records | PostgreSQL tables | Game, designer, artist, parts, player records | Queried directly; no embedding |
-| Media metadata | PostgreSQL tables | Schematic refs, video clip refs, callout refs | Points to Blob URLs |
+| Text corpus | Azure AI Search (Basic SKU) | Embedded chunks with metadata | Hybrid retrieval (BM25 + vector + semantic ranking) per ADR-0021. Cohere rerank is gated behind H3 quality data per ADR-0024. |
+| Structured records | Azure Cosmos DB (NoSQL) | Game, designer, artist, parts, player records | Queried directly; no embedding. Schema CRUD via ARM, item CRUD via data-plane SDK per ADR-0012. |
+| Media metadata | Azure Cosmos DB (NoSQL) | Schematic refs, video clip refs, callout refs | Points to Blob URLs |
 | Media files | Azure Blob | Images, audio, video | Referenced by media metadata |
-| Provenance graph | PostgreSQL tables | DocumentRecord, MediaRecord, RecordSource | Unifies citations across data shapes |
-| Conversation state | PostgreSQL (with TTL) or Redis | Active session context | Short-lived; session-scoped |
-| User memory | PostgreSQL tables | User profile, collection, diagnostic history, preferences | Long-lived; user-scoped |
-| Live data cache | Redis or in-memory (optional) | IFPA / Match Play / marketplace responses with short TTLs | Optimization, not source of truth |
+| Provenance | Embedded in source records | Source URL + discovery context + timeline + cross-references on every `Machine` / `ScrapedDocument` / `IndexedChunkDocument` | Provenance is structural (carried by every record), not a separate graph store. ADR-0002 / ADR-0004. |
+| Conversation state | Azure Cosmos DB (TTL container) | Active session context | Short-lived; session-scoped |
+| User memory | Azure Cosmos DB (NoSQL) | User profile, collection, diagnostic history, preferences | Long-lived; user-scoped |
+| Live data cache | In-memory LRU (Redis only if measured demand) | IFPA / Match Play / marketplace responses with short TTLs | Optimization, not source of truth |
 
-More stores than the original Phase 2 design, but the volume per store remains modest. PostgreSQL handles most of it.
+More stores than the original Phase 2 design, but the volume per store remains modest. **Cosmos DB handles most of it; AI Search holds the indexed text corpus.** PostgreSQL / pgvector are NOT in the locked stack — see CLAUDE.md § Phase 2 Preview for the implementation-layer reconciliation rationale.
+
+### 7.1 Tradeoffs considered
+
+The store-by-store choices above are deliberate, and they're all calibrated for **user delight at curated-subset scale** — fast on the queries users actually run today, with explicit triggers that re-open the call if scale changes the answer. Four tradeoffs are worth surfacing as explicit choices a sophisticated reviewer would push on:
+
+**Structured records — Cosmos NoSQL vs. Azure SQL / PostgreSQL Flexible Server.**
+The v2 tool registry's structured lookups (`compare_games`, `find_games`, `get_designer`, `get_compatible_parts`) are JOIN-heavy by their nature — *"all Stern horror-themed machines designed by John Borg between 2018–2024"* wants relational semantics. A relational engine answers that in 5–20 ms with a single indexed query; Cosmos serves it via cross-partition fan-out + app-side filtering at 200–500 ms, with latency that wobbles as the corpus grows. The chosen tradeoff: **stay on Cosmos** because (a) Phase 1 already ships a working Cosmos repository with a tuned partition strategy; (b) curated-subset volume keeps cross-partition queries fast enough that users feel them as instant; (c) `getMachineByTitle` (the single most-called tool) is a Cosmos point query, which is exactly Cosmos's strongest path; (d) introducing a second relational store doubles the schema-management surface and the ops bar for a reference app on a solo-developer budget. **Revisit when** any structured-lookup tool's p95 latency exceeds **200 ms** in production telemetry, OR Phase 4.5 corpus scaling drives RU costs on `find_games` / `compare_games` to dominate the per-query envelope. Both triggers are observable, not predictive.
+
+**Provenance — embedded vs. separate graph store.**
+Embedded means every `Machine` / `ScrapedDocument` / `IndexedChunkDocument` carries its own source URL + discovery context + timeline + cross-references. A separate provenance graph would unlock queries like *"show every record that traces back to source X"* or *"render the full citation chain end-to-end for this answer"*. The chosen tradeoff: **embedded** because (a) it's structurally simpler — the citation surface is whatever the tool result already carries; (b) there's no impedance mismatch between "the model sees provenance" and "the extractor reads provenance" — they read the same DTO instance per ADR-0022; (c) graph-traversal queries aren't on any current product surface. **Revisit when** a feature genuinely needs traversal (a "blame view" UI that walks answer → chunk → document → scrape job → source URL would be the trigger).
+
+**Live data cache — in-memory LRU vs. Azure Redis Cache.**
+In-memory LRU is zero infra cost and fastest; Redis Basic at ~$15/mo survives restarts + scales horizontally across multiple API instances + offers per-key TTLs without app-side eviction logic. The chosen tradeoff: **in-memory first** because (a) the API service is single-instance for v1; (b) live-data calls (IFPA / Match Play) are infrequent enough that cold-start cost is acceptable; (c) the existing in-process LRU semantic cache pattern from ADR-0015 is already a known-good template the new code can clone. **Add Redis when** the API goes multi-instance OR measured cold-start latency on IFPA queries exceeds ~500ms — both are observable triggers, not predictive guesses.
+
+**AI Search SKU — Basic vs. Standard.**
+Basic at ~$75/mo absorbs Phase 4's curated-subset corpus comfortably (2 GB total index cap; current curated-subset is under 50 MB). Standard at ~$250/mo unlocks built-in vectorizer integration, a 25 GB index cap, and higher replica + partition counts for query-side throughput. The chosen tradeoff: **Basic** until corpus growth approaches 1.5 GB (the 75% trip-wire documented in ADR-0020 § Negative consequences), at which point Phase 4.5 evaluates the Standard upgrade against the alternative of multi-index sharding on Basic. Locked in ADR-0021.
+
+Each row's recommendation is a *current* call, not a permanent commitment — the embedded "Revisit when" triggers are the structural signals that re-open the decision.
 
 ---
 
@@ -312,9 +330,9 @@ This is what makes the wizard's answers trustworthy and verifiable — and what 
 
 Each data shape has its own pipeline. Phase 1 (`scraper_plan_v4.md`) covers the document ingestion path for Stern. Other pipelines:
 
-- **Document** (manuals, bulletins, articles): scrape → text extract (PdfPig for PDFs, AngleSharp for HTML) → page-aware chunking → embed → index. Same pattern as the original Phase 2.
-- **Structured records**: scrape → parse to typed records → upsert into relational tables. No embedding step.
-- **Multimedia**: extract from documents (schematic images from PDFs) or scrape separately → store in Blob → metadata in PostgreSQL → caption/transcript indexed in the text corpus for searchability.
+- **Document** (manuals, bulletins, articles): scrape → text extract (PdfPig for PDFs, AngleSharp for HTML) → page-aware chunking (per ADR-0019) → embed via `text-embedding-3-large` (per ADR-0020) → upsert into AI Search via the `IRagIndexer` shipped in W2-3 (per ADR-0021).
+- **Structured records**: scrape → parse to typed records → upsert into Cosmos containers via the data-plane SDK (schema CRUD via ARM per ADR-0012). No embedding step.
+- **Multimedia**: extract from documents (schematic images from PDFs) or scrape separately → store in Blob → metadata in Cosmos → caption / transcript text indexed into the AI Search corpus alongside the rest of §4.1 for searchability.
 - **Live**: no ingestion — query at runtime.
 - **User memory**: written by the agent during sessions (via `record_diagnostic_attempt` and similar) and read by tools.
 
@@ -324,12 +342,12 @@ Each data shape has its own pipeline. Phase 1 (`scraper_plan_v4.md`) covers the 
 
 The Azure resources catalogued in `infra_analysis.md` remain valid. Additions and clarifications:
 
-- **More PostgreSQL tables** — structured records, media metadata, user profiles, conversation state, provenance graph. The B1ms server is sized appropriately; storage growth is the only meaningful cost change.
-- **Redis (optional)** — for live data caching. Can start without it (PostgreSQL with TTL works) and add only if measured latency demands it.
-- **Anthropic API account** — for Claude with tool use. Existing Azure OpenAI usage may shift partly to Anthropic depending on whether we want model + tool use + vision on one provider.
+- **More Cosmos containers** — structured records, media metadata, user profiles, conversation state. Cosmos serverless (per `infra_analysis.md`) absorbs the additional containers without a SKU bump; the per-RU cost is the only meaningful storage-side cost change. Schema CRUD via ARM, item CRUD via the data-plane SDK per ADR-0012.
+- **In-memory LRU first; Redis only on measured demand** — for live data caching. Cosmos with a TTL container is the persistence-side fallback; in-memory is the latency-side optimization. Add Redis only if measured latency demands it.
+- **No separate Anthropic API account.** Microsoft Foundry's MaaS catalog reaches Claude (and Cohere, etc.) through the same Azure-hosted, AAD-authed endpoint that already serves `gpt-4o-mini` / `gpt-4.1`. Selecting Claude for one or more agents is an `AiFoundryOptions.AgentModels[<agent>]` config change plus a deployment add (per ADR-0015) — see CLAUDE.md § Phase 2 Preview for the model-agnostic reconciliation.
 - **No new resource group** — runs in the existing personal Earlybird Azure subscription (per `infra_analysis.md`).
 
-**Cost impact:** Token usage per query rises noticeably under the agent model — multi-tool reasoning is more tokens than pure RAG. Worth budgeting for. Infrastructure cost is essentially flat.
+**Cost impact:** Token usage per query rises noticeably under the agent model — multi-tool reasoning is more tokens than pure RAG. Worth budgeting for. Infrastructure cost is essentially flat. The per-call cost ceiling per ADR-0015 absorbs the worst case before it becomes a runaway.
 
 ---
 
@@ -351,8 +369,8 @@ Aligns with `knowledge-sources.md` §8 but adds the agent transition explicitly:
 
 Explicit non-goals (so reviewers see we considered them):
 
-- **Not building our own LLM.** Claude is the agent.
-- **Not running our own vector DB at scale.** PostgreSQL + pgvector handles our volume.
+- **Not building our own LLM.** Foundry serves the model — currently `gpt-4o-mini` + `gpt-4.1`, with Claude / Cohere / etc. reachable through the MaaS catalog when a per-agent benchmark justifies the swap (per ADR-0015 + CLAUDE.md § Phase 2 Preview).
+- **Not running our own vector DB at scale.** Azure AI Search Basic (managed service) handles our volume per ADR-0021. Standard SKU upgrade is gated on corpus growth approaching the 2 GB cap; pgvector / Postgres aren't in the picture.
 - **Not building a tournament platform.** We read from IFPA, Match Play, Brackelope.
 - **Not building a marketplace.** We read existing listings.
 - **Not chasing real-time streaming.** Polling with short TTLs serves our use cases.
@@ -369,24 +387,24 @@ Acknowledged trade-offs:
 ## 15. Open Questions
 
 - **API service separation.** Does the wizard share the existing scraper CLI host, or get its own dedicated API service? Probably its own — clean boundary, independent deployment cadence, distinct scaling profile.
-- **Tool framework choice.** Use the Anthropic SDK directly, or adopt Semantic Kernel / LangChain for tool orchestration? Direct SDK is simpler; framework gives optionality.
-- **Vector store choice.** Stick with pgvector throughout, or use AI Search for the heavy hybrid retrieval and pgvector for everything else? `infra_analysis.md` already supports both — defer the decision.
 - **Memory consent and clarity.** Long-term memory is powerful but needs explicit user-facing controls — what is stored, how to view it, how to delete.
 - **Streaming responses.** Should the agent stream partial answers as tools complete, or wait and synthesize? Streaming is better UX; harder to implement cleanly.
+
+(The "tool framework" and "vector store" questions from earlier drafts are resolved: Microsoft Agent Framework per ADR-0014 is the locked tool framework; Azure AI Search Basic per ADR-0021 is the locked vector + hybrid-retrieval surface. See CLAUDE.md § Phase 2 Preview for the implementation-layer reconciliation.)
 
 ---
 
 ## 16. ADR Proposal
 
-The following ADR will be filed as `docs/adr/0008-agent-orchestrated-architecture.md`:
+A future ADR will be filed at the next available number (currently the highest committed ADR is 0024; the agent-orchestrated-architecture ADR will land as **0025** or higher when it's drafted).
 
 **Title:** Agent-orchestrated polymorphic knowledge layer over pure RAG
 
-**Status:** Proposed
+**Status:** Proposed (this document is the working draft)
 
 **Context:** The Pinball Wizard's knowledge spans four structurally different data shapes (unstructured text, structured records, live data, multimedia). A pure RAG pipeline serves the first shape well but fakes, ignores, or underserves the rest.
 
-**Decision:** Adopt a tool-using agent (Claude with tool use) as the system's front door. RAG search becomes one tool among many, alongside structured lookups, live API calls, media retrieval, and user-memory access.
+**Decision:** Adopt a tool-using agent as the system's front door — implemented today via Microsoft Foundry + Microsoft Agent Framework (per ADR-0014), with models served from the Foundry MaaS catalog so the model layer is provider-agnostic (per ADR-0015). RAG search becomes one tool among many, alongside structured lookups, live API calls, media retrieval, and user-memory access.
 
 **Consequences:**
 - More moving parts than pure RAG.
@@ -398,6 +416,7 @@ The following ADR will be filed as `docs/adr/0008-agent-orchestrated-architectur
 **Alternatives considered:**
 - Pure RAG over an enriched corpus that embeds all four shapes. Rejected: produces fuzzy answers to crisp questions, cannot handle live data, cannot return media as first-class output.
 - Multiple specialized retrievers fronted by a hardcoded router. Rejected: brittle, does not scale to new tool types, does not support multi-step reasoning.
+- Anthropic SDK directly (per the original Claude Desktop draft of this document). Rejected: gives up Foundry's first-party Azure integration, AAD identity, OTel auto-emission, managed evaluation surface, and per-agent model selection — all of which are precisely what an enterprise-class showcase posture (per `CLAUDE.md` § Showcase obligations) requires. Foundry MaaS still reaches Claude when a benchmark justifies the per-agent swap.
 
 ---
 
