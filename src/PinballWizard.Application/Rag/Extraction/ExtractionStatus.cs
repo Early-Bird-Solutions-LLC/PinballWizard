@@ -36,4 +36,14 @@ public enum ExtractionStatus
     // valid-but-imageless document). Logs the parser error message in
     // ExtractedDocument.Error.
     Malformed,
+
+    // The input stream's length exceeds PdfExtractionOptions.MaxStreamBytes.
+    // Distinct from Malformed because the cause is operational
+    // (oversized upload — possibly a zip-bomb or hostile multi-GB
+    // PDF) rather than a parser-level structural issue. The
+    // orchestrator (W3-2 Cosmos Change Feed Function) treats this
+    // identically to Malformed (log + skip), but the distinct status
+    // gives operational telemetry a way to count size-rejections
+    // separately from parse failures.
+    SizeExceeded,
 }
