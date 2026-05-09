@@ -1,0 +1,112 @@
+@*
+    Wave 1 PR-F2 proof component — validates the SSE pipeline end-to-end.
+
+    This is NOT one of the four locked delight surfaces (WizardAnswerStream,
+    RefusalPanel, CitationStrip family, TiltPage/TiltErrorBoundary) and it
+    is NOT subject to ADR-0008's custom-component restriction — it is a
+    temporary bridge scaffold. Wave 2 PR-D-stream replaces it with
+    WizardAnswerStream (the real streaming UX). If PR-D-stream does not
+    ship, this component becomes technical debt and must be removed before
+    the Wave 2 PR-D milestone.
+
+    ADR-0026 § 6 explicitly permits Wave 1 bridge components that are
+    immediately superseded by Wave 2 — document the bridge here and track
+    removal in the PR-D-stream PR description.
+
+    InteractiveAuto: renders Server-side first (fast TTFB), migrates to
+    WASM after the runtime downloads — same as the parent Wizard page.
+*@
+
+@rendermode InteractiveAuto
+@using PinballWizard.Application.Ai
+@inject IWizardStreamingClient StreamingClient
+
+<MudStack Spacing="2">
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               OnClick="OnStreamClickAsync"
+               Disabled="_streaming">
+        @(_streaming ? "Streaming…" : "Stream hello-world")
+    </MudButton>
+
+    @if (_chunks.Count > 0)
+    {
+        <MudPaper Class="pa-3" Elevation="1">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Wave 1 SSE proof — replace with WizardAnswerStream in PR-D-stream
+            </MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var line in _chunks)
+                {
+                    <MudListItem Icon="@Icons.Material.Filled.ChevronRight" Dense="true">
+                        @line
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error">@_error</MudAlert>
+    }
+</MudStack>
+
+@code {
+    private bool _streaming;
+    private readonly List<string> _chunks = [];
+    private string? _error;
+
+    // CancellationTokenSource scoped to this component. Cancelled in
+    // Dispose() so that a navigation-away during a stream is handled
+    // cleanly rather than leaking an async iterator.
+    private CancellationTokenSource _cts = new();
+
+    private async Task OnStreamClickAsync()
+    {
+        _streaming = true;
+        _chunks.Clear();
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            await foreach (var chunk in StreamingClient
+                .StreamAsync("hello", _cts.Token)
+                .ConfigureAwait(false))
+            {
+                var label = chunk switch
+                {
+                    AnswerChunk.TextDelta d        => $"TextDelta: \"{d.Text}\"",
+                    AnswerChunk.ToolCallStarted s  => $"ToolCallStarted: {s.ToolName}",
+                    AnswerChunk.ToolCallCompleted c => $"ToolCallCompleted: {c.ToolName} ({(c.Succeeded ? "ok" : "failed")})",
+                    AnswerChunk.CitationArrived ci  => $"CitationArrived: {ci.Citation.Title}",
+                    AnswerChunk.Refusal r           => $"Refusal: {r.Category} — {r.Text}",
+                    AnswerChunk.Final f             => $"Final: \"{f.Answer.Text[..Math.Min(60, f.Answer.Text.Length)]}…\"",
+                    _                              => $"Unknown: {chunk.GetType().Name}",
+                };
+                _chunks.Add(label);
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal on navigation-away — no error surface needed.
+        }
+        catch (Exception ex)
+        {
+            _error = $"Stream error: {ex.Message}";
+        }
+        finally
+        {
+            _streaming = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
