@@ -143,6 +143,22 @@ internal static class AiSearchIndexSchema
                 VectorSearchDimensions = EmbeddingDimensions,
                 VectorSearchProfileName = VectorProfileName,
             },
+
+            // last_scraped_utc — Phase 1 scraper's Timeline.LastDownloadedAt
+            // for the source document. "Scraped" = last byte-level fetch;
+            // LastDownloadedAt is the correct semantic (compared to
+            // LastContentChangedAt which is null when content never changed).
+            // Filterable + sortable so freshness-sort queries are possible.
+            // NOT searchable (timestamps are opaque to the text-search
+            // engine); NOT facetable (continuous timestamp, not a discrete
+            // category). Added in Wave 2 PR-C3 per ADR-0025 § 6:
+            // zero-migration-cost — existing chunks carry null until the
+            // next Change Feed re-ingestion run; no backfill required.
+            new(Retrieval.AiSearchIndexFields.LastScrapedUtc, SearchFieldDataType.DateTimeOffset)
+            {
+                IsFilterable = true,
+                IsSortable = true,
+            },
         };
 
         var index = new SearchIndex(indexName, fields)

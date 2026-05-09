@@ -64,6 +64,8 @@ public sealed class AiSearchIndexSchemaTests
         Assert.Contains("section_heading", fieldNames);
         Assert.Contains("content", fieldNames);
         Assert.Contains("content_embedding", fieldNames);
+        // PR-C3: freshness field added to ADR-0021 schema table.
+        Assert.Contains("last_scraped_utc", fieldNames);
     }
 
     [Fact]
@@ -131,6 +133,22 @@ public sealed class AiSearchIndexSchemaTests
         Assert.Equal(AiSearchIndexSchema.EmbeddingDimensions, embedding.VectorSearchDimensions);
         Assert.Equal(3072, embedding.VectorSearchDimensions);
         Assert.Equal(AiSearchIndexSchema.VectorProfileName, embedding.VectorSearchProfileName);
+    }
+
+    [Fact]
+    public void Build_LastScrapedUtcIsDateTimeOffsetFilterableSortable()
+    {
+        // PR-C3: last_scraped_utc is DateTimeOffset, filterable + sortable
+        // so freshness-sort queries work. NOT searchable (timestamps are
+        // opaque to the text-search engine) and NOT facetable (continuous
+        // timestamp). Mirrors the ADR-0021 schema table row added in PR-C3.
+        var index = Build();
+        var field = index.Fields.Single(f => f.Name == "last_scraped_utc");
+        Assert.Equal(SearchFieldDataType.DateTimeOffset, field.Type);
+        Assert.True(field.IsFilterable);
+        Assert.True(field.IsSortable);
+        Assert.NotEqual(true, field.IsSearchable);
+        Assert.NotEqual(true, field.IsFacetable);
     }
 
     [Fact]

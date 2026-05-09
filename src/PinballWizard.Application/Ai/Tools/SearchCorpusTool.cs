@@ -148,6 +148,12 @@ public sealed class SearchCorpusTool
                     // resolves reranker → BM25 → 0.0 before constructing it),
                     // so the cast to double? is always value-present.
                     Score = chunk.Score,
+                    // LastScrapedUtc is threaded through [JsonIgnore] (PR-C3)
+                    // so the model never sees it. The citation extractor reads
+                    // it to populate Citation.LastScrapedUtc for the frontend
+                    // freshness badge (ADR-0026 § 4). Null for chunks indexed
+                    // before PR-C3 — the frontend badge is conditionally rendered.
+                    LastScrapedUtc = chunk.LastScrapedUtc,
                 });
             }
 

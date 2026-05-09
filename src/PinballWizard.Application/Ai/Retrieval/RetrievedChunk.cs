@@ -29,4 +29,8 @@ public sealed record RetrievedChunk(
     int PageEnd,
     string SectionHeading,
     string Content,
-    double Score);
+    double Score,
+    // Timeline.LastDownloadedAt from the AI Search index's last_scraped_utc
+    // field (Wave 2 PR-C3). Null for chunks indexed before PR-C3 or when
+    // the source document's scraper did not populate LastDownloadedAt.
+    DateTimeOffset? LastScrapedUtc = null);

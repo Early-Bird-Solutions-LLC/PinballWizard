@@ -190,7 +190,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 // relevance on the citation card (ADR-0026 § 8). Null when
                 // the retriever did not return a score (pure keyword query
                 // that bypassed the semantic re-ranker edge case).
-                RelevanceScore: hit.Score));
+                RelevanceScore: hit.Score,
+                // LastScrapedUtc threaded from SearchCorpusHit.LastScrapedUtc
+                // in PR-C3. [JsonIgnore] keeps it model-invisible; C# code
+                // reads it here to populate the freshness badge (ADR-0026 § 4).
+                // Null for chunks indexed before PR-C3 — the frontend
+                // CitationCard renders the badge conditionally.
+                LastScrapedUtc: hit.LastScrapedUtc));
         }
     }
 
