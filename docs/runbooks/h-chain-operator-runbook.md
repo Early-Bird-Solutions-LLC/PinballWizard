@@ -99,6 +99,13 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
    $env:AiFoundry__ProjectEndpoint = '<foundryProjectEndpoint from outputs>'
    ```
 
+   For Phase 4 H1 (after PR #130 lands the ACA Bicep), also capture the new ACA outputs for step 10a + the post-W3-2-code image-swap step:
+
+   ```powershell
+   $env:RagIndexer__ContainerAppName = '<ragIndexerContainerAppName from outputs>'
+   $env:RagIndexer__PrincipalId       = '<ragIndexerPrincipalId from outputs>'
+   ```
+
 6. **Smoke-probe Cosmos.**
 
    ```powershell
@@ -139,7 +146,26 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 
     Expected: chat (`gpt-4o-mini`, plus `gpt-4-1` per [ADR-0015](../adr/0015-cost-routing-and-semantic-cache.md)) and embedding (`text-embedding-3-large`) deployments verified.
 
-11. **Capture the apply.** Append a [DL] entry to [`docs/decision-log.md`](../decision-log.md) recording deployment name, region, and the smoke-probe outcomes. Update the relevant § Retrospective section in `build-spec.md` to flip the H1 hand-off to ✅ with the timestamp.
+11. **Smoke-probe the RAG Indexer Container App** (Phase 4 H1 only — added in PR #130 / W3-2 Bicep).
+
+    ```powershell
+    az containerapp show -n $env:RagIndexer__ContainerAppName -g rg-pinwiz-shared-dev `
+       --query '{name:name,running:properties.runningStatus,image:properties.template.containers[0].image,replicas:properties.template.scale}' -o jsonc
+
+    az role assignment list --assignee $env:RagIndexer__PrincipalId -o table
+    ```
+
+    Expected: `runningStatus` = `Running`; `image` = `mcr.microsoft.com/k8se/quickstart:latest` (placeholder until the W3-2 code PR lands the real worker); `scale.minReplicas` = `0`; `scale.maxReplicas` = `2`. The role-assignment list shows five entries — Cosmos Built-in Data Contributor (account-scope), Search Index Data Contributor, Cognitive Services OpenAI User on Foundry, AcrPull on the registry, Storage Blob Data Reader. **A missing role assignment indicates managed-identity-propagation lag** (5–15 min on first deploy); re-run the query before opening a support case.
+
+    The placeholder image runs the ACA quickstart greeting on `:80`, but ingress is disabled, so it's only visible via `az containerapp logs show`. This is the **expected** state until the W3-2 code PR ships and an operator runs the image-swap step:
+
+    ```powershell
+    # Run AFTER the W3-2 code PR merges and the worker image lands in ACR.
+    az containerapp update -n $env:RagIndexer__ContainerAppName -g rg-pinwiz-shared-dev `
+       --image '<containerRegistryLoginServer>/pinwiz-rag-indexer:<sha>'
+    ```
+
+12. **Capture the apply.** Append a [DL] entry to [`docs/decision-log.md`](../decision-log.md) recording deployment name, region, and the smoke-probe outcomes (including the ACA `runningStatus` + role-assignment count). Update the relevant § Retrospective section in `build-spec.md` to flip the H1 hand-off to ✅ with the timestamp.
 
 ### Known gotchas (H1)
 
@@ -148,10 +174,12 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 - **Local-override drift causes silent skip.** `main-shared.dev.local.bicepparam` is gitignored, so stale values (e.g., `deployAiSearch = false` left over from a prior session) survive past their useful life and don't show up in committed diffs. Periodically diff the local override against the committed defaults to catch staleness — and always check it in step 2 above.
 - **Bicep `@description` strings hit the Windows console encoding ceiling.** Non-ASCII characters (arrows, em-dashes) in description strings break `az bicep build --stdout` on Windows with `'charmap' codec can't encode character`. The Bicep file is syntactically fine, but `az`'s stdout encoder chokes. Keep description strings ASCII-only.
 - **`az` ADR-0010 subscription guard fires on every apply.** Tenant or subscription mismatch aborts before any resources change. The guard exists because the personal Earlybird subscription is the only legitimate target (CLAUDE.md § Locked invariants #5). If the guard fires unexpectedly, run `az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a` and re-set the subscription rather than passing `-SkipGuard`.
+- **The RAG Indexer Container App ships with a placeholder image, by design.** PR #130 lands the Container App + KEDA scale rule + 5 role assignments BEFORE the worker code (W3-2 code PR) is ready, so the deploy is smoke-testable end-to-end without waiting for the image. The placeholder (`mcr.microsoft.com/k8se/quickstart:latest`) runs the ACA quickstart greeting on `:80` — `az containerapp logs show` shows the greeting; the Change Feed scaler is config-validated but does no real work. **`runningStatus = Running` with the placeholder image is the correct state for H1 until the W3-2 code PR ships the worker image.** A "deployment succeeded but nothing's indexing" complaint at this stage is the system working as designed.
+- **Container App MI-propagation lag.** Five role assignments declared at deploy time, propagated by Azure asynchronously. Step 10a's `az role assignment list --assignee` may return < 5 entries on the first read within ~15 minutes of the deploy; re-run the query rather than opening a support case. The role assignments themselves are declared with the same template that creates the MI, so propagation always converges.
 
 ## H2 — Eval baseline
 
-**Goal:** capture the intermediate eval baseline (`citation_precision`, `citation_recall`, `subagent_accuracy`, `refusal_correctness`) against the post-H1 deployed stack but BEFORE Phase 4's RAG retrieval (W4-1 `searchCorpus` + W4-3 citation-required) is wired. Establishes the floor that H3 measures lift against.
+**Goal:** capture the intermediate eval baseline (`citation_precision`, `citation_recall`, `citation_coverage`, `subagent_accuracy`, `refusal_correctness`) against the post-H1 deployed stack but BEFORE Phase 4's RAG retrieval (W4-1 `searchCorpus` + W4-3 citation-required) is wired. Establishes the floor that H3 measures lift against. `citation_coverage` was added by PR #129 / W4-2 (build-spec § Phase 4 item 22) — it mirrors the heuristic in `ConfidenceCalculator` so the eval baseline measures the same signal that drives the runtime confidence threshold.
 
 **When to run:** Phase 3 (after Wave 3 ships), again Phase 4 (after Wave 2 ships per [`docs/build-spec.md`](../build-spec.md) § Phase 4 § Operational hand-offs). Same procedure, different baseline reference numbers.
 
@@ -189,10 +217,11 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
    dotnet run --project src/PinballWizard.Cli -- --eval 2>&1 | Tee-Object -FilePath eval-h2-$(Get-Date -Format 'yyyy-MM-dd').log
    ```
 
-   Expected: 30 questions, 0 errors, ~3.5 minutes wall-clock. Result file at `data/eval/results/wizard.{timestamp}.json`. Capture the four metrics:
+   Expected: 30 questions, 0 errors, ~3.5 minutes wall-clock. Result file at `data/eval/results/wizard.{timestamp}.json`. Capture the five metrics:
 
    - `citation_precision`
    - `citation_recall`
+   - `citation_coverage` (W4-2 / PR #129; new in this baseline if comparing against pre-2026-05-09 baselines)
    - `subagent_accuracy`
    - `refusal_correctness`
 
