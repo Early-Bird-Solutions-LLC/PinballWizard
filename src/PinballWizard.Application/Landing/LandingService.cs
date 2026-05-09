@@ -3,77 +3,85 @@ using PinballWizard.Application.Persistence;
 
 namespace PinballWizard.Application.Landing;
 
-// PR-L2 implementation of ILandingService. Returns LandingResponse with
-// SeedQuestions populated from ISeedQuestionLoader and FeaturedMachines
-// populated from IFeaturedMachineRepository (Cosmos featured_machines
-// container). SystemStatus remains null until PR-L3 (/api/wizard/landing
-// endpoint + SystemStatus composition) lands.
+// PR-L3 implementation of ILandingService. Returns LandingResponse with
+// all three fields populated:
+//   SeedQuestions  — from ISeedQuestionLoader (static JSON)
+//   FeaturedMachines — from IFeaturedMachineRepository (Cosmos featured_machines)
+//   SystemStatus   — from ISystemStatusProvider (Foundry + AI Search + Cosmos canary)
 //
-// Registered as a singleton (see ServiceCollectionExtensions). The seed
-// questions JSON is static between deploys; the featured machines are
-// a small curated set (~6) so the per-request cost is bounded.
+// All three calls fan-out via Task.WhenAll so the combined latency is
+// max(seed_load, cosmos_read, status_probe) rather than the sum.
+// ISystemStatusProvider is stampede-safe and caches its result for 30 s
+// (default), so the per-request cost is effectively zero on cache hits.
 //
-// IFeaturedMachineRepository is an optional dependency: the service
-// degrades gracefully to null FeaturedMachines when Cosmos is not
-// configured (e.g., PinballWizard.Api started in local dev without an
-// emulator). This matches the PR-L1 null-placeholder contract and prevents
-// the API from failing to start when only Foundry or no Cosmos is wired.
+// Registered as a singleton (see ServiceCollectionExtensions). Optional
+// dependencies degrade gracefully:
+//   IFeaturedMachineRepository absent → FeaturedMachines = null
+//   ISystemStatusProvider absent      → SystemStatus = null
+// This allows the Api to start cleanly in local dev without Cosmos or
+// Foundry configured.
 public sealed class LandingService : ILandingService
 {
     private readonly ISeedQuestionLoader _seedQuestionLoader;
     private readonly IFeaturedMachineRepository? _featuredMachineRepository;
+    private readonly ISystemStatusProvider? _systemStatusProvider;
     private readonly ILogger<LandingService> _logger;
 
     public LandingService(
         ISeedQuestionLoader seedQuestionLoader,
         ILogger<LandingService> logger,
-        IFeaturedMachineRepository? featuredMachineRepository = null)
+        IFeaturedMachineRepository? featuredMachineRepository = null,
+        ISystemStatusProvider? systemStatusProvider = null)
     {
         ArgumentNullException.ThrowIfNull(seedQuestionLoader);
         ArgumentNullException.ThrowIfNull(logger);
         _seedQuestionLoader = seedQuestionLoader;
         _featuredMachineRepository = featuredMachineRepository;
+        _systemStatusProvider = systemStatusProvider;
         _logger = logger;
     }
 
     public async Task<LandingResponse> GetLandingAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug(
-            "Loading landing response: seed questions + featured machines " +
-            "(Cosmos repo available: {CosmosAvailable}).",
-            _featuredMachineRepository is not null);
+            "Loading landing response: seed questions + featured machines + system status " +
+            "(Cosmos repo: {CosmosAvailable}, StatusProvider: {StatusAvailable}).",
+            _featuredMachineRepository is not null,
+            _systemStatusProvider is not null);
 
-        // Fan-out the two calls when Cosmos is configured so the combined
-        // latency is max(seed_load, cosmos_read) rather than the sum.
-        IReadOnlyList<SeedQuestion> seedQuestions;
-        IReadOnlyList<FeaturedMachine>? featuredMachines = null;
+        // Fan-out all three calls so the combined latency is
+        // max(seed_load, cosmos_read, status_probe) not the sum.
+        var seedQuestionsTask = _seedQuestionLoader.LoadAsync(cancellationToken);
 
-        if (_featuredMachineRepository is not null)
-        {
-            var seedQuestionsTask = _seedQuestionLoader.LoadAsync(cancellationToken);
-            var featuredMachinesTask = _featuredMachineRepository.GetAllAsync(cancellationToken);
+        var featuredMachinesTask = _featuredMachineRepository is not null
+            ? _featuredMachineRepository.GetAllAsync(cancellationToken)
+            : Task.FromResult<IReadOnlyList<FeaturedMachine>>(null!);
 
-            await Task.WhenAll(seedQuestionsTask, featuredMachinesTask).ConfigureAwait(false);
+        var systemStatusTask = _systemStatusProvider is not null
+            ? _systemStatusProvider.GetStatusAsync(cancellationToken)
+            : Task.FromResult<SystemStatus>(null!);
 
-            seedQuestions = seedQuestionsTask.Result;
-            var fetched = featuredMachinesTask.Result;
-            featuredMachines = fetched.Count > 0 ? fetched : null;
-        }
-        else
-        {
-            seedQuestions = await _seedQuestionLoader
-                .LoadAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await Task.WhenAll(seedQuestionsTask, featuredMachinesTask, systemStatusTask)
+            .ConfigureAwait(false);
+
+        var seedQuestions = seedQuestionsTask.Result;
+        var fetchedMachines = featuredMachinesTask.Result;
+        var featuredMachines = fetchedMachines is { Count: > 0 } ? fetchedMachines : null;
+        var systemStatus = systemStatusTask.Result;
 
         _logger.LogDebug(
             "Landing response assembled: {SeedQuestionCount} seed question(s), " +
-            "{FeaturedMachineCount} featured machine(s), SystemStatus=null (PR-L3).",
-            seedQuestions.Count, featuredMachines?.Count ?? 0);
+            "{FeaturedMachineCount} featured machine(s), " +
+            "SystemStatus=[Cosmos={CosmosHealthy}, Foundry={FoundryHealthy}, AiSearch={AiSearchHealthy}].",
+            seedQuestions.Count,
+            featuredMachines?.Count ?? 0,
+            systemStatus?.CosmosHealthy?.ToString() ?? "null",
+            systemStatus?.FoundryHealthy?.ToString() ?? "null",
+            systemStatus?.AiSearchHealthy?.ToString() ?? "null");
 
         return new LandingResponse(
             SeedQuestions: seedQuestions,
             FeaturedMachines: featuredMachines,
-            SystemStatus: null);
+            SystemStatus: systemStatus);
     }
 }
