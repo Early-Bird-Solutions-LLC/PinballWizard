@@ -40,9 +40,9 @@ The default Cosmos indexing policy indexes every property on every document. For
 
 | Container | Policy | Justification |
 | --- | --- | --- |
-| `rag_leases` | Include `/id/?`, exclude `/*` | Checkpoint-keyed; never queried by other paths. |
-| `rag_index_state` | Include `/id/?`, `/document_id/?`, `/contentHash/?`, exclude `/*` | Reconcile uses these three; nothing else queried. |
-| `rag_dead_letters` | Include `/id/?`, `/document_id/?`, `/AttemptCount/?`, `/createdAt/?`, exclude `/*` | Operator queries on document_id + age + attempt count. |
+| `rag_leases` | Default (all) | Owned by `Cosmos.ChangeFeedProcessor`; query surface is SDK-internal, so a selective policy would risk a silent perf regression on a future SDK version. |
+| `rag_index_state` | Include `/id/?`, `/document_id/?`, `/recorded_utc/?`, exclude `/*` | Point-read on `id`; the reconciler issues `SELECT TOP @n * FROM c ORDER BY c.recorded_utc DESC`, so `recorded_utc` is load-bearing. |
+| `rag_dead_letters` | Include `/id/?`, `/document_id/?`, `/attempt_count/?`, `/last_attempt_utc/?`, exclude `/*` | Point-read on `id`; the remaining paths support operator queries in Data Explorer. JSON property names are snake_case via `[JsonPropertyName]` on `DeadLetterDocument`, and Cosmos indexes the on-the-wire path. |
 | `machines`, `ingestion_sources`, `scraped_documents` | Default (all) | Read-side query patterns still being tuned; future structured-record tools may query arbitrary fields. |
 | `machine_title_lookups` (point-read container, see § 4) | Include `/id/?`, `/normalizedTitle/?`, exclude `/*` | Pure point-read by id (which equals normalizedTitle). |
 
