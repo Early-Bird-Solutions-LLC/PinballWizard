@@ -182,7 +182,8 @@ public sealed class AiRouter : IAiRouter
                 IsRefusal: true,
                 RefusalCategory: RefusalCategory.CostCeilingHit,
                 PromptVersion: promptVersion,
-                FoundryThreadId: null);
+                FoundryThreadId: null,
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null));
             _cache.Store(normalized, promptVersion, ceilingAnswer);
             return ceilingAnswer;
         }
@@ -241,7 +242,8 @@ public sealed class AiRouter : IAiRouter
                 IsRefusal: true,
                 RefusalCategory: category,
                 PromptVersion: promptVersion,
-                FoundryThreadId: null);
+                FoundryThreadId: null,
+                RefusalDetail: BuildRefusalDetail(category, signals));
         }
         else if (citations.Count == 0)
         {
@@ -284,7 +286,8 @@ public sealed class AiRouter : IAiRouter
                 IsRefusal: true,
                 RefusalCategory: RefusalCategory.NoCitation,
                 PromptVersion: promptVersion,
-                FoundryThreadId: null);
+                FoundryThreadId: null,
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals));
         }
         else
         {
@@ -308,7 +311,8 @@ public sealed class AiRouter : IAiRouter
                 IsRefusal: false,
                 RefusalCategory: null,
                 PromptVersion: promptVersion,
-                FoundryThreadId: null);
+                FoundryThreadId: null,
+                RefusalDetail: null);
         }
 
         _cache.Store(normalized, promptVersion, answer);
@@ -372,6 +376,42 @@ public sealed class AiRouter : IAiRouter
         _ =>
             "I don't know.",
     };
+
+    // Builds the RefusalDetail surface per ADR-0026 § 4 and § 7. Wave 1
+    // ships the shape: Confidence is populated when signals are available
+    // (confidence-threshold and NoCitation paths both have signals); the
+    // cost-ceiling path has no signals (agent call was not made yet) so
+    // signals is null there. Recovery fields (RelatedMachines,
+    // CommunityResources, MissingWhat, SuggestedRephrase) are Wave 2
+    // PR-R2/R3/R4 responsibilities — null here is correct and expected.
+    //
+    // `internal` (not private) so RefusalDetailContractTests can pin the
+    // per-path breakdown contract without standing up a full AiRouter
+    // integration test (which requires a live AIAgent). Mirrors
+    // BuildRefusalText's visibility convention.
+    internal RefusalDetail BuildRefusalDetailForTest(RefusalCategory category, ConfidenceSignals? signals)
+        => BuildRefusalDetail(category, signals);
+
+    private RefusalDetail BuildRefusalDetail(RefusalCategory category, ConfidenceSignals? signals)
+    {
+        ConfidenceBreakdown? breakdown = null;
+        if (signals is not null)
+        {
+            breakdown = new ConfidenceBreakdown(
+                RetrievalSimilarity: signals.RetrievalSimilarity,
+                ModelSelfReported: signals.ModelSelfReported,
+                CitationCoverage: signals.CitationCoverage,
+                Composite: signals.Composite(),
+                Threshold: _options.ConfidenceThreshold);
+        }
+
+        return new RefusalDetail(
+            Confidence: breakdown,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: null,
+            SuggestedRephrase: null);
+    }
 
     private static string Normalize(string question)
     {

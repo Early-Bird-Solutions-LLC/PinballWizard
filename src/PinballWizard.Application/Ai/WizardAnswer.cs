@@ -8,6 +8,9 @@ namespace PinballWizard.Application.Ai;
 // + IsRefusal arrive in PR 5/6 when sub-agents + confidence calculation
 // land. Phase 3's Wave 2 PR 4 starts with a placeholder confidence of 1.0
 // and IsRefusal=false so the type contract is stable across the wave.
+// Phase 5 Wave 1 PR-R1 adds RefusalDetail surface for the user-delight
+// refusal UX (null when IsRefusal=false; non-null with potentially-null
+// sub-fields when IsRefusal=true).
 public sealed record WizardAnswer(
     string Text,
     IReadOnlyList<Citation> Citations,
@@ -17,4 +20,5 @@ public sealed record WizardAnswer(
     bool IsRefusal,
     RefusalCategory? RefusalCategory,
     string? PromptVersion,
-    string? FoundryThreadId);
+    string? FoundryThreadId,
+    RefusalDetail? RefusalDetail = null);
