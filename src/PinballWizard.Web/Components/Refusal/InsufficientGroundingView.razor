@@ -1,0 +1,59 @@
+@* InsufficientGroundingView — per-category subview for RefusalCategory.InsufficientGrounding.
+ *
+ * Rendered when retrieval found chunks but their similarity scores were below
+ * the confidence threshold. Tone: "ask more specifically" — a focused rephrasing
+ * may bring the right documents to the top.
+ *
+ * ADR-0026 § 4 — per-category subview within RefusalPanel
+ * ADR-0017     — geometric-mean confidence threshold (0.65 default)
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.ManageSearch"
+                 Color="Color.Secondary"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            Not Enough to Go On
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            I found some related material but it wasn't specific enough to give you a
+            grounded answer. A more focused question — mentioning the manufacturer,
+            game title, or specific feature — will help me retrieve the right sources.
+        </MudText>
+    </MudStack>
+
+    @if (RelatedMachines is not null && RelatedMachines.Count > 0)
+    {
+        <div data-testid="related-machines-section">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Machines I found in the neighborhood:</MudText>
+            <MudList T="RelatedMachine" Dense="true">
+                @foreach (var machine in RelatedMachines)
+                {
+                    <MudListItem Icon="@Icons.Material.Filled.Casino" Dense="true">
+                        @if (!string.IsNullOrWhiteSpace(machine.OpdbUrl))
+                        {
+                            <a href="@machine.OpdbUrl"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="mud-typography mud-link mud-primary-text mud-link-underline-hover">
+                                @machine.Title
+                            </a>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@machine.Title</MudText>
+                        }
+                    </MudListItem>
+                }
+            </MudList>
+        </div>
+    }
+</MudStack>
+
+@code {
+    [Parameter] public IReadOnlyList<RelatedMachine>? RelatedMachines { get; set; }
+}
