@@ -150,6 +150,22 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
                     $"but configuration requires '{containerOptions.PartitionKeyPath}'. Reconcile the drift before starting the app.");
             }
 
+            // Indexing-policy drift is logged (not thrown) per ADR-0025
+            // § 3. A policy mismatch on an existing container does not
+            // misroute writes (unlike partition-key drift) — Cosmos
+            // re-indexes in the background when the policy is
+            // re-applied. We surface drift so an operator running
+            // `--ensure-cosmos-containers` against a container created
+            // before PR #N (this PR) sees the warning and can re-create
+            // or update via Data Explorer.
+            if (containerOptions.IndexingPolicy is { } expected
+                && !IndexingPolicyMatches(existing.Data.Resource?.IndexingPolicy, expected))
+            {
+                _logger.LogWarning(
+                    "Container '{Container}' indexing policy via ARM differs from configuration. Re-apply by recreating the container or by editing the policy via Azure Portal Data Explorer.",
+                    containerOptions.Name);
+            }
+
             _logger.LogInformation(
                 "Container '{Container}' already present via ARM (partition key {PartitionKeyPath}).",
                 containerOptions.Name,
@@ -169,6 +185,10 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
         {
             resource.DefaultTtl = ttl;
         }
+        if (containerOptions.IndexingPolicy is { } indexingPolicy)
+        {
+            resource.IndexingPolicy = BuildArmIndexingPolicy(indexingPolicy);
+        }
 
         var content = new CosmosDBSqlContainerCreateOrUpdateContent(
             // Same placeholder rationale as the database create above —
@@ -183,9 +203,42 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Container '{Container}' created via ARM (partition key {PartitionKeyPath}, default TTL {Ttl}).",
+            "Container '{Container}' created via ARM (partition key {PartitionKeyPath}, default TTL {Ttl}, indexing {Indexing}).",
             containerOptions.Name,
             containerOptions.PartitionKeyPath,
-            containerOptions.DefaultTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none");
+            containerOptions.DefaultTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none",
+            containerOptions.IndexingPolicy is null ? "default" : "selective");
+    }
+
+    private static CosmosDBIndexingPolicy BuildArmIndexingPolicy(CosmosIndexingPolicyOptions source)
+    {
+        var policy = new CosmosDBIndexingPolicy
+        {
+            IndexingMode = CosmosDBIndexingMode.Consistent,
+            IsAutomatic = true,
+        };
+        foreach (var path in source.IncludedPaths)
+        {
+            policy.IncludedPaths.Add(new CosmosDBIncludedPath { Path = path });
+        }
+        foreach (var path in source.ExcludedPaths)
+        {
+            policy.ExcludedPaths.Add(new CosmosDBExcludedPath { Path = path });
+        }
+        return policy;
+    }
+
+    private static bool IndexingPolicyMatches(CosmosDBIndexingPolicy? actual, CosmosIndexingPolicyOptions expected)
+    {
+        if (actual is null)
+        {
+            return false;
+        }
+        var actualIncluded = actual.IncludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var expectedIncluded = expected.IncludedPaths.OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var actualExcluded = actual.ExcludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var expectedExcluded = expected.ExcludedPaths.OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        return actualIncluded.SequenceEqual(expectedIncluded, StringComparer.Ordinal)
+            && actualExcluded.SequenceEqual(expectedExcluded, StringComparer.Ordinal);
     }
 }

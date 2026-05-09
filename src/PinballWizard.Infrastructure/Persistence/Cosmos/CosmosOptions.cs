@@ -101,9 +101,52 @@ public sealed class CosmosOptions
         // worker boot. Idempotent: existing containers with matching
         // partition keys are no-ops.
         new() { Name = "scraped_documents", PartitionKeyPath = "/machine_id" },
+        // `rag_leases` intentionally has no indexing-policy override —
+        // the lease container is owned by `Cosmos.ChangeFeedProcessor`,
+        // and its document shape + query patterns are SDK-internal. A
+        // selective policy that became inconsistent with a future SDK
+        // version's query surface would manifest as a silent perf
+        // regression in change-feed processing. Default indexing is
+        // safe; the cost saving is marginal because the lease container
+        // is small (one row per partition lease).
         new() { Name = "rag_leases", PartitionKeyPath = "/id" },
-        new() { Name = "rag_index_state", PartitionKeyPath = "/document_id" },
-        new() { Name = "rag_dead_letters", PartitionKeyPath = "/document_id" },
+        // Selective indexing on `rag_index_state` per ADR-0025 § 3:
+        // every read path is either a deterministic point-read by
+        // `idx_<document_id>` (CosmosBackedIndexState) or the
+        // reconciler's `SELECT TOP @n * FROM c ORDER BY c.recorded_utc
+        // DESC` (CosmosAiSearchRagReconciler). Indexing only `id`,
+        // `document_id`, and `recorded_utc` keeps the ORDER-BY query
+        // efficient while saving RU on every upsert. NOTE: the JSON
+        // property is `recorded_utc` (snake_case via JsonPropertyName);
+        // Cosmos uses the JSON-on-the-wire path for indexing.
+        new()
+        {
+            Name = "rag_index_state",
+            PartitionKeyPath = "/document_id",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/id/?", "/document_id/?", "/recorded_utc/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
+        // Selective indexing on `rag_dead_letters` per ADR-0025 § 3:
+        // SDK access is point-reads by `dl_<document_id>`
+        // (CosmosBackedDeadLetterSink). The remaining indexed paths
+        // support operator queries in the Cosmos Data Explorer when
+        // investigating failed documents — `document_id` for direct
+        // lookup, `attempt_count` to triage stuck deliveries, and
+        // `last_attempt_utc` to filter by recency. JSON property names
+        // (snake_case) are the canonical paths.
+        new()
+        {
+            Name = "rag_dead_letters",
+            PartitionKeyPath = "/document_id",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/id/?", "/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
     ];
 
     /// <summary>
@@ -143,4 +186,39 @@ public sealed class CosmosContainerOptions
     /// (per-document TTL only).
     /// </summary>
     public int? DefaultTtlSeconds { get; init; }
+
+    /// <summary>
+    /// Optional indexing policy override per ADR-0025 § 3. When null
+    /// (the default), the container is created with Cosmos's default
+    /// policy (all paths indexed). When set, only the listed
+    /// <see cref="CosmosIndexingPolicyOptions.IncludedPaths"/> are
+    /// indexed and the listed
+    /// <see cref="CosmosIndexingPolicyOptions.ExcludedPaths"/> are
+    /// excluded. The provisioners apply the policy on container
+    /// create; on existing containers, drift is logged at warning (not
+    /// thrown) because indexing policy can be re-applied without data
+    /// loss — partition-key drift remains fatal because the layout has
+    /// already been committed and would silently misroute writes.
+    /// </summary>
+    public CosmosIndexingPolicyOptions? IndexingPolicy { get; init; }
+}
+
+/// <summary>
+/// Indexing policy override for a Cosmos container. Maps directly onto
+/// the SDK's <c>IndexingPolicy.IncludedPaths</c> /
+/// <c>IndexingPolicy.ExcludedPaths</c> shape (and the ARM equivalent).
+/// Path syntax uses Cosmos's JSON-pointer-with-wildcard form, e.g.
+/// <c>/id/?</c> for a single property or <c>/*</c> for everything.
+/// Cosmos requires at least one included path; the
+/// provisioners pass the configured paths through unmodified, so an
+/// empty <see cref="IncludedPaths"/> would yield a policy Cosmos
+/// rejects on create.
+/// </summary>
+public sealed class CosmosIndexingPolicyOptions
+{
+    /// <summary>Paths to index (Cosmos path syntax, e.g. <c>/id/?</c>).</summary>
+    public IReadOnlyList<string> IncludedPaths { get; init; } = [];
+
+    /// <summary>Paths to exclude from indexing (e.g. <c>/*</c> for everything not listed).</summary>
+    public IReadOnlyList<string> ExcludedPaths { get; init; } = [];
 }
