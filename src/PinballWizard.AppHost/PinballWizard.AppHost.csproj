@@ -26,6 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PinballWizard.Api\PinballWizard.Api.csproj" />
     <ProjectReference Include="..\PinballWizard.Cli\PinballWizard.Cli.csproj" />
     <ProjectReference Include="..\PinballWizard.Web\PinballWizard.Web.csproj" />
   </ItemGroup>

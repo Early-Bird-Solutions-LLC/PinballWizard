@@ -3,21 +3,26 @@ using Bunit.TestDoubles;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
+using NSubstitute;
+using PinballWizard.Application.Ai;
 using PinballWizard.Web.Components.Layout;
-using PinballWizard.Web.Components.Pages;
 using PinballWizard.Web.Components.Theming;
+using PinballWizard.Web.Components.Wizard;
 using Xunit;
+
+// Alias PinballWizard.Web.Components.Pages.Wizard to avoid the name clash
+// with the PinballWizard.Web.Components.Wizard namespace introduced in PR-F2.
+using WizardPage = PinballWizard.Web.Components.Pages.Wizard;
 
 namespace PinballWizard.Web.Tests.Components.Pages;
 
 // Per ADR-0026 PR self-audit item 9(d): every Razor component must have
-// a bUnit smoke test. Wizard.razor is the Wave 1 placeholder for the
-// primary /wizard route (anonymous, per ADR-0026 § 1). This test mounts
-// the component and asserts it renders without exception.
+// a bUnit smoke test. Wizard.razor is the primary /wizard route (anonymous,
+// per ADR-0026 § 1).
 //
-// PR-F1 extends these tests to assert layout-aware chrome rendering —
-// that the Wizard page content mounts inside the MainLayout chrome
-// (MudAppBar + BrandHeader + TiltErrorBoundary wrapper).
+// PR-F2 amends: WizardStreamingPlaceholder replaces the plain text placeholder.
+// Tests now assert the WizardStreamingPlaceholder is present (and IWizardStreamingClient
+// is registered in DI) rather than checking for the F1 placeholder text.
 //
 // Wave 2 tests will assert WizardAnswerStream, RefusalPanel, CitationStrip,
 // and streaming behavior once those delight surfaces land.
@@ -28,19 +33,27 @@ public sealed class WizardTests : TestContext
         // MudBlazor components require MudServices in the DI container.
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        // bUnit registers FakeNavigationManager automatically; ensure it's
-        // in place for BrandHeader nav links and NavigationManager injections.
+
+        // PR-F2: WizardStreamingPlaceholder injects IWizardStreamingClient.
+        // Register the mock BEFORE calling GetRequiredService — bUnit locks
+        // the service provider on the first GetService call.
+        Services.AddSingleton(Substitute.For<IWizardStreamingClient>());
+
+        // bUnit registers FakeNavigationManager automatically. Resolving it
+        // here confirms it is in place for BrandHeader nav links. Note: this
+        // call locks the provider so it must come after all AddSingleton calls.
         var _ = Services.GetRequiredService<FakeNavigationManager>();
     }
 
     [Fact]
     public void Wizard_Renders_WithoutException()
     {
-        // Act — mount the placeholder Wizard page.
-        var cut = RenderComponent<Wizard>();
+        // Act — mount the Wizard page (contains WizardStreamingPlaceholder).
+        var cut = RenderComponent<WizardPage>();
 
-        // Assert — the Wave 1 placeholder text is visible in the markup.
-        Assert.Contains("Wizard placeholder", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Assert — the SSE streaming placeholder button renders.
+        // The exact text "Stream hello-world" is in WizardStreamingPlaceholder.
+        Assert.Contains("Stream hello-world", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -53,7 +66,7 @@ public sealed class WizardTests : TestContext
         var cut = RenderComponent<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
-                builder.OpenComponent<Wizard>(0);
+                builder.OpenComponent<WizardPage>(0);
                 builder.CloseComponent();
             }));
 
@@ -62,7 +75,7 @@ public sealed class WizardTests : TestContext
         cut.FindComponent<BrandHeader>();
         cut.FindComponent<TiltErrorBoundary>();
 
-        // Assert — the Wizard page content is also present within the chrome.
-        Assert.Contains("Wizard placeholder", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Assert — the streaming placeholder is within the chrome.
+        Assert.Contains("Stream hello-world", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 }
