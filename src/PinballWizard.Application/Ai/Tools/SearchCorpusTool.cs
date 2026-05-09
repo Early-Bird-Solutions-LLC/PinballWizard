@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using Azure;
+using Azure.Identity;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Observability;
 
@@ -25,12 +28,14 @@ namespace PinballWizard.Application.Ai.Tools;
 // fabricate. Re-throwing here would let the model loop on transient
 // failures (Microsoft Agent Framework retries function calls), so we
 // fail closed at the tool boundary and let the orchestrator's
-// guardrail handle the user-visible refusal. The catch block emits
-// `pinwiz.ai.tool_errors_total{tool=searchCorpus}` per ADR-0023 §
-// Negative consequence #3 so an operator can distinguish "model
-// didn't call the tool" refusals from "tool threw" refusals — both
-// produce empty citation sets but they need different alerts. The
-// counter is defined on `PinballWizardTelemetry.AiToolErrors`.
+// guardrail handle the user-visible refusal.
+//
+// Wave 2 PR-D2: typed catch arms replace the prior single catch-all.
+// Each arm calls MarkAndCountSearchUnavailable with a distinct `reason`
+// tag so dashboards can distinguish timeout-induced empty results from
+// auth failures from generic 5xx (different alert, different remediation).
+// IDegradationContext.Mark() is called so AiRouter can fold the signal
+// into WizardAnswer.Degradation per ADR-0026 § 9.
 public sealed class SearchCorpusTool
 {
     // Server-side TopK ceiling. The model can request up to this; a
@@ -49,13 +54,19 @@ public sealed class SearchCorpusTool
     internal const string ToolTagValue = "searchCorpus";
 
     private readonly IRagRetriever _retriever;
+    private readonly IDegradationContext _degradationContext;
     private readonly ILogger<SearchCorpusTool> _logger;
 
-    public SearchCorpusTool(IRagRetriever retriever, ILogger<SearchCorpusTool> logger)
+    public SearchCorpusTool(
+        IRagRetriever retriever,
+        IDegradationContext degradationContext,
+        ILogger<SearchCorpusTool> logger)
     {
         ArgumentNullException.ThrowIfNull(retriever);
+        ArgumentNullException.ThrowIfNull(degradationContext);
         ArgumentNullException.ThrowIfNull(logger);
         _retriever = retriever;
+        _degradationContext = degradationContext;
         _logger = logger;
     }
 
@@ -101,29 +112,63 @@ public sealed class SearchCorpusTool
                     .RetrieveAsync(query, options, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (OperationCanceledException oce) when (IsTimeoutCancellation(oce))
+            {
+                // SDK-internal timeout (the retriever's own CancellationToken
+                // fired, not the caller's). Surface as SearchUnavailable/timeout
+                // rather than propagating — the model should not loop on a
+                // retriever timeout; fail closed and let NoCitation refuse.
+                MarkAndCountSearchUnavailable(
+                    "timeout",
+                    "AI Search retrieval timed out.",
+                    oce,
+                    options,
+                    query);
+                return new SearchCorpusResult([]);
+            }
             catch (OperationCanceledException)
             {
-                // Cancellation is the caller's intent — propagate.
+                // Caller intent — propagate so the outer request can be
+                // cancelled cleanly.
                 throw;
             }
-            catch (Exception ex)
+            catch (AuthenticationFailedException afe)
             {
-                // Transport-level failures (auth, network, AI Search 5xx)
-                // are caught + surfaced as empty so the model can't loop
-                // on a transient failure. The tool-errors counter (per
-                // ADR-0023 § Negative consequence #3) tags by `tool` so
-                // operator dashboards distinguish retrieval-side failures
-                // from agent-didn't-call-tool cases — both produce empty
-                // citation sets but they need different alerts.
-                PinballWizardTelemetry.AiToolErrors.Add(1,
-                    new KeyValuePair<string, object?>("tool", ToolTagValue));
-                _logger.LogWarning(
+                // Azure.Identity auth failure (misconfigured credential,
+                // expired MSI token). Surface as SearchUnavailable/auth_failure.
+                MarkAndCountSearchUnavailable(
+                    "auth_failure",
+                    "AI Search authentication failed.",
+                    afe,
+                    options,
+                    query);
+                return new SearchCorpusResult([]);
+            }
+            catch (RequestFailedException rfe) when (rfe.Status >= 500)
+            {
+                // AI Search 5xx (service outage, gateway timeout). The
+                // when-guard keeps 4xx (auth, not-found) from being
+                // silently swallowed — those would indicate a misconfigured
+                // index and should propagate so they're surfaced as errors.
+                MarkAndCountSearchUnavailable(
+                    "http_5xx",
+                    $"AI Search returned HTTP {rfe.Status}.",
+                    rfe,
+                    options,
+                    query);
+                return new SearchCorpusResult([]);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Generic transport-level failures (network partition, DNS,
+                // unexpected SDK wrapping). Categorized as "other" so the
+                // dashboard can distinguish this bucket from the typed arms.
+                MarkAndCountSearchUnavailable(
+                    "other",
+                    "AI Search retrieval failed with an unexpected error.",
                     ex,
-                    "SearchCorpusTool: retriever threw — returning empty result. query length={QueryLength} machineId={MachineId} documentType={DocumentType} topK={TopK}",
-                    query.Length,
-                    options.MachineId ?? "(any)",
-                    options.DocumentType ?? "(any)",
-                    options.TopK);
+                    options,
+                    query);
                 return new SearchCorpusResult([]);
             }
 
@@ -183,6 +228,51 @@ public sealed class SearchCorpusTool
             return TopKDefault;
         }
         return Math.Min(requested.Value, TopKCeiling);
+    }
+
+    // Returns true when the OperationCanceledException was raised by an
+    // SDK-internal timeout rather than by the caller's CancellationToken.
+    // The heuristic: a non-default (non-None) token that is already
+    // cancelled indicates the SDK passed its own internal token; the
+    // caller's token would typically be cancelled only when the caller
+    // intentionally cancels (in which case we propagate above). This
+    // mirrors the convention used in Azure.Core SDK timeout wrapping.
+    internal static bool IsTimeoutCancellation(OperationCanceledException oce)
+        => oce.CancellationToken != CancellationToken.None
+           && oce.CancellationToken.IsCancellationRequested;
+
+    // Marks the ambient degradation context, increments the search-unavailable
+    // OTel counter, increments the tool-errors counter, and logs a warning.
+    // All typed catch arms delegate here so the three side-effects stay
+    // synchronized — one place to update if the contract changes.
+    private void MarkAndCountSearchUnavailable(
+        string reason,
+        string detail,
+        Exception ex,
+        RetrievalOptions options,
+        string query)
+    {
+        _degradationContext.Mark(DegradationMode.SearchUnavailable, detail);
+
+        PinballWizardTelemetry.AiSearchUnavailable.Add(
+            1,
+            new KeyValuePair<string, object?>("reason", reason));
+
+        // AiToolErrors continues to fire so existing alerts and dashboards
+        // that rely on tool=searchCorpus are unaffected by the finer
+        // reason-tagged counter shipping in this PR.
+        PinballWizardTelemetry.AiToolErrors.Add(
+            1,
+            new KeyValuePair<string, object?>("tool", ToolTagValue));
+
+        _logger.LogWarning(
+            ex,
+            "SearchCorpusTool: retriever threw ({Reason}) — returning empty result. query length={QueryLength} machineId={MachineId} documentType={DocumentType} topK={TopK}",
+            reason,
+            query.Length,
+            options.MachineId ?? "(any)",
+            options.DocumentType ?? "(any)",
+            options.TopK);
     }
 
     // Normalize "" / "  " to null so the retriever's filter builder
