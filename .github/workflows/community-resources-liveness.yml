@@ -1,0 +1,116 @@
+# community-resources-liveness.yml
+#
+# Verifies that every URL in data/seeds/community_resources.v1.json returns
+# a successful HTTP response. This workflow is part of PinballWizard's
+# polite-by-construction posture: we hold our own curated seed file to the
+# same liveness standard we apply to external sources.
+#
+# Politeness commitments (visible to any prospect reading this action):
+#   - User-Agent identifies the project, its GitHub home, and a contact
+#     address — the same identity envelope the scrapers use.
+#   - Requests are serialised with a 1-second gap between them so we do
+#     not hammer community sites with concurrent HEAD requests.
+#   - HEAD is preferred over GET to minimise bandwidth on the remote server.
+#   - The check runs only when the seed file itself changes (on PRs). On
+#     direct pushes to main the check also runs to catch post-merge drift.
+#
+# Failure means a URL in the seed has gone stale. Fix the URL, then the
+# workflow will go green again. Do not suppress failures by skipping checks.
+
+name: Community Resources Liveness Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/seeds/community_resources.v1.json"
+  pull_request:
+    paths:
+      - "data/seeds/community_resources.v1.json"
+
+jobs:
+  liveness:
+    name: Probe community resource URLs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Parse the seed file with jq and probe each URL in sequence.
+      # A 1-second sleep between requests is the politeness rate limit —
+      # do not remove it or reduce it. Community sites are not CDNs;
+      # parallel probes from CI look like a small scrape burst to them.
+      - name: Probe URLs (1 req/sec, polite User-Agent)
+        env:
+          # Identity envelope: project name + GitHub URL + contact email.
+          # Matches the User-Agent pattern used by the PinballWizard scrapers.
+          USER_AGENT: "PinballWizard-CI-LivenessCheck/1.0 (+https://github.com/Early-Bird-Solutions-LLC/PinballWizard) jim@earlybirdsolutions.com"
+          SEED_FILE: data/seeds/community_resources.v1.json
+        run: |
+          set -euo pipefail
+
+          echo "Parsing URLs from $SEED_FILE …"
+          mapfile -t URLS < <(jq -r '.resources[].url' "$SEED_FILE")
+          echo "Found ${#URLS[@]} URLs to probe."
+
+          FAILED=0
+          PROBED=0
+
+          for URL in "${URLS[@]}"; do
+            # Polite gap — do not remove. One request per second.
+            if [ "$PROBED" -gt 0 ]; then
+              sleep 1
+            fi
+
+            echo -n "Probing: $URL … "
+
+            # Use HEAD first; fall back to GET if the server rejects HEAD.
+            # Timeout: 10 s per request (community sites can be slow).
+            HTTP_STATUS=$(curl \
+              --silent \
+              --output /dev/null \
+              --write-out "%{http_code}" \
+              --max-time 10 \
+              --user-agent "$USER_AGENT" \
+              --head \
+              "$URL" 2>/dev/null || echo "000")
+
+            # Some servers return 405 Method Not Allowed for HEAD.
+            # Fall back to a GET with --range 0-0 to minimise transfer.
+            if [ "$HTTP_STATUS" = "405" ] || [ "$HTTP_STATUS" = "000" ]; then
+              echo -n "(HEAD failed with $HTTP_STATUS; retrying with GET) "
+              HTTP_STATUS=$(curl \
+                --silent \
+                --output /dev/null \
+                --write-out "%{http_code}" \
+                --max-time 10 \
+                --user-agent "$USER_AGENT" \
+                --range 0-0 \
+                "$URL" 2>/dev/null || echo "000")
+            fi
+
+            PROBED=$((PROBED + 1))
+
+            # 2xx and 3xx are considered live (redirects are acceptable).
+            if [[ "$HTTP_STATUS" =~ ^[23] ]]; then
+              echo "OK ($HTTP_STATUS)"
+            else
+              echo "FAILED ($HTTP_STATUS)"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo ""
+          echo "Probed $PROBED URL(s). Failed: $FAILED."
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "::error::$FAILED URL(s) in $SEED_FILE returned non-2xx/3xx responses."
+            echo "Update or remove the stale entry(ies) before merging."
+            exit 1
+          fi
+
+          echo "All URLs are live."
