@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Theme picker prototype v1
+  Live theme switching across the three currently-prototyped themes:
+  Modern LCD (default), DMD Classic, Daytime Route.
+
+  How it works:
+  - Each theme defined as a CSS class (.theme-modern-lcd, .theme-dmd-classic,
+    .theme-daytime-route) on <body>, with all design tokens as CSS custom
+    properties scoped to that class.
+  - Theme picker cards each previewed in their OWN theme's palette, so
+    selecting is visual — you see what you're picking before you pick.
+  - Active theme stored in localStorage; persists across reloads.
+  - All other styles use var(--token) and re-cascade automatically when
+    the body class changes. Zero per-component theme branching.
+
+  This validates the design system: the same answer-with-citations payload
+  re-themes live, with no markup changes, just by swapping the body class.
+  In production, this picker UI lives on the Settings screen
+  (per docs/ui/themes/sibling-themes-overview.md § Theme picker UI
+  consideration). Here it's at the top of the page so you can see live
+  switching against a real answer surface.
+
+  Static HTML/CSS/JS only — no framework, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard — Theme picker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@500;700&family=Press+Start+2P&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <style>
+    /* ===== Theme: Modern LCD (default) ===== */
+    .theme-modern-lcd {
+      --bg-base: #0c0b0e;
+      --bg-surface: #161519;
+      --bg-surface-hi: #1f1d22;
+      --text-primary: #f4f1ea;
+      --text-secondary: #9a9590;
+      --accent-primary: #ff9a1f;
+      --accent-grounded: #34d96a;
+      --accent-refusal: #ff3b30;
+      --accent-mode: #e13bd9;
+      --border-quiet: #2a282d;
+      --border-glow-primary: #ff9a1f99;
+      --border-glow-grounded: #34d96a99;
+      --border-glow-mode: #e13bd999;
+      --font-display: 'Barlow Condensed', sans-serif;
+      --font-display-weight: 700;
+      --font-display-letterspacing: 0.02em;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --shadow-press: inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+      --glow-accent: 0 0 0 transparent;
+      --display-source-size: 24px;
+      --provenance-size: 12px;
+    }
+
+    /* ===== Theme: DMD Classic ===== */
+    .theme-dmd-classic {
+      --bg-base: #000000;
+      --bg-surface: #0a0500;
+      --bg-surface-hi: #1a0f00;
+      --text-primary: #f4d090;
+      --text-secondary: #a07050;
+      --accent-primary: #ff9900;
+      --accent-grounded: #ffaa00;
+      --accent-refusal: #ff4400;
+      --accent-mode: #ffcc66;
+      --border-quiet: #2a1500;
+      --border-glow-primary: #ff990099;
+      --border-glow-grounded: #ffaa0099;
+      --border-glow-mode: #ffcc6699;
+      --font-display: 'Press Start 2P', monospace;
+      --font-display-weight: 400;
+      --font-display-letterspacing: 0.05em;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'Press Start 2P', monospace;
+      --shadow-press: inset 0 -1px 2px rgba(0, 0, 0, 0.6);
+      --glow-accent: 0 0 4px currentColor, 0 0 10px rgba(255, 153, 0, 0.35);
+      --display-source-size: 14px;
+      --provenance-size: 9px;
+    }
+
+    /* ===== Theme: Daytime Route ===== */
+    .theme-daytime-route {
+      --bg-base: #faf6ef;
+      --bg-surface: #f0e9d8;
+      --bg-surface-hi: #e7dec5;
+      --text-primary: #1f1a14;
+      --text-secondary: #6a6052;
+      --accent-primary: #cc5500;
+      --accent-grounded: #0d6e2d;
+      --accent-refusal: #a8201a;
+      --accent-mode: #9a1c8a;
+      --border-quiet: #d8cdb5;
+      --border-glow-primary: #cc550066;
+      --border-glow-grounded: #0d6e2d66;
+      --border-glow-mode: #9a1c8a66;
+      --font-display: 'Barlow', sans-serif;
+      --font-display-weight: 700;
+      --font-display-letterspacing: 0.02em;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --shadow-press: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+      --glow-accent: 0 0 0 transparent;
+      --display-source-size: 24px;
+      --provenance-size: 12px;
+    }
+
+    /* ===== Common spacing/radius/motion (theme-agnostic) ===== */
+    :root {
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --radius-insert: 50%;
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+      --motion-slow: 600ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.6;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      transition: background var(--motion-medium), color var(--motion-medium);
+    }
+
+    /* ===== Header ===== */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 1px solid var(--border-quiet);
+      height: 56px;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-md);
+      letter-spacing: var(--font-display-letterspacing);
+      color: var(--text-primary);
+      text-shadow: var(--glow-accent);
+    }
+    .theme-dmd-classic .brand {
+      font-size: var(--type-sm);
+      color: var(--accent-primary);
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+
+    /* ===== Main ===== */
+    .page-main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4) var(--space-4) var(--space-5);
+    }
+
+    /* ===== Settings note ===== */
+    .settings-note {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      font-style: italic;
+      margin-bottom: var(--space-3);
+      padding: var(--space-2);
+      border-left: 3px solid var(--border-quiet);
+    }
+
+    /* ===== Theme picker ===== */
+    .picker-section {
+      margin-bottom: var(--space-5);
+    }
+    .picker-label {
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-md);
+      color: var(--text-primary);
+      margin-bottom: var(--space-2);
+      letter-spacing: var(--font-display-letterspacing);
+      text-shadow: var(--glow-accent);
+    }
+    .theme-dmd-classic .picker-label {
+      font-size: var(--type-sm);
+      color: var(--accent-primary);
+    }
+    .picker-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--space-2);
+    }
+
+    /* Theme cards each render in their own theme's palette */
+    .theme-card {
+      border: 1px solid;
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+      transition: transform var(--motion-fast), box-shadow var(--motion-fast);
+      font-family: 'Inter', sans-serif;
+    }
+    .theme-card:hover {
+      transform: translateY(-2px);
+    }
+    .theme-card.active {
+      box-shadow: 0 0 0 2px var(--accent-primary);
+    }
+
+    .theme-card-name {
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .theme-card-desc {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+    .theme-card-swatches {
+      display: flex;
+      gap: 6px;
+      margin-top: auto;
+    }
+    .swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 3px;
+      border: 1px solid rgba(127, 127, 127, 0.3);
+    }
+
+    /* --- Card: Modern LCD (preview) --- */
+    .theme-card.preview-modern-lcd {
+      background: #161519;
+      color: #f4f1ea;
+      border-color: #2a282d;
+    }
+    .theme-card.preview-modern-lcd .theme-card-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 22px;
+    }
+
+    /* --- Card: DMD Classic (preview) --- */
+    .theme-card.preview-dmd-classic {
+      background: #0a0500;
+      color: #f4d090;
+      border-color: #2a1500;
+    }
+    .theme-card.preview-dmd-classic .theme-card-name {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 13px;
+      color: #ff9900;
+      text-shadow: 0 0 4px currentColor, 0 0 10px rgba(255, 153, 0, 0.35);
+      line-height: 1.4;
+    }
+
+    /* --- Card: Daytime Route (preview) --- */
+    .theme-card.preview-daytime-route {
+      background: #f0e9d8;
+      color: #1f1a14;
+      border-color: #d8cdb5;
+    }
+    .theme-card.preview-daytime-route .theme-card-name {
+      font-family: 'Barlow', sans-serif;
+      font-size: 22px;
+      color: #cc5500;
+    }
+
+    /* ===== Divider ===== */
+    .preview-divider {
+      border-top: 1px dashed var(--border-quiet);
+      padding-top: var(--space-4);
+      margin-top: var(--space-4);
+    }
+    .preview-divider-label {
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-xs);
+      color: var(--text-secondary);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-3);
+    }
+    .theme-dmd-classic .preview-divider-label {
+      font-size: 9px;
+    }
+
+    /* ===== Question input ===== */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .theme-daytime-route .question-input input {
+      background: #ffffff;
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 1px var(--border-glow-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: var(--bg-base);
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: filter var(--motion-fast), transform var(--motion-fast);
+    }
+    .theme-dmd-classic .submit-btn {
+      font-size: var(--type-xs);
+      letter-spacing: 0.08em;
+    }
+    .theme-daytime-route .submit-btn {
+      color: #ffffff;
+    }
+    .submit-btn:hover { filter: brightness(1.12); }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* ===== Answer panel ===== */
+    .answer-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-4);
+    }
+    .answer-panel p {
+      margin-bottom: var(--space-2);
+      color: var(--text-primary);
+    }
+    .answer-panel p:last-child { margin-bottom: 0; }
+
+    /* Body-text portal */
+    .entity-portal {
+      color: var(--text-primary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .entity-portal:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+    .portal-icon {
+      font-size: 0.85em;
+      margin-left: 2px;
+      color: var(--text-secondary);
+      transition: color var(--motion-fast);
+    }
+    .entity-portal:hover .portal-icon {
+      color: var(--accent-grounded);
+    }
+
+    /* Inline citation marker */
+    .citation-marker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: var(--radius-insert);
+      background: var(--bg-surface-hi);
+      color: var(--accent-grounded);
+      border: 1px solid var(--accent-grounded);
+      box-shadow: 0 0 4px var(--border-glow-grounded);
+      font-family: var(--font-body);
+      font-size: var(--type-xs);
+      font-weight: 600;
+      vertical-align: super;
+      margin-left: 2px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast);
+    }
+    .theme-dmd-classic .citation-marker {
+      font-family: var(--font-display);
+      font-size: 9px;
+    }
+    .theme-daytime-route .citation-marker {
+      background: #ffffff;
+    }
+    .citation-marker:hover {
+      box-shadow: 0 0 8px var(--accent-grounded);
+      transform: translateY(-1px);
+    }
+    .theme-daytime-route .citation-marker:hover {
+      background: var(--accent-grounded);
+      color: #ffffff;
+    }
+
+    /* ===== Citation card ===== */
+    .citation-stack { margin-top: var(--space-4); }
+    .citation-summary {
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-3);
+    }
+    .theme-dmd-classic .citation-summary {
+      font-size: var(--type-xs);
+      letter-spacing: 0.1em;
+      text-transform: none;
+    }
+    .citation-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      transition: border-color var(--motion-fast), background var(--motion-fast);
+    }
+    .citation-card:hover {
+      background: var(--bg-surface-hi);
+      border-color: var(--accent-grounded);
+    }
+    .citation-card:last-child { margin-bottom: 0; }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+      flex-wrap: wrap;
+    }
+    .source-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border: 1px solid var(--accent-grounded);
+      box-shadow: 0 0 4px var(--border-glow-grounded);
+      border-radius: var(--radius-panel);
+      color: var(--accent-grounded);
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-xs);
+      letter-spacing: 0.1em;
+      text-shadow: var(--glow-accent);
+    }
+    .theme-dmd-classic .source-tag {
+      font-size: 9px;
+      padding: 4px 10px;
+    }
+    .source-identity {
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--display-source-size);
+      color: var(--text-primary);
+      letter-spacing: var(--font-display-letterspacing);
+      line-height: 1.2;
+      text-shadow: var(--glow-accent);
+    }
+    .theme-dmd-classic .source-identity {
+      color: var(--accent-primary);
+    }
+    .excerpt {
+      border-left: 3px solid var(--accent-grounded);
+      padding: var(--space-1) var(--space-2);
+      margin: var(--space-2) 0;
+      color: var(--text-primary);
+      font-style: italic;
+    }
+    .meta {
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-3);
+    }
+    .meta .provenance {
+      font-family: var(--font-mono);
+      font-size: var(--provenance-size);
+      margin-top: 4px;
+    }
+
+    /* ===== Flipper buttons ===== */
+    .flipper-pair {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+    }
+    .flipper {
+      background: var(--bg-surface-hi);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-weight: var(--font-display-weight);
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      min-height: 48px;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      text-shadow: var(--glow-accent);
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast),
+                  background var(--motion-fast), color var(--motion-fast),
+                  border-color var(--motion-fast);
+    }
+    .theme-dmd-classic .flipper {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      color: var(--accent-primary);
+    }
+    .theme-daytime-route .flipper {
+      background: var(--bg-base);
+    }
+    .flipper:active { transform: translateY(1px); }
+    .flipper-left:hover {
+      color: var(--accent-mode);
+      border-color: var(--accent-mode);
+      box-shadow: var(--shadow-press), 0 0 10px var(--border-glow-mode);
+    }
+    .flipper-right:hover {
+      color: var(--accent-grounded);
+      border-color: var(--accent-grounded);
+      box-shadow: var(--shadow-press), 0 0 10px var(--border-glow-grounded);
+    }
+    .theme-daytime-route .flipper-left:hover,
+    .theme-daytime-route .flipper-right:hover {
+      background: #ffffff;
+    }
+
+    /* ===== Footer ===== */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 1px solid var(--border-quiet);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .page-footer a {
+      color: var(--accent-grounded);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-grounded); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-2); }
+      .picker-grid { grid-template-columns: 1fr; }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .answer-panel { padding: var(--space-3); }
+      .flipper-pair { flex-direction: column; }
+      .flipper { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body class="theme-modern-lcd">
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <div class="settings-note">
+      In production, the theme picker lives on the Settings screen. It's
+      surfaced here at the top so you can see live theme switching against
+      a real answer surface — selecting a theme card re-themes everything
+      below instantly. Choice persists across reloads via localStorage.
+    </div>
+
+    <section class="picker-section" role="radiogroup" aria-label="Choose theme">
+      <div class="picker-label">Theme</div>
+      <div class="picker-grid">
+        <button
+          class="theme-card preview-modern-lcd active"
+          data-theme="theme-modern-lcd"
+          role="radio"
+          aria-checked="true"
+        >
+          <div class="theme-card-name">MODERN LCD</div>
+          <div class="theme-card-desc">Default. App-native foundation with broadcast accents — contemporary pinball LCD.</div>
+          <div class="theme-card-swatches">
+            <div class="swatch" style="background:#0c0b0e"></div>
+            <div class="swatch" style="background:#ff9a1f"></div>
+            <div class="swatch" style="background:#34d96a"></div>
+          </div>
+        </button>
+
+        <button
+          class="theme-card preview-dmd-classic"
+          data-theme="theme-dmd-classic"
+          role="radio"
+          aria-checked="false"
+        >
+          <div class="theme-card-name">DMD CLASSIC</div>
+          <div class="theme-card-desc">Late-80s through mid-90s nostalgia. Pure black with amber pixel-display moments.</div>
+          <div class="theme-card-swatches">
+            <div class="swatch" style="background:#000000"></div>
+            <div class="swatch" style="background:#ff9900"></div>
+            <div class="swatch" style="background:#ffaa00"></div>
+          </div>
+        </button>
+
+        <button
+          class="theme-card preview-daytime-route"
+          data-theme="theme-daytime-route"
+          role="radio"
+          aria-checked="false"
+        >
+          <div class="theme-card-name">DAYTIME ROUTE</div>
+          <div class="theme-card-desc">Era-neutral light mode for sunlit / public / accessibility contexts.</div>
+          <div class="theme-card-swatches">
+            <div class="swatch" style="background:#faf6ef"></div>
+            <div class="swatch" style="background:#cc5500"></div>
+            <div class="swatch" style="background:#0d6e2d"></div>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <div class="preview-divider">
+      <div class="preview-divider-label">Live preview · answer-with-citations screen</div>
+
+      <form class="question-input" onsubmit="event.preventDefault();">
+        <input
+          type="text"
+          value="How do I fix the trough opto on Bond Premium?"
+          aria-label="Ask a question about pinball"
+        >
+        <button type="submit" class="submit-btn">ASK ▶</button>
+      </form>
+
+      <article class="answer-panel" aria-live="polite">
+        <p>
+          For trough opto failures on
+          <a href="#" class="entity-portal" title="Stern Pinball — official game page">Bond Premium<span class="portal-icon">↗</span></a>,
+          the canonical service procedure comes from
+          <a href="#" class="entity-portal" title="Stern Pinball — service bulletin SB-243">Service Bulletin SB-243<span class="portal-icon">↗</span></a>.
+          The most common failure mode is a hard fault on boot when the optos
+          report inconsistent state — typically caused by a faulty opto board
+          rather than the optos themselves.<a href="#card-1" class="citation-marker" aria-label="Citation 1">1</a>
+        </p>
+        <p>
+          Before replacing the board, run the switch matrix test from the
+          operator menu to confirm the symptom matches. If the test passes
+          cleanly but ball-search behavior persists, the trough opto board
+          (assembly 520-5246-00) is the likely culprit.<a href="#card-2" class="citation-marker" aria-label="Citation 2">2</a>
+        </p>
+      </article>
+
+      <section class="citation-stack" aria-label="Sources">
+        <div class="citation-summary">SOURCES · 2 cited from 1 site</div>
+
+        <article class="citation-card" id="card-1" aria-labelledby="card-1-title">
+          <div class="card-header">
+            <span class="source-tag">BULLETIN</span>
+            <h2 class="source-identity" id="card-1-title">STERN BOND PREMIUM — SB-243</h2>
+          </div>
+          <blockquote class="excerpt">
+            "Replace the trough opto board (assembly 520-5246-00) when
+            ball-search behavior persists after switch matrix test passes."
+          </blockquote>
+          <div class="meta">
+            <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+            <div class="provenance">sternpinball.com / support / sb-243</div>
+          </div>
+          <div class="flipper-pair">
+            <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+            <button class="flipper flipper-right" aria-label="View the original Stern service bulletin SB-243, opens in new tab">VIEW THE ORIGINAL ▶</button>
+          </div>
+        </article>
+
+        <article class="citation-card" id="card-2" aria-labelledby="card-2-title">
+          <div class="card-header">
+            <span class="source-tag">MANUAL</span>
+            <h2 class="source-identity" id="card-2-title">STERN BOND PREMIUM — OPS MANUAL</h2>
+          </div>
+          <blockquote class="excerpt">
+            "Trough Opto Board Replacement: Power off the machine. Disconnect
+            the J1 connector. Remove the four mounting screws. Reverse to install."
+          </blockquote>
+          <div class="meta">
+            <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+            <div class="provenance">sternpinball.com / manuals / bond-pe-ops.pdf</div>
+          </div>
+          <div class="flipper-pair">
+            <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+            <button class="flipper flipper-right" aria-label="View the original Stern operations manual, opens in new tab">VIEW THE ORIGINAL ▶</button>
+          </div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+
+  <script>
+    // Theme picker — single click handler swaps the body class.
+    // localStorage persists choice across reloads.
+    (function () {
+      const STORAGE_KEY = 'pinwiz-theme';
+      const DEFAULT_THEME = 'theme-modern-lcd';
+      const validThemes = ['theme-modern-lcd', 'theme-dmd-classic', 'theme-daytime-route'];
+
+      function applyTheme(themeClass) {
+        if (!validThemes.includes(themeClass)) return;
+        document.body.className = themeClass;
+        document.querySelectorAll('.theme-card').forEach(card => {
+          const isActive = card.dataset.theme === themeClass;
+          card.classList.toggle('active', isActive);
+          card.setAttribute('aria-checked', String(isActive));
+        });
+      }
+
+      // Load persisted theme
+      const saved = localStorage.getItem(STORAGE_KEY) || DEFAULT_THEME;
+      applyTheme(saved);
+
+      // Click handlers
+      document.querySelectorAll('.theme-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const themeClass = card.dataset.theme;
+          applyTheme(themeClass);
+          localStorage.setItem(STORAGE_KEY, themeClass);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
