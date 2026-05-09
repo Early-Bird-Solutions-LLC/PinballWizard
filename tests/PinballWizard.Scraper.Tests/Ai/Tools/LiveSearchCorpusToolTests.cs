@@ -1,9 +1,10 @@
-using Azure.AI.OpenAI;
+﻿using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure.Search.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Retrieval;
@@ -75,7 +76,7 @@ public sealed class LiveSearchCorpusToolTests
             Options.Create(aiSearchOptions),
             NullLogger<AiSearchRagRetriever>.Instance);
 
-        var tool = new SearchCorpusTool(retriever, NullLogger<SearchCorpusTool>.Instance);
+        var tool = new SearchCorpusTool(retriever, new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var result = await tool.SearchCorpusAsync(

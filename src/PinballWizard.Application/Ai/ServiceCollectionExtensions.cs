@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Application.Ai.Citations;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
@@ -23,6 +24,12 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IAgentPromptProvider, EmbeddedResourceAgentPromptProvider>();
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
+        // Wave 2 PR-D2: per-call ambient degradation context. Singleton backed
+        // by AsyncLocal<T> — same pattern as IHttpContextAccessor. Safe to inject
+        // into other singletons (SearchCorpusTool, AiRouter) because state is
+        // flow-local, not instance-shared.
+        services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>();
+
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<SearchCorpusTool>();
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();

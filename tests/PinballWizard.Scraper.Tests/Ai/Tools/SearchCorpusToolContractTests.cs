@@ -1,8 +1,9 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Tools;
 using Xunit;
 
@@ -25,7 +26,7 @@ public sealed class SearchCorpusToolContractTests
     private static AIFunction CreateAIFunction()
     {
         var retriever = Substitute.For<IRagRetriever>();
-        var tool = new SearchCorpusTool(retriever, NullLogger<SearchCorpusTool>.Instance);
+        var tool = new SearchCorpusTool(retriever, new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);
         return AIFunctionFactory.Create(tool.SearchCorpusAsync);
     }
 
