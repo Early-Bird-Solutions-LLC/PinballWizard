@@ -21,6 +21,13 @@ namespace PinballWizard.Application.Ai;
 // the agent answered without calling a grounding tool, OR a tool error
 // prevented citation surfacing — distinguished in production by
 // cross-correlating with `pinwiz.ai.tool_errors_total`).
+//
+// Phase 5 Wave 1 PR-D1 adds UpstreamThrottled per ADR-0026 § 9:
+// Foundry / model upstream returned 429 Too Many Requests. Distinct
+// from CostCeilingHit (project ran out of budget) — UpstreamThrottled
+// is a transient per-tenant rate limit; the user can retry after the
+// Retry-After interval. RetryAfterSeconds surfaces on the paired
+// DegradationContext so the frontend's RetryHint can render a countdown.
 public enum RefusalCategory
 {
     InsufficientGrounding = 0,
@@ -29,4 +36,5 @@ public enum RefusalCategory
     CostCeilingHit = 3,
     HarmfulContent = 4,
     NoCitation = 5,
+    UpstreamThrottled = 6,
 }

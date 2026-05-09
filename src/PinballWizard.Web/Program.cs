@@ -26,6 +26,7 @@ using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.ServiceDefaults;
 using PinballWizard.Web.Components;
+using PinballWizard.Web.Components.Wizard;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +58,22 @@ builder.Services
 
 builder.Services.AddControllersWithViews()
     .AddMicrosoftIdentityUI();
+
+// ── Wizard SSE streaming client ───────────────────────────────────────────
+// Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
+// Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")
+// so Aspire injects the correct host in local dev and ACA injects the
+// internal FQDN in Azure. AddStandardResilienceHandler adds standard
+// retry + circuit-breaker from Microsoft.Extensions.Http.Resilience.
+builder.Services
+    .AddHttpClient<IWizardStreamingClient, WizardStreamingClient>(client =>
+    {
+        client.BaseAddress = new Uri("https+http://pinwiz-api");
+        // SSE streams can run for seconds; the default 100s timeout is fine
+        // for Wave 1 one-shot answers. Wave 2 PR-S2 (RunStreamingAsync) may
+        // need an infinite timeout — document at that point.
+    })
+    .AddStandardResilienceHandler();
 
 // ── Foundry + AI Router (gated — mirrors CLI wiring) ──────────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Web project starts cleanly

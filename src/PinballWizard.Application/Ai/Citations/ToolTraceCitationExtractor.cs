@@ -52,6 +52,18 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return [];
         }
 
+        return ExtractFromMessages(response.Messages ?? []);
+    }
+
+    // Exposed as internal so AiRouter.AnswerStreamingAsync can extract
+    // citations incrementally from a partially-accumulated message list
+    // (per-FunctionResultContent CitationArrived emission in Wave 2
+    // PR-S3). The public Extract(AgentResponse?) method delegates here.
+    // Callers outside the streaming path should use the public method —
+    // this helper is an implementation detail of the streaming pipeline,
+    // not a general extension point.
+    internal IReadOnlyList<Citation> ExtractFromMessages(IEnumerable<ChatMessage> messages)
+    {
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var citations = new List<Citation>();
 
@@ -60,7 +72,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // null would bubble an NPE out of AiRouter (the call site sits
         // outside the wizard.RunAsync try/catch). Hardened symmetrically
         // with SubAgentTraceReader in W2-1.
-        foreach (var message in response.Messages ?? [])
+        foreach (var message in messages)
         {
             foreach (var content in message.Contents ?? [])
             {
@@ -171,7 +183,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 PageStart: hit.PageStart,
                 PageEnd: hit.PageEnd,
                 SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
-                SourceType: CitationSourceType.CorpusChunk));
+                SourceType: CitationSourceType.CorpusChunk,
+                // RelevanceScore threaded from SearchCorpusHit.Score in
+                // PR-C2. The score is [JsonIgnore] on the DTO so the model
+                // never sees it, but C# code can read it here to surface
+                // relevance on the citation card (ADR-0026 § 8). Null when
+                // the retriever did not return a score (pure keyword query
+                // that bypassed the semantic re-ranker edge case).
+                RelevanceScore: hit.Score));
         }
     }
 

@@ -152,9 +152,12 @@ public sealed class SearchCorpusToolTests
     [Fact]
     public async Task SearchCorpusAsync_MapsRetrievedChunksToHits_PreservingFields()
     {
-        // The DTO drops Score, ChunkId, Manufacturer (model-facing
-        // surface concerns); MachineTitle / DocumentUrl / page range /
-        // SectionHeading / Content all flow through unchanged.
+        // ChunkId and Manufacturer are dropped (no model-facing value).
+        // Score is threaded through [JsonIgnore] (PR-C2) so it lands on
+        // SearchCorpusHit.Score for the citation extractor, but the model
+        // never sees it in the JSON payload. All other fields flow through
+        // unchanged for MachineTitle / DocumentUrl / page range /
+        // SectionHeading / Content.
         var chunk = SampleChunk(chunkId: "chk_abc", documentId: "doc_x", pageStart: 42, pageEnd: 43);
         var retriever = Substitute.For<IRagRetriever>();
         retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
@@ -173,6 +176,8 @@ public sealed class SearchCorpusToolTests
         Assert.Equal(43, hit.PageEnd);
         Assert.Equal(chunk.SectionHeading, hit.SectionHeading);
         Assert.Equal(chunk.Content, hit.Content);
+        // Score is threaded through [JsonIgnore] — visible to C# code.
+        Assert.Equal(chunk.Score, hit.Score);
     }
 
     [Fact]

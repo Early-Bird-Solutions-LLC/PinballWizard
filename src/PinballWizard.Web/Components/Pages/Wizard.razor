@@ -2,8 +2,13 @@
 @rendermode InteractiveAuto
 @attribute [AllowAnonymous]
 
-@* Wave 1 PR-F0 placeholder. PR-F1 ships the WizardShell + layout chrome.
-   PR-F2 ships WizardAnswerStream + the SSE endpoint + /api/wizard/ask:stream.
+@* Wave 1 PR-F2. Mounts WizardStreamingPlaceholder — a proof component
+   that validates the SSE pipeline end-to-end (Api project →
+   /api/wizard/ask:stream → WizardStreamingClient → this page).
+   Wave 2 PR-D-stream replaces WizardStreamingPlaceholder with the real
+   WizardAnswerStream delight surface. See WizardStreamingPlaceholder.razor
+   for bridge/removal rationale.
+
    ADR-0026 § 1 locks /wizard as the primary Wizard surface (anonymous,
    auto-render mode). InteractiveAuto: first response renders Server-side
    (fast TTFB, no WASM download wait), subsequent navigations use the WASM
@@ -12,5 +17,5 @@
 <PageTitle>PinballWizard — Ask the Wizard</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
-    <MudText Typo="Typo.h4">Wizard placeholder — PR-F1 ships layout shell.</MudText>
+    <WizardStreamingPlaceholder />
 </MudContainer>

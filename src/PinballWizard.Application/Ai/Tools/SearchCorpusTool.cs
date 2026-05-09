@@ -139,7 +139,16 @@ public sealed class SearchCorpusTool
                     PageStart: chunk.PageStart,
                     PageEnd: chunk.PageEnd,
                     SectionHeading: chunk.SectionHeading,
-                    Content: chunk.Content));
+                    Content: chunk.Content)
+                {
+                    // Score is threaded through [JsonIgnore] so the model
+                    // does not see it; the citation extractor reads it to
+                    // populate Citation.RelevanceScore (PR-C2). RetrievedChunk
+                    // guarantees a non-null double (AiSearchRagRetriever
+                    // resolves reranker → BM25 → 0.0 before constructing it),
+                    // so the cast to double? is always value-present.
+                    Score = chunk.Score,
+                });
             }
 
             _logger.LogDebug(

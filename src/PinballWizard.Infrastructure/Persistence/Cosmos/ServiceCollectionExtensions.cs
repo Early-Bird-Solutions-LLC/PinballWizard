@@ -11,7 +11,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Infrastructure.Landing;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
@@ -162,6 +164,15 @@ public static class ServiceCollectionExtensions
             return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
         });
 
+        // Curated landing-page featured machines per ADR-0026 § Landing surface.
+        // Inherits metering from `CosmosRepository<T>` so every SDK call here
+        // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.
+        services.AddSingleton<IFeaturedMachineRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "featured_machines");
+            return new FeaturedMachineRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FeaturedMachineRepository>>());
+        });
+
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
         // cost off the first user query. Failure is `Warning` not throw;
         // the health check below is the canonical reachability signal.
@@ -171,6 +182,14 @@ public static class ServiceCollectionExtensions
         // (tagged `live` so it's part of the liveness probe ACA hits).
         services.AddHealthChecks()
             .AddCheck<CosmosHealthCheck>("cosmos", tags: ["live"]);
+
+        // ICosmosCanaryProbe registered here (not in AddSystemStatusProvider)
+        // because CosmosCanaryProbe requires CosmosClient, which is guaranteed
+        // available at this point. Registering it in AddSystemStatusProvider
+        // would fail at DI-resolution time when Cosmos is absent. The probe is
+        // an optional dependency in SystemStatusProvider — absent when Cosmos
+        // is not configured, causing SystemStatus.CosmosHealthy = null.
+        services.TryAddSingleton<ICosmosCanaryProbe, CosmosCanaryProbe>();
 
         return services;
     }
