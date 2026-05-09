@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PinballWizard.Application.Ai.Tools;
 
 // DTO returned by the searchCorpus Foundry function tool. Carries the
@@ -7,11 +9,16 @@ namespace PinballWizard.Application.Ai.Tools;
 // extractor needs the same surface to build `Citation` instances per
 // ADR-0022 § Algorithm step 2.
 //
-// `Score` from `RetrievedChunk` is intentionally dropped — re-rank
-// scoring is an extractor + confidence-calculator concern, not
-// something the model needs to see (and exposing it would tempt the
-// model to compare scores in prose, which is meta-noise). `ChunkId`
-// is dropped likewise — the model has no use for it; the extractor
+// `Score` is re-threaded here (PR-C2) so the citation extractor can
+// populate `Citation.RelevanceScore`, but decorated `[JsonIgnore]` so
+// the model NEVER sees it. Exposing the score in the model-facing
+// payload would tempt the model to compare scores in prose (meta-
+// noise) or adjust its reasoning based on retrieval confidence — both
+// are extractor + confidence-calculator concerns, not model concerns.
+// The JSON contract test `SearchCorpusHitJsonContractTests` pins this
+// invariant against silent removal of the attribute.
+//
+// `ChunkId` is dropped — the model has no use for it; the extractor
 // keys citations on `DocumentId` to collapse multiple chunks from the
 // same document. `Manufacturer` is dropped — it already appears in
 // any prior `getMachineByTitle` ground truth and the chunk's
@@ -28,4 +35,14 @@ public sealed record SearchCorpusHit(
     int PageStart,
     int PageEnd,
     string SectionHeading,
-    string Content);
+    string Content)
+{
+    // Re-threaded from `RetrievedChunk.Score` in PR-C2. The [JsonIgnore]
+    // attribute is load-bearing: it prevents the score from appearing in
+    // the JSON payload the model receives (both via FunctionResultContent
+    // serialization and any direct JsonSerializer.Serialize call). Null
+    // when the SDK did not return a relevance score (e.g. for a pure
+    // keyword query that bypassed the semantic re-ranker).
+    [JsonIgnore]
+    public double? Score { get; init; }
+}

@@ -9,10 +9,11 @@ namespace PinballWizard.Application.Ai;
 //
 // Wave 1 (PR-C1) populates: PageStart, PageEnd, SectionHeading,
 //   SourceType (from ToolTraceCitationExtractor).
-// Wave 2 deferred: LastScrapedUtc (PR-C3, AI Search index field add)
-//   and RelevanceScore (PR-C2, re-thread Score onto SearchCorpusHit).
-//   Both remain null in Wave 1 — the frontend CitationCard must
-//   tolerate null freshness/score gracefully.
+// Wave 2 PR-C2 populates: RelevanceScore (re-threads Score from
+//   SearchCorpusHit; [JsonIgnore] keeps it model-invisible).
+// Wave 2 PR-C3 deferred: LastScrapedUtc (requires AI Search index
+//   field add + indexer projection — stays null until PR-C3 ships).
+//   The frontend CitationCard must tolerate null freshness gracefully.
 public sealed record Citation(
     string Title,
     string SourceUrl,

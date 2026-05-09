@@ -20,6 +20,7 @@
 using PinballWizard.Api.Endpoints;
 using PinballWizard.Application.Landing;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Landing;
 using PinballWizard.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,10 +36,12 @@ builder.AddServiceDefaults();
 // IS configured, registers IFoundryAgentFactory, IAiRouter, and related
 // services. The streaming endpoint returns 503 with Retry-After when the
 // router is absent — see WizardAskStreamEndpoint.
-// ── Landing service (PR-L1; endpoint wired in PR-L3) ─────────────────────────
-// Registered unconditionally — no Cosmos or Foundry dependency in PR-L1.
-// PR-L3 adds GET /api/wizard/landing that resolves ILandingService from DI.
+// ── Landing service (PR-L1 / PR-L3) ──────────────────────────────────────────
+// ILandingService (unconditional): seed questions + featured machines +
+// system status composition. ISystemStatusProvider degrades gracefully to
+// null fields when Foundry / AI Search / Cosmos are not configured.
 builder.Services.AddLandingService();
+builder.Services.AddSystemStatusProvider(builder.Configuration);
 
 var foundryEndpoint = builder.Configuration["AiFoundry:ProjectEndpoint"];
 var foundryWired = !string.IsNullOrWhiteSpace(foundryEndpoint);
@@ -54,5 +57,8 @@ app.MapDefaultEndpoints();
 
 // Wave 1 PR-F2: POST /api/wizard/ask:stream (SSE)
 app.MapWizardStreamingEndpoints();
+
+// Wave 2 PR-L3: GET /api/wizard/landing
+app.MapWizardLandingEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);

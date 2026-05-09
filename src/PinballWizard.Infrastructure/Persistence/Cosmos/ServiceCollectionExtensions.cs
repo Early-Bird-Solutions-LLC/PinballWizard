@@ -11,7 +11,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Infrastructure.Landing;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
@@ -180,6 +182,14 @@ public static class ServiceCollectionExtensions
         // (tagged `live` so it's part of the liveness probe ACA hits).
         services.AddHealthChecks()
             .AddCheck<CosmosHealthCheck>("cosmos", tags: ["live"]);
+
+        // ICosmosCanaryProbe registered here (not in AddSystemStatusProvider)
+        // because CosmosCanaryProbe requires CosmosClient, which is guaranteed
+        // available at this point. Registering it in AddSystemStatusProvider
+        // would fail at DI-resolution time when Cosmos is absent. The probe is
+        // an optional dependency in SystemStatusProvider — absent when Cosmos
+        // is not configured, causing SystemStatus.CosmosHealthy = null.
+        services.TryAddSingleton<ICosmosCanaryProbe, CosmosCanaryProbe>();
 
         return services;
     }
