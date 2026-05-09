@@ -1,0 +1,61 @@
+@* BrandHeader — header content rendered inside MudAppBar by MainLayout.
+ *
+ * Category: chrome wrapper — wraps MudBlazor navigation primitives. Not a
+ * custom delight surface in the ADR-0026 § 6 sense; it is a thin layout
+ * component around MudBlazor <MudIconButton>, <MudText>, <MudSpacer>, and
+ * <MudButton> primitives, assembled using MudBlazor theming tokens.
+ *
+ * Logo: text-only placeholder in Wave 1. Actual SVG/PNG logo asset
+ * arrives as a follow-up PR (tracked as Wave 2 follow-up).
+ *
+ * Nav links: /, /wizard, /about, /status.
+ * Authenticated routes (/admin/*) are only surfaced in AdminLayout's
+ * drawer — not in the public app bar — so anonymous visitors never
+ * see a disabled/locked admin link.
+ *
+ * ADR-0008 — MudBlazor strict (nav primitives only)
+ * ADR-0026 § 1 — routing inventory (/wizard anonymous, /admin auth)
+ *@
+
+@inject NavigationManager Nav
+
+<MudText Typo="Typo.h6" Class="brand-logo ml-2 mr-4" Style="cursor:pointer"
+         @onclick="@(() => Nav.NavigateTo("/"))">
+    &#x25CF; PinballWizard
+</MudText>
+
+<MudSpacer />
+
+<nav aria-label="Main navigation">
+    <MudButton Href="/"
+               Variant="Variant.Text"
+               Color="Color.Inherit"
+               Class="nav-link"
+               aria-label="Home">
+        Home
+    </MudButton>
+
+    <MudButton Href="/wizard"
+               Variant="Variant.Text"
+               Color="Color.Inherit"
+               Class="nav-link"
+               aria-label="Ask the Wizard">
+        Wizard
+    </MudButton>
+
+    <MudButton Href="/about"
+               Variant="Variant.Text"
+               Color="Color.Inherit"
+               Class="nav-link"
+               aria-label="About PinballWizard">
+        About
+    </MudButton>
+
+    <MudButton Href="/status"
+               Variant="Variant.Text"
+               Color="Color.Inherit"
+               Class="nav-link"
+               aria-label="System status">
+        Status
+    </MudButton>
+</nav>

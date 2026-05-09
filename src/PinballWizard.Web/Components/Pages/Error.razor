@@ -1,0 +1,74 @@
+@* Error — Wave 1 placeholder for the pinball-themed /error page.
+ *
+ * The full TiltPage (Wave 2 PR-D-degraded) adds:
+ *   - Pinball-themed visual design with bumper-pulse animation
+ *   - DegradationContext / ProblemDetails detail rendering
+ *   - Structured refusal recovery suggestions
+ *
+ * Wave 1 ships the route, the request-id surface, and a clean layout
+ * so error navigation resolves instead of hitting framework defaults.
+ *
+ * Category: chrome wrapper / page — this is the Wave 1 shell for the
+ * TiltPage delight surface that lands in Wave 2. The TiltPage component
+ * itself is one of the four locked delight surfaces (ADR-0026 § 6).
+ *
+ * ADR-0026  § 1 — /error route; § 5 — graceful degradation; § 9 — requestId
+ * ADR-0026  § 6 — TiltPage / TiltErrorBoundary are the locked delight surfaces
+ *@
+
+@page "/error"
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@using System.Diagnostics
+
+<PageTitle>PinballWizard — Something went wrong</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-12">
+    <MudPaper Class="pa-8" Elevation="4">
+        <MudStack Spacing="3" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.h3" Align="Align.Center" Color="Color.Warning">
+                TILT
+            </MudText>
+
+            <MudText Typo="Typo.h6" Align="Align.Center">
+                Something went wrong
+            </MudText>
+
+            <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+                The machine rattled. We logged it and the team will look into it.
+            </MudText>
+
+            @{
+                var requestId = Activity.Current?.TraceId.ToString() ?? "no-trace";
+                var reason = new Uri(Nav.Uri).Query
+                    .TrimStart('?')
+                    .Split('&')
+                    .Select(p => p.Split('='))
+                    .Where(p => p.Length == 2 && p[0] == "reason")
+                    .Select(p => Uri.UnescapeDataString(p[1]))
+                    .FirstOrDefault();
+            }
+
+            @if (reason is not null)
+            {
+                <MudChip T="string" Color="Color.Default" Size="Size.Small">@reason</MudChip>
+            }
+
+            <MudText Typo="Typo.caption" Class="error-request-id" Align="Align.Center">
+                <span data-testid="error-request-id">Request&nbsp;ID:&nbsp;@requestId</span>
+            </MudText>
+
+            <MudButton Href="/"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       Class="mt-2">
+                Back to Home
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+}

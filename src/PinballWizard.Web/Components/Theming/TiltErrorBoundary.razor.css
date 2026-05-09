@@ -1,0 +1,26 @@
+/* Scoped CSS for TiltErrorBoundary — pinball TILT fallback.
+ * Intentionally minimal. Substance comes from MudBlazor tokens;
+ * this file adds only the visual identity markers.
+ *
+ * Wave 2 PR-D-degraded layers prefers-reduced-motion handling for
+ * the bumper-pulse animation on the TILT title.
+ *
+ * ADR-0026 § 6 — scoped CSS in Components/Theming/, no global bleed.
+ */
+
+.tilt-boundary {
+    border: 1px solid var(--mud-palette-warning);
+    border-radius: 4px;
+}
+
+.tilt-title {
+    color: var(--mud-palette-warning);
+    letter-spacing: 0.15em;
+    font-weight: 700;
+}
+
+.tilt-request-id {
+    font-family: monospace;
+    font-size: 0.7rem;
+    opacity: 0.6;
+}

@@ -1,0 +1,84 @@
+@* AdminLayout — admin chrome with drawer navigation.
+ *
+ * Used exclusively by /admin/* pages that declare @layout AdminLayout.
+ * No /admin/* pages exist in Wave 1 — the layout is scaffolded so the
+ * Entra External ID auth wiring has a target once that PR lands.
+ *
+ * [Authorize] is present here and on /admin/* pages. The AzureAd
+ * appsettings are intentionally empty in Wave 1 — real tenant config
+ * arrives in the Entra follow-up PR. Until then, any visit to an
+ * admin route will fail the auth challenge (which is correct behavior).
+ *
+ * Category: chrome wrapper — all layout primitives are MudBlazor (MudLayout,
+ * MudAppBar, MudDrawer, MudNavMenu, MudMainContent). Not a custom delight
+ * surface in the ADR-0026 § 6 sense.
+ *
+ * ADR-0008  — MudBlazor strict for all chrome
+ * ADR-0009  — Entra External ID admin RBAC v1
+ * ADR-0026  § 1 — routing inventory (/admin auth)
+ *@
+
+@inherits LayoutComponentBase
+@attribute [Authorize]
+
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Theming
+
+<MudThemeProvider Theme="@_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="@ToggleDrawer"
+                       aria-label="Toggle navigation drawer" />
+
+        <MudText Typo="Typo.h6" Class="ml-2">
+            PinballWizard Admin
+        </MudText>
+
+        <MudSpacer />
+
+        <MudButton Href="/"
+                   Variant="Variant.Text"
+                   Color="Color.Inherit"
+                   StartIcon="@Icons.Material.Filled.ArrowBack"
+                   Size="Size.Small">
+            Back to Wizard
+        </MudButton>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen"
+               Variant="DrawerVariant.Temporary"
+               Elevation="2">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.subtitle1" Class="mt-1">Admin Navigation</MudText>
+        </MudDrawerHeader>
+
+        <MudNavMenu>
+            <MudNavLink Href="/admin"
+                        Match="NavLinkMatch.All"
+                        Icon="@Icons.Material.Filled.Dashboard">
+                Dashboard
+            </MudNavLink>
+            @* Additional admin nav items arrive with /admin/* pages in later PRs. *@
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent>
+        <TiltErrorBoundary>
+            @Body
+        </TiltErrorBoundary>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen;
+    private readonly MudTheme _theme = PinballTheme.Create();
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}
