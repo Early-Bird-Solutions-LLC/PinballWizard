@@ -31,10 +31,12 @@ namespace PinballWizard.Application.Ai.Citations;
 //    is preserved through the structural channel even if the prose
 //    representation drops it.
 //
-// Phase 4 will introduce searchCorpus as a sibling tool returning
-// RetrievedChunk[] with document_url + page_range; this extractor will
-// gain a corresponding case (build-spec § Phase 4 scope item 21
-// adds searchCorpus; this extractor extends symmetrically). The
+// Phase 4 W4-1 (build-spec § scope item 21) extends this extractor
+// with a searchCorpus arm: SearchCorpusResult.Hits → one Citation per
+// unique DocumentId, page-anchored via SectionHeading + page range
+// in the title. Multiple chunks from the same DocumentId collapse to
+// one citation; ADR-0022 § Negative consequence #4 notes a Phase 5
+// layering for union-of-page-ranges across collapsed chunks. The
 // public surface (ICitationExtractor) is stable across that addition.
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
@@ -95,6 +97,12 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        if (result is SearchCorpusResult corpus)
+        {
+            AddCitationsFromCorpusHits(corpus.Hits, seenUrls, citations);
+            return;
+        }
+
         // String result: either a JSON-serialized DTO (some SDK call
         // paths serialize tool returns to string before placing them in
         // the trace) or a sub-agent's text response. In either case, the
@@ -127,6 +135,62 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             SourceUrl: dto.OpdbSourceUrl,
             MachineId: dto.OpdbId,
             DocumentChunkId: null));
+    }
+
+    // Per ADR-0022 § Algorithm step 2: each retrieved chunk is a
+    // citation candidate; multiple chunks from the same DocumentId
+    // collapse via the seenUrls set so the user sees one entry per
+    // source document. The first hit's page range + section heading
+    // wins for the title. Phase 5 may layer union-of-ranges across
+    // collapsed chunks (ADR-0022 § Negative consequence #4); for
+    // Phase 4, single-anchor citations are the contract.
+    private static void AddCitationsFromCorpusHits(
+        IReadOnlyList<SearchCorpusHit> hits,
+        HashSet<string> seenUrls,
+        List<Citation> citations)
+    {
+        foreach (var hit in hits)
+        {
+            if (string.IsNullOrWhiteSpace(hit.DocumentUrl))
+            {
+                continue;
+            }
+
+            if (!seenUrls.Add(hit.DocumentUrl))
+            {
+                continue;
+            }
+
+            var title = BuildCorpusCitationTitle(hit);
+            citations.Add(new Citation(
+                Title: title,
+                SourceUrl: hit.DocumentUrl,
+                MachineId: hit.MachineId,
+                DocumentChunkId: hit.DocumentId));
+        }
+    }
+
+    private static string BuildCorpusCitationTitle(SearchCorpusHit hit)
+    {
+        var section = string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading;
+        var pageRange = hit.PageStart == hit.PageEnd
+            ? $"p. {hit.PageStart}"
+            : $"p. {hit.PageStart}–{hit.PageEnd}";
+        var machine = string.IsNullOrWhiteSpace(hit.MachineTitle) ? null : hit.MachineTitle;
+
+        if (machine is not null && section is not null)
+        {
+            return $"{machine} — {section} ({pageRange})";
+        }
+        if (machine is not null)
+        {
+            return $"{machine} ({pageRange})";
+        }
+        if (section is not null)
+        {
+            return $"{section} ({pageRange})";
+        }
+        return pageRange;
     }
 
     private static void AddCitationsFromText(

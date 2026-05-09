@@ -75,6 +75,8 @@ var foundryEmbeddingDeploymentName  = 'text-embedding-3-large'
 var storageAccountName       = take(toLower('${namePrefix}st${environment}${uniqueSuffix}'), 24) // Storage: <=24 chars, alphanumeric
 var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
+var acaEnvironmentName       = '${namePrefix}-acaenv-${environment}'                         // ACA Environment names are RG-scoped
+var ragIndexerContainerAppName = '${namePrefix}-ca-ragindexer-${environment}'                // RG-scoped; W3-2 Cosmos Change Feed worker
 
 // -----------------------------------------------------------------------------
 // Log Analytics + Application Insights (created first so others can wire up DS)
@@ -566,6 +568,175 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 }
 
 // -----------------------------------------------------------------------------
+// Azure Container Apps Environment (Phase 2)
+// -----------------------------------------------------------------------------
+// Single ACA Environment hosts every PinballWizard compute workload — this
+// W3-2 RAG Change Feed indexer plus future Wizard API + scheduled eval-harness
+// jobs. Per the project compute rule (memory entry feedback_compute_on_container_apps.md),
+// all compute defaults to ACA / ACA Jobs unless structurally not a fit;
+// adding more workloads later is a child resource, not a new environment.
+//
+// Workload profile: Consumption (default; cheaper, scale-to-zero compatible).
+// Container stdout / stderr flow to the existing Log Analytics workspace via
+// `appLogsConfiguration` — diagnostic settings on Microsoft.App/managedEnvironments
+// don't reach per-replica console output, so this is the canonical sink.
+
+resource acaEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (deployPhase2) {
+  name: acaEnvironmentName
+  location: location
+  tags: tags
+  properties: {
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// RAG Indexer Container App (Phase 4 W3-2)
+// -----------------------------------------------------------------------------
+// Long-running Cosmos Change Feed consumer — reads `scraped_documents` change
+// feed, runs the chunking + embedding pipeline, upserts into AI Search.
+// NOT a Container App Job: Change Feed lease ownership assumes a continuously
+// running process; Jobs that exit between leases would lose progress and
+// re-acquire the lease costs a backoff window per cycle.
+//
+// Scale: min=0, max=2, KEDA Cosmos scaler on the lease container. Idle cost
+// is $0; active cost is per-replica-second during ingestion. Combined with
+// Cosmos Change Feed's natural batching, steady-state cost on the curated
+// 7-machine subset is well under $1/mo. ACA Consumption pricing is roughly
+// $0.000024/vCPU-sec + $0.000003/GiB-sec; first-run backfill is <$0.05.
+//
+// Image: placeholder (`mcr.microsoft.com/k8se/quickstart:latest`) so the deploy
+// is smoke-testable end-to-end before the worker code ships. The W3-2 code PR
+// adds the worker image to ACR; an operator runs `az containerapp update
+// --image <acr>/pinwiz-rag-indexer:<sha>` to swap it in. Matches the W1-4
+// Bicep-flip-then-consuming-PR sequencing precedent.
+//
+// Identity: system-assigned. RBAC for the MI is in the "RAG Indexer Container
+// App MI RBAC" section below — Cosmos data-plane (source + leases), AI Search
+// index data, Foundry OpenAI user, ACR pull, Storage blob read.
+//
+// Ingress: omitted (= disabled). This is an internal worker; no inbound HTTP.
+
+// API version 2025-01-01 (GA) supports rule-level `identity` for KEDA scale
+// rules — the canonical way to authenticate the Cosmos Change Feed scaler
+// against the lease + source containers via the Container App's system-
+// assigned MI. Earlier 2024-03-01 only allowed `auth` (secret-based) which
+// would require a connection-string secret in Key Vault, undoing the MI
+// story. The preview-vs-GA distinction matters for showcase posture: stay
+// on GA APIs unless a feature is genuinely preview-only.
+resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2 && deployAiSearch) {
+  name: ragIndexerContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: acaEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      registries: [
+        {
+          server: containerRegistry.?properties.loginServer ?? ''
+          identity: 'system'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'rag-indexer'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'Cosmos__AccountEndpoint'
+              value: cosmosAccount.properties.documentEndpoint
+            }
+            {
+              name: 'AiSearch__Endpoint'
+              value: 'https://${searchService.?name ?? ''}.search.windows.net'
+            }
+            {
+              name: 'AiSearch__IndexName'
+              value: 'pinwiz-rag-v1'
+            }
+            {
+              name: 'AiFoundry__ProjectEndpoint'
+              value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+            }
+            {
+              name: 'AiFoundry__EmbeddingDeploymentName'
+              value: foundryEmbeddingDeploymentName
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.?properties.ConnectionString ?? ''
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 2
+        rules: [
+          {
+            name: 'cosmos-changefeed'
+            custom: {
+              type: 'cosmos-db'
+              identity: 'system'
+              metadata: {
+                // Database name MUST match `CosmosOptions.DatabaseName` —
+                // the worker uses default `pinwiz` (also matches AppHost's
+                // `cosmos.AddCosmosDatabase("pinwiz")` for local-dev
+                // emulator parity). Drift here is silent: KEDA would
+                // watch a non-existent container's leases and never
+                // scale up.
+                databaseName: 'pinwiz'
+                containerName: 'scraped_documents'
+                leaseDatabaseName: 'pinwiz'
+                leaseContainerName: 'rag_leases'
+                processorName: 'rag-indexer'
+                activationLagInterval: 'PT30S'
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+
+resource ragIndexerAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2 && deployAiSearch) {
+  scope: ragIndexerApp
+  name: 'send-to-law'
+  properties: {
+    workspaceId: logAnalytics.id
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Developer RBAC (optional — only assigned if developerObjectId is provided)
 // -----------------------------------------------------------------------------
 // Built-in role definition IDs (subscription-scoped, identical across subscriptions):
@@ -687,6 +858,87 @@ resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01'
 }
 
 // -----------------------------------------------------------------------------
+// RAG Indexer Container App MI RBAC (W3-2)
+// -----------------------------------------------------------------------------
+// The system-assigned managed identity on `ragIndexerApp` authenticates to
+// every backing service. Five assignments, mirroring the developer RBAC
+// block above but principalType=ServicePrincipal:
+//
+//   Cosmos DB Built-in Data Contributor (00000000-0000-0000-0000-000000000002)
+//     Reads `scraped_documents` change feed; writes `rag_leases` checkpoints.
+//     Reader alone (..0001) covers the source but cannot write leases — the
+//     KEDA Cosmos scaler + Cosmos.ChangeFeedProcessor both need lease writes.
+//   Search Index Data Contributor (8ebe5a00-799e-43f5-93ac-243d3dce84a7)
+//     Index-document upserts only; the index itself is created by W2-3 ahead
+//     of time, so Service Contributor is NOT needed.
+//   Cognitive Services OpenAI User on Foundry (5e0bd9bd-7b93-4f28-af87-19fc36ad61bd)
+//     Embedding calls against `text-embedding-3-large`.
+//   AcrPull on Container Registry (7f951dda-4ed3-4680-a7ca-43fe172d538d)
+//     Image pull on cold-start replica activation.
+//   Storage Blob Data Reader (2a2b9908-6ea1-4ae2-8e65-a410df84e7d1)
+//     Reads source PDFs from `pinwiz-raw` for PdfPig extraction (Change Feed
+//     payload carries blob URL, not bytes).
+//
+// All gated on `deployPhase2 && deployAiSearch` to match the ragIndexerApp
+// resource gate — no orphan role assignments on a non-existent principal.
+
+// Role-assignment GUIDs use ragIndexerApp.id (deterministic at deploy start
+// from name + RG) as the variable component, NOT the MI's principalId
+// (a runtime value). The principalId is set on the `properties` block where
+// runtime resolution is permitted. Stable across redeploys: same app name →
+// same id → same guid → idempotent re-application.
+
+resource ragIndexerCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, ragIndexerApp.id, '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+resource ragIndexerSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, ragIndexerApp.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource ragIndexerFoundryOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, ragIndexerApp.id, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd', 'rag-indexer')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource ragIndexerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, ragIndexerApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource ragIndexerStorageBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: storage
+  name: guid(storage.id, ragIndexerApp.id, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -729,3 +981,13 @@ output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ??
 
 output appInsightsName string = appInsights.?name ?? ''
 output appInsightsConnectionString string = appInsights.?properties.ConnectionString ?? ''
+
+// ACA Environment + RAG Indexer Container App (Phase 4 W3-2). Operators
+// capture `ragIndexerPrincipalId` for post-deploy `az role assignment list`
+// validation and use `ragIndexerContainerAppName` to swap the placeholder
+// image for the real worker image once the W3-2 code PR lands:
+//   az containerapp update -n <ragIndexerContainerAppName> -g <rg> \
+//                          --image <containerRegistryLoginServer>/pinwiz-rag-indexer:<sha>
+output acaEnvironmentName string = acaEnvironment.?name ?? ''
+output ragIndexerContainerAppName string = ragIndexerApp.?name ?? ''
+output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''

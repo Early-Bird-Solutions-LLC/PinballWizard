@@ -123,6 +123,16 @@ public static class PinballWizardTelemetry
         unit: "{citation}",
         description: "Citations attached to a Wizard answer. Tagged with source (tool_trace | regex_legacy) per ADR-0022 — during the Phase 4 cutover both extractors run; tool_trace is the primary and regex_legacy runs in parallel for behavioral comparison. The relative counts surface drift before the H3 eval baseline rerun.");
 
+    public static readonly Counter<long> AiToolErrors = Meter.CreateCounter<long>(
+        "pinwiz.ai.tool_errors_total",
+        unit: "{call}",
+        description: "Function-tool calls that surfaced an exception inside the tool's catch boundary (the tool returned an empty result rather than rethrowing — see ADR-0023 § Negative consequence #3). Tagged with `tool` (searchCorpus | getMachineByTitle). Distinguishes retrieval-side failures (which become NoCitation refusals) from agent-didn't-call-tool refusals — both can produce empty citation sets but operationally they need different alerts.");
+
+    public static readonly Histogram<double> AiToolDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.ai.tool_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Foundry function-tool invocation, measured at the tool's outer boundary (input normalization + downstream call + post-processing into the model-facing DTO). Tagged with `tool` (searchCorpus | getMachineByTitle). Pair with `pinwiz.rag.retrieval_duration_ms` to isolate per-tool overhead from retrieval-side latency on the searchCorpus path. Drives the §7.1 architecture-v2 user-delight revisit triggers (200ms p95 structured-records latency for getMachineByTitle, 500ms cold-start for searchCorpus). The brainstorm's `cache_state` tag was dropped: the LRU semantic cache (per ADR-0015) wraps IAiRouter ABOVE the tools, so when a tool fires the cache state is structurally always 'miss-path' — that signal lives on `pinwiz.ai.cache.{hits,misses}` instead.");
+
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6
     // dashboards aggregate them as a "metric trajectory" surface alongside
@@ -155,6 +165,131 @@ public static class PinballWizardTelemetry
         "pinwiz.eval.question.duration_ms",
         unit: "ms",
         description: "Wall-clock duration of a single eval question (IAiRouter dispatch + scoring) in milliseconds.");
+
+    // ── RAG indexing + retrieval instrumentation (build-spec § Phase 4 ─
+    // scope item 25, ADR-0021). The four `pinwiz.rag.*` instruments below
+    // were promised in the observability spec when the indexer (W2-3) and
+    // retriever (W3-3) were specified; both shipped without them. Wiring
+    // them now closes the gap-closure half of the observability follow-up
+    // tracked at memory/project_observability_followup_per_tool_metrics.md.
+    //
+    // The `pinwiz.search.index_size_bytes` + `index_documents_total` gauges
+    // identified in the brainstorm half of that follow-up are deferred to
+    // a future Phase 2 batch — they need a periodic sampler rather than
+    // hot-path emission, so the wiring shape is different.
+
+    public static readonly Histogram<double> RagIndexingDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.indexing_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single `IRagIndexer.UpsertAsync` call — embed batch + AI Search upsert + per-batch result aggregation. Measured at the indexer's outer boundary, so it captures total user-felt latency including embed-TPM throttling. Useful for capacity planning at Phase 4.5 corpus scaling vs. the curated-subset baseline.");
+
+    public static readonly Counter<long> RagIndexedChunks = Meter.CreateCounter<long>(
+        "pinwiz.rag.indexed_chunks_total",
+        unit: "{chunk}",
+        description: "Chunks successfully upserted into the AI Search index. Tagged with `document_type` (Manual | ServiceBulletin | MetadataCard) so dashboards can break down ingestion volume by source type — Stern bulletins should ramp first, then non-Stern manuals as Phase 4.5 expansion lands. Per-doc-failure counts (length-exceeded, schema validation) surface as `IndexUpsertResult.Failures` and are NOT counted here; only successes increment.");
+
+    public static readonly Histogram<double> RagRetrievalDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.retrieval_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single `IRagRetriever.RetrieveAsync` call — query embedding + AI Search hybrid query + post-filter mapping. Measured at the retriever's outer boundary so it captures total user-felt retrieval latency (the §7.1 user-delight reference for the corpus-search path). Pair with `pinwiz.ai.tool_duration_ms` once the latter ships to see how much of the searchCorpus tool budget is retrieval vs. tool overhead.");
+
+    public static readonly Histogram<double> RagRetrievalScoreDistribution = Meter.CreateHistogram<double>(
+        "pinwiz.rag.retrieval_score_distribution",
+        unit: "{score}",
+        description: "Per-result re-rank or BM25 score sampled on every `IRagRetriever.RetrieveAsync` result. Tagged with `score_source` (`semantic` when AI Search semantic ranker engaged | `bm25` when fallback to keyword score | `fallback_zero` when both null). Surfaces drift between the eval-baseline retrieval distribution and production-traffic retrieval distribution — informs the ADR-0024 cross-encoder gate trigger and the ADR-0017 confidence-threshold recalibration window.");
+
+    // ── RAG Change Feed worker instrumentation (Phase 4 W3-2 PR-C) ──────
+    // The W3-2 RagIngestionWorker (Container App) consumes the
+    // `scraped_documents` Cosmos change feed and runs the Application-
+    // layer ingestion pipeline per delivered document. The instruments
+    // below cover the hosted-service shell (batch lifecycle, dead-letter
+    // routing, at-budget short-circuit). Per-document outcome
+    // distribution (Indexed / Skipped_* / DeadLettered) is exposed via
+    // the pipeline's IngestionOutcome enum return value — surfaced in
+    // logs but NOT counted here to avoid double-counting against
+    // `pinwiz.rag.indexed_chunks_total` (which the indexer emits at
+    // chunk granularity per upserted batch).
+    //
+    // `pinwiz.rag.changefeed_lease_lag` (ObservableGauge backed by a
+    // periodic ChangeFeedEstimator poll) is deferred to a small follow-
+    // up PR — the gauge needs a background poll loop + cached-value
+    // pattern that's a meaningful design unit on its own; folding it
+    // into PR-C would balloon the diff.
+
+    public static readonly Histogram<double> RagChangefeedBatchDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.changefeed_batch_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Cosmos Change Feed batch handled by the W3-2 RagIngestionWorker — measured at the hosted-service `HandleChangesAsync` boundary so it captures total per-batch time including dead-letter lookups, handler invocations, and upsert calls. Operators chart p50/p95 to detect ingestion slowdowns before they become lease-lag spikes. Tagged with `batch_size_bucket` (`1`, `2-10`, `11-50`, `51+`) so dashboards can attribute latency growth to batch-size shifts vs. per-document slowdown.");
+
+    public static readonly Counter<long> RagChangefeedDeadLetterTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_dead_letter_total",
+        unit: "{document}",
+        description: "Per-document failures the W3-2 hosted service routed to the `rag_dead_letters` Cosmos container after an exception bubbled out of `ICosmosChangeFeedHandler.HandleAsync`. Tagged with `error_class` (the truncated exception type name — `RequestFailedException`, `InvalidOperationException`, etc.) so dashboards can distinguish AI-Search-side failures from Cosmos-side failures from extractor / chunker bugs. A spike on a single error_class points at a specific upstream regression. Always increments on every dead-letter UPSERT, regardless of whether the AttemptCount has reached MaxFailuresPerDocument — the at-budget short-circuit is observed via `pinwiz.rag.changefeed_short_circuit_total{reason=over_budget}`.");
+
+    public static readonly Counter<long> RagChangefeedShortCircuitTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_short_circuit_total",
+        unit: "{document}",
+        description: "Per-document Change Feed deliveries the W3-2 hosted service skipped without invoking the handler. Tagged with `reason`: `over_budget` when the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` (the structurally-poison-document case — only operator clearing the dead-letter resumes processing); `empty_document_id` when the source-document payload is malformed. Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). The pipeline-internal short-circuits (`Skipped_NotInCuratedSubset`, `Skipped_DocumentTypeFiltered`, `Skipped_HashUnchanged`) live below the hosted service and are NOT counted here — they are healthy filtering, not signal-of-trouble.");
+
+    // ── RAG Change Feed lease-lag gauge (W3-2 PR-C follow-up — shipped) ─
+    // Backed by `_changefeedLeaseLag`, a process-static cache the hosted
+    // service updates from a periodic `ChangeFeedEstimator` poll.
+    // ObservableGauge callbacks fire on the metrics-export thread and
+    // MUST NOT do I/O — caching is mandatory. Using a static cache means
+    // a single process supports a single Change Feed consumer; in
+    // production the W3-2 worker is exactly that, and ACA's per-replica
+    // process isolation means a multi-replica deploy still reports
+    // distinct gauge values per replica via OTel's natural per-instance
+    // emission. If a future second consumer ships in the same process,
+    // promote the cache to a per-processor `ConcurrentDictionary<string,
+    // long>` keyed on processorName and add a `processor_name` tag.
+
+    private static long _changefeedLeaseLag;
+
+    public static readonly ObservableGauge<long> RagChangefeedLeaseLag = Meter.CreateObservableGauge<long>(
+        "pinwiz.rag.changefeed_lease_lag",
+        observeValue: () => Interlocked.Read(ref _changefeedLeaseLag),
+        unit: "{document}",
+        description: "Estimated number of source documents the W3-2 RagIngestionWorker is behind the source-container's leading edge — summed across leases via Cosmos's `ChangeFeedEstimator`. Updated by a periodic poll inside `CosmosChangeFeedHostedService.ExecuteAsync` (default 30s cadence; see `CosmosChangeFeedHostedServiceOptions.LeaseLagPollInterval`). Operators alert on persistent non-zero values: a steady positive lag means the worker can't keep up with the change rate — either AI Search throughput is the bottleneck or per-document handler latency has regressed. Pair with `pinwiz.rag.changefeed_batch_duration_ms` p95 to triage.");
+
+    // Package-internal — only the Infrastructure-layer hosted service
+    // calls this. Exposed via the parent class rather than a setter on
+    // the gauge field so the static-cache invariant stays documented in
+    // one place.
+    public static void RecordChangefeedLeaseLag(long lag) =>
+        Interlocked.Exchange(ref _changefeedLeaseLag, lag);
+
+    // ── RAG Change Feed reconcile-on-startup instruments (W3-2) ─────────
+    // Emitted by the W3-2 reconciler when
+    // `RagIngestionOptions.ReconcileOnStartup=true`. The pass inspects
+    // a recency-biased sample of `rag_index_state` rows and verifies
+    // each has matching chunks in AI Search. Operators alert on drift_*
+    // counters trending non-zero across deploys — that's a signal that
+    // some Phase 1 → AI Search writes are being lost.
+    //
+    // Per-instance cardinality: one process invokes the reconciler at
+    // most once per startup, so these counters/histograms see a small
+    // number of observations per worker lifetime.
+
+    public static readonly Counter<long> RagChangefeedReconcileStarted = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_started",
+        unit: "{run}",
+        description: "Reconcile-on-startup invocations the W3-2 hosted service began. Increments once per worker boot when `RagIngestionOptions.ReconcileOnStartup=true` (and zero times otherwise). Pair with `pinwiz.rag.changefeed_reconcile_duration_ms` to chart reconcile cost over time.");
+
+    public static readonly Histogram<double> RagChangefeedReconcileDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.changefeed_reconcile_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single reconcile-on-startup pass — Cosmos sampling query + per-document AI Search filter calls + result aggregation. Measured at the reconciler's outer boundary (caller-visible latency). Useful for capacity planning at Phase 4.5 corpus scaling: if reconcile p95 grows past `RagIngestionOptions.ReconcileSampleSize / 50` × 1s, the per-document AI Search verify cost is the bottleneck and the sample size should drop.");
+
+    public static readonly Counter<long> RagChangefeedReconcileSampled = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_sampled_total",
+        unit: "{document}",
+        description: "Documents the reconcile pass actually inspected (may be less than `RagIngestionOptions.ReconcileSampleSize` if the `rag_index_state` container has fewer rows). Pair with `pinwiz.rag.changefeed_reconcile_drift_total` to compute drift rate (drift / sampled).");
+
+    public static readonly Counter<long> RagChangefeedReconcileDrift = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_drift_total",
+        unit: "{document}",
+        description: "Documents where the reconcile pass detected drift between `rag_index_state` and AI Search. Tagged with `drift_type`: `missing` (AI Search has zero chunks for the document_id — full write loss); `count_mismatch` (AI Search has a different chunk count than recorded — partial write loss). A non-zero rate over multiple deploys is the canonical alert: the indexer isn't durably persisting every chunk, and the gap won't self-heal without an operator-driven re-ingest.");
 
     // ── Activity (trace) names ───────────────────────────────────────────
 

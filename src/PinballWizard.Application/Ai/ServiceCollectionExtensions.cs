@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IAgentPromptProvider, EmbeddedResourceAgentPromptProvider>();
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
         services.TryAddSingleton<MachineGroundingTool>();
+        services.TryAddSingleton<SearchCorpusTool>();
         services.TryAddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.TryAddSingleton<ITokenUsageReader, NullTokenUsageReader>();
         services.TryAddSingleton<IAiCostCalculator, AiCostCalculator>();
@@ -48,6 +49,7 @@ public static class ServiceCollectionExtensions
         // Azure.AI.Projects for evaluator-definition registration).
         services.TryAddSingleton<CitationPrecisionEvaluator>();
         services.TryAddSingleton<CitationRecallEvaluator>();
+        services.TryAddSingleton<CitationCoverageEvaluator>();
         services.TryAddSingleton<SubagentAccuracyEvaluator>();
         services.TryAddSingleton<RefusalCorrectnessEvaluator>();
 

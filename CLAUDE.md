@@ -143,6 +143,7 @@ dotnet run --project src/PinballWizard.Cli -- [options]
 10. **Per-`AIAgent` model selection + per-call cost ceiling.** gpt-4o-mini default; gpt-4.1 for Repair / escalation. In-process LRU semantic cache; ceiling enforced as a refusal category. ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md))
 11. **Confidence-threshold refusal mandatory.** Geometric-mean composite of (retrieval, model self-reported, citation coverage); below-threshold returns a categorized refusal, never a fabrication. Threshold default 0.65. ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md))
 12. **Code-resource agent definitions.** Markdown prompts as `<EmbeddedResource>` in the Application csproj; constructed via `AsAIAgent`; never the Foundry portal. ([ADR-0018](docs/adr/0018-prompt-management.md))
+13. **Cosmos for User Delight.** Session consistency + Direct mode + AllowBulkExecution + selective indexing on write-heavy containers (`rag_leases`, `rag_index_state`, `rag_dead_letters`) + `EnableContentResponseOnWrite=false` + per-host `ApplicationName` + point-read for hot-path queries (NO cross-partition queries on the user-facing path) + single-region East US 2 with documented revisit triggers. Architectural style is Cosmos document store + targeted CQRS materialized views; NOT full event sourcing. ([ADR-0025](docs/adr/0025-cosmos-for-user-delight.md))
 
 ## Documentation map
 
@@ -172,7 +173,7 @@ Before pushing any PR that adds production code (new files, new public API, new 
 
 ### Step 0 — Local review (qualitative)
 
-Run `/local-review`. The skill spawns a `general-purpose` agent that critiques the diff across ten categories (design, drift, error handling, security, provenance, etc.) and returns a verdict-tagged report. Fix every 🔴 finding before continuing; fix or defer-with-justification each ⚠️ finding. Skill definition: [`.claude/skills/local-review/SKILL.md`](.claude/skills/local-review/SKILL.md).
+Run `/local-review`. The skill spawns a `general-purpose` agent that critiques the diff across eleven categories (design, drift, error handling, security, provenance, Cosmos surface, etc.) and returns a verdict-tagged report. Fix every 🔴 finding before continuing; fix or defer-with-justification each ⚠️ finding. Skill definition: [`.claude/skills/local-review/SKILL.md`](.claude/skills/local-review/SKILL.md).
 
 ### Step 1 — Mechanical self-audit (checklist)
 
@@ -185,5 +186,6 @@ After the qualitative review, run these mechanical checks:
 5. **Tests assert behavior, not just structure.** A test named "deduplicates" must include a fixture where dedup actually fires; a test named "rejects merch" must include merch in the input.
 6. **Build is zero-warning.** Treat new warnings as bugs.
 7. **Identity check.** `git log -1 --format='%an <%ae>'` shows the personal noreply, never the work email.
+8. **Cosmos surface conformance.** If the PR adds a `Container` registration, a new `IRepository<T>`, a new query, or modifies `CosmosClientOptions`: verify against [ADR-0025](docs/adr/0025-cosmos-for-user-delight.md). Specifically: (a) write-heavy container has selective indexing policy; (b) cross-partition query is justified in the PR description with an estimated RU cost OR is replaced by a point-read; (c) `EnableContentResponseOnWrite=false` unless the caller consumes the response body; (d) new container has a documented TTL decision (set or explicitly null with rationale); (e) new repo methods are wrapped by `MeteredCosmosRepository<T>` so RU + duration land on `pinwiz.cosmos.*`.
 
 The PR description records the local-review outcome (number of findings + how each was addressed). The PR template at `.github/PULL_REQUEST_TEMPLATE.md` includes the line.

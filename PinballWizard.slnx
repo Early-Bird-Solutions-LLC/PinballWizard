@@ -4,6 +4,7 @@
     <Project Path="src/PinballWizard.Application/PinballWizard.Application.csproj" />
     <Project Path="src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <Project Path="src/PinballWizard.Cli/PinballWizard.Cli.csproj" />
+    <Project Path="src/PinballWizard.RagIngestionWorker/PinballWizard.RagIngestionWorker.csproj" />
   </Folder>
   <Folder Name="/Aspire/">
     <Project Path="src/PinballWizard.AppHost/PinballWizard.AppHost.csproj" />

@@ -29,6 +29,7 @@ public sealed record EvalQuestionResult(
 public sealed record EvalScores(
     [property: JsonPropertyName("citation_precision")] double CitationPrecision,
     [property: JsonPropertyName("citation_recall")] double CitationRecall,
+    [property: JsonPropertyName("citation_coverage")] double CitationCoverage,
     [property: JsonPropertyName("subagent_accuracy")] double SubagentAccuracy,
     [property: JsonPropertyName("refusal_correctness")] double RefusalCorrectness);
 
@@ -37,6 +38,7 @@ public sealed record EvalAggregate(
     [property: JsonPropertyName("error_count")] int ErrorCount,
     [property: JsonPropertyName("citation_precision_mean")] double CitationPrecisionMean,
     [property: JsonPropertyName("citation_recall_mean")] double CitationRecallMean,
+    [property: JsonPropertyName("citation_coverage_mean")] double CitationCoverageMean,
     [property: JsonPropertyName("subagent_accuracy_mean")] double SubagentAccuracyMean,
     [property: JsonPropertyName("refusal_correctness_mean")] double RefusalCorrectnessMean);
 
