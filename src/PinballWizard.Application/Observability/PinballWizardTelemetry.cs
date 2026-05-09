@@ -231,6 +231,34 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Per-document Change Feed deliveries the W3-2 hosted service skipped without invoking the handler. Tagged with `reason`: `over_budget` when the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` (the structurally-poison-document case — only operator clearing the dead-letter resumes processing); `empty_document_id` when the source-document payload is malformed. Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). The pipeline-internal short-circuits (`Skipped_NotInCuratedSubset`, `Skipped_DocumentTypeFiltered`, `Skipped_HashUnchanged`) live below the hosted service and are NOT counted here — they are healthy filtering, not signal-of-trouble.");
 
+    // ── RAG Change Feed lease-lag gauge (W3-2 PR-C follow-up — shipped) ─
+    // Backed by `_changefeedLeaseLag`, a process-static cache the hosted
+    // service updates from a periodic `ChangeFeedEstimator` poll.
+    // ObservableGauge callbacks fire on the metrics-export thread and
+    // MUST NOT do I/O — caching is mandatory. Using a static cache means
+    // a single process supports a single Change Feed consumer; in
+    // production the W3-2 worker is exactly that, and ACA's per-replica
+    // process isolation means a multi-replica deploy still reports
+    // distinct gauge values per replica via OTel's natural per-instance
+    // emission. If a future second consumer ships in the same process,
+    // promote the cache to a per-processor `ConcurrentDictionary<string,
+    // long>` keyed on processorName and add a `processor_name` tag.
+
+    private static long _changefeedLeaseLag;
+
+    public static readonly ObservableGauge<long> RagChangefeedLeaseLag = Meter.CreateObservableGauge<long>(
+        "pinwiz.rag.changefeed_lease_lag",
+        observeValue: () => Interlocked.Read(ref _changefeedLeaseLag),
+        unit: "{document}",
+        description: "Estimated number of source documents the W3-2 RagIngestionWorker is behind the source-container's leading edge — summed across leases via Cosmos's `ChangeFeedEstimator`. Updated by a periodic poll inside `CosmosChangeFeedHostedService.ExecuteAsync` (default 30s cadence; see `CosmosChangeFeedHostedServiceOptions.LeaseLagPollInterval`). Operators alert on persistent non-zero values: a steady positive lag means the worker can't keep up with the change rate — either AI Search throughput is the bottleneck or per-document handler latency has regressed. Pair with `pinwiz.rag.changefeed_batch_duration_ms` p95 to triage.");
+
+    // Package-internal — only the Infrastructure-layer hosted service
+    // calls this. Exposed via the parent class rather than a setter on
+    // the gauge field so the static-cache invariant stays documented in
+    // one place.
+    public static void RecordChangefeedLeaseLag(long lag) =>
+        Interlocked.Exchange(ref _changefeedLeaseLag, lag);
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

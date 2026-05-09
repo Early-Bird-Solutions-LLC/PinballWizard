@@ -111,6 +111,7 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedBatchDurationMs.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
     }
 
     // Per-tool latency histogram. Drives the §7.1 architecture-v2 user-
@@ -161,5 +162,49 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedBatchDurationMs.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
+    }
+
+    [Fact]
+    public void RagChangefeedLeaseLagGauge_HasExpectedNameAndUnit()
+    {
+        Assert.Equal(
+            "pinwiz.rag.changefeed_lease_lag",
+            PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
+        Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedLeaseLag.Unit);
+    }
+
+    [Fact]
+    public void RecordChangefeedLeaseLag_UpdatesCachedValueObservedByGauge()
+    {
+        // The gauge callback reads `Interlocked.Read(ref _changefeedLeaseLag)`;
+        // the static `RecordChangefeedLeaseLag(long)` setter is the only
+        // way for the hosted service to push a fresh sample. Wired with
+        // a MeterListener since `ObservableGauge.GetCurrentValue` isn't
+        // public — we trigger a single observation cycle and read the
+        // sample.
+        const long sentinel = 12345;
+        PinballWizardTelemetry.RecordChangefeedLeaseLag(sentinel);
+
+        long? observed = null;
+        using var listener = new System.Diagnostics.Metrics.MeterListener();
+        listener.SetMeasurementEventCallback<long>((_, value, _, _) =>
+        {
+            observed = value;
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.RagChangefeedLeaseLag);
+        listener.RecordObservableInstruments();
+
+        // NotNull first so a regression that fails to wire the gauge at
+        // all (callback never fires) reports a clearer "no observation"
+        // failure rather than the misleading "0 != 12345" of an Equal
+        // assertion against a default-valued nullable.
+        Assert.NotNull(observed);
+        Assert.Equal(sentinel, observed);
+
+        // Reset to 0 so a sibling test that expects a fresh
+        // measurement doesn't see the leftover sentinel from this test.
+        PinballWizardTelemetry.RecordChangefeedLeaseLag(0);
     }
 }
