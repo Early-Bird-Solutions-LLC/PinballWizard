@@ -93,6 +93,23 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
                 containerOptions.Name);
         }
 
+        // TTL drift is logged (not thrown) for the same reason as
+        // indexing-policy drift: re-applying a TTL is a metadata-only
+        // operation. Mismatches surface to operators so a container
+        // created before the TTL decision was added (e.g.,
+        // `rag_dead_letters` provisioned pre-PR-6) can be reconciled
+        // by recreate or by editing the container settings via Data
+        // Explorer. Null-vs-set is a real drift; null-vs-null and
+        // matching-int values are silent matches.
+        if (!TtlMatches(response.Resource.DefaultTimeToLive, containerOptions.DefaultTtlSeconds))
+        {
+            _logger.LogWarning(
+                "Container '{Container}' default TTL ({ActualTtl}) differs from configured value ({ExpectedTtl}). Re-apply by recreating the container, or by editing default TTL via Data Explorer.",
+                containerOptions.Name,
+                FormatTtl(response.Resource.DefaultTimeToLive),
+                FormatTtl(containerOptions.DefaultTtlSeconds));
+        }
+
         _logger.LogInformation(
             "Container '{Container}' ready via data-plane SDK (partition key {PartitionKeyPath}, default TTL {Ttl}, indexing {Indexing}).",
             containerOptions.Name,
@@ -114,6 +131,12 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
             target.ExcludedPaths.Add(new ExcludedPath { Path = path });
         }
     }
+
+    private static bool TtlMatches(int? actual, int? expected) =>
+        actual == expected;
+
+    private static string FormatTtl(int? ttl) =>
+        ttl?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none";
 
     private static bool IndexingPolicyMatches(IndexingPolicy actual, CosmosIndexingPolicyOptions expected)
     {

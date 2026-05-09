@@ -137,10 +137,24 @@ public sealed class CosmosOptions
         // lookup, `attempt_count` to triage stuck deliveries, and
         // `last_attempt_utc` to filter by recency. JSON property names
         // (snake_case) are the canonical paths.
+        //
+        // 90-day TTL (7_776_000 seconds) per ADR-0025 § 3 — failed
+        // deliveries that haven't been investigated in 90 days are
+        // either stale (the underlying issue self-healed and the
+        // failure log is no longer actionable) or in need of operator
+        // intervention that hasn't happened. Either way the row's
+        // ongoing storage RU isn't earning its keep. Operators who need
+        // a longer-retention forensics record can mirror to Log
+        // Analytics. The other RAG containers (`rag_leases`,
+        // `rag_index_state`) intentionally have no TTL: leases encode
+        // ownership state that must persist until released, and the
+        // index-state container is the canonical hash store the
+        // pipeline consults on every change-feed delivery.
         new()
         {
             Name = "rag_dead_letters",
             PartitionKeyPath = "/document_id",
+            DefaultTtlSeconds = 7_776_000,
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
                 IncludedPaths = ["/id/?", "/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],

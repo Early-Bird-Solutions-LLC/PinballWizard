@@ -114,4 +114,61 @@ public sealed class CosmosOptionsTests
         var options = new CosmosOptions();
         Assert.Null(options.AccountEndpoint);
     }
+
+    [Fact]
+    public void Defaults_RagDeadLetters_HasNinetyDayTtl()
+    {
+        // Per ADR-0025 § 3 — failed-delivery rows that have not been
+        // investigated in 90 days are either stale or in need of
+        // operator intervention that hasn't happened. Either way the
+        // ongoing storage RU isn't earning its keep. 7_776_000 seconds
+        // = 90 days exactly (60 * 60 * 24 * 90).
+        var options = new CosmosOptions();
+
+        var deadLetters = Assert.Single(options.Containers, c => c.Name == "rag_dead_letters");
+        Assert.Equal(7_776_000, deadLetters.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_RagLeases_HasNoTtl()
+    {
+        // Lease ownership state must persist until the lease is
+        // released by the change-feed processor — a TTL would risk
+        // expiring an in-flight lease and stranding a partition's
+        // continuation token.
+        var options = new CosmosOptions();
+
+        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
+        Assert.Null(leases.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_RagIndexState_HasNoTtl()
+    {
+        // The index-state container is the canonical hash store the
+        // pipeline consults on every change-feed delivery. A TTL here
+        // would silently force a re-index of every document whose
+        // hash row had expired even when the underlying document
+        // hadn't actually changed — defeating the dedup contract.
+        var options = new CosmosOptions();
+
+        var indexState = Assert.Single(options.Containers, c => c.Name == "rag_index_state");
+        Assert.Null(indexState.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_Phase1Containers_HaveNoTtl()
+    {
+        // `machines` and `ingestion_sources` are durable catalogs —
+        // any TTL would silently delete catalog rows and break
+        // downstream tools that rely on point-reads. `scraped_documents`
+        // is the source of truth for raw scraped content; retention
+        // policy is operator-managed (purge via the catalog reconciler),
+        // not TTL-driven.
+        var options = new CosmosOptions();
+
+        Assert.Null(Assert.Single(options.Containers, c => c.Name == "machines").DefaultTtlSeconds);
+        Assert.Null(Assert.Single(options.Containers, c => c.Name == "ingestion_sources").DefaultTtlSeconds);
+        Assert.Null(Assert.Single(options.Containers, c => c.Name == "scraped_documents").DefaultTtlSeconds);
+    }
 }
