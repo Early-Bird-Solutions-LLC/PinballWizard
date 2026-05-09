@@ -467,6 +467,14 @@ public sealed class AiRouterStreamingTests
             PerCallCostCeilingUsdCents = 10,
         });
 
+        // Wave 2 PR-R2: IRefusalRecoveryService returns null for all categories
+        // in these tests — streaming behavior tests focus on chunk emission,
+        // not on recovery content.
+        var refusalRecovery = Substitute.For<IRefusalRecoveryService>();
+        refusalRecovery
+            .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
+            .Returns((RefusalDetail?)null);
+
         var router = new AiRouter(
             agentFactory,
             cache,
@@ -476,6 +484,7 @@ public sealed class AiRouterStreamingTests
             costCalculator,
             new ToolTraceCitationExtractor(),
             new RegexLegacyCitationExtractor(),
+            refusalRecovery,
             options,
             NullLogger<AiRouter>.Instance);
 

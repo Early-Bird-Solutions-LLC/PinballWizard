@@ -48,6 +48,58 @@ public sealed class MachineGroundingTool
     // from this method, so dashboards and prompts agree on the label.
     internal const string ToolTagValue = "getMachineByTitle";
 
+    // Stop-words filtered out before token-overlap scoring in
+    // RefusalRecoveryService. Kept here (not in the recovery service)
+    // because this class is the canonical tokenization authority for
+    // machine-title lookups — both the grounding tool and the recovery
+    // service operate on the same vocabulary.
+    // Lowercase only; TokenizeForOverlap lowercases input before splitting.
+    internal static readonly HashSet<string> TokenStopWords = new(StringComparer.Ordinal)
+    {
+        "a", "an", "the", "and", "or", "of", "in", "on", "at", "to",
+        "for", "with", "by", "from", "is", "it", "its", "this", "that",
+        "my", "me", "i", "what", "how", "when", "where", "which", "who",
+        "can", "could", "would", "should", "will", "do", "does", "did",
+        "be", "been", "was", "were", "are", "am", "has", "have", "had",
+        "not", "no", "but", "if", "as", "so", "up", "out", "about",
+        "into", "than", "more", "other", "after", "before", "just",
+        "tell", "know", "get", "give", "show", "find", "want",
+    };
+
+    // Tokenizes a free-text string for overlap scoring against machine
+    // titles. Returns normalized, meaningful tokens — stop-words and
+    // single-character tokens are excluded. Numerics are retained (e.g.,
+    // "007", "2001") because they are often load-bearing in machine names.
+    //
+    // Splitting on whitespace and common punctuation (',', '.', '!', '?',
+    // '(', ')', '-', '/', '\'', '"') produces tokens that match the
+    // subword vocabulary of typical machine titles.
+    //
+    // `internal` (not private) so RefusalRecoveryService and tests can
+    // share the exact same tokenizer without duplicating the logic.
+    internal static IReadOnlyList<string> TokenizeForOverlap(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return [];
+
+        var lower = text.ToLowerInvariant();
+
+        // Split on whitespace and punctuation.
+        var raw = lower.Split(
+            [' ', '\t', ',', '.', '!', '?', '(', ')', '-', '/', '\'', '"', ':', ';'],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        var result = new List<string>(raw.Length);
+        foreach (var tok in raw)
+        {
+            if (tok.Length <= 1) continue;
+            if (TokenStopWords.Contains(tok)) continue;
+            result.Add(tok);
+        }
+
+        return result;
+    }
+
     [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, and OPDB source URL — everything you need to ground an answer about that machine. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
         [Description("The pinball-machine title to look up, case-insensitive (for example: 'Foo Fighters', 'Stranger Things', 'Godzilla').")] string title,
