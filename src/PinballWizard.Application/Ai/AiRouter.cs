@@ -1009,9 +1009,12 @@ public sealed class AiRouter : IAiRouter
         ConfidenceSignals? signals,
         RefusalDetail? recovery = null)
     {
-        // `category` is not yet consumed beyond routing to this method;
-        // reserved for Wave 2 PR-R3/R4 (CommunityResources, MissingWhat)
-        // which will select recovery content based on category.
+        // `category` is retained for future extensibility but all per-category
+        // content (CommunityResources, MissingWhat, SuggestedRephrase) is now
+        // owned by IRefusalRecoveryService and passed through via `recovery`.
+        // Wave 2 PR-R3 wired CommunityResources; PR-R4 wires MissingWhat +
+        // SuggestedRephrase. Both arrive via recovery?.* so this method stays
+        // category-agnostic and the logic lives in one place.
         _ = category;
 
         ConfidenceBreakdown? breakdown = null;
@@ -1028,9 +1031,9 @@ public sealed class AiRouter : IAiRouter
         return new RefusalDetail(
             Confidence: breakdown,
             RelatedMachines: recovery?.RelatedMachines,
-            CommunityResources: null,
-            MissingWhat: null,
-            SuggestedRephrase: null);
+            CommunityResources: recovery?.CommunityResources,
+            MissingWhat: recovery?.MissingWhat,
+            SuggestedRephrase: recovery?.SuggestedRephrase);
     }
 
     private static string Normalize(string question)

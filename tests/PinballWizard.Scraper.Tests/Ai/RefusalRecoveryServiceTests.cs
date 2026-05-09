@@ -123,17 +123,17 @@ public sealed class RefusalRecoveryServiceTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 3. UpstreamThrottled → no recovery (returns null immediately)
+    // 3. UpstreamThrottled → text-only recovery; no machine lookups
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task BuildRecoveryAsync_UpstreamThrottled_Returns_Null_Without_Querying_Repository()
+    public async Task BuildRecoveryAsync_UpstreamThrottled_Returns_TextOnly_Recovery_Without_Querying_Repository()
     {
-        // UpstreamThrottled is a transient infra fault. Recovery suggestions
-        // would mislead the user about recoverability ("here are similar
-        // machines" implies the request can be retried differently, but the
-        // real message is "try again later"). Per IRefusalRecoveryService
-        // policy: no recovery for this category.
+        // PR-R4: UpstreamThrottled is a transient infra fault. It still gets
+        // a MissingWhat explanation (system-state prose) so RefusalPanel can
+        // show the user "this is temporary, not a content gap." However, no
+        // machine lookups or community routing fires (that would be misleading
+        // for an infrastructure failure, not a corpus miss).
         var repo = Substitute.For<IMachineRepository>();
 
         var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
@@ -143,7 +143,21 @@ public sealed class RefusalRecoveryServiceTests
             RefusalCategory.UpstreamThrottled,
             CancellationToken.None);
 
-        Assert.Null(detail);
+        // Non-null — there IS useful text to surface.
+        Assert.NotNull(detail);
+
+        // MissingWhat is populated with the system-state explanation.
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+
+        // SuggestedRephrase is null — rephrase wouldn't help a rate-limit.
+        Assert.Null(detail.SuggestedRephrase);
+
+        // RelatedMachines and CommunityResources remain null — machine
+        // lookups and community routing are not appropriate for transient
+        // infrastructure failures.
+        Assert.Null(detail.RelatedMachines);
+        Assert.Null(detail.CommunityResources);
 
         // The repository must not be touched — category is filtered out
         // before any lookup.
@@ -288,30 +302,32 @@ public sealed class RefusalRecoveryServiceTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 8. UpstreamThrottled → null CommunityResources
+    // 8. UpstreamThrottled → null CommunityResources (text-only recovery)
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task BuildRecoveryAsync_UpstreamThrottled_Returns_Null_CommunityResources()
     {
-        // UpstreamThrottled is a transient infra fault — the refusal message
-        // already tells the user to retry. Adding community resource cards
-        // would clutter the RefusalPanel with irrelevant alternatives when
-        // the only correct action is "wait and try again."
-        // PR-R3 spec: CommunityResources = null for UpstreamThrottled.
+        // PR-R4: UpstreamThrottled is a transient infra fault — adding community
+        // resource cards would clutter the RefusalPanel with irrelevant
+        // alternatives when the only correct action is "wait and try again."
+        // The detail is non-null (MissingWhat carries the system-state
+        // explanation), but CommunityResources and RelatedMachines remain null.
         var repo = Substitute.For<IMachineRepository>();
 
         var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
-        // UpstreamThrottled returns null from BuildRecoveryAsync (whole-detail null)
-        // because CategorySupportsRelatedMachines is false. Verify the whole
-        // detail is null — null detail → no CommunityResources to inspect.
         var detail = await svc.BuildRecoveryAsync(
             "godzilla wizard mode",
             RefusalCategory.UpstreamThrottled,
             CancellationToken.None);
 
-        Assert.Null(detail);
+        // Non-null — MissingWhat carries useful context for the user.
+        Assert.NotNull(detail);
+
+        // Community resources must be null — not appropriate for a transient
+        // rate-limit where the right action is retry, not "browse these links."
+        Assert.Null(detail!.CommunityResources);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -352,6 +368,216 @@ public sealed class RefusalRecoveryServiceTests
 
         Assert.Contains("forums", categories);
         Assert.Contains("machine_reference", categories);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // PR-R4: Per-category MissingWhat + SuggestedRephrase text strategies
+    // ──────────────────────────────────────────────────────────────────────
+
+    // 10. OutOfScope → both text fields populated, non-empty
+    [Fact]
+    public async Task BuildRecoveryAsync_OutOfScope_Populates_MissingWhat_And_SuggestedRephrase()
+    {
+        // OutOfScope gets both MissingWhat (topic list) and SuggestedRephrase
+        // (actionable narrowing hint). Both must be non-null and non-empty so
+        // RefusalPanel can render the full guidance panel.
+        var svc = new RefusalRecoveryService(EmptyRepo(), MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "what is the weather in chicago",
+            RefusalCategory.OutOfScope,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+        Assert.NotNull(detail.SuggestedRephrase);
+        Assert.NotEmpty(detail.SuggestedRephrase!);
+    }
+
+    // 11. InsufficientGrounding → both text fields populated, non-empty
+    [Fact]
+    public async Task BuildRecoveryAsync_InsufficientGrounding_Populates_MissingWhat_And_SuggestedRephrase()
+    {
+        var svc = new RefusalRecoveryService(EmptyRepo(), MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "godzilla multiball rules",
+            RefusalCategory.InsufficientGrounding,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+        Assert.NotNull(detail.SuggestedRephrase);
+        Assert.NotEmpty(detail.SuggestedRephrase!);
+    }
+
+    // 12. LowModelConfidence → both text fields populated, non-empty
+    [Fact]
+    public async Task BuildRecoveryAsync_LowModelConfidence_Populates_MissingWhat_And_SuggestedRephrase()
+    {
+        var svc = new RefusalRecoveryService(EmptyRepo(), MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "how does the addams family multiball score",
+            RefusalCategory.LowModelConfidence,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+        Assert.NotNull(detail.SuggestedRephrase);
+        Assert.NotEmpty(detail.SuggestedRephrase!);
+    }
+
+    // 13. NoCitation → both text fields populated, non-empty
+    [Fact]
+    public async Task BuildRecoveryAsync_NoCitation_Populates_MissingWhat_And_SuggestedRephrase()
+    {
+        var svc = new RefusalRecoveryService(EmptyRepo(), MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "stern godzilla release date",
+            RefusalCategory.NoCitation,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+        Assert.NotNull(detail.SuggestedRephrase);
+        Assert.NotEmpty(detail.SuggestedRephrase!);
+    }
+
+    // 14. UpstreamThrottled → MissingWhat populated, SuggestedRephrase null
+    [Fact]
+    public async Task BuildRecoveryAsync_UpstreamThrottled_Populates_MissingWhat_But_Not_SuggestedRephrase()
+    {
+        // Rephrase would mislead: the issue is a transient rate-limit, not
+        // the question. MissingWhat explains the system state; SuggestedRephrase
+        // stays null so the UI does not prompt the user to reword a valid query.
+        var repo = Substitute.For<IMachineRepository>();
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "godzilla rules",
+            RefusalCategory.UpstreamThrottled,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.MissingWhat);
+        Assert.NotEmpty(detail.MissingWhat!);
+        Assert.Null(detail.SuggestedRephrase);
+    }
+
+    // 15. CostCeilingHit → both null (operational; user shouldn't act)
+    [Fact]
+    public async Task BuildRecoveryAsync_CostCeilingHit_Returns_Null_Detail()
+    {
+        // CostCeilingHit is an infrastructure budget limit. There is no
+        // user-actionable guidance and no community routing (that would
+        // compound the cost problem). Returning null means RefusalPanel
+        // renders with no recovery enrichment — just the refusal text.
+        var repo = Substitute.For<IMachineRepository>();
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "godzilla rules",
+            RefusalCategory.CostCeilingHit,
+            CancellationToken.None);
+
+        Assert.Null(detail);
+
+        // Repository must not be touched for a cost-ceiling operational block.
+        repo.DidNotReceiveWithAnyArgs().QueryByTitleAsync(default!, default);
+    }
+
+    // 16. Brevity contract — each text field is ≤ 2 sentences per category
+    [Fact]
+    public void BuildRecoveryAsync_text_is_under_2_sentences_per_category()
+    {
+        // Pins the brevity invariant per the R4 spec. Sentences are counted
+        // by splitting on '.' and filtering empty segments — a conservative
+        // heuristic that catches the most common violations (run-on paragraphs)
+        // without false-positives on abbreviations in the test strings.
+        //
+        // The exact strings are the internal const strings on RefusalRecoveryService.
+        // Using them directly means this test catches a silent edit that lengthens
+        // the prose beyond the two-sentence contract.
+        var textFields = new[]
+        {
+            RefusalRecoveryService.MissingWhat_OutOfScope,
+            RefusalRecoveryService.SuggestedRephrase_OutOfScope,
+            RefusalRecoveryService.MissingWhat_InsufficientGrounding,
+            RefusalRecoveryService.SuggestedRephrase_InsufficientGrounding,
+            RefusalRecoveryService.MissingWhat_LowModelConfidence,
+            RefusalRecoveryService.SuggestedRephrase_LowModelConfidence,
+            RefusalRecoveryService.MissingWhat_NoCitation,
+            RefusalRecoveryService.SuggestedRephrase_NoCitation,
+            RefusalRecoveryService.MissingWhat_UpstreamThrottled,
+        };
+
+        foreach (var text in textFields)
+        {
+            // Count non-empty segments after splitting on '.'
+            // (e.g., "Sentence one. Sentence two." → 2 segments)
+            var sentenceCount = text
+                .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Count(s => s.Length > 0);
+
+            Assert.True(
+                sentenceCount <= 2,
+                $"Text exceeds 2-sentence brevity limit ({sentenceCount} sentences detected). " +
+                $"Text: \"{text}\"");
+        }
+    }
+
+    // 17. No-blame guard — text must not use blame-suggesting phrases
+    [Fact]
+    public void BuildRecoveryAsync_text_does_not_blame_the_user()
+    {
+        // Silent-edit guard: polite-by-construction posture (ADR-0026 § 5 +
+        // feedback_community_resource_posture.md) forbids any phrasing that
+        // implies the user is at fault. Scan all per-category const strings for
+        // known blame-suggesting phrases.
+        //
+        // This test fails if a future edit introduces blame phrasing — the
+        // failure message names the offending phrase so it's immediately
+        // actionable without reading the diff.
+        var blamePhrases = new[]
+        {
+            "you should have",
+            "your question is",
+            "you didn't",
+            "incorrectly",
+            "you failed",
+            "your fault",
+            "wrong question",
+        };
+
+        var allTexts = new Dictionary<string, string>
+        {
+            [nameof(RefusalRecoveryService.MissingWhat_OutOfScope)] = RefusalRecoveryService.MissingWhat_OutOfScope,
+            [nameof(RefusalRecoveryService.SuggestedRephrase_OutOfScope)] = RefusalRecoveryService.SuggestedRephrase_OutOfScope,
+            [nameof(RefusalRecoveryService.MissingWhat_InsufficientGrounding)] = RefusalRecoveryService.MissingWhat_InsufficientGrounding,
+            [nameof(RefusalRecoveryService.SuggestedRephrase_InsufficientGrounding)] = RefusalRecoveryService.SuggestedRephrase_InsufficientGrounding,
+            [nameof(RefusalRecoveryService.MissingWhat_LowModelConfidence)] = RefusalRecoveryService.MissingWhat_LowModelConfidence,
+            [nameof(RefusalRecoveryService.SuggestedRephrase_LowModelConfidence)] = RefusalRecoveryService.SuggestedRephrase_LowModelConfidence,
+            [nameof(RefusalRecoveryService.MissingWhat_NoCitation)] = RefusalRecoveryService.MissingWhat_NoCitation,
+            [nameof(RefusalRecoveryService.SuggestedRephrase_NoCitation)] = RefusalRecoveryService.SuggestedRephrase_NoCitation,
+            [nameof(RefusalRecoveryService.MissingWhat_UpstreamThrottled)] = RefusalRecoveryService.MissingWhat_UpstreamThrottled,
+        };
+
+        foreach (var (fieldName, text) in allTexts)
+        {
+            foreach (var phrase in blamePhrases)
+            {
+                Assert.False(
+                    text.Contains(phrase, StringComparison.OrdinalIgnoreCase),
+                    $"Blame-suggesting phrase \"{phrase}\" found in {fieldName}. " +
+                    $"Refusal text must be polite and never blame the user (ADR-0026 § 5).");
+            }
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
