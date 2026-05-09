@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Citations;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Tools;
@@ -68,6 +69,7 @@ public sealed class AiRouter : IAiRouter
     private readonly ToolTraceCitationExtractor _toolTraceExtractor;
     private readonly RegexLegacyCitationExtractor _regexLegacyExtractor;
     private readonly IRefusalRecoveryService _refusalRecovery;
+    private readonly IDegradationContext _degradationContext;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
 
@@ -81,6 +83,7 @@ public sealed class AiRouter : IAiRouter
         ToolTraceCitationExtractor toolTraceExtractor,
         RegexLegacyCitationExtractor regexLegacyExtractor,
         IRefusalRecoveryService refusalRecovery,
+        IDegradationContext degradationContext,
         IOptions<AiFoundryOptions> options,
         ILogger<AiRouter> logger)
     {
@@ -93,6 +96,7 @@ public sealed class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(toolTraceExtractor);
         ArgumentNullException.ThrowIfNull(regexLegacyExtractor);
         ArgumentNullException.ThrowIfNull(refusalRecovery);
+        ArgumentNullException.ThrowIfNull(degradationContext);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -105,6 +109,7 @@ public sealed class AiRouter : IAiRouter
         _toolTraceExtractor = toolTraceExtractor;
         _regexLegacyExtractor = regexLegacyExtractor;
         _refusalRecovery = refusalRecovery;
+        _degradationContext = degradationContext;
         _options = options.Value;
         _logger = logger;
     }
@@ -112,6 +117,9 @@ public sealed class AiRouter : IAiRouter
     public async Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
+
+        // PR-D2: reset per-call degradation context before agent invocation.
+        _degradationContext.Reset();
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
@@ -151,6 +159,11 @@ public sealed class AiRouter : IAiRouter
             // lower than the complexity of a leaky abstraction.
             var retryAfterSeconds = TryReadRetryAfterSeconds(ex) ?? 60;
 
+            _degradationContext.Mark(
+                DegradationMode.UpstreamThrottled,
+                "Upstream model rate-limited the request.",
+                retryAfterSeconds);
+
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
                 new KeyValuePair<string, object?>("refusal_category", RefusalCategory.UpstreamThrottled.ToString()),
@@ -172,10 +185,7 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.UpstreamThrottled,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                Degradation: new DegradationContext(
-                    Mode: DegradationMode.UpstreamThrottled,
-                    Detail: "Upstream model rate-limited the request.",
-                    RetryAfterSeconds: retryAfterSeconds));
+                Degradation: _degradationContext.Snapshot());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -254,6 +264,9 @@ public sealed class AiRouter : IAiRouter
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
+
+        // PR-D2: reset per-call degradation context before streaming agent invocation.
+        _degradationContext.Reset();
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
@@ -581,6 +594,11 @@ public sealed class AiRouter : IAiRouter
             // of AnswerStreamingAsync.
             var retryAfterSeconds = TryReadRetryAfterSeconds(ex) ?? 60;
 
+            _degradationContext.Mark(
+                DegradationMode.UpstreamThrottled,
+                "Upstream model rate-limited the request.",
+                retryAfterSeconds);
+
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
                 new KeyValuePair<string, object?>("refusal_category", RefusalCategory.UpstreamThrottled.ToString()),
@@ -602,10 +620,7 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.UpstreamThrottled,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                Degradation: new DegradationContext(
-                    Mode: DegradationMode.UpstreamThrottled,
-                    Detail: "Upstream model rate-limited the request.",
-                    RetryAfterSeconds: retryAfterSeconds));
+                Degradation: _degradationContext.Snapshot());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -802,7 +817,8 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.CostCeilingHit,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null, recovery: costCeilingRecovery));
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null, recovery: costCeilingRecovery),
+                Degradation: _degradationContext.Snapshot());
         }
 
         var citations = _toolTraceExtractor.Extract(response);
@@ -863,7 +879,8 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: category,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(category, signals, recovery: confidenceRecovery));
+                RefusalDetail: BuildRefusalDetail(category, signals, recovery: confidenceRecovery),
+                Degradation: _degradationContext.Snapshot());
         }
 
         if (citations.Count == 0)
@@ -912,7 +929,8 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.NoCitation,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals, recovery: noCitationRecovery));
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals, recovery: noCitationRecovery),
+                Degradation: _degradationContext.Snapshot());
         }
 
         // Debug-level (not Info) so per-question log volume stays
@@ -936,7 +954,8 @@ public sealed class AiRouter : IAiRouter
             RefusalCategory: null,
             PromptVersion: promptVersion,
             FoundryThreadId: null,
-            RefusalDetail: null);
+            RefusalDetail: null,
+            Degradation: _degradationContext.Snapshot());
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin

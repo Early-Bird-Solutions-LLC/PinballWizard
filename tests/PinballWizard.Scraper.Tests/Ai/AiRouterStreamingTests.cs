@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Azure;
 using Microsoft.Agents.AI;
@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
@@ -485,6 +486,7 @@ public sealed class AiRouterStreamingTests
             new ToolTraceCitationExtractor(),
             new RegexLegacyCitationExtractor(),
             refusalRecovery,
+            new AmbientDegradationContext(),
             options,
             NullLogger<AiRouter>.Instance);
 
