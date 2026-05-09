@@ -248,3 +248,7 @@ This is a personal showcase project; external contributions aren't expected, but
 ## License
 
 [MIT](LICENSE) — Copyright (c) 2026 Early Bird Solutions LLC.
+
+### Third-party fonts
+
+PinballWizard.Web bundles four web font families, self-hosted under [`src/PinballWizard.Web/wwwroot/fonts/`](src/PinballWizard.Web/wwwroot/fonts/) to avoid leaking visitor IPs to a third-party CDN on every page load. All four are licensed under the [SIL Open Font License 1.1](https://scripts.sil.org/OFL); see [`wwwroot/fonts/README.md`](src/PinballWizard.Web/wwwroot/fonts/README.md) for per-family attribution and the upstream `LICENSE.txt` shipped alongside each `.woff2`.
