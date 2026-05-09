@@ -5,6 +5,7 @@ using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Core.Configuration;
+using System.Threading;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests.Ai;
@@ -85,6 +86,14 @@ public sealed class RefusalDetailContractTests
         // Default: never grounded, so citations empty and composite low.
         confidenceCalc ??= Substitute.For<IConfidenceCalculator>();
 
+        // Wave 2 PR-R2: IRefusalRecoveryService injected. Returning null
+        // means "no recovery available" — keeps the existing contract
+        // tests focused on Confidence field structure, not on recovery content.
+        var refusalRecovery = Substitute.For<IRefusalRecoveryService>();
+        refusalRecovery
+            .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
+            .Returns((RefusalDetail?)null);
+
         return new AiRouter(
             Substitute.For<IFoundryAgentFactory>(),
             Substitute.For<ISemanticAnswerCache>(),
@@ -94,6 +103,7 @@ public sealed class RefusalDetailContractTests
             Substitute.For<IAiCostCalculator>(),
             toolTraceExtractor,
             regexExtractor,
+            refusalRecovery,
             Microsoft.Extensions.Options.Options.Create(options ?? Options),
             NullLogger<AiRouter>.Instance);
     }
@@ -168,13 +178,17 @@ public sealed class RefusalDetailContractTests
     }
 
     [Fact]
-    public void BuildRefusalDetail_WaveOneTombstone_RecoveryFieldsAllNull()
+    public void BuildRefusalDetail_WaveTwoContract_RecoveryNullWhenServiceReturnsNull()
     {
-        // Wave 1 ships the shape only — RelatedMachines, CommunityResources,
-        // MissingWhat, SuggestedRephrase are Wave 2 PR-R2/R3/R4 fills.
-        // This test pins the Wave 1 null contract so a Wave 2 PR that
-        // accidentally pre-fills these fields before the recovery service
-        // is wired will be caught here.
+        // Wave 2 PR-R2: when IRefusalRecoveryService returns null (category
+        // not supported, or best-effort failure), RelatedMachines must remain
+        // null on the RefusalDetail — no phantom empty list. CommunityResources,
+        // MissingWhat, SuggestedRephrase remain Wave 2 PR-R3/R4
+        // responsibilities and must still be null.
+        //
+        // CreateRouter() stubs IRefusalRecoveryService to return null for all
+        // categories, so this exercises the "no recovery" code path through
+        // BuildRefusalDetail.
         var router = CreateRouter();
 
         foreach (var signals in new ConfidenceSignals?[] { null, LowSignals, HighSignals })
