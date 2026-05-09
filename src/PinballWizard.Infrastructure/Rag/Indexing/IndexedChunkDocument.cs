@@ -55,4 +55,12 @@ internal sealed class IndexedChunkDocument
     // omits this field on purpose to skip the bandwidth cost.
     [JsonPropertyName(AiSearchIndexFields.ContentEmbedding)]
     public float[] ContentEmbedding { get; set; } = [];
+
+    // Timeline.LastDownloadedAt from the Phase 1 scraper provenance record.
+    // See AiSearchIndexFields.LastScrapedUtc for the semantic rationale
+    // (LastDownloadedAt vs LastContentChangedAt). Nullable because
+    // existing indexed chunks before PR-C3 carry null; new ingest runs
+    // populate it going forward (zero-migration-cost per ADR-0025 § 6).
+    [JsonPropertyName(AiSearchIndexFields.LastScrapedUtc)]
+    public DateTimeOffset? LastScrapedUtc { get; set; }
 }

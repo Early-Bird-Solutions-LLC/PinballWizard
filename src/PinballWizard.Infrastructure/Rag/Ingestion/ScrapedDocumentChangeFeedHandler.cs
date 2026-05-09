@@ -55,7 +55,13 @@ public sealed class ScrapedDocumentChangeFeedHandler
             MachineTitle: change.MachineTitle,
             Manufacturer: change.Manufacturer,
             DocumentType: documentType,
-            ContentHash: change.ContentHash);
+            ContentHash: change.ContentHash,
+            // Thread LastDownloadedAt from the Cosmos change-feed payload
+            // so the indexer can populate the last_scraped_utc AI Search
+            // field (PR-C3). Null when the source document is legacy (pre-
+            // PR-C3 scraper writes that didn't capture the field) — the
+            // indexer propagates null gracefully.
+            LastScrapedUtc: change.LastDownloadedAt);
 
         await using var pdfStream = await _bytesSource
             .OpenAsync(change.DocumentUrl, cancellationToken).ConfigureAwait(false);

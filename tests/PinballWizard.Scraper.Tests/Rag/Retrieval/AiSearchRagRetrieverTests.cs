@@ -126,7 +126,7 @@ public sealed class AiSearchRagRetrieverTests
         // The 3072-d content_embedding column must NOT be projected
         // back — bandwidth and memory cost. Schema fields needed for
         // citation rendering and orchestrator routing must all be
-        // selected.
+        // selected, including last_scraped_utc (PR-C3).
         var options = AiSearchRagRetriever.BuildSearchOptionsCore(
             SampleVector,
             new RetrievalOptions(),
@@ -138,6 +138,9 @@ public sealed class AiSearchRagRetrieverTests
         Assert.Contains("page_start", options.Select);
         Assert.Contains("section_heading", options.Select);
         Assert.Contains("content", options.Select);
+        // PR-C3: last_scraped_utc must be projected so the retriever
+        // can thread it through to Citation.LastScrapedUtc.
+        Assert.Contains("last_scraped_utc", options.Select);
         Assert.DoesNotContain("content_embedding", options.Select);
     }
 
@@ -162,6 +165,7 @@ public sealed class AiSearchRagRetrieverTests
     [Fact]
     public void MapToChunk_RoundTripsAllSchemaFields()
     {
+        var expectedLastScraped = new DateTimeOffset(2026, 4, 15, 10, 0, 0, TimeSpan.Zero);
         var doc = new RetrievedChunkDocument
         {
             ChunkId = "chunk_abc",
@@ -175,6 +179,7 @@ public sealed class AiSearchRagRetrieverTests
             PageEnd = 43,
             SectionHeading = "Foo Mode Rules",
             Content = "Foo Mode awards the Wizard combo bonus when …",
+            LastScrapedUtc = expectedLastScraped,
         };
 
         var chunk = AiSearchRagRetriever.MapToChunk(doc, score: 0.91);
@@ -191,5 +196,27 @@ public sealed class AiSearchRagRetrieverTests
         Assert.Equal("Foo Mode Rules", chunk.SectionHeading);
         Assert.Equal("Foo Mode awards the Wizard combo bonus when …", chunk.Content);
         Assert.Equal(0.91, chunk.Score);
+        // PR-C3: LastScrapedUtc must round-trip from RetrievedChunkDocument.
+        Assert.Equal(expectedLastScraped, chunk.LastScrapedUtc);
+    }
+
+    [Fact]
+    public void MapToChunk_NullLastScrapedUtc_PropagatesNull()
+    {
+        // Pre-C3 chunks and chunks from scrapers that didn't populate
+        // Timeline.LastDownloadedAt will have null here. The retriever
+        // must not throw and must propagate null so the citation extractor
+        // can render the freshness badge conditionally.
+        var doc = new RetrievedChunkDocument
+        {
+            ChunkId = "chunk_abc",
+            MachineId = "mch_x",
+            DocumentUrl = "https://example/doc.pdf",
+            LastScrapedUtc = null,
+        };
+
+        var chunk = AiSearchRagRetriever.MapToChunk(doc, score: 0.5);
+
+        Assert.Null(chunk.LastScrapedUtc);
     }
 }

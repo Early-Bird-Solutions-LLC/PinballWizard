@@ -43,6 +43,7 @@ Index name **`pinwiz-rag-v1`**.
 | `section_heading` | `Edm.String` | yes | yes | yes | no | "Coil Replacement", "Wizard Mode Rules", etc. (empty for no-outline fallback) |
 | `content` | `Edm.String` | yes | no | no | no | The chunk text |
 | `content_embedding` | `Collection(Edm.Single)` | n/a | n/a | n/a | n/a | 3072d, HNSW algorithm, cosine similarity |
+| `last_scraped_utc` | `Edm.DateTimeOffset` | no | yes | no | yes | Source document's `Timeline.LastDownloadedAt` from the Phase 1 scraper provenance record. "Scraped" = last byte-level fetch; `LastDownloadedAt` is the correct semantic because `LastContentChangedAt` is null when content has never changed (a new document with only one fetch would show null freshness), whereas `LastDownloadedAt` is populated on every successful fetch. Filterable + sortable for freshness-sort queries; NOT searchable (timestamps are opaque to text search); NOT facetable (continuous timestamp). Null for chunks indexed before Wave 2 PR-C3; populated going forward per ADR-0025 § 6 zero-migration-cost schema add. |
 
 ### Vector configuration
 

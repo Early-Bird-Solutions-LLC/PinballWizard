@@ -1,6 +1,6 @@
 ---
 name: local-review
-description: Run a structured pre-push code review of the current branch's diff against main. Produces a verdict-tagged critique (✅/⚠️/🔴) covering design, drift, error handling, security smells, and test quality. Runs BEFORE the 9-item PR self-audit checklist. Invoke any time you are about to push a non-trivial PR.
+description: Run a structured pre-push code review of the current branch's diff against main. Produces a verdict-tagged critique (✅/⚠️/🔴) covering design, drift, error handling, security smells, and test quality. Runs BEFORE the 10-item PR self-audit checklist. Invoke any time you are about to push a non-trivial PR.
 ---
 
 # /local-review — Pre-push code review
@@ -9,7 +9,7 @@ description: Run a structured pre-push code review of the current branch's diff 
 
 Before pushing **any** PR that adds production code (new files, new public API, new behavior). Doc-only PRs and pure dependency bumps may skip.
 
-This skill is **step 0** of the PR self-audit flow defined in `CLAUDE.md` § PR self-audit. The 9-item mechanical checklist runs after this — it catches dead config and identity issues; this skill catches design, architecture, and drift issues that a checklist cannot.
+This skill is **step 0** of the PR self-audit flow defined in `CLAUDE.md` § PR self-audit. The 10-item mechanical checklist runs after this — it catches dead config and identity issues; this skill catches design, architecture, and drift issues that a checklist cannot.
 
 ## What it does
 
@@ -19,7 +19,7 @@ Spawns a `general-purpose` agent with a structured review prompt against the sta
 - **Fix or defer** ⚠️ minor findings (defer must include a one-line justification)
 - **Acknowledge** ✅ no-concerns categories (no action needed)
 
-After the review, run the 9-item self-audit (mechanical preconditions), then commit and push.
+After the review, run the 10-item self-audit (mechanical preconditions), then commit and push.
 
 ## How to invoke
 
@@ -199,6 +199,62 @@ problems. If you find none of consequence, say so explicitly.
       format to render format; loses the discriminated-union benefit).
     - Auto-playing audio asset / non-muted-by-default `SoundController`
       → 🔴 (showcase prudence; ADR-0026 § Explicitly NOT adopted).
+
+13. **Community-resource posture conformance** (when the PR touches
+    `data/seeds/community_resources.v1.json`,
+    `data/seeds/pinside_slug_aliases.v1.json`, the refusal-routing
+    matrix, the `IDestinationResolver` surface, the `QuestionTopic`
+    enum, the four agent prompts in
+    `src/PinballWizard.Application/Ai/Agents/*.md`, or any UI that
+    renders a plural community-resource set): verify against
+    [ADR-0027](docs/adr/0027-community-resource-posture.md). Specific
+    checks:
+    - Plurality threshold below the locked bar — single-CTA refusal
+      for any non-singular category, fewer than 3 marketplace cards,
+      fewer than 2 forum / catalog / tool / location cards → 🔴
+      (re-litigates the avoid-appearance-of-favoritism posture).
+    - Within-set ordering computed by frequency-of-use, click-rate,
+      "primary"/"featured" promotion, or any non-alphabetical /
+      non-randomized scheme → 🔴 (creates the favoritism feedback
+      loop ADR-0027 § 10 rejects).
+    - Agent prompt or UI text that editorializes — "we recommend X,"
+      "the best place is Y," "you should go to Z" — even when the
+      surrounding plural set is technically correct → 🔴 (subtle
+      favoritism slips past the threshold check).
+    - Refusal text that says "try again later," "rephrase your
+      question," or "I don't know" without naming what's missing
+      and routing outward → ⚠️ (refusal-as-stall undermines the
+      community-resource posture).
+    - `QuestionTopic` enum addition (new value, new switch case
+      handling a topic that isn't in the closed enum) without an
+      ADR-0027 amendment in the same PR → 🔴 (soft-adding a topic
+      bypasses the curated routing matrix).
+    - New `community_resources.v1.json` entry missing any required
+      field (`id`, `name`, `urlBase`, `topics[]`, `kind`,
+      `tosPolitenessNotes`, `lastVerifiedUtc`) → 🔴 (schema drift
+      breaks the contract tests).
+    - New non-link-only seed entry without a CI URL-liveness check
+      pathway, OR a link-only entry without the "Disallows
+      programmatic UAs" sentinel in `tosPolitenessNotes` → ⚠️.
+    - Pinside slug derived at runtime by string manipulation /
+      probing / scraping → 🔴 (Pinside UA policy + polite-by-
+      construction; alias table at
+      `data/seeds/pinside_slug_aliases.v1.json` is the only path).
+    - Engagement-metric framing introduced — "trending questions,"
+      "popular machines," "most-asked," "recommended for you,"
+      signup gate, first-run tour, session-history surface, per-user
+      click-trail → 🔴 (captive UI; ADR-0027 § 10 rejects all of
+      these permanently).
+    - Per-user analytics / behavior tracking beyond aggregate
+      cost / capacity / drift telemetry → 🔴 (privacy-first posture
+      is load-bearing).
+    - Secondary-market price scraping or display of secondary-market
+      prices in v1 without an operator yes-response on file → 🔴
+      (re-litigates ADR-0027 § 11 v1 pricing strategy; aggregator-
+      link-only is the locked posture).
+    - Sponsor / paid-placement / "featured" tier introduced for any
+      community resource → 🔴 (rejected permanently per ADR-0027
+      § 10 and trade-off matrix item 18).
 
 For each 🔴 finding, give a specific recommended fix (not just "this
 is broken"). For ⚠️ findings, give the fix plus the cost-of-deferring
