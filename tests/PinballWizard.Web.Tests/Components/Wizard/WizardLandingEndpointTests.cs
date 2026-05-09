@@ -61,15 +61,23 @@ public sealed class WizardLandingEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task Landing_WhenServiceNotRegistered_BodyContainsLandingUnavailableError()
+    public async Task Landing_WhenServiceNotRegistered_BodyIsProblemDetailsJson()
     {
+        // Wave 2 PR-D3: the bare-JSON {"error":"landing_unavailable"} Wave 1
+        // baseline is replaced with RFC 9457 application/problem+json. Assert
+        // on the structured ProblemDetails fields rather than the old key.
         using var server = BuildServer(registerService: false);
         using var client = server.CreateClient();
 
         var response = await client.GetAsync("/api/wizard/landing");
         var body = await response.Content.ReadAsStringAsync();
 
-        Assert.Contains("landing_unavailable", body, StringComparison.Ordinal);
+        using var doc = JsonDocument.Parse(body);
+        Assert.True(doc.RootElement.TryGetProperty("type", out _),
+            "503 body must be RFC 9457 ProblemDetails with 'type' field.");
+        Assert.True(doc.RootElement.TryGetProperty("title", out _),
+            "503 body must have 'title' field.");
+        Assert.Equal(503, doc.RootElement.GetProperty("status").GetInt32());
     }
 
     // ──────────────────────────────────────────────────────────────
