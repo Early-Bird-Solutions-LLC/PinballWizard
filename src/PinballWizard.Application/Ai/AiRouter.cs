@@ -1,4 +1,6 @@
+using System.Net;
 using System.Runtime.CompilerServices;
+using Azure;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -107,6 +109,42 @@ public sealed class AiRouter : IAiRouter
             response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             responseText = response?.Text ?? string.Empty;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
+        {
+            // ADR-0026 § 9: Foundry / model upstream returned 429 Too Many
+            // Requests. Azure.AI.Projects wraps this as RequestFailedException
+            // (Status=429); HttpRequestException (StatusCode=429) is the
+            // fallback for non-Azure callers. Neither is cached — a cached
+            // 429 refusal would replay the refusal after the throttle window
+            // closes, producing a stale UX.
+            var retryAfterSeconds = TryReadRetryAfterSeconds(ex) ?? 60;
+
+            PinballWizardTelemetry.AiRefusals.Add(
+                1,
+                new KeyValuePair<string, object?>("refusal_category", RefusalCategory.UpstreamThrottled.ToString()),
+                new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard));
+
+            _logger.LogWarning(
+                ex,
+                "AiRouter refused on upstream 429: retryAfter={RetryAfterSeconds}s promptVersion={PromptVersion}",
+                retryAfterSeconds,
+                promptVersion);
+
+            return new WizardAnswer(
+                Text: BuildRefusalText(RefusalCategory.UpstreamThrottled),
+                Citations: [],
+                SubAgentUsed: AgentName.Wizard,
+                Confidence: 0.0,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.UpstreamThrottled,
+                PromptVersion: promptVersion,
+                FoundryThreadId: null,
+                Degradation: new DegradationContext(
+                    Mode: DegradationMode.UpstreamThrottled,
+                    Detail: "Upstream model rate-limited the request.",
+                    RetryAfterSeconds: retryAfterSeconds));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -373,6 +411,8 @@ public sealed class AiRouter : IAiRouter
             "I don't know — content safety blocked this response. Please rephrase the question.",
         RefusalCategory.NoCitation =>
             "I don't know — I couldn't ground that answer in a source I can cite. Try a more specific question, or ask about one of the machines covered in our corpus.",
+        RefusalCategory.UpstreamThrottled =>
+            "I don't know — the upstream model is rate-limited right now. Please try again in a moment.",
         _ =>
             "I don't know.",
     };
@@ -424,5 +464,62 @@ public sealed class AiRouter : IAiRouter
             && !string.IsNullOrWhiteSpace(model)
             ? model
             : _options.ChatDeploymentName;
+    }
+
+    // Returns true when the exception is a 429 Too Many Requests from any
+    // caller path. Covers the two concrete exception types the stack may
+    // surface:
+    //   - RequestFailedException (Azure.Core) — thrown by Azure.AI.Projects
+    //     (Foundry) when the model tier is rate-limited.
+    //   - HttpRequestException (.NET BCL) — thrown by the HTTP layer in
+    //     non-Azure callers or future provider swaps.
+    // The method is a `when` filter guard — it is NOT a catch block; it
+    // must not throw (filter exceptions are silently swallowed by the CLR
+    // and will cause the outer catch-all to fire instead).
+    // `internal` (not private) for unit testing via InternalsVisibleTo.
+    internal static bool Is429(Exception ex)
+    {
+        try
+        {
+            if (ex is RequestFailedException rfe)
+                return rfe.Status == (int)HttpStatusCode.TooManyRequests;
+
+            if (ex is HttpRequestException hre)
+                return hre.StatusCode == HttpStatusCode.TooManyRequests;
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Extracts the Retry-After value (in seconds) from a 429 exception.
+    // For RequestFailedException, inspects the raw response headers.
+    // For HttpRequestException, headers are not preserved by .NET's
+    // HttpClient at the exception level — returns null.
+    // Failure to parse is not fatal; callers default to 60s.
+    internal static int? TryReadRetryAfterSeconds(Exception ex)
+    {
+        try
+        {
+            if (ex is RequestFailedException rfe)
+            {
+                var raw = rfe.GetRawResponse();
+                if (raw is not null && raw.Headers.TryGetValue("Retry-After", out var value)
+                    && int.TryParse(value, out var seconds)
+                    && seconds > 0)
+                {
+                    return seconds;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

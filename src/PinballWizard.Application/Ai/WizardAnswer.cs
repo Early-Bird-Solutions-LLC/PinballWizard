@@ -11,6 +11,13 @@ namespace PinballWizard.Application.Ai;
 // Phase 5 Wave 1 PR-R1 adds RefusalDetail surface for the user-delight
 // refusal UX (null when IsRefusal=false; non-null with potentially-null
 // sub-fields when IsRefusal=true).
+//
+// Phase 5 Wave 1 PR-D1 adds Degradation per ADR-0026 § 9. Non-null when
+// the answer was produced under degraded conditions (e.g., AI Search
+// unavailable, upstream throttled). On a full refusal caused by 429,
+// IsRefusal=true AND Degradation is populated (Mode=UpstreamThrottled,
+// RetryAfterSeconds from Retry-After header). On a healthy answer,
+// Degradation is null.
 public sealed record WizardAnswer(
     string Text,
     IReadOnlyList<Citation> Citations,
@@ -21,4 +28,5 @@ public sealed record WizardAnswer(
     RefusalCategory? RefusalCategory,
     string? PromptVersion,
     string? FoundryThreadId,
-    RefusalDetail? RefusalDetail = null);
+    RefusalDetail? RefusalDetail = null,
+    DegradationContext? Degradation = null);
