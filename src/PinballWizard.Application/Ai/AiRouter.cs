@@ -242,6 +242,49 @@ public sealed class AiRouter : IAiRouter
                 PromptVersion: promptVersion,
                 FoundryThreadId: null);
         }
+        else if (citations.Count == 0)
+        {
+            // ADR-0023 citation-required guardrail. Order matters: the
+            // confidence-threshold check above runs first; this gate
+            // only fires when confidence is acceptable but no citation
+            // attached. If a turn's confidence is also low, that path
+            // wins above (more specific — confidence is low BECAUSE
+            // retrieval is bad; the absent citation is the symptom,
+            // not the cause). The structural promise vision.md /
+            // guardrails.md goal #5 makes — "every Wizard answer cites
+            // a source, or refuses" — becomes mechanically enforceable
+            // here, not a prompt-level wish. v1 gate is binary (≥1
+            // citation passes); H3 calibration can widen the extractor
+            // (ADR-0023 § Calibration) but never tightens this gate
+            // without an ADR successor.
+            //
+            // A spike on `pinwiz.ai.refusals_total{category=NoCitation}`
+            // correlated with `pinwiz.ai.tool_errors_total` indicates
+            // tool errors as the cause; an uncorrelated spike indicates
+            // the agent didn't call a grounding tool at all. Both
+            // refuse identically here — the distinction lives in the
+            // production dashboard.
+            PinballWizardTelemetry.AiRefusals.Add(
+                1,
+                new KeyValuePair<string, object?>("refusal_category", RefusalCategory.NoCitation.ToString()),
+                new KeyValuePair<string, object?>("sub_agent", subAgentUsed));
+
+            _logger.LogInformation(
+                "AiRouter refused on no-citation guardrail: confidence={Confidence:F3} citations=0 subAgent={SubAgent}",
+                confidence,
+                subAgentUsed);
+
+            answer = new WizardAnswer(
+                Text: BuildRefusalText(RefusalCategory.NoCitation),
+                Citations: [],
+                SubAgentUsed: subAgentUsed,
+                Confidence: confidence,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.NoCitation,
+                PromptVersion: promptVersion,
+                FoundryThreadId: null);
+        }
         else
         {
             // Debug-level (not Info) so per-question log volume stays
@@ -271,7 +314,14 @@ public sealed class AiRouter : IAiRouter
         return answer;
     }
 
-    private static string BuildRefusalText(RefusalCategory category) => category switch
+    // `internal` (not private) so RefusalCategoryRefusalTextTests can pin
+    // the per-category text contract without instantiating a full AiRouter
+    // (Application's csproj declares InternalsVisibleTo for the test
+    // project). The exact text is part of the user-facing contract — a
+    // silent rewrite would change UX without surfacing in any
+    // behavior test, which is exactly the failure mode the test
+    // pin guards against.
+    internal static string BuildRefusalText(RefusalCategory category) => category switch
     {
         RefusalCategory.InsufficientGrounding =>
             "I don't know — I don't have grounded data to answer that question yet.",
@@ -283,6 +333,8 @@ public sealed class AiRouter : IAiRouter
             "I don't know — answering would exceed the per-question cost ceiling. Try a more focused question.",
         RefusalCategory.HarmfulContent =>
             "I don't know — content safety blocked this response. Please rephrase the question.",
+        RefusalCategory.NoCitation =>
+            "I don't know — I couldn't ground that answer in a source I can cite. Try a more specific question, or ask about one of the machines covered in our corpus.",
         _ =>
             "I don't know.",
     };
