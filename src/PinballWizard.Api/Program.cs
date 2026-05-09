@@ -18,6 +18,7 @@
 // ADR-0026 § 4 — AnswerChunk discriminated union on the wire
 
 using PinballWizard.Api.Endpoints;
+using PinballWizard.Application.Landing;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.ServiceDefaults;
 
@@ -34,6 +35,11 @@ builder.AddServiceDefaults();
 // IS configured, registers IFoundryAgentFactory, IAiRouter, and related
 // services. The streaming endpoint returns 503 with Retry-After when the
 // router is absent — see WizardAskStreamEndpoint.
+// ── Landing service (PR-L1; endpoint wired in PR-L3) ─────────────────────────
+// Registered unconditionally — no Cosmos or Foundry dependency in PR-L1.
+// PR-L3 adds GET /api/wizard/landing that resolves ILandingService from DI.
+builder.Services.AddLandingService();
+
 var foundryEndpoint = builder.Configuration["AiFoundry:ProjectEndpoint"];
 var foundryWired = !string.IsNullOrWhiteSpace(foundryEndpoint);
 if (foundryWired)
