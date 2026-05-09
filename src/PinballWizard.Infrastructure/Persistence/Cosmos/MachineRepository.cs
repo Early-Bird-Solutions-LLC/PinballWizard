@@ -60,12 +60,25 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             .WithParameter("@title", title);
         var requestOptions = new QueryRequestOptions { MaxItemCount = 1 };
 
+        // Per-page metric emission via the base helper so this
+        // cross-partition query lands on `pinwiz.cosmos.query_duration_ms`
+        // alongside generic `StreamAsync` calls. PR 5 of the Cosmos delight
+        // track validates its point-read win against this path's pre-merge
+        // p95 distribution — without metering, the win would only be
+        // observable in synthetic benchmarks, not production traffic.
         using var iterator = Container.GetItemQueryIterator<Machine>(
             queryDefinition,
             requestOptions: requestOptions);
         while (iterator.HasMoreResults)
         {
-            var page = await iterator.ReadNextAsync(cancellationToken).ConfigureAwait(false);
+            var page = await ExecuteWithMetricsAsync(
+                "query",
+                async ct =>
+                {
+                    var p = await iterator.ReadNextAsync(ct).ConfigureAwait(false);
+                    return (p, p.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
             foreach (var machine in page)
             {
                 yield return machine;

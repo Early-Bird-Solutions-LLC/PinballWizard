@@ -150,8 +150,11 @@ problems. If you find none of consequence, say so explicitly.
       → 🔴 (use a point-read or add a materialized-view container).
     - New write-heavy container without a selective indexing policy
       → ⚠️ (default policy indexes every property; usually wasteful).
-    - New repo method not wrapped by `MeteredCosmosRepository<T>`
-      → ⚠️ (RU + duration won't show up on `pinwiz.cosmos.*`).
+    - New repo method calling Cosmos SDK directly without routing
+      through `CosmosRepository<T>.ExecuteWithMetricsAsync` (or a
+      base method that does) → ⚠️ (RU + duration + `CosmosException.Diagnostics`
+      capture won't show up on `pinwiz.cosmos.*` / structured log
+      scope).
     - 2nd writer of `machines` (or any container with a documented
       single-writer property in ADR-0011) without ETag conditional
       writes via `ItemRequestOptions.IfMatchEtag` → 🔴 (lost-update
