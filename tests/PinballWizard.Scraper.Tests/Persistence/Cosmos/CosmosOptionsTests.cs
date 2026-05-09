@@ -41,13 +41,66 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
-    public void Defaults_Containers_HasExactlyTheTwoPhase1Containers()
+    public void Defaults_Containers_IncludesScrapedDocumentsWithMachineIdPartitionKey()
+    {
+        // W3-2 source container — the change-feed processor in
+        // PinballWizard.RagIngestionWorker subscribes to its change feed.
+        // Partition key `/machine_id` keeps a machine's documents
+        // co-located so a future per-machine reindex can issue a
+        // single-partition query rather than a cross-partition scan.
+        var options = new CosmosOptions();
+
+        var scraped = Assert.Single(options.Containers, c => c.Name == "scraped_documents");
+        Assert.Equal("/machine_id", scraped.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_Containers_IncludesRagLeasesContainer()
+    {
+        // W3-2 lease container — owned by Cosmos.ChangeFeedProcessor and by
+        // the KEDA Cosmos scaler in the Bicep ACA resource. Partition key
+        // `/id` matches the SDK's lease-document layout.
+        var options = new CosmosOptions();
+
+        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
+        Assert.Equal("/id", leases.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_Containers_IncludesRagIndexStateContainer()
+    {
+        // W3-2 hash-tracking container backing IIndexState. Partition key
+        // `/document_id` makes the per-document point-read the natural
+        // single-partition lookup.
+        var options = new CosmosOptions();
+
+        var indexState = Assert.Single(options.Containers, c => c.Name == "rag_index_state");
+        Assert.Equal("/document_id", indexState.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_Containers_IncludesRagDeadLettersContainer()
+    {
+        // W3-2 per-document failure ledger backing IDeadLetterSink.
+        // Partition key `/document_id` keeps the cardinality bounded
+        // by document count, not by failure count (re-deliveries upsert
+        // the same row).
+        var options = new CosmosOptions();
+
+        var deadLetters = Assert.Single(options.Containers, c => c.Name == "rag_dead_letters");
+        Assert.Equal("/document_id", deadLetters.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_Containers_HasExactlyTheExpectedContainers()
     {
         // Pin the count so a future addition that drifts from the repository
-        // registrations (which would silently leave the new container missing
-        // partition-key validation) trips this test as a flag.
+        // registrations or worker wiring (which would silently leave the new
+        // container missing partition-key validation) trips this test as a
+        // flag. Phase 1: machines + ingestion_sources. Phase 4 W3-2: adds
+        // scraped_documents + rag_leases + rag_index_state + rag_dead_letters.
         var options = new CosmosOptions();
-        Assert.Equal(2, options.Containers.Count);
+        Assert.Equal(6, options.Containers.Count);
     }
 
     [Fact]
