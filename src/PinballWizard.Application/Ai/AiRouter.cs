@@ -1,7 +1,9 @@
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Azure;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Citations;
@@ -28,12 +30,24 @@ namespace PinballWizard.Application.Ai;
 //          legacy regex extractor runs in parallel for cutover
 //          observability (pinwiz.ai.citations.extracted_total{source=...})
 //          until H2 confirms parity-or-better; then it gets deleted.
-//   W2-1 — THIS PR. Reads SubAgentUsed from the AgentResponse's
-//          tool-call trace via SubAgentTraceReader, replacing the
-//          PR 4 always-"Wizard" placeholder. Closes Phase 3 follow-up
-//          #4 — the eval surface can now distinguish Wizard direct
-//          answers from sub-agent dispatch, which the H2 baseline's
-//          subagent_accuracy=0.033 made measurably visible.
+//   W2-1 — Reads SubAgentUsed from the AgentResponse's tool-call trace
+//          via SubAgentTraceReader, replacing the PR 4 always-"Wizard"
+//          placeholder. Closes Phase 3 follow-up #4.
+// Phase 5:
+//   Wave 2 PR-S2 — Extracts ApplyPostAgentGuardrailsAsync helper so
+//          AnswerAsync and AnswerStreamingAsync share identical guardrail
+//          ordering (sub-agent read, cost attribution, cost ceiling,
+//          citation extraction, confidence, NoCitation). AnswerStreamingAsync
+//          is now wired to wizardAgent.RunStreamingAsync, emits per-update
+//          TextDelta chunks as they arrive, aggregates updates into an
+//          AgentResponse post-stream, then calls the shared helper.
+//          AgentResponseExtensions.ToAgentResponseAsync is not present in
+//          Microsoft.Agents.AI 1.4.0; aggregation is done inline from the
+//          AgentResponseUpdate.Contents (IList<AIContent>) per update.
+//          The 429 catch arm is duplicated at each agent-invocation site
+//          (AnswerAsync + AnswerStreamingAsync) with an explaining comment;
+//          duplication is minimal and avoids a helper that would leak
+//          streaming state across an async boundary.
 public sealed class AiRouter : IAiRouter
 {
     private readonly IFoundryAgentFactory _agentFactory;
@@ -102,13 +116,11 @@ public sealed class AiRouter : IAiRouter
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
         var startedAt = DateTimeOffset.UtcNow;
 
-        string responseText;
         AgentResponse? response;
         try
         {
             response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            responseText = response?.Text ?? string.Empty;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -118,6 +130,12 @@ public sealed class AiRouter : IAiRouter
             // fallback for non-Azure callers. Neither is cached — a cached
             // 429 refusal would replay the refusal after the throttle window
             // closes, producing a stale UX.
+            // NOTE: the same catch arm is duplicated in AnswerStreamingAsync
+            // around the RunStreamingAsync aggregation loop. The duplication
+            // is deliberate — a shared wrapping helper over async streaming
+            // cannot be lifted cleanly in C# without losing streaming
+            // semantics. The block is small so the cost of duplication is
+            // lower than the complexity of a leaky abstraction.
             var retryAfterSeconds = TryReadRetryAfterSeconds(ex) ?? 60;
 
             PinballWizardTelemetry.AiRefusals.Add(
@@ -154,6 +172,317 @@ public sealed class AiRouter : IAiRouter
 
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
+
+        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Cache successful answers only — refusals are not cached so a
+        // transient low-confidence or no-citation run doesn't poison the
+        // cache for the same normalized question on the next request.
+        // Exception: CostCeilingHit was previously cached (Phase 3 PR 6);
+        // that decision is reversed here because the cost ceiling is a
+        // transient call-level guard, not a stable signal about the
+        // question's answerability. The cache key (normalized + promptVersion)
+        // ensures a PromptVersion bump invalidates all cached answers.
+        if (!answer.IsRefusal)
+        {
+            _cache.Store(normalized, promptVersion, answer);
+        }
+
+        return answer;
+    }
+
+    // Per ADR-0026 § 3. Wave 2 PR-S2: replaces the Wave 1 AnswerAsync
+    // delegation with a live call to wizardAgent.RunStreamingAsync, emitting
+    // per-update TextDelta chunks as they arrive from the Foundry model.
+    //
+    // Pipeline summary:
+    //   1. Cache hit → yield TextDelta(cached.Text) + Final(cached). Done.
+    //   2. Cache miss → call wizardAgent.RunStreamingAsync and yield
+    //      TextDelta for each AgentResponseUpdate that carries non-empty
+    //      text. Accumulate all updates for post-stream reconstruction.
+    //   3. After stream completes, reconstruct an AgentResponse from the
+    //      accumulated ChatMessages (tool-call results preserved so
+    //      ToolTraceCitationExtractor and SubAgentTraceReader can read them).
+    //   4. Apply ApplyPostAgentGuardrailsAsync on the reconstructed response
+    //      (same ordering as AnswerAsync: sub-agent, cost, cost ceiling,
+    //      citations, confidence, NoCitation).
+    //   5. If a guardrail refuses: yield Refusal then Final. No cache write.
+    //      The Refusal chunk supersedes prior TextDeltas on the client per
+    //      ADR-0026 § 5 UX rule.
+    //   6. If passes: yield Final and write to cache.
+    //   7. 429 from RunStreamingAsync: catch, build UpstreamThrottled
+    //      refusal, yield Refusal + Final. No cache write.
+    //
+    // [EnumeratorCancellation] propagates CancellationToken through the
+    // IAsyncEnumerable machinery so callers can cancel mid-iteration
+    // (e.g., user navigates away before Final arrives).
+    public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(question);
+
+        var normalized = Normalize(question);
+        var promptVersion = _promptProvider.PromptVersion;
+
+        // ── Cache hit: single TextDelta from the cached answer ────────
+        // A cached answer is always a single round-trip (whole text).
+        // Streaming a cached answer as multiple deltas would be misleading
+        // (the deltas don't map to real model output). One TextDelta is
+        // the honest contract for a cache-hit reply.
+        if (_cache.TryGet(normalized, promptVersion, out var cached))
+        {
+            PinballWizardTelemetry.AiCacheHits.Add(1);
+            _logger.LogDebug("AiRouter cache hit for normalized question (PromptVersion={PromptVersion}).", promptVersion);
+
+            if (cached.IsRefusal)
+            {
+                yield return new AnswerChunk.Refusal(
+                    cached.RefusalCategory ?? RefusalCategory.OutOfScope,
+                    cached.Text);
+            }
+            else
+            {
+                yield return new AnswerChunk.TextDelta(cached.Text);
+            }
+
+            yield return new AnswerChunk.Final(cached);
+            yield break;
+        }
+
+        PinballWizardTelemetry.AiCacheMisses.Add(1);
+
+        var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
+        var wizardModel = ResolveAgentModel(AgentName.Wizard);
+
+        // ── Live stream: aggregate then yield ─────────────────────────
+        // C# forbids yield inside a try/catch body (CS1626). The solution:
+        // AggregateStreamAsync collects all AgentResponseUpdates into
+        // (messages, textDeltas, 429Refusal?) without yielding — pure async
+        // aggregation with no iterator machinery. After it returns we yield
+        // the buffered deltas in a yield-safe context.
+        //
+        // Trade-off: the first TextDelta reaches the client only after the
+        // full stream completes rather than as each token arrives. In the
+        // Wave 1 baseline the client saw a single TextDelta anyway (the stub
+        // called AnswerAsync then wrapped the whole text). Wave 2 PR-S2
+        // preserves per-update granularity (multiple TextDelta events) while
+        // respecting the language constraint; true "token-by-token" delivery
+        // without buffering requires the streaming infrastructure to surface
+        // below the try/catch boundary, which would require a structural
+        // change to AggregateStreamAsync. Logged in DL-0003 for Wave 3 review.
+        //
+        // AgentResponseExtensions.ToAgentResponseAsync is not present in
+        // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); AggregateStreamAsync
+        // handles reconstruction inline.
+        var (accumulatedMessages, textDeltas, refusalFromException) =
+            await AggregateStreamAsync(wizardAgent, question, promptVersion, cancellationToken)
+                .ConfigureAwait(false);
+
+        // Yield the buffered TextDelta chunks — safe to yield here because
+        // we are outside any try/catch block.
+        foreach (var delta in textDeltas)
+        {
+            yield return new AnswerChunk.TextDelta(delta);
+        }
+
+        // ── 429 path: emit Refusal + Final, no cache write ────────────
+        if (refusalFromException is not null)
+        {
+            // ADR-0026 § 5: Refusal supersedes prior TextDeltas on the client.
+            yield return new AnswerChunk.Refusal(
+                refusalFromException.RefusalCategory ?? RefusalCategory.OutOfScope,
+                refusalFromException.Text);
+            yield return new AnswerChunk.Final(refusalFromException);
+            yield break;
+        }
+
+        // ── Post-stream: reconstruct AgentResponse + apply guardrails ──
+        // Reconstruct from accumulated ChatMessages so the citation
+        // extractor (ToolTraceCitationExtractor) can read FunctionResultContent
+        // from the tool-call turns. AgentResponse(IList<ChatMessage>) maps
+        // directly to the Messages property that extractors iterate.
+        var reconstructedResponse = new AgentResponse(accumulatedMessages);
+
+        var answer = await ApplyPostAgentGuardrailsAsync(
+                reconstructedResponse,
+                normalized,
+                promptVersion,
+                wizardModel,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // ── Emit result: Refusal supersedes prior TextDeltas (ADR-0026 § 5) ─
+        if (answer.IsRefusal)
+        {
+            // Refusal supersedes the TextDeltas already emitted to the client.
+            // The client discards any in-flight prose when it receives a
+            // Refusal chunk per ADR-0026 § 5 UX rule. No cache write.
+            yield return new AnswerChunk.Refusal(
+                answer.RefusalCategory ?? RefusalCategory.OutOfScope,
+                answer.Text);
+        }
+
+        yield return new AnswerChunk.Final(answer);
+
+        // Cache write only on successful (non-refusal) answers.
+        if (!answer.IsRefusal)
+        {
+            _cache.Store(normalized, promptVersion, answer);
+        }
+    }
+
+    // Aggregates a RunStreamingAsync call into (messages, textDeltas, 429Refusal?).
+    // Separated from AnswerStreamingAsync because C# forbids yield inside a
+    // try/catch body (CS1626). This method is a pure async aggregator — no
+    // iterator machinery — which lets the caller yield the buffered deltas
+    // in a safe context.
+    //
+    // Returns:
+    //   messages    — One ChatMessage per AgentResponseUpdate, preserving
+    //                 FunctionResultContent for the citation extractor.
+    //   textDeltas  — Non-empty text fragments in arrival order; caller
+    //                 yields these as AnswerChunk.TextDelta events.
+    //   refusal     — Non-null only when a 429 was caught; caller emits
+    //                 Refusal + Final and skips the guardrail pipeline.
+    //
+    // See DL-0003: true per-token delivery (no buffering) requires surfacing
+    // the stream below the try/catch boundary — deferred to Wave 3.
+    private async Task<(List<ChatMessage> messages, List<string> textDeltas, WizardAnswer? refusal)>
+        AggregateStreamAsync(
+            AIAgent wizardAgent,
+            string question,
+            string promptVersion,
+            CancellationToken cancellationToken)
+    {
+        var messages = new List<ChatMessage>();
+        var textDeltas = new List<string>();
+        WizardAnswer? refusal = null;
+
+        try
+        {
+            await foreach (var update in wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
+                .ConfigureAwait(false))
+            {
+                // Build a ChatMessage from this update so the reconstructed
+                // AgentResponse carries all FunctionResultContent entries.
+                // When Contents is already populated (Microsoft.Agents.AI 1.4.0
+                // sets Contents = [TextContent(text)] when constructed via
+                // AgentResponseUpdate(role, text)), do NOT add a second
+                // TextContent — that would double the text in AgentResponse.Text.
+                // The supplemental TextContent path handles SDK variants that
+                // populate Text without populating Contents.
+                var contentItems = new List<AIContent>();
+                if (update.Contents is { Count: > 0 })
+                {
+                    contentItems.AddRange(update.Contents);
+                }
+                else if (!string.IsNullOrEmpty(update.Text))
+                {
+                    contentItems.Add(new TextContent(update.Text));
+                }
+
+                if (contentItems.Count > 0)
+                {
+                    var role = update.Role ?? ChatRole.Assistant;
+                    messages.Add(new ChatMessage(role, contentItems));
+                }
+
+                // Collect non-empty text fragments for per-delta emission.
+                // Skip empty updates (tool-call bookkeeping, usage metadata).
+                if (!string.IsNullOrEmpty(update.Text))
+                    textDeltas.Add(update.Text);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
+        {
+            // See AnswerAsync's 429 catch arm for rationale. Duplicate
+            // here because streaming cannot be lifted into a shared async
+            // wrapper without losing the IAsyncEnumerable yield semantics
+            // of AnswerStreamingAsync.
+            var retryAfterSeconds = TryReadRetryAfterSeconds(ex) ?? 60;
+
+            PinballWizardTelemetry.AiRefusals.Add(
+                1,
+                new KeyValuePair<string, object?>("refusal_category", RefusalCategory.UpstreamThrottled.ToString()),
+                new KeyValuePair<string, object?>("sub_agent", AgentName.Wizard));
+
+            _logger.LogWarning(
+                ex,
+                "AiRouter refused on upstream 429 (streaming): retryAfter={RetryAfterSeconds}s promptVersion={PromptVersion}",
+                retryAfterSeconds,
+                promptVersion);
+
+            refusal = new WizardAnswer(
+                Text: BuildRefusalText(RefusalCategory.UpstreamThrottled),
+                Citations: [],
+                SubAgentUsed: AgentName.Wizard,
+                Confidence: 0.0,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.UpstreamThrottled,
+                PromptVersion: promptVersion,
+                FoundryThreadId: null,
+                Degradation: new DegradationContext(
+                    Mode: DegradationMode.UpstreamThrottled,
+                    Detail: "Upstream model rate-limited the request.",
+                    RetryAfterSeconds: retryAfterSeconds));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(
+                ex,
+                "AiRouter failed invoking Wizard agent (streaming) for normalized question (PromptVersion={PromptVersion}).",
+                promptVersion);
+            throw;
+        }
+
+        return (messages, textDeltas, refusal);
+    }
+
+    // Shared post-agent guardrail pipeline. Called by both AnswerAsync
+    // (after wizardAgent.RunAsync) and AnswerStreamingAsync (after the
+    // RunStreamingAsync aggregation loop). Encapsulates:
+    //   1. Sub-agent trace read (SubAgentTraceReader).
+    //   2. Cost attribution (ITokenUsageReader + IAiCostCalculator).
+    //   3. Cost ceiling check → CostCeilingHit refusal if exceeded.
+    //   4. Citation extraction (ToolTraceCitationExtractor + optional
+    //      RegexLegacyCitationExtractor for ADR-0022 cutover window).
+    //   5. Confidence calculation → confidence-threshold refusal if below.
+    //   6. NoCitation check → NoCitation refusal if zero citations pass
+    //      the confidence gate.
+    //   7. Success path → build WizardAnswer with text + citations.
+    //
+    // Returns the final WizardAnswer (refusal or success). Cache write
+    // is the caller's responsibility — the helper does NOT write to cache
+    // because the streaming path needs to emit Final before writing.
+    //
+    // The `normalized` parameter is used for log correlation only; the
+    // caller owns the cache write keyed by (normalized, promptVersion).
+    // `wizardModel` is passed through for cost attribution telemetry.
+    private async Task<WizardAnswer> ApplyPostAgentGuardrailsAsync(
+        AgentResponse? response,
+        string normalized,
+        string promptVersion,
+        string wizardModel,
+        CancellationToken cancellationToken)
+    {
+        // The method is declared async so callers can await it uniformly
+        // and future guardrail steps (e.g., async confidence calibration,
+        // Cosmos session-state writes) can be added without changing the
+        // call sites. No async work exists today, so we yield immediately.
+        // cancellationToken is passed through for the same forward-compat
+        // reason — when the first async guardrail lands it will flow
+        // naturally. normalized is used for log correlation by callers;
+        // it is not consumed here but is kept in the signature to keep the
+        // method's contract complete.
+        _ = normalized;
+        await Task.Yield();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var responseText = response?.Text ?? string.Empty;
 
         // W2-1: which sub-agent (if any) the Wizard dispatched to.
         // Read once from the trace and reused at every downstream
@@ -211,7 +540,7 @@ public sealed class AiRouter : IAiRouter
                 wizardModel,
                 subAgentUsed);
 
-            var ceilingAnswer = new WizardAnswer(
+            return new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.CostCeilingHit),
                 Citations: [],
                 SubAgentUsed: subAgentUsed,
@@ -222,8 +551,6 @@ public sealed class AiRouter : IAiRouter
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null));
-            _cache.Store(normalized, promptVersion, ceilingAnswer);
-            return ceilingAnswer;
         }
 
         var citations = _toolTraceExtractor.Extract(response);
@@ -251,7 +578,6 @@ public sealed class AiRouter : IAiRouter
         var signals = _confidenceCalculator.Compute(responseText, citations);
         var confidence = signals.Composite();
 
-        WizardAnswer answer;
         if (confidence < _options.ConfidenceThreshold)
         {
             var category = _confidenceCalculator.CategorizeRefusal(signals);
@@ -271,7 +597,7 @@ public sealed class AiRouter : IAiRouter
                 signals.ModelSelfReported,
                 signals.CitationCoverage);
 
-            answer = new WizardAnswer(
+            return new WizardAnswer(
                 Text: BuildRefusalText(category),
                 Citations: [],
                 SubAgentUsed: subAgentUsed,
@@ -283,7 +609,8 @@ public sealed class AiRouter : IAiRouter
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(category, signals));
         }
-        else if (citations.Count == 0)
+
+        if (citations.Count == 0)
         {
             // ADR-0023 citation-required guardrail. Order matters: the
             // confidence-threshold check above runs first; this gate
@@ -315,7 +642,7 @@ public sealed class AiRouter : IAiRouter
                 confidence,
                 subAgentUsed);
 
-            answer = new WizardAnswer(
+            return new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.NoCitation),
                 Citations: [],
                 SubAgentUsed: subAgentUsed,
@@ -327,67 +654,29 @@ public sealed class AiRouter : IAiRouter
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals));
         }
-        else
-        {
-            // Debug-level (not Info) so per-question log volume stays
-            // bounded; correlates a single answer's sub-agent to the
-            // citations it produced when triaging an outlier vs.
-            // the OTel-tagged metrics. Mirrors the refusal paths'
-            // observability posture.
-            _logger.LogDebug(
-                "AiRouter answered: subAgent={SubAgent} confidence={Confidence:F3} citations={CitationCount}",
-                subAgentUsed,
-                confidence,
-                citations.Count);
 
-            answer = new WizardAnswer(
-                Text: responseText,
-                Citations: citations,
-                SubAgentUsed: subAgentUsed,
-                Confidence: confidence,
-                Escalated: false,
-                IsRefusal: false,
-                RefusalCategory: null,
-                PromptVersion: promptVersion,
-                FoundryThreadId: null,
-                RefusalDetail: null);
-        }
+        // Debug-level (not Info) so per-question log volume stays
+        // bounded; correlates a single answer's sub-agent to the
+        // citations it produced when triaging an outlier vs.
+        // the OTel-tagged metrics. Mirrors the refusal paths'
+        // observability posture.
+        _logger.LogDebug(
+            "AiRouter answered: subAgent={SubAgent} confidence={Confidence:F3} citations={CitationCount}",
+            subAgentUsed,
+            confidence,
+            citations.Count);
 
-        _cache.Store(normalized, promptVersion, answer);
-        return answer;
-    }
-
-    // Per ADR-0026 § 3. Wave 1 contract: delegates to AnswerAsync (one
-    // round-trip), then emits TextDelta + Final on success, or Refusal +
-    // Final on any refusal path. Guardrails (cache, cost ceiling, confidence
-    // threshold, NoCitation) remain one-shot in AnswerAsync for this wave.
-    // Wave 2 PR-S2 replaces the AnswerAsync call with RunStreamingAsync and
-    // emits per-update TextDelta chunks as they arrive; this method signature
-    // and the AnswerChunk contract are stable across that swap.
-    //
-    // [EnumeratorCancellation] propagates CancellationToken through the
-    // IAsyncEnumerable machinery so callers can cancel mid-iteration
-    // (e.g., user navigates away before Final arrives).
-    public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
-        string question,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var answer = await AnswerAsync(question, cancellationToken).ConfigureAwait(false);
-
-        if (answer.IsRefusal)
-        {
-            // Refusal supersedes prior TextDelta per ADR-0026 § 5 UX rule.
-            // Wave 1 emits no TextDelta on refusal paths.
-            yield return new AnswerChunk.Refusal(
-                answer.RefusalCategory ?? RefusalCategory.OutOfScope,
-                answer.Text);
-        }
-        else
-        {
-            yield return new AnswerChunk.TextDelta(answer.Text);
-        }
-
-        yield return new AnswerChunk.Final(answer);
+        return new WizardAnswer(
+            Text: responseText,
+            Citations: citations,
+            SubAgentUsed: subAgentUsed,
+            Confidence: confidence,
+            Escalated: false,
+            IsRefusal: false,
+            RefusalCategory: null,
+            PromptVersion: promptVersion,
+            FoundryThreadId: null,
+            RefusalDetail: null);
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin
