@@ -32,7 +32,9 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
     }
 
     /// <inheritdoc />
-    public IAsyncEnumerable<Machine> QueryByTitleAsync(string title, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<Machine> QueryByTitleAsync(
+        string title,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
 
@@ -44,10 +46,30 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
         // manufacturer up front. At ~2,400 machines the RU cost of a
         // cross-partition equality match is small (single-digit RU
         // typical for sub-thousand-row scans).
-        return StreamAsync(
-            "SELECT * FROM c WHERE STRINGEQUALS(c.title, @title, true)",
-            parameters: new Dictionary<string, object> { ["title"] = title },
-            partitionKey: null,
-            cancellationToken: cancellationToken);
+        //
+        // Per ADR-0025 § 4 this cross-partition query is the user-
+        // delight bottleneck on the Wizard answer flow's cache-miss
+        // path; PR 5 of the Cosmos delight track replaces it with a
+        // point-read against a `machine_title_lookups` materialized
+        // view. Until then, `MaxItemCount = 1` is the cheapest tuning
+        // available — the only caller (`MachineGroundingTool`) breaks
+        // on the first match, so a 1-doc page minimizes the per-page
+        // RU cost without changing observable behavior.
+        var queryDefinition = new QueryDefinition(
+            "SELECT * FROM c WHERE STRINGEQUALS(c.title, @title, true)")
+            .WithParameter("@title", title);
+        var requestOptions = new QueryRequestOptions { MaxItemCount = 1 };
+
+        using var iterator = Container.GetItemQueryIterator<Machine>(
+            queryDefinition,
+            requestOptions: requestOptions);
+        while (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var machine in page)
+            {
+                yield return machine;
+            }
+        }
     }
 }

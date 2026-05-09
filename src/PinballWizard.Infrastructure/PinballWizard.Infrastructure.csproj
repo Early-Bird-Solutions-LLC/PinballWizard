@@ -67,6 +67,13 @@
     <PackageReference Include="Microsoft.Azure.Cosmos" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- IHealthCheck + HealthCheckResult + HealthCheckContext + the
+         AddHealthChecks().AddCheck<T>() registration extension. Per
+         ADR-0025 § 8 the Infrastructure layer owns CosmosHealthCheck
+         (it's Cosmos-specific); this package gives us the abstractions
+         without taking a Microsoft.AspNetCore.App framework reference. -->
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />

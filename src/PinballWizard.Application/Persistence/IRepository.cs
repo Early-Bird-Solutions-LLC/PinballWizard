@@ -25,9 +25,21 @@ public interface IRepository<T> where T : class, IEntity
     /// <summary>
     /// Upsert (insert-or-replace) a document. The document's
     /// <see cref="IEntity.Id"/> and <see cref="IEntity.PartitionKey"/>
-    /// determine where it lands. Returns the persisted entity (with
-    /// <c>ETag</c> populated when the underlying store provides one).
+    /// determine where it lands. Returns the SAME entity instance that
+    /// was passed in.
     /// </summary>
+    /// <remarks>
+    /// Per <see href="../../../docs/adr/0025-cosmos-for-user-delight.md">ADR-0025 § 2</see>
+    /// the Cosmos client is configured with <c>EnableContentResponseOnWrite = false</c>,
+    /// so the underlying store does NOT round-trip the persisted resource
+    /// (saving one round-trip + ~1 RU per write). The returned entity is
+    /// therefore the input entity, unchanged. Callers that need the
+    /// server-populated <c>ETag</c> for optimistic-concurrency conditional
+    /// writes will need to opt back into <c>EnableContentResponseOnWrite</c>
+    /// at the per-request level — a separate decision per ADR-0025 § 7
+    /// (deferred until a 2nd writer of <see cref="IMachineRepository"/>
+    /// lands).
+    /// </remarks>
     Task<T> UpsertAsync(T entity, CancellationToken cancellationToken);
 
     /// <summary>
