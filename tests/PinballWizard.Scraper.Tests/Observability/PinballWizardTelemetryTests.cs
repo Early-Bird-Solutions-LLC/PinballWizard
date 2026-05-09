@@ -112,6 +112,10 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileStarted.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileSampled.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileDrift.Name);
     }
 
     // Per-tool latency histogram. Drives the §7.1 architecture-v2 user-
@@ -163,6 +167,10 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileStarted.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileSampled.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedReconcileDrift.Name);
     }
 
     [Fact]
@@ -172,6 +180,36 @@ public sealed class PinballWizardTelemetryTests
             "pinwiz.rag.changefeed_lease_lag",
             PinballWizardTelemetry.RagChangefeedLeaseLag.Name);
         Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedLeaseLag.Unit);
+    }
+
+    // Reconcile-on-startup instruments per W3-2 follow-up. The
+    // reconciler emits these once per worker boot when
+    // RagIngestionOptions.ReconcileOnStartup=true. Pinned alongside
+    // the other changefeed instruments so a rename trips the test
+    // before it silently breaks the operator dashboard.
+
+    [Fact]
+    public void RagChangefeedReconcileInstruments_HaveExpectedNamesAndUnits()
+    {
+        Assert.Equal(
+            "pinwiz.rag.changefeed_reconcile_started",
+            PinballWizardTelemetry.RagChangefeedReconcileStarted.Name);
+        Assert.Equal("{run}", PinballWizardTelemetry.RagChangefeedReconcileStarted.Unit);
+
+        Assert.Equal(
+            "pinwiz.rag.changefeed_reconcile_duration_ms",
+            PinballWizardTelemetry.RagChangefeedReconcileDurationMs.Name);
+        Assert.Equal("ms", PinballWizardTelemetry.RagChangefeedReconcileDurationMs.Unit);
+
+        Assert.Equal(
+            "pinwiz.rag.changefeed_reconcile_sampled_total",
+            PinballWizardTelemetry.RagChangefeedReconcileSampled.Name);
+        Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedReconcileSampled.Unit);
+
+        Assert.Equal(
+            "pinwiz.rag.changefeed_reconcile_drift_total",
+            PinballWizardTelemetry.RagChangefeedReconcileDrift.Name);
+        Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedReconcileDrift.Unit);
     }
 
     [Fact]

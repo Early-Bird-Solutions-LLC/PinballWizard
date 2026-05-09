@@ -259,6 +259,38 @@ public static class PinballWizardTelemetry
     public static void RecordChangefeedLeaseLag(long lag) =>
         Interlocked.Exchange(ref _changefeedLeaseLag, lag);
 
+    // ── RAG Change Feed reconcile-on-startup instruments (W3-2) ─────────
+    // Emitted by the W3-2 reconciler when
+    // `RagIngestionOptions.ReconcileOnStartup=true`. The pass inspects
+    // a recency-biased sample of `rag_index_state` rows and verifies
+    // each has matching chunks in AI Search. Operators alert on drift_*
+    // counters trending non-zero across deploys — that's a signal that
+    // some Phase 1 → AI Search writes are being lost.
+    //
+    // Per-instance cardinality: one process invokes the reconciler at
+    // most once per startup, so these counters/histograms see a small
+    // number of observations per worker lifetime.
+
+    public static readonly Counter<long> RagChangefeedReconcileStarted = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_started",
+        unit: "{run}",
+        description: "Reconcile-on-startup invocations the W3-2 hosted service began. Increments once per worker boot when `RagIngestionOptions.ReconcileOnStartup=true` (and zero times otherwise). Pair with `pinwiz.rag.changefeed_reconcile_duration_ms` to chart reconcile cost over time.");
+
+    public static readonly Histogram<double> RagChangefeedReconcileDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.changefeed_reconcile_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single reconcile-on-startup pass — Cosmos sampling query + per-document AI Search filter calls + result aggregation. Measured at the reconciler's outer boundary (caller-visible latency). Useful for capacity planning at Phase 4.5 corpus scaling: if reconcile p95 grows past `RagIngestionOptions.ReconcileSampleSize / 50` × 1s, the per-document AI Search verify cost is the bottleneck and the sample size should drop.");
+
+    public static readonly Counter<long> RagChangefeedReconcileSampled = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_sampled_total",
+        unit: "{document}",
+        description: "Documents the reconcile pass actually inspected (may be less than `RagIngestionOptions.ReconcileSampleSize` if the `rag_index_state` container has fewer rows). Pair with `pinwiz.rag.changefeed_reconcile_drift_total` to compute drift rate (drift / sampled).");
+
+    public static readonly Counter<long> RagChangefeedReconcileDrift = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_reconcile_drift_total",
+        unit: "{document}",
+        description: "Documents where the reconcile pass detected drift between `rag_index_state` and AI Search. Tagged with `drift_type`: `missing` (AI Search has zero chunks for the document_id — full write loss); `count_mismatch` (AI Search has a different chunk count than recorded — partial write loss). A non-zero rate over multiple deploys is the canonical alert: the indexer isn't durably persisting every chunk, and the gap won't self-heal without an operator-driven re-ingest.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

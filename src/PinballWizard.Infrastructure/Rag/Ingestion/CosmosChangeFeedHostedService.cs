@@ -44,6 +44,7 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
     private readonly Container _leaseContainer;
     private readonly ICosmosChangeFeedHandler<T> _handler;
     private readonly IDeadLetterSink _deadLetterSink;
+    private readonly IRagReconciler? _reconciler;
     private readonly Func<T, string> _documentIdSelector;
     private readonly Func<T, string?> _changeLsnSelector;
     private readonly RagIngestionOptions _ingestionOptions;
@@ -54,6 +55,13 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
     private ChangeFeedProcessor? _processor;
     private ChangeFeedProcessor? _estimator;
 
+    // `reconciler` is OPTIONAL — null means the reconcile-on-startup
+    // pass is unavailable in this host (typical for unit tests + the
+    // sibling `machines` change-feed consumer that doesn't need a
+    // reconciler). When `RagIngestionOptions.ReconcileOnStartup=true`
+    // and the reconciler is null, ExecuteAsync logs a warning and
+    // skips — better than crashing the worker on a config combination
+    // an integration test might produce.
     public CosmosChangeFeedHostedService(
         Container sourceContainer,
         Container leaseContainer,
@@ -64,7 +72,8 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
         IOptions<RagIngestionOptions> ingestionOptions,
         IOptions<CosmosChangeFeedHostedServiceOptions> changeFeedOptions,
         TimeProvider clock,
-        ILogger<CosmosChangeFeedHostedService<T>> logger)
+        ILogger<CosmosChangeFeedHostedService<T>> logger,
+        IRagReconciler? reconciler = null)
     {
         ArgumentNullException.ThrowIfNull(sourceContainer);
         ArgumentNullException.ThrowIfNull(leaseContainer);
@@ -81,6 +90,7 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
         _leaseContainer = leaseContainer;
         _handler = handler;
         _deadLetterSink = deadLetterSink;
+        _reconciler = reconciler;
         _documentIdSelector = documentIdSelector;
         _changeLsnSelector = changeLsnSelector;
         _ingestionOptions = ingestionOptions.Value;
@@ -119,23 +129,42 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
             _changeFeedOptions.StartFromBeginning,
             _ingestionOptions.MaxFailuresPerDocument);
 
-        // Reconciliation pass on startup: when enabled, the worker
-        // samples N random `rag_index_state` rows and verifies AI
-        // Search has matching chunks. The IMPLEMENTATION ships in
-        // PR-C alongside the `pinwiz.rag.changefeed_reconcile_*`
-        // instruments (per `RagIngestionOptions.ReconcileOnStartup`
-        // docstring + the observability gap-closure rule —
-        // instruments + emission ship together). PR-B reads the
-        // option here so a deploy that sets `ReconcileOnStartup=true`
-        // before PR-C lands gets a clear "feature pending" log line
-        // rather than silent acceptance of a dead option.
+        await _processor.StartAsync().ConfigureAwait(false);
+
+        // Reconcile-on-startup. Runs ASYNC after the change-feed
+        // processor starts so worker boot isn't blocked by the
+        // reconcile (which can take seconds-to-a-minute for a typical
+        // sample size). Result is logged + emitted as
+        // `pinwiz.rag.changefeed_reconcile_*` instruments by the
+        // reconciler itself; no return-value handling needed here.
         if (_ingestionOptions.ReconcileOnStartup)
         {
-            _logger.LogInformation(
-                "RAG Change Feed: ReconcileOnStartup is enabled; reconciliation pass will run once the implementation lands in W3-2 PR-C (with the `pinwiz.rag.changefeed_reconcile_*` instruments). No-op for now.");
+            if (_reconciler is null)
+            {
+                _logger.LogWarning(
+                    "RAG Change Feed: ReconcileOnStartup is enabled but no IRagReconciler is registered; skipping. Wire `AddCosmosChangeFeedRagIngestion` (or supply a reconciler explicitly) to enable.");
+            }
+            else
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _reconciler.ReconcileAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        // Worker shutting down mid-reconcile; expected.
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "RAG Change Feed: reconcile-on-startup pass threw to the hosted service. Worker continues serving the change feed.");
+                    }
+                }, stoppingToken);
+            }
         }
-
-        await _processor.StartAsync().ConfigureAwait(false);
 
         // Lease-lag estimator. Cosmos's ChangeFeedEstimator builds a
         // *secondary* ChangeFeedProcessor that owns its own lease-state

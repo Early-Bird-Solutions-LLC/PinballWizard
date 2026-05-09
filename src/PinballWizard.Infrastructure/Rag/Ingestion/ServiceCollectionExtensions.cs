@@ -1,3 +1,5 @@
+using Azure.Identity;
+using Azure.Search.Documents;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -79,6 +81,30 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
+        // Reconciler — Cosmos `rag_index_state` reader + AI Search
+        // verifier. Registered unconditionally; the hosted service
+        // only invokes it when `RagIngestionOptions.ReconcileOnStartup
+        // = true`. SearchClient is constructed inline (matches the
+        // per-factory construction pattern used by
+        // `AddAzureAiSearchIntegration.BuildRagIndexer` /
+        // `BuildRagRetriever` — a top-level SearchClient registration
+        // would be a cleaner refactor target but is out of scope for
+        // the reconcile follow-up).
+        services.AddSingleton<IRagReconciler>(sp =>
+        {
+            var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+            var searchClient = new SearchClient(
+                new Uri(aiSearchOptions.Endpoint),
+                aiSearchOptions.IndexName,
+                new DefaultAzureCredential());
+
+            return new CosmosAiSearchRagReconciler(
+                ResolveContainer(sp, "rag_index_state"),
+                searchClient,
+                sp.GetRequiredService<IOptions<RagIngestionOptions>>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosAiSearchRagReconciler>>());
+        });
+
         services.AddSingleton<IHostedService>(sp =>
         {
             var changeFeedOpts = sp.GetRequiredService<IOptions<CosmosChangeFeedHostedServiceOptions>>().Value;
@@ -95,7 +121,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IOptions<RagIngestionOptions>>(),
                 sp.GetRequiredService<IOptions<CosmosChangeFeedHostedServiceOptions>>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosChangeFeedHostedService<RagSourceDocument>>>());
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosChangeFeedHostedService<RagSourceDocument>>>(),
+                sp.GetService<IRagReconciler>());
         });
 
         return services;
