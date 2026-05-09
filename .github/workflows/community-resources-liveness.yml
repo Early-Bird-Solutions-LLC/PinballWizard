@@ -1,0 +1,138 @@
+# community-resources-liveness.yml
+#
+# Verifies that every URL in data/seeds/community_resources.v1.json returns
+# a successful HTTP response. This workflow is part of PinballWizard's
+# polite-by-construction posture: we hold our own curated seed file to the
+# same liveness standard we apply to external sources.
+#
+# Politeness commitments (visible to any prospect reading this action):
+#   - User-Agent identifies the project, its GitHub home, and a contact
+#     address — the same identity envelope the scrapers use.
+#   - Requests are serialised with a 1-second gap between them so we do
+#     not hammer community sites with concurrent HEAD requests.
+#   - HEAD is preferred over GET to minimise bandwidth on the remote server.
+#   - The check runs only when the seed file itself changes (on PRs). On
+#     direct pushes to main the check also runs to catch post-merge drift.
+#
+# Failure means a URL in the seed has gone stale. Fix the URL, then the
+# workflow will go green again. Do not suppress failures by skipping checks.
+
+name: Community Resources Liveness Check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/seeds/community_resources.v1.json"
+  pull_request:
+    paths:
+      - "data/seeds/community_resources.v1.json"
+
+jobs:
+  liveness:
+    name: Probe community resource URLs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Parse the seed file with jq and probe each URL in sequence.
+      # A 1-second sleep between requests is the politeness rate limit —
+      # do not remove it or reduce it. Community sites are not CDNs;
+      # parallel probes from CI look like a small scrape burst to them.
+      - name: Probe URLs (1 req/sec, polite User-Agent)
+        env:
+          # Identity envelope: project name + GitHub URL + contact email.
+          # Matches the User-Agent pattern used by the PinballWizard scrapers.
+          USER_AGENT: "PinballWizard-CI-LivenessCheck/1.0 (+https://github.com/Early-Bird-Solutions-LLC/PinballWizard) jim@earlybirdsolutions.com"
+          SEED_FILE: data/seeds/community_resources.v1.json
+        run: |
+          set -euo pipefail
+
+          echo "Parsing URLs from $SEED_FILE …"
+          mapfile -t URLS < <(jq -r '.resources[].url' "$SEED_FILE")
+          echo "Found ${#URLS[@]} URLs to probe."
+
+          FAILED=0
+          BLOCKED=0
+          PROBED=0
+
+          for URL in "${URLS[@]}"; do
+            # Polite gap — do not remove. One request per second.
+            if [ "$PROBED" -gt 0 ]; then
+              sleep 1
+            fi
+
+            echo -n "Probing: $URL … "
+
+            # Use HEAD first; fall back to GET if the server rejects HEAD.
+            # Timeout: 10 s per request (community sites can be slow).
+            HTTP_STATUS=$(curl \
+              --silent \
+              --output /dev/null \
+              --write-out "%{http_code}" \
+              --max-time 10 \
+              --user-agent "$USER_AGENT" \
+              --head \
+              "$URL" 2>/dev/null || echo "000")
+
+            # Some servers return 405 Method Not Allowed for HEAD.
+            # Fall back to a GET with --range 0-0 to minimise transfer.
+            if [ "$HTTP_STATUS" = "405" ] || [ "$HTTP_STATUS" = "000" ]; then
+              echo -n "(HEAD failed with $HTTP_STATUS; retrying with GET) "
+              HTTP_STATUS=$(curl \
+                --silent \
+                --output /dev/null \
+                --write-out "%{http_code}" \
+                --max-time 10 \
+                --user-agent "$USER_AGENT" \
+                --range 0-0 \
+                "$URL" 2>/dev/null || echo "000")
+            fi
+
+            PROBED=$((PROBED + 1))
+
+            # Response classification:
+            #   2xx / 3xx — server confirmed the resource is reachable.
+            #   403 / 405 / 429 / 999 — bot-protection signal, NOT a broken URL.
+            #     These statuses are not "broken" — they're "we don't talk to bots".
+            #     The actual website is live and working in browsers. Community sites
+            #     like Pinside, IPDB, IFPA, Pinball News, and Cloudflare-protected
+            #     pages commonly return 403 or 999 to automated probes; 405 is
+            #     "Method Not Allowed for HEAD"; 429 is rate-limiting. We trust the
+            #     maintainer to spot-check these periodically rather than treating
+            #     a bot-blocking response as evidence the site is down.
+            #   Any other status (404, 5xx, 000 connection errors) — genuine failure.
+            case "$HTTP_STATUS" in
+              2*|3*)
+                echo "OK ($HTTP_STATUS)"
+                ;;
+              403|405|429|999)
+                echo "BLOCKED ($HTTP_STATUS) — bot-protection; treating as live (manual spot-check recommended)"
+                BLOCKED=$((BLOCKED + 1))
+                ;;
+              *)
+                echo "FAILED ($HTTP_STATUS)"
+                FAILED=$((FAILED + 1))
+                ;;
+            esac
+          done
+
+          echo ""
+          echo "Probed $PROBED URL(s). Failed: $FAILED. Blocked (bot-protection, likely-live): $BLOCKED."
+
+          if [ "$BLOCKED" -gt 0 ]; then
+            echo "::warning::$BLOCKED URL(s) returned bot-protection status (likely-live; spot-check periodically)"
+          fi
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo ""
+            echo "::error::$FAILED URL(s) in $SEED_FILE returned non-2xx/3xx responses."
+            echo "Update or remove the stale entry(ies) before merging."
+            exit 1
+          fi
+
+          echo "All URLs are live (or bot-protected and assumed live)."

@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "resources": [
+    {
+      "category": "forums",
+      "name": "Pinside",
+      "url": "https://pinside.com",
+      "description": "A large online community where collectors and players discuss machines, share tips, and post reviews. Covers a broad range of manufacturers and eras.",
+      "covers_question_types": ["rules", "repair", "valuation", "general"]
+    },
+    {
+      "category": "forums",
+      "name": "Tilt Forums",
+      "url": "https://tiltforums.com",
+      "description": "Community forum focused on pinball discussion, rules breakdowns, and repair guides across a wide range of titles.",
+      "covers_question_types": ["rules", "repair", "general"]
+    },
+    {
+      "category": "machine_reference",
+      "name": "IPDB",
+      "url": "https://www.ipdb.org",
+      "description": "The Internet Pinball Machine Database — a volunteer-maintained encyclopedia of pinball machines dating from the earliest electromechanical era to modern solid-state titles. Covers serial numbers, production counts, and historical notes.",
+      "covers_question_types": ["machine_reference", "valuation"]
+    },
+    {
+      "category": "machine_reference",
+      "name": "OPDB",
+      "url": "https://opdb.org",
+      "description": "The Open Pinball Database — a community-maintained registry of pinball machines with canonical identifiers, manufacturer records, and edition data. Used by operators and collectors as a reference catalog.",
+      "covers_question_types": ["machine_reference", "valuation"]
+    },
+    {
+      "category": "machine_reference",
+      "name": "Pinside Pulse",
+      "url": "https://pinside.com/pinball/machine",
+      "description": "Pinside's machine directory with community ratings, owner counts, and user-contributed game information for a broad library of titles.",
+      "covers_question_types": ["machine_reference", "valuation"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "American Pinball",
+      "url": "https://american-pinball.com",
+      "description": "Official site for American Pinball — manufacturer support, game pages, and news directly from the manufacturer.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "Barrels of Fun (Spooky)",
+      "url": "https://spookypinball.com",
+      "description": "Official site for Spooky Pinball (a Barrels of Fun brand) — game information, support resources, and manufacturer news.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "Chicago Gaming Company",
+      "url": "https://chicago-gaming.com",
+      "description": "Official site for Chicago Gaming Company — game pages and manufacturer information for their coin-op lineup.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "Jersey Jack Pinball",
+      "url": "https://jerseyjackpinball.com",
+      "description": "Official site for Jersey Jack Pinball — game details, support, and news directly from the manufacturer.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "Multimorphic",
+      "url": "https://multimorphic.com",
+      "description": "Official site for Multimorphic — modular P3 platform game pages and developer resources.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "manufacturer_pages",
+      "name": "Stern Pinball",
+      "url": "https://sternpinball.com",
+      "description": "Official site for Stern Pinball — game pages, service bulletins, manuals, and manufacturer support.",
+      "covers_question_types": ["rules", "repair", "manufacturer"]
+    },
+    {
+      "category": "marketplace",
+      "name": "Facebook Marketplace",
+      "url": "https://www.facebook.com/marketplace/category/pinball-machines",
+      "description": "Local and national pinball machine listings on Facebook Marketplace. Useful for finding machines nearby and negotiating directly with sellers.",
+      "covers_question_types": ["marketplace", "valuation"]
+    },
+    {
+      "category": "marketplace",
+      "name": "Mr. Pinball",
+      "url": "https://mrpinball.com",
+      "description": "A long-running pinball classifieds site with both dealer and private-party listings. Covers new, used, and restored machines.",
+      "covers_question_types": ["marketplace", "valuation"]
+    },
+    {
+      "category": "marketplace",
+      "name": "Pinside Market",
+      "url": "https://pinside.com/pinball/market",
+      "description": "Pinside's buy/sell section for pinball machines and parts, with listings from community members. Covers a broad range of titles and conditions.",
+      "covers_question_types": ["marketplace", "valuation"]
+    },
+    {
+      "category": "news_and_culture",
+      "name": "Pinball News",
+      "url": "https://www.pinballnews.com",
+      "description": "Coverage of pinball industry news, game announcements, and show reports from a collector-focused perspective.",
+      "covers_question_types": ["news", "general"]
+    },
+    {
+      "category": "tournament_and_play",
+      "name": "IFPA",
+      "url": "https://www.ifpapinball.com",
+      "description": "The International Flipper Pinball Association — the governing body for competitive pinball. Hosts player rankings, tournament calendars, and official rules.",
+      "covers_question_types": ["tournament", "competitive"]
+    },
+    {
+      "category": "tournament_and_play",
+      "name": "Match Play Events",
+      "url": "https://matchplay.events",
+      "description": "Tournament management platform used by organizers worldwide. Browse upcoming events and results, or run your own bracket.",
+      "covers_question_types": ["tournament", "competitive"]
+    },
+    {
+      "category": "tournament_and_play",
+      "name": "Pinball Map",
+      "url": "https://pinballmap.com",
+      "description": "A community-maintained map of publicly accessible pinball machines at arcades, bars, and venues. Useful for finding a specific title to play near you.",
+      "covers_question_types": ["location", "play"]
+    }
+  ]
+}
