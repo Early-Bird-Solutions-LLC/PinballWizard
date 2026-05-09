@@ -134,7 +134,8 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             Title: $"OPDB record {dto.OpdbId}",
             SourceUrl: dto.OpdbSourceUrl,
             MachineId: dto.OpdbId,
-            DocumentChunkId: null));
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.MachineRecord));
     }
 
     // Per ADR-0022 § Algorithm step 2: each retrieved chunk is a
@@ -166,7 +167,11 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 Title: title,
                 SourceUrl: hit.DocumentUrl,
                 MachineId: hit.MachineId,
-                DocumentChunkId: hit.DocumentId));
+                DocumentChunkId: hit.DocumentId,
+                PageStart: hit.PageStart,
+                PageEnd: hit.PageEnd,
+                SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
+                SourceType: CitationSourceType.CorpusChunk));
         }
     }
 
@@ -211,7 +216,8 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 Title: $"OPDB record {match.Groups["id"].Value}",
                 SourceUrl: url,
                 MachineId: match.Groups["id"].Value,
-                DocumentChunkId: null));
+                DocumentChunkId: null,
+                SourceType: CitationSourceType.MachineRecord));
         }
     }
 }
