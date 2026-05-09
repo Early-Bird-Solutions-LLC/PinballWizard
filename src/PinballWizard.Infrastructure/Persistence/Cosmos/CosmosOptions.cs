@@ -88,6 +88,36 @@ public sealed class CosmosOptions
     [
         new() { Name = "machines", PartitionKeyPath = "/manufacturer" },
         new() { Name = "ingestion_sources", PartitionKeyPath = "/partitionKey" },
+        // Title→OPDB-ID materialized view per ADR-0025 § 4. The Wizard's
+        // `getMachineByTitle` Foundry function tool point-reads this
+        // container first; the previous cross-partition `STRINGEQUALS`
+        // query in `MachineRepository.QueryByTitleAsync` survives as a
+        // logged-warning fallback. Single writer is `OpdbSyncService`,
+        // which dual-writes (machine first, then lookup) under Cosmos
+        // session consistency for read-your-writes. Doc id equals the
+        // partition-key value (the normalized title) so reads are pure
+        // point lookups with no secondary index. Selective indexing
+        // matches ADR-0025 § 3 — only `id` and `normalizedTitle` are
+        // queried (and `id == normalizedTitle` by construction; both
+        // are indexed for safety against future operator queries that
+        // happen to name one or the other).
+        //
+        // No TTL (DefaultTtlSeconds = null). Lookup rows are bounded by
+        // the OPDB machine catalog (~2,400 machines) and refreshed on
+        // every OPDB sync — there is no stale-row accumulation problem
+        // for TTL to solve. Auto-expiring rows would silently break
+        // point-reads between syncs and force the cross-partition
+        // fallback for the affected titles.
+        new()
+        {
+            Name = "machine_title_lookups",
+            PartitionKeyPath = "/normalizedTitle",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/id/?", "/normalizedTitle/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
         // Phase 4 W3-2 RAG ingestion containers. The hosted-service
         // consumer (`PinballWizard.RagIngestionWorker`) reads the
         // `scraped_documents` change feed, writes lease checkpoints to
