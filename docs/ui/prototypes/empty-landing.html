@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Empty / landing screen prototype v1
+  Renders the cold-load first-impression state per docs/ui/screens/empty-landing.md.
+
+  This is the cinematic-flourish moment of the Modern LCD theme: typographic
+  hero with no machine imagery (mechanics-not-IP), single ambient pulse
+  element, four parity-balanced suggested-question helpers covering different
+  manufacturers and topics.
+
+  Static HTML/CSS only — no JavaScript, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard — Ask anything about pinball</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0c0b0e;
+      --bg-base-deep: #0a090d;
+      --bg-surface: #161519;
+      --bg-surface-hi: #1f1d22;
+      --text-primary: #f4f1ea;
+      --text-secondary: #9a9590;
+      --accent-primary: #ff9a1f;
+      --accent-grounded: #34d96a;
+      --accent-refusal: #ff3b30;
+      --border-quiet: #2a282d;
+      --border-glow-primary: #ff9a1f99;
+      --border-glow-grounded: #34d96a99;
+
+      --font-display: 'Barlow Condensed', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+      --type-2xl-mobile: 48px;
+      --type-2xl-desktop: 64px;
+
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --space-6: 48px;
+
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --shadow-press: inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+      --motion-slow: 600ms;
+      --motion-pulse: 3000ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: linear-gradient(180deg, var(--bg-base) 0%, var(--bg-base-deep) 100%);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.6;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 1px solid var(--border-quiet);
+      height: 56px;
+      flex-shrink: 0;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-md);
+      letter-spacing: 0.02em;
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-grounded);
+    }
+
+    /* Main */
+    .page-main {
+      flex: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+      padding: var(--space-6) var(--space-4);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== Hero zone ===== */
+    .hero {
+      text-align: center;
+      padding: var(--space-6) 0;
+      position: relative;
+    }
+
+    .hero-tagline {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-2);
+    }
+
+    .hero-wordmark {
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: var(--type-2xl-desktop);
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      line-height: 1;
+      margin-bottom: var(--space-3);
+      position: relative;
+      display: inline-block;
+    }
+
+    .hero-pulse {
+      position: absolute;
+      top: 50%;
+      right: -28px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent-grounded);
+      transform: translateY(-50%);
+      box-shadow: 0 0 8px var(--accent-grounded);
+      animation: pulse var(--motion-pulse) ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; box-shadow: 0 0 4px var(--accent-grounded); }
+      50%      { opacity: 1.0; box-shadow: 0 0 12px var(--accent-grounded); }
+    }
+
+    .hero-subline {
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      color: var(--text-primary);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Question input — emphasized on this screen */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-top: var(--space-6);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px var(--accent-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: var(--bg-base);
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-4);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-md);
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: filter var(--motion-fast), transform var(--motion-fast);
+    }
+    .submit-btn:hover { filter: brightness(1.1); }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* Suggested-question helpers */
+    .helpers-label {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
+    .helpers-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-2);
+      margin-bottom: var(--space-5);
+    }
+    .helper-cta {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-cta);
+      padding: var(--space-2);
+      font-family: var(--font-display);
+      font-weight: 500;
+      font-size: var(--type-sm);
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      text-align: left;
+      transition: box-shadow var(--motion-fast), background var(--motion-fast),
+                  transform var(--motion-fast);
+    }
+    .helper-cta:hover {
+      box-shadow: var(--shadow-press), 0 0 8px var(--border-glow-primary);
+      background: var(--bg-surface-hi);
+    }
+    .helper-cta:active {
+      transform: translateY(1px);
+    }
+
+    /* Footer */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 1px solid var(--border-quiet);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+      flex-shrink: 0;
+      width: 100%;
+    }
+    .page-footer a {
+      color: var(--accent-grounded);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-grounded); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* Mobile */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-4) var(--space-2); }
+      .hero { padding: var(--space-4) 0; }
+      .hero-wordmark { font-size: var(--type-2xl-mobile); }
+      .hero-pulse { right: -22px; width: 10px; height: 10px; }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .helpers-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0ms !important;
+      }
+      .hero-pulse {
+        opacity: 0.7;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <section class="hero" aria-labelledby="hero-wordmark">
+      <p class="hero-tagline" aria-hidden="true">A community-resource pinball wizard</p>
+      <h1 class="hero-wordmark" id="hero-wordmark">
+        PINBALLWIZARD
+        <span class="hero-pulse" aria-hidden="true"></span>
+      </h1>
+      <p class="hero-subline">
+        Ask anything about pinball — every answer cites its source and routes you to the community.
+      </p>
+    </section>
+
+    <form class="question-input" onsubmit="event.preventDefault();">
+      <input
+        type="text"
+        placeholder="Ask the Wizard..."
+        aria-label="Ask a question about pinball"
+        autofocus
+      >
+      <button type="submit" class="submit-btn">ASK ▶</button>
+    </form>
+
+    <p class="helpers-label">Try one of these, or ask anything else:</p>
+    <div class="helpers-grid">
+      <button class="helper-cta" aria-label="Try the example question: How do I fix the trough opto on Bond Premium?">
+        How do I fix the trough opto on Bond Premium?
+      </button>
+      <button class="helper-cta" aria-label="Try the example question: What's the rule sheet for Wonka?">
+        What's the rule sheet for Wonka?
+      </button>
+      <button class="helper-cta" aria-label="Try the example question: What's a Galactic Tank Force selling for these days?">
+        What's a Galactic Tank Force selling for these days?
+      </button>
+      <button class="helper-cta" aria-label="Try the example question: Who designed Twilight Zone?">
+        Who designed Twilight Zone?
+      </button>
+    </div>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+</body>
+</html>

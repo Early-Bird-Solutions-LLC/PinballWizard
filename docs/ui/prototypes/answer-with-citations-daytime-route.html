@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Answer-with-Citations screen, Daytime Route theme prototype v1
+  Same scaffold as answer-with-citations.html (Modern LCD), same content,
+  but with the Daytime Route palette + type tokens swapped per
+  docs/ui/themes/sibling-themes-overview.md.
+
+  Daytime Route is the era-neutral light-mode sibling — sunlit / public /
+  social mood ("I'm at a pinball expo"). It's the most extreme palette
+  swap of any sibling (dark → light), which makes it the strongest
+  proof that the design system is genuinely token-driven across the
+  light/dark axis as well as within era-themed dark variants like
+  DMD Classic.
+
+  Anti-pattern this prototype must NOT slide into: "default light SaaS."
+  The accent palette stays opinionated (burnt-orange / forest-green /
+  deep-red / plum-magenta — not pastel-friendly Material defaults). The
+  cabinet-button family, recessed flipper anatomy, and pinball-insert
+  citation markers all carry through. Pinball signature is preserved
+  by structure even when colors shift.
+
+  Static HTML/CSS only — no JavaScript, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard (Daytime Route) — How do I fix the trough opto on Bond Premium?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* ===== Daytime Route palette ===== */
+      /* Warm off-white base — "convention floor cream." NOT clinical white;
+         a hint of warmth to feel sunlit rather than fluorescent-lit. */
+      --bg-base: #faf6ef;
+      --bg-surface: #f0e9d8;
+      --bg-surface-hi: #e7dec5;
+
+      /* Body in warm near-black — readability without the harshness of pure
+         black on cream. */
+      --text-primary: #1f1a14;
+      --text-secondary: #6a6052;
+
+      /* Accents rebalanced for light backgrounds — significantly darker
+         versions of the Modern LCD palette to maintain WCAG AA contrast.
+         Each retains its semantic role: primary action, citation/grounded,
+         refusal, mode. Burnt-orange is the daytime-equivalent of pinball
+         amber; deep forest-green for citations; deep red for refusal;
+         plum-magenta for mode/navigation. Opinionated colors — never
+         pastel — to avoid sliding into generic light-SaaS aesthetic. */
+      --accent-primary: #cc5500;
+      --accent-grounded: #0d6e2d;
+      --accent-refusal: #a8201a;
+      --accent-mode: #9a1c8a;
+
+      --border-quiet: #d8cdb5;
+      --border-glow-primary: #cc550066;
+      --border-glow-grounded: #0d6e2d66;
+      --border-glow-mode: #9a1c8a66;
+
+      /* ===== Type tokens ===== */
+      /* Display = Barlow (NOT condensed) at 700 — open, daytime-feel,
+         humanist warmth. Less broadcast-condensed punch than Modern LCD's
+         Barlow Condensed; more "expo banner" than "scoreboard."
+         Body = Inter (unchanged). Mono = JetBrains Mono (unchanged). */
+      --font-display: 'Barlow', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --space-6: 48px;
+
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --radius-insert: 50%;
+
+      /* Recessed-button shadow inverts for light theme: dark shadow at TOP
+         edge (light comes from above; the recess casts a shadow there). */
+      --shadow-press: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+      --motion-slow: 600ms;
+
+      /* No phosphor-bleed glow on light theme — daytime, no light bleeding
+         through dot lenses. Character comes from palette + type, not glow. */
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.6;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* ===== Header ===== */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 1px solid var(--border-quiet);
+      height: 56px;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-md);
+      letter-spacing: 0.02em;
+      color: var(--accent-primary);
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+
+    /* ===== Main ===== */
+    .page-main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4) var(--space-4) var(--space-6);
+    }
+
+    /* ===== Question input ===== */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: #ffffff;
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px var(--border-glow-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: filter var(--motion-fast), transform var(--motion-fast);
+    }
+    .submit-btn:hover { filter: brightness(1.08); }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* ===== Answer panel ===== */
+    .answer-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-4);
+      box-shadow: 0 0 0 0 var(--border-glow-grounded);
+      animation: answer-reveal var(--motion-slow) ease-out 1;
+    }
+    @keyframes answer-reveal {
+      0%   { box-shadow: 0 0 8px 0 var(--border-glow-grounded); }
+      100% { box-shadow: 0 0 0 0 var(--border-glow-grounded); }
+    }
+    .answer-panel p {
+      margin-bottom: var(--space-2);
+      color: var(--text-primary);
+    }
+    .answer-panel p:last-child { margin-bottom: 0; }
+
+    /* Body-text outbound portal */
+    .entity-portal {
+      color: var(--text-primary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .entity-portal:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+    .portal-icon {
+      font-size: 0.85em;
+      margin-left: 2px;
+      color: var(--text-secondary);
+      transition: color var(--motion-fast);
+    }
+    .entity-portal:hover .portal-icon {
+      color: var(--accent-grounded);
+    }
+
+    /* Inline citation marker (pinball insert — deep forest-green dot on cream) */
+    .citation-marker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: var(--radius-insert);
+      background: #ffffff;
+      color: var(--accent-grounded);
+      border: 1px solid var(--accent-grounded);
+      font-family: var(--font-body);
+      font-size: var(--type-xs);
+      font-weight: 600;
+      vertical-align: super;
+      margin-left: 2px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background var(--motion-fast), transform var(--motion-fast),
+                  box-shadow var(--motion-fast);
+    }
+    .citation-marker:hover {
+      background: var(--accent-grounded);
+      color: #ffffff;
+      box-shadow: 0 0 6px var(--border-glow-grounded);
+      transform: translateY(-1px);
+    }
+
+    /* ===== Citation card stack ===== */
+    .citation-stack { margin-top: var(--space-4); }
+
+    .citation-summary {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-3);
+    }
+
+    .citation-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      transition: border-color var(--motion-fast), background var(--motion-fast);
+    }
+    .citation-card:hover {
+      background: var(--bg-surface-hi);
+      border-color: var(--accent-grounded);
+    }
+    .citation-card:last-child { margin-bottom: 0; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+    }
+
+    .source-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border: 1px solid var(--accent-grounded);
+      border-radius: var(--radius-panel);
+      color: var(--accent-grounded);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-xs);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .source-identity {
+      font-family: var(--font-display);
+      font-weight: 500;
+      font-size: var(--type-lg);
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+    }
+
+    .excerpt {
+      border-left: 3px solid var(--accent-grounded);
+      padding: var(--space-1) var(--space-2);
+      margin: var(--space-2) 0;
+      color: var(--text-primary);
+      font-style: italic;
+    }
+
+    .meta {
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-3);
+    }
+    .meta .provenance {
+      font-family: var(--font-mono);
+      font-size: var(--type-xs);
+      margin-top: 4px;
+    }
+
+    /* ===== Flipper buttons ===== */
+    .flipper-pair {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+    }
+
+    .flipper {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      min-height: 48px;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast),
+                  background var(--motion-fast), color var(--motion-fast),
+                  border-color var(--motion-fast);
+    }
+    .flipper:active { transform: translateY(1px); }
+
+    .flipper-left:hover {
+      color: var(--accent-mode);
+      border-color: var(--accent-mode);
+      box-shadow: var(--shadow-press), 0 0 8px var(--border-glow-mode);
+      background: #ffffff;
+    }
+
+    .flipper-right:hover {
+      color: var(--accent-grounded);
+      border-color: var(--accent-grounded);
+      box-shadow: var(--shadow-press), 0 0 8px var(--border-glow-grounded);
+      background: #ffffff;
+    }
+
+    /* ===== Footer ===== */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 1px solid var(--border-quiet);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .page-footer a {
+      color: var(--accent-grounded);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-grounded); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-2); }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .answer-panel { padding: var(--space-3); }
+      .flipper-pair { flex-direction: column; }
+      .flipper { width: 100%; }
+      .source-identity { font-size: var(--type-md); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <form class="question-input" onsubmit="event.preventDefault();">
+      <input
+        type="text"
+        value="How do I fix the trough opto on Bond Premium?"
+        aria-label="Ask a question about pinball"
+      >
+      <button type="submit" class="submit-btn">ASK ▶</button>
+    </form>
+
+    <article class="answer-panel" aria-live="polite">
+      <p>
+        For trough opto failures on
+        <a href="#" class="entity-portal" title="Stern Pinball — official game page">Bond Premium<span class="portal-icon">↗</span></a>,
+        the canonical service procedure comes from
+        <a href="#" class="entity-portal" title="Stern Pinball — service bulletin SB-243">Service Bulletin SB-243<span class="portal-icon">↗</span></a>.
+        The most common failure mode is a hard fault on boot when the optos
+        report inconsistent state — typically caused by a faulty opto board
+        rather than the optos themselves.<a href="#card-1" class="citation-marker" aria-label="Citation 1">1</a>
+      </p>
+      <p>
+        Before replacing the board, run the switch matrix test from the
+        operator menu to confirm the symptom matches. If the test passes
+        cleanly but ball-search behavior persists, the trough opto board
+        (assembly 520-5246-00) is the likely culprit. Stern's operations
+        manual covers the replacement procedure step-by-step including
+        connector identification.<a href="#card-2" class="citation-marker" aria-label="Citation 2">2</a>
+      </p>
+    </article>
+
+    <section class="citation-stack" aria-label="Sources">
+      <div class="citation-summary">SOURCES · 2 cited from 1 site</div>
+
+      <article class="citation-card" id="card-1" aria-labelledby="card-1-title">
+        <div class="card-header">
+          <span class="source-tag">BULLETIN</span>
+          <h2 class="source-identity" id="card-1-title">STERN BOND PREMIUM — SB-243</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Replace the trough opto board (assembly 520-5246-00) when
+          ball-search behavior persists after switch matrix test passes.
+          Symptom is a hard fault on boot reporting inconsistent opto state."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → support → service-bulletins → sb-243</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern service bulletin SB-243, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+
+      <article class="citation-card" id="card-2" aria-labelledby="card-2-title">
+        <div class="card-header">
+          <span class="source-tag">MANUAL</span>
+          <h2 class="source-identity" id="card-2-title">STERN BOND PREMIUM — OPERATIONS MANUAL</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Trough Opto Board Replacement: Power off the machine. Disconnect
+          the J1 connector from the trough opto board (520-5246-00). Remove
+          the four mounting screws. Reverse to install. Run switch test to
+          confirm operation."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → manuals → bond-pe-operations-manual.pdf</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern operations manual, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+</body>
+</html>
