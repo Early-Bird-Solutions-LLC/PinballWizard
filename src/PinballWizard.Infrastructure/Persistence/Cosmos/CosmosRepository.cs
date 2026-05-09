@@ -69,11 +69,17 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        var response = await _container.UpsertItemAsync(
+        // Per ADR-0025 § 2 the CosmosClient is configured with
+        // `EnableContentResponseOnWrite = false`, so `response.Resource`
+        // is null. Return the input `entity` directly — caller already
+        // holds the canonical instance. Saves one round-trip + ~1 RU per
+        // write. Optimistic-concurrency conditional writes (which would
+        // need the server-populated ETag) are deferred per ADR-0025 § 7.
+        await _container.UpsertItemAsync(
             entity,
             new PartitionKey(entity.PartitionKey),
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        return response.Resource;
+        return entity;
     }
 
     /// <inheritdoc />

@@ -7,6 +7,8 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
@@ -67,6 +69,19 @@ public static class ServiceCollectionExtensions
                 Serializer = new SystemTextJsonCosmosSerializer(jsonOptions),
                 ConnectionMode = ConnectionMode.Direct,
                 ConsistencyLevel = ConsistencyLevel.Session,
+                // Per ADR-0025 § 2 — saves one round-trip + ~1 RU per
+                // write. `IRepository<T>.UpsertAsync` returns the input
+                // entity directly (per its updated contract); callers
+                // that need the server-populated ETag for optimistic-
+                // concurrency conditional writes opt back in per-request
+                // (deferred per ADR-0025 § 7).
+                EnableContentResponseOnWrite = false,
+                // Per ADR-0025 § 2 — auto-batches concurrent operations
+                // on the same partition into a single backend call. Zero
+                // risk for current single-op call sites; meaningful win
+                // for multi-op paths (OPDB sync ~2,400 sequential
+                // upserts; future Phase 1 → Cosmos backfill).
+                AllowBulkExecution = true,
             };
 
             // CosmosClientOptions.ApplicationName is appended to the
@@ -136,6 +151,16 @@ public static class ServiceCollectionExtensions
             var container = ResolveContainer(sp, "ingestion_sources");
             return new IngestionSourceRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<IngestionSourceRepository>>());
         });
+
+        // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
+        // cost off the first user query. Failure is `Warning` not throw;
+        // the health check below is the canonical reachability signal.
+        services.AddHostedService<CosmosClientWarmupHostedService>();
+
+        // Per ADR-0025 § 8 — Cosmos reachability surfaces via /healthz
+        // (tagged `live` so it's part of the liveness probe ACA hits).
+        services.AddHealthChecks()
+            .AddCheck<CosmosHealthCheck>("cosmos", tags: ["live"]);
 
         return services;
     }

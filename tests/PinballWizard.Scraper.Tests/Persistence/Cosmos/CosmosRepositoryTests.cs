@@ -19,7 +19,7 @@ namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
 /// <list type="bullet">
 ///   <item>404 on read returns null (no exception leaks).</item>
 ///   <item>404 on delete is swallowed (idempotent deletion).</item>
-///   <item>Upsert returns the persisted resource.</item>
+///   <item>Upsert returns the input entity (per ADR-0025 § 2 — `EnableContentResponseOnWrite=false`).</item>
 ///   <item>Streaming queries paginate correctly.</item>
 ///   <item>Argument validation throws before any SDK call.</item>
 /// </list>
@@ -128,10 +128,20 @@ public sealed class CosmosRepositoryTests
     // ------------------------------------------------------------------------
 
     [Fact]
-    public async Task UpsertAsync_PassesEntityAndPartitionKey_ReturnsPersistedResource()
+    public async Task UpsertAsync_PassesEntityAndPartitionKey_ReturnsInputEntity()
     {
+        // Per ADR-0025 § 2 the CosmosClient is configured with
+        // `EnableContentResponseOnWrite=false`, so `response.Resource`
+        // is null and the repository returns the SAME instance the
+        // caller passed in. Saves one round-trip + ~1 RU per write.
+        // Optimistic-concurrency callers that need the server-populated
+        // ETag are deferred per ADR-0025 § 7 (no callers today; single
+        // writer of `machines`).
         var entity = new TestEntity { Id = TestId, PartitionKey = TestPartitionKey, Name = "new" };
-        var persisted = new TestEntity { Id = TestId, PartitionKey = TestPartitionKey, Name = "new", ETag = "etag-1" };
+        // Even when the SDK happens to return a populated resource (e.g.,
+        // a test that doesn't mirror the production option), the
+        // repository returns `entity` — pin the input-instance contract.
+        var persisted = new TestEntity { Id = TestId, PartitionKey = TestPartitionKey, Name = "should-be-ignored", ETag = "etag-from-server" };
         var response = MakeItemResponse(persisted, HttpStatusCode.OK);
         _container
             .UpsertItemAsync(entity, new PartitionKey(TestPartitionKey), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
@@ -139,8 +149,9 @@ public sealed class CosmosRepositoryTests
 
         var result = await _repository.UpsertAsync(entity, CancellationToken.None);
 
+        Assert.Same(entity, result);
         Assert.Equal("new", result.Name);
-        Assert.Equal("etag-1", result.ETag);
+        Assert.Null(result.ETag);
     }
 
     [Fact]
