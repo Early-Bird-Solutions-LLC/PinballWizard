@@ -29,9 +29,20 @@
       in Directory.Packages.props. Remove when bunit ships a clean dep.
     -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
+    <!--
+      Microsoft.AspNetCore.TestHost powers the in-process TestServer used
+      by WizardAskStreamEndpointTests. Version matches ASP.NET Core .NET 10 GA.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      PinballWizard.Api is referenced so the endpoint extension method
+      (MapWizardStreamingEndpoints) is available for in-process TestServer
+      tests without starting the real Api host.
+    -->
+    <ProjectReference Include="../../src/PinballWizard.Api/PinballWizard.Api.csproj" />
     <ProjectReference Include="../../src/PinballWizard.Web/PinballWizard.Web.csproj" />
   </ItemGroup>
 

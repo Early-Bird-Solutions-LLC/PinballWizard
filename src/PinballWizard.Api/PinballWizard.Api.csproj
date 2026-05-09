@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>PinballWizard.Api</RootNamespace>
+    <AssemblyName>PinballWizard.Api</AssemblyName>
+
+    <!--
+      Aspire publishes this as a Bicep-manifest resource alongside
+      PinballWizard.Web. Disable locked-mode restore for the same
+      reason as AppHost and Web — RID-specific asset resolution causes
+      cross-platform lock-file failures in CI.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
+    <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
+    <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>
