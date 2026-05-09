@@ -12,7 +12,19 @@ namespace PinballWizard.Application.Ai;
 // Phase 3 Wave 2 PR 4 ships the skeleton. PR 5 fills sub-agent prompts +
 // the getMachineByTitle function tool. PR 6 layers in confidence-driven
 // refusal.
+//
+// Phase 5 Wave 1 PR-S1 adds AnswerStreamingAsync per ADR-0026 § 3.
+// Wave 1 is contract-only: both surfaces share the same one-shot
+// round-trip. Wave 2 PR-S2 swaps the underlying call to RunStreamingAsync
+// + per-update TextDelta emission.
 public interface IAiRouter
 {
     Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken);
+
+    // Per ADR-0026 § 3. Streaming sibling. Wave 1 ships contract; Wave 2
+    // PR-S2 swaps underlying call to RunStreamingAsync. Guardrails (cache,
+    // cost ceiling, confidence threshold, NoCitation, UpstreamThrottled)
+    // stay one-shot via AgentResponseExtensions.ToAgentResponseAsync
+    // post-stream reconstruction (Wave 2). Both surfaces share guardrails.
+    IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(string question, CancellationToken cancellationToken);
 }

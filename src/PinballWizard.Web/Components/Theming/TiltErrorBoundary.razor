@@ -1,0 +1,56 @@
+@* TiltErrorBoundary — pinball-themed ErrorBoundary for render-time exceptions.
+ *
+ * Replaces the ASP.NET Core framework default error boundary output with a
+ * pinball "TILT" message and the OTel TraceId so an operator or support
+ * contact can correlate the failure in the dashboard without scraping logs.
+ *
+ * Category: delight surface — explicitly listed in ADR-0026 § 6 as one of
+ * the four locked custom components. Every other chrome component in this
+ * PR is a MudBlazor-primitive wrapper (chrome wrapper category).
+ *
+ * Wave 2 PR-D-degraded adds the full /error page (TiltPage). This boundary
+ * is the *in-component* fallback that catches render-time exceptions before
+ * they bubble to the full-page handler. The two work in complementary layers:
+ *   1. TiltErrorBoundary  — catches render exceptions inside a component tree.
+ *   2. UseExceptionHandler("/error") — catches unhandled exceptions server-wide.
+ *
+ * ADR-0026 § 6, § 9 — delight surface; RFC 9457 requestId surfacing.
+ *@
+
+@using System.Diagnostics
+@inherits ErrorBoundary
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    @* TILT fallback — intentionally minimal so it looks engineered, not broken. *@
+    <MudPaper Class="tilt-boundary pa-6 ma-4" Elevation="4">
+        <MudStack Spacing="2" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.h4" Class="tilt-title" Align="Align.Center">
+                TILT
+            </MudText>
+
+            <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+                Something rattled the machine. The rest of the wizard is still running.
+            </MudText>
+
+            @{
+                var requestId = Activity.Current?.TraceId.ToString()
+                              ?? "no-trace";
+            }
+            <MudText Typo="Typo.caption" Class="tilt-request-id" Align="Align.Center">
+                <span data-testid="tilt-request-id">Request&nbsp;ID:&nbsp;@requestId</span>
+            </MudText>
+
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Primary"
+                       OnClick="@Recover"
+                       Size="Size.Small">
+                Reset and try again
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}

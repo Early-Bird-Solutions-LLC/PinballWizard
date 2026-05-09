@@ -16,6 +16,10 @@
          from Infrastructure since it pulls in Azure.AI.Projects. -->
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- Microsoft.Extensions.Hosting provides BackgroundService for
+         WizardAgentWarmupHostedService (ADR-0026 § 11). Mirrors the
+         pattern in CosmosClientWarmupHostedService (Infrastructure). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options" />
 

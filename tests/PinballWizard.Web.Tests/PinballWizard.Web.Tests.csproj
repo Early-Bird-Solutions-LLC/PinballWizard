@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <!--
+      Opt out of locked-mode restore — the Razor SDK introduces test-runner
+      RID-specific assets similar to AppHost. Matches the AppHost opt-out
+      rationale in PinballWizard.AppHost.csproj.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- bUnit + xUnit: Blazor component testing -->
+    <PackageReference Include="bunit" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="MudBlazor" />
+    <!--
+      Override transitive System.Security.Cryptography.Xml to avoid
+      NU1903 (high-severity vuln in 9.0.0 pulled by bunit). Direct-pinned
+      in Directory.Packages.props. Remove when bunit ships a clean dep.
+    -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/PinballWizard.Web/PinballWizard.Web.csproj" />
+  </ItemGroup>
+
+</Project>

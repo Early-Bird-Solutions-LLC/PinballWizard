@@ -1,0 +1,25 @@
+@* NotFound — catch-all route that redirects 404s to the error page.
+ *
+ * The @page "/{**slug}" catch-all ensures the framework never shows its
+ * default 404 response. Instead, any unmatched URL redirects immediately
+ * to /error?reason=not-found. The /error page itself is Wave 2
+ * PR-D-degraded (Error.razor is the Wave 1 placeholder below).
+ *
+ * Category: chrome wrapper / page — uses NavigationManager only,
+ * no custom component. Not a delight surface in the ADR-0026 § 6 sense.
+ *
+ * ADR-0026  § 1 — catch-all /{**slug} → /error?reason=not-found
+ *@
+
+@page "/{**slug}"
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/error?reason=not-found", replace: true);
+    }
+}

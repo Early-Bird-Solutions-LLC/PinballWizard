@@ -5,6 +5,8 @@
     <Project Path="src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <Project Path="src/PinballWizard.Cli/PinballWizard.Cli.csproj" />
     <Project Path="src/PinballWizard.RagIngestionWorker/PinballWizard.RagIngestionWorker.csproj" />
+    <Project Path="src/PinballWizard.Web/PinballWizard.Web.csproj" />
+    <Project Path="src/PinballWizard.Web.Client/PinballWizard.Web.Client.csproj" />
   </Folder>
   <Folder Name="/Aspire/">
     <Project Path="src/PinballWizard.AppHost/PinballWizard.AppHost.csproj" />
@@ -12,5 +14,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/PinballWizard.Scraper.Tests/PinballWizard.Scraper.Tests.csproj" />
+    <Project Path="tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj" />
   </Folder>
 </Solution>

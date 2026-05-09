@@ -106,11 +106,49 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
   </ItemGroup>
 
-  <ItemGroup Label="Tests — xUnit + NSubstitute + test SDK">
+  <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
+    <PackageVersion Include="bunit" Version="1.37.7" />
+    <!--
+      System.Security.Cryptography.Xml 9.0.0 has two high-severity vulns
+      (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf). Pulled transitively by
+      bunit via AngleSharp.Css / Microsoft.AspNetCore.Components.Testing.
+      Direct-pin to 10.0.0 to satisfy TreatWarningsAsErrors + NU1903.
+      Remove this pin once bunit ships a release that depends on >= 10.x.
+    -->
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.7" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
+    <!--
+      MudBlazor 8.x targets .NET 8+. 8.5.0 is the current GA that
+      supports .NET 10 via the .NET 8 TFM forward-compat path.
+      Pin to a specific minor so template / theme shape is reproducible.
+      Bump in a dedicated Dependabot PR.
+    -->
+    <PackageVersion Include="MudBlazor" Version="8.5.0" />
+    <!--
+      Microsoft.Identity.Web 3.x is the first release to support
+      Entra External ID tenants natively per ADR-0009. 3.8.4 is the
+      current GA; bump via Dependabot.
+    -->
+    <PackageVersion Include="Microsoft.Identity.Web" Version="3.8.4" />
+    <PackageVersion Include="Microsoft.Identity.Web.UI" Version="3.8.4" />
+    <!--
+      Blazor auto-render mode (ADR-0026 § 1) requires the WASM runtime
+      in the Client project and the WASM static-asset server in the
+      Server project. Both match the ASP.NET Core / .NET 10 GA train.
+      Microsoft.AspNetCore.Components.WebAssembly is NOT implicit in
+      the BlazorWebAssembly SDK — it must be an explicit reference.
+      Microsoft.AspNetCore.Components.WebAssembly.Server must be
+      referenced by the Server (PinballWizard.Web) so Kestrel serves
+      the WASM bootstrap and static framework files.
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.7" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Tools;
 using Xunit;
@@ -325,6 +326,134 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Equal(2, citations.Count);
         Assert.Contains(citations, c => c.SourceUrl == "https://opdb.org/machines/GRBE-MJL05");
         Assert.Contains(citations, c => c.SourceUrl == "https://example/manual.pdf");
+    }
+
+    // -------------------------------------------------------------------------
+    // PR-C1 Wave 1: Citation DTO widening — SourceType + page anchors
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Extract_CorpusHit_SourceTypeIsCorpusChunk()
+    {
+        // ADR-0026 § 8: searchCorpus hits → CorpusChunk source type.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf"),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_CorpusHit_PageAnchorsAndSectionHeadingPopulated()
+    {
+        // Wave 1 populates page anchors + section heading from
+        // SearchCorpusHit immediately; LastScrapedUtc / RelevanceScore
+        // stay null until PR-C2/C3.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      machineId: "GRBE-MJL05", section: "Coil Replacement",
+                      pageStart: 12, pageEnd: 15),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(12, citation.PageStart);
+        Assert.Equal(15, citation.PageEnd);
+        Assert.Equal("Coil Replacement", citation.SectionHeading);
+        Assert.Equal("GRBE-MJL05", citation.MachineId);
+        Assert.Equal("doc_a", citation.DocumentChunkId);
+        Assert.Null(citation.LastScrapedUtc);
+        Assert.Null(citation.RelevanceScore);
+    }
+
+    [Fact]
+    public void Extract_CorpusHit_SinglePage_PageStartEqualsPageEnd()
+    {
+        // When PageStart == PageEnd the Citation fields are both
+        // populated identically — the title formatter handles the
+        // "p. N" rendering, but both raw fields carry the value.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      pageStart: 7, pageEnd: 7),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(7, citation.PageStart);
+        Assert.Equal(7, citation.PageEnd);
+    }
+
+    [Fact]
+    public void Extract_CorpusHit_WhitespaceSectionHeading_CitationSectionHeadingIsNull()
+    {
+        // Empty or whitespace-only SectionHeading on the hit must not
+        // propagate as an empty string — the Citation field must be null
+        // so the frontend can test `!= null` rather than also trimming.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      section: "   "),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Null(citation.SectionHeading);
+    }
+
+    [Fact]
+    public void Extract_GroundingDto_SourceTypeIsMachineRecord()
+    {
+        // getMachineByTitle result → MachineRecord source type.
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var response = BuildAgentResponseWithToolResult("getMachineByTitle", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Null(citation.PageStart);
+        Assert.Null(citation.PageEnd);
+        Assert.Null(citation.SectionHeading);
+    }
+
+    [Fact]
+    public void Extract_RegexFallbackOpdbUrl_SourceTypeIsMachineRecord()
+    {
+        // Regex-extracted OPDB URLs from sub-agent text → MachineRecord.
+        const string subAgentText = "See https://opdb.org/machines/GRBE-MJL05 for details.";
+        var response = BuildAgentResponseWithToolResult("Valuation", subAgentText);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Null(citation.PageStart);
+        Assert.Null(citation.PageEnd);
+    }
+
+    [Fact]
+    public void Extract_MultipleCorpusHitsSameDocumentUrl_CollapsesToOneCitation_ExistingBehaviorPreserved()
+    {
+        // Dedup (keyed by DocumentUrl) continues to work correctly
+        // after the DTO widening — first-hit wins for page anchors.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_x", documentUrl: "https://example/manual_x.pdf",
+                      section: "Section A", pageStart: 1, pageEnd: 1),
+            SampleHit(documentId: "doc_x", documentUrl: "https://example/manual_x.pdf",
+                      section: "Section B", pageStart: 5, pageEnd: 6),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://example/manual_x.pdf", citation.SourceUrl);
+        // First hit wins: page anchors and section from the first entry.
+        Assert.Equal(1, citation.PageStart);
+        Assert.Equal(1, citation.PageEnd);
+        Assert.Equal("Section A", citation.SectionHeading);
     }
 
     private static SearchCorpusHit SampleHit(
