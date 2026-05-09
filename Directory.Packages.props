@@ -137,6 +137,18 @@
     -->
     <PackageVersion Include="Microsoft.Identity.Web" Version="3.8.4" />
     <PackageVersion Include="Microsoft.Identity.Web.UI" Version="3.8.4" />
+    <!--
+      Blazor auto-render mode (ADR-0026 § 1) requires the WASM runtime
+      in the Client project and the WASM static-asset server in the
+      Server project. Both match the ASP.NET Core / .NET 10 GA train.
+      Microsoft.AspNetCore.Components.WebAssembly is NOT implicit in
+      the BlazorWebAssembly SDK — it must be an explicit reference.
+      Microsoft.AspNetCore.Components.WebAssembly.Server must be
+      referenced by the Server (PinballWizard.Web) so Kestrel serves
+      the WASM bootstrap and static framework files.
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.7" />
   </ItemGroup>
 
 </Project>

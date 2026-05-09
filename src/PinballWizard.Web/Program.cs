@@ -1,14 +1,20 @@
-// PinballWizard.Web — Blazor Web App (auto-render mode)
+// PinballWizard.Web — Blazor Web App (auto-render mode, Server + WASM)
 //
-// Wave 1 PR-F0 skeleton. Establishes the project, DI wiring,
+// Wave 1 PR-F0 skeleton (amended). Establishes the project, DI wiring,
 // ServiceDefaults (OTel + healthz + alive), Entra External ID auth
 // scaffolding (AzureAd section intentionally empty — real tenant
 // config arrives in a follow-up PR), and the empty /wizard route.
 //
+// Auto-render mode wiring: AddInteractiveWebAssemblyComponents +
+// AddInteractiveWebAssemblyRenderMode + AddAdditionalAssemblies are
+// fully wired here — PinballWizard.Web.Client is the WASM runtime.
+// Components using @rendermode InteractiveAuto start Server-side
+// (instant TTFB) and migrate to WASM after the runtime downloads.
+//
 // PR-F1 layers the WizardShell + MainLayout + MudBlazor theme tokens.
 // PR-F2 layers the /api/wizard/ask:stream SSE endpoint + Api project.
 //
-// ADR-0026 § 1 — Blazor Web App with auto-render mode
+// ADR-0026 § 1 — Blazor Web App with auto-render mode (Server + WASM)
 // ADR-0009    — Entra External ID auth (configured in a follow-up PR)
 // ADR-0008    — MudBlazor strict for all chrome
 
@@ -28,9 +34,10 @@ var builder = WebApplication.CreateBuilder(args);
 // service discovery, standard HTTP resilience, /healthz + /alive.
 builder.AddServiceDefaults();
 
-// ── Razor components (Blazor Web App, auto-render mode) ───────────────────
+// ── Razor components (Blazor Web App, auto-render mode per ADR-0026 § 1) ──
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddInteractiveWebAssemblyComponents();
 
 // ── MudBlazor (ADR-0008 — sole chrome library) ────────────────────────────
 builder.Services.AddMudServices();
@@ -87,7 +94,9 @@ app.MapDefaultEndpoints();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(PinballWizard.Web.Client._Imports).Assembly);
 
 // Microsoft.Identity.Web sign-in / sign-out controller routes.
 app.MapControllers();

@@ -31,6 +31,15 @@
     <PackageReference Include="MudBlazor" />
 
     <!--
+      Microsoft.AspNetCore.Components.WebAssembly.Server enables Kestrel
+      to serve the WASM bootstrap, framework static files, and the
+      blazor.webassembly.js runtime script required by auto-render mode
+      (ADR-0026 § 1). Without this package the Server cannot deliver the
+      WASM payload to the browser.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+
+    <!--
       Microsoft.Identity.Web wires Entra External ID auth per ADR-0009.
       Auth config lives in appsettings.json § AzureAd — intentionally
       empty in Wave 1; real tenant config arrives in a follow-up PR.
@@ -43,6 +52,17 @@
     <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
     <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Auto-mode wiring per ADR-0026 § 1: the Server hosts both Server-
+      rendered components and WASM-fallback components. The Client project
+      is referenced so its @page components are discoverable by the
+      Server's router (AddAdditionalAssemblies in Program.cs) and so
+      Aspire publishes its WASM artifacts alongside the Server.
+    -->
+    <ProjectReference Include="../PinballWizard.Web.Client/PinballWizard.Web.Client.csproj" />
   </ItemGroup>
 
 </Project>
