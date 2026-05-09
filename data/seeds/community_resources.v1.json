@@ -80,13 +80,6 @@
     },
     {
       "category": "marketplace",
-      "name": "eBay Pinball Listings",
-      "url": "https://www.ebay.com/b/Pinball-Machines/19143/bn_1648183",
-      "description": "eBay's pinball machine category — a broad secondary market with listings from individual sellers and dealers. Prices vary widely; verify condition and shipping costs carefully.",
-      "covers_question_types": ["marketplace", "valuation"]
-    },
-    {
-      "category": "marketplace",
       "name": "Facebook Marketplace",
       "url": "https://www.facebook.com/marketplace/category/pinball-machines",
       "description": "Local and national pinball machine listings on Facebook Marketplace. Useful for finding machines nearby and negotiating directly with sellers.",
