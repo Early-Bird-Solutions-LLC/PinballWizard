@@ -1,0 +1,89 @@
+@* SeedQuestionGrid — 4-card grid of seed questions.
+ *
+ * Each card represents one sub-agent path (Wizard / Valuation / Rules / Repair).
+ * Clicking a card pre-fills the LandingHero input AND navigates to
+ * /wizard/q/{slug}, which D-stream owns for auto-submit.
+ *
+ * Loading state: while the parent awaits /api/wizard/landing, this component
+ * renders 4 MudSkeleton placeholders. Pass null for Questions to show skeletons.
+ *
+ * Fallback: if the parent could not load from the endpoint, it passes the
+ * compiled-in fallback set so the grid always renders 4 cards regardless of
+ * endpoint availability. The page MUST work even when the endpoint is down.
+ *
+ * Mobile-first responsive grid: 2×2 on phone (≤600px), 1×4 on desktop.
+ *
+ * Custom delight surface — within the landing surface scope (ADR-0026 § Landing).
+ * ADR-0008 — chrome uses MudCard.
+ *@
+
+@using PinballWizard.Application.Landing
+
+@inject NavigationManager Nav
+
+<div class="seed-question-grid" data-testid="seed-question-grid">
+    @if (Questions is null)
+    {
+        @* Loading skeleton — 4 placeholders while the parent awaits the endpoint *@
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="seed-question-grid__cell" data-testid="seed-question-skeleton">
+                <MudCard Class="seed-card seed-card--skeleton" Elevation="1">
+                    <MudCardContent>
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="80%" Class="mb-2" />
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="60%" />
+                    </MudCardContent>
+                </MudCard>
+            </div>
+        }
+    }
+    else
+    {
+        @foreach (var q in Questions)
+        {
+            var slug = q.Slug; // capture for lambda
+            var question = q.Question;
+            <div class="seed-question-grid__cell">
+                <MudCard Class="seed-card mud-clickable" Elevation="2"
+                         @onclick="@(() => OnCardClick(slug, question))"
+                         data-testid="@($"seed-card-{slug}")"
+                         role="button"
+                         tabindex="0"
+                         aria-label="@($"Ask: {question}")">
+                    <MudCardContent>
+                        <MudText Typo="Typo.body1" Class="seed-card__question mb-1"
+                                 data-testid="seed-card-question">
+                            @q.Question
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary"
+                                 Class="seed-card__description"
+                                 data-testid="seed-card-description">
+                            @q.TargetSubAgent
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    // Null = show loading skeletons; non-null = render cards.
+    [Parameter]
+    public IReadOnlyList<SeedQuestion>? Questions { get; set; }
+
+    // Raised when a card is clicked so Index.razor can pre-fill the hero input.
+    [Parameter]
+    public EventCallback<string> QuestionSelected { get; set; }
+
+    private async Task OnCardClick(string slug, string question)
+    {
+        // 1. Notify parent to pre-fill the LandingHero input.
+        await QuestionSelected.InvokeAsync(question).ConfigureAwait(false);
+
+        // 2. Navigate to /wizard/q/{slug} — D-stream owns this route and
+        //    auto-submits the pre-filled question so the user immediately
+        //    sees the streaming answer surface.
+        Nav.NavigateTo($"/wizard/q/{slug}");
+    }
+}

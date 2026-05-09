@@ -1,0 +1,59 @@
+/* SeedQuestionGrid scoped styles.
+ * Mobile-first: 2-column grid on phone, 4-column on desktop.
+ */
+
+.seed-question-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+/* 4-column on desktop */
+@media (min-width: 900px) {
+    .seed-question-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.seed-question-grid__cell {
+    display: flex;
+}
+
+.seed-card {
+    width: 100%;
+    cursor: pointer;
+    transition: box-shadow 0.15s ease, transform 0.12s ease;
+    border: 1px solid var(--mud-palette-divider, #2a282d);
+}
+
+.seed-card:hover,
+.seed-card:focus-within {
+    box-shadow: 0 0 0 2px var(--mud-palette-primary, #ff9a1f);
+    transform: translateY(-2px);
+}
+
+.seed-card:focus-visible {
+    outline: 2px solid var(--mud-palette-primary, #ff9a1f);
+    outline-offset: 2px;
+}
+
+.seed-card--skeleton {
+    cursor: default;
+    pointer-events: none;
+}
+
+.seed-card__question {
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.seed-card__description {
+    display: block;
+    margin-top: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+}

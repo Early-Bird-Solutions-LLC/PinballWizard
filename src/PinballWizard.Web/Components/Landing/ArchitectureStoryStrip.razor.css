@@ -1,0 +1,66 @@
+/* ArchitectureStoryStrip scoped styles.
+ * Intentionally muted — supplementary content for the engineering-curious
+ * prospect who scrolls past the seed question grid. Lower visual weight than
+ * the hero and seed cards.
+ */
+
+.arch-strip {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0.5rem 0;
+}
+
+.arch-strip__cell {
+    flex: 1 1 180px;
+    min-width: 160px;
+}
+
+.arch-card {
+    height: 100%;
+    border: 1px solid var(--mud-palette-divider, #2a282d);
+    background: var(--mud-palette-surface, #161519);
+    opacity: 0.85;
+}
+
+.arch-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem !important;
+}
+
+.arch-card__label {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+}
+
+.arch-card__desc {
+    font-size: 0.75rem;
+    line-height: 1.45;
+    flex: 1;
+}
+
+.arch-card__link {
+    font-size: 0.7rem;
+    margin-top: 0.25rem;
+    text-decoration: none;
+    color: var(--mud-palette-text-secondary, #9a9590) !important;
+}
+
+.arch-card__link:hover {
+    color: var(--mud-palette-primary, #ff9a1f) !important;
+}
+
+@media (max-width: 600px) {
+    .arch-strip {
+        flex-direction: column;
+    }
+    .arch-strip__cell {
+        flex: none;
+    }
+}
