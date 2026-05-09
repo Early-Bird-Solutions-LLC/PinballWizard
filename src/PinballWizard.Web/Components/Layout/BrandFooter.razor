@@ -1,0 +1,41 @@
+@* BrandFooter — chrome footer mounted by MainLayout after MudMainContent.
+ *
+ * Coverage-statement copy is locked from
+ * docs/ui/screens/empty-landing.md § Section 4 and renders on every
+ * screen per docs/ui/screens/answer-with-citations.md § Screen zones #5.
+ *
+ * ADR-0008      — MudBlazor strict (MudText + MudLink only)
+ * ADR-0026 § 6  — chrome, not a delight surface
+ * ADR-0027 § 1  — Status link lives here, not in prospect-facing header
+ * ADR-0027 § 4  — coverage transparency surface
+ *@
+
+<footer class="brand-footer" aria-label="Site footer">
+    <MudText Typo="Typo.body2" Align="Align.Center" Class="footer-coverage">
+        The Wizard has first-party data on 8 active manufacturers and OPDB.
+        Everything else routes to community resources.
+        <MudLink Href="/about"
+                 Color="Color.Success"
+                 Underline="Underline.Hover"
+                 Class="footer-coverage-link"
+                 aria-label="What we cover">What we cover &rarr;</MudLink>
+    </MudText>
+
+    <MudText Typo="Typo.caption" Align="Align.Center" Class="footer-meta mt-2">
+        <span class="footer-project-name">PinballWizard</span>
+        <span class="footer-sep" aria-hidden="true"> · </span>
+        <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard"
+                 Target="_blank"
+                 Color="Color.Inherit"
+                 Underline="Underline.Hover"
+                 Class="footer-github-link"
+                 rel="noopener noreferrer"
+                 aria-label="PinballWizard on GitHub">GitHub</MudLink>
+        <span class="footer-sep" aria-hidden="true"> · </span>
+        <MudLink Href="/status"
+                 Color="Color.Inherit"
+                 Underline="Underline.Hover"
+                 Class="footer-status-link"
+                 aria-label="System status">Status</MudLink>
+    </MudText>
+</footer>
