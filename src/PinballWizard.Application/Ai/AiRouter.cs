@@ -659,12 +659,14 @@ public sealed class AiRouter : IAiRouter
         return "unknown_tool";
     }
 
-    // Records the pinwiz.ai.first_token_ms histogram. Stops the stopwatch
-    // before recording so the elapsed time represents exactly the latency
-    // up to the point where the caller invokes this — the Stopwatch
-    // continues running after this call, which is intentional: callers
-    // invoke this at the first-token moment and the Stopwatch is never
-    // used again for first_token_ms purposes.
+    // Records the pinwiz.ai.first_token_ms histogram. Reads the elapsed
+    // time from the still-running Stopwatch — callers must NOT call
+    // stopwatch.Stop() before invoking this, because the Stopwatch may
+    // still be in scope after the first-token moment and its running state
+    // is inconsequential (it is never read again for first_token_ms purposes
+    // after this call). The elapsed value is the caller-visible latency from
+    // method entry to the moment the first text-bearing or refusal chunk is
+    // ready to yield.
     private static void RecordFirstTokenMs(
         Stopwatch stopwatch,
         string cacheState,

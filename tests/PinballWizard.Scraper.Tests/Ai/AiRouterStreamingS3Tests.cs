@@ -100,17 +100,17 @@ public sealed class AiRouterStreamingS3Tests
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // T3 — first_token_ms NOT recorded when 429 fires before any chunk
+    // T3 — first_token_ms recorded with outcome=refusal when 429 fires
+    //      before any TextDelta (no "streamed" observation emitted)
     // ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AnswerStreamingAsync_does_not_record_first_token_ms_on_429_before_any_chunk()
+    public async Task AnswerStreamingAsync_records_first_token_ms_with_refusal_outcome_on_429()
     {
-        // A 429 throws before any update arrives from the model. The spec
-        // says "DO NOT record if the request fails before any chunk is
-        // emitted." However, the spec also says record with outcome=refusal
-        // when a refusal fires BEFORE any TextDelta — 429 is such a case.
-        // Verify outcome=refusal tag is present (not a "streamed" observation).
+        // A 429 throws before any update arrives from the model. The first
+        // client-visible chunk is the Refusal chunk (not a TextDelta), so
+        // first_token_ms must be recorded with outcome=refusal. No
+        // outcome=streamed observation must appear — the text path was never hit.
         var (router, cache, _, _, _, _) = BuildRouter(agentUpdates: [], throwOn429: true);
         SetCacheMiss(cache);
 
