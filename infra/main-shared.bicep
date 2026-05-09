@@ -118,6 +118,15 @@ output openAiAccountName string = shared.outputs.openAiAccountName
 output storageAccountName string = shared.outputs.storageAccountName
 output appInsightsName string = shared.outputs.appInsightsName
 
+// ACA + RAG Indexer (Phase 4 W3-2). `ragIndexerPrincipalId` is the canonical
+// post-deploy validation handle: `az role assignment list --assignee <id>`
+// confirms the five MI-side role assignments propagated. `ragIndexerContainerAppName`
+// is the resource name an operator references when swapping the placeholder
+// image for the real worker image once the W3-2 code PR ships.
+output acaEnvironmentName string = shared.outputs.acaEnvironmentName
+output ragIndexerContainerAppName string = shared.outputs.ragIndexerContainerAppName
+output ragIndexerPrincipalId string = shared.outputs.ragIndexerPrincipalId
+
 // Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
 // operators export as $env:AiFoundry__ProjectEndpoint for the
 // --ensure-azure-foundry smoke probe and Wave 2 PR 4 IAiRouter.
