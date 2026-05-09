@@ -256,6 +256,7 @@ public sealed class EvaluationHarnessTests
                 PromptProvider,
                 new CitationPrecisionEvaluator(),
                 new CitationRecallEvaluator(),
+                new CitationCoverageEvaluator(),
                 new SubagentAccuracyEvaluator(),
                 new RefusalCorrectnessEvaluator(),
                 evalOptions,

@@ -60,6 +60,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
     private readonly IAgentPromptProvider _promptProvider;
     private readonly CitationPrecisionEvaluator _precisionEvaluator;
     private readonly CitationRecallEvaluator _recallEvaluator;
+    private readonly CitationCoverageEvaluator _coverageEvaluator;
     private readonly SubagentAccuracyEvaluator _subagentEvaluator;
     private readonly RefusalCorrectnessEvaluator _refusalEvaluator;
     private readonly EvalHarnessOptions _evalOptions;
@@ -71,6 +72,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         IAgentPromptProvider promptProvider,
         CitationPrecisionEvaluator precisionEvaluator,
         CitationRecallEvaluator recallEvaluator,
+        CitationCoverageEvaluator coverageEvaluator,
         SubagentAccuracyEvaluator subagentEvaluator,
         RefusalCorrectnessEvaluator refusalEvaluator,
         IOptions<EvalHarnessOptions> evalOptions,
@@ -81,6 +83,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         ArgumentNullException.ThrowIfNull(promptProvider);
         ArgumentNullException.ThrowIfNull(precisionEvaluator);
         ArgumentNullException.ThrowIfNull(recallEvaluator);
+        ArgumentNullException.ThrowIfNull(coverageEvaluator);
         ArgumentNullException.ThrowIfNull(subagentEvaluator);
         ArgumentNullException.ThrowIfNull(refusalEvaluator);
         ArgumentNullException.ThrowIfNull(evalOptions);
@@ -90,6 +93,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         _promptProvider = promptProvider;
         _precisionEvaluator = precisionEvaluator;
         _recallEvaluator = recallEvaluator;
+        _coverageEvaluator = coverageEvaluator;
         _subagentEvaluator = subagentEvaluator;
         _refusalEvaluator = refusalEvaluator;
         _evalOptions = evalOptions.Value;
@@ -183,13 +187,14 @@ public sealed class EvaluationHarness : IEvaluationHarness
         PinballWizardTelemetry.EvalRuns.Add(1);
         _logger.LogInformation(
             "EvaluationHarness completed {Count} questions ({Errors} errors) in {Elapsed:N1}s; results written to {Path}. " +
-            "citation_precision={Precision:F3} citation_recall={Recall:F3} subagent_accuracy={Subagent:F3} refusal_correctness={Refusal:F3}",
+            "citation_precision={Precision:F3} citation_recall={Recall:F3} citation_coverage={Coverage:F3} subagent_accuracy={Subagent:F3} refusal_correctness={Refusal:F3}",
             aggregate.QuestionCount,
             aggregate.ErrorCount,
             (completedAt - startedAt).TotalSeconds,
             resultsPath,
             aggregate.CitationPrecisionMean,
             aggregate.CitationRecallMean,
+            aggregate.CitationCoverageMean,
             aggregate.SubagentAccuracyMean,
             aggregate.RefusalCorrectnessMean);
 
@@ -244,6 +249,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var scores = new EvalScores(
             CitationPrecision: _precisionEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
             CitationRecall: _recallEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
+            CitationCoverage: _coverageEvaluator.Compute(answerText, predictedCitations),
             SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent),
             RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal));
 
@@ -301,12 +307,14 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 ErrorCount: 0,
                 CitationPrecisionMean: 0.0,
                 CitationRecallMean: 0.0,
+                CitationCoverageMean: 0.0,
                 SubagentAccuracyMean: 0.0,
                 RefusalCorrectnessMean: 0.0);
         }
 
         double precisionSum = 0;
         double recallSum = 0;
+        double coverageSum = 0;
         double subagentSum = 0;
         double refusalSum = 0;
         var errorCount = 0;
@@ -315,6 +323,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         {
             precisionSum += r.Scores.CitationPrecision;
             recallSum += r.Scores.CitationRecall;
+            coverageSum += r.Scores.CitationCoverage;
             subagentSum += r.Scores.SubagentAccuracy;
             refusalSum += r.Scores.RefusalCorrectness;
             if (!string.IsNullOrEmpty(r.Error))
@@ -329,6 +338,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
             ErrorCount: errorCount,
             CitationPrecisionMean: precisionSum / n,
             CitationRecallMean: recallSum / n,
+            CitationCoverageMean: coverageSum / n,
             SubagentAccuracyMean: subagentSum / n,
             RefusalCorrectnessMean: refusalSum / n);
     }
