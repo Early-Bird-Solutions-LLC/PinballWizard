@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Answer-with-Citations screen, Cabinet theme prototype v1
+  Same scaffold as answer-with-citations.html (Modern LCD), same content,
+  but with the Cabinet palette + type tokens swapped per
+  docs/ui/themes/sibling-themes-overview.md § Cabinet.
+
+  Cabinet evokes the machine itself — wood-grain side art, brushed metal
+  lockdown bar, classic flipper button red and yellow. The "I'm in front
+  of the machine" theme. Tactile, warm, physical.
+
+  Anti-pattern this prototype must NOT slide into: heavy textures
+  everywhere. Wood grain on every panel = 1990s skeuomorphism. Texture
+  is for accents (page bezel, panel frame, footer) — NEVER on body-text
+  surfaces. The spec is explicit about this trap; the implementation
+  honors it by confining wood-tone gradients to the page background and
+  letting the answer panel sit on a cleaner playfield-mylar surface.
+
+  Static HTML/CSS only — no JavaScript, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard (Cabinet) — How do I fix the trough opto on Bond Premium?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Inter:wght@400;500;600&family=Special+Elite&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* ===== Cabinet palette =====
+         Background = warm dark woods, the cabinet's side art under low
+         arcade light. Surface = a cleaner "playfield mylar" tone so body
+         text never has to fight wood grain. The brushed-metal border on
+         the answer panel + the cabinet-frame footer carry the texture
+         signal; everything else stays readable. */
+      --bg-base: #2a1f15;          /* dark walnut side art */
+      --bg-base-deep: #1a1208;     /* coin door shadow */
+      --bg-surface: #20272a;       /* playfield mylar — cool dark green-grey
+                                      so body text reads cleanly without
+                                      fighting the warm bezel */
+      --bg-surface-hi: #2a3236;    /* hovered panel — slight metal lift */
+
+      --text-primary: #f4eedd;     /* aged ivory — apron-card paper, NOT
+                                      pure white (would scream against
+                                      the warm bezel) */
+      --text-secondary: #b8a892;   /* worn brass-text grey */
+
+      /* Cabinet accents = classic flipper button red (primary action),
+         flipper button yellow (citations / grounded), warning red
+         (refusal), brushed-chrome blue (mode/topic). Saturated but
+         desaturated-vs-Backbox to read as "lit-from-behind" rather than
+         "neon-glow." */
+      --accent-primary: #d23030;   /* flipper button red — submit, ASK */
+      --accent-grounded: #f5c83a;  /* flipper button yellow / playfield
+                                      insert — citations, source-grounded */
+      --accent-refusal: #c41e1e;   /* deeper red for refusal — distinct
+                                      from primary action's flipper red */
+      --accent-mode: #5a8aa8;      /* brushed chrome blue — mode/topic
+                                      context, NOT magenta (Cabinet
+                                      doesn't do neon) */
+
+      --border-quiet: #3d2e1f;     /* darker wood seam */
+      --border-glow-primary: #d2303066;
+      --border-glow-grounded: #f5c83a66;
+      --border-glow-mode: #5a8aa866;
+
+      /* Brushed metal frame — used on the answer panel border so it
+         reads like a metal trim around the playfield. Subtle by spec. */
+      --frame-metal-light: #8a7e6e;
+      --frame-metal-dark:  #4a3f30;
+
+      /* ===== Type tokens =====
+         Display = Alfa Slab One — geometric chunky slab, evokes hand-
+         painted American game-art side-panels (Bally / Williams cabinet
+         lettering). Distinct from Barlow Condensed (broadcast-LCD) and
+         Big Shoulders Display (Backbox cinematic). Reserved for
+         announcements; body stays clean Inter for readability. */
+      --font-display: 'Alfa Slab One', 'Times New Roman', serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'Special Elite', 'Courier New', monospace;
+      /* Special Elite = typewriter style — evokes the printed instruction
+         cards taped inside coin doors. Per the spec: "evokes the
+         dot-matrix instruction cards inside coin doors." */
+
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --space-6: 48px;
+
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --radius-insert: 50%;
+      --shadow-press: inset 0 -1px 2px rgba(0, 0, 0, 0.5);
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+      --motion-slow: 600ms;
+
+      /* Cabinet-specific: warm playfield-glow for accent surfaces.
+         Less neon than Backbox; more "lit-through-translucent-plastic." */
+      --glow-amber: 0 0 6px rgba(245, 200, 58, 0.35);
+      --glow-red: 0 0 6px rgba(210, 48, 48, 0.30);
+      --ambient-glow: 0 0 24px rgba(245, 200, 58, 0.05);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      /* Wood-bezel page background — radial highlights at top and bottom
+         suggest the curve of cabinet-side wood under arcade light. Very
+         subtle; never crosses into "skeuomorphic plank" territory. The
+         body-text-surface (.answer-panel) has its own clean background
+         so wood grain NEVER touches reading content. */
+      background:
+        radial-gradient(ellipse 1200px 300px at 50% 0%, rgba(80, 55, 30, 0.6), transparent),
+        radial-gradient(ellipse 1200px 200px at 50% 100%, rgba(40, 25, 12, 0.7), transparent),
+        linear-gradient(180deg, var(--bg-base) 0%, var(--bg-base-deep) 100%);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.6;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* ===== Header — brushed metal lockdown bar feel ===== */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 2px solid;
+      border-image: linear-gradient(90deg,
+        var(--frame-metal-dark),
+        var(--frame-metal-light),
+        var(--frame-metal-dark)) 1;
+      height: 56px;
+      background: linear-gradient(180deg,
+        rgba(58, 42, 26, 0.85),
+        rgba(38, 27, 16, 0.85));
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent-grounded);
+      text-shadow: var(--glow-amber);
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+
+    /* ===== Main ===== */
+    .page-main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4) var(--space-4) var(--space-6);
+    }
+
+    /* ===== Question input ===== */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 12px var(--border-glow-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: var(--text-primary);
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: var(--shadow-press), var(--glow-red);
+      transition: filter var(--motion-fast), transform var(--motion-fast),
+                  box-shadow var(--motion-fast);
+    }
+    .submit-btn:hover {
+      filter: brightness(1.1);
+      box-shadow: var(--shadow-press), 0 0 16px var(--accent-primary);
+    }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* ===== Answer panel — playfield mylar in a brushed-metal frame =====
+       The frame is what carries the cabinet motif on the content area.
+       Body text reads against the cleaner mylar surface, never wood. */
+    .answer-panel {
+      background: var(--bg-surface);
+      border: 2px solid;
+      border-image: linear-gradient(135deg,
+        var(--frame-metal-light) 0%,
+        var(--frame-metal-dark)  50%,
+        var(--frame-metal-light) 100%) 1;
+      border-radius: var(--radius-panel);
+      padding: var(--space-4);
+      box-shadow: var(--ambient-glow);
+      animation: answer-reveal var(--motion-slow) ease-out 1;
+    }
+    @keyframes answer-reveal {
+      0%   { box-shadow: 0 0 18px var(--border-glow-grounded); }
+      100% { box-shadow: var(--ambient-glow); }
+    }
+    .answer-panel p {
+      margin-bottom: var(--space-2);
+      color: var(--text-primary);
+    }
+    .answer-panel p:last-child { margin-bottom: 0; }
+
+    /* Body-text outbound portal */
+    .entity-portal {
+      color: var(--text-primary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .entity-portal:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+    .portal-icon {
+      font-size: 0.85em;
+      margin-left: 2px;
+      color: var(--text-secondary);
+      transition: color var(--motion-fast);
+    }
+    .entity-portal:hover .portal-icon { color: var(--accent-grounded); }
+
+    /* Inline citation marker — flipper-yellow lit insert */
+    .citation-marker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: var(--radius-insert);
+      background: var(--bg-surface-hi);
+      color: var(--accent-grounded);
+      border: 1px solid var(--accent-grounded);
+      box-shadow: var(--glow-amber);
+      font-family: var(--font-body);
+      font-size: var(--type-xs);
+      font-weight: 700;
+      vertical-align: super;
+      margin-left: 2px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast);
+    }
+    .citation-marker:hover {
+      box-shadow: 0 0 12px var(--accent-grounded);
+      transform: translateY(-1px);
+    }
+
+    /* ===== Citation card stack ===== */
+    .citation-stack { margin-top: var(--space-4); }
+
+    .citation-summary {
+      font-family: var(--font-display);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-3);
+    }
+
+    .citation-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      transition: border-color var(--motion-fast), background var(--motion-fast),
+                  box-shadow var(--motion-fast);
+    }
+    .citation-card:hover {
+      background: var(--bg-surface-hi);
+      border-color: var(--accent-grounded);
+      box-shadow: 0 0 18px var(--border-glow-grounded);
+    }
+    .citation-card:last-child { margin-bottom: 0; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .source-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid var(--accent-grounded);
+      box-shadow: var(--glow-amber);
+      border-radius: var(--radius-panel);
+      color: var(--accent-grounded);
+      font-family: var(--font-display);
+      font-size: var(--type-xs);
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+    }
+
+    .source-identity {
+      font-family: var(--font-display);
+      font-size: var(--type-lg);
+      color: var(--text-primary);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      line-height: 1.15;
+    }
+
+    .excerpt {
+      border-left: 3px solid var(--accent-grounded);
+      box-shadow: -3px 0 12px var(--border-glow-grounded);
+      padding: var(--space-1) var(--space-2);
+      margin: var(--space-2) 0;
+      color: var(--text-primary);
+      font-style: italic;
+    }
+
+    .meta {
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-3);
+    }
+    .meta .provenance {
+      font-family: var(--font-mono);
+      font-size: var(--type-xs);
+      margin-top: 4px;
+      color: var(--text-secondary);
+    }
+
+    /* ===== Flipper buttons — recessed cabinet pucks =====
+       Cabinet's flippers visually lean hardest into the recessed-cabinet-
+       button family. Outer-glow is reduced vs. Backbox (which is the
+       most theatrical sibling); these read more like real flipper
+       buttons under arcade light than like neon callouts. */
+    .flipper-pair {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+    }
+
+    .flipper {
+      background: var(--bg-surface-hi);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      min-height: 48px;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast),
+                  background var(--motion-fast), color var(--motion-fast);
+    }
+    .flipper:active { transform: translateY(1px); }
+
+    .flipper-left {
+      box-shadow: var(--shadow-press), inset 0 0 12px rgba(90, 138, 168, 0.18);
+    }
+    .flipper-left:hover {
+      color: var(--accent-mode);
+      box-shadow: var(--shadow-press),
+                  0 0 14px var(--border-glow-mode),
+                  inset 0 0 14px rgba(90, 138, 168, 0.35);
+      background: rgba(90, 138, 168, 0.10);
+    }
+
+    .flipper-right {
+      box-shadow: var(--shadow-press), inset 0 0 12px rgba(245, 200, 58, 0.20);
+    }
+    .flipper-right:hover {
+      color: var(--accent-grounded);
+      box-shadow: var(--shadow-press),
+                  0 0 14px var(--border-glow-grounded),
+                  inset 0 0 14px rgba(245, 200, 58, 0.35);
+      background: rgba(245, 200, 58, 0.10);
+      text-shadow: var(--glow-amber);
+    }
+
+    /* ===== Footer — coin door framing ===== */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 2px solid;
+      border-image: linear-gradient(90deg,
+        var(--frame-metal-dark),
+        var(--frame-metal-light),
+        var(--frame-metal-dark)) 1;
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .page-footer a {
+      color: var(--accent-grounded);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-grounded); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-2); }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .answer-panel { padding: var(--space-3); }
+      .flipper-pair { flex-direction: column; }
+      .flipper { width: 100%; }
+      .source-identity { font-size: var(--type-md); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <form class="question-input" onsubmit="event.preventDefault();">
+      <input
+        type="text"
+        value="How do I fix the trough opto on Bond Premium?"
+        aria-label="Ask a question about pinball"
+      >
+      <button type="submit" class="submit-btn">ASK ▶</button>
+    </form>
+
+    <article class="answer-panel" aria-live="polite">
+      <p>
+        For trough opto failures on
+        <a href="#" class="entity-portal" title="Stern Pinball — official game page">Bond Premium<span class="portal-icon">↗</span></a>,
+        the canonical service procedure comes from
+        <a href="#" class="entity-portal" title="Stern Pinball — service bulletin SB-243">Service Bulletin SB-243<span class="portal-icon">↗</span></a>.
+        The most common failure mode is a hard fault on boot when the optos
+        report inconsistent state — typically caused by a faulty opto board
+        rather than the optos themselves.<a href="#card-1" class="citation-marker" aria-label="Citation 1">1</a>
+      </p>
+      <p>
+        Before replacing the board, run the switch matrix test from the
+        operator menu to confirm the symptom matches. If the test passes
+        cleanly but ball-search behavior persists, the trough opto board
+        (assembly 520-5246-00) is the likely culprit. Stern's operations
+        manual covers the replacement procedure step-by-step including
+        connector identification.<a href="#card-2" class="citation-marker" aria-label="Citation 2">2</a>
+      </p>
+    </article>
+
+    <section class="citation-stack" aria-label="Sources">
+      <div class="citation-summary">SOURCES · 2 CITED FROM 1 SITE</div>
+
+      <article class="citation-card" id="card-1" aria-labelledby="card-1-title">
+        <div class="card-header">
+          <span class="source-tag">BULLETIN</span>
+          <h2 class="source-identity" id="card-1-title">STERN BOND PREMIUM — SB-243</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Replace the trough opto board (assembly 520-5246-00) when
+          ball-search behavior persists after switch matrix test passes.
+          Symptom is a hard fault on boot reporting inconsistent opto state."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → support → service-bulletins → sb-243</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern service bulletin SB-243, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+
+      <article class="citation-card" id="card-2" aria-labelledby="card-2-title">
+        <div class="card-header">
+          <span class="source-tag">MANUAL</span>
+          <h2 class="source-identity" id="card-2-title">STERN BOND PREMIUM — OPERATIONS MANUAL</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Trough Opto Board Replacement: Power off the machine. Disconnect
+          the J1 connector from the trough opto board (520-5246-00). Remove
+          the four mounting screws. Reverse to install. Run switch test to
+          confirm operation."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → manuals → bond-pe-operations-manual.pdf</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern operations manual, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+</body>
+</html>
