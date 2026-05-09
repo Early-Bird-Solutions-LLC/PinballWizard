@@ -31,13 +31,32 @@ public sealed class RagIngestionOptions
     public IReadOnlyList<DocumentType> AcceptedDocumentTypes { get; init; } =
         [DocumentType.Manual, DocumentType.ServiceBulletin];
 
-    // Optional reconciliation pass on worker startup: sample N random
-    // `rag_index_state` rows and verify AI Search has matching chunks.
+    // Optional reconciliation pass on worker startup: sample N rows
+    // from `rag_index_state` and verify AI Search has matching chunks.
     // Off by default — fast cold-start matters; enable manually after
-    // a known purge per the operator runbook. When on, the worker
-    // emits `pinwiz.rag.changefeed_reconcile_*` instruments (W3-2
-    // Phase C / observability PR) so the cost is observable.
+    // a known purge per the operator runbook, or via Bicep param for a
+    // canary deploy. When on, the worker emits the
+    // `pinwiz.rag.changefeed_reconcile_*` instruments so operators can
+    // see what the pass found.
+    //
+    // Failure posture: the reconcile runs ASYNC after the change-feed
+    // processor starts so worker boot isn't blocked. A reconcile
+    // exception is logged at warning and the worker continues serving
+    // the change feed normally — a stale-but-trustworthy index is
+    // operationally better than a refusing-to-start worker.
     public bool ReconcileOnStartup { get; init; }
+
+    // Number of `rag_index_state` rows to inspect during the
+    // reconcile-on-startup pass. The reconciler reads the most-recently-
+    // recorded N rows (ORDER BY recorded_utc DESC) — recency-biased
+    // sampling because recent ingests are the documents most likely to
+    // have hit a transient AI Search outage that would surface as
+    // drift. Default 50 covers the curated-subset's typical write
+    // volume while keeping the reconcile pass under one second on
+    // Cosmos serverless. Range 1-1000 — larger than 1000 starts to
+    // burn meaningful Cosmos RU on every cold start.
+    [Range(1, 1000)]
+    public int ReconcileSampleSize { get; init; } = 50;
 
     // Per-document retry budget. Tracked on `IIndexState` rows; once a
     // document accumulates this many failures, the next failure
