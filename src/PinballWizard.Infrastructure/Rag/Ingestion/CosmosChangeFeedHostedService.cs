@@ -52,6 +52,7 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
     private readonly ILogger<CosmosChangeFeedHostedService<T>> _logger;
 
     private ChangeFeedProcessor? _processor;
+    private ChangeFeedProcessor? _estimator;
 
     public CosmosChangeFeedHostedService(
         Container sourceContainer,
@@ -136,6 +137,40 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
 
         await _processor.StartAsync().ConfigureAwait(false);
 
+        // Lease-lag estimator. Cosmos's ChangeFeedEstimator builds a
+        // *secondary* ChangeFeedProcessor that owns its own lease-state
+        // observation loop and fires the ChangesEstimationHandler with
+        // the cross-lease total estimated lag (delegate signature:
+        // `(long estimatedLag, CancellationToken) => Task`). We push
+        // that value into PinballWizardTelemetry's static cache; the
+        // `pinwiz.rag.changefeed_lease_lag` ObservableGauge callback
+        // reads the cache (sync, no I/O on the export thread).
+        //
+        // Failure posture: estimator startup faults are logged at
+        // warning; the gauge stays at its last known value (initial 0).
+        // Per-poll handler exceptions are caught inside the handler so
+        // the SDK's poll loop keeps running.
+        try
+        {
+            _estimator = _sourceContainer
+                .GetChangeFeedEstimatorBuilder(
+                    _changeFeedOptions.ProcessorName,
+                    LeaseLagEstimationHandler,
+                    _changeFeedOptions.LeaseLagPollInterval)
+                .WithLeaseContainer(_leaseContainer)
+                .Build();
+            await _estimator.StartAsync().ConfigureAwait(false);
+            _logger.LogInformation(
+                "RAG Change Feed lease-lag estimator started: pollInterval={PollInterval}.",
+                _changeFeedOptions.LeaseLagPollInterval);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "RAG Change Feed: lease-lag estimator startup failed; `pinwiz.rag.changefeed_lease_lag` gauge will report 0 until a future deploy fixes the configuration. Worker continues serving the change feed.");
+        }
+
         try
         {
             // BackgroundService.ExecuteAsync conventionally blocks on
@@ -164,7 +199,46 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                     "RAG Change Feed processor StopAsync failed (continuing shutdown): processor={ProcessorName}.",
                     _changeFeedOptions.ProcessorName);
             }
+
+            if (_estimator is not null)
+            {
+                try
+                {
+                    await _estimator.StopAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "RAG Change Feed lease-lag estimator StopAsync failed (continuing shutdown).");
+                }
+            }
         }
+    }
+
+    // ChangesEstimationHandler — fires periodically (per
+    // CosmosChangeFeedHostedServiceOptions.LeaseLagPollInterval) with
+    // the cross-lease total estimated lag. Pushes the value into
+    // PinballWizardTelemetry's static cache so the ObservableGauge
+    // can read it without I/O. Catches exceptions internally so a
+    // single bad sample doesn't tear down the SDK's poll loop.
+    private Task LeaseLagEstimationHandler(long estimatedLag, CancellationToken cancellationToken)
+    {
+        try
+        {
+            PinballWizardTelemetry.RecordChangefeedLeaseLag(estimatedLag);
+        }
+        catch (Exception ex)
+        {
+            // Should never happen — the cache update is just an
+            // Interlocked.Exchange — but defending the SDK's poll loop
+            // is cheap and the alternative (estimator silently dying
+            // on a transient telemetry failure) is operationally bad.
+            _logger.LogWarning(
+                ex,
+                "RAG Change Feed: lease-lag cache update failed; gauge retains previous value.");
+        }
+        return Task.CompletedTask;
     }
 
     internal async Task HandleChangesAsync(

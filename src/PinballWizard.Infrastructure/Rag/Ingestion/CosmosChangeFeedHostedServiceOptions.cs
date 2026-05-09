@@ -41,4 +41,13 @@ public sealed class CosmosChangeFeedHostedServiceOptions
     // resume from the last checkpoint regardless of this setting —
     // this only affects the first-ever lease grant.
     public bool StartFromBeginning { get; init; } = true;
+
+    // How often the hosted service polls Cosmos's `ChangeFeedEstimator`
+    // to refresh the cached lease-lag value behind the
+    // `pinwiz.rag.changefeed_lease_lag` ObservableGauge. Default 30s
+    // matches the dashboard refresh granularity: faster polling burns
+    // RU on the lease container without surfacing actionable signal at
+    // operator timescale; slower polling makes the gauge feel stale.
+    [Range(typeof(TimeSpan), "00:00:05", "00:10:00")]
+    public TimeSpan LeaseLagPollInterval { get; init; } = TimeSpan.FromSeconds(30);
 }
