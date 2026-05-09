@@ -1,6 +1,47 @@
-/* PinballWizard.Web — Wave 1 PR-F0 baseline styles.
-   PR-F1 ships MudBlazor theme tokens + WizardShell scoped CSS.
-   Only global resets / body defaults live here. */
+/* PinballWizard.Web — global tokens + resets.
+   Spec authority: docs/ui/themes/modern-lcd.md § Visual system.
+   Tokens MudBlazor's MudPalette can't model live here as :root custom
+   properties (chrome stays MudBlazor-strict per ADR-0026 § 6; tokens
+   without a MudPalette slot live as CSS variables). */
+
+:root {
+    /* ── Spec-token aliases (mirror docs/ui/themes/modern-lcd.md § Visual system).
+         Custom delight surfaces (TiltErrorBoundary, RefusalPanel, CitationStrip,
+         WizardAnswerStream) reference these stable names instead of MudBlazor's
+         internal --mud-palette-* class. Keeps the chrome-strict / custom-for-delight
+         split clean per ADR-0026 § 6. */
+    --pw-bg-base: #0c0b0e;
+    --pw-bg-surface: #161519;
+    --pw-bg-surface-hi: #1f1d22;          /* MudPalette has no slot for elevation lift */
+    --pw-text-primary: #f4f1ea;
+    --pw-text-secondary: #9a9590;
+    --pw-accent-primary: #ff9a1f;          /* arcade amber */
+    --pw-accent-grounded: #34d96a;         /* atomic green / GI glow — citations */
+    --pw-accent-refusal: #ff3b30;          /* saturated red — refusal panels */
+    --pw-accent-mode: #e13bd9;             /* magenta — mode/topic; MudPalette has no slot */
+    --pw-border-quiet: #2a282d;
+
+    /* ── Border-glow tints (alpha-60 over base; consumed by hover/focus
+         pulses per the motion vocabulary) ────────────────────────────── */
+    --pw-border-glow-amber: #ff9a1f99;
+    --pw-border-glow-green: #34d96a99;
+    --pw-border-glow-magenta: #e13bd999;
+    --pw-border-glow-red: #ff3b3099;
+
+    /* ── Font stacks ───────────────────────────────────────────────── */
+    --pw-font-display: "Barlow Condensed", Roboto, sans-serif;
+    --pw-font-body: Inter, Roboto, sans-serif;
+    --pw-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+
+    /* ── Motion durations (signal, not decoration; reduced-motion
+         override below collapses these to 0ms) ────────────────────── */
+    --pw-motion-fast: 150ms;
+    --pw-motion-medium: 300ms;
+    --pw-motion-slow: 600ms;
+
+    /* Tabular figures site-wide — pinball numbers don't jitter. */
+    font-feature-settings: "tnum";
+}
 
 *, *::before, *::after {
     box-sizing: border-box;
@@ -9,5 +50,20 @@
 html, body {
     margin: 0;
     padding: 0;
-    font-family: Roboto, sans-serif;
+    font-family: var(--pw-font-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --pw-motion-fast: 0ms;
+        --pw-motion-medium: 0ms;
+        --pw-motion-slow: 0ms;
+    }
+
+    *, *::before, *::after {
+        animation-duration: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0ms !important;
+        scroll-behavior: auto !important;
+    }
 }
