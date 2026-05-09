@@ -15,6 +15,15 @@
          provider (Microsoft.Agents.AI.Foundry, preview) is referenced
          from Infrastructure since it pulls in Azure.AI.Projects. -->
     <PackageReference Include="Microsoft.Agents.AI" />
+    <!-- Azure.Core is referenced directly (not just transitively) so
+         AiRouter.cs can catch Azure.RequestFailedException (the exception
+         type Foundry / Azure.AI.Projects surfaces for 429 / 503 responses)
+         and inspect its Status + GetRawResponse() header. Application
+         already couples to Microsoft.Agents.AI; Azure.Core is the Azure
+         SDK exception-abstraction layer that sits beneath Foundry. This
+         is the only Azure SDK type used in Application — all other Azure
+         integrations stay in Infrastructure per ADR-0006. -->
+    <PackageReference Include="Azure.Core" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <!-- Microsoft.Extensions.Hosting provides BackgroundService for
          WizardAgentWarmupHostedService (ADR-0026 § 11). Mirrors the

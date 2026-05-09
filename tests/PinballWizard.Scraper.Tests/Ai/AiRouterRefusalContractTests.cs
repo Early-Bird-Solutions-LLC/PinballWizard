@@ -46,6 +46,7 @@ public sealed class AiRouterRefusalContractTests
     [InlineData(RefusalCategory.CostCeilingHit)]
     [InlineData(RefusalCategory.HarmfulContent)]
     [InlineData(RefusalCategory.NoCitation)]
+    [InlineData(RefusalCategory.UpstreamThrottled)]
     public void BuildRefusalText_EveryCategory_ReturnsNonEmptyAndStartsWithIDontKnow(RefusalCategory category)
     {
         var text = AiRouter.BuildRefusalText(category);
@@ -60,7 +61,7 @@ public sealed class AiRouterRefusalContractTests
         // Distinct per-category text is the contract that lets operators
         // identify which gate fired from the user-visible answer alone
         // without cross-referencing telemetry. Distinctness must hold
-        // across all 6 categories — no two categories may share a
+        // across all 7 categories — no two categories may share a
         // refusal message.
         var allCategories = new[]
         {
@@ -70,6 +71,7 @@ public sealed class AiRouterRefusalContractTests
             RefusalCategory.CostCeilingHit,
             RefusalCategory.HarmfulContent,
             RefusalCategory.NoCitation,
+            RefusalCategory.UpstreamThrottled,
         };
 
         var texts = allCategories
