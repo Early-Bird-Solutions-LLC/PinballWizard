@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>PinballWizard.Web</RootNamespace>
+    <AssemblyName>PinballWizard.Web</AssemblyName>
+
+    <!--
+      UserSecretsId scopes secrets to this project for local dev.
+      The Entra External ID config (AzureAd section) arrives in a
+      future PR — this id reserves the slot.
+    -->
+    <UserSecretsId>pinwiz-web-dev</UserSecretsId>
+
+    <!--
+      Aspire publishes this as a Bicep-manifest resource. Disable locked-mode
+      restore for the same reason as AppHost — AppHost's RID-specific binaries
+      cause cross-platform lock-file failures in CI. Web carries no
+      RID-specific content today, but keeping the restore policy aligned
+      simplifies future AppHost Bicep-manifest publish flows.
+      Remove this opt-out if/when the lock-file story for web-SDK projects
+      is clarified.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      MudBlazor is the sole chrome library per ADR-0008. Pin to a
+      .NET 10 / Blazor Web App compatible release.
+    -->
+    <PackageReference Include="MudBlazor" />
+
+    <!--
+      Microsoft.Identity.Web wires Entra External ID auth per ADR-0009.
+      Auth config lives in appsettings.json § AzureAd — intentionally
+      empty in Wave 1; real tenant config arrives in a follow-up PR.
+    -->
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <PackageReference Include="Microsoft.Identity.Web.UI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
+    <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
+    <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

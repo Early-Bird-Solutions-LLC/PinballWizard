@@ -772,6 +772,7 @@
           "Microsoft.Agents.AI": "[1.4.0, )",
           "Microsoft.Bcl.Memory": "[10.0.7, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.7, )",
+          "Microsoft.Extensions.Hosting": "[10.0.7, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )",
           "Microsoft.Extensions.Options": "[10.0.7, )",
           "Microsoft.ML.Tokenizers": "[2.0.0, )",
