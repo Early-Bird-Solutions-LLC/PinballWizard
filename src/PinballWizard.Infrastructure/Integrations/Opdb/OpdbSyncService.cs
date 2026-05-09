@@ -25,6 +25,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
     private readonly OpdbClient _client;
     private readonly IMachineRepository _machines;
     private readonly IIngestionSourceRepository _ingestionSources;
+    private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpdbSyncService> _logger;
 
@@ -33,16 +34,19 @@ public sealed class OpdbSyncService : IOpdbSyncService
         OpdbClient client,
         IMachineRepository machines,
         IIngestionSourceRepository ingestionSources,
+        IMachineTitleLookupRepository titleLookups,
         ILogger<OpdbSyncService> logger,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(machines);
         ArgumentNullException.ThrowIfNull(ingestionSources);
+        ArgumentNullException.ThrowIfNull(titleLookups);
         ArgumentNullException.ThrowIfNull(logger);
         _client = client;
         _machines = machines;
         _ingestionSources = ingestionSources;
+        _titleLookups = titleLookups;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -120,11 +124,28 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(mapped, cancellationToken).ConfigureAwait(false);
+                        // Dual-write the title lookup row per ADR-0025 § 4 —
+                        // machine first (so a failed lookup write leaves the
+                        // machine resolvable via the QueryByTitleAsync
+                        // fallback), then the lookup. Session consistency on
+                        // the same client gives read-your-writes; the next
+                        // Wizard query against this title lands on the
+                        // point-read path.
+                        await UpdateTitleLookupAsync(
+                            mapped.Id,
+                            mapped.PartitionKey,
+                            priorTitle: null,
+                            newTitle: mapped.Title,
+                            now: now,
+                            cancellationToken).ConfigureAwait(false);
                     }
                     inserted++;
                 }
                 else
                 {
+                    // Capture the prior title BEFORE the merge so the rename
+                    // case (OPDB renamed a base record) detects correctly.
+                    var priorTitle = existing.Title;
                     // Merge runs in both modes: in dry-run the mutated `existing`
                     // is discarded by the GC, but performing the merge confirms
                     // the mapping itself doesn't throw on real OPDB data.
@@ -132,6 +153,18 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+                        // Dual-write per ADR-0025 § 4 — the helper handles the
+                        // rename case: when the normalized title changes, the
+                        // (machineId, manufacturer) entry is removed from the
+                        // OLD lookup row (deleting the row if it becomes
+                        // empty) before the new row is upserted.
+                        await UpdateTitleLookupAsync(
+                            existing.Id,
+                            existing.PartitionKey,
+                            priorTitle: priorTitle,
+                            newTitle: existing.Title,
+                            now: now,
+                            cancellationToken).ConfigureAwait(false);
                     }
                     updated++;
                 }
@@ -339,5 +372,120 @@ public sealed class OpdbSyncService : IOpdbSyncService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Maintains the <c>machine_title_lookups</c> materialized view per
+    /// ADR-0025 § 4. Two behaviors:
+    /// <list type="number">
+    ///   <item>Rename — when <paramref name="priorTitle"/> normalizes to
+    ///     a different value than <paramref name="newTitle"/>, the
+    ///     <c>(machineId, manufacturer)</c> entry is removed from the
+    ///     OLD lookup row (and the row deleted if it becomes empty).</item>
+    ///   <item>Always — the NEW lookup row is read-modify-written so this
+    ///     machine's entry is present (and the LastSyncedUtc audit
+    ///     timestamp refreshed).</item>
+    /// </list>
+    /// </summary>
+    /// <remarks>
+    /// Per-step exceptions are caught and logged at warning, not
+    /// rethrown — the canonical machine row has already landed by the
+    /// time this helper runs, and a stale or missing lookup row is
+    /// recoverable by:
+    /// <list type="bullet">
+    ///   <item><c>MachineGroundingTool.GetMachineByTitleAsync</c>'s
+    ///     cross-partition fallback (the pre-PR-5 path, retained as a
+    ///     warning-logged fallback) — the user query still resolves,
+    ///     just slower.</item>
+    ///   <item>The next OPDB sync iteration, which RMW's the row and
+    ///     converges automatically.</item>
+    /// </list>
+    /// Cancellation propagates so a host-stop signal isn't swallowed.
+    /// </remarks>
+    private async Task UpdateTitleLookupAsync(
+        string machineId,
+        string manufacturer,
+        string? priorTitle,
+        string newTitle,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(newTitle))
+        {
+            // OPDB shouldn't ever yield this; the OpdbMachineMapper
+            // filters blank-title records into the `skipped` count
+            // before reaching this helper. Defensive guard so a future
+            // mapper bug doesn't write a lookup row with an empty key.
+            _logger.LogWarning(
+                "OPDB sync: machine {MachineId} has a blank title at lookup-write time — lookup row not updated.",
+                machineId);
+            return;
+        }
+
+        var newNormalized = MachineTitleLookup.NormalizeTitle(newTitle);
+
+        // Rename detection: if the prior normalized title differs, remove
+        // the (machineId, manufacturer) entry from the OLD lookup row.
+        if (!string.IsNullOrWhiteSpace(priorTitle))
+        {
+            var priorNormalized = MachineTitleLookup.NormalizeTitle(priorTitle);
+            if (!string.Equals(priorNormalized, newNormalized, StringComparison.Ordinal))
+            {
+                try
+                {
+                    var oldLookup = await _titleLookups.GetByTitleAsync(priorTitle, cancellationToken).ConfigureAwait(false);
+                    if (oldLookup is not null && oldLookup.RemoveEntry(machineId))
+                    {
+                        if (oldLookup.OpdbIds.Count == 0)
+                        {
+                            await _titleLookups.DeleteByTitleAsync(priorTitle, cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            oldLookup.LastSyncedUtc = now;
+                            await _titleLookups.UpsertAsync(oldLookup, cancellationToken).ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "OPDB sync: failed to clean up old title lookup row for machine {MachineId} (prior title '{PriorTitle}' → new title '{NewTitle}'). The stale entry will produce a logged-warning fallback in MachineGroundingTool until the next sync repopulates the row.",
+                        machineId, priorTitle, newTitle);
+                }
+            }
+        }
+
+        // Upsert the NEW lookup row (read-modify-write so multiple
+        // machines that share a normalized title coexist as parallel
+        // entries on the same row).
+        try
+        {
+            var lookup = await _titleLookups.GetByTitleAsync(newTitle, cancellationToken).ConfigureAwait(false);
+            lookup ??= new MachineTitleLookup
+            {
+                Id = newNormalized,
+                PartitionKey = newNormalized,
+            };
+            lookup.UpsertEntry(machineId, manufacturer);
+            lookup.LastSyncedUtc = now;
+            await _titleLookups.UpsertAsync(lookup, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "OPDB sync: failed to update title lookup row for machine {MachineId} title '{Title}'. The cross-partition fallback in MachineGroundingTool will resolve queries for this title until the next sync repopulates the lookup.",
+                machineId, newTitle);
+        }
     }
 }

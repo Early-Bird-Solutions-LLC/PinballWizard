@@ -29,6 +29,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
     private readonly OpdbClient _client;
     private readonly IMachineRepository _repository = Substitute.For<IMachineRepository>();
     private readonly IIngestionSourceRepository _ingestionSources = Substitute.For<IIngestionSourceRepository>();
+    private readonly IMachineTitleLookupRepository _titleLookups = Substitute.For<IMachineTitleLookupRepository>();
     private static readonly DateTimeOffset NowFixed = new(2026, 5, 2, 12, 0, 0, TimeSpan.Zero);
     private readonly TimeProvider _time = new FakeTimeProvider(NowFixed);
 
@@ -72,7 +73,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
@@ -100,7 +101,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -124,7 +125,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
         _handler.SetResponseFor("/api/export", $"[{nonMachine}]");
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -145,7 +146,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         // Counters reflect what WOULD have been written.
@@ -171,7 +172,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         await _ingestionSources.Received(1).RecordRunResultAsync(
@@ -191,7 +192,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         // Dry-run should NOT touch the IngestionSource document — operator-visible
@@ -213,7 +214,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
             .When(x => x.RecordRunResultAsync(Arg.Any<string>(), Arg.Any<IngestionSourceRunResult>(), Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("simulated cosmos hiccup"));
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
 
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
@@ -237,7 +238,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(simulatedFailure);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None));
@@ -275,7 +276,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -318,7 +319,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
             .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
@@ -352,7 +353,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -397,7 +398,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.AliasesAppended);
@@ -430,7 +431,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.AliasesAppended);
@@ -473,7 +474,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
             .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         var snapshot = $"AliasesAppended={result.AliasesAppended} AliasesOrphaned={result.AliasesOrphaned} Skipped={result.Skipped} Inserted={result.Inserted}";
@@ -499,7 +500,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
         _handler.SetResponseFor("/api/export", $"[{aliasWithoutManufacturer}]");
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -540,7 +541,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
                 return m;
             });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(3, result.Fetched);
@@ -563,7 +564,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
             .Returns(_ => lastUpserted);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         Assert.Equal(1, result.Inserted);
@@ -573,6 +574,174 @@ public sealed class OpdbSyncServiceTests : IDisposable
         // The load-bearing assertion: NO writes occur in dry-run mode for
         // either pass, even though the alias would have appended an edition.
         await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── ADR-0025 § 4 dual-write ──────────────────────────────────────────
+    // PR 5 of the Cosmos for User Delight track adds a dual-write of the
+    // machine_title_lookups materialized view alongside every base-machine
+    // upsert. Tests below pin the four operationally-load-bearing
+    // behaviors: (a) insert-path writes a lookup row; (b) update-path
+    // with same normalized title leaves prior lookup row untouched
+    // structurally; (c) rename-path moves the entry from old to new
+    // lookup row, deleting the old row when it becomes empty; (d) dry-run
+    // does NOT touch the lookup repo at all (matches the existing
+    // dry-run-doesn't-write-machines invariant).
+
+    [Fact]
+    public async Task SyncAsync_NewMachine_DualWritesTitleLookup()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+        // Lookup repo returns null on first call (no existing row), so
+        // the helper creates a new row.
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Lookup row was upserted with the normalized title.
+        await _titleLookups.Received(1).UpsertAsync(
+            Arg.Is<MachineTitleLookup>(l =>
+                l.Id == "stranger things"
+                && l.PartitionKey == "stranger things"
+                && l.OpdbIds.Contains("GRBN-MQR4P")
+                && l.Manufacturers.Contains("stern")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_RenameTitle_RemovesEntryFromOldLookupRow()
+    {
+        // OPDB renames a machine: existing record had Title="Old Name",
+        // new export carries name="New Name (Pro)" common_name="New Name".
+        // Helper must remove the entry from the old normalized title's
+        // lookup row AND upsert the new normalized title's lookup row.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "New Name (Pro)", commonName: "New Name")));
+
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Old Name",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        // Old lookup row exists with our machine + a sibling.
+        var oldLookup = new MachineTitleLookup
+        {
+            Id = "old name",
+            PartitionKey = "old name",
+        };
+        oldLookup.UpsertEntry("GRBN-MQR4P", "stern");
+        oldLookup.UpsertEntry("GRBN-OTHER", "jjp");
+        _titleLookups.GetByTitleAsync("Old Name", Arg.Any<CancellationToken>()).Returns(oldLookup);
+        // New lookup row doesn't exist yet.
+        _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Old row was upserted (sibling entry remains; our entry removed).
+        await _titleLookups.Received(1).UpsertAsync(
+            Arg.Is<MachineTitleLookup>(l =>
+                l.Id == "old name"
+                && !l.OpdbIds.Contains("GRBN-MQR4P")
+                && l.OpdbIds.Contains("GRBN-OTHER")),
+            Arg.Any<CancellationToken>());
+
+        // New row was upserted with our entry.
+        await _titleLookups.Received(1).UpsertAsync(
+            Arg.Is<MachineTitleLookup>(l =>
+                l.Id == "new name"
+                && l.OpdbIds.Contains("GRBN-MQR4P")
+                && l.Manufacturers.Contains("stern")),
+            Arg.Any<CancellationToken>());
+
+        // Old row was NOT deleted (sibling remains).
+        await _titleLookups.DidNotReceive().DeleteByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_RenameTitle_LastEntry_DeletesOldLookupRow()
+    {
+        // Edge case: the rename leaves the old normalized title's row
+        // empty (no other machines shared the title). The helper deletes
+        // the row instead of upserting an empty list.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "New Name (Pro)", commonName: "New Name")));
+
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Old Name",
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var oldLookup = new MachineTitleLookup { Id = "old name", PartitionKey = "old name" };
+        oldLookup.UpsertEntry("GRBN-MQR4P", "stern"); // only entry
+        _titleLookups.GetByTitleAsync("Old Name", Arg.Any<CancellationToken>()).Returns(oldLookup);
+        _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Old row was deleted (would have been empty otherwise).
+        await _titleLookups.Received(1).DeleteByTitleAsync("Old Name", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_DryRun_DoesNotTouchLookupRepo()
+    {
+        // Dry-run must NOT mutate the lookup container. Matches the
+        // existing dry-run-doesn't-touch-machines invariant.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
+
+        await _titleLookups.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default);
+        await _titleLookups.DidNotReceiveWithAnyArgs().DeleteByTitleAsync(default!, default);
+        await _titleLookups.DidNotReceiveWithAnyArgs().GetByTitleAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task SyncAsync_LookupUpsertThrows_LogsAndContinues()
+    {
+        // Resilience: a transient lookup-write failure must NOT abort
+        // the OPDB sync. The machine row already landed; the cross-
+        // partition fallback in MachineGroundingTool keeps queries
+        // working until the next sync repopulates the row.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        _titleLookups.UpsertAsync(Arg.Any<MachineTitleLookup>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("simulated lookup write failure"));
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Sync completed despite the lookup failure.
+        Assert.Equal(1, result.Inserted);
+        await _repository.Received(1).UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
     }
 
     private static string MachineJson(string opdbId, string manufacturer, string name, string commonName) =>

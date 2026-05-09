@@ -152,6 +152,16 @@ public static class ServiceCollectionExtensions
             return new IngestionSourceRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<IngestionSourceRepository>>());
         });
 
+        // Title→OPDB-ID lookup for the user-delight critical path per
+        // ADR-0025 § 4. Inherits metering from `CosmosRepository<T>` so
+        // every point-read here lands on `pinwiz.cosmos.*` tagged
+        // `container=machine_title_lookups`.
+        services.AddSingleton<IMachineTitleLookupRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "machine_title_lookups");
+            return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
+        });
+
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
         // cost off the first user query. Failure is `Warning` not throw;
         // the health check below is the canonical reachability signal.

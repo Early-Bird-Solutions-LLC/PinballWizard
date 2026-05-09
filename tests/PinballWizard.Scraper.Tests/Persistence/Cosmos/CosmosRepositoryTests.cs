@@ -1,9 +1,13 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Text.Json.Serialization;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Observability;
 using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
@@ -292,11 +296,15 @@ public sealed class CosmosRepositoryTests
     // Helpers
     // ------------------------------------------------------------------------
 
-    private static ItemResponse<TItem> MakeItemResponse<TItem>(TItem? resource, HttpStatusCode statusCode)
+    private static ItemResponse<TItem> MakeItemResponse<TItem>(
+        TItem? resource,
+        HttpStatusCode statusCode,
+        double requestCharge = 0)
     {
         var response = Substitute.For<ItemResponse<TItem>>();
         response.Resource.Returns(resource!);
         response.StatusCode.Returns(statusCode);
+        response.RequestCharge.Returns(requestCharge);
         return response;
     }
 
@@ -342,10 +350,12 @@ public sealed class CosmosRepositoryTests
     private sealed class FakeFeedResponse<TItem> : FeedResponse<TItem>
     {
         private readonly IReadOnlyList<TItem> _items;
+        private readonly double _requestCharge;
 
-        public FakeFeedResponse(IReadOnlyList<TItem> items)
+        public FakeFeedResponse(IReadOnlyList<TItem> items, double requestCharge = 0)
         {
             _items = items;
+            _requestCharge = requestCharge;
         }
 
         public override int Count => _items.Count;
@@ -354,7 +364,7 @@ public sealed class CosmosRepositoryTests
         public override IEnumerable<TItem> Resource => _items;
         public override HttpStatusCode StatusCode => HttpStatusCode.OK;
         public override CosmosDiagnostics Diagnostics => null!;
-        public override double RequestCharge => 0;
+        public override double RequestCharge => _requestCharge;
         public override string? ActivityId => null;
         public override string? ETag => null;
         public override string? IndexMetrics => null;

@@ -38,7 +38,7 @@ public sealed class MachineGroundingToolTests
         repo.QueryByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(machine));
 
-        var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
 
         Assert.NotNull(result);
@@ -61,7 +61,7 @@ public sealed class MachineGroundingToolTests
         repo.QueryByTitleAsync("nonexistent", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<Machine>());
 
-        var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("nonexistent", CancellationToken.None);
 
         Assert.Null(result);
@@ -72,7 +72,7 @@ public sealed class MachineGroundingToolTests
     {
         var repo = Substitute.For<IMachineRepository>();
 
-        var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync(string.Empty, CancellationToken.None);
 
         Assert.Null(result);
@@ -84,7 +84,7 @@ public sealed class MachineGroundingToolTests
     {
         var repo = Substitute.For<IMachineRepository>();
 
-        var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("   ", CancellationToken.None);
 
         Assert.Null(result);
@@ -101,18 +101,145 @@ public sealed class MachineGroundingToolTests
         repo.QueryByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(first, second));
 
-        var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("GRBN-MQR4P", result!.OpdbId);
     }
 
+    // ── ADR-0025 § 4 point-read path ─────────────────────────────────────
+    // PR 5 of the Cosmos for User Delight track replaces the cross-
+    // partition `STRINGEQUALS` query with a two-point-read path: first
+    // the `machine_title_lookups` materialized view, then `machines`
+    // by (opdb_id, manufacturer). The cross-partition query survives as
+    // a logged-warning fallback for the unmigrated-lookup case.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_LookupHit_UsesPointReadAndDoesNotQueryFallback()
+    {
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
+        };
+        lookup.UpsertEntry("GRBN-MQR4P", "stern");
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
+            .Returns(NewMachine("GRBN-MQR4P", "Foo Fighters", 2023));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-MQR4P", result!.OpdbId);
+        // Point-read path bypasses QueryByTitleAsync entirely.
+        repo.DidNotReceiveWithAnyArgs().QueryByTitleAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_LookupHitButMachineMissing_FallsBackAndStillResolves()
+    {
+        // Stale lookup — the lookup row points at a machine that no
+        // longer exists in the `machines` container. The tool must
+        // fall through to the cross-partition fallback so the user
+        // query still resolves; the next OPDB sync will fix the row.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Stranger Things"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Stranger Things"),
+        };
+        lookup.UpsertEntry("GRBN-STALE", "stern");
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Stranger Things", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        // The lookup-pointed-at machine is gone (point-read returns null).
+        repo.GetByOpdbIdAsync("GRBN-STALE", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+        // The fallback cross-partition query still finds a (different) match.
+        var current = NewMachine("GRBN-CURRENT", "Stranger Things", 2024);
+        repo.QueryByTitleAsync("Stranger Things", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(current));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stranger Things", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-CURRENT", result!.OpdbId);
+        repo.Received(1).QueryByTitleAsync("Stranger Things", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_LookupMissing_FallsBackToCrossPartitionQuery()
+    {
+        // Lookup row doesn't exist (post-deploy backfill pending, or a
+        // transient lookup-write failure during OPDB sync). The tool
+        // must still resolve the answer via the fallback path.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Godzilla", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(NewMachine("GRBN-GODZ", "Godzilla", 2021)));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-GODZ", result!.OpdbId);
+        repo.Received(1).QueryByTitleAsync("Godzilla", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_LookupHitWithCollision_ReturnsFirstEntry()
+    {
+        // Title collisions (e.g. multiple "Godzilla" releases) are
+        // stored as parallel entries on the same row. The tool returns
+        // the first entry's machine, matching the existing first-hit
+        // semantics from the cross-partition query path.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Godzilla"),
+        };
+        lookup.UpsertEntry("GRBN-G1995", "sega");
+        lookup.UpsertEntry("GRBN-G2021", "stern");
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GRBN-G1995", "sega", Arg.Any<CancellationToken>())
+            .Returns(NewMachine("GRBN-G1995", "Godzilla", 1995));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-G1995", result!.OpdbId);
+        // Only the first entry's GetByOpdbIdAsync should fire — no
+        // second-entry follow-up unless the first one was missing.
+        await repo.DidNotReceive().GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public void Ctor_NullRepository_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new MachineGroundingTool(null!, NullLogger<MachineGroundingTool>.Instance));
+            new MachineGroundingTool(null!, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance));
+    }
+
+    [Fact]
+    public void Ctor_NullTitleLookups_Throws()
+    {
+        var repo = Substitute.For<IMachineRepository>();
+        Assert.Throws<ArgumentNullException>(() =>
+            new MachineGroundingTool(repo, null!, NullLogger<MachineGroundingTool>.Instance));
     }
 
     [Fact]
@@ -120,7 +247,7 @@ public sealed class MachineGroundingToolTests
     {
         var repo = Substitute.For<IMachineRepository>();
         Assert.Throws<ArgumentNullException>(() =>
-            new MachineGroundingTool(repo, null!));
+            new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), null!));
     }
 
     // ── pinwiz.ai.tool_duration_ms emission ──────────────────────────────
@@ -139,7 +266,7 @@ public sealed class MachineGroundingToolTests
         var samples = CollectToolDurationSamples(out var listener);
         using (listener)
         {
-            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
             await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
         }
 
@@ -160,7 +287,7 @@ public sealed class MachineGroundingToolTests
         var samples = CollectToolDurationSamples(out var listener);
         using (listener)
         {
-            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
             var result = await tool.GetMachineByTitleAsync("nonexistent", CancellationToken.None);
             Assert.Null(result);
         }
@@ -179,7 +306,7 @@ public sealed class MachineGroundingToolTests
         var samples = CollectToolDurationSamples(out var listener);
         using (listener)
         {
-            var tool = new MachineGroundingTool(repo, NullLogger<MachineGroundingTool>.Instance);
+            var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
             await tool.GetMachineByTitleAsync("   ", CancellationToken.None);
         }
 

@@ -291,6 +291,36 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents where the reconcile pass detected drift between `rag_index_state` and AI Search. Tagged with `drift_type`: `missing` (AI Search has zero chunks for the document_id — full write loss); `count_mismatch` (AI Search has a different chunk count than recorded — partial write loss). A non-zero rate over multiple deploys is the canonical alert: the indexer isn't durably persisting every chunk, and the gap won't self-heal without an operator-driven re-ingest.");
 
+    // ── Cosmos repository operations (ADR-0025 § 8) ──────────────────────
+    // Emitted at the boundary of every `IRepository<T>` SDK call inside
+    // `CosmosRepository<T>` (and from `MachineRepository.QueryByTitleAsync`
+    // until PR 5 replaces it with a point-read against
+    // `machine_title_lookups`). Both instruments carry the same two
+    // tags: `container` (the Cosmos container name) + `operation`
+    // (`read` | `query` | `upsert` | `delete`).
+    //
+    // Architectural note: ADR-0025 § 8 originally framed this emission
+    // as a `MeteredCosmosRepository<T>` decorator (lower coupling).
+    // PR 4 deviated to inline emission inside `CosmosRepository<T>`
+    // because `IRepository<T>` is Cosmos-agnostic and does NOT surface
+    // `ResponseMessage.RequestCharge` — a decorator over that interface
+    // could capture wall-clock duration but not RU. The inline-helper
+    // pattern (`ExecuteWithMetricsAsync` in `CosmosRepository<T>`)
+    // captures both at the actual SDK boundary, with the helper exposed
+    // `protected` so concrete repositories with specialized methods
+    // (e.g. `MachineRepository.QueryByTitleAsync`) can wrap their own
+    // SDK calls without re-implementing the boundary capture.
+
+    public static readonly Histogram<double> CosmosRuCharge = Meter.CreateHistogram<double>(
+        "pinwiz.cosmos.ru_charge",
+        unit: "{ru}",
+        description: "Cosmos request units consumed by a single SDK call from `CosmosRepository<T>` (or a concrete subclass's specialized method). Tagged with `container` (the Cosmos container name) + `operation` (`read` | `query` | `upsert` | `delete`). For streaming queries, one observation is recorded per page from `iterator.ReadNextAsync()` so heavy multi-page queries don't get hidden inside an aggregate. Failed calls (any `CosmosException` other than 404 — 404 is normal flow for `GetByIdAsync`/`DeleteAsync`) emit the SDK-reported `CosmosException.RequestCharge` so RU spent on a failed operation is still surfaced. Drives the §7.1 user-delight RU-cost-dominance revisit trigger (RU per Wizard answer).");
+
+    public static readonly Histogram<double> CosmosQueryDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.cosmos.query_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Cosmos SDK call from `CosmosRepository<T>` (or a concrete subclass's specialized method). Same tags as `pinwiz.cosmos.ru_charge`. For streaming queries, one observation per page so a query that paginates through 10 pages emits 10 samples. Drives the §7.1 user-delight 200ms p95 trigger on the `getMachineByTitle` path; PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

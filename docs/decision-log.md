@@ -30,6 +30,31 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-09 — Title→OPDB-ID materialized view: dual-write + parallel-arrays + Cosmos-id-safe normalization
+
+**Decision:** PR 5 of the Cosmos for User Delight track ships a `machine_title_lookups` Cosmos container as the materialized view backing `MachineGroundingTool.GetMachineByTitleAsync`'s point-read path per [ADR-0025 § 4](adr/0025-cosmos-for-user-delight.md). Three sub-decisions sit below the ADR threshold and are recorded here:
+
+1. **Dual-write from `OpdbSyncService` (single writer + session consistency).** Maintenance pattern is a per-machine dual-write inside the existing pass-1 loop: machine row first, then the lookup row. Failure of the lookup write is caught + logged at warning, NOT propagated — the machine row has already landed and the cross-partition fallback in `MachineGroundingTool` keeps queries working until the next sync repopulates the row. Rename detection captures `existing.Title` BEFORE `OpdbMachineMapper.MergeOpdbFieldsInto` runs, then if the normalized prior title differs from the new normalized title, removes the entry from the OLD lookup row (deleting the row when it becomes empty).
+2. **Parallel-arrays `opdbIds: string[]` + `manufacturers: string[]` over a list of nested objects.** Title collisions (two machines that normalize to the same title — `Godzilla` is the canonical case) get a single lookup row with parallel index-aligned arrays. The entity exposes `UpsertEntry(opdbId, manufacturer)` / `RemoveEntry(opdbId)` helpers so callers can't accidentally desynchronize the two lists. Trade-off: parallel arrays are lighter on the Cosmos wire format (smaller doc per machine), but the C# API needs the helpers to keep the invariant. The list-of-records alternative would be cleaner C# but spends extra bytes per row and requires a custom `JsonConverter` to avoid leaking the .NET shape into the wire format.
+3. **Cosmos-id-safe normalization: lowercase + trim + escape `/`, `\`, `?`, `#` to `_`.** Cosmos document ids reject those four characters; partition-key values accept them but we want `id == partitionKey value` so reads are pure point-lookups with no secondary index. The substitution is one-way (no reverse transform) — the canonical title lives on `Machine.Title`; the lookup never needs to reconstruct the original. Two distinct titles that collide under the substitution (e.g., `AC/DC` vs `AC_DC`) are stored as two entries on the same row, which is the same collision shape the schema already supports for genuine same-title collisions.
+
+**Alternatives considered:**
+
+- **Change-Feed-driven projection from `machines` → `machine_title_lookups`** (instead of dual-write). Rejected for now: a single projection doesn't earn the Change Feed processor's complexity (lease container, hosted service, replay handling). When a 2nd `machines` materialized view lands (Phase 4.5+), switch to Change-Feed-driven so the writer doesn't need to know about every projection. Documented as a revisit trigger in ADR-0025 § 1.
+- **Composite index on `c.title` in `machines`** (cheaper to ship; no second container). Rejected — still cross-partition, just faster cross-partition. ~10-20ms savings vs ~50-145ms with the lookup container. Doesn't earn the Wizard answer flow's latency budget.
+- **Hash the title to derive the id** (sidesteps the forbidden-character question). Rejected — unreadable in Data Explorer; debugging a "why does title X resolve to row Y?" question requires re-running the hash. The substitution-based normalization keeps the row keys human-readable.
+- **List of `MachineTitleLookupEntry` records** (cleaner C# than parallel arrays). Rejected per the rationale in sub-decision 2 above.
+
+**Rationale:** Dual-write is the simplest pattern that works for a single writer; the more sophisticated Change-Feed-driven projection earns its keep when there are multiple projections to keep in sync, not for one. Parallel arrays match the wire format the plan specified and keep the doc size minimal. Cosmos-id-safe normalization is the smallest deviation from "lowercase + trim" that makes `id == partitionKey value` always valid.
+
+**Revisit when:**
+
+- A 2nd materialized view off `machines` lands → switch this projection AND the new one to Change-Feed-driven, with the W3-2 hosted service abstraction handling lease ownership.
+- A title-collision case surfaces in eval data with semantic ambiguity the agent can't resolve from the first entry → consider returning up-to-N matches from `MachineGroundingTool` instead of just the first.
+- A future analytic query against the lookup container by raw title (not normalized) → the one-way substitution would prevent reconstruction; would need to add a `rawTitles: string[]` field. Defer until such a query actually emerges.
+
+**Related:** ADR-0025 § 4, [`MachineTitleLookup`](../src/PinballWizard.Core/Domain/MachineTitleLookup.cs), [`MachineTitleLookupRepository`](../src/PinballWizard.Infrastructure/Persistence/Cosmos/MachineTitleLookupRepository.cs), [`OpdbSyncService.UpdateTitleLookupAsync`](../src/PinballWizard.Infrastructure/Integrations/Opdb/OpdbSyncService.cs)
+
 ## 2026-05-08 — Latest .NET / C# 14 features audit; collection-expression sweep
 
 **Decision:** Audit the codebase for adoption of the latest stable .NET 10 / C# 14 language and library features. Two material findings, one obvious-win modernization landed, the rest of the codebase already on the current idiom.
