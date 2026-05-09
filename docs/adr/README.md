@@ -36,6 +36,7 @@ negative) it carries.
 | [0023](0023-citation-required-guardrail.md) | Citation-required guardrail — refuse when no citation can be attached | Accepted |
 | [0024](0024-two-stage-reranking.md) | Two-stage re-ranking — AI Search semantic ranker now, cross-encoder layer deferred behind H3 gate | Accepted |
 | [0025](0025-cosmos-for-user-delight.md) | Cosmos for User Delight — locked client options + selective indexing + point-read over cross-partition + observability + 5-layer enforcement | Accepted |
+| [0026](0026-user-delight-frontend-and-streaming.md) | User Delight Frontend and Streaming — Blazor Web App + SSE + dual `IAiRouter` contract + MudBlazor strict + plural recovery + pinball-themed degradation | Accepted |
 
 ## Conventions
 

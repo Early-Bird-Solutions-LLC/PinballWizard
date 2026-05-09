@@ -1,6 +1,6 @@
 ---
 name: local-review
-description: Run a structured pre-push code review of the current branch's diff against main. Produces a verdict-tagged critique (✅/⚠️/🔴) covering design, drift, error handling, security smells, and test quality. Runs BEFORE the 7-item PR self-audit checklist. Invoke any time you are about to push a non-trivial PR.
+description: Run a structured pre-push code review of the current branch's diff against main. Produces a verdict-tagged critique (✅/⚠️/🔴) covering design, drift, error handling, security smells, and test quality. Runs BEFORE the 9-item PR self-audit checklist. Invoke any time you are about to push a non-trivial PR.
 ---
 
 # /local-review — Pre-push code review
@@ -9,7 +9,7 @@ description: Run a structured pre-push code review of the current branch's diff 
 
 Before pushing **any** PR that adds production code (new files, new public API, new behavior). Doc-only PRs and pure dependency bumps may skip.
 
-This skill is **step 0** of the PR self-audit flow defined in `CLAUDE.md` § PR self-audit. The 7-item mechanical checklist runs after this — it catches dead config and identity issues; this skill catches design, architecture, and drift issues that a checklist cannot.
+This skill is **step 0** of the PR self-audit flow defined in `CLAUDE.md` § PR self-audit. The 9-item mechanical checklist runs after this — it catches dead config and identity issues; this skill catches design, architecture, and drift issues that a checklist cannot.
 
 ## What it does
 
@@ -19,7 +19,7 @@ Spawns a `general-purpose` agent with a structured review prompt against the sta
 - **Fix or defer** ⚠️ minor findings (defer must include a one-line justification)
 - **Acknowledge** ✅ no-concerns categories (no action needed)
 
-After the review, run the 7-item self-audit (mechanical preconditions), then commit and push.
+After the review, run the 9-item self-audit (mechanical preconditions), then commit and push.
 
 ## How to invoke
 
@@ -164,6 +164,41 @@ problems. If you find none of consequence, say so explicitly.
       → ⚠️ (wastes a round-trip + RU per write).
     - New container without a documented TTL decision (set OR
       explicitly null with rationale) → ⚠️.
+
+12. **User-Delight surface conformance** (when the PR adds a Razor
+    component, modifies `WizardAnswer` / `Citation` / `RefusalDetail` /
+    `AnswerChunk`, touches the SSE streaming endpoint, or changes a
+    refusal text or recovery payload): verify against
+    [ADR-0026](docs/adr/0026-user-delight-frontend-and-streaming.md).
+    Specific checks:
+    - Refusal recovery payload renders fewer than the locked plurality
+      threshold (≥3 for marketplace categories, ≥2 for machine-ref
+      categories per `feedback_destination_plurality.md`) → 🔴
+      (favors a single venue; re-litigates the
+      avoid-appearance-of-favoritism posture).
+    - New `Citation` writer that does NOT populate `LastScrapedUtc` +
+      `RelevanceScore` from the underlying `SearchCorpusHit` → ⚠️
+      (DTO-level field-dropping; the retrieval pipeline already
+      computes these — no new index work).
+    - Streaming endpoint code path that can return WITHOUT emitting a
+      final `Final` chunk (refusal-only paths, exception paths) → 🔴
+      (clients depend on `Final` arrival; missing it leaves the stream
+      open and the UI in `Streaming` state forever).
+    - `Refusal` chunk emitted WITHOUT a subsequent `Final` chunk → 🔴
+      (the refusal-supersedes-text UX rule requires `Final` to close
+      the stream so the client knows discard-prior-text is final).
+    - New custom (non-MudBlazor) Razor component outside the four
+      locked delight surfaces (`WizardAnswerStream`, `RefusalPanel`,
+      `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`) → ⚠️
+      (re-litigates [ADR-0008](docs/adr/0008-mudblazor-strict.md);
+      surface for explicit reconfirmation before merging).
+    - New Razor component without a bUnit smoke test → ⚠️
+      (component coverage gates the User-Delight surface from drift).
+    - SSE event payload that is NOT an `AnswerChunk`-shaped JSON
+      (e.g., raw markdown deltas, plain strings) → 🔴 (couples wire
+      format to render format; loses the discriminated-union benefit).
+    - Auto-playing audio asset / non-muted-by-default `SoundController`
+      → 🔴 (showcase prudence; ADR-0026 § Explicitly NOT adopted).
 
 For each 🔴 finding, give a specific recommended fix (not just "this
 is broken"). For ⚠️ findings, give the fix plus the cost-of-deferring
