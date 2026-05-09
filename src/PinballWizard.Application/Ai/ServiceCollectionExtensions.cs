@@ -49,6 +49,7 @@ public static class ServiceCollectionExtensions
         // Azure.AI.Projects for evaluator-definition registration).
         services.TryAddSingleton<CitationPrecisionEvaluator>();
         services.TryAddSingleton<CitationRecallEvaluator>();
+        services.TryAddSingleton<CitationCoverageEvaluator>();
         services.TryAddSingleton<SubagentAccuracyEvaluator>();
         services.TryAddSingleton<RefusalCorrectnessEvaluator>();
 

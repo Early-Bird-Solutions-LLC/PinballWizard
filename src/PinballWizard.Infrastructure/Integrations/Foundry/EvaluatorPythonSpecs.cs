@@ -20,6 +20,7 @@ internal static class EvaluatorPythonSpecs
         ArgumentException.ThrowIfNullOrWhiteSpace(evaluatorNamespace);
         yield return $"{evaluatorNamespace}.{CitationPrecisionEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{CitationRecallEvaluator.EvaluatorName}";
+        yield return $"{evaluatorNamespace}.{CitationCoverageEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{SubagentAccuracyEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{RefusalCorrectnessEvaluator.EvaluatorName}";
     }
@@ -54,5 +55,19 @@ def evaluate(predicted_sub_agent, expected_sub_agent, **_):
     public const string RefusalCorrectnessPython = """
 def evaluate(predicted_refusal, acceptable_refusal, **_):
     return {"score": 1.0 if bool(predicted_refusal) == bool(acceptable_refusal) else 0.0}
+""";
+
+    public const string CitationCoveragePython = """
+def evaluate(answer_text, predicted, **_):
+    cites = list(predicted or [])
+    if not cites:
+        return {"score": 0.0}
+    text = (answer_text or "").strip()
+    if not text:
+        return {"score": 0.0}
+    paragraphs = [p for p in text.replace("\r\n", "\n").split("\n\n") if p]
+    n = max(len(paragraphs), 1)
+    coverage = len(cites) / n
+    return {"score": min(coverage, 1.0)}
 """;
 }
