@@ -50,6 +50,13 @@ namespace PinballWizard.Application.Ai;
 //          (AnswerAsync + AnswerStreamingAsync) with an explaining comment;
 //          duplication is minimal and avoids a helper that would leak
 //          streaming state across an async boundary.
+//   Wave 2 PR-R2 — IRefusalRecoveryService injected into ctor. Refusal paths
+//          in ApplyPostAgentGuardrailsAsync call BuildRecoveryAsync to
+//          populate RefusalDetail.RelatedMachines (up to 3 machines ranked
+//          by token-overlap score). Cache-hit replay paths return before
+//          ApplyPostAgentGuardrailsAsync is reached and therefore never
+//          call recovery — the cached RefusalDetail already carries the
+//          RelatedMachines from the original miss path.
 public sealed class AiRouter : IAiRouter
 {
     private readonly IFoundryAgentFactory _agentFactory;
@@ -60,6 +67,7 @@ public sealed class AiRouter : IAiRouter
     private readonly IAiCostCalculator _costCalculator;
     private readonly ToolTraceCitationExtractor _toolTraceExtractor;
     private readonly RegexLegacyCitationExtractor _regexLegacyExtractor;
+    private readonly IRefusalRecoveryService _refusalRecovery;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
 
@@ -72,6 +80,7 @@ public sealed class AiRouter : IAiRouter
         IAiCostCalculator costCalculator,
         ToolTraceCitationExtractor toolTraceExtractor,
         RegexLegacyCitationExtractor regexLegacyExtractor,
+        IRefusalRecoveryService refusalRecovery,
         IOptions<AiFoundryOptions> options,
         ILogger<AiRouter> logger)
     {
@@ -83,6 +92,7 @@ public sealed class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(costCalculator);
         ArgumentNullException.ThrowIfNull(toolTraceExtractor);
         ArgumentNullException.ThrowIfNull(regexLegacyExtractor);
+        ArgumentNullException.ThrowIfNull(refusalRecovery);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -94,6 +104,7 @@ public sealed class AiRouter : IAiRouter
         _costCalculator = costCalculator;
         _toolTraceExtractor = toolTraceExtractor;
         _regexLegacyExtractor = regexLegacyExtractor;
+        _refusalRecovery = refusalRecovery;
         _options = options.Value;
         _logger = logger;
     }
@@ -705,17 +716,17 @@ public sealed class AiRouter : IAiRouter
         string wizardModel,
         CancellationToken cancellationToken)
     {
-        // The method is declared async so callers can await it uniformly
-        // and future guardrail steps (e.g., async confidence calibration,
-        // Cosmos session-state writes) can be added without changing the
-        // call sites. No async work exists today, so we yield immediately.
-        // cancellationToken is passed through for the same forward-compat
-        // reason — when the first async guardrail lands it will flow
-        // naturally. normalized is used for log correlation by callers;
-        // it is not consumed here but is kept in the signature to keep the
-        // method's contract complete.
-        _ = normalized;
-        await Task.Yield();
+        // Wave 2 PR-R2: IRefusalRecoveryService.BuildRecoveryAsync is called on
+        // all three refusal paths below (CostCeilingHit, confidence-threshold,
+        // NoCitation) using `normalized` to score token-overlap. The method is
+        // best-effort — a null return means "no recovery available" and is safe
+        // to pass through to BuildRefusalDetail unchanged.
+        //
+        // Cache-hit replay does NOT call IRefusalRecoveryService — both
+        // AnswerAsync and AnswerStreamingAsync return before reaching this
+        // method on a cache hit. The cached WizardAnswer already carries a
+        // RefusalDetail with RelatedMachines populated from the original miss
+        // path.
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -777,6 +788,10 @@ public sealed class AiRouter : IAiRouter
                 wizardModel,
                 subAgentUsed);
 
+            var costCeilingRecovery = await _refusalRecovery
+                .BuildRecoveryAsync(normalized, RefusalCategory.CostCeilingHit, cancellationToken)
+                .ConfigureAwait(false);
+
             return new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.CostCeilingHit),
                 Citations: [],
@@ -787,7 +802,7 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.CostCeilingHit,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null));
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null, recovery: costCeilingRecovery));
         }
 
         var citations = _toolTraceExtractor.Extract(response);
@@ -834,6 +849,10 @@ public sealed class AiRouter : IAiRouter
                 signals.ModelSelfReported,
                 signals.CitationCoverage);
 
+            var confidenceRecovery = await _refusalRecovery
+                .BuildRecoveryAsync(normalized, category, cancellationToken)
+                .ConfigureAwait(false);
+
             return new WizardAnswer(
                 Text: BuildRefusalText(category),
                 Citations: [],
@@ -844,7 +863,7 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: category,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(category, signals));
+                RefusalDetail: BuildRefusalDetail(category, signals, recovery: confidenceRecovery));
         }
 
         if (citations.Count == 0)
@@ -879,6 +898,10 @@ public sealed class AiRouter : IAiRouter
                 confidence,
                 subAgentUsed);
 
+            var noCitationRecovery = await _refusalRecovery
+                .BuildRecoveryAsync(normalized, RefusalCategory.NoCitation, cancellationToken)
+                .ConfigureAwait(false);
+
             return new WizardAnswer(
                 Text: BuildRefusalText(RefusalCategory.NoCitation),
                 Citations: [],
@@ -889,7 +912,7 @@ public sealed class AiRouter : IAiRouter
                 RefusalCategory: RefusalCategory.NoCitation,
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
-                RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals));
+                RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals, recovery: noCitationRecovery));
         }
 
         // Debug-level (not Info) so per-question log volume stays
@@ -947,19 +970,31 @@ public sealed class AiRouter : IAiRouter
     // ships the shape: Confidence is populated when signals are available
     // (confidence-threshold and NoCitation paths both have signals); the
     // cost-ceiling path has no signals (agent call was not made yet) so
-    // signals is null there. Recovery fields (RelatedMachines,
-    // CommunityResources, MissingWhat, SuggestedRephrase) are Wave 2
-    // PR-R2/R3/R4 responsibilities — null here is correct and expected.
+    // signals is null there.
+    //
+    // Wave 2 PR-R2: the optional `recovery` parameter carries the output of
+    // IRefusalRecoveryService.BuildRecoveryAsync. When non-null, RelatedMachines
+    // is merged from the recovery result; when null (recovery unavailable or
+    // category-unsupported), RelatedMachines stays null. CommunityResources,
+    // MissingWhat, SuggestedRephrase remain Wave 2 PR-R3/R4 responsibilities.
     //
     // `internal` (not private) so RefusalDetailContractTests can pin the
     // per-path breakdown contract without standing up a full AiRouter
     // integration test (which requires a live AIAgent). Mirrors
     // BuildRefusalText's visibility convention.
     internal RefusalDetail BuildRefusalDetailForTest(RefusalCategory category, ConfidenceSignals? signals)
-        => BuildRefusalDetail(category, signals);
+        => BuildRefusalDetail(category, signals, recovery: null);
 
-    private RefusalDetail BuildRefusalDetail(RefusalCategory category, ConfidenceSignals? signals)
+    private RefusalDetail BuildRefusalDetail(
+        RefusalCategory category,
+        ConfidenceSignals? signals,
+        RefusalDetail? recovery = null)
     {
+        // `category` is not yet consumed beyond routing to this method;
+        // reserved for Wave 2 PR-R3/R4 (CommunityResources, MissingWhat)
+        // which will select recovery content based on category.
+        _ = category;
+
         ConfidenceBreakdown? breakdown = null;
         if (signals is not null)
         {
@@ -973,7 +1008,7 @@ public sealed class AiRouter : IAiRouter
 
         return new RefusalDetail(
             Confidence: breakdown,
-            RelatedMachines: null,
+            RelatedMachines: recovery?.RelatedMachines,
             CommunityResources: null,
             MissingWhat: null,
             SuggestedRephrase: null);

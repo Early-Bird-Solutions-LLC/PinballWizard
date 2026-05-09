@@ -474,6 +474,14 @@ public sealed class AiRouterStreamingS3Tests
             PerCallCostCeilingUsdCents = 10,
         });
 
+        // Wave 2 PR-R2: IRefusalRecoveryService returns null for all categories
+        // in these tests — S3 tests focus on first-token metrics, not on
+        // recovery content.
+        var refusalRecovery = Substitute.For<IRefusalRecoveryService>();
+        refusalRecovery
+            .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
+            .Returns((RefusalDetail?)null);
+
         var router = new AiRouter(
             agentFactory,
             cache,
@@ -483,6 +491,7 @@ public sealed class AiRouterStreamingS3Tests
             costCalculator,
             new ToolTraceCitationExtractor(),
             new RegexLegacyCitationExtractor(),
+            refusalRecovery,
             options,
             NullLogger<AiRouter>.Instance);
 

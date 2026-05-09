@@ -39,6 +39,12 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ToolTraceCitationExtractor>();
         services.TryAddSingleton<RegexLegacyCitationExtractor>();
 
+        // Wave 2 PR-R2 recovery service: populates RefusalDetail.RelatedMachines
+        // (up to 3 machines by token-overlap) on refusal answers. Stateless,
+        // singleton. Registered before IAiRouter so the router resolves it on
+        // first construction.
+        services.TryAddSingleton<IRefusalRecoveryService, RefusalRecoveryService>();
+
         services.TryAddSingleton<IAiRouter, AiRouter>();
 
         // Evaluation harness evaluators (ADR-0016). Pure deterministic
