@@ -53,7 +53,12 @@ public sealed record ScrapedDocumentChange(
     string MachineTitle,
     string Manufacturer,
     DocumentType DocumentType,
-    string ContentHash);
+    string ContentHash,
+    // Timeline.LastDownloadedAt from the Phase 1 scraper provenance record.
+    // Threaded to the AI Search index as `last_scraped_utc` in Wave 2 PR-C3.
+    // Nullable because legacy Cosmos documents written before PR-C3 may not
+    // carry this field; the indexer and retriever propagate null gracefully.
+    DateTimeOffset? LastScrapedUtc = null);
 
 // Possible outcomes of one pipeline invocation. Surfaced via telemetry
 // (`pinwiz.rag.changefeed_short_circuit_total{reason}` and

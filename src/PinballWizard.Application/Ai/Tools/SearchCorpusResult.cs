@@ -45,4 +45,14 @@ public sealed record SearchCorpusHit(
     // keyword query that bypassed the semantic re-ranker).
     [JsonIgnore]
     public double? Score { get; init; }
+
+    // Re-threaded from `RetrievedChunk.LastScrapedUtc` in PR-C3. The
+    // [JsonIgnore] attribute is load-bearing for the same reason as Score:
+    // citation freshness is a user-facing signal, not a reasoning input for
+    // the model. The frontend CitationCard reads LastScrapedUtc from
+    // Citation (not from the model's function-result payload) — consistent
+    // with ADR-0026 § 4. Null when the chunk was indexed before PR-C3 or
+    // when the source document's scraper did not record LastDownloadedAt.
+    [JsonIgnore]
+    public DateTimeOffset? LastScrapedUtc { get; init; }
 }

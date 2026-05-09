@@ -292,6 +292,12 @@ public sealed class AiSearchRagIndexer : IRagIndexer
             SectionHeading = chunk.SectionHeading,
             Content = chunk.Text,
             ContentEmbedding = [], // populated post-embed
+            // LastScrapedUtc carries Timeline.LastDownloadedAt from the
+            // Phase 1 scraper provenance record (PR-C3). Null for legacy
+            // chunks indexed before PR-C3 — acceptable per ADR-0025 § 6
+            // (zero-migration-cost: existing chunks update on next
+            // Change Feed re-ingestion; no backfill required).
+            LastScrapedUtc = request.LastScrapedUtc,
         };
     }
 

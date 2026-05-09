@@ -367,6 +367,50 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     // -------------------------------------------------------------------------
+    // PR-C3 Wave 2: LastScrapedUtc threaded from SearchCorpusHit → Citation
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Extract_populates_LastScrapedUtc_from_SearchCorpusHit()
+    {
+        // The citation extractor reads LastScrapedUtc (which is [JsonIgnore]
+        // on SearchCorpusHit so the model never sees it) and threads it onto
+        // Citation.LastScrapedUtc for the frontend CitationCard freshness badge
+        // (ADR-0026 § 4). Uses a real non-default timestamp to confirm the
+        // value flows through — default(DateTimeOffset) would not distinguish
+        // "threaded null" from "threaded zero" bugs.
+        var expectedTs = new DateTimeOffset(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      lastScrapedUtc: expectedTs),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(expectedTs, citation.LastScrapedUtc);
+    }
+
+    [Fact]
+    public void Extract_handles_null_LastScrapedUtc_gracefully()
+    {
+        // Chunks indexed before PR-C3 (or from scrapers that didn't populate
+        // Timeline.LastDownloadedAt) carry null. The extractor must not throw
+        // and must leave Citation.LastScrapedUtc null so the frontend
+        // freshness badge is conditionally rendered rather than showing a
+        // misleading epoch timestamp.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      lastScrapedUtc: null),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Null(citation.LastScrapedUtc);
+    }
+
+    // -------------------------------------------------------------------------
     // PR-C1 Wave 1: Citation DTO widening — SourceType + page anchors
     // -------------------------------------------------------------------------
 
@@ -502,7 +546,8 @@ public sealed class ToolTraceCitationExtractorTests
         string section = "Section",
         int pageStart = 1,
         int pageEnd = 1,
-        double? score = null)
+        double? score = null,
+        DateTimeOffset? lastScrapedUtc = null)
     {
         return new SearchCorpusHit(
             MachineId: machineId,
@@ -516,6 +561,7 @@ public sealed class ToolTraceCitationExtractorTests
             Content: "chunk content")
         {
             Score = score,
+            LastScrapedUtc = lastScrapedUtc,
         };
     }
 

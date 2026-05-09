@@ -49,6 +49,14 @@ public sealed class RagSourceDocument
     [JsonPropertyName("content_hash")]
     public string ContentHash { get; init; } = string.Empty;
 
+    // Timeline.LastDownloadedAt from the Phase 1 scraper provenance record.
+    // Projected from the Cosmos `scraped_documents` payload and threaded
+    // through to the AI Search index as `last_scraped_utc` (Wave 2 PR-C3).
+    // Nullable because legacy documents written before the Phase 1 scraper
+    // populated timeline fields may not carry this field.
+    [JsonPropertyName("last_downloaded_at")]
+    public DateTimeOffset? LastDownloadedAt { get; init; }
+
     [JsonPropertyName("_etag")]
     public string? Etag { get; init; }
 
