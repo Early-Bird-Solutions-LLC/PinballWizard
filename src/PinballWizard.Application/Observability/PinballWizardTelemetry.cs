@@ -133,6 +133,40 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single Foundry function-tool invocation, measured at the tool's outer boundary (input normalization + downstream call + post-processing into the model-facing DTO). Tagged with `tool` (searchCorpus | getMachineByTitle). Pair with `pinwiz.rag.retrieval_duration_ms` to isolate per-tool overhead from retrieval-side latency on the searchCorpus path. Drives the §7.1 architecture-v2 user-delight revisit triggers (200ms p95 structured-records latency for getMachineByTitle, 500ms cold-start for searchCorpus). The brainstorm's `cache_state` tag was dropped: the LRU semantic cache (per ADR-0015) wraps IAiRouter ABOVE the tools, so when a tool fires the cache state is structurally always 'miss-path' — that signal lives on `pinwiz.ai.cache.{hits,misses}` instead.");
 
+    // ── First-token latency (ADR-0026 § 7) ──────────────────────────────
+    // Emitted by AiRouter.AnswerStreamingAsync on the FIRST non-empty
+    // TextDelta yielded to the client — covers both cache-hit replay
+    // (a single TextDelta representing the whole cached answer) and
+    // live-stream paths (the first per-update TextDelta). A refusal that
+    // fires before any TextDelta is recorded with outcome=refusal so
+    // dashboards can distinguish "model never produced text" (slow
+    // orchestration path, possible tool-loop storm) from "model produced
+    // text but guardrail refused post-stream" (which still emits a normal
+    // first-token sample).
+    //
+    // Tags:
+    //   cache_state ∈ { hit, miss } — distinguishes cache-replay latency
+    //     (sub-millisecond; the cached answer is already in memory) from
+    //     live-stream latency (hundreds of milliseconds; includes Foundry
+    //     round-trip + any tool loops). Keeps the two distributions from
+    //     contaminating each other on a single histogram.
+    //   outcome ∈ { streamed, refusal } — present only when the outcome is
+    //     known at emission time. For the refusal-before-TextDelta path
+    //     (429 catch or guardrail fires before any text arrives) this tag
+    //     is set to "refusal"; for normal TextDelta paths it is "streamed"
+    //     (omitted from the tag set when using the default happy path to
+    //     keep cardinality minimal — callers opt in to the "refusal" tag
+    //     explicitly).
+    //
+    // Drives the §7.1 user-delight revisit triggers:
+    //   200ms p95 first-token-ms for structured-records latency.
+    //   500ms cold-start cache trigger.
+
+    public static readonly Histogram<double> AiFirstTokenMs = Meter.CreateHistogram<double>(
+        "pinwiz.ai.first_token_ms",
+        unit: "ms",
+        description: "Time from request to first text-bearing chunk emitted to the client (cache hit replay counts). Tagged with cache_state (hit | miss) and optionally outcome (streamed | refusal). Drives the ADR-0026 §7.1 user-delight revisit triggers: 200ms p95 structured-records latency, 500ms cold-start cache trigger.");
+
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6
     // dashboards aggregate them as a "metric trajectory" surface alongside
