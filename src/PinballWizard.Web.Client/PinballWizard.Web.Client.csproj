@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <RootNamespace>PinballWizard.Web.Client</RootNamespace>
+    <AssemblyName>PinballWizard.Web.Client</AssemblyName>
+
+    <!--
+      NoDefaultLaunchSettingsFile: this project is consumed by the Server
+      (PinballWizard.Web), not launched directly; suppress the empty
+      launchSettings.json the SDK would otherwise scaffold.
+    -->
+    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+
+    <!--
+      StaticWebAssetProjectMode=Default: required for the auto-mode WASM
+      client so the Server's static-asset pipeline correctly discovers
+      and serves the WASM framework artifacts. See the official Blazor
+      Web App with Auto interactivity template.
+    -->
+    <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
+
+    <!--
+      BlazorDisableThrowNavigationException=true: prevents the WASM
+      runtime from throwing on programmatic navigation that the Server
+      already handled (consistent with the Server project setting).
+    -->
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+
+    <!--
+      Match Web project's posture for the same reason — RID-specific
+      content + Aspire publish workflows interact poorly with locked-mode
+      restore. Re-enable when the lock-file story for WASM SDK projects
+      is clarified.
+    -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.AspNetCore.Components.WebAssembly is NOT implicit in the
+      BlazorWebAssembly SDK — it must be an explicit reference. Required
+      for WebAssemblyHostBuilder and the WASM runtime bootstrap.
+      MudBlazor must be referenced here too so WASM-side rendering of
+      MudBlazor components compiles.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+
+</Project>

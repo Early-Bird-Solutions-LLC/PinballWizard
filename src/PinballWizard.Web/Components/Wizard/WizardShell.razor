@@ -1,0 +1,27 @@
+@* WizardShell — centered layout wrapper for /wizard content.
+ *
+ * Uses MainLayout as the outer chrome (via @layout). Adds a centered
+ * MudContainer with the PinballWizard visual identity tokens so all
+ * /wizard pages share consistent horizontal margins and max-width.
+ *
+ * Wave 2 PR-D-stream mounts WizardAnswerStream inside this shell.
+ * The shell itself is an @page "/"  omitted — it is a layout partial,
+ * not a routable page. Pages that want this layout declare
+ * @layout WizardShell (if they also want a nested centered container).
+ * Alternatively, pages can use @Body directly from MainLayout and
+ * render their own MudContainer — WizardShell is a convenience
+ * partial for /wizard/* pages that all share the same container width.
+ *
+ * Category: chrome wrapper — wraps MudBlazor MudContainer. Not a custom
+ * delight surface in the ADR-0026 § 6 sense.
+ *
+ * ADR-0026  § 1, § 6 — /wizard anonymous, auto-render mode, chrome
+ * ADR-0008  — MudBlazor strict
+ *@
+
+@inherits LayoutComponentBase
+@layout MainLayout
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="wizard-shell py-6">
+    @Body
+</MudContainer>

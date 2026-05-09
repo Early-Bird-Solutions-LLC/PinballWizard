@@ -1,0 +1,42 @@
+@* MainLayout — public Wizard surface chrome.
+ *
+ * Replaces the PR-F0 placeholder. Wraps @Body with the full MudBlazor
+ * chrome: theme tokens, MudLayout, MudAppBar (BrandHeader), MudMainContent.
+ * TiltErrorBoundary wraps @Body so any unhandled render exception displays
+ * the pinball-themed TILT message instead of the framework default.
+ *
+ * Category: chrome wrapper — all layout primitives are MudBlazor (MudLayout,
+ * MudAppBar, MudMainContent). Not a custom delight surface in the
+ * ADR-0026 § 6 sense; serves as the public chrome container.
+ *
+ * AdminLayout uses a separate layout declared explicitly via @layout on each
+ * /admin/* page — no pages in Wave 1 use AdminLayout.
+ *
+ * ADR-0008  — MudBlazor strict for all chrome
+ * ADR-0026  § 1, § 6 — auto-render mode + component strategy
+ *@
+
+@inherits LayoutComponentBase
+
+@using PinballWizard.Web.Components.Theming
+
+<MudThemeProvider Theme="@_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <BrandHeader />
+    </MudAppBar>
+
+    <MudMainContent>
+        <TiltErrorBoundary>
+            @Body
+        </TiltErrorBoundary>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private readonly MudTheme _theme = PinballTheme.Create();
+}

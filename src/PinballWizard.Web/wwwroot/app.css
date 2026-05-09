@@ -1,0 +1,13 @@
+/* PinballWizard.Web — Wave 1 PR-F0 baseline styles.
+   PR-F1 ships MudBlazor theme tokens + WizardShell scoped CSS.
+   Only global resets / body defaults live here. */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: Roboto, sans-serif;
+}

@@ -72,4 +72,15 @@ var storage = builder.AddAzureStorage("storage")
     });
 _ = storage.AddBlobs("blobs");
 
+// Blazor Web App — Wave 1 PR-F0. Wired with a Cosmos reference so
+// Wave 2 PR-L2 (featured_machines lookup) works without an AppHost
+// change. The Web project starts cleanly without Cosmos data in Wave 1
+// (empty /wizard placeholder has no DB queries). See ADR-0026 § 1.
+//
+// NOTE: The Cosmos preview emulator comment at the top of this file
+// documents why WaitFor is not chained here — dependency ordering is
+// handled at the application layer (CosmosBootstrapper.EnsureCreatedAsync).
+_ = builder.AddProject<Projects.PinballWizard_Web>("pinwiz-web")
+    .WithReference(cosmos);
+
 await builder.Build().RunAsync().ConfigureAwait(false);

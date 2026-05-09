@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -312,6 +313,39 @@ public sealed class AiRouter : IAiRouter
 
         _cache.Store(normalized, promptVersion, answer);
         return answer;
+    }
+
+    // Per ADR-0026 § 3. Wave 1 contract: delegates to AnswerAsync (one
+    // round-trip), then emits TextDelta + Final on success, or Refusal +
+    // Final on any refusal path. Guardrails (cache, cost ceiling, confidence
+    // threshold, NoCitation) remain one-shot in AnswerAsync for this wave.
+    // Wave 2 PR-S2 replaces the AnswerAsync call with RunStreamingAsync and
+    // emits per-update TextDelta chunks as they arrive; this method signature
+    // and the AnswerChunk contract are stable across that swap.
+    //
+    // [EnumeratorCancellation] propagates CancellationToken through the
+    // IAsyncEnumerable machinery so callers can cancel mid-iteration
+    // (e.g., user navigates away before Final arrives).
+    public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var answer = await AnswerAsync(question, cancellationToken).ConfigureAwait(false);
+
+        if (answer.IsRefusal)
+        {
+            // Refusal supersedes prior TextDelta per ADR-0026 § 5 UX rule.
+            // Wave 1 emits no TextDelta on refusal paths.
+            yield return new AnswerChunk.Refusal(
+                answer.RefusalCategory ?? RefusalCategory.OutOfScope,
+                answer.Text);
+        }
+        else
+        {
+            yield return new AnswerChunk.TextDelta(answer.Text);
+        }
+
+        yield return new AnswerChunk.Final(answer);
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin
