@@ -118,6 +118,25 @@ public sealed class CosmosOptions
                 ExcludedPaths = ["/*"],
             },
         },
+        // Curated landing-page featured machines per ADR-0026 § Landing surface.
+        // Seeded by --seed-featured-machines from data/seeds/featured_machines.v1.json.
+        // Partition key is /slug (= document id) so every read is a pure point-lookup
+        // with no secondary index — mirrors machine_title_lookups. Selective indexing:
+        // only display_order is indexed (sort key for the landing strip); title and
+        // tagline are display-only, never queried, and excluded to save RU on seed
+        // upserts. No TTL (DefaultTtlSeconds = null): the curated set is static between
+        // deploys and is replaced wholesale by re-running --seed-featured-machines.
+        // Auto-expiring rows would silently break the landing page between seed runs.
+        new()
+        {
+            Name = "featured_machines",
+            PartitionKeyPath = "/slug",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/id/?", "/slug/?", "/display_order/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
         // Phase 4 W3-2 RAG ingestion containers. The hosted-service
         // consumer (`PinballWizard.RagIngestionWorker`) reads the
         // `scraped_documents` change feed, writes lease checkpoints to

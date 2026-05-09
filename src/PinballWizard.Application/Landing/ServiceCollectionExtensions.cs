@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<ISeedQuestionLoader, SeedQuestionLoader>();
+        services.TryAddSingleton<IFeaturedMachineSeedLoader, FeaturedMachineSeedLoader>();
         services.TryAddSingleton<ILandingService, LandingService>();
 
         return services;
