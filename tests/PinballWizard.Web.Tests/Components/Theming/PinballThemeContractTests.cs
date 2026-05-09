@@ -1,0 +1,106 @@
+using PinballWizard.Web.Components.Theming;
+using Xunit;
+
+namespace PinballWizard.Web.Tests.Components.Theming;
+
+// Pins the Modern LCD spec palette + typography to the values in
+// docs/ui/themes/modern-lcd.md § Visual system. The audit at
+// docs/PHASE5-DRIFT-AUDIT.md § 1 lists nine 🔴 token findings that
+// PR-T1 closes; these tests mechanically prevent the palette from
+// drifting back to Material defaults the next time the theme is
+// touched. Any spec change must update both modern-lcd.md AND this
+// test together.
+public sealed class PinballThemeContractTests
+{
+    [Theory]
+    [InlineData("Primary", "#ff9a1f")]            // accent-primary — arcade amber
+    [InlineData("Background", "#0c0b0e")]         // bg-base — warm near-black
+    [InlineData("Surface", "#161519")]            // bg-surface — panel interiors
+    [InlineData("AppbarBackground", "#08070a")]   // recessed header
+    [InlineData("DrawerBackground", "#101015")]
+    [InlineData("TextPrimary", "#f4f1ea")]        // warm off-white
+    [InlineData("TextSecondary", "#9a9590")]
+    [InlineData("Success", "#34d96a")]            // accent-grounded — atomic green
+    [InlineData("Error", "#ff3b30")]              // accent-refusal — saturated red
+    [InlineData("Divider", "#2a282d")]            // border-quiet
+    public void PaletteLight_Pins_ModernLcdSpecValue(string slot, string expectedHex)
+    {
+        var theme = PinballTheme.Create();
+        var actual = slot switch
+        {
+            "Primary" => theme.PaletteLight.Primary.Value,
+            "Background" => theme.PaletteLight.Background.Value,
+            "Surface" => theme.PaletteLight.Surface.Value,
+            "AppbarBackground" => theme.PaletteLight.AppbarBackground.Value,
+            "DrawerBackground" => theme.PaletteLight.DrawerBackground.Value,
+            "TextPrimary" => theme.PaletteLight.TextPrimary.Value,
+            "TextSecondary" => theme.PaletteLight.TextSecondary.Value,
+            "Success" => theme.PaletteLight.Success.Value,
+            "Error" => theme.PaletteLight.Error.Value,
+            "Divider" => theme.PaletteLight.Divider.Value,
+            _ => throw new ArgumentOutOfRangeException(nameof(slot)),
+        };
+
+        // MudColor normalizes to #RRGGBBAA (9 chars, ff alpha when opaque).
+        // The Modern LCD spec is RGB-only (#RRGGBB); compare on RGB.
+        Assert.Equal(expectedHex, actual[..7], ignoreCase: true);
+    }
+
+    [Theory]
+    [InlineData("H1", "700")]   // Spec § Typography: 700 primary for H1–H4 (announcement scales).
+    [InlineData("H2", "700")]
+    [InlineData("H3", "700")]
+    [InlineData("H4", "700")]
+    [InlineData("H5", "500")]   // 500 secondary for H5–H6 (smaller headers).
+    [InlineData("H6", "500")]
+    public void Typography_Display_UsesBarlowCondensed(string scale, string expectedWeight)
+    {
+        var theme = PinballTheme.Create();
+        var family = FontFamilyFor(theme, scale);
+        var weight = FontWeightFor(theme, scale);
+
+        Assert.NotNull(family);
+        Assert.Contains("Barlow Condensed", family);
+        Assert.Contains("Roboto", family);
+        Assert.Equal(expectedWeight, weight);
+    }
+
+    [Theory]
+    [InlineData("Default")]
+    [InlineData("Body1")]
+    [InlineData("Body2")]
+    public void Typography_Body_UsesInter(string scale)
+    {
+        var theme = PinballTheme.Create();
+        var family = FontFamilyFor(theme, scale);
+
+        Assert.NotNull(family);
+        Assert.Contains("Inter", family);
+        Assert.Contains("Roboto", family);
+    }
+
+    private static string[]? FontFamilyFor(MudBlazor.MudTheme theme, string scale) => scale switch
+    {
+        "Default" => theme.Typography.Default.FontFamily,
+        "H1" => theme.Typography.H1.FontFamily,
+        "H2" => theme.Typography.H2.FontFamily,
+        "H3" => theme.Typography.H3.FontFamily,
+        "H4" => theme.Typography.H4.FontFamily,
+        "H5" => theme.Typography.H5.FontFamily,
+        "H6" => theme.Typography.H6.FontFamily,
+        "Body1" => theme.Typography.Body1.FontFamily,
+        "Body2" => theme.Typography.Body2.FontFamily,
+        _ => throw new ArgumentOutOfRangeException(nameof(scale)),
+    };
+
+    private static string? FontWeightFor(MudBlazor.MudTheme theme, string scale) => scale switch
+    {
+        "H1" => theme.Typography.H1.FontWeight,
+        "H2" => theme.Typography.H2.FontWeight,
+        "H3" => theme.Typography.H3.FontWeight,
+        "H4" => theme.Typography.H4.FontWeight,
+        "H5" => theme.Typography.H5.FontWeight,
+        "H6" => theme.Typography.H6.FontWeight,
+        _ => throw new ArgumentOutOfRangeException(nameof(scale)),
+    };
+}
