@@ -140,6 +140,28 @@ problems. If you find none of consequence, say so explicitly.
     should be config? `[Required]` on properties that are required?
     `[Range]` on bounded numerics?
 
+11. **Cosmos surface conformance** (when the PR touches Cosmos —
+    new `Container` registration, new `IRepository<T>`, new query,
+    `CosmosClientOptions` change, or a new write path): verify
+    against [ADR-0025](docs/adr/0025-cosmos-for-user-delight.md).
+    Specific checks:
+    - Cross-partition query on a user-facing path without explicit
+      RU-cost justification AND latency budget in the PR description
+      → 🔴 (use a point-read or add a materialized-view container).
+    - New write-heavy container without a selective indexing policy
+      → ⚠️ (default policy indexes every property; usually wasteful).
+    - New repo method not wrapped by `MeteredCosmosRepository<T>`
+      → ⚠️ (RU + duration won't show up on `pinwiz.cosmos.*`).
+    - 2nd writer of `machines` (or any container with a documented
+      single-writer property in ADR-0011) without ETag conditional
+      writes via `ItemRequestOptions.IfMatchEtag` → 🔴 (lost-update
+      protection per ADR-0025 § 7).
+    - `EnableContentResponseOnWrite=true` re-introduced (the SDK
+      default) without a caller that consumes `response.Resource`
+      → ⚠️ (wastes a round-trip + RU per write).
+    - New container without a documented TTL decision (set OR
+      explicitly null with rationale) → ⚠️.
+
 For each 🔴 finding, give a specific recommended fix (not just "this
 is broken"). For ⚠️ findings, give the fix plus the cost-of-deferring
 so the human can choose.
