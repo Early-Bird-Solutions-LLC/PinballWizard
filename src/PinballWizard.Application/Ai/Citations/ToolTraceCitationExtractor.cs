@@ -183,7 +183,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 PageStart: hit.PageStart,
                 PageEnd: hit.PageEnd,
                 SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
-                SourceType: CitationSourceType.CorpusChunk));
+                SourceType: CitationSourceType.CorpusChunk,
+                // RelevanceScore threaded from SearchCorpusHit.Score in
+                // PR-C2. The score is [JsonIgnore] on the DTO so the model
+                // never sees it, but C# code can read it here to surface
+                // relevance on the citation card (ADR-0026 § 8). Null when
+                // the retriever did not return a score (pure keyword query
+                // that bypassed the semantic re-ranker edge case).
+                RelevanceScore: hit.Score));
         }
     }
 

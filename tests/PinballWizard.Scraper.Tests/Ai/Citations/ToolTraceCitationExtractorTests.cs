@@ -329,6 +329,44 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     // -------------------------------------------------------------------------
+    // PR-C2 Wave 2: RelevanceScore threaded from SearchCorpusHit.Score
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Extract_populates_RelevanceScore_from_SearchCorpusHit_Score()
+    {
+        // The citation extractor reads Score (which is [JsonIgnore] on
+        // SearchCorpusHit so the model never sees it) and threads it onto
+        // Citation.RelevanceScore for the frontend CitationCard to render.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      score: 0.85),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(0.85, citation.RelevanceScore);
+    }
+
+    [Fact]
+    public void Extract_handles_null_Score_gracefully()
+    {
+        // Score is null when the retriever bypassed the semantic re-ranker
+        // (e.g. pure keyword query path). The citation must not throw and
+        // must leave RelevanceScore null so the frontend tolerates absence.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      score: null),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Null(citation.RelevanceScore);
+    }
+
+    // -------------------------------------------------------------------------
     // PR-C1 Wave 1: Citation DTO widening — SourceType + page anchors
     // -------------------------------------------------------------------------
 
@@ -463,7 +501,8 @@ public sealed class ToolTraceCitationExtractorTests
         string machineTitle = "Godzilla (Premium)",
         string section = "Section",
         int pageStart = 1,
-        int pageEnd = 1)
+        int pageEnd = 1,
+        double? score = null)
     {
         return new SearchCorpusHit(
             MachineId: machineId,
@@ -474,7 +513,10 @@ public sealed class ToolTraceCitationExtractorTests
             PageStart: pageStart,
             PageEnd: pageEnd,
             SectionHeading: section,
-            Content: "chunk content");
+            Content: "chunk content")
+        {
+            Score = score,
+        };
     }
 
     private static MachineGroundingDto SampleGroundingDto(string opdbId, string title)
