@@ -91,6 +91,22 @@ public sealed class IndexingPolicyContractTests
         Assert.Null(scraped.IndexingPolicy);
     }
 
+    [Fact]
+    public void Defaults_MachineTitleLookups_HasSelectiveIndexing()
+    {
+        // Per ADR-0025 § 3 — `machine_title_lookups` is a write-heavy
+        // projection (re-upserted on every OPDB sync per machine, plus
+        // the rename cleanup path). Reads are pure point-lookups
+        // by normalized title, where `id == normalizedTitle`. Indexing
+        // both `id` and `normalizedTitle` is defense-in-depth against
+        // future operator queries that name one or the other; everything
+        // else is excluded to halve the per-write RU cost.
+        var lookup = AssertContainer("machine_title_lookups");
+        var policy = Assert.IsType<CosmosIndexingPolicyOptions>(lookup.IndexingPolicy);
+        Assert.Equal(["/id/?", "/normalizedTitle/?"], policy.IncludedPaths);
+        Assert.Equal(["/*"], policy.ExcludedPaths);
+    }
+
     private static CosmosContainerOptions AssertContainer(string name)
     {
         var options = new CosmosOptions();

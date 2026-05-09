@@ -92,6 +92,22 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
+    public void Defaults_Containers_IncludesMachineTitleLookupsContainer()
+    {
+        // Cosmos for User Delight track PR 5 (ADR-0025 § 4) — the
+        // Title→OPDB-ID materialized view backing
+        // `MachineGroundingTool`'s point-read path. Doc id equals
+        // partition-key value (the normalized title) so reads are pure
+        // point lookups; the Wizard's `getMachineByTitle` cache-miss
+        // path drops from ~50-150ms cross-partition `STRINGEQUALS`
+        // to ~5+5ms two-point-read.
+        var options = new CosmosOptions();
+
+        var lookup = Assert.Single(options.Containers, c => c.Name == "machine_title_lookups");
+        Assert.Equal("/normalizedTitle", lookup.PartitionKeyPath);
+    }
+
+    [Fact]
     public void Defaults_Containers_HasExactlyTheExpectedContainers()
     {
         // Pin the count so a future addition that drifts from the repository
@@ -99,8 +115,9 @@ public sealed class CosmosOptionsTests
         // container missing partition-key validation) trips this test as a
         // flag. Phase 1: machines + ingestion_sources. Phase 4 W3-2: adds
         // scraped_documents + rag_leases + rag_index_state + rag_dead_letters.
+        // Cosmos for User Delight PR 5: adds machine_title_lookups.
         var options = new CosmosOptions();
-        Assert.Equal(6, options.Containers.Count);
+        Assert.Equal(7, options.Containers.Count);
     }
 
     [Fact]
@@ -154,6 +171,20 @@ public sealed class CosmosOptionsTests
 
         var indexState = Assert.Single(options.Containers, c => c.Name == "rag_index_state");
         Assert.Null(indexState.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_MachineTitleLookups_HasNoTtl()
+    {
+        // The lookup container is bounded by the OPDB catalog (~2,400
+        // machines) and refreshed on every OPDB sync — no stale-row
+        // accumulation problem for TTL to solve. Auto-expiring rows
+        // would silently break point-reads between syncs and force
+        // the cross-partition fallback for the affected titles.
+        var options = new CosmosOptions();
+
+        var lookup = Assert.Single(options.Containers, c => c.Name == "machine_title_lookups");
+        Assert.Null(lookup.DefaultTtlSeconds);
     }
 
     [Fact]
