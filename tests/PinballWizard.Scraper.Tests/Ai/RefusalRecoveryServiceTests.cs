@@ -1,21 +1,26 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Refusal;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests.Ai;
 
-// Behavioral tests for RefusalRecoveryService per ADR-0026 § 4 and
-// the Wave 2 PR-R2 spec. Each test exercises a distinct behavior path
-// (token-overlap scoring, per-category policy, cap enforcement, empty
-// result, exception swallowing) to confirm that the recovery service
+// Behavioral tests for RefusalRecoveryService per ADR-0026 § 4 and the
+// Wave 2 PR-R2/R3 spec. Each test exercises a distinct behavior path
+// (token-overlap scoring, per-category community routing, cap enforcement,
+// empty result, exception swallowing) to confirm that the recovery service
 // enriches refusals correctly without ever breaking the primary path.
 //
 // IMachineRepository.QueryByTitleAsync is mocked with a synchronous
-// async-iterator helper (ToAsyncEnumerable) — the same pattern used
-// in MachineGroundingToolTests.
+// async-iterator helper (ToAsyncEnumerable) — the same pattern used in
+// MachineGroundingToolTests.
+//
+// ICommunityResourceLoader is mocked using NSubstitute. In tests where the
+// community resource content is not the focus, the loader returns a minimal
+// set that satisfies plurality minimums.
 public sealed class RefusalRecoveryServiceTests
 {
     // ──────────────────────────────────────────────────────────────────────
@@ -56,7 +61,7 @@ public sealed class RefusalRecoveryServiceTests
         repo.QueryByTitleAsync("tips", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<Machine>());
 
-        var svc = new RefusalRecoveryService(repo, NullLogger<RefusalRecoveryService>.Instance);
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         // Act
         var detail = await svc.BuildRecoveryAsync(Question, RefusalCategory.OutOfScope, CancellationToken.None);
@@ -106,7 +111,7 @@ public sealed class RefusalRecoveryServiceTests
         repo.QueryByTitleAsync("machine", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<Machine>());
 
-        var svc = new RefusalRecoveryService(repo, NullLogger<RefusalRecoveryService>.Instance);
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         // Act
         var detail = await svc.BuildRecoveryAsync(Question, RefusalCategory.LowModelConfidence, CancellationToken.None);
@@ -131,7 +136,7 @@ public sealed class RefusalRecoveryServiceTests
         // policy: no recovery for this category.
         var repo = Substitute.For<IMachineRepository>();
 
-        var svc = new RefusalRecoveryService(repo, NullLogger<RefusalRecoveryService>.Instance);
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         var detail = await svc.BuildRecoveryAsync(
             "godzilla rules",
@@ -163,7 +168,7 @@ public sealed class RefusalRecoveryServiceTests
         repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable<Machine>());
 
-        var svc = new RefusalRecoveryService(repo, NullLogger<RefusalRecoveryService>.Instance);
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         var detail = await svc.BuildRecoveryAsync(
             "xyzzy unobtainium",
@@ -190,7 +195,7 @@ public sealed class RefusalRecoveryServiceTests
         repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("simulated Cosmos failure"));
 
-        var svc = new RefusalRecoveryService(repo, NullLogger<RefusalRecoveryService>.Instance);
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
 
         // Act: must not throw.
         var detail = await svc.BuildRecoveryAsync(
@@ -199,6 +204,154 @@ public sealed class RefusalRecoveryServiceTests
             CancellationToken.None);
 
         Assert.Null(detail);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 6. OutOfScope → marketplace + machine_reference + manufacturer cards
+    //    (PR-R3: CommunityResources routing)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildRecoveryAsync_OutOfScope_Returns_Marketplace_And_MachineReference_Cards()
+    {
+        // Arrange: OutOfScope should route to marketplace, machine_reference,
+        // and manufacturer_pages. Verify CommunityResources is non-null and
+        // contains at least one card from each of the marketplace and
+        // machine_reference categories.
+        var repo = EmptyRepo();
+        var loader = LoaderWithResources(
+            Marketplace("Alpha Market", "https://alphamarket.example.com"),
+            Marketplace("Beta Market", "https://betamarket.example.com"),
+            Marketplace("Gamma Market", "https://gammamarket.example.com"),
+            MachineRef("IPDB", "https://ipdb.example.com"),
+            MachineRef("OPDB", "https://opdb.example.com"),
+            ManufacturerPage("Stern Pinball", "https://sternpinball.example.com"));
+
+        var svc = new RefusalRecoveryService(repo, loader, NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "buy a godzilla",
+            RefusalCategory.OutOfScope,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.CommunityResources);
+
+        var categories = detail.CommunityResources!
+            .Select(r => r.Category)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("marketplace", categories);
+        Assert.Contains("machine_reference", categories);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 7. OutOfScope marketplace cards count at least 3
+    //    (ADR-0026 § 5 plurality pin — load-bearing test per spec)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildRecoveryAsync_OutOfScope_Marketplace_Cards_Count_At_Least_3()
+    {
+        // This test pins the ADR-0026 § 5 plurality invariant: when the user
+        // gets a refusal for OutOfScope, at least 3 marketplace cards must
+        // appear. A count of fewer than 3 means we're implicitly recommending
+        // one venue over others — the favoritism failure mode.
+        //
+        // The loader is populated with exactly 3 marketplace entries (the
+        // minimum from the seed) so the test verifies the floor, not a
+        // coincidental surplus.
+        var repo = EmptyRepo();
+        var loader = LoaderWithResources(
+            Marketplace("Alpha Market", "https://alphamarket.example.com"),
+            Marketplace("Beta Market", "https://betamarket.example.com"),
+            Marketplace("Gamma Market", "https://gammamarket.example.com"),
+            MachineRef("IPDB", "https://ipdb.example.com"),
+            MachineRef("OPDB", "https://opdb.example.com"));
+
+        var svc = new RefusalRecoveryService(repo, loader, NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "where can I buy a machine",
+            RefusalCategory.OutOfScope,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.CommunityResources);
+
+        var marketplaceCount = detail.CommunityResources!
+            .Count(r => string.Equals(r.Category, "marketplace", StringComparison.OrdinalIgnoreCase));
+
+        Assert.True(
+            marketplaceCount >= 3,
+            $"Expected at least 3 marketplace community cards for OutOfScope refusals (ADR-0026 § 5 plurality). Got {marketplaceCount}.");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8. UpstreamThrottled → null CommunityResources
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildRecoveryAsync_UpstreamThrottled_Returns_Null_CommunityResources()
+    {
+        // UpstreamThrottled is a transient infra fault — the refusal message
+        // already tells the user to retry. Adding community resource cards
+        // would clutter the RefusalPanel with irrelevant alternatives when
+        // the only correct action is "wait and try again."
+        // PR-R3 spec: CommunityResources = null for UpstreamThrottled.
+        var repo = Substitute.For<IMachineRepository>();
+
+        var svc = new RefusalRecoveryService(repo, MinimalLoader(), NullLogger<RefusalRecoveryService>.Instance);
+
+        // UpstreamThrottled returns null from BuildRecoveryAsync (whole-detail null)
+        // because CategorySupportsRelatedMachines is false. Verify the whole
+        // detail is null — null detail → no CommunityResources to inspect.
+        var detail = await svc.BuildRecoveryAsync(
+            "godzilla wizard mode",
+            RefusalCategory.UpstreamThrottled,
+            CancellationToken.None);
+
+        Assert.Null(detail);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 9. InsufficientGrounding → forums + machine_reference + news_and_culture
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildRecoveryAsync_InsufficientGrounding_Returns_Forums_And_MachineReference_Cards()
+    {
+        // InsufficientGrounding means retrieval returned chunks but scored too
+        // low to ground an answer — route the user to forums + canonical refs
+        // + news where they can find the answer from community members.
+        var repo = EmptyRepo();
+        var loader = LoaderWithResources(
+            Forum("Pinside", "https://pinside.example.com"),
+            Forum("Tilt Forums", "https://tiltforums.example.com"),
+            MachineRef("IPDB", "https://ipdb.example.com"),
+            MachineRef("OPDB", "https://opdb.example.com"),
+            NewsAndCulture("Pinball News", "https://pinballnews.example.com"),
+            // marketplace is NOT in the InsufficientGrounding routing
+            Marketplace("Alpha Market", "https://alphamarket.example.com"),
+            Marketplace("Beta Market", "https://betamarket.example.com"),
+            Marketplace("Gamma Market", "https://gammamarket.example.com"));
+
+        var svc = new RefusalRecoveryService(repo, loader, NullLogger<RefusalRecoveryService>.Instance);
+
+        var detail = await svc.BuildRecoveryAsync(
+            "what are the rules for godzilla multiball",
+            RefusalCategory.InsufficientGrounding,
+            CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.NotNull(detail!.CommunityResources);
+
+        var categories = detail.CommunityResources!
+            .Select(r => r.Category)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Assert.Contains("forums", categories);
+        Assert.Contains("machine_reference", categories);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -225,4 +378,66 @@ public sealed class RefusalRecoveryServiceTests
         }
         await Task.CompletedTask;
     }
+
+    // Returns a loader stub that serves the minimum required plurality set
+    // (3 marketplace + 2 machine_reference) so tests focused on RelatedMachines
+    // do not fail on an empty or invalid loader.
+    private static ICommunityResourceLoader MinimalLoader()
+    {
+        return LoaderWithResources(
+            Marketplace("Alpha Market", "https://alphamarket.example.com"),
+            Marketplace("Beta Market", "https://betamarket.example.com"),
+            Marketplace("Gamma Market", "https://gammamarket.example.com"),
+            MachineRef("IPDB", "https://ipdb.example.com"),
+            MachineRef("OPDB", "https://opdb.example.com"));
+    }
+
+    // Returns a loader stub configured to return the given resources.
+    private static ICommunityResourceLoader LoaderWithResources(params CommunityResource[] resources)
+    {
+        var loader = Substitute.For<ICommunityResourceLoader>();
+
+        loader.LoadAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<CommunityResource>>(resources.ToList().AsReadOnly()));
+
+        // Wire LoadByCategoryAsync to filter from the resources list — mirrors
+        // the real CommunityResourceLoader.LoadByCategoryAsync behaviour.
+        loader.LoadByCategoryAsync(Arg.Any<CommunityResourceCategory>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cat = callInfo.Arg<CommunityResourceCategory>();
+                var categoryString = CommunityResourceLoader.CategoryToString(cat);
+                var filtered = resources
+                    .Where(r => string.Equals(r.Category, categoryString, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+                    .AsReadOnly();
+                return Task.FromResult<IReadOnlyList<CommunityResource>>(filtered);
+            });
+
+        return loader;
+    }
+
+    private static IMachineRepository EmptyRepo()
+    {
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+        return repo;
+    }
+
+    private static CommunityResource Marketplace(string name, string url) =>
+        new(Name: name, Url: url, Category: "marketplace", Description: null);
+
+    private static CommunityResource MachineRef(string name, string url) =>
+        new(Name: name, Url: url, Category: "machine_reference", Description: null);
+
+    private static CommunityResource ManufacturerPage(string name, string url) =>
+        new(Name: name, Url: url, Category: "manufacturer_pages", Description: null);
+
+    private static CommunityResource Forum(string name, string url) =>
+        new(Name: name, Url: url, Category: "forums", Description: null);
+
+    private static CommunityResource NewsAndCulture(string name, string url) =>
+        new(Name: name, Url: url, Category: "news_and_culture", Description: null);
 }
