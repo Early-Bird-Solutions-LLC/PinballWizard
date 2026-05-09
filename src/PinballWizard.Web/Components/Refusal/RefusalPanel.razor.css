@@ -1,0 +1,38 @@
+/* Scoped CSS for RefusalPanel — top-level refusal recovery container.
+ *
+ * Design intent: the panel reads as a helpful sidebar / interstitial,
+ * not an error page. Warm-bordered paper with restrained color use.
+ *
+ * Custom CSS is justified (locked delight surface per ADR-0026 § 6 /
+ * ADR-0008) — RefusalPanel is in the explicit set.
+ *
+ * ADR-0026 § 6 — scoped CSS in Components/Refusal/, no global bleed.
+ */
+
+/* Panel border uses a muted amber tint — signals "attention" without
+ * the severity of Error red. MudBlazor's Warning token maps to orange
+ * in PinballTheme — approachable, on-brand. */
+.refusal-panel {
+    border: 1px solid var(--mud-palette-warning);
+    border-radius: 8px;
+    max-width: 720px;
+}
+
+/* Category label — Barlow Condensed via h6 MudText (h6 uses that family
+ * per PinballTheme.cs). Slight letter-spacing for the "announcement" feel
+ * without full SHOUTING. */
+::deep .refusal-category-label {
+    letter-spacing: 0.03em;
+}
+
+/* SuggestedRephrase call-out: contrasting background, left accent border.
+ * Styled as an "action" — invites the user to copy and try the rephrasing. */
+.suggested-rephrase {
+    border-left: 3px solid var(--mud-palette-primary);
+    background-color: color-mix(in srgb, var(--mud-palette-primary) 8%, var(--mud-palette-surface));
+    border-radius: 0 4px 4px 0;
+}
+
+.suggested-rephrase-text {
+    font-style: italic;
+}
