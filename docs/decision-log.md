@@ -30,6 +30,29 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-09 — eBay excluded from community_resources.v1.json (CI URL-liveness false positive)
+
+**Decision:** PR-R3's `data/seeds/community_resources.v1.json` does NOT include eBay even though it's a major used-pinball marketplace. The marketplace category meets its ≥3 plurality minimum (per ADR-0026 § 6 + `feedback_destination_plurality.md`) via Facebook Marketplace + Mr. Pinball + Pinside Market.
+
+**Alternatives considered:**
+
+- **Include eBay; whitelist 500 in the workflow's BLOCKED list.** Rejected — 500 in the BLOCKED list means a legitimate community-resource outage would silently pass CI. The workflow's job is to catch real failures; eBay is the false-positive case, not the canonical-broken case.
+- **Include eBay; skip eBay in the workflow probe loop with an exception.** Rejected — special-casing one URL hides the problem instead of solving it. If we have to skip a URL, we shouldn't be linking to it as a "verified live community resource."
+- **Use a different eBay URL pattern (search endpoint vs. category endpoint vs. saved-search RSS).** Rejected — eBay's bot-detection is CDN-level; every public eBay URL gets the same 5xx-to-non-browsers treatment. Verified by manual probing during R3 fix.
+- **Render eBay only at frontend-time (not in the seed).** Held as a future option — see "Revisit when" below. The frontend would link directly without the seed-file probe owning validation.
+
+**Rationale:** eBay's CDN returns HTTP 500 to non-browser User-Agents (CI runners, curl HEAD/GET). The actual eBay listing pages are live and working in browsers. The R3 workflow's BLOCKED list (statuses treated as "live but bot-protected, log a warning, don't fail") is `403 / 405 / 429 / 999` — these are unambiguous bot-detection signals. **500 is deliberately NOT in that list** because a legitimate 500 from a community resource SHOULD fail the workflow so we catch real outages. Adding 500 to BLOCKED would mask real failures.
+
+The marketplace category retains plural coverage (Facebook + Mr. Pinball + Pinside Market) — Pinside in particular aggregates listings from eBay for users who want that specific channel.
+
+**Revisit when:**
+
+- eBay changes CDN behavior to allow HEAD/GET from non-browser User-Agents (annual spot-check).
+- A frontend-side approach lands that doesn't require the seed-file to own validation (e.g., a per-render "marketplace links" component that probes opportunistically with browser-like fetch — separate from CI).
+- A user-research signal indicates eBay is the missing surface they expected to see (we have other ways to send users to eBay, but if specific eBay coverage becomes important, revisit).
+
+**Related:** PR #165, ADR-0026, `feedback_destination_plurality.md`, `feedback_avoid_appearance_of_favoritism.md`. Memory: `project_ebay_excluded_from_community_resources.md`.
+
 ## 2026-05-09 — Title→OPDB-ID materialized view: dual-write + parallel-arrays + Cosmos-id-safe normalization
 
 **Decision:** PR 5 of the Cosmos for User Delight track ships a `machine_title_lookups` Cosmos container as the materialized view backing `MachineGroundingTool.GetMachineByTitleAsync`'s point-read path per [ADR-0025 § 4](adr/0025-cosmos-for-user-delight.md). Three sub-decisions sit below the ADR threshold and are recorded here:
