@@ -88,6 +88,22 @@ public sealed class CosmosOptions
     [
         new() { Name = "machines", PartitionKeyPath = "/manufacturer" },
         new() { Name = "ingestion_sources", PartitionKeyPath = "/partitionKey" },
+        // Phase 4 W3-2 RAG ingestion containers. The hosted-service
+        // consumer (`PinballWizard.RagIngestionWorker`) reads the
+        // `scraped_documents` change feed, writes lease checkpoints to
+        // `rag_leases`, hash-state rows to `rag_index_state`, and
+        // failed-document records to `rag_dead_letters`. Declared in
+        // the Phase 1 defaults (rather than gated behind `deployPhase2`)
+        // because `--ensure-cosmos-containers` is the canonical creator
+        // per ADR-0012 and the Bicep wires the KEDA scaler against
+        // `scraped_documents` unconditionally — the change-feed
+        // subscription needs the source container to exist on first
+        // worker boot. Idempotent: existing containers with matching
+        // partition keys are no-ops.
+        new() { Name = "scraped_documents", PartitionKeyPath = "/machine_id" },
+        new() { Name = "rag_leases", PartitionKeyPath = "/id" },
+        new() { Name = "rag_index_state", PartitionKeyPath = "/document_id" },
+        new() { Name = "rag_dead_letters", PartitionKeyPath = "/document_id" },
     ];
 
     /// <summary>

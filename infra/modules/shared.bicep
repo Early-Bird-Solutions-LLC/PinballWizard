@@ -695,9 +695,15 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
               type: 'cosmos-db'
               identity: 'system'
               metadata: {
-                databaseName: 'pinwizdb'
+                // Database name MUST match `CosmosOptions.DatabaseName` —
+                // the worker uses default `pinwiz` (also matches AppHost's
+                // `cosmos.AddCosmosDatabase("pinwiz")` for local-dev
+                // emulator parity). Drift here is silent: KEDA would
+                // watch a non-existent container's leases and never
+                // scale up.
+                databaseName: 'pinwiz'
                 containerName: 'scraped_documents'
-                leaseDatabaseName: 'pinwizdb'
+                leaseDatabaseName: 'pinwiz'
                 leaseContainerName: 'rag_leases'
                 processorName: 'rag-indexer'
                 activationLagInterval: 'PT30S'
