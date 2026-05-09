@@ -156,6 +156,20 @@ Per [ADR-0021](adr/0021-ai-search-index-schema.md), the Phase 4 RAG surface uses
 
 Pre-filter sampling intentional — `retrieval_score_distribution` records the full distribution AI Search produced, not just the post-`MinimumScore` shape. Post-filter chunk count is reflected in the per-call log statement, not in this histogram.
 
+### RAG Change Feed worker (Phase 4 W3-2)
+
+The W3-2 [`RagIngestionWorker`](../src/PinballWizard.RagIngestionWorker/) (Container App, KEDA-Cosmos-scaled) consumes the `scraped_documents` change feed and runs the Application-layer ingestion pipeline per delivered document. The instruments below cover the hosted-service shell — batch lifecycle + dead-letter routing + at-budget short-circuit. Per-document outcome distribution (`Indexed` / `Skipped_*`) lives in the pipeline's `IngestionOutcome` enum return value (surfaced in logs); chunk-level write volume is observed via [`pinwiz.rag.indexed_chunks_total`](#rag-indexing--retrieval-instruments-phase-4) so the two layers don't double-count.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.rag.changefeed_batch_duration_ms` | Histogram | `batch_size_bucket` | Per-`HandleChangesAsync` wall-clock — total time the hosted service spent processing one Change Feed batch (dead-letter lookups + handler invocations + sink upserts). Tag values: `0`, `1`, `2-10`, `11-50`, `51+`. p50/p95 charts surface ingestion slowdowns BEFORE they manifest as lease-lag spikes; the bucket tag attributes latency growth to batch-size shifts vs. per-document slowdown without exploding cardinality on raw counts. |
+| `pinwiz.rag.changefeed_dead_letter_total` | Counter | `error_class` | Per-document failures the hosted service routed to the `rag_dead_letters` Cosmos container after an exception bubbled out of `ICosmosChangeFeedHandler.HandleAsync`. Tag values: truncated exception type names (`RequestFailedException`, `InvalidOperationException`, `CosmosException`, etc. — capped at 64 chars). A spike on a single `error_class` points at a specific upstream regression. Increments only AFTER the dead-letter UPSERT lands; sink failures log separately so the dashboard reflects what's actually persisted. |
+| `pinwiz.rag.changefeed_short_circuit_total` | Counter | `reason` | Per-document Change Feed deliveries the hosted service skipped without invoking the handler. Tag values: `over_budget` (the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` — only an operator clearing the dead-letter row resumes processing); `empty_document_id` (the source-document payload was malformed, no doc id to key on). Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). |
+
+**Pipeline-internal short-circuits NOT counted here.** The pipeline's `Skipped_NotInCuratedSubset` / `Skipped_DocumentTypeFiltered` / `Skipped_HashUnchanged` outcomes are healthy filtering, not signal-of-trouble — they live below the hosted-service instrumentation boundary. Operators charting "documents that didn't index" should join logs (per-outcome) rather than expecting a metric here.
+
+**Deferred to a small follow-up:** `pinwiz.rag.changefeed_lease_lag` (ObservableGauge backed by a periodic `ChangeFeedEstimator` poll). The gauge needs a background poll loop + cached-value pattern that's a meaningful design unit on its own; folding it into PR-C (the W3-2 close) would balloon the diff. Operators who need lease-lag visibility before that lands can query Cosmos diagnostics directly: `AzureDiagnostics | where ResourceType == "DATABASEACCOUNTS" | where Category == "ChangeFeedItems"`.
+
 ### Inherited Foundry attributes (do NOT duplicate as `pinwiz.ai.*`)
 
 Foundry's SDK emits OTel spans with these standard `gen_ai.*` semantic-convention attributes:
@@ -202,6 +216,8 @@ Aggregate-monthly view (alerting on the $300/mo threshold) sums per-day rows × 
 - **Real `ITokenUsageReader` impl** — pending Microsoft Agent Framework exposing a Usage surface on `AgentResponse` (issue #2688). `NullTokenUsageReader` is the default; cost telemetry stays at 0 cents until the impl swap. The pricing + ceiling enforcement machinery is in place (this PR) so the swap is a one-class change.
 - **Per-tool latency histogram** (`pinwiz.ai.tool_duration_ms`) — Phase 4 follow-up. Tagged by `tool` (searchCorpus | getMachineByTitle | future tools) to surface per-tool latency for the §7.1 user-delight revisit triggers (200ms p95 structured-records, 500ms cold-start cache). Sequenced after PR #120 (W4-1) merges so the wiring can touch SearchCorpusTool alongside MachineGroundingTool in one PR.
 - **AI Search index size + document count** (`pinwiz.search.index_size_bytes`, `pinwiz.search.index_documents_total`) — Phase 4 follow-up. Periodic-sampler emission rather than hot-path; drives the §7.1 AI Search Basic-vs-Standard 1.5 GB trip-wire trigger.
+- **Change Feed lease lag** (`pinwiz.rag.changefeed_lease_lag`) — W3-2 follow-up to PR-C. ObservableGauge backed by a periodic `ChangeFeedEstimator.GetCurrentStateIterator` poll updating a cached value the gauge callback reads. Tagged with `processor_name` once a second consumer ships. Drives operator alerting on persistent ingestion backlog.
+- **Reconcile-pass instruments** (`pinwiz.rag.changefeed_reconcile_started`, `pinwiz.rag.changefeed_reconcile_duration_ms`, `pinwiz.rag.changefeed_reconcile_drift_total`) — paired with the `RagIngestionOptions.ReconcileOnStartup` implementation (logged-as-pending in PR-C). Sample N rows from `rag_index_state`, verify each has matching chunks in AI Search, count drift; emit when the worker is launched with `ReconcileOnStartup=true`.
 
 ## Update triggers
 

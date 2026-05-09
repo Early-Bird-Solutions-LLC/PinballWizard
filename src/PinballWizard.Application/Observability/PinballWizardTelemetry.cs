@@ -198,6 +198,39 @@ public static class PinballWizardTelemetry
         unit: "{score}",
         description: "Per-result re-rank or BM25 score sampled on every `IRagRetriever.RetrieveAsync` result. Tagged with `score_source` (`semantic` when AI Search semantic ranker engaged | `bm25` when fallback to keyword score | `fallback_zero` when both null). Surfaces drift between the eval-baseline retrieval distribution and production-traffic retrieval distribution — informs the ADR-0024 cross-encoder gate trigger and the ADR-0017 confidence-threshold recalibration window.");
 
+    // ── RAG Change Feed worker instrumentation (Phase 4 W3-2 PR-C) ──────
+    // The W3-2 RagIngestionWorker (Container App) consumes the
+    // `scraped_documents` Cosmos change feed and runs the Application-
+    // layer ingestion pipeline per delivered document. The instruments
+    // below cover the hosted-service shell (batch lifecycle, dead-letter
+    // routing, at-budget short-circuit). Per-document outcome
+    // distribution (Indexed / Skipped_* / DeadLettered) is exposed via
+    // the pipeline's IngestionOutcome enum return value — surfaced in
+    // logs but NOT counted here to avoid double-counting against
+    // `pinwiz.rag.indexed_chunks_total` (which the indexer emits at
+    // chunk granularity per upserted batch).
+    //
+    // `pinwiz.rag.changefeed_lease_lag` (ObservableGauge backed by a
+    // periodic ChangeFeedEstimator poll) is deferred to a small follow-
+    // up PR — the gauge needs a background poll loop + cached-value
+    // pattern that's a meaningful design unit on its own; folding it
+    // into PR-C would balloon the diff.
+
+    public static readonly Histogram<double> RagChangefeedBatchDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.rag.changefeed_batch_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a single Cosmos Change Feed batch handled by the W3-2 RagIngestionWorker — measured at the hosted-service `HandleChangesAsync` boundary so it captures total per-batch time including dead-letter lookups, handler invocations, and upsert calls. Operators chart p50/p95 to detect ingestion slowdowns before they become lease-lag spikes. Tagged with `batch_size_bucket` (`1`, `2-10`, `11-50`, `51+`) so dashboards can attribute latency growth to batch-size shifts vs. per-document slowdown.");
+
+    public static readonly Counter<long> RagChangefeedDeadLetterTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_dead_letter_total",
+        unit: "{document}",
+        description: "Per-document failures the W3-2 hosted service routed to the `rag_dead_letters` Cosmos container after an exception bubbled out of `ICosmosChangeFeedHandler.HandleAsync`. Tagged with `error_class` (the truncated exception type name — `RequestFailedException`, `InvalidOperationException`, etc.) so dashboards can distinguish AI-Search-side failures from Cosmos-side failures from extractor / chunker bugs. A spike on a single error_class points at a specific upstream regression. Always increments on every dead-letter UPSERT, regardless of whether the AttemptCount has reached MaxFailuresPerDocument — the at-budget short-circuit is observed via `pinwiz.rag.changefeed_short_circuit_total{reason=over_budget}`.");
+
+    public static readonly Counter<long> RagChangefeedShortCircuitTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.changefeed_short_circuit_total",
+        unit: "{document}",
+        description: "Per-document Change Feed deliveries the W3-2 hosted service skipped without invoking the handler. Tagged with `reason`: `over_budget` when the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` (the structurally-poison-document case — only operator clearing the dead-letter resumes processing); `empty_document_id` when the source-document payload is malformed. Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). The pipeline-internal short-circuits (`Skipped_NotInCuratedSubset`, `Skipped_DocumentTypeFiltered`, `Skipped_HashUnchanged`) live below the hosted service and are NOT counted here — they are healthy filtering, not signal-of-trouble.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

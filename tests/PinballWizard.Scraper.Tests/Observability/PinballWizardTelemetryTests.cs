@@ -108,6 +108,9 @@ public sealed class PinballWizardTelemetryTests
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagIndexedChunks.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalDurationMs.Name);
         Assert.StartsWith(prefix, PinballWizardTelemetry.RagRetrievalScoreDistribution.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedBatchDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
     }
 
     // Per-tool latency histogram. Drives the §7.1 architecture-v2 user-
@@ -120,5 +123,43 @@ public sealed class PinballWizardTelemetryTests
     {
         Assert.Equal("pinwiz.ai.tool_duration_ms", PinballWizardTelemetry.AiToolDurationMs.Name);
         Assert.Equal("ms", PinballWizardTelemetry.AiToolDurationMs.Unit);
+    }
+
+    // RAG Change Feed worker instruments per build-spec § Phase 4 W3-2.
+    // The hosted-service shell (CosmosChangeFeedHostedService<T>) emits
+    // these as part of every batch; see RagChangefeedTelemetryTests for
+    // the emission-behavior pinning. Same name/unit pinning posture as
+    // the OPDB / RAG / AI tool suites above — drift here zeroes the
+    // operator dashboards for the W3-2 worker silently.
+
+    [Fact]
+    public void RagChangefeedInstruments_HaveExpectedNamesAndUnits()
+    {
+        Assert.Equal(
+            "pinwiz.rag.changefeed_batch_duration_ms",
+            PinballWizardTelemetry.RagChangefeedBatchDurationMs.Name);
+        Assert.Equal("ms", PinballWizardTelemetry.RagChangefeedBatchDurationMs.Unit);
+
+        Assert.Equal(
+            "pinwiz.rag.changefeed_dead_letter_total",
+            PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
+        Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Unit);
+
+        Assert.Equal(
+            "pinwiz.rag.changefeed_short_circuit_total",
+            PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
+        Assert.Equal("{document}", PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Unit);
+    }
+
+    [Fact]
+    public void RagChangefeedInstruments_AllUnderRagPrefix()
+    {
+        // Dashboard wildcard `pinwiz.rag.changefeed_*` should reach the
+        // entire W3-2 worker telemetry surface. Drift on the prefix
+        // breaks the dashboard taxonomy — pinned here.
+        var prefix = "pinwiz.rag.changefeed_";
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedBatchDurationMs.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Name);
+        Assert.StartsWith(prefix, PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Name);
     }
 }
