@@ -1,0 +1,59 @@
+@* OutOfScopeView — per-category subview for RefusalCategory.OutOfScope.
+ *
+ * Rendered by RefusalPanel when the user asked about something outside
+ * the Wizard's covered domain. Tone is "let me help you get unstuck" —
+ * we explain what we DO cover and surface related machines as pivots.
+ *
+ * ADR-0026 § 4 — per-category subview within RefusalPanel
+ * ADR-0026 § 5 — community resources rendered by CommunityResourceCards
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.TravelExplore"
+                 Color="Color.Secondary"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            Outside My Coverage
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            I focus on pinball machine information — manuals, service bulletins, game
+            rules, and specifications from the manufacturers I track. This question
+            falls outside that scope.
+        </MudText>
+    </MudStack>
+
+    @if (RelatedMachines is not null && RelatedMachines.Count > 0)
+    {
+        <div data-testid="related-machines-section">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Related machines I do cover:</MudText>
+            <MudList T="RelatedMachine" Dense="true">
+                @foreach (var machine in RelatedMachines)
+                {
+                    <MudListItem Icon="@Icons.Material.Filled.Casino" Dense="true">
+                        @if (!string.IsNullOrWhiteSpace(machine.OpdbUrl))
+                        {
+                            <a href="@machine.OpdbUrl"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="mud-typography mud-link mud-primary-text mud-link-underline-hover">
+                                @machine.Title
+                            </a>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@machine.Title</MudText>
+                        }
+                    </MudListItem>
+                }
+            </MudList>
+        </div>
+    }
+</MudStack>
+
+@code {
+    [Parameter] public IReadOnlyList<RelatedMachine>? RelatedMachines { get; set; }
+}
