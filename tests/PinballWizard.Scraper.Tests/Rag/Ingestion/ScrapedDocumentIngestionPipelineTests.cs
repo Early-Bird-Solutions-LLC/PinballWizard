@@ -139,7 +139,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
     [InlineData(ExtractionStatus.Encrypted)]
     [InlineData(ExtractionStatus.Malformed)]
     [InlineData(ExtractionStatus.SizeExceeded)]
-    public async Task IngestAsync_NonSuccessExtraction_ReturnsExtractionFailed_DoesNotIndex(ExtractionStatus status)
+    public async Task IngestAsync_NonSuccessExtraction_SkipsWithoutIndexing(ExtractionStatus status)
     {
         // Each non-Success extraction status is a known coverage gap
         // (per Phase 4 § Non-goals). The pipeline logs and skips at
