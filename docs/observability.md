@@ -175,6 +175,17 @@ The W3-2 [`RagIngestionWorker`](../src/PinballWizard.RagIngestionWorker/) (Conta
 
 **Reconcile-on-startup is opt-in.** Default `RagIngestionOptions.ReconcileOnStartup=false`. Enable per worker boot via Bicep param or appsettings override after a known purge / suspected drift event. The reconcile runs async after the change-feed processor starts so worker boot isn't blocked; a reconcile exception is logged at warning and the worker continues serving the change feed normally — a stale-but-trustworthy index is operationally better than a refusing-to-start worker.
 
+### Cosmos repository operations (Phase 4 W4 — ADR-0025 § 8)
+
+Two histograms emitted at the SDK boundary inside [`CosmosRepository<T>`](../src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosRepository.cs) (and from concrete repositories' specialized methods that route through `ExecuteWithMetricsAsync`). The instruments make the [`architecture-v2.md`](architecture-v2.md) § 7.1 user-delight revisit triggers (200ms p95 latency on the `getMachineByTitle` path, RU-cost-dominance) measurable for the first time.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.cosmos.ru_charge` | Histogram | `container`, `operation` | Cosmos request units consumed by a single SDK call. `operation` = `read` (`ReadItemAsync`) / `query` (per-page `iterator.ReadNextAsync`) / `upsert` (`UpsertItemAsync`) / `delete` (`DeleteItemAsync`). Streaming queries emit one observation per page so a 10-page result emits 10 samples — heavy multi-page queries don't get hidden inside an aggregate. Failed calls (any non-404 `CosmosException`) emit `CosmosException.RequestCharge` so RU spent on a failed operation is still surfaced. 404s emit RU too — operator visibility on the cost of looking for a missing item. |
+| `pinwiz.cosmos.query_duration_ms` | Histogram | `container`, `operation` | Wall-clock duration of the same SDK call, same tags. PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution on the `{operation=query, container=machines}` slice — the point-read refactor lands when the post-merge p95 drops under the §7.1 200ms trigger. |
+
+**Diagnostic-log capture on failure.** On any non-404 `CosmosException`, [`CosmosRepository<T>`](../src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosRepository.cs)'s helper opens a structured `BeginScope` carrying `cosmos.diagnostics` (`ex.Diagnostics.ToString()` — region, retry count, RU consumed, per-stage timing breakdown), `cosmos.status_code`, `cosmos.sub_status_code`, `cosmos.activity_id`, `cosmos.request_charge`, `pinwiz.container`, and `pinwiz.operation`. Operators investigating a 429/503/408 see the failure context in the App Insights log entry without a separate trace lookup. 404s are deliberately suppressed from this path — they are normal flow on `GetByIdAsync` cache misses and `DeleteAsync` idempotency, and routine traffic should not page operators.
+
 ### Inherited Foundry attributes (do NOT duplicate as `pinwiz.ai.*`)
 
 Foundry's SDK emits OTel spans with these standard `gen_ai.*` semantic-convention attributes:
@@ -216,7 +227,6 @@ Aggregate-monthly view (alerting on the $300/mo threshold) sums per-day rows × 
 
 ## Deferred to later phases
 
-- **Cosmos RU charge capture** (`pinwiz.cosmos.write.ru_charge`) — Phase 6 (operability). Requires either a `MeteredMachineRepository` decorator or an inline RU-capture helper in repositories. Best designed once real production traffic gives signal on which operations dominate RU consumption. Tracked under Phase 6 § Cost quality.
 - **Per-scraper run metrics** (`pinwiz.scrape.<source>.*`) — Phase 3+. Lands when manufacturer scrapers gain ACA Job execution and the orchestrator-from-IngestionSource path comes online.
 - **Real `ITokenUsageReader` impl** — pending Microsoft Agent Framework exposing a Usage surface on `AgentResponse` (issue #2688). `NullTokenUsageReader` is the default; cost telemetry stays at 0 cents until the impl swap. The pricing + ceiling enforcement machinery is in place (this PR) so the swap is a one-class change.
 - **AI Search index size + document count** (`pinwiz.search.index_size_bytes`, `pinwiz.search.index_documents_total`) — Phase 4 follow-up. Periodic-sampler emission rather than hot-path; drives the §7.1 AI Search Basic-vs-Standard 1.5 GB trip-wire trigger.
