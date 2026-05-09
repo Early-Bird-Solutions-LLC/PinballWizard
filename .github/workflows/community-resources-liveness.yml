@@ -57,6 +57,7 @@ jobs:
           echo "Found ${#URLS[@]} URLs to probe."
 
           FAILED=0
+          BLOCKED=0
           PROBED=0
 
           for URL in "${URLS[@]}"; do
@@ -94,17 +95,38 @@ jobs:
 
             PROBED=$((PROBED + 1))
 
-            # 2xx and 3xx are considered live (redirects are acceptable).
-            if [[ "$HTTP_STATUS" =~ ^[23] ]]; then
-              echo "OK ($HTTP_STATUS)"
-            else
-              echo "FAILED ($HTTP_STATUS)"
-              FAILED=$((FAILED + 1))
-            fi
+            # Response classification:
+            #   2xx / 3xx — server confirmed the resource is reachable.
+            #   403 / 405 / 429 / 999 — bot-protection signal, NOT a broken URL.
+            #     These statuses are not "broken" — they're "we don't talk to bots".
+            #     The actual website is live and working in browsers. Community sites
+            #     like Pinside, IPDB, IFPA, Pinball News, and Cloudflare-protected
+            #     pages commonly return 403 or 999 to automated probes; 405 is
+            #     "Method Not Allowed for HEAD"; 429 is rate-limiting. We trust the
+            #     maintainer to spot-check these periodically rather than treating
+            #     a bot-blocking response as evidence the site is down.
+            #   Any other status (404, 5xx, 000 connection errors) — genuine failure.
+            case "$HTTP_STATUS" in
+              2*|3*)
+                echo "OK ($HTTP_STATUS)"
+                ;;
+              403|405|429|999)
+                echo "BLOCKED ($HTTP_STATUS) — bot-protection; treating as live (manual spot-check recommended)"
+                BLOCKED=$((BLOCKED + 1))
+                ;;
+              *)
+                echo "FAILED ($HTTP_STATUS)"
+                FAILED=$((FAILED + 1))
+                ;;
+            esac
           done
 
           echo ""
-          echo "Probed $PROBED URL(s). Failed: $FAILED."
+          echo "Probed $PROBED URL(s). Failed: $FAILED. Blocked (bot-protection, likely-live): $BLOCKED."
+
+          if [ "$BLOCKED" -gt 0 ]; then
+            echo "::warning::$BLOCKED URL(s) returned bot-protection status (likely-live; spot-check periodically)"
+          fi
 
           if [ "$FAILED" -gt 0 ]; then
             echo ""
@@ -113,4 +135,4 @@ jobs:
             exit 1
           fi
 
-          echo "All URLs are live."
+          echo "All URLs are live (or bot-protected and assumed live)."

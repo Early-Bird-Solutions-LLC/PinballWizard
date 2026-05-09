@@ -3,13 +3,6 @@
   "resources": [
     {
       "category": "forums",
-      "name": "AAP Forum",
-      "url": "https://forum.americanapinball.com",
-      "description": "Community discussion hosted by American Pinball, covering their game lineup and general pinball topics.",
-      "covers_question_types": ["rules", "repair", "general"]
-    },
-    {
-      "category": "forums",
       "name": "Pinside",
       "url": "https://pinside.com",
       "description": "A large online community where collectors and players discuss machines, share tips, and post reviews. Covers a broad range of manufacturers and eras.",
@@ -115,23 +108,9 @@
     },
     {
       "category": "news_and_culture",
-      "name": "Kaneda's Pinball Podcast",
-      "url": "https://kanedasgames.com/pinball-podcast",
-      "description": "A podcast covering pinball news, game reviews, and industry discussions — a regular source for collectors and enthusiasts.",
-      "covers_question_types": ["news", "general"]
-    },
-    {
-      "category": "news_and_culture",
       "name": "Pinball News",
       "url": "https://www.pinballnews.com",
       "description": "Coverage of pinball industry news, game announcements, and show reports from a collector-focused perspective.",
-      "covers_question_types": ["news", "general"]
-    },
-    {
-      "category": "news_and_culture",
-      "name": "Tilt Forums News",
-      "url": "https://tiltforums.com/c/pinball-news",
-      "description": "Community-curated pinball news thread on Tilt Forums, aggregating industry announcements and discussion.",
       "covers_question_types": ["news", "general"]
     },
     {
