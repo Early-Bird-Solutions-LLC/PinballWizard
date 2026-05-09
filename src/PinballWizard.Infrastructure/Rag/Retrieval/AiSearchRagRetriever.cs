@@ -185,6 +185,10 @@ public sealed class AiSearchRagRetriever : IRagRetriever
                 AiSearchIndexFields.PageEnd,
                 AiSearchIndexFields.SectionHeading,
                 AiSearchIndexFields.Content,
+                // Projected for Citation.LastScrapedUtc freshness badge
+                // (PR-C3). Never used in ranking or filtering here; the
+                // frontend CitationCard reads it from the citation DTO.
+                AiSearchIndexFields.LastScrapedUtc,
             },
         };
 
@@ -270,5 +274,10 @@ public sealed class AiSearchRagRetriever : IRagRetriever
             PageEnd: doc.PageEnd,
             SectionHeading: doc.SectionHeading,
             Content: doc.Content,
-            Score: score);
+            Score: score,
+            // LastScrapedUtc projected from the AI Search index's
+            // last_scraped_utc field (PR-C3). Null for chunks indexed
+            // before PR-C3; propagated to Citation.LastScrapedUtc via
+            // SearchCorpusHit → ToolTraceCitationExtractor.
+            LastScrapedUtc: doc.LastScrapedUtc);
 }

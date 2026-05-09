@@ -133,7 +133,10 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
             Manufacturer: change.Manufacturer,
             DocumentId: change.DocumentId,
             DocumentUrl: change.DocumentUrl,
-            DocumentType: change.DocumentType);
+            DocumentType: change.DocumentType,
+            // LastScrapedUtc threaded from the Change Feed payload (PR-C3)
+            // so the indexer can populate last_scraped_utc on each chunk.
+            LastScrapedUtc: change.LastScrapedUtc);
 
         var chunks = _chunker.Chunk(extracted, chunkRequest, cancellationToken);
         if (chunks.Count == 0)

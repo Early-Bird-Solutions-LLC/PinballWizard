@@ -42,4 +42,11 @@ public sealed record ChunkRequest(
     string Manufacturer,
     string DocumentId,
     string DocumentUrl,
-    DocumentType DocumentType);
+    DocumentType DocumentType,
+    // Timeline.LastDownloadedAt from the scraper provenance record.
+    // Threaded from ScrapedDocumentChange → ChunkRequest → IndexedChunkDocument
+    // so the AI Search index row carries the last_scraped_utc field (PR-C3).
+    // Optional with a null default so existing callers (including test
+    // factories that construct ChunkRequest without the new argument) do
+    // not need to be updated unless they want to populate freshness.
+    DateTimeOffset? LastScrapedUtc = null);

@@ -46,4 +46,12 @@ internal sealed class RetrievedChunkDocument
 
     [JsonPropertyName(AiSearchIndexFields.Content)]
     public string Content { get; set; } = string.Empty;
+
+    // Timeline.LastDownloadedAt projected from the index. Nullable
+    // because chunks indexed before PR-C3 carry null; the retriever
+    // surfaces null gracefully and the citation extractor propagates
+    // null to Citation.LastScrapedUtc so the frontend freshness badge
+    // is conditionally rendered.
+    [JsonPropertyName(AiSearchIndexFields.LastScrapedUtc)]
+    public DateTimeOffset? LastScrapedUtc { get; set; }
 }

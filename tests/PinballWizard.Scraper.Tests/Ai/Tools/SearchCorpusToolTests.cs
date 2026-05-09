@@ -18,6 +18,9 @@ public sealed class SearchCorpusToolTests
     private static SearchCorpusTool NewTool(IRagRetriever retriever) =>
         new(retriever, NullLogger<SearchCorpusTool>.Instance);
 
+    private static readonly DateTimeOffset SampleLastScraped =
+        new(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
+
     private static RetrievedChunk SampleChunk(
         string chunkId = "chk_1",
         string machineId = "GRBE-MJL05",
@@ -36,7 +39,8 @@ public sealed class SearchCorpusToolTests
             PageEnd: pageEnd,
             SectionHeading: "Foo Mode",
             Content: "Foo Mode rules text…",
-            Score: 0.85);
+            Score: 0.85,
+            LastScrapedUtc: SampleLastScraped);
 
     [Fact]
     public async Task SearchCorpusAsync_WhitespaceQuery_ReturnsEmptyWithoutCallingRetriever()
@@ -178,6 +182,8 @@ public sealed class SearchCorpusToolTests
         Assert.Equal(chunk.Content, hit.Content);
         // Score is threaded through [JsonIgnore] — visible to C# code.
         Assert.Equal(chunk.Score, hit.Score);
+        // PR-C3: LastScrapedUtc is threaded through [JsonIgnore] — visible to C# code.
+        Assert.Equal(chunk.LastScrapedUtc, hit.LastScrapedUtc);
     }
 
     [Fact]

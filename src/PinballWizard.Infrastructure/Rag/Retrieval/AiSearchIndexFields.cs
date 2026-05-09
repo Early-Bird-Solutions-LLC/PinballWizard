@@ -23,4 +23,10 @@ internal static class AiSearchIndexFields
     public const string SectionHeading = "section_heading";
     public const string Content = "content";
     public const string ContentEmbedding = "content_embedding";
+
+    // last_scraped_utc — the timestamp of Timeline.LastDownloadedAt from the
+    // Phase 1 scraper's provenance record. Filterable + sortable so freshness-
+    // sort queries work. Added in Wave 2 PR-C3; zero-migration-cost (existing
+    // chunks reindex on next ingestion run per ADR-0025 § 6).
+    public const string LastScrapedUtc = "last_scraped_utc";
 }
