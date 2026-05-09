@@ -116,8 +116,9 @@ public sealed class CosmosOptionsTests
         // flag. Phase 1: machines + ingestion_sources. Phase 4 W3-2: adds
         // scraped_documents + rag_leases + rag_index_state + rag_dead_letters.
         // Cosmos for User Delight PR 5: adds machine_title_lookups.
+        // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
         var options = new CosmosOptions();
-        Assert.Equal(7, options.Containers.Count);
+        Assert.Equal(8, options.Containers.Count);
     }
 
     [Fact]
@@ -185,6 +186,44 @@ public sealed class CosmosOptionsTests
 
         var lookup = Assert.Single(options.Containers, c => c.Name == "machine_title_lookups");
         Assert.Null(lookup.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_Containers_IncludesFeaturedMachinesContainer()
+    {
+        // Phase 5 Wave 2 PR-L2 — curated landing-page strip per ADR-0026.
+        // Partition key /slug (= document id) so every read is a pure
+        // point-lookup with no secondary index, mirroring machine_title_lookups.
+        var options = new CosmosOptions();
+
+        var featured = Assert.Single(options.Containers, c => c.Name == "featured_machines");
+        Assert.Equal("/slug", featured.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_FeaturedMachines_HasNoTtl()
+    {
+        // The curated list is static between deploys and replaced wholesale
+        // by re-running --seed-featured-machines. Auto-expiring rows would
+        // silently break the landing page between seed runs.
+        var options = new CosmosOptions();
+
+        var featured = Assert.Single(options.Containers, c => c.Name == "featured_machines");
+        Assert.Null(featured.DefaultTtlSeconds);
+    }
+
+    [Fact]
+    public void Defaults_FeaturedMachines_HasSelectiveIndexingPolicy()
+    {
+        // Per ADR-0025 § 6 — only display_order is indexed (sort key for the
+        // landing strip). Title and tagline are display-only and excluded to
+        // save RU on seed upserts.
+        var options = new CosmosOptions();
+
+        var featured = Assert.Single(options.Containers, c => c.Name == "featured_machines");
+        Assert.NotNull(featured.IndexingPolicy);
+        Assert.Contains("/display_order/?", featured.IndexingPolicy!.IncludedPaths);
+        Assert.Contains("/*", featured.IndexingPolicy.ExcludedPaths);
     }
 
     [Fact]

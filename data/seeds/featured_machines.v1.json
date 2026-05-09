@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "featured_machines": [
+    {
+      "slug": "stern-godzilla-pro",
+      "title": "Godzilla Pro",
+      "opdb_id": null,
+      "display_order": 1,
+      "tagline": "The king of the monsters rules the playfield with multi-level ramps and a jaw-dropping motorized Mechagodzilla upper playfield."
+    },
+    {
+      "slug": "jjp-wonka",
+      "title": "Wonka",
+      "opdb_id": null,
+      "display_order": 2,
+      "tagline": "Jersey Jack's whimsical masterpiece channels pure imagination across a hand-painted playfield bursting with Oompa-Loompa surprises."
+    },
+    {
+      "slug": "spooky-halloween",
+      "title": "Halloween",
+      "opdb_id": null,
+      "display_order": 3,
+      "tagline": "Spooky Pinball's licensed tribute to the classic slasher franchise features Michael Myers lurking through shadowy original artwork."
+    },
+    {
+      "slug": "ap-houdini",
+      "title": "Houdini: Master of Mystery",
+      "opdb_id": null,
+      "display_order": 4,
+      "tagline": "American Pinball's debut machine evokes the showmanship of the legendary illusionist through illusion-themed modes and a striking art package."
+    },
+    {
+      "slug": "chicago-gaming-medieval-madness",
+      "title": "Medieval Madness (Remake)",
+      "opdb_id": null,
+      "display_order": 5,
+      "tagline": "Chicago Gaming Company's faithful recreation of the beloved Williams classic lets a new generation storm castles and slay trolls."
+    },
+    {
+      "slug": "multimorphic-p3",
+      "title": "P3 Pinball Platform",
+      "opdb_id": null,
+      "display_order": 6,
+      "tagline": "Multimorphic's modular P3 platform redefines what a pinball machine can be: swap game kits and transform the experience without changing the cabinet."
+    }
+  ]
+}
