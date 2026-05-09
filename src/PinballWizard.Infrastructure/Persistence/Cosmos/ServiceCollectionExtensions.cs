@@ -162,6 +162,15 @@ public static class ServiceCollectionExtensions
             return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
         });
 
+        // Curated landing-page featured machines per ADR-0026 § Landing surface.
+        // Inherits metering from `CosmosRepository<T>` so every SDK call here
+        // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.
+        services.AddSingleton<IFeaturedMachineRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "featured_machines");
+            return new FeaturedMachineRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FeaturedMachineRepository>>());
+        });
+
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
         // cost off the first user query. Failure is `Warning` not throw;
         // the health check below is the canonical reachability signal.

@@ -8,6 +8,8 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
+using PinballWizard.Application.Landing;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
@@ -88,6 +90,11 @@ var seedIngestionSourcesOption = new Option<bool>("--seed-ingestion-sources")
     Description = "Read data/seeds/ingestion_sources.v1.json (relative to the current working directory, typically the repo root) and upsert each entry into the Cosmos ingestion_sources container. Idempotent: re-runs apply config field changes from the manifest while preserving runtime fields (LastRunAt, LastSuccessAt, totalDocumentsDiscovered, totalRunFailures) populated by actual scraper runs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var seedFeaturedMachinesOption = new Option<bool>("--seed-featured-machines")
+{
+    Description = "Read data/seeds/featured_machines.v1.json (relative to the current working directory, typically the repo root) and upsert each entry into the Cosmos featured_machines container. Idempotent: re-runs apply content changes from the manifest (showcase copy, display_order edits) without data loss. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
 {
     Description = "Post-deploy smoke-test for the Azure AI Foundry project (ADR-0014): connects via DefaultAzureCredential, enumerates model deployments, asserts the configured chat (AiFoundry:ChatDeploymentName) and embedding (AiFoundry:EmbeddingDeploymentName) deployments are present. Idempotent. Requires AiFoundry:ProjectEndpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
@@ -124,6 +131,7 @@ rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
+rootCommand.Options.Add(seedFeaturedMachinesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
@@ -142,6 +150,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
+    var seedFeaturedMachines = parseResult.GetValue(seedFeaturedMachinesOption);
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
@@ -205,6 +214,39 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine();
         Console.WriteLine($"Ingestion sources seeded: {seedResult.Inserted} inserted, " +
                           $"{seedResult.Updated} updated, {seedResult.Total} total.");
+        return;
+    }
+
+    // Handle --seed-featured-machines (one-shot bootstrap for the
+    // featured_machines Cosmos container). Resolves IFeaturedMachineSeedLoader
+    // and IFeaturedMachineRepository from DI; both are only registered when
+    // AddCosmosPersistence was wired (i.e., Cosmos config is present) and
+    // AddLandingService was called. Mirrors the --seed-ingestion-sources
+    // exit-code-2 remediation pattern.
+    if (seedFeaturedMachines)
+    {
+        var loader = host.Services.GetService<IFeaturedMachineSeedLoader>();
+        var repo = host.Services.GetService<IFeaturedMachineRepository>();
+        if (loader is null || repo is null)
+        {
+            Console.Error.WriteLine(
+                "--seed-featured-machines requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var documents = await loader.LoadAsync(cancellationToken);
+        var upserted = 0;
+        foreach (var doc in documents)
+        {
+            await repo.UpsertAsync(doc, cancellationToken);
+            upserted++;
+            Console.WriteLine($"  Upserted: {doc.Id} (display_order={doc.DisplayOrder})");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Featured machines seeded: {upserted} upserted.");
         return;
     }
 
@@ -516,6 +558,14 @@ static IHost CreateHost(string[] args)
         // gated alongside Cosmos because there's nothing for it to write to
         // without the repository.
         builder.Services.AddTransient<IIngestionSourceSeeder, IngestionSourceSeeder>();
+
+        // Featured-machine seed loader. Application-layer service depending on
+        // IFeaturedMachineRepository (registered by AddCosmosPersistence above);
+        // gated alongside Cosmos because --seed-featured-machines has no target
+        // container without the repository. IFeaturedMachineSeedLoader is the
+        // file-system read; IFeaturedMachineRepository is the Cosmos write target.
+        // Both are checked via GetService in the --seed-featured-machines handler.
+        builder.Services.AddSingleton<IFeaturedMachineSeedLoader, FeaturedMachineSeedLoader>();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,
