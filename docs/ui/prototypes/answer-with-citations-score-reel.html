@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Answer-with-Citations screen, Score Reel theme prototype v1
+  Same scaffold as answer-with-citations.html (Modern LCD), same content,
+  but with the Score Reel palette + type tokens swapped per
+  docs/ui/themes/sibling-themes-overview.md § Score Reel.
+
+  Score Reel evokes pre-DMD electromechanical pinball — physical rotating
+  score drums, painted numerals, paper score cards on the apron. Cream
+  backgrounds, classic Gottlieb red and yellow-gold accents, brass and
+  chrome metal moments. The "Gottlieb in a malt shop" theme. The
+  most aesthetically distinct sibling — effectively a second design
+  system rather than a re-skin (which is why the spec sequences it last).
+
+  This is also the second light-mode sibling (the first is Daytime Route),
+  and the only era-specific light-mode option. Body text is high-contrast
+  black ink on aged paper; accents are saturated period-correct hues.
+
+  Anti-pattern this prototype must NOT slide into: GOING TWEE. The era
+  was utilitarian and confident, not precious. No cursive flourishes,
+  no fake aging on every surface, no scrapbook-style decoration. The
+  paper texture is an extremely subtle background gradient; everything
+  else carries character through type and color, not embellishment.
+
+  Static HTML/CSS only — no JavaScript, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard (Score Reel) — How do I fix the trough opto on Bond Premium?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Source+Serif+4:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* ===== Score Reel palette =====
+         Light mode. Cream / aged-paper backgrounds, high-contrast black
+         ink for body, classic Gottlieb red / yellow-gold accents, brass
+         and chrome for "machine" moments.
+
+         All foreground/background pairs verified against WCAG AA at
+         body-text size: black ink on cream is ~16:1 (AAA); the Gottlieb
+         red on cream is ~5.4:1 (AA); yellow-gold on cream is ~4.6:1 (AA
+         for body, AAA for large). */
+      --bg-base: #f4ecd8;          /* aged paper */
+      --bg-base-deep: #ebe2c8;     /* edge-of-page paper, slightly weathered */
+      --bg-surface: #fbf6e8;       /* score-card paper — slightly brighter
+                                      so panels lift from the page */
+      --bg-surface-hi: #fffaec;    /* hovered card — apron-card-fresh */
+
+      --text-primary: #1a1a1a;     /* high-contrast ink, NOT pure black —
+                                      pure black on cream reads as digital
+                                      print, not letterpress */
+      --text-secondary: #6a5d44;   /* aged pencil grey-brown */
+
+      /* Score Reel accents = period-correct Gottlieb / Bally palette */
+      --accent-primary: #c4302c;   /* classic Gottlieb cabinet red — submit,
+                                      primary action */
+      --accent-grounded: #a07a14;  /* deep yellow-gold (NOT Cabinet's
+                                      flipper yellow — Score Reel's gold
+                                      is brassier, period-correct, and
+                                      hits AA against cream) */
+      --accent-refusal: #8a1f1f;   /* deeper red for refusal — distinct
+                                      from primary action */
+      --accent-mode: #6a4f1a;      /* brass / coin-mech bronze — mode/topic
+                                      context */
+
+      --border-quiet: #c8b896;     /* aged paper border, visible not wispy */
+      --border-glow-primary: #c4302c40;
+      --border-glow-grounded: #a07a1440;
+      --border-glow-mode: #6a4f1a40;
+
+      /* Score Reel-specific: brass / chrome metal accents for the
+         "machine" moments — header rule, footer rule, panel framing */
+      --frame-brass: #a06b27;
+      --frame-brass-light: #d4a96a;
+
+      /* ===== Type tokens =====
+         Display = Bungee — geometric, mid-century arcade marquee
+         lettering. Confident, utilitarian, NOT twee. Per the spec:
+         "vintage display sans evocative of mid-century arcade marquees."
+         Bungee's all-caps energy lands the era without crossing into
+         scrapbook territory.
+         Body  = Source Serif 4 — slightly warmer body face with subtle
+         character. Per the spec, named as a candidate. The serif evokes
+         apron-card paper print without becoming "vintage menu."
+         Mono  = Courier Prime — typewriter feel for citation IDs and
+         provenance trails. Per the spec, named as the canonical mono. */
+      --font-display: 'Bungee', 'Impact', sans-serif;
+      --font-body: 'Source Serif 4', 'Georgia', serif;
+      --font-mono: 'Courier Prime', 'Courier New', monospace;
+
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --space-6: 48px;
+
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --radius-insert: 50%;
+      --shadow-press: inset 0 -1px 2px rgba(106, 79, 26, 0.3);
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+      --motion-slow: 600ms;
+
+      /* Score Reel uses lighter shadow accents — the era didn't have
+         neon glow; emphasis came from saturated paint on metal/paper. */
+      --glow-red: 0 0 6px rgba(196, 48, 44, 0.25);
+      --glow-gold: 0 0 6px rgba(160, 122, 20, 0.25);
+      --ambient-glow: 0 1px 4px rgba(106, 79, 26, 0.10);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      /* Subtle paper-bezel background. Two extremely faint radial
+         highlights suggest the curve of an apron-card folded under
+         the playfield glass. NEVER textured patterns — that crosses
+         into "vintage scrapbook" cliche. The character comes from the
+         palette + type, not from decoration. */
+      background:
+        radial-gradient(ellipse 1200px 400px at 50% 0%, rgba(255, 250, 220, 0.55), transparent),
+        radial-gradient(ellipse 1200px 300px at 50% 100%, rgba(220, 200, 160, 0.30), transparent),
+        var(--bg-base);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.65;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* ===== Header — apron-card rule + brass divider ===== */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 3px double var(--frame-brass);
+      height: 60px;
+      background: linear-gradient(180deg,
+        rgba(255, 250, 220, 0.50),
+        rgba(244, 236, 216, 0.30));
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.04em;
+      color: var(--accent-primary);
+      /* Bungee is already all-caps by design — no text-transform needed */
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+    }
+
+    /* ===== Main ===== */
+    .page-main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4) var(--space-4) var(--space-6);
+    }
+
+    /* ===== Question input ===== */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 8px var(--border-glow-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: var(--bg-base);
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      box-shadow: var(--shadow-press), var(--glow-red);
+      transition: filter var(--motion-fast), transform var(--motion-fast),
+                  box-shadow var(--motion-fast);
+    }
+    .submit-btn:hover {
+      filter: brightness(1.1);
+      box-shadow: var(--shadow-press), 0 0 14px var(--accent-primary);
+    }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* ===== Answer panel — apron card on the playfield ===== */
+    .answer-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-4);
+      box-shadow: var(--ambient-glow);
+      animation: answer-reveal var(--motion-slow) ease-out 1;
+    }
+    @keyframes answer-reveal {
+      0%   { box-shadow: 0 0 16px var(--border-glow-grounded); }
+      100% { box-shadow: var(--ambient-glow); }
+    }
+    .answer-panel p {
+      margin-bottom: var(--space-2);
+      color: var(--text-primary);
+    }
+    .answer-panel p:last-child { margin-bottom: 0; }
+
+    /* Body-text outbound portal */
+    .entity-portal {
+      color: var(--text-primary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast), color var(--motion-fast);
+    }
+    .entity-portal:hover {
+      color: var(--accent-grounded);
+      border-bottom-color: var(--accent-grounded);
+    }
+    .portal-icon {
+      font-size: 0.85em;
+      margin-left: 2px;
+      color: var(--text-secondary);
+      transition: color var(--motion-fast);
+    }
+    .entity-portal:hover .portal-icon { color: var(--accent-grounded); }
+
+    /* Inline citation marker — score-reel-numeral inset */
+    .citation-marker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: var(--radius-insert);
+      background: var(--accent-grounded);
+      color: var(--bg-surface);
+      border: 1px solid var(--accent-grounded);
+      box-shadow: var(--glow-gold);
+      font-family: var(--font-display);
+      font-size: 10px;
+      font-weight: 700;
+      vertical-align: super;
+      margin-left: 2px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast);
+    }
+    .citation-marker:hover {
+      box-shadow: 0 0 12px var(--accent-grounded);
+      transform: translateY(-1px);
+    }
+
+    /* ===== Citation card stack ===== */
+    .citation-stack { margin-top: var(--space-4); }
+
+    .citation-summary {
+      font-family: var(--font-display);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      letter-spacing: 0.10em;
+      margin-bottom: var(--space-3);
+    }
+
+    .citation-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      transition: border-color var(--motion-fast), background var(--motion-fast),
+                  box-shadow var(--motion-fast);
+    }
+    .citation-card:hover {
+      background: var(--bg-surface-hi);
+      border-color: var(--accent-grounded);
+      box-shadow: 0 0 14px var(--border-glow-grounded);
+    }
+    .citation-card:last-child { margin-bottom: 0; }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-bottom: var(--space-2);
+      flex-wrap: wrap;
+    }
+
+    .source-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid var(--accent-grounded);
+      background: var(--accent-grounded);
+      border-radius: var(--radius-panel);
+      color: var(--bg-base);
+      font-family: var(--font-display);
+      font-size: var(--type-xs);
+      letter-spacing: 0.10em;
+    }
+
+    .source-identity {
+      font-family: var(--font-display);
+      font-size: var(--type-lg);
+      color: var(--accent-primary);
+      letter-spacing: 0.02em;
+      line-height: 1.15;
+    }
+
+    .excerpt {
+      border-left: 3px solid var(--accent-grounded);
+      box-shadow: -3px 0 8px var(--border-glow-grounded);
+      padding: var(--space-1) var(--space-2);
+      margin: var(--space-2) 0;
+      color: var(--text-primary);
+      font-style: italic;
+    }
+
+    .meta {
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-3);
+    }
+    .meta .provenance {
+      font-family: var(--font-mono);
+      font-size: var(--type-xs);
+      margin-top: 4px;
+      color: var(--text-secondary);
+    }
+
+    /* ===== Flipper buttons — painted-button feel =====
+       Score Reel's flippers don't carry outer glow at all (the era
+       didn't have backlight). Instead, they read as painted metal
+       buttons: saturated fill on hover, recessed-press feedback,
+       brass-frame border-shift. */
+    .flipper-pair {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+    }
+
+    .flipper {
+      background: var(--bg-surface-hi);
+      color: var(--text-primary);
+      border: 1px solid var(--frame-brass);
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-size: var(--type-md);
+      letter-spacing: 0.04em;
+      min-height: 48px;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: box-shadow var(--motion-fast), transform var(--motion-fast),
+                  background var(--motion-fast), color var(--motion-fast);
+    }
+    .flipper:active { transform: translateY(1px); }
+
+    .flipper-left {
+      box-shadow: var(--shadow-press), inset 0 0 10px rgba(106, 79, 26, 0.10);
+    }
+    .flipper-left:hover {
+      color: var(--bg-base);
+      background: var(--accent-mode);
+      border-color: var(--accent-mode);
+      box-shadow: var(--shadow-press),
+                  0 0 10px var(--border-glow-mode);
+    }
+
+    .flipper-right {
+      box-shadow: var(--shadow-press), inset 0 0 10px rgba(160, 122, 20, 0.18);
+    }
+    .flipper-right:hover {
+      color: var(--bg-base);
+      background: var(--accent-grounded);
+      border-color: var(--accent-grounded);
+      box-shadow: var(--shadow-press),
+                  0 0 12px var(--border-glow-grounded);
+    }
+
+    /* ===== Footer — apron-card rule, mirrors header ===== */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 3px double var(--frame-brass);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .page-footer a {
+      color: var(--accent-primary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-primary); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-2); }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .answer-panel { padding: var(--space-3); }
+      .flipper-pair { flex-direction: column; }
+      .flipper { width: 100%; }
+      .source-identity { font-size: var(--type-md); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <form class="question-input" onsubmit="event.preventDefault();">
+      <input
+        type="text"
+        value="How do I fix the trough opto on Bond Premium?"
+        aria-label="Ask a question about pinball"
+      >
+      <button type="submit" class="submit-btn">ASK ▶</button>
+    </form>
+
+    <article class="answer-panel" aria-live="polite">
+      <p>
+        For trough opto failures on
+        <a href="#" class="entity-portal" title="Stern Pinball — official game page">Bond Premium<span class="portal-icon">↗</span></a>,
+        the canonical service procedure comes from
+        <a href="#" class="entity-portal" title="Stern Pinball — service bulletin SB-243">Service Bulletin SB-243<span class="portal-icon">↗</span></a>.
+        The most common failure mode is a hard fault on boot when the optos
+        report inconsistent state — typically caused by a faulty opto board
+        rather than the optos themselves.<a href="#card-1" class="citation-marker" aria-label="Citation 1">1</a>
+      </p>
+      <p>
+        Before replacing the board, run the switch matrix test from the
+        operator menu to confirm the symptom matches. If the test passes
+        cleanly but ball-search behavior persists, the trough opto board
+        (assembly 520-5246-00) is the likely culprit. Stern's operations
+        manual covers the replacement procedure step-by-step including
+        connector identification.<a href="#card-2" class="citation-marker" aria-label="Citation 2">2</a>
+      </p>
+    </article>
+
+    <section class="citation-stack" aria-label="Sources">
+      <div class="citation-summary">SOURCES · 2 CITED FROM 1 SITE</div>
+
+      <article class="citation-card" id="card-1" aria-labelledby="card-1-title">
+        <div class="card-header">
+          <span class="source-tag">BULLETIN</span>
+          <h2 class="source-identity" id="card-1-title">STERN BOND PREMIUM — SB-243</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Replace the trough opto board (assembly 520-5246-00) when
+          ball-search behavior persists after switch matrix test passes.
+          Symptom is a hard fault on boot reporting inconsistent opto state."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → support → service-bulletins → sb-243</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern service bulletin SB-243, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+
+      <article class="citation-card" id="card-2" aria-labelledby="card-2-title">
+        <div class="card-header">
+          <span class="source-tag">MANUAL</span>
+          <h2 class="source-identity" id="card-2-title">STERN BOND PREMIUM — OPERATIONS MANUAL</h2>
+        </div>
+        <blockquote class="excerpt">
+          "Trough Opto Board Replacement: Power off the machine. Disconnect
+          the J1 connector from the trough opto board (520-5246-00). Remove
+          the four mounting screws. Reverse to install. Run switch test to
+          confirm operation."
+        </blockquote>
+        <div class="meta">
+          <div>Discovered 2026-04-12 · Last verified 2026-05-08</div>
+          <div class="provenance">sternpinball.com → manuals → bond-pe-operations-manual.pdf</div>
+        </div>
+        <div class="flipper-pair">
+          <button class="flipper flipper-left" aria-label="View this citation in the answer body above">◀ VIEW IN ANSWER</button>
+          <button class="flipper flipper-right" aria-label="View the original Stern operations manual, opens in new tab">VIEW THE ORIGINAL ▶</button>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+</body>
+</html>

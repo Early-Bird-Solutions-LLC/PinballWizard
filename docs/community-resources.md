@@ -1,7 +1,8 @@
-# Community Resources — Outbound Routing Contract (Brainstorm v1)
+# Community Resources — Outbound Routing Contract
 
-> **Status:** Iterating on `Dev-WebUiThemesBrainstorm`. Not yet a committed system contract.
-> Living spec. Update in place rather than spawning sibling docs. May graduate to an ADR once the destination directory and resolver behavior stabilize.
+> **Status:** Live system contract — promoted from brainstorm 2026-05-09 by [ADR-0027](adr/0027-community-resource-posture.md).
+> ADR-0027 locks the posture, plurality thresholds, closed `QuestionTopic` enum, refusal-routing matrix shape, destination-directory schema, Pinside slug-alias table, resolver abstraction, and v1 pricing strategy. **This document remains the live contract** — entry-level curation (which venues land in the directory, which slugs land in the alias table, which refusal text is rendered for which cell of the matrix) lives here and updates in place. Architectural changes (plurality thresholds, enum values, schema, posture) require an ADR-0027 amendment, never an in-place edit here.
+> Five-layer enforcement: ADR-0027 → [`guardrails.md`](guardrails.md) § Locked decisions → [`CLAUDE.md`](../CLAUDE.md) § Locked invariants 15 → [`CLAUDE.md`](../CLAUDE.md) § PR self-audit Step 1 item 10 → [`/local-review` SKILL.md](../.claude/skills/local-review/SKILL.md) category 13.
 
 ## Purpose
 
