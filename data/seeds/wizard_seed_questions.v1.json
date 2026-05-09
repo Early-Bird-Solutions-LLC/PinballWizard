@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "questions": [
+    {
+      "slug": "how-does-the-wizard-mode-work-on-godzilla",
+      "question": "How does the wizard mode work on Stern Godzilla? What do I need to complete to reach it?",
+      "target_sub_agent": "Rules",
+      "description": "Demonstrates the Rules sub-agent answering a gameplay question grounded by searchCorpus against the indexed manual for a featured Stern title."
+    },
+    {
+      "slug": "whats-my-medieval-madness-worth",
+      "question": "What is a fully working Medieval Madness worth on today's market?",
+      "target_sub_agent": "Valuation",
+      "description": "Demonstrates the Valuation sub-agent answering a machine-worth question using OPDB identity data while being transparent about live-pricing integration gaps."
+    },
+    {
+      "slug": "godzilla-ramp-motor-not-working",
+      "question": "The left ramp motor on my Stern Godzilla stopped responding. How do I diagnose whether it's the coil, opto, or node board?",
+      "target_sub_agent": "Repair",
+      "description": "Demonstrates the Repair sub-agent's safety-first diagnostic flow using indexed service bulletins, with the non-fabrication safety invariant visible to prospects."
+    },
+    {
+      "slug": "tell-me-about-the-wizard",
+      "question": "What can you help me with? Show me what PinballWizard knows about pinball machines.",
+      "target_sub_agent": "Wizard",
+      "description": "Demonstrates the Wizard orchestrator agent routing, cross-cutting tool usage, and the general Q&A surface — a first-30-seconds showcase entry point."
+    }
+  ]
+}
