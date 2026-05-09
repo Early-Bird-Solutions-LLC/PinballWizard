@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<!--
+  PinballWizard — Refusal-state screen prototype v1
+  Renders the LOW_CONFIDENCE × market refusal state per
+  docs/ui/screens/answer-with-citations.md (refusal section).
+
+  Sample scenario: a market-topic question about Williams Twilight Zone.
+  The Wizard refuses because secondary-market pricing isn't first-party
+  data; routes to the marketplace plural set per the contract's
+  refusal-routing matrix.
+
+  Static HTML/CSS only — no JavaScript, no build step.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PinballWizard — What's a Twilight Zone going for these days?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0c0b0e;
+      --bg-surface: #161519;
+      --bg-surface-hi: #1f1d22;
+      --text-primary: #f4f1ea;
+      --text-secondary: #9a9590;
+      --accent-primary: #ff9a1f;
+      --accent-grounded: #34d96a;
+      --accent-refusal: #ff3b30;
+      --accent-mode: #e13bd9;
+      --border-quiet: #2a282d;
+      --border-glow-primary: #ff9a1f99;
+      --border-glow-grounded: #34d96a99;
+      --border-glow-refusal: #ff3b3099;
+
+      --font-display: 'Barlow Condensed', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --type-xs: 12px;
+      --type-sm: 14px;
+      --type-base: 16px;
+      --type-md: 18px;
+      --type-lg: 24px;
+      --type-xl: 32px;
+
+      --space-1: 8px;
+      --space-2: 16px;
+      --space-3: 24px;
+      --space-4: 32px;
+      --space-5: 40px;
+      --space-6: 48px;
+
+      --radius-panel: 2px;
+      --radius-cta: 6px;
+      --shadow-press: inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+      --motion-fast: 120ms;
+      --motion-medium: 240ms;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: var(--type-base);
+      line-height: 1.6;
+      font-feature-settings: "tnum";
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-2) var(--space-4);
+      border-bottom: 1px solid var(--border-quiet);
+      height: 56px;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-md);
+      letter-spacing: 0.02em;
+    }
+    .header-link {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: color var(--motion-fast), border-color var(--motion-fast);
+    }
+    .header-link:hover {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-grounded);
+    }
+
+    /* Main */
+    .page-main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4) var(--space-4) var(--space-6);
+    }
+
+    /* Question input */
+    .question-input {
+      display: flex;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+    .question-input input {
+      flex: 1;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-panel);
+      padding: var(--space-2);
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
+    }
+    .question-input input:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 1px var(--border-glow-primary);
+    }
+    .submit-btn {
+      background: var(--accent-primary);
+      color: var(--bg-base);
+      border: none;
+      border-radius: var(--radius-cta);
+      padding: var(--space-2) var(--space-3);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      box-shadow: var(--shadow-press);
+      transition: filter var(--motion-fast), transform var(--motion-fast);
+    }
+    .submit-btn:hover { filter: brightness(1.1); }
+    .submit-btn:active { transform: translateY(1px); }
+
+    /* ===== Refusal panel ===== */
+    .refusal-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--accent-refusal);
+      border-radius: var(--radius-panel);
+      padding: var(--space-4);
+      box-shadow: 0 0 12px var(--border-glow-refusal);
+    }
+
+    .refusal-category {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-xl);
+      color: var(--accent-refusal);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-2);
+      line-height: 1.1;
+    }
+
+    .refusal-reason {
+      font-family: var(--font-body);
+      font-size: var(--type-md);
+      color: var(--text-primary);
+      margin-bottom: var(--space-4);
+    }
+
+    .refusal-routing-label {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: var(--type-xs);
+      color: var(--text-secondary);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: var(--space-2);
+    }
+
+    .routing-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+    }
+
+    /* ===== Routing recommendation CTA — recessed puck, smaller than flipper ===== */
+    .routing-cta {
+      background: var(--bg-surface-hi);
+      color: var(--text-primary);
+      border: 1px solid var(--border-quiet);
+      border-radius: var(--radius-cta);
+      padding: var(--space-1) var(--space-2);
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--type-sm);
+      letter-spacing: 0.05em;
+      min-height: 40px;
+      cursor: pointer;
+      box-shadow: var(--shadow-press), inset 0 0 8px rgba(52, 217, 106, 0.12);
+      transition: box-shadow var(--motion-fast), background var(--motion-fast),
+                  transform var(--motion-fast);
+      text-align: left;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .routing-cta:hover {
+      box-shadow: var(--shadow-press), 0 0 10px var(--border-glow-grounded),
+                  inset 0 0 8px rgba(52, 217, 106, 0.22);
+      background: rgba(52, 217, 106, 0.05);
+    }
+    .routing-cta:active {
+      transform: translateY(1px);
+    }
+    .routing-cta::after {
+      content: " ▶";
+      color: var(--accent-grounded);
+      margin-left: var(--space-1);
+    }
+
+    .refusal-fallback-text {
+      font-family: var(--font-body);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      font-style: italic;
+      padding-top: var(--space-2);
+      border-top: 1px solid var(--border-quiet);
+    }
+
+    /* Footer */
+    .page-footer {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: var(--space-4);
+      border-top: 1px solid var(--border-quiet);
+      font-size: var(--type-sm);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .page-footer a {
+      color: var(--accent-grounded);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color var(--motion-fast);
+    }
+    .page-footer a:hover { border-bottom-color: var(--accent-grounded); }
+    .page-footer > div { margin-bottom: var(--space-1); }
+    .page-footer > div:last-child { margin-bottom: 0; }
+
+    /* Mobile */
+    @media (max-width: 767px) {
+      .page-main { padding: var(--space-2); }
+      .question-input { flex-direction: column; }
+      .submit-btn { width: 100%; }
+      .refusal-panel { padding: var(--space-3); }
+      .refusal-category { font-size: var(--type-lg); }
+      .routing-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0ms !important;
+        transition-duration: 0ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="brand">PinballWizard</div>
+    <a class="header-link" href="#">What we cover</a>
+  </header>
+
+  <main class="page-main">
+    <form class="question-input" onsubmit="event.preventDefault();">
+      <input
+        type="text"
+        value="What's a Twilight Zone going for these days?"
+        aria-label="Ask a question about pinball"
+      >
+      <button type="submit" class="submit-btn">ASK ▶</button>
+    </form>
+
+    <section class="refusal-panel" role="region" aria-labelledby="refusal-cat" aria-live="assertive">
+      <h2 class="refusal-category" id="refusal-cat">LOW CONFIDENCE</h2>
+      <p class="refusal-reason">
+        We don't have first-party pricing data for Twilight Zone — secondary-market
+        values aren't part of our scraped sources, and Williams is a defunct
+        manufacturer so there's no current MSRP to anchor on either. The community
+        resources below cover this, alphabetical and equal-weight.
+      </p>
+
+      <div class="refusal-routing-label">Try these instead:</div>
+      <div class="routing-grid">
+        <button class="routing-cta" aria-label="Search Barnebys for Twilight Zone realized auction prices, opens in new tab">BARNEBYS</button>
+        <button class="routing-cta" aria-label="Search eBay sold listings for Twilight Zone, opens in new tab">EBAY SOLD-LISTINGS</button>
+        <button class="routing-cta" aria-label="Search Liveauctioneers for Twilight Zone, opens in new tab">LIVEAUCTIONEERS</button>
+        <button class="routing-cta" aria-label="Browse Mr. Pinball Classifieds for Twilight Zone, opens in new tab">MR. PINBALL CLASSIFIEDS</button>
+        <button class="routing-cta" aria-label="Open the PinballPrice sales-records database, opens in new tab">PINBALLPRICE</button>
+        <button class="routing-cta" aria-label="Open the PinballPrices price guide, opens in new tab">PINBALLPRICES</button>
+        <button class="routing-cta" aria-label="Open the PinballValue appraisal page for Twilight Zone, opens in new tab">PINBALLVALUE</button>
+        <button class="routing-cta" aria-label="Open the Pinside Twilight Zone market page, opens in new tab">PINSIDE TWILIGHT ZONE / MARKET</button>
+        <button class="routing-cta" aria-label="Open the Pinpedia Twilight Zone page, opens in new tab">PINPEDIA</button>
+      </div>
+
+      <div class="refusal-fallback-text">
+        Facebook Marketplace and regional Facebook pinball groups are also where many
+        private sales happen — no direct link possible. Check there too.
+      </div>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <div>The Wizard has first-party data on 8 active manufacturers and OPDB. <a href="#">What we cover →</a></div>
+    <div>PinballWizard by Earlybird Solutions · <a href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard">GitHub</a></div>
+  </footer>
+</body>
+</html>
