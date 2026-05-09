@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
 
@@ -196,11 +198,28 @@ public sealed class AiRouter : IAiRouter
     // delegation with a live call to wizardAgent.RunStreamingAsync, emitting
     // per-update TextDelta chunks as they arrive from the Foundry model.
     //
+    // Wave 2 PR-S3 adds:
+    //   - pinwiz.ai.first_token_ms histogram: recorded on the first non-empty
+    //     TextDelta (or on a refusal before any TextDelta). Tagged with
+    //     cache_state (hit | miss) and outcome (refusal — only on refusal paths
+    //     that fire before any text chunk).
+    //   - ToolCallStarted / ToolCallCompleted chunk emission: emitted as
+    //     FunctionCallContent / FunctionResultContent appear in the stream
+    //     updates. Deduped by call ID — only the first sighting of each call
+    //     ID fires. Client shows progress breadcrumbs without waiting for Final.
+    //   - CitationArrived chunk emission: emitted per citation extracted from
+    //     each searchCorpus FunctionResultContent. Optimistic view — Final's
+    //     Answer.Citations is authoritative. Client can begin rendering citation
+    //     cards early.
+    //
     // Pipeline summary:
-    //   1. Cache hit → yield TextDelta(cached.Text) + Final(cached). Done.
+    //   1. Cache hit → yield TextDelta(cached.Text) + record first_token_ms
+    //      (cache_state=hit) + Final(cached). Done.
     //   2. Cache miss → call wizardAgent.RunStreamingAsync and yield
     //      TextDelta for each AgentResponseUpdate that carries non-empty
-    //      text. Accumulate all updates for post-stream reconstruction.
+    //      text, ToolCallStarted/Completed per FunctionCall/Result contents,
+    //      and CitationArrived per searchCorpus results. Accumulate all
+    //      updates for post-stream reconstruction.
     //   3. After stream completes, reconstruct an AgentResponse from the
     //      accumulated ChatMessages (tool-call results preserved so
     //      ToolTraceCitationExtractor and SubAgentTraceReader can read them).
@@ -209,10 +228,12 @@ public sealed class AiRouter : IAiRouter
     //      citations, confidence, NoCitation).
     //   5. If a guardrail refuses: yield Refusal then Final. No cache write.
     //      The Refusal chunk supersedes prior TextDeltas on the client per
-    //      ADR-0026 § 5 UX rule.
+    //      ADR-0026 § 5 UX rule. Prior ToolCall/Citation chunks are NOT
+    //      removed — client renders Refusal as authoritative.
     //   6. If passes: yield Final and write to cache.
-    //   7. 429 from RunStreamingAsync: catch, build UpstreamThrottled
-    //      refusal, yield Refusal + Final. No cache write.
+    //   7. 429 from RunStreamingAsync: catch, record first_token_ms
+    //      (cache_state=miss, outcome=refusal), yield Refusal + Final. No
+    //      cache write.
     //
     // [EnumeratorCancellation] propagates CancellationToken through the
     // IAsyncEnumerable machinery so callers can cancel mid-iteration
@@ -226,6 +247,12 @@ public sealed class AiRouter : IAiRouter
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
 
+        // Stopwatch started at entry so first_token_ms covers the full
+        // caller-visible latency including cache lookup. Both cache-hit
+        // and cache-miss paths record elapsed time at first TextDelta (or
+        // refusal) emission.
+        var requestStopwatch = Stopwatch.StartNew();
+
         // ── Cache hit: single TextDelta from the cached answer ────────
         // A cached answer is always a single round-trip (whole text).
         // Streaming a cached answer as multiple deltas would be misleading
@@ -238,12 +265,27 @@ public sealed class AiRouter : IAiRouter
 
             if (cached.IsRefusal)
             {
+                // Record first_token_ms as a refusal on the cache-hit path.
+                // The refusal chunk IS the first chunk emitted, so elapsed
+                // here is the correct first-token latency.
+                RecordFirstTokenMs(
+                    requestStopwatch,
+                    cacheState: "hit",
+                    outcome: "refusal");
+
                 yield return new AnswerChunk.Refusal(
                     cached.RefusalCategory ?? RefusalCategory.OutOfScope,
                     cached.Text);
             }
             else
             {
+                // Record first_token_ms on the TextDelta (the first client-
+                // visible chunk from a non-refusal cache hit).
+                RecordFirstTokenMs(
+                    requestStopwatch,
+                    cacheState: "hit",
+                    outcome: "streamed");
+
                 yield return new AnswerChunk.TextDelta(cached.Text);
             }
 
@@ -259,38 +301,67 @@ public sealed class AiRouter : IAiRouter
         // ── Live stream: aggregate then yield ─────────────────────────
         // C# forbids yield inside a try/catch body (CS1626). The solution:
         // AggregateStreamAsync collects all AgentResponseUpdates into
-        // (messages, textDeltas, 429Refusal?) without yielding — pure async
+        // (messages, streamChunks, 429Refusal?) without yielding — pure async
         // aggregation with no iterator machinery. After it returns we yield
-        // the buffered deltas in a yield-safe context.
+        // the buffered chunks in a yield-safe context.
+        //
+        // streamChunks is ordered: ToolCallStarted / ToolCallCompleted /
+        // CitationArrived chunks are interleaved with TextDelta chunks in
+        // arrival order. This lets the client render progress breadcrumbs
+        // (tool calls, citations) as they are produced rather than waiting
+        // for the Final chunk.
         //
         // Trade-off: the first TextDelta reaches the client only after the
         // full stream completes rather than as each token arrives. In the
         // Wave 1 baseline the client saw a single TextDelta anyway (the stub
-        // called AnswerAsync then wrapped the whole text). Wave 2 PR-S2
-        // preserves per-update granularity (multiple TextDelta events) while
-        // respecting the language constraint; true "token-by-token" delivery
-        // without buffering requires the streaming infrastructure to surface
-        // below the try/catch boundary, which would require a structural
-        // change to AggregateStreamAsync. Logged in DL-0003 for Wave 3 review.
+        // called AnswerAsync then wrapped the whole text). Wave 2 PR-S2/S3
+        // preserves per-update granularity (multiple TextDelta / ToolCall /
+        // Citation events) while respecting the language constraint; true
+        // "token-by-token" delivery without buffering requires the streaming
+        // infrastructure to surface below the try/catch boundary, which would
+        // require a structural change to AggregateStreamAsync. Logged in
+        // DL-0003 for Wave 3 review.
         //
         // AgentResponseExtensions.ToAgentResponseAsync is not present in
         // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); AggregateStreamAsync
         // handles reconstruction inline.
-        var (accumulatedMessages, textDeltas, refusalFromException) =
+        var (accumulatedMessages, streamChunks, refusalFromException) =
             await AggregateStreamAsync(wizardAgent, question, promptVersion, cancellationToken)
                 .ConfigureAwait(false);
 
-        // Yield the buffered TextDelta chunks — safe to yield here because
-        // we are outside any try/catch block.
-        foreach (var delta in textDeltas)
+        // Yield the buffered chunks (TextDelta, ToolCallStarted, ToolCallCompleted,
+        // CitationArrived) — safe to yield here because we are outside any
+        // try/catch block. Record first_token_ms on the first TextDelta.
+        var firstTokenRecorded = false;
+        foreach (var chunk in streamChunks)
         {
-            yield return new AnswerChunk.TextDelta(delta);
+            if (!firstTokenRecorded && chunk is AnswerChunk.TextDelta)
+            {
+                RecordFirstTokenMs(
+                    requestStopwatch,
+                    cacheState: "miss",
+                    outcome: "streamed");
+                firstTokenRecorded = true;
+            }
+
+            yield return chunk;
         }
 
         // ── 429 path: emit Refusal + Final, no cache write ────────────
         if (refusalFromException is not null)
         {
             // ADR-0026 § 5: Refusal supersedes prior TextDeltas on the client.
+            // Record first_token_ms with outcome=refusal because no TextDelta
+            // was emitted before this point (a 429 throws before any update
+            // arrives from the model).
+            if (!firstTokenRecorded)
+            {
+                RecordFirstTokenMs(
+                    requestStopwatch,
+                    cacheState: "miss",
+                    outcome: "refusal");
+            }
+
             yield return new AnswerChunk.Refusal(
                 refusalFromException.RefusalCategory ?? RefusalCategory.OutOfScope,
                 refusalFromException.Text);
@@ -318,7 +389,11 @@ public sealed class AiRouter : IAiRouter
         {
             // Refusal supersedes the TextDeltas already emitted to the client.
             // The client discards any in-flight prose when it receives a
-            // Refusal chunk per ADR-0026 § 5 UX rule. No cache write.
+            // Refusal chunk per ADR-0026 § 5 UX rule. Prior ToolCallStarted /
+            // ToolCallCompleted / CitationArrived chunks remain in the stream —
+            // the client decides how to handle them (ADR-0026 § 5 refusal UX
+            // rule covers text-delta supersession, not non-text chunks). No
+            // cache write.
             yield return new AnswerChunk.Refusal(
                 answer.RefusalCategory ?? RefusalCategory.OutOfScope,
                 answer.Text);
@@ -333,23 +408,33 @@ public sealed class AiRouter : IAiRouter
         }
     }
 
-    // Aggregates a RunStreamingAsync call into (messages, textDeltas, 429Refusal?).
+    // Aggregates a RunStreamingAsync call into (messages, streamChunks, 429Refusal?).
     // Separated from AnswerStreamingAsync because C# forbids yield inside a
     // try/catch body (CS1626). This method is a pure async aggregator — no
-    // iterator machinery — which lets the caller yield the buffered deltas
+    // iterator machinery — which lets the caller yield the buffered chunks
     // in a safe context.
     //
     // Returns:
-    //   messages    — One ChatMessage per AgentResponseUpdate, preserving
-    //                 FunctionResultContent for the citation extractor.
-    //   textDeltas  — Non-empty text fragments in arrival order; caller
-    //                 yields these as AnswerChunk.TextDelta events.
-    //   refusal     — Non-null only when a 429 was caught; caller emits
-    //                 Refusal + Final and skips the guardrail pipeline.
+    //   messages     — One ChatMessage per AgentResponseUpdate, preserving
+    //                  FunctionResultContent for the citation extractor.
+    //   streamChunks — AnswerChunk events in arrival order: TextDelta (per
+    //                  non-empty text update), ToolCallStarted (per first
+    //                  FunctionCallContent sighting), ToolCallCompleted (per
+    //                  FunctionResultContent), CitationArrived (per citation
+    //                  extracted from searchCorpus results). Caller yields
+    //                  these after AggregateStreamAsync returns.
+    //   refusal      — Non-null only when a 429 was caught; caller emits
+    //                  Refusal + Final and skips the guardrail pipeline.
+    //
+    // Wave 2 PR-S3 adds ToolCall/Citation chunk emission and interleaves them
+    // with TextDelta chunks in streamChunks. The deduplication set (seenCallIds)
+    // prevents double-emission when multiple updates carry the same call ID
+    // (e.g., function-call bookkeeping updates that repeat the call ID across
+    // multiple streaming frames).
     //
     // See DL-0003: true per-token delivery (no buffering) requires surfacing
     // the stream below the try/catch boundary — deferred to Wave 3.
-    private async Task<(List<ChatMessage> messages, List<string> textDeltas, WizardAnswer? refusal)>
+    private async Task<(List<ChatMessage> messages, List<AnswerChunk> streamChunks, WizardAnswer? refusal)>
         AggregateStreamAsync(
             AIAgent wizardAgent,
             string question,
@@ -357,8 +442,16 @@ public sealed class AiRouter : IAiRouter
             CancellationToken cancellationToken)
     {
         var messages = new List<ChatMessage>();
-        var textDeltas = new List<string>();
+        var streamChunks = new List<AnswerChunk>();
         WizardAnswer? refusal = null;
+
+        // Per-call-ID deduplication for ToolCallStarted / ToolCallCompleted.
+        // A single logical function invocation may surface its FunctionCallContent
+        // across multiple streaming frames; we emit exactly one ToolCallStarted
+        // per unique call ID. FunctionResultContent is the terminal signal for a
+        // call ID so ToolCallCompleted is emitted at most once per ID.
+        var seenCallIds = new HashSet<string>(StringComparer.Ordinal);
+        var completedCallIds = new HashSet<string>(StringComparer.Ordinal);
 
         try
         {
@@ -377,6 +470,80 @@ public sealed class AiRouter : IAiRouter
                 if (update.Contents is { Count: > 0 })
                 {
                     contentItems.AddRange(update.Contents);
+
+                    // Inspect each content item for ToolCall/Result signals.
+                    foreach (var content in update.Contents)
+                    {
+                        if (content is FunctionCallContent call)
+                        {
+                            // Emit ToolCallStarted on first sighting of this
+                            // call ID. The call ID may repeat across multiple
+                            // streaming frames (SDK buffering artifact) — dedupe.
+                            if (!string.IsNullOrEmpty(call.CallId)
+                                && seenCallIds.Add(call.CallId))
+                            {
+                                streamChunks.Add(new AnswerChunk.ToolCallStarted(
+                                    ToolName: call.Name ?? string.Empty,
+                                    ToolCallId: call.CallId));
+                            }
+                            else if (string.IsNullOrEmpty(call.CallId))
+                            {
+                                // No call ID: emit ToolCallStarted without dedup
+                                // (cannot correlate to a Completed event).
+                                streamChunks.Add(new AnswerChunk.ToolCallStarted(
+                                    ToolName: call.Name ?? string.Empty,
+                                    ToolCallId: null));
+                            }
+                        }
+                        else if (content is FunctionResultContent result)
+                        {
+                            // Emit ToolCallCompleted for this result, then
+                            // CitationArrived for any citations extracted.
+                            // Dedupe by call ID — emit Completed at most once.
+                            if (!string.IsNullOrEmpty(result.CallId)
+                                && completedCallIds.Add(result.CallId))
+                            {
+                                var succeeded = !IsToolCallError(result.Result);
+                                streamChunks.Add(new AnswerChunk.ToolCallCompleted(
+                                    ToolName: ResolveToolName(result.CallId, result.Result),
+                                    ToolCallId: result.CallId,
+                                    Succeeded: succeeded));
+                            }
+                            else if (string.IsNullOrEmpty(result.CallId))
+                            {
+                                // No call ID: emit ToolCallCompleted without dedup.
+                                var succeeded = !IsToolCallError(result.Result);
+                                streamChunks.Add(new AnswerChunk.ToolCallCompleted(
+                                    ToolName: ResolveToolName(result.CallId, result.Result),
+                                    ToolCallId: null,
+                                    Succeeded: succeeded));
+                            }
+
+                            // CitationArrived emission: extract citations from
+                            // searchCorpus results only (the optimistic view).
+                            // getMachineByTitle citations are extracted the same
+                            // way but their authoritative form is in Final.Answer.
+                            // Per ADR-0026 § 5, Final.Answer.Citations is
+                            // authoritative — these are optimistic previews.
+                            if (result.Result is SearchCorpusResult corpus)
+                            {
+                                // Reuse ToolTraceCitationExtractor's internal
+                                // per-message helper to ensure consistent
+                                // deduplication and title-building logic.
+                                // Wrap in a single-message ChatMessage so the
+                                // helper can iterate the standard way.
+                                var singleMsg = new ChatMessage(
+                                    ChatRole.Tool,
+                                    new List<AIContent> { content });
+                                var optimisticCitations = _toolTraceExtractor
+                                    .ExtractFromMessages([singleMsg]);
+                                foreach (var citation in optimisticCitations)
+                                {
+                                    streamChunks.Add(new AnswerChunk.CitationArrived(citation));
+                                }
+                            }
+                        }
+                    }
                 }
                 else if (!string.IsNullOrEmpty(update.Text))
                 {
@@ -389,10 +556,10 @@ public sealed class AiRouter : IAiRouter
                     messages.Add(new ChatMessage(role, contentItems));
                 }
 
-                // Collect non-empty text fragments for per-delta emission.
-                // Skip empty updates (tool-call bookkeeping, usage metadata).
+                // Collect non-empty text fragments as TextDelta chunks,
+                // interleaved with ToolCall/Citation chunks in arrival order.
                 if (!string.IsNullOrEmpty(update.Text))
-                    textDeltas.Add(update.Text);
+                    streamChunks.Add(new AnswerChunk.TextDelta(update.Text));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
@@ -438,7 +605,77 @@ public sealed class AiRouter : IAiRouter
             throw;
         }
 
-        return (messages, textDeltas, refusal);
+        return (messages, streamChunks, refusal);
+    }
+
+    // Returns true when the tool-call result indicates an error condition.
+    // A null result or a string starting with "Error" (the convention the
+    // Microsoft Agent Framework uses for function-call failures) is treated
+    // as a failure. SearchCorpusResult and MachineGroundingDto results are
+    // always success — the tool catches its own exceptions and returns empty
+    // results rather than rethrowing (ADR-0023 fail-closed posture).
+    private static bool IsToolCallError(object? result)
+    {
+        if (result is null)
+        {
+            return true;
+        }
+
+        if (result is string text)
+        {
+            return text.StartsWith("Error", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    // Resolves a human-readable tool name from a call ID and/or result.
+    // The call ID (e.g., "call_getMachineByTitle_abc123") often encodes
+    // the tool name; the result type is a reliable fallback. Returns a
+    // generic label when neither source yields the name.
+    private static string ResolveToolName(string? callId, object? result)
+    {
+        // Prefer the result type — it's always accurate.
+        if (result is SearchCorpusResult)
+        {
+            return SearchCorpusTool.ToolTagValue;
+        }
+
+        if (result is MachineGroundingDto)
+        {
+            return "getMachineByTitle";
+        }
+
+        // Try to extract from call ID convention (call_<toolName>_<uuid>).
+        if (!string.IsNullOrEmpty(callId))
+        {
+            var parts = callId.Split('_');
+            if (parts.Length >= 2)
+            {
+                return parts[1];
+            }
+        }
+
+        return "unknown_tool";
+    }
+
+    // Records the pinwiz.ai.first_token_ms histogram. Reads the elapsed
+    // time from the still-running Stopwatch — callers must NOT call
+    // stopwatch.Stop() before invoking this, because the Stopwatch may
+    // still be in scope after the first-token moment and its running state
+    // is inconsequential (it is never read again for first_token_ms purposes
+    // after this call). The elapsed value is the caller-visible latency from
+    // method entry to the moment the first text-bearing or refusal chunk is
+    // ready to yield.
+    private static void RecordFirstTokenMs(
+        Stopwatch stopwatch,
+        string cacheState,
+        string outcome)
+    {
+        PinballWizardTelemetry.AiFirstTokenMs.Record(
+            stopwatch.Elapsed.TotalMilliseconds,
+            new KeyValuePair<string, object?>("cache_state", cacheState),
+            new KeyValuePair<string, object?>("outcome", outcome));
     }
 
     // Shared post-agent guardrail pipeline. Called by both AnswerAsync
