@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
 
@@ -171,91 +173,141 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
     {
         ArgumentNullException.ThrowIfNull(changes);
 
-        foreach (var change in changes)
+        // Stopwatch wraps the full batch — operators chart p50/p95 of
+        // `pinwiz.rag.changefeed_batch_duration_ms` to detect ingestion
+        // slowdowns before they manifest as lease-lag spikes. Tagged
+        // with a coarse batch-size bucket so latency growth can be
+        // attributed to batch-size shifts vs. per-document slowdown
+        // without exploding cardinality on raw counts. Emitted in
+        // `finally` so cancellation + transport failures both surface
+        // a duration sample (failures still cost wall-clock the operator
+        // paid for).
+        var stopwatch = Stopwatch.StartNew();
+        var batchSizeTag = new KeyValuePair<string, object?>(
+            "batch_size_bucket",
+            ClassifyBatchSize(changes.Count));
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var change in changes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var documentId = _documentIdSelector(change);
-            if (string.IsNullOrWhiteSpace(documentId))
-            {
-                _logger.LogWarning(
-                    "RAG Change Feed: skipping change with empty document id; payload type {PayloadType}.",
-                    typeof(T).Name);
-                continue;
-            }
+                var documentId = _documentIdSelector(change);
+                if (string.IsNullOrWhiteSpace(documentId))
+                {
+                    _logger.LogWarning(
+                        "RAG Change Feed: skipping change with empty document id; payload type {PayloadType}.",
+                        typeof(T).Name);
+                    PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Add(
+                        1, new KeyValuePair<string, object?>("reason", "empty_document_id"));
+                    continue;
+                }
 
-            // Short-circuit on already-dead-lettered documents so we
-            // don't repeatedly re-invoke a handler that's structurally
-            // failing. Operators clear the dead-letter row to retry.
-            DeadLetterRecord? existingDeadLetter;
-            try
-            {
-                existingDeadLetter = await _deadLetterSink
-                    .GetAsync(documentId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // The dead-letter LOOKUP itself failed (transient Cosmos
-                // failure). Log and proceed to the handler — we'd rather
-                // re-attempt the handler than silently skip a document.
-                _logger.LogWarning(
-                    ex,
-                    "RAG Change Feed: dead-letter lookup failed for document={DocumentId}; proceeding to handler.",
-                    documentId);
-                existingDeadLetter = null;
-            }
-
-            if (existingDeadLetter is { } dl
-                && dl.AttemptCount >= _ingestionOptions.MaxFailuresPerDocument)
-            {
-                _logger.LogDebug(
-                    "RAG Change Feed: skipping document={DocumentId}; over retry budget (attempts={AttemptCount}).",
-                    documentId, dl.AttemptCount);
-                continue;
-            }
-
-            try
-            {
-                await _handler.HandleAsync(change, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                var newAttemptCount = (existingDeadLetter?.AttemptCount ?? 0) + 1;
-                var record = new DeadLetterRecord(
-                    DocumentId: documentId,
-                    AttemptCount: newAttemptCount,
-                    LastAttemptUtc: _clock.GetUtcNow(),
-                    ErrorClass: TruncateClassName(ex.GetType().Name),
-                    ErrorMessage: TruncateMessage(ex.Message),
-                    ChangeLsn: _changeLsnSelector(change));
-
+                // Short-circuit on already-dead-lettered documents so we
+                // don't repeatedly re-invoke a handler that's structurally
+                // failing. Operators clear the dead-letter row to retry.
+                DeadLetterRecord? existingDeadLetter;
                 try
                 {
-                    await _deadLetterSink
-                        .UpsertAsync(record, cancellationToken).ConfigureAwait(false);
+                    existingDeadLetter = await _deadLetterSink
+                        .GetAsync(documentId, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
-                catch (Exception sinkEx)
+                catch (Exception ex)
                 {
-                    _logger.LogError(
-                        sinkEx,
-                        "RAG Change Feed: dead-letter UPSERT failed for document={DocumentId} (original error: {OriginalError}). Batch advances regardless.",
-                        documentId, ex.Message);
+                    // The dead-letter LOOKUP itself failed (transient Cosmos
+                    // failure). Log and proceed to the handler — we'd rather
+                    // re-attempt the handler than silently skip a document.
+                    _logger.LogWarning(
+                        ex,
+                        "RAG Change Feed: dead-letter lookup failed for document={DocumentId}; proceeding to handler.",
+                        documentId);
+                    existingDeadLetter = null;
+                }
+
+                if (existingDeadLetter is { } dl
+                    && dl.AttemptCount >= _ingestionOptions.MaxFailuresPerDocument)
+                {
+                    _logger.LogDebug(
+                        "RAG Change Feed: skipping document={DocumentId}; over retry budget (attempts={AttemptCount}).",
+                        documentId, dl.AttemptCount);
+                    PinballWizardTelemetry.RagChangefeedShortCircuitTotal.Add(
+                        1, new KeyValuePair<string, object?>("reason", "over_budget"));
+                    continue;
+                }
+
+                try
+                {
+                    await _handler.HandleAsync(change, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    var newAttemptCount = (existingDeadLetter?.AttemptCount ?? 0) + 1;
+                    var errorClass = TruncateClassName(ex.GetType().Name);
+                    var record = new DeadLetterRecord(
+                        DocumentId: documentId,
+                        AttemptCount: newAttemptCount,
+                        LastAttemptUtc: _clock.GetUtcNow(),
+                        ErrorClass: errorClass,
+                        ErrorMessage: TruncateMessage(ex.Message),
+                        ChangeLsn: _changeLsnSelector(change));
+
+                    try
+                    {
+                        await _deadLetterSink
+                            .UpsertAsync(record, cancellationToken).ConfigureAwait(false);
+                        // Increment the dead-letter counter only AFTER the
+                        // sink upsert succeeded — a failed upsert means the
+                        // dead-letter row didn't actually land, so the
+                        // operator dashboard shouldn't think it did. The
+                        // sink-failure path below logs separately.
+                        PinballWizardTelemetry.RagChangefeedDeadLetterTotal.Add(
+                            1, new KeyValuePair<string, object?>("error_class", errorClass));
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception sinkEx)
+                    {
+                        _logger.LogError(
+                            sinkEx,
+                            "RAG Change Feed: dead-letter UPSERT failed for document={DocumentId} (original error: {OriginalError}). Batch advances regardless.",
+                            documentId, ex.Message);
+                    }
                 }
             }
         }
+        finally
+        {
+            stopwatch.Stop();
+            PinballWizardTelemetry.RagChangefeedBatchDurationMs.Record(
+                stopwatch.Elapsed.TotalMilliseconds,
+                batchSizeTag);
+        }
     }
+
+    // Coarse batch-size bucketing for the `batch_size_bucket` tag on
+    // `pinwiz.rag.changefeed_batch_duration_ms`. Buckets chosen for
+    // operational signal at curated-subset scale: most batches are
+    // 1-5 documents (steady-state), occasional ramps hit 11-50, larger
+    // is unusual and worth surfacing.
+    internal static string ClassifyBatchSize(int count) => count switch
+    {
+        <= 0 => "0",
+        1 => "1",
+        <= 10 => "2-10",
+        <= 50 => "11-50",
+        _ => "51+",
+    };
 
     private const int ErrorClassMaxLen = 64;
     private const int ErrorMessageMaxLen = 1024;
