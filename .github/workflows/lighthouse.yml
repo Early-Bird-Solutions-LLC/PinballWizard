@@ -40,8 +40,12 @@ jobs:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-      # Run the app in Development so HTTPS redirect and HSTS are suppressed.
-      ASPNETCORE_ENVIRONMENT: Development
+      # Production environment: uses the Release static web asset manifest so
+      # _content/MudBlazor/MudBlazor.min.css and blazor.web.js are served
+      # correctly. HTTPS redirect and HSTS are NOT in Program.cs — the Azure
+      # Container Apps load balancer handles TLS termination, so the app
+      # safely runs HTTP-only in any environment.
+      ASPNETCORE_ENVIRONMENT: Production
       # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
       ASPNETCORE_URLS: 'http://localhost:5000'
       # Microsoft Identity Web's MergedOptionsValidation.Validate() fires on
