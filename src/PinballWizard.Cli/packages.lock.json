@@ -4,20 +4,21 @@
     "net10.0": {
       "Aspire.Microsoft.Azure.Cosmos": {
         "type": "Direct",
-        "requested": "[13.2.4, )",
-        "resolved": "13.2.4",
-        "contentHash": "7r0oEYD/r8FJqzcgmNqhUE9NYs3szCD7gT6JWRGKWUshuooqOsAd8/PRT0F4oi8ubv0npbfxkwFgfTsgM/sTUg==",
+        "requested": "[13.3.0, )",
+        "resolved": "13.3.0",
+        "contentHash": "nGseACMdpry2N34rZsXNxFtaYgJiJsuoZz7uczTjDmIUNMlG7BdLo+dUIPzPQ65uj52MAwyPhayTMDDHg8lMXA==",
         "dependencies": {
-          "Azure.Core": "1.51.1",
-          "Azure.Identity": "1.18.0",
+          "Azure.Core": "1.53.0",
+          "Azure.Identity": "1.21.0",
           "Microsoft.Azure.Cosmos": "3.54.0",
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Configuration.Binder": "10.0.5",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Hosting.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.5",
-          "Microsoft.Extensions.Options": "10.0.5",
-          "Microsoft.Extensions.Primitives": "10.0.5",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.7",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.7",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.7",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.7",
+          "Microsoft.Extensions.Logging": "10.0.7",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.7",
+          "Microsoft.Extensions.Options": "10.0.7",
+          "Microsoft.Extensions.Primitives": "10.0.7",
           "Newtonsoft.Json": "13.0.4",
           "OpenTelemetry.Extensions.Hosting": "1.15.3"
         }

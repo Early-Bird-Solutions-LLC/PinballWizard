@@ -30,9 +30,9 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.2.4" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.2.4" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.2.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.3.0" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.3.0" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.3.0" />
   </ItemGroup>
 
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
