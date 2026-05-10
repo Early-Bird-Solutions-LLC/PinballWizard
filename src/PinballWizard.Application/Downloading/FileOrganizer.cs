@@ -69,8 +69,10 @@ public static class FileOrganizer
 
             return filename;
         }
-        catch
+        catch (UriFormatException)
         {
+            // Malformed URL — fall back to a hash-based filename so the
+            // caller always gets a valid path component.
             return $"{DocumentRecord.GenerateId(url)}.bin";
         }
     }

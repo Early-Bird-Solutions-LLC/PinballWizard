@@ -1,0 +1,180 @@
+@* RefusalPanel — top-level refusal recovery surface.
+ *
+ * One of the four locked delight surfaces per ADR-0026 § 6. Renders the
+ * full RefusalDetail recovery payload produced by R2/R3/R4 backend PRs:
+ *
+ *   - RelatedMachines (R2)          — via per-category subview
+ *   - CommunityResources (R3)       — via CommunityResourceCards
+ *   - MissingWhat (R4)              — labeled prose section
+ *   - SuggestedRephrase (R4)        — action-styled call-out (hidden when null)
+ *   - ConfidenceBreakdown (R1)      — LowConfidence path only, score bars + threshold
+ *
+ * Per-category routing:
+ *   OutOfScope            → OutOfScopeView
+ *   InsufficientGrounding → InsufficientGroundingView
+ *   LowModelConfidence    → LowConfidenceView (also renders ConfidenceBreakdown)
+ *   NoCitation            → NoCitationView
+ *   UpstreamThrottled     → UpstreamThrottledView (NO community resources — transient)
+ *   CostCeilingHit        → CostCeilingView (NO community resources — operational)
+ *   HarmfulContent        → (shared fallback; no recovery offered per policy)
+ *
+ * MissingWhat + SuggestedRephrase + CommunityResourceCards are SHARED sections
+ * rendered below the per-category subview for all categories that include
+ * recovery (OutOfScope, InsufficientGrounding, LowModelConfidence, NoCitation).
+ *
+ * Tone: "let me help you get unstuck" — helpful sidebar, not an error page.
+ *
+ * ADR-0026 §§ 4, 5, 6 — RefusalPanel UX rules, recovery payload, plurality minimums
+ * ADR-0017 — ConfidenceBreakdown threshold (0.65)
+ * ADR-0008 — MudBlazor strict
+ * feedback_destination_plurality.md — marketplace ≥ 3, machine_reference ≥ 2
+ * feedback_avoid_appearance_of_favoritism.md — alphabetical, no featured badging
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudPaper Class="refusal-panel pa-4 pa-sm-5" Elevation="2" data-testid="refusal-panel"
+          data-refusal-category="@Category.ToString()">
+    <MudStack Spacing="4">
+
+        @* ── Per-category subview ────────────────────────────────────────── *@
+        @switch (Category)
+        {
+            case RefusalCategory.OutOfScope:
+                <OutOfScopeView RelatedMachines="Detail?.RelatedMachines" />
+                break;
+
+            case RefusalCategory.InsufficientGrounding:
+                <InsufficientGroundingView RelatedMachines="Detail?.RelatedMachines" />
+                break;
+
+            case RefusalCategory.LowModelConfidence:
+                <LowConfidenceView Confidence="Detail?.Confidence" />
+                break;
+
+            case RefusalCategory.NoCitation:
+                <NoCitationView RelatedMachines="Detail?.RelatedMachines" />
+                break;
+
+            case RefusalCategory.UpstreamThrottled:
+                <UpstreamThrottledView RetryAfterSeconds="_retryAfterSeconds" />
+                break;
+
+            case RefusalCategory.CostCeilingHit:
+                <CostCeilingView />
+                break;
+
+            case RefusalCategory.HarmfulContent:
+                @* Policy: no recovery offered for content-safety refusals.
+                   No community resources (routing users elsewhere during a safety
+                   block would undermine the refusal posture). *@
+                <MudStack Spacing="1">
+                    <MudIcon Icon="@Icons.Material.Filled.Block"
+                             Color="Color.Error"
+                             Size="Size.Medium" />
+                    <MudText Typo="Typo.h6" Class="refusal-category-label">
+                        Content Not Permitted
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        This question was flagged by the content safety system and
+                        cannot be processed.
+                    </MudText>
+                </MudStack>
+                break;
+
+            default:
+                @* Unknown future category: generic fallback so the panel
+                   doesn't crash on a forward-compat enum value. *@
+                <MudStack Spacing="1">
+                    <MudIcon Icon="@Icons.Material.Filled.Info"
+                             Color="Color.Secondary"
+                             Size="Size.Medium" />
+                    <MudText Typo="Typo.h6" Class="refusal-category-label">
+                        Unable to Answer
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        I wasn't able to produce a grounded answer for this question.
+                        Try rephrasing or exploring the community resources below.
+                    </MudText>
+                </MudStack>
+                break;
+        }
+
+        @* ── Shared: MissingWhat (all recovery-eligible categories) ─────── *@
+        @if (_showRecoverySections && !string.IsNullOrWhiteSpace(Detail?.MissingWhat))
+        {
+            <MudStack Spacing="1" data-testid="missing-what-section">
+                <MudText Typo="Typo.subtitle2">Why I can't answer:</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @Detail.MissingWhat
+                </MudText>
+            </MudStack>
+        }
+
+        @* ── Shared: SuggestedRephrase (hidden when null) ────────────────── *@
+        @if (_showRecoverySections && !string.IsNullOrWhiteSpace(Detail?.SuggestedRephrase))
+        {
+            <MudPaper Class="suggested-rephrase pa-3" Elevation="0"
+                      data-testid="suggested-rephrase-section">
+                <MudStack Spacing="1">
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                        <MudIcon Icon="@Icons.Material.Filled.TipsAndUpdates"
+                                 Color="Color.Primary"
+                                 Size="Size.Small" />
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">
+                            Try asking:
+                        </MudText>
+                    </MudStack>
+                    <MudText Typo="Typo.body2" Class="suggested-rephrase-text">
+                        @Detail.SuggestedRephrase
+                    </MudText>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @* ── Shared: CommunityResourceCards (recovery-eligible categories only) ── *@
+        @if (_showRecoverySections && _communityResources.Count > 0)
+        {
+            <div data-testid="community-resources-section">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                    Community resources that may help:
+                </MudText>
+                <CommunityResourceCards Resources="_communityResources" />
+            </div>
+        }
+
+    </MudStack>
+</MudPaper>
+
+@code {
+    // The RefusalDetail produced by R2/R3/R4 backend work. Null-safe throughout:
+    // Wave 1 shipped the shape; Wave 2 R-series PRs fill the sub-fields.
+    // RefusalPanel renders gracefully with null Detail (shows category heading only).
+    [Parameter] public RefusalDetail? Detail { get; set; }
+
+    // The category that fired the refusal. Routes to per-category subview.
+    [Parameter, EditorRequired] public RefusalCategory Category { get; set; }
+
+    // Optional: RetryAfterSeconds from DegradationContext, forwarded to
+    // UpstreamThrottledView when the caller has it.
+    [Parameter] public int? RetryAfterSeconds { get; set; }
+
+    // Derived: whether this category shows shared recovery sections
+    // (MissingWhat, SuggestedRephrase, CommunityResourceCards).
+    // UpstreamThrottled + CostCeiling + HarmfulContent: system-state —
+    // no recovery cards per IRefusalRecoveryService contract comments.
+    private bool _showRecoverySections => Category
+        is RefusalCategory.OutOfScope
+        or RefusalCategory.InsufficientGrounding
+        or RefusalCategory.LowModelConfidence
+        or RefusalCategory.NoCitation;
+
+    // RetryAfterSeconds forwarded to UpstreamThrottledView. Uses the
+    // explicit parameter in preference to anything on Detail.
+    private int? _retryAfterSeconds => RetryAfterSeconds;
+
+    // CommunityResources flattened for the cards component.
+    // Empty list when Detail is null or when Detail.CommunityResources is null.
+    private IReadOnlyList<CommunityResource> _communityResources =>
+        Detail?.CommunityResources ?? [];
+}

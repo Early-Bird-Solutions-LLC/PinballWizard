@@ -135,9 +135,10 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
                     return true;
                 }
             }
-            catch
+            catch (PlaywrightException)
             {
-                // Try next selector
+                // Try next selector — PlaywrightException is the realistic failure
+                // when a selector doesn't match or the click is intercepted.
             }
         }
 

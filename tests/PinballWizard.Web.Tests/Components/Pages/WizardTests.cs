@@ -5,6 +5,9 @@ using MudBlazor;
 using MudBlazor.Services;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Landing;
+using PinballWizard.Web.Clients;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Layout;
 using PinballWizard.Web.Components.Theming;
 using PinballWizard.Web.Components.Wizard;
@@ -20,12 +23,11 @@ namespace PinballWizard.Web.Tests.Components.Pages;
 // a bUnit smoke test. Wizard.razor is the primary /wizard route (anonymous,
 // per ADR-0026 § 1).
 //
-// PR-F2 amends: WizardStreamingPlaceholder replaces the plain text placeholder.
-// Tests now assert the WizardStreamingPlaceholder is present (and IWizardStreamingClient
-// is registered in DI) rather than checking for the F1 placeholder text.
-//
-// Wave 2 tests will assert WizardAnswerStream, RefusalPanel, CitationStrip,
-// and streaming behavior once those delight surfaces land.
+// Wave 2 PR-D-stream: WizardStreamingPlaceholder removed; WizardAnswerStream
+// is now the primary surface. Tests updated:
+//   - Register IWizardLandingClient (injected by Wizard.razor for slug resolution).
+//   - Assert WizardAnswerStream renders (question input present in Idle state).
+//   - MountsInsideMainLayout asserts the chrome is still in place.
 public sealed class WizardTests : TestContext
 {
     public WizardTests()
@@ -34,26 +36,40 @@ public sealed class WizardTests : TestContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
 
-        // PR-F2: WizardStreamingPlaceholder injects IWizardStreamingClient.
-        // Register the mock BEFORE calling GetRequiredService — bUnit locks
+        // WizardAnswerStream injects IWizardStreamingClient.
+        // Wizard.razor injects IWizardLandingClient for slug resolution.
+        // Register both BEFORE calling GetRequiredService — bUnit locks
         // the service provider on the first GetService call.
         Services.AddSingleton(Substitute.For<IWizardStreamingClient>());
+
+        var landingClient = Substitute.For<IWizardLandingClient>();
+        // Return null (endpoint down / no slug) — triggers slug-as-question fallback.
+        landingClient
+            .GetLandingAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<LandingResponse?>(null));
+        Services.AddSingleton(landingClient);
+
+        // Logging required by WizardAnswerStream.
+        Services.AddLogging();
+
+        // PR-D-degraded: OutageBanner (in MainLayout) injects IClientDegradationStore.
+        Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
         // bUnit registers FakeNavigationManager automatically. Resolving it
         // here confirms it is in place for BrandHeader nav links. Note: this
         // call locks the provider so it must come after all AddSingleton calls.
-        var _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<FakeNavigationManager>();
     }
 
     [Fact]
     public void Wizard_Renders_WithoutException()
     {
-        // Act — mount the Wizard page (contains WizardStreamingPlaceholder).
+        // Act — mount the Wizard page (now contains WizardAnswerStream).
         var cut = RenderComponent<WizardPage>();
 
-        // Assert — the SSE streaming placeholder button renders.
-        // The exact text "Stream hello-world" is in WizardStreamingPlaceholder.
-        Assert.Contains("Stream hello-world", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Assert — WizardAnswerStream renders in Idle state with the question input.
+        cut.Find("[data-testid='wizard-answer-stream']");
+        cut.Find("[data-testid='ask-button']");
     }
 
     [Fact]
@@ -75,7 +91,7 @@ public sealed class WizardTests : TestContext
         cut.FindComponent<BrandHeader>();
         cut.FindComponent<TiltErrorBoundary>();
 
-        // Assert — the streaming placeholder is within the chrome.
-        Assert.Contains("Stream hello-world", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Assert — the WizardAnswerStream delight surface is within the chrome.
+        cut.Find("[data-testid='wizard-answer-stream']");
     }
 }

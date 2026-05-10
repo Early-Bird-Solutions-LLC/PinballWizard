@@ -1,0 +1,24 @@
+/* Index page scoped styles. */
+
+.landing-page {
+    padding-top: 1.5rem;
+    padding-bottom: 3rem;
+    position: relative;
+}
+
+.landing-page__status-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+}
+
+.landing-page__section {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+.landing-page__section--muted {
+    margin-top: 2.5rem;
+    opacity: 0.75;
+}

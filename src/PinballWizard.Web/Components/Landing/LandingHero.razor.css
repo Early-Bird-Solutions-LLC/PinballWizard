@@ -1,0 +1,46 @@
+/* LandingHero scoped styles.
+ * Token references: PinballTheme.cs palette (arcade-amber primary, warm off-white text,
+ * warm near-black background) expressed via MudBlazor theme variables.
+ * Custom properties come from wwwroot/app.css :root block.
+ */
+
+.landing-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    padding: 3rem 1rem 2rem;
+    text-align: center;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.landing-hero__brand {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.landing-hero__title {
+    /* Barlow Condensed via MudBlazor Typography.H2 */
+    letter-spacing: -0.01em;
+    color: var(--mud-palette-primary, #ff9a1f);
+}
+
+.landing-hero__tagline {
+    max-width: 560px;
+    color: var(--mud-palette-text-secondary, #9a9590);
+    line-height: 1.55;
+}
+
+.landing-hero__input-row {
+    width: 100%;
+    max-width: 600px;
+}
+
+/* Mobile: narrow the padding slightly on phone viewports */
+@media (max-width: 600px) {
+    .landing-hero {
+        padding: 2rem 0.75rem 1.5rem;
+    }
+}

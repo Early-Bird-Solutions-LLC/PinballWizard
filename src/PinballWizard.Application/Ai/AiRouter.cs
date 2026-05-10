@@ -549,7 +549,7 @@ public sealed class AiRouter : IAiRouter
                             // way but their authoritative form is in Final.Answer.
                             // Per ADR-0026 § 5, Final.Answer.Citations is
                             // authoritative — these are optimistic previews.
-                            if (result.Result is SearchCorpusResult corpus)
+                            if (result.Result is SearchCorpusResult)
                             {
                                 // Reuse ToolTraceCitationExtractor's internal
                                 // per-message helper to ensure consistent
@@ -1072,8 +1072,11 @@ public sealed class AiRouter : IAiRouter
 
             return false;
         }
-        catch
+        catch (Exception)
         {
+            // This is a `when` filter guard — it must not throw (filter exceptions
+            // are silently swallowed by the CLR). Swallowing any exception here is
+            // intentional: the outer catch-all should fire rather than crashing.
             return false;
         }
     }
@@ -1100,8 +1103,9 @@ public sealed class AiRouter : IAiRouter
 
             return null;
         }
-        catch
+        catch (Exception)
         {
+            // Header-parsing is best-effort; callers default to 60s on null.
             return null;
         }
     }

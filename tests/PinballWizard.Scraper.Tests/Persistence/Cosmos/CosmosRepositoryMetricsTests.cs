@@ -39,6 +39,12 @@ public sealed class CosmosRepositoryMetricsTests
     // sibling classes' emissions on the shared Meter.
     private const string ContainerId = "metrics-test-container";
 
+    // Tolerance-based equality avoids the cs/equality-on-floats finding
+    // even though, in practice, no arithmetic happens on the RU values
+    // between fixture and assertion (they flow as exact bits).
+    private static bool RuEquals(double actual, double expected) =>
+        Math.Abs(actual - expected) < 1e-9;
+
     [Fact]
     public async Task GetByIdAsync_Success_EmitsRuChargeAndDuration()
     {
@@ -55,7 +61,7 @@ public sealed class CosmosRepositoryMetricsTests
 
         // Tag-filtered Assert.Contains because parallel test classes can
         // emit on the same instruments concurrently.
-        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && s.Value == 1.5);
+        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && RuEquals(s.Value, 1.5));
         Assert.Contains(duration, s => s.Container == ContainerId && s.Operation == "read" && s.Value >= 0);
     }
 
@@ -75,7 +81,7 @@ public sealed class CosmosRepositoryMetricsTests
         var result = await repo.GetByIdAsync("missing", "p", CancellationToken.None);
 
         Assert.Null(result);
-        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && s.Value == 1.0);
+        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && RuEquals(s.Value, 1.0));
         Assert.Contains(duration, s => s.Container == ContainerId && s.Operation == "read");
     }
 
@@ -95,7 +101,7 @@ public sealed class CosmosRepositoryMetricsTests
         await Assert.ThrowsAsync<CosmosException>(() =>
             repo.GetByIdAsync("hot", "p", CancellationToken.None));
 
-        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && s.Value == 7.25);
+        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "read" && RuEquals(s.Value, 7.25));
     }
 
     [Fact]
@@ -153,7 +159,7 @@ public sealed class CosmosRepositoryMetricsTests
 
         await repo.UpsertAsync(entity, CancellationToken.None);
 
-        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "upsert" && s.Value == 5.0);
+        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "upsert" && RuEquals(s.Value, 5.0));
         Assert.Contains(duration, s => s.Container == ContainerId && s.Operation == "upsert");
     }
 
@@ -170,7 +176,7 @@ public sealed class CosmosRepositoryMetricsTests
 
         await repo.DeleteAsync("x", "p", CancellationToken.None);
 
-        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "delete" && s.Value == 5.5);
+        Assert.Contains(ru, s => s.Container == ContainerId && s.Operation == "delete" && RuEquals(s.Value, 5.5));
         Assert.Contains(duration, s => s.Container == ContainerId && s.Operation == "delete");
     }
 
@@ -200,8 +206,8 @@ public sealed class CosmosRepositoryMetricsTests
 
         var queryRu = ru.Where(s => s.Container == ContainerId && s.Operation == "query").ToList();
         Assert.Equal(2, queryRu.Count);
-        Assert.Contains(queryRu, s => s.Value == 2.0);
-        Assert.Contains(queryRu, s => s.Value == 3.5);
+        Assert.Contains(queryRu, s => RuEquals(s.Value, 2.0));
+        Assert.Contains(queryRu, s => RuEquals(s.Value, 3.5));
         Assert.Equal(2, duration.Count(s => s.Container == ContainerId && s.Operation == "query"));
     }
 

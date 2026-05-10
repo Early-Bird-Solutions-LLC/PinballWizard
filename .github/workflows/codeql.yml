@@ -33,7 +33,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: csharp
-          queries: security-and-quality
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Restore dependencies (locked)
         run: dotnet restore --locked-mode PinballWizard.slnx

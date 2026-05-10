@@ -155,6 +155,49 @@ html, body {
     font-family: var(--pw-font-body);
 }
 
+/* ── CitationStrip delight surface (ADR-0026 § 4, § 6) ────────────────── */
+
+/* Freshness badge color variants — behavioral contract pinned by
+   FreshnessBadgeTests. Do not change color values without updating the
+   matching test assertion. */
+.freshness-fresh {
+    border-color: var(--pw-accent-grounded) !important;
+    color:        var(--pw-accent-grounded) !important;
+}
+
+.freshness-stale {
+    /* Pale amber — warm-amber at reduced opacity to signal "old but present". */
+    border-color: var(--pw-accent-primary) !important;
+    color:        var(--pw-accent-primary) !important;
+    opacity:      0.7;
+}
+
+.freshness-neutral {
+    border-color: var(--pw-text-secondary) !important;
+    color:        var(--pw-text-secondary) !important;
+}
+
+/* Citation card — base and high-score variant. */
+.citation-card {
+    border: 1px solid var(--pw-border-quiet);
+    border-radius: 6px;
+}
+
+/* High-score (≥ 0.85) accent border — arcade amber glow to signal confidence. */
+.citation-card-high-score {
+    border-color: var(--pw-accent-primary) !important;
+    box-shadow: 0 0 0 1px var(--pw-border-glow-amber);
+}
+
+.citation-group {
+    border-left: 2px solid var(--pw-border-quiet);
+    padding-left: 8px;
+}
+
+.citation-strip-label {
+    display: block;
+}
+
 @media (prefers-reduced-motion: reduce) {
     :root {
         --pw-motion-fast: 0ms;
