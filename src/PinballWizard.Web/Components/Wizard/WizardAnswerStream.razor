@@ -1,0 +1,459 @@
+@*
+    WizardAnswerStream — the live streaming surface for the /wizard page.
+
+    One of the four locked delight surfaces per ADR-0026 § 6:
+      WizardAnswerStream | RefusalPanel | CitationStrip family | TiltPage/TiltErrorBoundary
+
+    Replaces WizardStreamingPlaceholder (Wave 1 F2 bridge). Owns the full
+    question → answer lifecycle for the Wizard UX:
+
+      1. Renders an input form (Idle state).
+      2. On submit, transitions to Thinking → shows WizardThinkingIndicator.
+      3. First TextDelta → Streaming state → shows TokenRenderer + ToolCallBreadcrumb.
+      4. CitationArrived chunks accumulate → CitationsArriving; CitationStrip renders
+         alongside the streaming text (both visible simultaneously).
+      5a. AnswerChunk.Final → Complete → TokenRenderer shows canonical text,
+          CitationStrip shows canonical citation list, ToolCallBreadcrumb hidden.
+      5b. AnswerChunk.Refusal arrives at any point → Refusal state:
+          HIDES all prior streamed text (ADR-0026 § 5 load-bearing UX rule),
+          renders RefusalPanel + (if present) RefusalPanel with recovery detail.
+      6.  Stream exception → Error state → falls back to a whole-response call
+          via IWizardStreamingClient.StreamAsync with a one-shot answer, or
+          surfaces TiltErrorBoundary content + logs wizard.stream.fallback.
+
+    State machine enum: Idle | Submitted | Thinking | Streaming |
+                        CitationsArriving | Complete | Refusal | Error
+
+    ADR-0026 §§ 3, 4, 5, 6 — streaming UX, AnswerChunk union, refusal-supersedes,
+                               delight surface lock
+    ADR-0008                 — MudBlazor strict
+*@
+
+@rendermode InteractiveAuto
+@using PinballWizard.Application.Ai
+@inject IWizardStreamingClient StreamingClient
+@inject ILogger<WizardAnswerStream> Logger
+@implements IDisposable
+
+<div class="wizard-answer-stream" data-testid="wizard-answer-stream">
+
+    @* ── Question input (always visible in Idle; hidden after submit) ──── *@
+    @if (_state == AnswerState.Idle)
+    {
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_question"
+                          Placeholder="Ask anything about pinball machines…"
+                          Variant="Variant.Outlined"
+                          FullWidth="true"
+                          AutoFocus="true"
+                          aria-label="Question"
+                          data-testid="question-input"
+                          OnKeyDown="OnKeyDownAsync"
+                          Disabled="_state != AnswerState.Idle" />
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="SubmitAsync"
+                       Disabled="string.IsNullOrWhiteSpace(_question)"
+                       data-testid="ask-button">
+                Ask the Wizard
+            </MudButton>
+        </MudStack>
+    }
+    else
+    {
+        @* Show the submitted question as a header while the answer streams *@
+        <MudStack Spacing="1" Class="mb-3">
+            <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+                     data-testid="submitted-question">
+                @_submittedQuestion
+            </MudText>
+            @if (_state is not AnswerState.Complete and not AnswerState.Refusal and not AnswerState.Error)
+            {
+                <MudButton Variant="Variant.Text"
+                           Size="Size.Small"
+                           Color="Color.Secondary"
+                           OnClick="ResetToIdle"
+                           data-testid="cancel-button">
+                    Cancel
+                </MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Text"
+                           Size="Size.Small"
+                           Color="Color.Primary"
+                           OnClick="ResetToIdle"
+                           data-testid="new-question-button">
+                    Ask another question
+                </MudButton>
+            }
+        </MudStack>
+    }
+
+    @* ── Thinking indicator (Submitted / Thinking, before first chunk) ─── *@
+    @if (_state is AnswerState.Submitted or AnswerState.Thinking)
+    {
+        <WizardThinkingIndicator />
+    }
+
+    @* ── Active tool call breadcrumb (during Streaming / CitationsArriving) *@
+    @if (!string.IsNullOrEmpty(_currentToolCallName) &&
+         _state is AnswerState.Streaming or AnswerState.CitationsArriving)
+    {
+        <ToolCallBreadcrumb ToolName="@_currentToolCallName" />
+    }
+
+    @* ── Streamed text (Streaming / CitationsArriving / Complete states) ── *@
+    @* ADR-0026 § 5: Refusal SUPERSEDES prior TextDelta — TokenRenderer is
+       NOT rendered in Refusal state. When a Refusal chunk arrives, _textDeltas
+       is cleared and _state transitions to Refusal so this block never renders. *@
+    @if (_state is AnswerState.Streaming or AnswerState.CitationsArriving or AnswerState.Complete)
+    {
+        <TokenRenderer SpanTexts="_textDeltas"
+                       IsStreaming="_state is AnswerState.Streaming or AnswerState.CitationsArriving" />
+    }
+
+    @* ── CitationStrip (CitationsArriving / Complete) ─────────────────── *@
+    @if (_citations.Count > 0 &&
+         _state is AnswerState.CitationsArriving or AnswerState.Complete)
+    {
+        <CitationStrip Citations="_citations" />
+    }
+
+    @* ── RefusalPanel (Refusal state only — supersedes streamed text) ──── *@
+    @if (_state == AnswerState.Refusal && _refusalCategory.HasValue)
+    {
+        <RefusalPanel Category="_refusalCategory.Value"
+                      Detail="_refusalDetail"
+                      RetryAfterSeconds="_retryAfterSeconds" />
+    }
+
+    @* ── Error state ─────────────────────────────────────────────────────── *@
+    @if (_state == AnswerState.Error)
+    {
+        <MudAlert Severity="Severity.Warning"
+                  data-testid="stream-error-alert"
+                  Class="mt-2">
+            The Wizard hit a snag. Retrying with a full response…
+        </MudAlert>
+    }
+
+</div>
+
+@code {
+    // Optional: if the Question parameter is pre-set (e.g., from D-landing's
+    // /wizard/q/{slug} route), auto-submit on init.
+    [Parameter]
+    public string? Question { get; set; }
+
+    // ── State machine ─────────────────────────────────────────────────────
+    private enum AnswerState
+    {
+        Idle,
+        Submitted,
+        Thinking,
+        Streaming,
+        CitationsArriving,
+        Complete,
+        Refusal,
+        Error,
+    }
+
+    private AnswerState _state = AnswerState.Idle;
+    private string _question = string.Empty;
+    private string _submittedQuestion = string.Empty;
+
+    // Accumulated TextDelta texts. Cleared on Refusal (§ 5 supersedes rule).
+    // On Final: replaced with a single entry = Final.Answer.Text.
+    private readonly List<string> _textDeltas = [];
+
+    // Accumulated CitationArrived chunks. On Final: replaced with
+    // Final.Answer.Citations (canonical list per post-guardrail truth).
+    private readonly List<Citation> _citations = [];
+
+    // Active tool call (shown as breadcrumb).
+    // Stores both ToolName (for display) and ToolCallId (for matching ToolCallCompleted).
+    // ToolCallId may be null — in that case any ToolCallCompleted clears the breadcrumb.
+    private string? _currentToolCallName;
+    private string? _currentToolCallId;
+
+    // Refusal state — populated when AnswerChunk.Refusal arrives.
+    private RefusalCategory? _refusalCategory;
+    private RefusalDetail? _refusalDetail;
+    private int? _retryAfterSeconds;
+
+    // CancellationTokenSource scoped to this component lifetime.
+    // Cancelled in Dispose() to abort in-flight streams on navigation-away.
+    private CancellationTokenSource _cts = new();
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // If a Question was pre-filled (e.g., via /wizard/q/{slug} route)
+        // and we are still Idle, auto-submit.
+        if (!string.IsNullOrWhiteSpace(Question) &&
+            _state == AnswerState.Idle &&
+            string.IsNullOrWhiteSpace(_question))
+        {
+            _question = Question;
+            await SubmitAsync().ConfigureAwait(false);
+        }
+    }
+
+    // ── Input handling ────────────────────────────────────────────────────
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_question))
+        {
+            await SubmitAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_question) || _state != AnswerState.Idle)
+            return;
+
+        _submittedQuestion = _question.Trim();
+        _textDeltas.Clear();
+        _citations.Clear();
+        _currentToolCallName = null;
+        _currentToolCallId = null;
+        _refusalCategory = null;
+        _refusalDetail = null;
+        _retryAfterSeconds = null;
+
+        // Cancel any prior stream token and issue a fresh one.
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+
+        TransitionTo(AnswerState.Submitted);
+
+        await StreamAnswerAsync(_submittedQuestion, _cts.Token).ConfigureAwait(false);
+    }
+
+    // ── Streaming core ────────────────────────────────────────────────────
+
+    private async Task StreamAnswerAsync(string question, CancellationToken ct)
+    {
+        var gotFirstChunk = false;
+
+        try
+        {
+            await foreach (var chunk in StreamingClient
+                .StreamAsync(question, ct)
+                .ConfigureAwait(false))
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                if (!gotFirstChunk)
+                {
+                    gotFirstChunk = true;
+                    // First chunk — transition out of Thinking.
+                    if (_state is AnswerState.Submitted or AnswerState.Thinking)
+                    {
+                        TransitionTo(AnswerState.Streaming);
+                    }
+                }
+
+                switch (chunk)
+                {
+                    case AnswerChunk.TextDelta td:
+                        _textDeltas.Add(td.Text);
+                        if (_state == AnswerState.Submitted || _state == AnswerState.Thinking)
+                            TransitionTo(AnswerState.Streaming);
+                        break;
+
+                    case AnswerChunk.ToolCallStarted ts:
+                        _currentToolCallName = ts.ToolName;
+                        _currentToolCallId = ts.ToolCallId;
+                        break;
+
+                    case AnswerChunk.ToolCallCompleted tc:
+                        // Clear the breadcrumb when this ToolCallCompleted matches the
+                        // currently-active tool call. Match on ToolCallId when both are
+                        // non-null; otherwise match on ToolName (ToolCallId may be null in
+                        // dev/mock scenarios where Foundry doesn't assign an ID).
+                        var idMatch = string.IsNullOrEmpty(tc.ToolCallId) ||
+                                      string.IsNullOrEmpty(_currentToolCallId) ||
+                                      tc.ToolCallId == _currentToolCallId;
+                        var nameMatch = tc.ToolName == _currentToolCallName;
+                        if (idMatch && nameMatch)
+                        {
+                            _currentToolCallName = null;
+                            _currentToolCallId = null;
+                        }
+                        break;
+
+                    case AnswerChunk.CitationArrived ca:
+                        _citations.Add(ca.Citation);
+                        if (_state == AnswerState.Streaming)
+                            TransitionTo(AnswerState.CitationsArriving);
+                        break;
+
+                    case AnswerChunk.Refusal r:
+                        // ADR-0026 § 5 — Refusal supersedes all prior TextDelta.
+                        // Clear accumulated text so TokenRenderer does not render it.
+                        _textDeltas.Clear();
+                        _refusalCategory = r.Category;
+                        // RefusalDetail is not carried in the stream chunk (it lives on
+                        // WizardAnswer). The detail will arrive on the Final chunk.
+                        TransitionTo(AnswerState.Refusal);
+                        break;
+
+                    case AnswerChunk.Final f:
+                        ApplyFinal(f.Answer);
+                        break;
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Navigation-away or user cancelled — no error surface.
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex,
+                "wizard.stream.fallback — stream failed for question {QuestionPreview}. Reason: {Message}",
+                question.Length > 60 ? question[..60] + "…" : question,
+                ex.Message);
+
+            TransitionTo(AnswerState.Error);
+            StateHasChanged();
+
+            // Fallback: attempt a whole-response-style call.
+            // The streaming client's fallback mode yields TextDelta + Final for
+            // any question when the Api is unreachable — this gives us the same
+            // recovery path without a separate IAiRouter injection.
+            await FallbackToWholeResponseAsync(question, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task FallbackToWholeResponseAsync(string question, CancellationToken ct)
+    {
+        // Re-initialize state for a clean fallback render.
+        _textDeltas.Clear();
+        _citations.Clear();
+        _currentToolCallName = null;
+        _currentToolCallId = null;
+
+        try
+        {
+            await foreach (var chunk in StreamingClient
+                .StreamAsync(question, ct)
+                .ConfigureAwait(false))
+            {
+                if (ct.IsCancellationRequested)
+                    break;
+
+                switch (chunk)
+                {
+                    case AnswerChunk.TextDelta td:
+                        _textDeltas.Add(td.Text);
+                        if (_state is AnswerState.Error or AnswerState.Submitted)
+                            TransitionTo(AnswerState.Streaming);
+                        break;
+
+                    case AnswerChunk.CitationArrived ca:
+                        _citations.Add(ca.Citation);
+                        break;
+
+                    case AnswerChunk.Refusal r:
+                        _textDeltas.Clear();
+                        _refusalCategory = r.Category;
+                        TransitionTo(AnswerState.Refusal);
+                        break;
+
+                    case AnswerChunk.Final f:
+                        ApplyFinal(f.Answer);
+                        break;
+
+                    default:
+                        break;
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled during fallback — acceptable.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "wizard.stream.fallback.failed — fallback also failed for question {QuestionPreview}.",
+                question.Length > 60 ? question[..60] + "…" : question);
+            // Leave in Error state — user sees the alert.
+            StateHasChanged();
+        }
+    }
+
+    // ── Final chunk application (canonical truth) ─────────────────────────
+
+    private void ApplyFinal(WizardAnswer answer)
+    {
+        if (answer.IsRefusal && answer.RefusalCategory.HasValue)
+        {
+            // Post-guardrail refusal — treat the same as a Refusal chunk.
+            // ADR-0026 § 5: supersedes any prior streamed text.
+            _textDeltas.Clear();
+            _refusalCategory = answer.RefusalCategory;
+            _refusalDetail = answer.RefusalDetail;
+            _retryAfterSeconds = (int?)answer.Degradation?.RetryAfterSeconds;
+            TransitionTo(AnswerState.Refusal);
+            return;
+        }
+
+        // Non-refusal Final: canonical answer text supersedes streamed deltas.
+        // ADR-0026 § 5 (Final supersedes): render Final.Answer.Text, not deltas.
+        _textDeltas.Clear();
+        _textDeltas.Add(answer.Text);
+
+        // Canonical citation list supersedes streamed CitationArrived chunks.
+        _citations.Clear();
+        _citations.AddRange(answer.Citations);
+
+        _currentToolCallName = null;
+        _currentToolCallId = null;
+        TransitionTo(AnswerState.Complete);
+    }
+
+    // ── State helper ──────────────────────────────────────────────────────
+
+    private void TransitionTo(AnswerState next)
+    {
+        _state = next;
+    }
+
+    private void ResetToIdle()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+
+        _state = AnswerState.Idle;
+        _question = string.Empty;
+        _submittedQuestion = string.Empty;
+        _textDeltas.Clear();
+        _citations.Clear();
+        _currentToolCallName = null;
+        _currentToolCallId = null;
+        _refusalCategory = null;
+        _refusalDetail = null;
+        _retryAfterSeconds = null;
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
