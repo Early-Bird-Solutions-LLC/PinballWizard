@@ -14,6 +14,7 @@ namespace PinballWizard.Web.Services;
 public static class ThemeNames
 {
     public const string Backbox = "backbox";
+    public const string Cabinet = "cabinet";
     public const string DaytimeRoute = "daytime-route";
     public const string ModernLcd = "modern-lcd";
 }

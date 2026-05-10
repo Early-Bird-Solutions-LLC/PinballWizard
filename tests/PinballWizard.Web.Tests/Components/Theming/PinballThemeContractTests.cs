@@ -155,6 +155,7 @@ public sealed class UserPreferencesContractTests
 {
     [Theory]
     [InlineData(ThemeNames.Backbox,      "backbox")]
+    [InlineData(ThemeNames.Cabinet,      "cabinet")]
     [InlineData(ThemeNames.DaytimeRoute, "daytime-route")]
     [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
     public void ThemeName_MatchesExpected(string actual, string expected)
@@ -199,6 +200,41 @@ public sealed class BackboxThemeContractTests
     [InlineData(BackboxTheme.AccentPrimary,  "#ff3399")]
     [InlineData(BackboxTheme.AccentGrounded, "#00e5cc")]
     [InlineData(BackboxTheme.BorderQuiet,    "#1f2740")]
+    public void Token_MatchesSpec(string actual, string expected)
+        => Assert.Equal(expected, actual, ignoreCase: true);
+}
+
+/// <summary>
+/// Pins the Cabinet sibling-theme token values defined in app.css
+/// (html.theme-cabinet block). CSS-variable-only for v1 — no MudTheme
+/// companion. Spec authority: docs/ui/themes/sibling-themes-overview.md § Cabinet.
+///
+/// Any palette change must update both app.css AND these constants together.
+/// The five tokens chosen are most visually distinctive: warm wood base,
+/// aged ivory text, flipper-button red primary, flipper yellow grounded.
+/// </summary>
+public static class CabinetTheme
+{
+    public const string CssClass       = "theme-cabinet";
+    public const string BgBase         = "#2a1f15";
+    public const string TextPrimary    = "#f4eedd";
+    public const string AccentPrimary  = "#d23030";
+    public const string AccentGrounded = "#f5c83a";
+    public const string BorderQuiet    = "#3d2e1f";
+}
+
+public sealed class CabinetThemeContractTests
+{
+    [Fact]
+    public void CssClass_IsCabinetSelector()
+        => Assert.Equal("theme-cabinet", CabinetTheme.CssClass);
+
+    [Theory]
+    [InlineData(CabinetTheme.BgBase,         "#2a1f15")]
+    [InlineData(CabinetTheme.TextPrimary,    "#f4eedd")]
+    [InlineData(CabinetTheme.AccentPrimary,  "#d23030")]
+    [InlineData(CabinetTheme.AccentGrounded, "#f5c83a")]
+    [InlineData(CabinetTheme.BorderQuiet,    "#3d2e1f")]
     public void Token_MatchesSpec(string actual, string expected)
         => Assert.Equal(expected, actual, ignoreCase: true);
 }
