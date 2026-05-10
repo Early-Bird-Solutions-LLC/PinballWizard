@@ -1,0 +1,150 @@
+name: Lighthouse CI
+
+# Performance / Accessibility / SEO gate for the public Blazor frontend.
+# Runs on PRs that touch the Web project, tests, or this workflow file.
+#
+# Thresholds (quality-spec.md § Performance regression tests, Phase 5+):
+#   Performance  ≥ 70 (warn)  — starts at 70; SSR without static CSS/JS is
+#                               penalized by Lighthouse. Ratchet to 90 when
+#                               real static assets are fingerprinted + served
+#                               with far-future cache headers.
+#   Accessibility ≥ 90 (error) — axe-core guarantees WCAG at component level;
+#                               Lighthouse audits complement at page level.
+#   Best-Practices ≥ 90 (error)
+#   SEO           ≥ 90 (warn)
+#
+# See .lighthouserc.json at repo root for the lhci config.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/PinballWizard.Web/**'
+      - 'tests/**'
+      - '.github/workflows/lighthouse.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lighthouse-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse (Performance / Accessibility / SEO)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+      # Run the app in Development so HTTPS redirect and HSTS are suppressed.
+      ASPNETCORE_ENVIRONMENT: Development
+      # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
+      ASPNETCORE_URLS: 'http://localhost:5000'
+      # Microsoft Identity Web validates ClientId/TenantId on first request even
+      # for [AllowAnonymous] routes. Providing placeholder values satisfies the
+      # IDW10106 validation without enabling real OIDC (no tenant/client is real).
+      AzureAd__TenantId: '00000000-0000-0000-0000-000000000000'
+      AzureAd__ClientId: '00000000-0000-0000-0000-000000000000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore (locked mode)
+        run: dotnet restore --locked-mode PinballWizard.slnx
+
+      - name: Build (Release, warnings as errors)
+        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
+
+      # Start the Web app in the background. Foundry and Cosmos are not
+      # configured in CI (AiFoundry:ProjectEndpoint is empty, no connection
+      # string present) — both are gated in Program.cs so the app starts
+      # cleanly without them. Public routes (/wizard, /) are [AllowAnonymous]
+      # so no Entra token is required. The AzureAd section has empty strings
+      # which is valid for the Wave 1 skeleton; auth middleware registers but
+      # does not challenge on anonymous-allowed routes.
+      - name: Start web app
+        run: |
+          dotnet run \
+            --project src/PinballWizard.Web \
+            --configuration Release \
+            --no-build \
+            > /tmp/app.log 2>&1 \
+            &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+
+      # Poll until the app returns HTTP 200 on /alive or the 60s budget expires.
+      # /alive uses Predicate = r => r.Tags.Contains("live"); with zero "live"
+      # health checks registered, it returns Healthy (200) as soon as Kestrel
+      # is accepting connections. A diagnostic loop (not --fail) logs each
+      # attempt's status code so CI failures can be triaged from the log.
+      - name: Wait for app to be ready
+        run: |
+          echo "Waiting for http://localhost:5000/alive ..."
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                        --connect-timeout 2 \
+                        http://localhost:5000/alive 2>/dev/null || echo "000")
+            echo "  attempt $i: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "App is ready."
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "App did not become ready within 60s (last code: $CODE)."
+              echo "--- app startup log ---"
+              cat /tmp/app.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli
+
+      - name: Collect Lighthouse reports
+        # lhci collect fetches the configured URLs and writes JSON + HTML
+        # reports to .lighthouseci/. numberOfRuns=1 in .lighthouserc.json
+        # keeps CI fast; bump to 3 when the score becomes stable.
+        run: lhci collect
+
+      - name: Assert Lighthouse thresholds
+        # Non-zero exit on threshold failure — the job fails here so the PR
+        # is blocked when accessibility or best-practices drop below the floor.
+        # Performance and SEO are configured as "warn" so they annotate without
+        # blocking (see .lighthouserc.json). The upload step uses if: always()
+        # so the HTML report is available even when this step fails.
+        run: lhci assert
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-reports
+          path: .lighthouseci/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop web app
+        if: always()
+        run: |
+          if [ -n "${APP_PID}" ]; then
+            kill "${APP_PID}" 2>/dev/null || true
+          fi
