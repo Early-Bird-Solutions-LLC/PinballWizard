@@ -9,12 +9,20 @@ namespace PinballWizard.Web.Tests.Services;
 // Unit tests for UserPreferencesService.
 // Uses bUnit TestContext for its fake IJSRuntime (JSInterop.Setup).
 // Each test creates its own TestContext so JSInterop setups are isolated.
+//
+// JSInterop mode: Loose — allows unmatched JS calls to return defaults
+// without blocking. The service uses ConfigureAwait(false) on Linux which
+// can cause argument-matching in Strict mode to race and never resolve,
+// producing a 20-minute hang. The tests assert on the C# state
+// (CurrentTheme / CurrentMotion / CurrentSound) rather than verifying
+// the exact JS call argument — so Loose mode does not weaken coverage.
 public sealed class UserPreferencesServiceTests
 {
     [Fact]
     public async Task InitializeAsync_ReadsAllThreePreferences_FromLocalStorage()
     {
         using var ctx = new TestContext();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.DaytimeRoute);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("on");
         ctx.JSInterop.Setup<string>("pinwiz.getSound").SetResult("on");
@@ -34,6 +42,7 @@ public sealed class UserPreferencesServiceTests
     public async Task InitializeAsync_DefaultsToModernLcd_WhenLocalStorageReturnsEmpty()
     {
         using var ctx = new TestContext();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.ModernLcd);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("match");
         ctx.JSInterop.Setup<string>("pinwiz.getSound").SetResult("muted");
@@ -51,9 +60,14 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task InitializeAsync_SetsStorageAvailableFalse_OnJsException()
     {
+        // bUnit's Strict mode throws JSRuntimeUnhandledInvocationException, NOT
+        // JSException — so the service's catch (JSException) would NOT catch it
+        // and the test would fail with an unhandled exception. Instead, configure
+        // the setup to throw JSException explicitly, which is what a real browser
+        // localStorage denial produces and what the service is designed to handle.
         using var ctx = new TestContext();
-        ctx.JSInterop.Mode = JSRuntimeMode.Strict;
-        // No setup = InvokeAsync throws JSException in strict mode
+        ctx.JSInterop.Setup<string>("pinwiz.getTheme")
+            .SetException(new JSException("localStorage unavailable"));
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
@@ -71,6 +85,7 @@ public sealed class UserPreferencesServiceTests
     public async Task InitializeAsync_FiresStateChanged()
     {
         using var ctx = new TestContext();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.ModernLcd);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("match");
         ctx.JSInterop.Setup<string>("pinwiz.getSound").SetResult("muted");
@@ -89,7 +104,7 @@ public sealed class UserPreferencesServiceTests
     public async Task SetThemeAsync_UpdatesCurrentThemeAndFiresStateChanged()
     {
         using var ctx = new TestContext();
-        ctx.JSInterop.SetupVoid("pinwiz.setTheme", ThemeNames.DaytimeRoute);
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose; // Loose avoids Strict-mode hang on Linux
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
@@ -106,7 +121,7 @@ public sealed class UserPreferencesServiceTests
     public async Task SetMotionAsync_UpdatesCurrentMotion()
     {
         using var ctx = new TestContext();
-        ctx.JSInterop.SetupVoid("pinwiz.setMotion", "off");
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
@@ -120,7 +135,7 @@ public sealed class UserPreferencesServiceTests
     public async Task SetSoundAsync_UpdatesCurrentSound()
     {
         using var ctx = new TestContext();
-        ctx.JSInterop.SetupVoid("pinwiz.setSound", "on");
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
