@@ -1,74 +1,162 @@
-@* Error — Wave 1 placeholder for the pinball-themed /error page.
+@* TiltPage — full-page pinball-themed error surface.
  *
- * The full TiltPage (Wave 2 PR-D-degraded) adds:
- *   - Pinball-themed visual design with bumper-pulse animation
- *   - DegradationContext / ProblemDetails detail rendering
- *   - Structured refusal recovery suggestions
+ * Wave 2 PR-D-degraded expands the Wave 1 placeholder into the full
+ * pinball-themed TiltPage per ADR-0026 § 5-6.
  *
- * Wave 1 ships the route, the request-id surface, and a clean layout
- * so error navigation resolves instead of hitting framework defaults.
+ * Routes: /error (canonical) and /tilt (alias).
  *
- * Category: chrome wrapper / page — this is the Wave 1 shell for the
- * TiltPage delight surface that lands in Wave 2. The TiltPage component
- * itself is one of the four locked delight surfaces (ADR-0026 § 6).
+ * Design:
+ *   - Large "TILT" heading inside a CSS-animated wrapper (tilt + shake).
+ *   - Fake DMD (dot-matrix display) score line rendering the requestId so
+ *     a prospect or operator can correlate the failure in the dashboard.
+ *   - Friendly "what happened" prose — professional, not apologetic.
+ *   - "Try Again" button (→ /wizard) + "Back to Home" link.
  *
- * ADR-0026  § 1 — /error route; § 5 — graceful degradation; § 9 — requestId
- * ADR-0026  § 6 — TiltPage / TiltErrorBoundary are the locked delight surfaces
+ * Animation:
+ *   - CSS-only transform + keyframes. No JS animation library.
+ *   - @media (prefers-reduced-motion: reduce) in Error.razor.css sets
+ *     animation: none and removes the tilt rotation. This is an
+ *     accessibility requirement (vestibular / motion-sensitivity).
+ *     The CSS class "tilt-animated-wrapper" is pinned by:
+ *       TiltPageTests.Tilt_animation_disabled_when_prefers_reduced_motion
+ *     Do NOT rename or remove the class without updating that test.
+ *
+ * requestId surface:
+ *   - Reads "requestId" query parameter first (ProblemDetails RFC 9457 path).
+ *   - Falls back to Activity.Current?.TraceId (OTel) then "no-trace".
+ *
+ * reason surface:
+ *   - Reads "reason" query parameter (human-readable degradation hint).
+ *
+ * Category: delight surface — TiltPage is one of the four locked custom
+ * components in ADR-0026 § 6. TiltErrorBoundary is the in-component
+ * fallback; TiltPage is the full-page handler at /error.
+ *
+ * ADR-0026 § 5 — graceful degradation; § 6 — TiltPage delight surface;
+ * § 9 — requestId surfacing.
  *@
 
 @page "/error"
+@page "/tilt"
 @attribute [AllowAnonymous]
 
 @using Microsoft.AspNetCore.Authorization
 @using System.Diagnostics
 
-<PageTitle>PinballWizard — Something went wrong</PageTitle>
+<PageTitle>PinballWizard — TILT</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Small" Class="mt-12">
-    <MudPaper Class="pa-8" Elevation="4">
-        <MudStack Spacing="3" AlignItems="AlignItems.Center">
-            <MudText Typo="Typo.h3" Align="Align.Center" Color="Color.Warning">
-                TILT
-            </MudText>
+@* Outer container for the page *@
+<MudContainer MaxWidth="MaxWidth.Small" Class="tilt-page-container mt-8">
 
-            <MudText Typo="Typo.h6" Align="Align.Center">
-                Something went wrong
-            </MudText>
+    @* tilt-animated-wrapper: carries the CSS tilt animation.
+       The class name is pinned by TiltPageTests so the
+       @media (prefers-reduced-motion: reduce) rule cannot be silently dropped. *@
+    <div class="tilt-animated-wrapper" data-testid="tilt-animated-wrapper">
 
-            <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
-                The machine rattled. We logged it and the team will look into it.
-            </MudText>
+        <MudPaper Class="pa-8 tilt-paper" Elevation="8">
+            <MudStack Spacing="4" AlignItems="AlignItems.Center">
 
-            @{
-                var requestId = Activity.Current?.TraceId.ToString() ?? "no-trace";
-                var reason = new Uri(Nav.Uri).Query
-                    .TrimStart('?')
-                    .Split('&')
-                    .Select(p => p.Split('='))
-                    .Where(p => p.Length == 2 && p[0] == "reason")
-                    .Select(p => Uri.UnescapeDataString(p[1]))
-                    .FirstOrDefault();
-            }
+                @* ── TILT heading ──────────────────────────────────────── *@
+                <MudText Typo="Typo.h2"
+                         Align="Align.Center"
+                         Class="tilt-heading"
+                         data-testid="tilt-heading">
+                    TILT
+                </MudText>
 
-            @if (reason is not null)
-            {
-                <MudChip T="string" Color="Color.Default" Size="Size.Small">@reason</MudChip>
-            }
+                @* ── DMD score line (fake dot-matrix display) ──────────── *@
+                <div class="tilt-dmd-strip" data-testid="tilt-dmd-strip">
+                    <span class="tilt-dmd-label">REQUEST ID</span>
+                    <span class="tilt-dmd-value" data-testid="tilt-request-id">@_requestId</span>
+                </div>
 
-            <MudText Typo="Typo.caption" Class="error-request-id" Align="Align.Center">
-                <span data-testid="error-request-id">Request&nbsp;ID:&nbsp;@requestId</span>
-            </MudText>
+                @* ── Friendly prose ────────────────────────────────────── *@
+                <MudText Typo="Typo.h6" Align="Align.Center" Class="mt-2">
+                    Something rattled the machine.
+                </MudText>
 
-            <MudButton Href="/"
-                       Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       Class="mt-2">
-                Back to Home
-            </MudButton>
-        </MudStack>
-    </MudPaper>
+                <MudText Typo="Typo.body1"
+                         Align="Align.Center"
+                         Color="Color.Secondary">
+                    We logged the fault automatically. If the problem persists,
+                    share the Request&nbsp;ID above with support — it correlates
+                    directly to the trace in our dashboard.
+                </MudText>
+
+                @* ── Reason chip (optional) ────────────────────────────── *@
+                @if (_reason is not null)
+                {
+                    <MudChip T="string"
+                             Color="Color.Default"
+                             Size="Size.Small"
+                             data-testid="tilt-reason">
+                        @_reason
+                    </MudChip>
+                }
+
+                @* ── Action buttons ────────────────────────────────────── *@
+                <MudStack Row="true" Spacing="2" Class="mt-2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               OnClick="@TryAgain"
+                               data-testid="tilt-try-again">
+                        Try Again
+                    </MudButton>
+
+                    <MudButton Href="/"
+                               Variant="Variant.Outlined"
+                               Color="Color.Secondary"
+                               data-testid="tilt-home">
+                        Back to Home
+                    </MudButton>
+                </MudStack>
+
+            </MudStack>
+        </MudPaper>
+
+    </div>
+
 </MudContainer>
 
 @code {
     [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private string _requestId = "no-trace";
+    private string? _reason;
+
+    protected override void OnInitialized()
+    {
+        // Manual query-string parse — mirrors the existing codebase pattern
+        // and avoids a QueryHelpers import that isn't needed elsewhere.
+        var queryParts = new Uri(Nav.Uri).Query
+            .TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2))
+            .Where(p => p.Length == 2)
+            .ToDictionary(
+                p => Uri.UnescapeDataString(p[0]),
+                p => Uri.UnescapeDataString(p[1]),
+                StringComparer.OrdinalIgnoreCase);
+
+        // requestId from query (set by ProblemDetails RFC 9457 redirect).
+        if (queryParts.TryGetValue("requestId", out var reqId) &&
+            !string.IsNullOrWhiteSpace(reqId))
+        {
+            _requestId = reqId;
+        }
+        else
+        {
+            // Fall back to OTel TraceId if the query param is absent.
+            _requestId = Activity.Current?.TraceId.ToString() ?? "no-trace";
+        }
+
+        // reason from query (human-readable hint, optional).
+        if (queryParts.TryGetValue("reason", out var reason) &&
+            !string.IsNullOrWhiteSpace(reason))
+        {
+            _reason = reason;
+        }
+    }
+
+    private void TryAgain() => Nav.NavigateTo("/wizard");
 }

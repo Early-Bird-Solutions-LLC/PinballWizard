@@ -1,0 +1,96 @@
+@* OutageBanner — degraded-session banner that mounts in MainLayout.
+ *
+ * Shown when IClientDegradationStore.Current is non-None (and not dismissed).
+ * Hidden by default when the session is healthy.
+ * Renders mode-specific recovery text per DegradationMode:
+ *   SearchUnavailable  → "Knowledge search is temporarily limited; community resources still work."
+ *   UpstreamThrottled  → "AI is rate-limited; results may be slower than usual."
+ *   PartialResults     → "Partial answer received; some sources did not load."
+ *
+ * Dismiss button hides the banner for this session. Degradation state is
+ * retained in IClientDegradationStore so RetryHint can still show the
+ * countdown even after the banner is dismissed.
+ *
+ * Subscribes to IClientDegradationStore.OnChanged in OnInitialized;
+ * unsubscribes in Dispose. Pattern: event Action + IDisposable —
+ * standard Blazor service-event coordination.
+ *
+ * Category: delight surface — explicitly listed in ADR-0026 § 6 as one
+ * of the four locked custom components.
+ *
+ * ADR-0026 § 5 — graceful degradation; § 6 — delight surface.
+ *@
+
+@using PinballWizard.Application.Ai
+@implements IDisposable
+
+@inject IClientDegradationStore DegradationStore
+
+@if (_visible)
+{
+    <MudAlert Severity="Severity.Warning"
+              Variant="Variant.Filled"
+              Dense="true"
+              Square="true"
+              Class="outage-banner"
+              data-testid="outage-banner"
+              CloseIcon="@Icons.Material.Filled.Close"
+              ShowCloseIcon="true"
+              CloseIconClicked="@HandleDismiss">
+        <span data-testid="outage-banner-text">@_message</span>
+    </MudAlert>
+}
+
+@code {
+    private bool _visible;
+    private string _message = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        // Subscribe to store changes so the banner re-evaluates whenever
+        // degradation state or dismiss state changes.
+        DegradationStore.OnChanged += OnDegradationChanged;
+        Refresh();
+    }
+
+    private void OnDegradationChanged()
+    {
+        // The event fires on the Blazor circuit sync context.
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Refresh()
+    {
+        var ctx = DegradationStore.Current;
+
+        if (ctx is null || ctx.Mode == DegradationMode.None || DegradationStore.IsDismissed)
+        {
+            _visible = false;
+            _message = string.Empty;
+            return;
+        }
+
+        _visible = true;
+        _message = ctx.Mode switch
+        {
+            DegradationMode.SearchUnavailable =>
+                "Knowledge search is temporarily limited; community resources still work.",
+            DegradationMode.UpstreamThrottled =>
+                "AI is rate-limited; results may be slower than usual.",
+            DegradationMode.PartialResults =>
+                "Partial answer received; some sources did not load.",
+            _ => "Service is degraded; some features may not be available."
+        };
+    }
+
+    private void HandleDismiss()
+    {
+        DegradationStore.Dismiss();
+    }
+
+    public void Dispose()
+    {
+        DegradationStore.OnChanged -= OnDegradationChanged;
+    }
+}

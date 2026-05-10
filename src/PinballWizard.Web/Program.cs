@@ -25,7 +25,9 @@ using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.ServiceDefaults;
+using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -58,6 +60,29 @@ builder.Services
 
 builder.Services.AddControllersWithViews()
     .AddMicrosoftIdentityUI();
+
+// ── Degradation state store (scoped per circuit) ──────────────────────────
+// IClientDegradationStore propagates DegradationContext from WizardAnswer
+// responses to OutageBanner without requiring a global singleton or
+// cascading value. Scoped lifetime = one instance per Blazor Server circuit.
+// ADR-0026 § 5 — graceful degradation surface.
+builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+
+// ── Landing page client ────────────────────────────────────────────────────
+// Typed HttpClient for GET /api/wizard/landing. Returns null on non-200 so
+// the Index page renders its compiled-in fallback — the prospect's first
+// impression MUST NOT 500 if the endpoint is unavailable.
+// ADR-0026 § Landing surface.
+builder.Services
+    .AddHttpClient<IWizardLandingClient, WizardLandingClient>(client =>
+    {
+        client.BaseAddress = new Uri("https+http://pinwiz-api");
+        // 5-second timeout for the landing call — fast cold-start budget.
+        // If the endpoint doesn't respond in 5s, the compiled-in fallback
+        // renders so the prospect doesn't wait for a broken dependency.
+        client.Timeout = TimeSpan.FromSeconds(5);
+    })
+    .AddStandardResilienceHandler();
 
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
