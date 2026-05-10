@@ -1,117 +1,126 @@
 using System.Net;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using MudBlazor.Services;
+using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
+using PinballWizard.Web.Components.Degraded;
+using PinballWizard.Web.Components.Wizard;
+using Xunit;
 
 namespace PinballWizard.Web.Tests.A11y;
 
-// Starts a real Kestrel listener on a random loopback port alongside the
-// TestServer-based host that WebApplicationFactory<T> uses internally.
-// Playwright (a real browser process) must connect over a TCP socket —
-// TestServer's in-process pipe is not usable from an external browser.
+// Builds a fresh minimal WebApplication for Playwright accessibility tests.
 //
-// Type parameter: App (the Blazor root component in PinballWizard.Web).
-// Using App rather than Program avoids the ambiguity between PinballWizard.Api
-// and PinballWizard.Web, both of which have a top-level-statement Program class.
-// WebApplicationFactory<T> uses typeof(T).Assembly, so any public type from
-// the target project works.
+// Why not WebApplicationFactory<App>?
+// WebApplicationFactory<TEntryPoint> invokes the real Program.cs, which
+// registers AddMicrosoftIdentityWebApp (OpenIdConnect). ConfigureTestServices
+// runs BEFORE Program.cs in the WebApplicationFactory lifecycle, so OIDC
+// Configure actions registered by Program.cs override the test overrides.
+// The OIDC middleware then challenges Blazor's /_blazor circuit upgrade
+// (no auth cookie in the headless browser) and returns its XHTML form-post
+// page (lang="iv" / InvariantCulture). Playwright follows the form's
+// JavaScript auto-submit, and axe-core scans the OIDC page rather than
+// the actual Blazor app.
 //
-// Pattern: build the IHostBuilder twice — once for TestServer (returned to
-// base class) and once for Kestrel (held internally, surfaced via ServerAddress).
-public sealed class PlaywrightWebApplicationFactory : WebApplicationFactory<App>
+// This factory builds only what is needed for the UI to render:
+//   Blazor (razor + server + WASM) / MudBlazor / IClientDegradationStore
+//   No-op auth (TestAuthHandler) / stub HTTP clients / no OIDC / no AI
+//
+// The app URL is read from IServerAddressesFeature after startup.
+public sealed class PlaywrightWebApplicationFactory : IAsyncLifetime
 {
-    private IHost? _kestrelHost;
+    private WebApplication? _app;
 
-    // The base address that Playwright pages should navigate to.
     public string ServerAddress
     {
         get
         {
-            EnsureServer();
-            return _kestrelHost!.Services
-                .GetRequiredService<IServer>()
-                .Features.GetRequiredFeature<IServerAddressesFeature>()
+            if (_app is null)
+                throw new InvalidOperationException("InitializeAsync not called.");
+
+            var server = _app.Services.GetRequiredService<IServer>();
+            return server.Features
+                .Get<IServerAddressesFeature>()!
                 .Addresses
                 .First();
         }
     }
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    public async Task InitializeAsync()
     {
-        // Development environment skips HSTS + HTTPS redirection.
-        builder.UseEnvironment("Development");
+        var builder = WebApplication.CreateBuilder([]);
 
-        builder.ConfigureTestServices(services =>
-        {
-            // Redirect ALL auth operations to a no-op handler so that
-            // Microsoft Identity Web's OpenIdConnect scheme never issues its
-            // XHTML form-post challenge page (lang="iv" / InvariantCulture).
-            //
-            // Root cause: Blazor's /_blazor circuit upgrade has no auth
-            // cookie; OIDC middleware challenges it, returning the XHTML
-            // redirect form. blazor.web.js's JS auto-submits the form,
-            // Playwright follows the navigation, and axe scans the OIDC
-            // page instead of the real Blazor page.
-            //
-            // AddAuthentication(...) adds a new Configure action; it does
-            // NOT remove existing scheme handlers, so OIDC is still
-            // registered as a handler. PostConfigure runs after ALL
-            // Configure actions (guaranteed by the options framework) and
-            // sets every scheme slot to "Test", so the OIDC handler is
-            // never selected as the challenge scheme.
-            services.AddAuthentication()
-                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                    "Test", _ => { });
+        // Blazor auto-render mode (Server + WASM) — identical to Program.cs.
+        builder.Services.AddRazorComponents()
+            .AddInteractiveServerComponents()
+            .AddInteractiveWebAssemblyComponents();
 
-            services.PostConfigure<AuthenticationOptions>(opts =>
-            {
-                opts.DefaultScheme = "Test";
-                opts.DefaultAuthenticateScheme = "Test";
-                opts.DefaultChallengeScheme = "Test";
-                opts.DefaultSignInScheme = "Test";
-                opts.DefaultSignOutScheme = "Test";
-                opts.DefaultForbidScheme = "Test";
-            });
-        });
+        // MudBlazor chrome (ADR-0008).
+        builder.Services.AddMudServices();
+
+        // Scoped services depended on by Blazor components.
+        builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+
+        // Stub HTTP clients: base addresses point nowhere but the Index page
+        // has a compiled-in fallback for when the landing endpoint is down.
+        builder.Services
+            .AddHttpClient<IWizardLandingClient, WizardLandingClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
+        builder.Services
+            .AddHttpClient<IWizardStreamingClient, WizardStreamingClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
+        // No-op auth — no OIDC, no challenge, no redirect.
+        builder.Services
+            .AddAuthentication(defaultScheme: "Test")
+            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
+        builder.Services.AddAuthorization();
+
+        // Random loopback port; actual address is read from IServerAddressesFeature.
+        builder.WebHost.ConfigureKestrel(opts => opts.Listen(System.Net.IPAddress.Loopback, 0));
+
+        var app = builder.Build();
+
+        app.UseStaticFiles();
+        app.UseAntiforgery();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.MapRazorComponents<App>()
+            .AddInteractiveServerRenderMode()
+            .AddInteractiveWebAssemblyRenderMode()
+            .AddAdditionalAssemblies(typeof(PinballWizard.Web.Client._Imports).Assembly);
+
+        app.MapStaticAssets();
+
+        _app = app;
+        await _app.StartAsync();
     }
 
-    protected override IHost CreateHost(IHostBuilder builder)
+    public async Task DisposeAsync()
     {
-        // Build 1: TestServer-based host — returned to base class so the
-        // base WebApplicationFactory API (CreateClient, etc.) continues to
-        // work for any other tests sharing this fixture type.
-        var testHost = builder.Build();
-
-        // Build 2: real Kestrel host on a random loopback port.
-        // Playwright needs a real TCP socket; TestServer is in-process only.
-        builder.ConfigureWebHost(b =>
-            b.UseKestrel(opts => opts.Listen(IPAddress.Loopback, port: 0)));
-
-        _kestrelHost = builder.Build();
-        _kestrelHost.Start();
-
-        return testHost;
+        if (_app is not null)
+            await _app.DisposeAsync();
     }
 
-    // Trigger host initialization before ServerAddress is read, in case no
-    // CreateClient() call has been made yet by the fixture lifecycle.
-    private void EnsureServer()
+    // Returns 503 for all requests; used by stub HTTP clients so the
+    // IWizardLandingClient and IWizardStreamingClient gracefully fall back.
+    private sealed class StubHttpHandler : HttpMessageHandler
     {
-        if (_kestrelHost is null)
-            _ = CreateClient();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        _kestrelHost?.StopAsync().GetAwaiter().GetResult();
-        _kestrelHost?.Dispose();
-        base.Dispose(disposing);
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(
+                System.Net.HttpStatusCode.ServiceUnavailable));
     }
 }
