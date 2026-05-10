@@ -60,7 +60,8 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
         var detail = string.Join("\n", results.Violations.Select(v =>
             $"  [{v.Id}] {v.Description}\n" +
             string.Join("", v.Nodes.Take(3).Select(n =>
-                $"    Target: {n.Target}\n"))));
+                $"    Target: {n.Target}\n" +
+                $"    HTML:   {n.Html}\n"))));
 
         Assert.True(
             results.Violations.Length == 0,
