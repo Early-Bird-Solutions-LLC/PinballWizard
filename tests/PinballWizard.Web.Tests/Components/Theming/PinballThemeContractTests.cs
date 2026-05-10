@@ -157,6 +157,7 @@ public sealed class UserPreferencesContractTests
     [InlineData(ThemeNames.Backbox,      "backbox")]
     [InlineData(ThemeNames.Cabinet,      "cabinet")]
     [InlineData(ThemeNames.DaytimeRoute, "daytime-route")]
+    [InlineData(ThemeNames.DmdClassic,   "dmd-classic")]
     [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
     public void ThemeName_MatchesExpected(string actual, string expected)
         => Assert.Equal(expected, actual);
@@ -235,6 +236,41 @@ public sealed class CabinetThemeContractTests
     [InlineData(CabinetTheme.AccentPrimary,  "#d23030")]
     [InlineData(CabinetTheme.AccentGrounded, "#f5c83a")]
     [InlineData(CabinetTheme.BorderQuiet,    "#3d2e1f")]
+    public void Token_MatchesSpec(string actual, string expected)
+        => Assert.Equal(expected, actual, ignoreCase: true);
+}
+
+/// <summary>
+/// Pins the DMD Classic sibling-theme token values defined in app.css
+/// (html.theme-dmd-classic block). CSS-variable-only for v1 — no MudTheme
+/// companion. Spec authority: docs/ui/themes/sibling-themes-overview.md § DMD Classic.
+///
+/// Any palette change must update both app.css AND these constants together.
+/// The five tokens chosen are most visually distinctive: pure black base,
+/// warm cream text, THE amber accent, hot amber grounded.
+/// </summary>
+public static class DmdClassicTheme
+{
+    public const string CssClass       = "theme-dmd-classic";
+    public const string BgBase         = "#000000";
+    public const string TextPrimary    = "#f4d090";
+    public const string AccentPrimary  = "#ff9900";
+    public const string AccentGrounded = "#ffaa00";
+    public const string BorderQuiet    = "#2a1500";
+}
+
+public sealed class DmdClassicThemeContractTests
+{
+    [Fact]
+    public void CssClass_IsDmdClassicSelector()
+        => Assert.Equal("theme-dmd-classic", DmdClassicTheme.CssClass);
+
+    [Theory]
+    [InlineData(DmdClassicTheme.BgBase,         "#000000")]
+    [InlineData(DmdClassicTheme.TextPrimary,    "#f4d090")]
+    [InlineData(DmdClassicTheme.AccentPrimary,  "#ff9900")]
+    [InlineData(DmdClassicTheme.AccentGrounded, "#ffaa00")]
+    [InlineData(DmdClassicTheme.BorderQuiet,    "#2a1500")]
     public void Token_MatchesSpec(string actual, string expected)
         => Assert.Equal(expected, actual, ignoreCase: true);
 }
