@@ -71,6 +71,34 @@ html.theme-daytime-route {
     }
 }
 
+/* ── Backbox sibling theme ────────────────────────────────────────────── */
+/* Theatrical, layered, glowing: deep blue-black "backbox glass" with
+   saturated magenta/cyan/violet accents and heavy outer glow.
+   CSS-variable-only for v1 — no MudTheme companion.
+   Spec authority: docs/ui/themes/sibling-themes-overview.md § Backbox. */
+html.theme-backbox {
+    --pw-bg-base:           #0a0e1a;
+    --pw-bg-surface:        #131a2e;
+    --pw-bg-surface-hi:     #1d2640;
+    --pw-text-primary:      #e8edf5;
+    --pw-text-secondary:    #8a96b5;
+    --pw-accent-primary:    #ff3399;
+    --pw-accent-grounded:   #00e5cc;
+    --pw-accent-refusal:    #ff4466;
+    --pw-accent-mode:       #b066ff;
+    --pw-border-quiet:      #1f2740;
+    --pw-border-glow-amber:   #ff339966;
+    --pw-border-glow-green:   #00e5cc66;
+    --pw-border-glow-magenta: #b066ff66;
+    --pw-border-glow-red:     #ff446666;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.theme-backbox {
+        transition: none;
+    }
+}
+
 /* Self-hosted web fonts. Files live under wwwroot/fonts/<family>/.
    Sourced from upstream OFL repos via fontsource (woff2 only, latin subset).
    See wwwroot/fonts/README.md for license attribution and provenance.

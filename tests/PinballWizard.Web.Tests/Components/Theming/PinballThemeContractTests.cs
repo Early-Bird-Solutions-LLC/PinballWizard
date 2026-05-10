@@ -154,8 +154,9 @@ public sealed class DaytimeRouteThemeContractTests
 public sealed class UserPreferencesContractTests
 {
     [Theory]
-    [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
+    [InlineData(ThemeNames.Backbox,      "backbox")]
     [InlineData(ThemeNames.DaytimeRoute, "daytime-route")]
+    [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
     public void ThemeName_MatchesExpected(string actual, string expected)
         => Assert.Equal(expected, actual);
 
@@ -165,4 +166,39 @@ public sealed class UserPreferencesContractTests
     [InlineData(PreferenceKeys.Sound,  "pinwiz.sound")]
     public void PreferenceKey_MatchesExpected(string actual, string expected)
         => Assert.Equal(expected, actual);
+}
+
+/// <summary>
+/// Pins the Backbox sibling-theme token values defined in app.css
+/// (html.theme-backbox block). CSS-variable-only for v1 — no MudTheme
+/// companion. Spec authority: docs/ui/themes/sibling-themes-overview.md § Backbox.
+///
+/// Any palette change must update both app.css AND these constants together.
+/// The five tokens chosen are the most visually distinctive (magenta primary,
+/// cyan grounded — inverted from Modern LCD's amber/green family).
+/// </summary>
+public static class BackboxTheme
+{
+    public const string CssClass       = "theme-backbox";
+    public const string BgBase         = "#0a0e1a";
+    public const string TextPrimary    = "#e8edf5";
+    public const string AccentPrimary  = "#ff3399";
+    public const string AccentGrounded = "#00e5cc";
+    public const string BorderQuiet    = "#1f2740";
+}
+
+public sealed class BackboxThemeContractTests
+{
+    [Fact]
+    public void CssClass_IsBackboxSelector()
+        => Assert.Equal("theme-backbox", BackboxTheme.CssClass);
+
+    [Theory]
+    [InlineData(BackboxTheme.BgBase,         "#0a0e1a")]
+    [InlineData(BackboxTheme.TextPrimary,    "#e8edf5")]
+    [InlineData(BackboxTheme.AccentPrimary,  "#ff3399")]
+    [InlineData(BackboxTheme.AccentGrounded, "#00e5cc")]
+    [InlineData(BackboxTheme.BorderQuiet,    "#1f2740")]
+    public void Token_MatchesSpec(string actual, string expected)
+        => Assert.Equal(expected, actual, ignoreCase: true);
 }
