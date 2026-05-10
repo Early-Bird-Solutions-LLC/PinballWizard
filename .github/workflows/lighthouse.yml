@@ -1,0 +1,136 @@
+name: Lighthouse CI
+
+# Performance / Accessibility / SEO gate for the public Blazor frontend.
+# Runs on PRs that touch the Web project, tests, or this workflow file.
+#
+# Thresholds (quality-spec.md § Performance regression tests, Phase 5+):
+#   Performance  ≥ 70 (warn)  — starts at 70; SSR without static CSS/JS is
+#                               penalized by Lighthouse. Ratchet to 90 when
+#                               real static assets are fingerprinted + served
+#                               with far-future cache headers.
+#   Accessibility ≥ 90 (error) — axe-core guarantees WCAG at component level;
+#                               Lighthouse audits complement at page level.
+#   Best-Practices ≥ 90 (error)
+#   SEO           ≥ 90 (warn)
+#
+# See .lighthouserc.json at repo root for the lhci config.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/PinballWizard.Web/**'
+      - 'tests/**'
+      - '.github/workflows/lighthouse.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lighthouse-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    name: Lighthouse (Performance / Accessibility / SEO)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+      # Run the app in Development so HTTPS redirect and HSTS are suppressed
+      # (Lighthouse targets plain HTTP; the redirect would cause ERR_CONNECTION_REFUSED).
+      # This matches the PlaywrightWebApplicationFactory convention in ci.yml.
+      ASPNETCORE_ENVIRONMENT: Development
+      # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
+      ASPNETCORE_URLS: 'http://localhost:5000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore (locked mode)
+        run: dotnet restore --locked-mode PinballWizard.slnx
+
+      - name: Build (Release, warnings as errors)
+        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
+
+      # Start the Web app in the background. Foundry and Cosmos are not
+      # configured in CI (AiFoundry:ProjectEndpoint is empty, no connection
+      # string present) — both are gated in Program.cs so the app starts
+      # cleanly without them. Public routes (/wizard, /) are [AllowAnonymous]
+      # so no Entra token is required. The AzureAd section has empty strings
+      # which is valid for the Wave 1 skeleton; auth middleware registers but
+      # does not challenge on anonymous-allowed routes.
+      - name: Start web app
+        run: |
+          dotnet run \
+            --project src/PinballWizard.Web \
+            --configuration Release \
+            --no-build \
+            &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+
+      # Poll /healthz until the app responds or the timeout expires (30s).
+      # /healthz is registered by AddServiceDefaults() (ServiceDefaults project).
+      # Using --retry-connrefused + --retry so curl retries on connection
+      # refused (app not yet listening) as well as on server errors.
+      - name: Wait for app to be healthy
+        run: |
+          echo "Waiting for http://localhost:5000/healthz ..."
+          curl --retry 15 \
+               --retry-delay 2 \
+               --retry-connrefused \
+               --retry-max-time 30 \
+               --silent \
+               --fail \
+               http://localhost:5000/healthz
+          echo "App is healthy."
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli
+
+      - name: Collect Lighthouse reports
+        # lhci collect fetches the configured URLs and writes JSON + HTML
+        # reports to .lighthouseci/. numberOfRuns=1 in .lighthouserc.json
+        # keeps CI fast; bump to 3 when the score becomes stable.
+        run: lhci collect
+
+      - name: Assert Lighthouse thresholds
+        # Non-zero exit on threshold failure — the job fails here so the PR
+        # is blocked when accessibility or best-practices drop below the floor.
+        # Performance and SEO are configured as "warn" so they annotate without
+        # blocking (see .lighthouserc.json). The upload step uses if: always()
+        # so the HTML report is available even when this step fails.
+        run: lhci assert
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-reports
+          path: .lighthouseci/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop web app
+        if: always()
+        run: |
+          if [ -n "${APP_PID}" ]; then
+            kill "${APP_PID}" 2>/dev/null || true
+          fi
