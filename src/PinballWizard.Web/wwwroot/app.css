@@ -43,6 +43,34 @@
     font-feature-settings: "tnum";
 }
 
+/* ── Daytime Route sibling theme ──────────────────────────────────── */
+/* Light/outdoor palette: warm cream base, burnt-orange accent, deep green
+   grounded. CSS-variable-only for v1 — delight surfaces reference --pw-*
+   tokens directly, so no separate MudTheme is needed.
+   Spec authority: docs/ui/themes/sibling-themes.md § Daytime Route. */
+html.theme-daytime-route {
+    --pw-bg-base:           #faf6ef;
+    --pw-bg-surface:        #f0e9d8;
+    --pw-bg-surface-hi:     #e7dec5;
+    --pw-text-primary:      #1f1a14;
+    --pw-text-secondary:    #6a6052;
+    --pw-accent-primary:    #cc5500;
+    --pw-accent-grounded:   #0d6e2d;
+    --pw-accent-refusal:    #a8201a;
+    --pw-accent-mode:       #9a1c8a;
+    --pw-border-quiet:      #d8cdb5;
+    --pw-border-glow-amber:   #cc550066;
+    --pw-border-glow-green:   #0d6e2d66;
+    --pw-border-glow-magenta: #9a1c8a66;
+    --pw-border-glow-red:     #a8201a66;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.theme-daytime-route {
+        transition: none;
+    }
+}
+
 /* Self-hosted web fonts. Files live under wwwroot/fonts/<family>/.
    Sourced from upstream OFL repos via fontsource (woff2 only, latin subset).
    See wwwroot/fonts/README.md for license attribution and provenance.
