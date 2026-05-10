@@ -86,23 +86,29 @@ jobs:
             &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
 
-      # Poll /alive until the app responds or the timeout expires (30s).
-      # /alive is registered by AddServiceDefaults() (ServiceDefaults project)
-      # and always returns 200 when the process is running — regardless of
-      # whether Cosmos, Foundry, or AI Search are configured. /healthz would
-      # return 503 in CI (dependencies not wired) causing curl --fail to exit
-      # with code 22. /alive is the correct readiness probe for this use case.
+      # Poll until the app returns HTTP 200 on /alive or the 60s budget expires.
+      # /alive uses Predicate = r => r.Tags.Contains("live"); with zero "live"
+      # health checks registered, it returns Healthy (200) as soon as Kestrel
+      # is accepting connections. A diagnostic loop (not --fail) logs each
+      # attempt's status code so CI failures can be triaged from the log.
       - name: Wait for app to be ready
         run: |
           echo "Waiting for http://localhost:5000/alive ..."
-          curl --retry 15 \
-               --retry-delay 2 \
-               --retry-connrefused \
-               --retry-max-time 30 \
-               --silent \
-               --fail \
-               http://localhost:5000/alive
-          echo "App is ready."
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                        --connect-timeout 2 \
+                        http://localhost:5000/alive 2>/dev/null || echo "000")
+            echo "  attempt $i: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then
+              echo "App is ready."
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "App did not become ready within 60s (last code: $CODE)."
+              exit 1
+            fi
+            sleep 2
+          done
 
       - name: Install Lighthouse CI
         run: npm install -g @lhci/cli
