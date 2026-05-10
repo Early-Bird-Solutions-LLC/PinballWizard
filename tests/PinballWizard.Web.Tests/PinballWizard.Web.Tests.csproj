@@ -34,6 +34,15 @@
       by WizardAskStreamEndpointTests. Version matches ASP.NET Core .NET 10 GA.
     -->
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <!--
+      Playwright + axe-core for accessibility tests (Wave 3 PR-Q1b).
+      Microsoft.Playwright is already versioned in Directory.Packages.props
+      (shared with the scraper's browser automation use). Deque.AxeCore.Playwright
+      wraps axe-core for Playwright page objects — see A11y/ test classes.
+    -->
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Deque.AxeCore.Playwright" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 
   <ItemGroup>

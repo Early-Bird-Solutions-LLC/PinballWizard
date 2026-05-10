@@ -54,6 +54,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 - Dependabot: [`.github/dependabot.yml`](../.github/dependabot.yml) — weekly bumps
 - `.slnx` solution format
 - **Test coverage threshold + CI enforcement**: [`tests/coverage.runsettings`](../tests/coverage.runsettings) excludes test assemblies and 3rd-party deps so the gate measures production code only. CI runs `dotnet test --collect "Code Coverage;Format=cobertura" --settings tests/coverage.runsettings` and the [`irongut/CodeCoverageSummary`](../.github/workflows/ci.yml) step fails the job if production line coverage drops below the threshold (currently **70%**, ratchet up at phase boundaries). Phase 5 entry baseline: 73.3% line / 70.9% branch.
+- **Accessibility tests (axe-core via Playwright)**: [`tests/PinballWizard.Web.Tests/A11y/`](../tests/PinballWizard.Web.Tests/A11y/) — `PlaywrightWebApplicationFactory` starts the app on a real Kestrel port; `AccessibilityTests` navigates a headless Chromium browser to every public route (`/`, `/wizard`, `/settings`, `/error`, `/tilt`) and runs axe-core with `wcag2a` + `wcag2aa` tags. Zero violations required; failing axe rule = failing CI job. Runs as a separate parallel job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) `accessibility` job.
 
 ### To add
 
@@ -78,8 +79,8 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 | --- | --- | --- |
 | Retrieval / answer-quality evaluation harness | 3 | Held-out set of pinball questions with known correct citations + expected answer themes. Scored continuously; results trended in `eval/` directory. Routing-decision tests (gpt-4o-mini vs gpt-4.1) validated. Threshold-driven refusal validated. |
 | Citation-accuracy eval set | 4 | Specifically: % of Wizard answers that include a clickable, valid citation pointing at a real source URL in the catalog. v1 target: ≥ 95%. Lower threshold = the "I don't know" path needs strengthening, not the citation pipeline. |
-| bUnit for Blazor components | 5 | Component-level unit tests for every interactive Razor component; complements end-to-end Playwright tests. Required for any component beyond static markup. |
-| Accessibility tests (axe-core via Playwright) | 5 | WCAG AA assertions on every public page in CI. Failing axe rule = failing build. |
+| bUnit for Blazor components | 5 | Component-level unit tests for every interactive Razor component; complements end-to-end Playwright tests. Required for any component beyond static markup. Already in practice — 191 bUnit tests in `PinballWizard.Web.Tests`; row will be formally retired once every interactive component has smoke coverage. |
+| Performance regression tests | 5+ | Lighthouse CI for the public Wizard (LCP, TTI, CLS budgets); k6 or similar for Wizard p95 latency under load. Both run in CI on Blazor-touching PRs. |
 | Performance regression tests | 5+ | Lighthouse CI for the public Wizard (LCP, TTI, CLS budgets); k6 or similar for Wizard p95 latency under load. Both run in CI on Blazor-touching PRs. |
 
 ## Review process

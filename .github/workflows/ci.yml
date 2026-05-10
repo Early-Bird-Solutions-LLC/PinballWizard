@@ -110,3 +110,64 @@ jobs:
         with:
           recreate: true
           path: code-coverage-results.md
+
+  accessibility:
+    name: Accessibility (axe-core via Playwright)
+    runs-on: ubuntu-latest
+    # Runs in parallel with build-and-test; does NOT need coverage output.
+    needs: []
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        # Web.Tests opts out of locked-mode restore (Razor SDK RID assets).
+        run: dotnet restore PinballWizard.slnx
+
+      - name: Build (Release, warnings as errors)
+        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
+
+      - name: Install Playwright browsers
+        # playwright.ps1 is emitted by the Microsoft.Playwright package into
+        # the test project's output directory. pwsh is available on ubuntu-latest.
+        run: |
+          pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
+            install --with-deps chromium
+
+      - name: Accessibility tests (axe-core, wcag2a + wcag2aa)
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --filter "Category=Accessibility" \
+            --logger "trx;LogFileName=a11y-results.trx" \
+            --results-directory ./a11y-results \
+            tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Upload accessibility test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a11y-results
+          path: a11y-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
