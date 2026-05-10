@@ -29,6 +29,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,6 +61,12 @@ builder.Services
 
 builder.Services.AddControllersWithViews()
     .AddMicrosoftIdentityUI();
+
+// ── User preferences (scoped per circuit) ─────────────────────────────────
+// Reads/writes localStorage via JS interop: pinwiz.theme, pinwiz.motion,
+// pinwiz.sound. Scoped so each Blazor circuit holds its own state.
+// ADR-0026 § 6 — sound muted by default; docs/ui/screens/settings.md.
+builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
 
 // ── Degradation state store (scoped per circuit) ──────────────────────────
 // IClientDegradationStore propagates DegradationContext from WizardAnswer
@@ -123,9 +130,11 @@ if (!app.Environment.IsDevelopment())
     // ProblemDetails middleware and TiltErrorBoundary land in PR-D3 (Wave 2).
     app.UseExceptionHandler("/error", createScopeForErrors: true);
     app.UseHsts();
+    // HTTPS redirect only in non-Development: the test host (PlaywrightWebApplicationFactory)
+    // listens on plain HTTP; redirecting to https:// causes Chromium to hit
+    // ERR_CONNECTION_REFUSED and axe scans the browser error page instead of the app.
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.UseAuthentication();
