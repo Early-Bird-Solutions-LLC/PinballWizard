@@ -174,8 +174,8 @@ public sealed class AmbientDegradationContextTests
         var ctx = new AmbientDegradationContext();
 
         // Barrier to force both tasks to reach their Mark() at the same time.
-        var barrier = new SemaphoreSlim(0, 2);
-        var releaseBarrier = new SemaphoreSlim(0, 2);
+        using var barrier = new SemaphoreSlim(0, 2);
+        using var releaseBarrier = new SemaphoreSlim(0, 2);
 
         DegradationMode? modeSeenByTask1 = null;
         DegradationMode? modeSeenByTask2 = null;

@@ -78,6 +78,8 @@ public sealed class ScraperOrchestrator
             }
             catch (Exception ex)
             {
+                // Broad catch: per-scraper failure must not abort other scrapers in the loop;
+                // OOM/cancellation still propagate via the runtime.
                 _logger.LogError(ex, "Scraper {Name} failed", scraper.Name);
                 result.Errors.Add($"{scraper.Name}: {ex.Message}");
             }
@@ -119,7 +121,7 @@ public sealed class ScraperOrchestrator
             toDownload.Count, catalog.Documents.Count, forceAll);
 
         // Download with controlled concurrency
-        var semaphore = new SemaphoreSlim(_settings.MaxConcurrentDownloads);
+        using var semaphore = new SemaphoreSlim(_settings.MaxConcurrentDownloads);
 
         var tasks = toDownload.Select(async doc =>
         {

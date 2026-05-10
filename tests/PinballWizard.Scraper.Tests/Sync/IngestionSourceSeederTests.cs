@@ -50,7 +50,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
                 e.Id == "stern"
                 && e.PartitionKey == "config"
                 && e.DisplayName == "Stern Pinball"
-                && e.Enabled == true
+                && e.Enabled
                 && e.LastRunAt == null
                 && e.LastSuccessAt == null
                 && e.TotalDocumentsDiscovered == 0

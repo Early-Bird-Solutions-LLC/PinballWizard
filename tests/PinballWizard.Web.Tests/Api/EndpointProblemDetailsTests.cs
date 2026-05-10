@@ -242,6 +242,10 @@ public sealed class EndpointProblemDetailsTests : IDisposable
 
     public void Dispose() { }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "CodeQuality",
+        "cs/local-not-disposed",
+        Justification = "StringContent ownership transfers to HttpClient via PostAsync; HttpClient disposes it through HttpRequestMessage.Dispose().")]
     private static Task<HttpResponseMessage> PostAskAsync(HttpClient client, string question)
     {
         var body = JsonSerializer.Serialize(new { question }, JsonOptions);
@@ -341,16 +345,6 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     private static IAiRouter BuildDefaultRouter()
     {
         var router = Substitute.For<IAiRouter>();
-        var answer = new WizardAnswer(
-            Text: "Default answer.",
-            Citations: [],
-            SubAgentUsed: "wizard",
-            Confidence: 0.9,
-            Escalated: false,
-            IsRefusal: false,
-            RefusalCategory: null,
-            PromptVersion: "v1.test",
-            FoundryThreadId: null);
         router
             .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());

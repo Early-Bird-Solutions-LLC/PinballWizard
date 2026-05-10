@@ -189,6 +189,10 @@ public sealed class WizardStreamingClientTests
         return sb.ToString();
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "CodeQuality",
+        "cs/local-not-disposed",
+        Justification = "HttpResponseMessage ownership transfers to HttpClient caller via the SendAsync lambda return; the caller disposes.")]
     private static WizardStreamingClient BuildClient(
         HttpStatusCode statusCode,
         string body,

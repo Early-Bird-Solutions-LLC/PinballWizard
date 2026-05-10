@@ -160,7 +160,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
             // run-level failure (caller cancellation, run-timeout
             // expiry, harness bug). Increment the failed counter
             // and propagate so the caller's exit code reflects the
-            // failure.
+            // failure. Broad catch is intentional — this is a
+            // log-then-rethrow; no exception is swallowed.
             PinballWizardTelemetry.EvalRunsFailed.Add(1);
             throw;
         }

@@ -57,7 +57,7 @@ public sealed class PolitenessGateTests
         var gate = CreateGate(options);
         var url = new Uri("https://example.com/page");
 
-        await using (var first = await gate.AcquireForRequestAsync(url, CancellationToken.None))
+        await using (await gate.AcquireForRequestAsync(url, CancellationToken.None))
         {
             // Hold briefly to simulate request work.
         }
@@ -74,7 +74,7 @@ public sealed class PolitenessGateTests
     {
         var gate = CreateGate();
 
-        await using (var first = await gate.AcquireForRequestAsync(new Uri("https://a.example.com/x"), CancellationToken.None))
+        await using (await gate.AcquireForRequestAsync(new Uri("https://a.example.com/x"), CancellationToken.None))
         {
             // first lease open
         }
@@ -214,6 +214,10 @@ public sealed class PolitenessGateTests
             _robotsBody = robotsBody;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (_robotsBody is null)

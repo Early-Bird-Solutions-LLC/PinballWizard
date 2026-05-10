@@ -58,7 +58,7 @@ public sealed class WizardTests : TestContext
         // bUnit registers FakeNavigationManager automatically. Resolving it
         // here confirms it is in place for BrandHeader nav links. Note: this
         // call locks the provider so it must come after all AddSingleton calls.
-        var _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<FakeNavigationManager>();
     }
 
     [Fact]

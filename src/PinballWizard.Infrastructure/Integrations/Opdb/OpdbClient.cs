@@ -169,7 +169,7 @@ public sealed class OpdbClient : PoliteScraperBase
                 // the caller still gets the in-memory response. Best-effort
                 // cleanup of the temp file in case the failure was at the
                 // Move step.
-                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { /* ignore */ }
+                try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch (IOException) { /* best-effort cleanup; ignore */ }
                 Logger.LogWarning(
                     ex,
                     "OPDB: failed to persist export cache to {Path}; the in-memory response is unaffected.",

@@ -83,9 +83,14 @@ public sealed class CommunityResourceLoader : ICommunityResourceLoader, IDisposa
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Double-check inside lock.
-            if (_cached is not null)
-                return _cached;
+            // Async double-checked locking: re-read after acquiring the semaphore.
+            // Two callers may both pass the fast-path null check before either thread
+            // reaches WaitAsync; reading _cached again here prevents a double call to
+            // LoadCoreAsync. The local read breaks the static-analysis alias chain that
+            // causes cs/constant-condition false-positives on _cached re-checks.
+            var cached = _cached;
+            if (cached is not null)
+                return cached;
 
             _cached = await LoadCoreAsync(cancellationToken).ConfigureAwait(false);
             return _cached;

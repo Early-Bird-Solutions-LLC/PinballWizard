@@ -55,8 +55,12 @@ public sealed class CosmosClientWarmupHostedService : BackgroundService
         {
             // Worker shutting down before warmup completed; expected.
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is CosmosException or HttpRequestException
+                                       or InvalidOperationException or TimeoutException)
         {
+            // Warmup failure: realistic modes are CosmosException (Cosmos
+            // unreachable / auth error), network error, or SDK misconfig.
+            // Warmup is a latency optimization; failure is non-fatal.
             stopwatch.Stop();
             _logger.LogWarning(
                 ex,
