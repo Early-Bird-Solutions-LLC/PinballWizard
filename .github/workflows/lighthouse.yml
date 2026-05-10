@@ -120,6 +120,20 @@ jobs:
             sleep 2
           done
 
+      # Diagnostic: verify the pages return meaningful HTML before Lighthouse runs.
+      # NO_FCP means Chrome got the page but saw no paintable content. Checking
+      # the HTTP status and first 300 bytes of HTML helps distinguish: empty body
+      # (SSR failure), redirect, or render-blocking resource 404.
+      - name: Verify page responses
+        run: |
+          for path in "/" "/wizard"; do
+            CODE=$(curl -s -o /tmp/page.html -w "%{http_code}" "http://localhost:5000${path}")
+            SIZE=$(wc -c < /tmp/page.html)
+            echo "GET ${path}: HTTP $CODE, ${SIZE} bytes"
+            head -c 300 /tmp/page.html
+            echo ""
+          done
+
       - name: Install Lighthouse CI
         run: npm install -g @lhci/cli
 
