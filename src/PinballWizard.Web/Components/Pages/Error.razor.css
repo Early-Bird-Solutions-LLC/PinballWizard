@@ -1,0 +1,97 @@
+/* Scoped CSS for Error.razor (TiltPage) — pinball-themed full-page error.
+ *
+ * Animation design:
+ *   - tilt-animated-wrapper applies a slight initial rotation and a shake
+ *     keyframe sequence to simulate a pinball machine tilting.
+ *   - CSS-only: no JavaScript animation library, no Web Animations API.
+ *
+ * MANDATORY: @media (prefers-reduced-motion: reduce) DISABLES ALL ANIMATION.
+ *   This is an accessibility requirement for users with vestibular disorders
+ *   or motion sensitivity. The class "tilt-animated-wrapper" is pinned by:
+ *     TiltPageTests.Tilt_animation_disabled_when_prefers_reduced_motion
+ *   Do NOT remove or weaken the @media rule without updating that test pin.
+ *
+ * ADR-0008 — MudBlazor strict; scoped CSS only for custom delight surfaces.
+ * ADR-0026 § 6 — TiltPage is a locked delight surface.
+ */
+
+/* ── Container ─────────────────────────────────────────────────────────── */
+
+.tilt-page-container {
+    /* Padding for breathing room on small viewports. */
+}
+
+/* ── Animated wrapper ──────────────────────────────────────────────────── */
+
+.tilt-animated-wrapper {
+    /* Start in a physically-tilted posture, then shake. */
+    transform: rotate(-3deg);
+    transform-origin: center bottom;
+    animation: tilt-shake 0.6s ease-in-out 0s 1 forwards;
+}
+
+@keyframes tilt-shake {
+    0%   { transform: rotate(-3deg); }
+    20%  { transform: rotate( 2deg); }
+    40%  { transform: rotate(-4deg); }
+    60%  { transform: rotate( 3deg); }
+    80%  { transform: rotate(-2deg); }
+    100% { transform: rotate(-3deg); }
+}
+
+/* MANDATORY accessibility rule — do NOT remove.
+ * Pinned by TiltPageTests.Tilt_animation_disabled_when_prefers_reduced_motion. */
+@media (prefers-reduced-motion: reduce) {
+    .tilt-animated-wrapper {
+        animation: none;
+        transform: none;
+    }
+}
+
+/* ── Paper ─────────────────────────────────────────────────────────────── */
+
+.tilt-paper {
+    border: 1px solid var(--mud-palette-warning);
+    border-radius: 4px;
+}
+
+/* ── TILT heading ──────────────────────────────────────────────────────── */
+
+.tilt-heading {
+    color: var(--mud-palette-warning);
+    letter-spacing: 0.25em;
+    font-weight: 900;
+    text-shadow: 0 0 12px var(--mud-palette-warning-darken);
+}
+
+/* ── DMD strip (fake dot-matrix display) ──────────────────────────────── */
+
+.tilt-dmd-strip {
+    background: #111;
+    border: 1px solid #444;
+    border-radius: 3px;
+    padding: 6px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    max-width: 36rem;
+}
+
+.tilt-dmd-label {
+    font-family: monospace;
+    font-size: 0.65rem;
+    color: #888;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+}
+
+.tilt-dmd-value {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: #f5a623; /* amber — classic DMD colour */
+    letter-spacing: 0.08em;
+    word-break: break-all;
+    text-align: center;
+}

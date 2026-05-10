@@ -1,0 +1,76 @@
+# CodeQL configuration for PinballWizard.
+#
+# The default query suite is `security-and-quality`, which surfaces a number of
+# well-known false-positive rules on this codebase. Each suppression here is
+# documented inline so a reviewer can re-evaluate the call later.
+#
+# To add a new suppression, prefer narrowing first (per-occurrence inline
+# `// lgtm[<rule>]` or per-file `paths-ignore`). Reach for a global
+# `query-filters` exclusion only when the rule is wrong about the *pattern*,
+# not about a specific occurrence.
+
+name: PinballWizard CodeQL config
+
+# Generated build output is not source we maintain — exclude it from analysis
+# so source generator output (e.g. RegexGenerator) does not surface findings.
+paths-ignore:
+  - "**/obj/**"
+  - "**/bin/**"
+
+queries:
+  - uses: security-and-quality
+
+query-filters:
+  # cs/path-combine — flags any `Path.Combine` whose first argument is a
+  # relative path. The rule's stated risk is path-injection when the first
+  # argument is user-controlled. Every Path.Combine call in this codebase
+  # takes either a string literal (e.g. Path.Combine("data", "seeds", "..."))
+  # or a config-derived value (e.g. ScraperSettings.DataPath) as the first
+  # argument — none come from external input. The rule produces ~60 hits, all
+  # false positives. Re-evaluate if user-input paths are ever introduced.
+  - exclude:
+      id: cs/path-combine
+
+  # cs/useless-cast-to-self — flags casts where source and target type are the
+  # same. We use this pattern to disambiguate NSubstitute `Returns(...)` and
+  # collection-expression-typed Razor expressions. Examples:
+  #   _loader.LoadAsync(Arg.Any<CancellationToken>())
+  #          .Returns((IReadOnlyList<SeedQuestion>)[]);
+  #   var rest = sorted.Count > 1 ? sorted.Skip(1).ToList() : (IReadOnlyList<Citation>)[];
+  # In both cases the cast is load-bearing for overload resolution against
+  # collection expressions, even though the static type matches. Removing the
+  # casts breaks compilation. Re-evaluate when C# overload resolution catches
+  # up with collection-expression typing.
+  - exclude:
+      id: cs/useless-cast-to-self
+
+  # cs/useless-upcast — flags casts that widen a value to a base type. Two
+  # load-bearing patterns in this codebase produce false positives:
+  #   1. NSubstitute typed-null disambiguation:
+  #      _repository.GetByIdAsync(...).Returns((Machine?)null);
+  #      Without the cast, NSubstitute can't distinguish the value-returning
+  #      Returns(T) overload from the Func-returning Returns(Func<,T>) overload.
+  #   2. Generic-constraint double-cast for runtime polymorphism:
+  #      return (T)(object)stream;
+  #      The intermediate (object) cast is required by the C# compiler when T
+  #      has no derivation-from-Stream constraint. Removing breaks compilation.
+  # Suppressing the rule loses signal for genuinely useless upcasts; the trade
+  # is acceptable because both load-bearing patterns are common across the
+  # test suite and the Cosmos serializer.
+  - exclude:
+      id: cs/useless-upcast
+
+  # cs/linq/missed-where + cs/linq/missed-select — stylistic notes that flag
+  # foreach loops which could be expressed as .Where() / .Select() chains.
+  # The project deliberately mixes both styles based on per-call-site
+  # judgment: LINQ chains for readable filter / project pipelines, explicit
+  # loops in scraper / extractor hot paths where allocation overhead matters
+  # and intermediate state (counters, side effects) is naturally expressed
+  # imperatively. Forcing a global transformation either direction would
+  # degrade one of the two contexts. CodeQL surfaces these as `note` severity,
+  # acknowledging the stylistic nature; we accept the trade and review style
+  # per-case in code review rather than via static analysis.
+  - exclude:
+      id: cs/linq/missed-where
+  - exclude:
+      id: cs/linq/missed-select

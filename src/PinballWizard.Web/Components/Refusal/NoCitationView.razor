@@ -1,0 +1,64 @@
+@* NoCitationView — per-category subview for RefusalCategory.NoCitation.
+ *
+ * Rendered when the citation extractor surfaced zero citations for the
+ * answer. Per ADR-0023, PinballWizard refuses rather than fabricates when
+ * no grounding documents can be cited. Tone: "no documented evidence —
+ * check these authoritative sources".
+ *
+ * Community resources here focus on machine_reference category — the user
+ * is likely asking about a specific machine and wants authoritative
+ * documentation.
+ *
+ * ADR-0023 — citation-required guardrail (refuse without citations)
+ * ADR-0026 § 4 — per-category subview within RefusalPanel
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.FindInPage"
+                 Color="Color.Secondary"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            No Documented Evidence
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            I couldn't find documented sources in my knowledge base to cite for this
+            answer. Rather than guess, I'd point you to the authoritative references
+            below — they carry the actual documentation, not a summary of it.
+        </MudText>
+    </MudStack>
+
+    @if (RelatedMachines is not null && RelatedMachines.Count > 0)
+    {
+        <div data-testid="related-machines-section">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Related machines I know about:</MudText>
+            <MudList T="RelatedMachine" Dense="true">
+                @foreach (var machine in RelatedMachines)
+                {
+                    <MudListItem Icon="@Icons.Material.Filled.Casino" Dense="true">
+                        @if (!string.IsNullOrWhiteSpace(machine.OpdbUrl))
+                        {
+                            <a href="@machine.OpdbUrl"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               class="mud-typography mud-link mud-primary-text mud-link-underline-hover">
+                                @machine.Title
+                            </a>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@machine.Title</MudText>
+                        }
+                    </MudListItem>
+                }
+            </MudList>
+        </div>
+    }
+</MudStack>
+
+@code {
+    [Parameter] public IReadOnlyList<RelatedMachine>? RelatedMachines { get; set; }
+}

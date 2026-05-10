@@ -154,8 +154,12 @@ public sealed class FileDownloader : IFileDownloader
             // Caller cancelled — propagate without converting to a Failed result.
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
         {
+            // Narrow to the realistic download failure modes: network error
+            // (HttpRequestException), disk/stream error (IOException), or
+            // protocol mismatch (InvalidOperationException). All produce a
+            // Failed result so the caller's loop can continue with other files.
             _logger.LogError(ex, "Failed to download: {Url}", fileUrl);
             return new DownloadResult
             {

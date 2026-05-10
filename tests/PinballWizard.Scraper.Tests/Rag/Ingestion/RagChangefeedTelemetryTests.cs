@@ -139,8 +139,8 @@ public sealed class RagChangefeedTelemetryTests
         var ctx = new TestContext();
         var marker = $"happy_doc_{Guid.NewGuid():N}";
 
-        var dlSamples = CollectDeadLetterSamples(out var dlListener);
-        var scSamples = CollectShortCircuitSamples(out var scListener);
+        _ = CollectDeadLetterSamples(out var dlListener);
+        _ = CollectShortCircuitSamples(out var scListener);
         using (dlListener)
         using (scListener)
         {

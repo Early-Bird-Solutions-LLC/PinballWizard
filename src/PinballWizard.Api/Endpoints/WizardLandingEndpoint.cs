@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc;
 using PinballWizard.Application.Landing;
 
 namespace PinballWizard.Api.Endpoints;
@@ -48,6 +51,13 @@ public static class WizardLandingEndpoint
     // (including nulls) keeps the contract unambiguous.
     private static readonly JsonSerializerOptions LandingJsonOptions = new(JsonSerializerDefaults.Web);
 
+    // RFC 9457 ProblemDetails JsonSerializerOptions — omit null extensions
+    // (retryAfterSeconds is conditional) so the payload stays compact.
+    private static readonly JsonSerializerOptions ProblemJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     public static IEndpointRouteBuilder MapWizardLandingEndpoint(
         this IEndpointRouteBuilder endpoints)
     {
@@ -71,17 +81,35 @@ public static class WizardLandingEndpoint
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        // ── Landing service not wired? Return 503 with Retry-After ────
-        // Wave 1 baseline — Wave 2 PR-D3 replaces with RFC 9457
-        // ProblemDetails middleware.
+        // ── Landing service not wired? Return RFC 9457 503 ProblemDetails ──
+        // Wave 2 PR-D3: replaced the bare-JSON Wave 1 baseline with structured
+        // application/problem+json per ADR-0026 § 9 + RFC 9457.
         var landingService = services.GetService<ILandingService>();
         if (landingService is null)
         {
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            var requestId = Activity.Current?.TraceId.ToString()
+                            ?? context.TraceIdentifier;
+
+            var problem = new ProblemDetails
+            {
+                Type     = "https://pinballwizard.app/errors/landing-unavailable",
+                Title    = "Service Unavailable",
+                Status   = StatusCodes.Status503ServiceUnavailable,
+                Detail   = "The landing service is not currently available. Please retry.",
+                Instance = context.Request.Path,
+            };
+            problem.Extensions["requestId"]          = requestId;
+            problem.Extensions["timestampUtc"]        = DateTimeOffset.UtcNow.ToString("O");
+            problem.Extensions["retryAfterSeconds"]   = 60;
+
+            context.Response.StatusCode  = StatusCodes.Status503ServiceUnavailable;
             context.Response.Headers.RetryAfter = "60";
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync(
-                """{"error":"landing_unavailable","retryAfterSeconds":60}""",
+            context.Response.ContentType = "application/problem+json";
+
+            await JsonSerializer.SerializeAsync(
+                context.Response.Body,
+                problem,
+                ProblemJsonOptions,
                 cancellationToken).ConfigureAwait(false);
             return;
         }

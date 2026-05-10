@@ -25,6 +25,18 @@
 
   <ItemGroup>
     <!--
+      InternalsVisibleTo: PinballWizard.Web.Tests accesses internal types
+      (ClientDegradationStore) for DI registration in bUnit tests.
+      Pattern matches PinballWizard.Application.csproj (InternalsVisibleTo
+      for PinballWizard.Scraper.Tests). The concrete store is internal so
+      callers must depend on IClientDegradationStore; the test project is
+      the single exempted consumer.
+    -->
+    <InternalsVisibleTo Include="PinballWizard.Web.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
       MudBlazor is the sole chrome library per ADR-0008. Pin to a
       .NET 10 / Blazor Web App compatible release.
     -->

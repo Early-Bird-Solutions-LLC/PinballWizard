@@ -77,8 +77,11 @@ public sealed class CosmosHealthCheck : IHealthCheck
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException
+                                       or TimeoutException or TaskCanceledException)
         {
+            // Non-Cosmos SDK failures: network error (HttpRequestException), SDK
+            // misconfig (InvalidOperationException), or timeout — all map to Unhealthy.
             return HealthCheckResult.Unhealthy($"Cosmos unreachable: {ex.Message}", exception: ex);
         }
     }

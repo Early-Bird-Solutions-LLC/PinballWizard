@@ -1,0 +1,83 @@
+@* LandingHero — top-of-page hero for the public / route.
+ *
+ * Renders the PinballWizard brand name, a 1–2 sentence tagline explaining
+ * what the application does, and a prominent MudTextField question input
+ * that autofocuses on page load. The hero is hardcoded — it does NOT depend
+ * on /api/wizard/landing — so it renders immediately even when the landing
+ * endpoint is unavailable.
+ *
+ * The question input is two-way bound to the QuestionText parameter so the
+ * parent (Index.razor) can pre-fill it when a seed question card is clicked.
+ * QuestionSubmitted is invoked when the user presses Enter or clicks "Ask".
+ *
+ * Custom delight surface — LandingHero is within the four locked delight
+ * surfaces (ADR-0026 § 6, CLAUDE.md invariant 14):
+ *   WizardAnswerStream | RefusalPanel | CitationStrip family | TiltPage/TiltErrorBoundary
+ * LandingHero is the landing-surface equivalent and is explicitly in scope
+ * per ADR-0026 § Landing surface.
+ *
+ * ADR-0008 — MudBlazor strict for chrome. Hero input is MudTextField.
+ * ADR-0026 § Landing surface.
+ *@
+
+@inject NavigationManager Nav
+
+<div class="landing-hero" data-testid="landing-hero">
+    <div class="landing-hero__brand">
+        <MudText Typo="Typo.h2" Class="landing-hero__title" data-testid="landing-hero-title">
+            &#x25CF; PinballWizard
+        </MudText>
+        <MudText Typo="Typo.subtitle1" Class="landing-hero__tagline" data-testid="landing-hero-tagline">
+            An AI-powered pinball encyclopedia — rules, valuations, repairs, and machine history,
+            grounded in manufacturer manuals and service bulletins with source-cited answers.
+        </MudText>
+    </div>
+
+    <div class="landing-hero__input-row" data-testid="landing-hero-input">
+        <MudTextField @ref="_inputRef"
+                      @bind-Value="QuestionText"
+                      @bind-Value:event="oninput"
+                      Placeholder="Ask anything about pinball machines…"
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      AdornmentColor="Color.Primary"
+                      OnAdornmentClick="OnSubmitClick"
+                      FullWidth="true"
+                      AutoFocus="true"
+                      aria-label="Question input"
+                      OnKeyDown="OnKeyDown" />
+    </div>
+</div>
+
+@code {
+    private MudTextField<string>? _inputRef;
+
+    // Two-way bound by the parent (Index.razor). Pre-filled when a seed
+    // question card is clicked.
+    [Parameter]
+    public string QuestionText { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> QuestionTextChanged { get; set; }
+
+    // Invoked when the user submits (Enter key or adornment click).
+    [Parameter]
+    public EventCallback<string> QuestionSubmitted { get; set; }
+
+    private async Task OnSubmitClick()
+    {
+        if (!string.IsNullOrWhiteSpace(QuestionText))
+        {
+            await QuestionSubmitted.InvokeAsync(QuestionText).ConfigureAwait(false);
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(QuestionText))
+        {
+            await QuestionSubmitted.InvokeAsync(QuestionText).ConfigureAwait(false);
+        }
+    }
+}

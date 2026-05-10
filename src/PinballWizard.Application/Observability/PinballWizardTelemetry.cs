@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace PinballWizard.Application.Observability;
@@ -166,6 +166,15 @@ public static class PinballWizardTelemetry
         "pinwiz.ai.first_token_ms",
         unit: "ms",
         description: "Time from request to first text-bearing chunk emitted to the client (cache hit replay counts). Tagged with cache_state (hit | miss) and optionally outcome (streamed | refusal). Drives the ADR-0026 §7.1 user-delight revisit triggers: 200ms p95 structured-records latency, 500ms cold-start cache trigger.");
+
+    // ── AI Search unavailable degradation counter (ADR-0026 § 9 PR-D2) ──
+    // Emitted by SearchCorpusTool on any typed catch arm that suppresses a
+    // retriever transport failure and returns an empty result. Tags reason
+    // so dashboards can distinguish timeout vs. auth failure vs. 5xx.
+    public static readonly Counter<long> AiSearchUnavailable = Meter.CreateCounter<long>(
+        "pinwiz.ai.search_unavailable_total",
+        unit: "{call}",
+        description: "SearchCorpusTool calls where the retriever threw and the tool returned an empty result, tagged by reason (timeout | http_5xx | auth_failure | other). Complements pinwiz.ai.tool_errors_total with finer failure-type attribution. Drives the PR-D2 SearchUnavailable degradation-context mark so WizardAnswer.Degradation surfaces to the frontend.");
 
     // ── Eval harness instrumentation (ADR-0016) ──────────────────────────
     // The Phase 3 evaluation harness emits these instruments; Phase 6

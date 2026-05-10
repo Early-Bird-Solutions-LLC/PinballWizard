@@ -1,6 +1,7 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
@@ -104,6 +105,7 @@ public sealed class RefusalDetailContractTests
             toolTraceExtractor,
             regexExtractor,
             refusalRecovery,
+            new AmbientDegradationContext(),
             Microsoft.Extensions.Options.Options.Create(options ?? Options),
             NullLogger<AiRouter>.Instance);
     }

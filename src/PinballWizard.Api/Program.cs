@@ -18,6 +18,7 @@
 // ADR-0026 § 4 — AnswerChunk discriminated union on the wire
 
 using PinballWizard.Api.Endpoints;
+using PinballWizard.Api.Middleware;
 using PinballWizard.Application.Landing;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Landing;
@@ -29,6 +30,15 @@ var builder = WebApplication.CreateBuilder(args);
 // OTel (logs / metrics / traces + OTLP exporter when env var present),
 // service discovery, standard HTTP resilience, /healthz + /alive.
 builder.AddServiceDefaults();
+
+// ── RFC 9457 ProblemDetails (Wave 2 PR-D3) ───────────────────────────────
+// IExceptionHandler implementation emits application/problem+json for all
+// unhandled exceptions. Extensions: requestId (W3C trace ID), retryAfterSeconds
+// (when applicable), timestampUtc. Stack traces NEVER leak to the user.
+// AddProblemDetails registers IProblemDetailsService for the ASP.NET Core
+// 8+ ProblemDetails pattern. UseExceptionHandler() (below) activates it.
+builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // ── Foundry + AI Router (gated — mirrors CLI + Web wiring) ────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Api starts cleanly in local
@@ -51,6 +61,13 @@ if (foundryWired)
 }
 
 var app = builder.Build();
+
+// ── Exception handler ─────────────────────────────────────────────────────
+// Must be placed BEFORE other middleware so unhandled exceptions from any
+// downstream middleware or endpoint are caught and returned as RFC 9457
+// application/problem+json. UseExceptionHandler() activates the registered
+// IExceptionHandler chain (ProblemDetailsExceptionHandler).
+app.UseExceptionHandler();
 
 // OTel default routes (/healthz + /alive) from ServiceDefaults.
 app.MapDefaultEndpoints();
