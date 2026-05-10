@@ -1,5 +1,7 @@
 using System.Net;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Features;
@@ -43,10 +45,22 @@ public sealed class PlaywrightWebApplicationFactory : WebApplicationFactory<App>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // Development environment skips HSTS + HTTPS redirection — both
-        // require a real certificate and TLS terminator that the test host
-        // does not provide. Matches the condition in Program.cs (line 127).
+        // Development environment skips HSTS + HTTPS redirection.
         builder.UseEnvironment("Development");
+
+        builder.ConfigureTestServices(services =>
+        {
+            // Replace Microsoft Identity Web's OpenIdConnect scheme with a
+            // no-op handler. Without this, the OIDC middleware intercepts
+            // Blazor's /_blazor SignalR circuit upgrade (which doesn't carry
+            // a cookie) and returns its XHTML challenge page — lang="iv"
+            // (InvariantCulture) — instead of the real Blazor pages. Public
+            // routes are [AllowAnonymous]; TestAuthHandler returns NoResult
+            // so authorization passes through without any redirect.
+            services.AddAuthentication(defaultScheme: "Test")
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                    "Test", _ => { });
+        });
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
