@@ -5,6 +5,7 @@ using MudBlazor;
 using MudBlazor.Services;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Layout;
 using PinballWizard.Web.Components.Theming;
 using PinballWizard.Web.Components.Wizard;
@@ -38,6 +39,9 @@ public sealed class WizardTests : TestContext
         // Register the mock BEFORE calling GetRequiredService — bUnit locks
         // the service provider on the first GetService call.
         Services.AddSingleton(Substitute.For<IWizardStreamingClient>());
+
+        // PR-D-degraded: OutageBanner (in MainLayout) injects IClientDegradationStore.
+        Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
         // bUnit registers FakeNavigationManager automatically. Resolving it
         // here confirms it is in place for BrandHeader nav links. Note: this

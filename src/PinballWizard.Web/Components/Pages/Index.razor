@@ -1,0 +1,150 @@
+@page "/"
+@rendermode InteractiveAuto
+@attribute [AllowAnonymous]
+
+@* PinballWizard public landing page — PR-D-landing.
+ *
+ * Composes LandingHero + SeedQuestionGrid + FeaturedMachinesStrip +
+ * ArchitectureStoryStrip + LiveStatusBadge. The hero is hardcoded and
+ * renders immediately; the grid and machines use skeleton placeholders
+ * while the IWizardLandingClient call is in flight.
+ *
+ * Fallback posture (ADR-0026 § Landing):
+ *   If IWizardLandingClient returns null (endpoint down, 503, transport error)
+ *   the page falls back to the compiled-in FallbackLanding — 4 seed questions
+ *   and 6 featured machines derived from the same on-disk seed data that the
+ *   backend uses. The prospect's first impression NEVER 500s.
+ *
+ * LiveStatusBadge is placed in the top-right of the landing surface.
+ * It renders amber ("unknown") during the loading phase and updates once
+ * the endpoint call completes.
+ *
+ * ADR-0026 § Landing surface, ADR-0008 MudBlazor strict.
+ *@
+
+@using PinballWizard.Application.Landing
+@using PinballWizard.Web.Clients
+@using PinballWizard.Web.Components.Landing
+
+@inject IWizardLandingClient LandingClient
+@inject NavigationManager Nav
+
+<PageTitle>PinballWizard — AI-Powered Pinball Encyclopedia</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="landing-page">
+    @* Top-right status badge — always rendered, amber until data loads *@
+    <div class="landing-page__status-row" data-testid="landing-status-row">
+        <LiveStatusBadge Status="@_status" />
+    </div>
+
+    @* Hero — hardcoded, renders immediately, no API dependency *@
+    <LandingHero @bind-QuestionText="_question"
+                 QuestionSubmitted="OnQuestionSubmitted" />
+
+    @* Seed question grid — null until data loads (shows skeletons) *@
+    <div class="landing-page__section">
+        <SeedQuestionGrid Questions="@_seedQuestions"
+                          QuestionSelected="OnSeedQuestionSelected" />
+    </div>
+
+    @* Featured machines — null until data loads (shows skeletons) *@
+    <div class="landing-page__section">
+        <FeaturedMachinesStrip Machines="@_featuredMachines" />
+    </div>
+
+    @* Architecture story strip — hardcoded, always renders *@
+    <div class="landing-page__section landing-page__section--muted">
+        <ArchitectureStoryStrip />
+    </div>
+</MudContainer>
+
+@code {
+    private string _question = string.Empty;
+
+    // Null = loading (show skeletons). Populated on successful API call or
+    // fallback. Never null after OnInitializedAsync completes.
+    private IReadOnlyList<SeedQuestion>? _seedQuestions;
+    private IReadOnlyList<FeaturedMachine>? _featuredMachines;
+    private SystemStatus? _status;
+
+    // ── Compiled-in fallback seed questions ────────────────────────────────
+    // Mirrors wizard_seed_questions.v1.json. Used when the endpoint is down
+    // so the page always renders 4 cards — the prospect's first impression
+    // MUST NOT 500 or show a blank grid.
+    private static readonly IReadOnlyList<SeedQuestion> FallbackSeedQuestions =
+    [
+        new SeedQuestion(
+            Slug: "how-does-the-wizard-mode-work-on-godzilla",
+            Question: "How does the wizard mode work on Stern Godzilla?",
+            TargetSubAgent: "Rules",
+            Description: "Demonstrates the Rules sub-agent answering a gameplay question grounded by searchCorpus against the indexed manual for a featured Stern title."),
+        new SeedQuestion(
+            Slug: "whats-my-medieval-madness-worth",
+            Question: "What is a fully working Medieval Madness worth on today's market?",
+            TargetSubAgent: "Valuation",
+            Description: "Demonstrates the Valuation sub-agent answering a machine-worth question using OPDB identity data."),
+        new SeedQuestion(
+            Slug: "godzilla-ramp-motor-not-working",
+            Question: "The left ramp motor on my Stern Godzilla stopped responding. How do I diagnose it?",
+            TargetSubAgent: "Repair",
+            Description: "Demonstrates the Repair sub-agent's safety-first diagnostic flow using indexed service bulletins."),
+        new SeedQuestion(
+            Slug: "tell-me-about-the-wizard",
+            Question: "What can you help me with? Show me what PinballWizard knows.",
+            TargetSubAgent: "Wizard",
+            Description: "Demonstrates the Wizard orchestrator agent routing and the general Q&A surface."),
+    ];
+
+    // ── Compiled-in fallback featured machines ─────────────────────────────
+    // Mirrors featured_machines.v1.json. Used when the endpoint is down.
+    private static readonly IReadOnlyList<FeaturedMachine> FallbackFeaturedMachines =
+    [
+        new FeaturedMachine("stern-godzilla-pro", "Godzilla Pro", null, 1,
+            "The king of the monsters rules the playfield with multi-level ramps and a motorized Mechagodzilla upper playfield."),
+        new FeaturedMachine("jjp-wonka", "Wonka", null, 2,
+            "Jersey Jack's whimsical masterpiece channels pure imagination across a hand-painted playfield."),
+        new FeaturedMachine("spooky-halloween", "Halloween", null, 3,
+            "Spooky Pinball's licensed tribute to the classic slasher franchise."),
+        new FeaturedMachine("ap-houdini", "Houdini: Master of Mystery", null, 4,
+            "American Pinball's debut machine evokes the showmanship of the legendary illusionist."),
+        new FeaturedMachine("chicago-gaming-medieval-madness", "Medieval Madness (Remake)", null, 5,
+            "Chicago Gaming Company's faithful recreation of the beloved Williams classic."),
+        new FeaturedMachine("multimorphic-p3", "P3 Pinball Platform", null, 6,
+            "Multimorphic's modular P3 platform redefines what a pinball machine can be."),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var landing = await LandingClient
+            .GetLandingAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        if (landing is not null)
+        {
+            _seedQuestions = landing.SeedQuestions;
+            _featuredMachines = landing.FeaturedMachines;
+            _status = landing.SystemStatus;
+        }
+        else
+        {
+            // Endpoint down or returned non-200 — use compiled-in fallback.
+            // The prospect's first impression never shows a broken page.
+            _seedQuestions = FallbackSeedQuestions;
+            _featuredMachines = FallbackFeaturedMachines;
+            _status = null; // amber badge — status unknown
+        }
+    }
+
+    private void OnSeedQuestionSelected(string question)
+    {
+        _question = question;
+    }
+
+    private void OnQuestionSubmitted(string question)
+    {
+        if (!string.IsNullOrWhiteSpace(question))
+        {
+            Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(question)}");
+        }
+    }
+}

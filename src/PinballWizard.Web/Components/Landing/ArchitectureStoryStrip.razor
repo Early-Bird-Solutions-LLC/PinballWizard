@@ -1,0 +1,71 @@
+@* ArchitectureStoryStrip — horizontal strip of engineering-story cards.
+ *
+ * Renders 4 small cards below the seed question grid, each naming one
+ * architectural pillar of the showcase and linking to the relevant ADR or
+ * doc section. Visually muted — this is "tell me more" content for the
+ * engineering-curious prospect, not front-and-center UX.
+ *
+ * Cards are hardcoded (no API call) so the strip renders regardless of
+ * endpoint availability.
+ *
+ * ADR-0008 — chrome uses MudCard.
+ * ADR-0026 § Landing surface.
+ *@
+
+<div class="arch-strip" data-testid="architecture-story-strip">
+    @foreach (var card in _cards)
+    {
+        <div class="arch-strip__cell">
+            <MudCard Class="arch-card" Elevation="0" data-testid="@($"arch-card-{card.Id}")">
+                <MudCardContent Class="arch-card__content">
+                    <MudText Typo="Typo.overline" Color="Color.Primary" Class="arch-card__label">
+                        @card.Label
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="arch-card__desc">
+                        @card.Description
+                    </MudText>
+                    <MudLink Href="@card.Href"
+                             Target="_blank"
+                             Typo="Typo.caption"
+                             Color="Color.Inherit"
+                             Class="arch-card__link"
+                             aria-label="@($"Read more about {card.Label}")">
+                        @card.LinkText ↗
+                    </MudLink>
+                </MudCardContent>
+            </MudCard>
+        </div>
+    }
+</div>
+
+@code {
+    private sealed record ArchCard(string Id, string Label, string Description, string Href, string LinkText);
+
+    private static readonly ArchCard[] _cards =
+    [
+        new(
+            Id: "polite-scraping",
+            Label: "Polite Scraping",
+            Description: "Every outbound HTTP request routes through IPolitenessGate, robots.txt is honored unconditionally, and rate limits are per-source configurable.",
+            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/",
+            LinkText: "ADRs"),
+        new(
+            Id: "rag-manuals",
+            Label: "RAG over Manuals",
+            Description: "Manufacturer manuals and service bulletins are chunked, embedded, and indexed in Azure AI Search so answers are grounded in authoritative source text.",
+            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0021-ai-search-index-schema.md",
+            LinkText: "ADR-0021"),
+        new(
+            Id: "confidence-refusal",
+            Label: "Confidence Refusal",
+            Description: "A geometric-mean composite of retrieval, model self-report, and citation coverage gates every answer. Below 0.65: structured refusal, never fabrication.",
+            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0017-confidence-threshold-refusal.md",
+            LinkText: "ADR-0017"),
+        new(
+            Id: "source-citations",
+            Label: "Source-Cited Answers",
+            Description: "Every answer ends with clickable citations carrying page anchors, freshness timestamps, and relevance scores traced from the retrieval pipeline.",
+            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0022-tool-call-trace-citation-extraction.md",
+            LinkText: "ADR-0022"),
+    ];
+}
