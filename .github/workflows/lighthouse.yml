@@ -83,6 +83,7 @@ jobs:
             --project src/PinballWizard.Web \
             --configuration Release \
             --no-build \
+            > /tmp/app.log 2>&1 \
             &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
 
@@ -105,6 +106,8 @@ jobs:
             fi
             if [ "$i" -eq 30 ]; then
               echo "App did not become ready within 60s (last code: $CODE)."
+              echo "--- app startup log ---"
+              cat /tmp/app.log || true
               exit 1
             fi
             sleep 2
