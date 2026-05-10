@@ -53,12 +53,12 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 - Bicep syntax validation: [`.github/workflows/bicep.yml`](../.github/workflows/bicep.yml)
 - Dependabot: [`.github/dependabot.yml`](../.github/dependabot.yml) — weekly bumps
 - `.slnx` solution format
+- **Test coverage threshold + CI enforcement**: [`tests/coverage.runsettings`](../tests/coverage.runsettings) excludes test assemblies and 3rd-party deps so the gate measures production code only. CI runs `dotnet test --collect "Code Coverage;Format=cobertura" --settings tests/coverage.runsettings` and the [`irongut/CodeCoverageSummary`](../.github/workflows/ci.yml) step fails the job if production line coverage drops below the threshold (currently **70%**, ratchet up at phase boundaries). Phase 5 entry baseline: 73.3% line / 70.9% branch.
 
 ### To add
 
 | Gate | Phase | Notes |
 | --- | --- | --- |
-| Test coverage threshold + CI enforcement | 2 | Coverlet already measures; add a regression-check task that fails CI if line coverage drops below the rolling baseline. Initial threshold: whatever the current coverage is at Phase 2 entry, rounded down to the nearest 5%. Ratchet up at each phase boundary if coverage actually rises. |
 | Mutation testing (Stryker.NET) | 3 | Validates the "tests assert behavior" rule mechanically. Cadence: per-phase (full run) + nightly on `main` (incremental). Threshold: ≥ 70% mutation score on `Core` + `Application`; ≥ 50% on `Infrastructure` (which has more I/O integration code). Initial baseline taken at Phase 3 entry. |
 | Architecture fitness tests (NetArchTest) | 3 | Mechanical layering enforcement. Initial assertions: `Application` doesn't reference `Microsoft.Azure.Cosmos` or `Azure.ResourceManager.*`; `Core` has zero external package references; `Infrastructure.Scraping.<Mfg>` doesn't reference other manufacturer namespaces; no `public` types in `Internal/` folders. Failures fail the build. |
 

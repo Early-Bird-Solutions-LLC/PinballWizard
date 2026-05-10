@@ -54,12 +54,18 @@ jobs:
         run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
 
       - name: Test (with coverage)
+        # Microsoft Code Coverage collector (built into Microsoft.NET.Test.Sdk
+        # via Microsoft.CodeCoverage transitive). Cobertura format is the only
+        # output our downstream summary action consumes. coverage.runsettings
+        # excludes test assemblies and third-party deps so the gate measures
+        # production code only — see file header for rationale.
         run: |
           dotnet test \
             --no-build \
             --configuration Release \
             --logger "trx;LogFileName=test-results.trx" \
-            --collect:"XPlat Code Coverage" \
+            --collect "Code Coverage;Format=cobertura" \
+            --settings tests/coverage.runsettings \
             --results-directory ./coverage \
             PinballWizard.slnx
 
@@ -78,24 +84,29 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage
-          path: coverage/**/coverage.cobertura.xml
-          if-no-files-found: warn
+          path: coverage/*/*.cobertura.xml
+          if-no-files-found: error
           retention-days: 14
 
-      - name: Coverage summary (PRs only)
-        if: github.event_name == 'pull_request'
+      # Threshold gate: fails the job if production-code line coverage drops
+      # below the floor. Initial threshold 70% line (current ~73%, rounded
+      # down to nearest 5% per quality-spec § Code quality). Ratchet up at
+      # phase boundaries when coverage genuinely rises. Runs on both push
+      # and PR so main can't drift below the floor between PRs.
+      - name: Coverage threshold gate
+        if: always()
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
-          filename: coverage/**/coverage.cobertura.xml
+          filename: coverage/*/*.cobertura.xml
           badge: true
+          fail_below_min: true
+          thresholds: '70 80'
           format: markdown
           output: both
-        continue-on-error: true
 
       - name: Comment coverage on PR
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           recreate: true
           path: code-coverage-results.md
-        continue-on-error: true

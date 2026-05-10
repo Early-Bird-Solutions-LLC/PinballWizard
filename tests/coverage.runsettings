@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coverage runsettings for the Microsoft Code Coverage collector. -->
+<!-- Excludes test assemblies and third-party dependencies (bUnit, MudBlazor, -->
+<!-- Microsoft.*, etc.) so the reported percentage reflects production code -->
+<!-- only. Without this filter, the measurement includes tests covering -->
+<!-- themselves (~96-98%) plus framework code we don't own, both of which -->
+<!-- would distort the threshold gate. -->
+<!-- Used by .github/workflows/ci.yml. Local invocation: -->
+<!--   dotnet test PinballWizard.slnx \ -->
+<!--     /collect:"Code Coverage;Format=cobertura" \ -->
+<!--     /settings:tests/coverage.runsettings \ -->
+<!--     /results-directory:./coverage -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage" uri="datacollector://Microsoft/CodeCoverage/2.0" assemblyQualifiedName="Microsoft.VisualStudio.Coverage.DynamicCoverageDataCollector, Microsoft.VisualStudio.TraceDataCollector, Version=11.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+        <Configuration>
+          <CodeCoverage>
+            <ModulePaths>
+              <Exclude>
+                <!-- Our own test assemblies — coverage of test code is meaningless. -->
+                <ModulePath>.*\.Tests\.dll$</ModulePath>
+                <ModulePath>.*\.Tests\.exe$</ModulePath>
+                <!-- bUnit + MudBlazor + AspNetCore.TestHost + xunit + NSubstitute. -->
+                <ModulePath>.*Bunit.*\.dll$</ModulePath>
+                <ModulePath>.*MudBlazor.*\.dll$</ModulePath>
+                <ModulePath>.*Microsoft\.AspNetCore\.TestHost\.dll$</ModulePath>
+                <ModulePath>.*xunit.*\.dll$</ModulePath>
+                <ModulePath>.*NSubstitute.*\.dll$</ModulePath>
+                <!-- Microsoft and Azure framework / SDK assemblies. -->
+                <ModulePath>.*Microsoft\..*\.dll$</ModulePath>
+                <ModulePath>.*Azure\..*\.dll$</ModulePath>
+                <ModulePath>.*System\..*\.dll$</ModulePath>
+                <ModulePath>.*OpenTelemetry.*\.dll$</ModulePath>
+                <ModulePath>.*AngleSharp.*\.dll$</ModulePath>
+                <ModulePath>.*Aspire.*\.dll$</ModulePath>
+                <ModulePath>.*Polly.*\.dll$</ModulePath>
+              </Exclude>
+              <Include>
+                <!-- Whitelist: everything we ship under PinballWizard.* (excluding tests above). -->
+                <ModulePath>PinballWizard\..*\.dll$</ModulePath>
+              </Include>
+            </ModulePaths>
+            <UseVerifiableInstrumentation>False</UseVerifiableInstrumentation>
+            <AllowLowIntegrityProcesses>True</AllowLowIntegrityProcesses>
+            <CollectFromChildProcesses>True</CollectFromChildProcesses>
+            <CollectAspDotNet>False</CollectAspDotNet>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
