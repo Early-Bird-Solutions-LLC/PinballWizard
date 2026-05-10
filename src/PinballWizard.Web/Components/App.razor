@@ -12,6 +12,17 @@
 
 <body>
     <Routes />
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('pinwiz.theme');
+                if (t === 'daytime-route') document.documentElement.classList.add('theme-daytime-route');
+                var m = localStorage.getItem('pinwiz.motion');
+                if (m) document.documentElement.dataset.motion = m;
+            } catch (_) { }
+        })();
+    </script>
+    <script src="app.js"></script>
     <script src="_framework/blazor.web.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 </body>

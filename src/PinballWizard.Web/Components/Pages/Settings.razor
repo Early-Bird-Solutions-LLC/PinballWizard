@@ -1,0 +1,154 @@
+@page "/settings"
+@rendermode InteractiveAuto
+@attribute [AllowAnonymous]
+@using PinballWizard.Web.Services
+
+@* Settings — locally-persisted user preferences.
+ *
+ * Three sections in order per docs/ui/screens/settings.md:
+ *   1. Theme — sibling-theme picker (alphabetical, peer-parity cards)
+ *   2. Motion — three-state prefers-reduced-motion override
+ *   3. Sound  — muted-by-default toggle per ADR-0026
+ *
+ * MudBlazor strict per ADR-0008: all chrome uses MudBlazor components.
+ * Theme picker uses native <fieldset>/<input>/<label> (not a custom
+ * Razor component — structural HTML inside a single Razor file is allowed).
+ *
+ * ADR-0008  — MudBlazor strict for chrome
+ * ADR-0026  — sound muted by default; never auto-play
+ * ADR-0027  — no engagement-metric framing, no captive UI
+ * docs/ui/screens/settings.md — full spec
+ *@
+
+@inject IUserPreferencesService Prefs
+
+<PageTitle>Settings — PinballWizard</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="settings-page py-6">
+    <MudText Typo="Typo.h4" Class="mb-6">Settings</MudText>
+
+    @* ── Theme ──────────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
+        <section aria-labelledby="theme-heading">
+            <MudText id="theme-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">THEME</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Choose how the Wizard looks. Your selection is remembered on this device.
+            </MudText>
+
+            @if (!Prefs.StorageAvailable)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                    Browser storage is disabled. Your selection won&apos;t persist between visits.
+                </MudText>
+            }
+
+            @* Alphabetical: Daytime Route (D) before Modern LCD (M) per ADR-0027 § 3 *@
+            <fieldset class="theme-picker-grid" aria-label="Theme">
+                <legend style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">Theme</legend>
+
+                @foreach (var theme in Themes)
+                {
+                    var isActive = Prefs.CurrentTheme == theme.Key;
+                    <label class="theme-card @(isActive ? "theme-card--active" : "")"
+                           for="theme-@theme.Key"
+                           data-testid="theme-card-@theme.Key">
+                        <input type="radio"
+                               id="theme-@theme.Key"
+                               name="theme"
+                               value="@theme.Key"
+                               checked="@isActive"
+                               @onchange="() => OnThemeChanged(theme.Key)"
+                               style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0" />
+                        <div class="theme-card__header">
+                            <MudText Typo="Typo.h6" Class="theme-card__name">@theme.Name</MudText>
+                            @if (theme.IsBeta)
+                            {
+                                <span class="theme-card__beta-tag"
+                                      aria-label="@(theme.Name + ", beta — has not yet earned a full design specification")">
+                                    BETA
+                                </span>
+                            }
+                        </div>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="theme-card__oneliner d-block mb-2">
+                            @theme.Oneliner
+                        </MudText>
+                        <div class="theme-card__swatch" aria-hidden="true">
+                            <span class="theme-swatch-chip" style="background:@theme.SwatchBg"></span>
+                            <span class="theme-swatch-chip" style="background:@theme.SwatchAccent1"></span>
+                            <span class="theme-swatch-chip" style="background:@theme.SwatchAccent2"></span>
+                            <span class="theme-swatch-type" style="color:@theme.SwatchText;font-family:@theme.SwatchFont">Aa</span>
+                        </div>
+                    </label>
+                }
+            </fieldset>
+        </section>
+    </MudPaper>
+
+    @* ── Motion ──────────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
+        <section aria-labelledby="motion-heading">
+            <MudText id="motion-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">MOTION</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                The Wizard uses subtle motion to signal state. You can override your device&apos;s setting.
+            </MudText>
+            <MudRadioGroup T="string" Value="@Prefs.CurrentMotion" ValueChanged="OnMotionChanged">
+                <MudRadio T="string" Value=@("match") Dense="true">Match my device</MudRadio>
+                <MudRadio T="string" Value=@("on") Dense="true">Always on</MudRadio>
+                <MudRadio T="string" Value=@("off") Dense="true">Always off</MudRadio>
+            </MudRadioGroup>
+        </section>
+    </MudPaper>
+
+    @* ── Sound ───────────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 settings-section" Elevation="1">
+        <section aria-labelledby="sound-heading">
+            <MudText id="sound-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">SOUND</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                The Wizard is muted by default. If sounds are added in a future release, this toggle controls whether they play.
+            </MudText>
+            <MudSwitch T="bool"
+                       Value="@(Prefs.CurrentSound == "on")"
+                       ValueChanged="OnSoundChanged"
+                       Label="@(Prefs.CurrentSound == "on" ? "Sound on" : "Muted")"
+                       Color="Color.Primary" />
+        </section>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    // Alphabetical by Name: Daytime Route (D) before Modern LCD (M) per ADR-0027 § 3.
+    // Swatch values match Track B (PR #181) palette constants.
+    private sealed record ThemeOption(
+        string Key, string Name, bool IsBeta, string Oneliner,
+        string SwatchBg, string SwatchAccent1, string SwatchAccent2,
+        string SwatchText, string SwatchFont);
+
+    private static readonly ThemeOption[] Themes =
+    [
+        new(ThemeNames.DaytimeRoute, "Daytime Route", IsBeta: true,
+            "Sunlit, public, social. The expo floor theme.",
+            SwatchBg: "#faf6ef", SwatchAccent1: "#cc5500", SwatchAccent2: "#0d6e2d",
+            SwatchText: "#1f1a14", SwatchFont: "'Barlow Condensed', sans-serif"),
+
+        new(ThemeNames.ModernLcd, "Modern LCD", IsBeta: false,
+            "The default. Dark arcade atmosphere, warm amber accents.",
+            SwatchBg: "#0c0b0e", SwatchAccent1: "#ff9a1f", SwatchAccent2: "#34d96a",
+            SwatchText: "#f4f1ea", SwatchFont: "'Barlow Condensed', sans-serif"),
+    ];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await Prefs.InitializeAsync().ConfigureAwait(false);
+        StateHasChanged();
+    }
+
+    private async Task OnThemeChanged(string theme)
+        => await Prefs.SetThemeAsync(theme).ConfigureAwait(false);
+
+    private async Task OnMotionChanged(string motion)
+        => await Prefs.SetMotionAsync(motion).ConfigureAwait(false);
+
+    private async Task OnSoundChanged(bool on)
+        => await Prefs.SetSoundAsync(on ? "on" : "muted").ConfigureAwait(false);
+}

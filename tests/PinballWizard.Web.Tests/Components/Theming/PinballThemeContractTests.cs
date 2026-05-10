@@ -1,4 +1,5 @@
 using PinballWizard.Web.Components.Theming;
+using PinballWizard.Web.Services;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Theming;
@@ -146,4 +147,22 @@ public sealed class DaytimeRouteThemeContractTests
     {
         Assert.Equal(expected, actual, ignoreCase: true);
     }
+}
+
+// Pins the ThemeNames and PreferenceKeys constants so any rename is a
+// compile-level breaking change visible across Web + Web.Tests simultaneously.
+public sealed class UserPreferencesContractTests
+{
+    [Theory]
+    [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
+    [InlineData(ThemeNames.DaytimeRoute, "daytime-route")]
+    public void ThemeName_MatchesExpected(string actual, string expected)
+        => Assert.Equal(expected, actual);
+
+    [Theory]
+    [InlineData(PreferenceKeys.Theme,  "pinwiz.theme")]
+    [InlineData(PreferenceKeys.Motion, "pinwiz.motion")]
+    [InlineData(PreferenceKeys.Sound,  "pinwiz.sound")]
+    public void PreferenceKey_MatchesExpected(string actual, string expected)
+        => Assert.Equal(expected, actual);
 }
