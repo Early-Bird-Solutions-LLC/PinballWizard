@@ -59,13 +59,13 @@ jobs:
         # output our downstream summary action consumes. coverage.runsettings
         # excludes test assemblies and third-party deps so the gate measures
         # production code only — see file header for rationale.
-        # Exclude Category=Accessibility — those tests need Playwright browsers
-        # installed and run in the separate parallel `accessibility` job.
+        # Exclude Category=Accessibility and Category=Snapshots — those tests
+        # need Playwright browsers installed and run in their own parallel jobs.
         run: |
           dotnet test \
             --no-build \
             --configuration Release \
-            --filter "Category!=Accessibility" \
+            --filter "Category!=Accessibility&Category!=Snapshots" \
             --logger "trx;LogFileName=test-results.trx" \
             --collect "Code Coverage;Format=cobertura" \
             --settings tests/coverage.runsettings \
@@ -172,5 +172,82 @@ jobs:
         with:
           name: a11y-results
           path: a11y-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+  snapshots:
+    name: Responsive snapshots (Playwright, mobile/tablet/desktop)
+    runs-on: ubuntu-latest
+    # Runs in parallel with build-and-test and accessibility; does NOT depend
+    # on either. Screenshots are uploaded as an artifact for manual review —
+    # no pixel-diff comparison occurs here.
+    needs: []
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore
+        # Web.Tests opts out of locked-mode restore (Razor SDK RID assets).
+        run: dotnet restore PinballWizard.slnx
+
+      - name: Build (Release, warnings as errors)
+        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
+
+      - name: Install Playwright browsers
+        # playwright.ps1 is emitted by the Microsoft.Playwright package into
+        # the test project's output directory. pwsh is available on ubuntu-latest.
+        run: |
+          pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
+            install --with-deps chromium
+
+      - name: Responsive snapshot tests
+        # Screenshots are written to ./screenshots/ relative to the working
+        # directory. The test asserts no critical WCAG 2.1 violations at each
+        # breakpoint; the screenshots themselves are uploaded for manual review.
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --filter "Category=Snapshots" \
+            --logger "trx;LogFileName=snapshot-results.trx" \
+            --results-directory ./snapshot-results \
+            tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Upload snapshot screenshots
+        # Always upload — even on test failure the screenshots are useful
+        # for diagnosing layout breakage at a given breakpoint.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: responsive-screenshots
+          path: screenshots/**/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload snapshot test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: snapshot-results
+          path: snapshot-results/**/*.trx
           if-no-files-found: warn
           retention-days: 14
