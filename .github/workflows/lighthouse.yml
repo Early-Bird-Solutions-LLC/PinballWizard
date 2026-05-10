@@ -86,21 +86,23 @@ jobs:
             &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
 
-      # Poll /healthz until the app responds or the timeout expires (30s).
-      # /healthz is registered by AddServiceDefaults() (ServiceDefaults project).
-      # Using --retry-connrefused + --retry so curl retries on connection
-      # refused (app not yet listening) as well as on server errors.
-      - name: Wait for app to be healthy
+      # Poll /alive until the app responds or the timeout expires (30s).
+      # /alive is registered by AddServiceDefaults() (ServiceDefaults project)
+      # and always returns 200 when the process is running — regardless of
+      # whether Cosmos, Foundry, or AI Search are configured. /healthz would
+      # return 503 in CI (dependencies not wired) causing curl --fail to exit
+      # with code 22. /alive is the correct readiness probe for this use case.
+      - name: Wait for app to be ready
         run: |
-          echo "Waiting for http://localhost:5000/healthz ..."
+          echo "Waiting for http://localhost:5000/alive ..."
           curl --retry 15 \
                --retry-delay 2 \
                --retry-connrefused \
                --retry-max-time 30 \
                --silent \
                --fail \
-               http://localhost:5000/healthz
-          echo "App is healthy."
+               http://localhost:5000/alive
+          echo "App is ready."
 
       - name: Install Lighthouse CI
         run: npm install -g @lhci/cli
