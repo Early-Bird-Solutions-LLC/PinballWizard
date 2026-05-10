@@ -123,9 +123,13 @@ if (!app.Environment.IsDevelopment())
     // ProblemDetails middleware and TiltErrorBoundary land in PR-D3 (Wave 2).
     app.UseExceptionHandler("/error", createScopeForErrors: true);
     app.UseHsts();
+    // HTTPS redirect inside the non-Development guard: the Playwright
+    // accessibility test host (PlaywrightWebApplicationFactory) listens on
+    // plain HTTP. Redirecting to https:// there causes Chromium to hit
+    // ERR_CONNECTION_REFUSED and axe-core scans the browser error page
+    // instead of the actual app. Standard ASP.NET Core template convention.
+    app.UseHttpsRedirection();
 }
-
-app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.UseAuthentication();
