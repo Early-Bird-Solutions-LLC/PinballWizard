@@ -1,0 +1,83 @@
+@* CommunityResourceCards — renders a plural set of community resource cards.
+ *
+ * One of the four locked delight surfaces (ADR-0026 § 6 — "CitationStrip family"
+ * encompasses all refusal-recovery surfaces including CommunityResourceCards).
+ *
+ * Design invariants (per feedback_destination_plurality.md +
+ * feedback_avoid_appearance_of_favoritism.md):
+ *
+ *   1. Alphabetical ordering within a category — no "recommended" / "featured"
+ *      / "best" markup on any card. The seed loader already sorts alphabetically
+ *      (CommunityResourceLoader.cs line ~196) so if Resources arrives pre-sorted
+ *      the visual order honors that. The component does NOT re-sort — caller
+ *      passes resources in the correct order.
+ *
+ *   2. External links MUST carry rel="noopener noreferrer" and target="_blank"
+ *      (security: opener isolation + referrer suppression).
+ *
+ *   3. Description text is rendered as-is from the seed — no rewriting,
+ *      no superlatives added. The seed is the editorial layer.
+ *
+ *   4. Cards are visually equal — same elevation, same padding, same type.
+ *      No "primary" / "highlighted" card for any destination.
+ *
+ * ADR-0026 § 5 — plurality minimums (marketplace ≥ 3, machine_reference ≥ 2)
+ * ADR-0026 § 6 — custom component within locked delight surface set
+ * ADR-0008     — MudBlazor strict for chrome
+ *@
+
+@using PinballWizard.Application.Ai
+
+@if (Resources is not null && Resources.Count > 0)
+{
+    <div class="community-resource-cards" data-testid="community-resource-cards">
+        <MudGrid Spacing="2">
+            @foreach (var resource in Resources)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="1" Class="resource-card h-100"
+                             data-testid="community-resource-card"
+                             data-resource-name="@resource.Name"
+                             data-resource-category="@resource.Category">
+                        <MudCardContent Class="pa-3">
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.subtitle2" Class="resource-name">
+                                    @resource.Name
+                                </MudText>
+                                @if (!string.IsNullOrWhiteSpace(resource.Description))
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="resource-description">
+                                        @resource.Description
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudCardContent>
+                        <MudCardActions Class="pa-3 pt-0">
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       Href="@resource.Url"
+                                       Target="_blank"
+                                       Rel="noopener noreferrer"
+                                       data-testid="resource-link"
+                                       data-href="@resource.Url">
+                                Visit @resource.Name
+                                <MudIcon Icon="@Icons.Material.Filled.OpenInNew"
+                                         Size="Size.Small"
+                                         Class="ml-1" />
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    </div>
+}
+
+@code {
+    // The caller passes resources pre-sorted alphabetically within category
+    // (CommunityResourceLoader guarantees alphabetical order at load time).
+    // This component does NOT re-sort — it renders in the order received.
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CommunityResource> Resources { get; set; } = [];
+}

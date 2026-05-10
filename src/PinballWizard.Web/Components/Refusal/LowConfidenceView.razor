@@ -1,0 +1,129 @@
+@* LowConfidenceView — per-category subview for RefusalCategory.LowModelConfidence.
+ *
+ * Rendered when the geometric-mean composite confidence (ADR-0017) falls
+ * below the threshold. This is a SHOWCASE moment — the system explains its
+ * own uncertainty through three sub-scores (retrieval, model self-reported,
+ * citation coverage) with the threshold marked visually.
+ *
+ * The ConfidenceBreakdown visualization is intentionally prominent but NOT
+ * the whole panel — the community resources section gives the user somewhere
+ * to go next.
+ *
+ * Scores are rendered as horizontal progress bars (0–1 scale) with the
+ * 0.65 threshold marked as a reference line.
+ *
+ * ADR-0017 — geometric-mean confidence threshold, sub-scores
+ * ADR-0026 § 4 — per-category subview within RefusalPanel
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.Psychology"
+                 Color="Color.Secondary"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            Not Confident Enough to Answer
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            I could construct a response, but my confidence score fell below the
+            required threshold. I'd rather point you to authoritative sources than
+            risk giving you inaccurate information about your machine.
+        </MudText>
+    </MudStack>
+
+    @if (Confidence is not null)
+    {
+        <div class="confidence-breakdown" data-testid="confidence-breakdown">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">
+                Confidence breakdown
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Inline="true">
+                    — geometric-mean composite: @Confidence.Composite.ToString("P0")
+                    (threshold: @Confidence.Threshold.ToString("P0"))
+                </MudText>
+            </MudText>
+
+            <MudStack Spacing="2">
+                <div class="score-row" data-testid="score-retrieval">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.caption" Class="score-label">
+                            Retrieval similarity
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @Confidence.RetrievalSimilarity.ToString("P0")
+                        </MudText>
+                    </MudStack>
+                    <div class="score-bar-track">
+                        <div class="score-bar-fill @ScoreColorClass(Confidence.RetrievalSimilarity, Confidence.Threshold)"
+                             style="width: @ScoreWidthPct(Confidence.RetrievalSimilarity)"
+                             data-testid="score-bar-retrieval">
+                        </div>
+                        <div class="score-threshold-marker"
+                             style="left: @ScoreWidthPct(Confidence.Threshold)"
+                             title="Threshold: @Confidence.Threshold.ToString("P0")">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="score-row" data-testid="score-model">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.caption" Class="score-label">
+                            Model self-reported
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @Confidence.ModelSelfReported.ToString("P0")
+                        </MudText>
+                    </MudStack>
+                    <div class="score-bar-track">
+                        <div class="score-bar-fill @ScoreColorClass(Confidence.ModelSelfReported, Confidence.Threshold)"
+                             style="width: @ScoreWidthPct(Confidence.ModelSelfReported)"
+                             data-testid="score-bar-model">
+                        </div>
+                        <div class="score-threshold-marker"
+                             style="left: @ScoreWidthPct(Confidence.Threshold)"
+                             title="Threshold: @Confidence.Threshold.ToString("P0")">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="score-row" data-testid="score-citation">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.caption" Class="score-label">
+                            Citation coverage
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @Confidence.CitationCoverage.ToString("P0")
+                        </MudText>
+                    </MudStack>
+                    <div class="score-bar-track">
+                        <div class="score-bar-fill @ScoreColorClass(Confidence.CitationCoverage, Confidence.Threshold)"
+                             style="width: @ScoreWidthPct(Confidence.CitationCoverage)"
+                             data-testid="score-bar-citation">
+                        </div>
+                        <div class="score-threshold-marker"
+                             style="left: @ScoreWidthPct(Confidence.Threshold)"
+                             title="Threshold: @Confidence.Threshold.ToString("P0")">
+                        </div>
+                    </div>
+                </div>
+            </MudStack>
+        </div>
+    }
+</MudStack>
+
+@code {
+    [Parameter] public ConfidenceBreakdown? Confidence { get; set; }
+
+    // Clamps a score to [0,1] and returns a CSS width percentage string.
+    private static string ScoreWidthPct(double score)
+    {
+        var clamped = Math.Clamp(score, 0.0, 1.0);
+        return $"{clamped * 100:F1}%";
+    }
+
+    // Returns a CSS color class based on whether the score is above or below the threshold.
+    private static string ScoreColorClass(double score, double threshold)
+        => score >= threshold ? "score-above-threshold" : "score-below-threshold";
+}

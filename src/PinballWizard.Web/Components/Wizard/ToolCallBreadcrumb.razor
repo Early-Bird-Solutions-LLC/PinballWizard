@@ -1,0 +1,54 @@
+@*
+    ToolCallBreadcrumb — inline pill showing the current active tool call.
+
+    Appears when WizardAnswerStream receives a ToolCallStarted chunk. Hidden
+    (not rendered) when ToolCallCompleted arrives for the matching ToolCallId,
+    or when Final arrives (all tool calls are implicitly complete at that point).
+
+    Multiple tool calls may fire in a stream (Wizard → searchCorpus, then
+    Repair → getMachineByTitle). This component renders only the CURRENT
+    active tool call (the one most recently started that has not yet completed).
+    The parent tracks a single _currentToolCallName string.
+
+    The label maps ToolName to a human-readable string. Unknown tool names fall
+    back to "Working…" so the component is forward-compatible with new tools.
+
+    Category: delight surface sub-component (within WizardAnswerStream scope).
+    ADR-0026 § 3 — streaming state machine; tool-call breadcrumbs
+    ADR-0008     — MudBlazor strict; uses MudChip
+*@
+
+@if (!string.IsNullOrEmpty(ToolName))
+{
+    <div class="tool-call-breadcrumb"
+         data-testid="tool-call-breadcrumb"
+         aria-label="@($"Tool call: {FriendlyLabel}")">
+        <MudChip T="string"
+                 Size="Size.Small"
+                 Variant="Variant.Outlined"
+                 Color="Color.Primary"
+                 Icon="@Icons.Material.Filled.Psychology"
+                 Class="tool-call-breadcrumb__chip">
+            @FriendlyLabel
+        </MudChip>
+    </div>
+}
+
+@code {
+    // The ToolName from AnswerChunk.ToolCallStarted. Null / empty = hidden.
+    [Parameter]
+    public string? ToolName { get; set; }
+
+    // Maps the raw function tool name to a user-facing label.
+    private string FriendlyLabel => ToolName switch
+    {
+        "searchCorpus"        => "Searching corpus…",
+        "getMachineByTitle"   => "Looking up machine record…",
+        "getMachineById"      => "Looking up machine record…",
+        "getValuation"        => "Fetching valuation data…",
+        "getRulesForMachine"  => "Retrieving rules information…",
+        "getRepairGuide"      => "Looking up repair guide…",
+        null or ""            => string.Empty,
+        _                     => "Working…",
+    };
+}

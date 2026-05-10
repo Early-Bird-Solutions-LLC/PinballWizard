@@ -1,0 +1,47 @@
+@* CostCeilingView — per-category subview for RefusalCategory.CostCeilingHit.
+ *
+ * Rendered when the per-call cost ceiling (ADR-0015) was reached. This is
+ * an operational condition — not user-actionable, not a question quality
+ * problem. No recovery options are surfaced (adding machine lookups when the
+ * budget guard just fired would compound the cost problem).
+ *
+ * Tone: transparent about the constraint without alarming the user. This is
+ * a showcase app and the budget cap is an intentional design decision — we
+ * can be honest about it.
+ *
+ * ADR-0015 — per-agent cost routing + per-call cost ceiling
+ * ADR-0026 § 4 — per-category subview within RefusalPanel (no community resources)
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.MoneyOff"
+                 Color="Color.Secondary"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            Request Too Large to Process
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            This question required more processing than the per-request budget allows.
+            Shorter, more specific questions work best. Try focusing on one machine
+            or one specific feature.
+        </MudText>
+    </MudStack>
+
+    <MudAlert Severity="Severity.Warning"
+              Icon="@Icons.Material.Filled.Lightbulb"
+              Dense="true">
+        Tip: Break your question into smaller parts — one machine or feature at a time.
+    </MudAlert>
+
+    @* Intentionally no CommunityResourceCards — the cost ceiling is not a
+       "try somewhere else" situation. Per IRefusalRecoveryService contract:
+       CostCeilingHit returns null recovery (adding lookups compounds the cost). *@
+</MudStack>
+
+@code {
+    // No parameters — CostCeiling rendering is fixed (no per-user customization).
+}

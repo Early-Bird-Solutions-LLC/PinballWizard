@@ -1,0 +1,104 @@
+@* SoundController — muted-by-default audio toggle in the header.
+ *
+ * State persisted in localStorage under key "pinwiz.sound.enabled".
+ * Defaults to MUTED (false) when the key is absent or unreadable.
+ *
+ * Per ADR-0026 § "Explicitly NOT adopted":
+ *   "audio assets are muted by default and gated behind the SoundController
+ *    toggle persisted to localStorage — auto-playing audio is 🔴"
+ *
+ * This PR ships only the toggle INFRASTRUCTURE. No <audio> element renders
+ * and no JS Web Audio API is invoked here. When future PRs add pinball-themed
+ * audio assets they wire into this SoundController without re-architecting:
+ *   1. Inject ISoundService (future).
+ *   2. Call ISoundService.SetEnabled(IsMuted == false) after toggle.
+ *
+ * The mute-default invariant is enforced by:
+ *   a. Code: IsMuted defaults to true; localStorage read can only override
+ *      it to false if the stored value is explicitly "true".
+ *   b. Test: SoundControllerTests.Defaults_to_muted_when_localStorage_is_empty
+ *      exercises the IJSRuntime localStorage flow and asserts IsMuted == true.
+ *      This is a load-bearing test pin per ADR-0026 § Explicitly NOT adopted.
+ *
+ * Category: delight surface — explicitly listed in ADR-0026 § 6 as one
+ * of the four locked custom components.
+ *
+ * ADR-0026 § 6 — SoundController is a locked delight surface.
+ * ADR-0026 § "Explicitly NOT adopted" — auto-playing audio is 🔴.
+ *@
+
+@inject IJSRuntime Js
+
+@* Icon-only toggle: 🔇 when muted, 🔊 when unmuted. *@
+<MudTooltip Text="@(IsMuted ? "Sound off (click to enable)" : "Sound on (click to mute)")">
+    <MudIconButton Icon="@(IsMuted ? Icons.Material.Filled.VolumeOff : Icons.Material.Filled.VolumeUp)"
+                   Color="Color.Inherit"
+                   Size="Size.Small"
+                   OnClick="@ToggleAsync"
+                   aria-label="@(IsMuted ? "Sound muted" : "Sound on")"
+                   data-testid="sound-controller-toggle"
+                   data-muted="@(IsMuted.ToString().ToLower())" />
+</MudTooltip>
+
+@code {
+    private const string LocalStorageKey = "pinwiz.sound.enabled";
+
+    /// <summary>
+    /// True when audio is muted. Defaults to true (audio off) per ADR-0026.
+    /// The test pin for this default is:
+    ///   SoundControllerTests.Defaults_to_muted_when_localStorage_is_empty
+    /// </summary>
+    public bool IsMuted { get; private set; } = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read persisted preference. Default is muted (IsMuted=true) if the
+        // key is absent, null, or not parseable as a boolean.
+        // Wrap in try-catch: localStorage is unavailable in SSR prerender context
+        // (no JS interop before the circuit connects). Fail-safe to muted.
+        try
+        {
+            var stored = await Js.InvokeAsync<string?>(
+                "localStorage.getItem", LocalStorageKey)
+                .ConfigureAwait(true);
+
+            // Only unmute if the stored value is explicitly "true".
+            IsMuted = !string.Equals(stored, "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JSException)
+        {
+            // JS interop unavailable (SSR prerender). Stay muted.
+            IsMuted = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Component disposed before the async operation completed. Stay muted.
+            IsMuted = true;
+        }
+        catch (InvalidOperationException)
+        {
+            // Circuit not yet connected, or ObjectDisposedException (subclass). Stay muted.
+            IsMuted = true;
+        }
+    }
+
+    private async Task ToggleAsync()
+    {
+        IsMuted = !IsMuted;
+
+        // Persist to localStorage. Fire-and-forget — if the write fails the
+        // in-memory state is still correct for this page session.
+        try
+        {
+            await Js.InvokeVoidAsync(
+                "localStorage.setItem",
+                LocalStorageKey,
+                (!IsMuted).ToString().ToLower())
+                .ConfigureAwait(true);
+        }
+        catch (JSException)
+        {
+            // localStorage write failed. In-memory toggle still applied.
+        }
+    }
+}

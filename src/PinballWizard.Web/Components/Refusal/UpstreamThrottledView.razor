@@ -1,0 +1,62 @@
+@* UpstreamThrottledView — per-category subview for RefusalCategory.UpstreamThrottled.
+ *
+ * Rendered when Foundry / the model upstream returned 429 Too Many Requests.
+ * This is a TRANSIENT system-state condition — the user can retry after the
+ * Retry-After interval. Community resource cards are intentionally NOT shown
+ * here: a transient rate-limit doesn't mean the question is unanswerable,
+ * and routing users to external resources during a throttle window would
+ * mislead them about recoverability.
+ *
+ * If RetryAfterSeconds is provided, a static "try again in N seconds" hint
+ * is rendered. A live countdown is a Wave 2 PR-D-degraded scope item.
+ *
+ * ADR-0026 § 9 — UpstreamThrottled degradation path
+ * ADR-0026 § 4 — per-category subview within RefusalPanel (no community resources)
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+<MudStack Spacing="3">
+    <MudStack Spacing="1">
+        <MudIcon Icon="@Icons.Material.Filled.HourglassBottom"
+                 Color="Color.Warning"
+                 Size="Size.Medium" />
+        <MudText Typo="Typo.h6" Class="refusal-category-label">
+            High Demand Right Now
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            The AI service is temporarily handling more traffic than usual. Your
+            question wasn't dropped — please try again in a moment.
+        </MudText>
+    </MudStack>
+
+    @if (RetryAfterSeconds.HasValue && RetryAfterSeconds.Value > 0)
+    {
+        <MudAlert Severity="Severity.Info"
+                  Icon="@Icons.Material.Filled.Schedule"
+                  Dense="true"
+                  data-testid="retry-hint">
+            Try again in approximately @RetryAfterSeconds.Value second@(RetryAfterSeconds.Value == 1 ? "" : "s").
+        </MudAlert>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info"
+                  Icon="@Icons.Material.Filled.Schedule"
+                  Dense="true"
+                  data-testid="retry-hint">
+            Try again in a few seconds.
+        </MudAlert>
+    }
+
+    @* Intentionally no CommunityResourceCards — transient throttle is not a
+       "try somewhere else" situation; it's a "try again in a moment" situation.
+       Per IRefusalRecoveryService contract: UpstreamThrottled returns null recovery. *@
+</MudStack>
+
+@code {
+    // Surfaced from DegradationContext.RetryAfterSeconds when the 429 response
+    // included a Retry-After header. Null or zero means "unknown; retry shortly".
+    [Parameter] public int? RetryAfterSeconds { get; set; }
+}
