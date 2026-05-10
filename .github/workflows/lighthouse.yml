@@ -40,12 +40,15 @@ jobs:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-      # Run the app in Development so HTTPS redirect and HSTS are suppressed
-      # (Lighthouse targets plain HTTP; the redirect would cause ERR_CONNECTION_REFUSED).
-      # This matches the PlaywrightWebApplicationFactory convention in ci.yml.
+      # Run the app in Development so HTTPS redirect and HSTS are suppressed.
       ASPNETCORE_ENVIRONMENT: Development
       # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
       ASPNETCORE_URLS: 'http://localhost:5000'
+      # Microsoft Identity Web validates ClientId/TenantId on first request even
+      # for [AllowAnonymous] routes. Providing placeholder values satisfies the
+      # IDW10106 validation without enabling real OIDC (no tenant/client is real).
+      AzureAd__TenantId: '00000000-0000-0000-0000-000000000000'
+      AzureAd__ClientId: '00000000-0000-0000-0000-000000000000'
 
     steps:
       - name: Checkout
