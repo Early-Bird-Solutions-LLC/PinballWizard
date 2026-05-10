@@ -1,0 +1,98 @@
+@* CitationGroup — renders all citations from a single source-URL host.
+ *
+ * One of the locked CitationStrip delight surface family (ADR-0026 § 6).
+ *
+ * Behavior:
+ *   - Citations are sorted by RelevanceScore descending (nulls last).
+ *   - The highest-scoring citation is always visible.
+ *   - Additional citations collapse behind a "+N more from this source"
+ *     disclosure button. Clicking toggles the expanded list.
+ *   - Groups with exactly one citation do NOT show the disclosure button.
+ *
+ * ADR-0026 § 4 — citation grouping + disclosure UX
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+@{
+    var sorted  = SortedCitations(Citations);
+    var primary = sorted.Count > 0 ? sorted[0] : null;
+    var rest    = sorted.Count > 1 ? sorted.Skip(1).ToList() : (IReadOnlyList<Citation>)[];
+}
+
+<div class="citation-group"
+     data-testid="citation-group"
+     data-host="@Host">
+
+    <MudStack Spacing="1">
+
+        @* Host label row *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <MudIcon Icon="@Icons.Material.Filled.Public"
+                     Size="Size.Small"
+                     Color="Color.Secondary" />
+            <MudText Typo="Typo.caption"
+                     Color="Color.Secondary"
+                     Style="font-family: var(--pw-font-mono);"
+                     Class="citation-group-host">
+                @Host
+            </MudText>
+        </MudStack>
+
+        @* Primary (highest-scoring) citation — always visible *@
+        @if (primary is not null)
+        {
+            <CitationCard Citation="@primary" />
+        }
+
+        @* Disclosure toggle — only rendered when there are additional citations *@
+        @if (rest.Count > 0)
+        {
+            <div data-testid="citation-group-disclosure">
+                @if (!_expanded)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               Size="Size.Small"
+                               OnClick="@(() => _expanded = true)"
+                               Class="citation-group-more-button"
+                               data-testid="citation-group-expand-button">
+                        +@rest.Count more from this source
+                    </MudButton>
+                }
+                else
+                {
+                    <MudStack Spacing="1">
+                        @foreach (var citation in rest)
+                        {
+                            <CitationCard Citation="@citation" />
+                        }
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Secondary"
+                                   Size="Size.Small"
+                                   OnClick="@(() => _expanded = false)"
+                                   Class="citation-group-less-button"
+                                   data-testid="citation-group-collapse-button">
+                            Show less
+                        </MudButton>
+                    </MudStack>
+                }
+            </div>
+        }
+    </MudStack>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Host { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Citation> Citations { get; set; } = [];
+
+    private bool _expanded;
+
+    // Internal so tests can validate ordering logic independently.
+    internal static IReadOnlyList<Citation> SortedCitations(IReadOnlyList<Citation> citations) =>
+        [.. citations.OrderByDescending(c => c.RelevanceScore ?? double.MinValue)];
+}

@@ -1,0 +1,75 @@
+@* FreshnessBadge — renders a human-readable freshness delta for a citation.
+ *
+ * One of the locked CitationStrip delight surface family (ADR-0026 § 6).
+ *
+ * Color semantics per ADR-0026 § 4:
+ *   Fresh  (< 30 days)  → green chip  (css class: freshness-fresh)
+ *   Stale  (≥ 90 days)  → pale-amber chip (css class: freshness-stale)
+ *   Middle (30–89 days) → neutral chip (css class: freshness-neutral)
+ *   Null                → neutral chip with "freshness unknown" label
+ *
+ * The stale threshold is a behavioral invariant per ADR-0026 § 4 — do not
+ * change the 90-day cutoff without updating the FreshnessBadgeTests contract test.
+ *
+ * ADR-0026 § 4 — citation surface UX, freshness visual pin
+ * ADR-0008     — MudBlazor strict for chrome
+ *@
+
+@using PinballWizard.Application.Ai
+
+@{
+    var (label, cssClass) = ComputeBadge(LastScrapedUtc, Now);
+}
+
+<MudChip T="string"
+         Class="@($"freshness-badge {cssClass}")"
+         Size="Size.Small"
+         Variant="Variant.Outlined"
+         data-testid="freshness-badge"
+         data-freshness-class="@cssClass">
+    @label
+</MudChip>
+
+@code {
+    [Parameter] public DateTimeOffset? LastScrapedUtc { get; set; }
+
+    // Injected as a parameter to make it testable without real-clock
+    // dependencies. Callers omit this; tests set it to a fixed instant.
+    [Parameter] public DateTimeOffset? Now { get; set; }
+
+    // Thresholds (in days) per ADR-0026 § 4 — behavioral contract;
+    // also pinned by FreshnessBadgeTests.
+    internal const int FreshThresholdDays  = 30;
+    internal const int StaleThresholdDays  = 90;
+
+    internal static (string label, string cssClass) ComputeBadge(
+        DateTimeOffset? lastScrapedUtc,
+        DateTimeOffset? overrideNow)
+    {
+        if (lastScrapedUtc is null)
+            return ("freshness unknown", "freshness-neutral");
+
+        var now  = overrideNow ?? DateTimeOffset.UtcNow;
+        var age  = now - lastScrapedUtc.Value;
+        var days = (int)age.TotalDays;
+
+        var label = days switch
+        {
+            0              => "today",
+            1              => "yesterday",
+            < 7            => $"{days} days ago",
+            < 14           => "1 week ago",
+            < 28           => $"{days / 7} weeks ago",
+            < 60           => "1 month ago",
+            < 335          => $"{days / 30} months ago",
+            < 548          => "1 year ago",
+            _              => $"{days / 365} years ago",
+        };
+
+        var cssClass = days < FreshThresholdDays  ? "freshness-fresh"
+                     : days >= StaleThresholdDays ? "freshness-stale"
+                     :                              "freshness-neutral";
+
+        return (label, cssClass);
+    }
+}
