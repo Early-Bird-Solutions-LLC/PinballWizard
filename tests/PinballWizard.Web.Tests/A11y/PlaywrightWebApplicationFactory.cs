@@ -96,12 +96,15 @@ public sealed class PlaywrightWebApplicationFactory : IAsyncLifetime
         app.UseAuthentication();
         app.UseAuthorization();
 
+        // MapStaticAssets() requires a staticwebassets.endpoints.json manifest
+        // that only exists in the published Web project, not in the test host.
+        // For SSR accessibility testing we don't need fingerprinted static assets —
+        // axe runs on the server-rendered HTML (DOMContentLoaded) before Blazor.js
+        // initialises, which is the content screen readers and crawlers encounter.
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode()
             .AddInteractiveWebAssemblyRenderMode()
             .AddAdditionalAssemblies(typeof(PinballWizard.Web.Client._Imports).Assembly);
-
-        app.MapStaticAssets();
 
         _app = app;
         await _app.StartAsync();

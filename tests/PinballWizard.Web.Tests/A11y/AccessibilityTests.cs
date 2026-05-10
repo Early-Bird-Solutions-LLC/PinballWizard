@@ -51,9 +51,13 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
 
         var page = await browser.NewPageAsync();
 
+        // DOMContentLoaded: axe runs on the server-rendered HTML before Blazor.js
+        // initialises. Static assets (blazor.web.js, MudBlazor.min.js) are not
+        // available in the minimal test host. SSR HTML is what screen readers and
+        // crawlers encounter first and is the most important layer to validate.
         await page.GotoAsync(
             $"{factory.ServerAddress}{path}",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         AxeResult results = await page.RunAxe(Wcag21Aa);
 
