@@ -1,61 +1,42 @@
-@* BrandHeader — header content rendered inside MudAppBar by MainLayout.
+@* BrandHeader — chrome content rendered inside MudAppBar by MainLayout.
  *
- * Category: chrome wrapper — wraps MudBlazor navigation primitives. Not a
- * custom delight surface in the ADR-0026 § 6 sense; it is a thin layout
- * component around MudBlazor <MudIconButton>, <MudText>, <MudSpacer>, and
- * <MudButton> primitives, assembled using MudBlazor theming tokens.
+ * Spec authority: docs/ui/screens/answer-with-citations.md § Screen zones
+ * #1 ("Brand mark on the left, 'What we cover' link on the right").
+ * The chrome is intentionally minimal — one outbound link that surfaces
+ * the coverage-transparency posture immediately.
  *
- * Logo: text-only placeholder in Wave 1. Actual SVG/PNG logo asset
- * arrives as a follow-up PR (tracked as Wave 2 follow-up).
+ * Rationale (per docs/PHASE5-DRIFT-AUDIT.md § 3): a 4-link nav reads as a
+ * generic SaaS site. "Home" is internally redundant with the brand mark
+ * (brand → /). "Wizard" is the same destination as / once landing renders
+ * the Wizard surface (ADR-0026 § 1: / = landing, /wizard = primary surface).
+ * "Status" belongs in the footer per ADR-0027 § 1 (no captive-UI status
+ * surfaces in the prospect-facing chrome).
  *
- * Nav links: /, /wizard, /about, /status.
- * Authenticated routes (/admin/*) are only surfaced in AdminLayout's
- * drawer — not in the public app bar — so anonymous visitors never
- * see a disabled/locked admin link.
+ * Logo: text-only placeholder. SVG/PNG asset arrives as a follow-up.
+ * Authenticated routes (/admin/*) are surfaced only in AdminLayout's drawer.
  *
- * ADR-0008 — MudBlazor strict (nav primitives only)
- * ADR-0026 § 1 — routing inventory (/wizard anonymous, /admin auth)
+ * ADR-0008 — MudBlazor strict (uses MudLink + MudButton + MudSpacer)
+ * ADR-0026 § 1 — routing inventory
+ * ADR-0027 § 1 — community-resource posture (no captive UI)
  *@
 
-@inject NavigationManager Nav
-
-<MudText Typo="Typo.h6" Class="brand-logo ml-2 mr-4" Style="cursor:pointer"
-         @onclick="@(() => Nav.NavigateTo("/"))">
+<MudLink Href="/"
+         Class="brand-logo ml-2 mr-4"
+         Typo="Typo.h6"
+         Color="Color.Inherit"
+         Underline="Underline.None"
+         aria-label="PinballWizard home">
     &#x25CF; PinballWizard
-</MudText>
+</MudLink>
 
 <MudSpacer />
 
 <nav aria-label="Main navigation">
-    <MudButton Href="/"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="Home">
-        Home
-    </MudButton>
-
-    <MudButton Href="/wizard"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="Ask the Wizard">
-        Wizard
-    </MudButton>
-
     <MudButton Href="/about"
                Variant="Variant.Text"
                Color="Color.Inherit"
                Class="nav-link"
-               aria-label="About PinballWizard">
-        About
-    </MudButton>
-
-    <MudButton Href="/status"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="System status">
-        Status
+               aria-label="What we cover">
+        What we cover
     </MudButton>
 </nav>
