@@ -1,0 +1,182 @@
+@* About — PinballWizard engineering story page.
+ *
+ * Public, anonymous-accessible page that tells the architecture story to
+ * engineering-curious prospects. Linked from BrandFooter ("What we cover →")
+ * and the /status footer link family.
+ *
+ * Content:
+ *   - What PinballWizard is (1–2 sentences, from docs/vision.md)
+ *   - Architecture summary: Blazor Web App + .NET Aspire + Azure + Clean Architecture + OTel
+ *   - Mermaid architecture diagram (client-side, CDN-hosted Mermaid v11)
+ *   - Tech stack bullets
+ *   - GitHub repo link
+ *
+ * Mermaid is rendered by the browser after InteractiveServer wires up.
+ * HeadContent injects the mermaid.min.js CDN script and initialize call.
+ *
+ * Community-resource posture (ADR-0027 § 1): the page explains the app
+ * honestly and routes users outward — no engagement-metric framing, no
+ * "trending" copy, no signup gate.
+ *
+ * ADR-0008 — MudBlazor strict (MudText, MudLink, MudCard, MudList etc.)
+ * ADR-0026 § chrome — not a delight surface; standard chrome component.
+ *@
+
+@page "/about"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+
+<HeadContent>
+    @* Mermaid CDN — renders the architecture diagram client-side once
+       InteractiveServer mode is active. initialize() is called with
+       startOnLoad:true so it picks up any .mermaid div automatically. *@
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    </script>
+</HeadContent>
+
+<PageTitle>PinballWizard — About</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="about-page" data-testid="about-page">
+
+    @* ── Page header ──────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h4" Class="about-heading mt-6 mb-2" data-testid="about-heading">
+        About PinballWizard
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="about-intro mb-6" data-testid="about-intro">
+        PinballWizard is an AI-powered pinball encyclopedia and repair assistant that answers
+        questions grounded in first-party manufacturer data — manuals, service bulletins, and
+        machine specifications — and routes every unanswerable question to the authoritative
+        community resource that can help.
+    </MudText>
+
+    @* ── Architecture summary ─────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4">
+        Architecture
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-4">
+        Built on Clean Architecture with .NET 10 and .NET Aspire, the system separates
+        domain logic (Core), orchestration (Application), and infrastructure concerns
+        (scrapers, Cosmos DB, Azure AI Search). Azure AI Foundry provides the orchestration
+        layer for multi-agent reasoning, with OpenTelemetry wiring structured traces and
+        metrics end-to-end from the browser to the Azure Monitor workspace.
+    </MudText>
+
+    @* ── Mermaid diagram ──────────────────────────────────────────────────── *@
+    <div class="about-diagram mb-6" data-testid="about-diagram">
+        <div class="mermaid">
+graph TD
+    Browser["Public Web\n(Blazor Web App)"]
+    SSE["API Layer\n(ASP.NET Core SSE)"]
+    App["Application\n(IAiRouter · Azure AI Foundry)"]
+    Infra["Infrastructure\n(10 Scrapers · Cosmos DB · AI Search)"]
+    Azure["Azure Services\n(Cosmos DB Serverless · AI Search Basic\nAzure OpenAI · Container Apps)"]
+
+    Browser -->|"HTTPS / text/event-stream"| SSE
+    SSE --> App
+    App --> Infra
+    Infra --> Azure
+        </div>
+    </div>
+
+    @* ── Tech stack ───────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4">
+        Tech Stack
+    </MudText>
+
+    <MudList T="string" Dense="true" Class="about-tech-list mb-6" data-testid="about-tech-list">
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">.NET 10 / C# 14</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Blazor Web App (auto-render mode)</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">.NET Aspire 13 — local orchestration + service defaults</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Azure AI Foundry (Microsoft Agent Framework, multi-agent orchestration)</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Azure Cosmos DB Serverless — machine catalog + session state</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Azure AI Search Basic — RAG retrieval over indexed manuals and bulletins</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">MudBlazor — UI component library (strict mode)</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">OpenTelemetry — structured traces, metrics, and logs</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Server-Sent Events (text/event-stream) — streaming answer delivery</MudText>
+        </MudListItem>
+    </MudList>
+
+    @* ── What we cover ────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4">
+        What We Cover
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-2">
+        PinballWizard has first-party data (manuals, service bulletins, game pages, machine specs)
+        on 8 active manufacturers and OPDB:
+    </MudText>
+
+    <MudList T="string" Dense="true" Class="about-manufacturer-list mb-2" data-testid="about-manufacturer-list">
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Stern Pinball — manuals, game pages, and service bulletins</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Jersey Jack Pinball</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">American Pinball</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Spooky Pinball</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Pinball Brothers</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Barrels of Fun</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Multimorphic</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">Chicago Gaming Company</MudText>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudText Typo="Typo.body2">OPDB — Open Pinball Database (canonical machine catalog)</MudText>
+        </MudListItem>
+    </MudList>
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Everything else routes to authoritative community resources — Pinside, IFPA, Pinball Map,
+        and manufacturer sites — rather than attempting to answer from incomplete data.
+    </MudText>
+
+    @* ── GitHub link ──────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.body1" Class="mb-8">
+        The source code is open on
+        <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard"
+                 Target="_blank"
+                 rel="noopener noreferrer"
+                 aria-label="PinballWizard on GitHub"
+                 Class="about-github-link"
+                 data-testid="about-github-link">
+            GitHub
+        </MudLink>.
+        ADRs, build specs, and quality gates are committed alongside the code — the engineering
+        story is readable in the repository, not just in this page.
+    </MudText>
+
+</MudContainer>

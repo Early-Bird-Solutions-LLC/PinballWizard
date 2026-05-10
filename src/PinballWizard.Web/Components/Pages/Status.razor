@@ -1,0 +1,159 @@
+@* Status — system health page.
+ *
+ * Public, anonymous-accessible page showing the current health of the three
+ * Azure backing services: Cosmos DB, Azure AI Foundry, and AI Search.
+ *
+ * Render semantics:
+ *   SSR / static render  → all three cards show "Unknown" (amber) state.
+ *   InteractiveServer    → OnInitializedAsync calls IWizardLandingClient to
+ *                          fetch /api/wizard/landing and populate cards from
+ *                          the embedded SystemStatus. Falls back gracefully
+ *                          when the endpoint is unavailable.
+ *
+ * This mirrors the LiveStatusBadge semantics on the landing page
+ * (ADR-0026 § Landing) but surfaces per-system detail in cards rather
+ * than a single collapsed dot.
+ *
+ * Linked from BrandFooter ("Status" link — ADR-0027 § 1).
+ *
+ * ADR-0008  — MudBlazor strict (MudCard + MudText)
+ * ADR-0026  § Landing — SystemStatus is the authoritative source of truth.
+ *@
+
+@page "/status"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Landing
+@using PinballWizard.Web.Clients
+
+@inject IWizardLandingClient LandingClient
+
+<PageTitle>PinballWizard — System Status</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="status-page" data-testid="status-page">
+
+    @* ── Page header ──────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h4" Class="status-heading mt-6 mb-1" data-testid="status-heading">
+        System Status
+    </MudText>
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Live health of the Azure backing services powering PinballWizard.
+    </MudText>
+
+    @* ── Status cards grid ────────────────────────────────────────────────── *@
+    <MudGrid Spacing="3" Class="status-cards-grid" data-testid="status-cards-grid">
+
+        @* Cosmos DB *@
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="1" Class="status-card" data-testid="status-card-cosmos">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Cosmos DB</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <div class="status-card__indicator" data-testid="status-indicator-cosmos">
+                        <span class="@DotClass(_status?.CosmosHealthy)"
+                              role="img"
+                              aria-label="@StatusLabel(_status?.CosmosHealthy)">
+                        </span>
+                        <MudText Typo="Typo.body2" Class="status-card__label">
+                            @StatusLabel(_status?.CosmosHealthy)
+                        </MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* Azure AI Foundry *@
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="1" Class="status-card" data-testid="status-card-foundry">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Azure AI Foundry</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <div class="status-card__indicator" data-testid="status-indicator-foundry">
+                        <span class="@DotClass(_status?.FoundryHealthy)"
+                              role="img"
+                              aria-label="@StatusLabel(_status?.FoundryHealthy)">
+                        </span>
+                        <MudText Typo="Typo.body2" Class="status-card__label">
+                            @StatusLabel(_status?.FoundryHealthy)
+                        </MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        @* AI Search *@
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="1" Class="status-card" data-testid="status-card-search">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">AI Search</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <div class="status-card__indicator" data-testid="status-indicator-search">
+                        <span class="@DotClass(_status?.AiSearchHealthy)"
+                              role="img"
+                              aria-label="@StatusLabel(_status?.AiSearchHealthy)">
+                        </span>
+                        <MudText Typo="Typo.body2" Class="status-card__label">
+                            @StatusLabel(_status?.AiSearchHealthy)
+                        </MudText>
+                    </div>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+    </MudGrid>
+
+    @* ── Footer note ──────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-6 mb-8 status-note"
+             data-testid="status-note">
+        Status is refreshed each time this page loads.
+        "Unknown" means the status endpoint is unavailable — the Wizard may still be operational.
+    </MudText>
+
+</MudContainer>
+
+@code {
+    // Null until the API call completes or falls back.
+    // null → "Unknown" (amber) on all cards — the probe is in flight or the endpoint is down.
+    private SystemStatus? _status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var landing = await LandingClient
+            .GetLandingAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // Pull SystemStatus from the landing payload; leave null if the
+        // endpoint is unavailable — cards render "Unknown" (amber) gracefully.
+        _status = landing?.SystemStatus;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+
+    private static string DotClass(bool? healthy) =>
+        healthy switch
+        {
+            true  => "status-dot status-dot--green",
+            false => "status-dot status-dot--red",
+            null  => "status-dot status-dot--amber",
+        };
+
+    private static string StatusLabel(bool? healthy) =>
+        healthy switch
+        {
+            true  => "Healthy",
+            false => "Degraded",
+            null  => "Unknown",
+        };
+}
