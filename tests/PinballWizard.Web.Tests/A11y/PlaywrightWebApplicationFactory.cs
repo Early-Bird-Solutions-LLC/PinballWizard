@@ -50,16 +50,35 @@ public sealed class PlaywrightWebApplicationFactory : WebApplicationFactory<App>
 
         builder.ConfigureTestServices(services =>
         {
-            // Replace Microsoft Identity Web's OpenIdConnect scheme with a
-            // no-op handler. Without this, the OIDC middleware intercepts
-            // Blazor's /_blazor SignalR circuit upgrade (which doesn't carry
-            // a cookie) and returns its XHTML challenge page — lang="iv"
-            // (InvariantCulture) — instead of the real Blazor pages. Public
-            // routes are [AllowAnonymous]; TestAuthHandler returns NoResult
-            // so authorization passes through without any redirect.
-            services.AddAuthentication(defaultScheme: "Test")
+            // Redirect ALL auth operations to a no-op handler so that
+            // Microsoft Identity Web's OpenIdConnect scheme never issues its
+            // XHTML form-post challenge page (lang="iv" / InvariantCulture).
+            //
+            // Root cause: Blazor's /_blazor circuit upgrade has no auth
+            // cookie; OIDC middleware challenges it, returning the XHTML
+            // redirect form. blazor.web.js's JS auto-submits the form,
+            // Playwright follows the navigation, and axe scans the OIDC
+            // page instead of the real Blazor page.
+            //
+            // AddAuthentication(...) adds a new Configure action; it does
+            // NOT remove existing scheme handlers, so OIDC is still
+            // registered as a handler. PostConfigure runs after ALL
+            // Configure actions (guaranteed by the options framework) and
+            // sets every scheme slot to "Test", so the OIDC handler is
+            // never selected as the challenge scheme.
+            services.AddAuthentication()
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                     "Test", _ => { });
+
+            services.PostConfigure<AuthenticationOptions>(opts =>
+            {
+                opts.DefaultScheme = "Test";
+                opts.DefaultAuthenticateScheme = "Test";
+                opts.DefaultChallengeScheme = "Test";
+                opts.DefaultSignInScheme = "Test";
+                opts.DefaultSignOutScheme = "Test";
+                opts.DefaultForbidScheme = "Test";
+            });
         });
     }
 
