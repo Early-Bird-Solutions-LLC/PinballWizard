@@ -104,3 +104,46 @@ public sealed class PinballThemeContractTests
         _ => throw new ArgumentOutOfRangeException(nameof(scale)),
     };
 }
+
+/// <summary>
+/// Pins the Daytime Route sibling-theme token values defined in app.css
+/// (html.theme-daytime-route block). CSS-variable-only for v1 — no MudTheme
+/// companion. Spec authority: docs/ui/themes/sibling-themes.md § Daytime Route.
+///
+/// Any palette change must update both app.css AND these constants together.
+/// The five tokens chosen are the most visually distinctive (inverted light
+/// direction vs Modern LCD) and are the ones most likely to regress via
+/// copy-paste from the dark theme.
+/// </summary>
+public static class DaytimeRouteTheme
+{
+    // CSS class name applied by ThemeService to the <html> element.
+    public const string CssClass = "theme-daytime-route";
+
+    // Light/outdoor palette tokens (hex, no alpha suffix).
+    public const string BgBase        = "#faf6ef";   // warm cream — base background
+    public const string TextPrimary   = "#1f1a14";   // near-black — readable on cream
+    public const string AccentPrimary = "#cc5500";   // burnt orange — most visually distinctive
+    public const string AccentGrounded = "#0d6e2d";  // deep green — citations / grounded signal
+    public const string BorderQuiet   = "#d8cdb5";   // warm sand — inverted vs Modern LCD #2a282d
+}
+
+public sealed class DaytimeRouteThemeContractTests
+{
+    [Fact]
+    public void CssClass_IsDaytimeRouteSelector()
+    {
+        Assert.Equal("theme-daytime-route", DaytimeRouteTheme.CssClass);
+    }
+
+    [Theory]
+    [InlineData(DaytimeRouteTheme.BgBase,         "#faf6ef")]   // warm cream base
+    [InlineData(DaytimeRouteTheme.TextPrimary,    "#1f1a14")]   // near-black on cream
+    [InlineData(DaytimeRouteTheme.AccentPrimary,  "#cc5500")]   // burnt orange
+    [InlineData(DaytimeRouteTheme.AccentGrounded, "#0d6e2d")]   // deep green
+    [InlineData(DaytimeRouteTheme.BorderQuiet,    "#d8cdb5")]   // warm sand
+    public void Token_MatchesSpec(string actual, string expected)
+    {
+        Assert.Equal(expected, actual, ignoreCase: true);
+    }
+}
