@@ -1,0 +1,52 @@
+/* TokenRenderer — accumulated answer text with per-token bumper-pulse animation.
+ *
+ * Each new TextDelta span gets the --new modifier class which triggers the
+ * bumper-pulse keyframe. The animation is short (300ms) and subtle — a quick
+ * scale + fade-in that mimics a pinball bumper lighting up when the ball hits.
+ *
+ * prefers-reduced-motion: in reduced-motion mode the animation is disabled.
+ * The span appears immediately at full opacity with no transform. The
+ * reduced-motion block overrides via specificity (same selector + !important).
+ */
+
+.token-renderer {
+    padding: 4px 0;
+}
+
+.token-renderer__text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+}
+
+.token-renderer__span {
+    display: inline;
+}
+
+.token-renderer__span--new {
+    animation: bumper-pulse 300ms ease-out forwards;
+}
+
+@keyframes bumper-pulse {
+    0% {
+        opacity: 0.4;
+        transform: scale(1.03);
+    }
+    60% {
+        opacity: 1;
+        transform: scale(1.01);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* ── prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+    .token-renderer__span--new {
+        animation: none !important;
+        opacity: 1;
+        transform: none;
+    }
+}

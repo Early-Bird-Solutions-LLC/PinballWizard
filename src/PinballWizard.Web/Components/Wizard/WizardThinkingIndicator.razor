@@ -1,0 +1,43 @@
+@*
+    WizardThinkingIndicator — animated "thinking" gap before the first
+    TextDelta arrives.
+
+    Shown while WizardAnswerStream is in the Thinking state (Submitted but
+    no chunks have arrived yet — i.e., the Foundry agent is processing the
+    question). Hidden when the first TextDelta, Refusal, or Final arrives.
+
+    Accessibility:
+      • role="status" + aria-live="polite" so screen readers announce the
+        thinking message without interrupting the user.
+      • prefers-reduced-motion: the CSS animation is gated via
+        @media (prefers-reduced-motion: reduce). In reduced-motion mode the
+        dots are rendered statically at their mid-opacity so the indicator
+        is still visible but does not animate.
+
+    Category: delight surface (within WizardAnswerStream scope per ADR-0026
+    § 6). Uses MudBlazor primitives for the outer container — custom only for
+    the animated dot row.
+
+    ADR-0026 § 3 — streaming state machine; Thinking state
+    ADR-0008     — MudBlazor strict
+*@
+
+<div class="wizard-thinking-indicator"
+     data-testid="wizard-thinking-indicator"
+     role="status"
+     aria-live="polite"
+     aria-label="Wizard is thinking">
+
+    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+        <MudText Typo="Typo.body2" Color="Color.Secondary"
+                 Class="wizard-thinking-indicator__label">
+            Wizard is thinking
+        </MudText>
+        <span class="wizard-thinking-indicator__dots" aria-hidden="true">
+            <span class="wizard-thinking-indicator__dot wizard-thinking-indicator__dot--1"></span>
+            <span class="wizard-thinking-indicator__dot wizard-thinking-indicator__dot--2"></span>
+            <span class="wizard-thinking-indicator__dot wizard-thinking-indicator__dot--3"></span>
+        </span>
+    </MudStack>
+
+</div>
