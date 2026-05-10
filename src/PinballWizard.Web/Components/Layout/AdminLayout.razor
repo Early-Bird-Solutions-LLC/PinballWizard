@@ -65,7 +65,16 @@
                         Icon="@Icons.Material.Filled.Dashboard">
                 Dashboard
             </MudNavLink>
-            @* Additional admin nav items arrive with /admin/* pages in later PRs. *@
+            <MudNavLink Href="/admin/sources"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Source">
+                Sources
+            </MudNavLink>
+            <MudNavLink Href="/admin/machines"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.SportsBaseball">
+                Machines
+            </MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
