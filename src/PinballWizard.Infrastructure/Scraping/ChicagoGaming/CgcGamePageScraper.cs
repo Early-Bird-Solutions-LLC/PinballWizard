@@ -122,6 +122,8 @@ public sealed class CgcGamePageScraper : PoliteScraperBase, ISourceScraper
         }
         catch (Exception ex)
         {
+            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
+            // propagate via the runtime. One bad page is logged and skipped.
             Logger.LogWarning(ex, "Chicago Gaming scraper: failed to fetch / extract {Url}; skipping.", machineUrl);
             return (null, []);
         }

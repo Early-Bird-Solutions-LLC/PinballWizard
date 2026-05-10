@@ -162,9 +162,9 @@ public static class JsonLdProductParser
     private static string? ReadPriceFromOffer(JsonElement offer)
     {
         // Flat shape (Shopify, Multimorphic): offers[].price
-        if (offer.TryGetProperty("price", out var direct))
+        if (offer.TryGetProperty("price", out var direct) && FormatPrice(direct) is { } flat)
         {
-            if (FormatPrice(direct) is { } flat) return flat;
+            return flat;
         }
 
         // Nested shape (WooCommerce): offers[].priceSpecification.price.

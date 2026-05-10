@@ -96,6 +96,8 @@ public sealed class BofProductScraper : PoliteScraperBase, ISourceScraper
         }
         catch (Exception ex)
         {
+            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
+            // propagate via the runtime. One bad page is logged and skipped.
             Logger.LogWarning(
                 ex, "Barrels of Fun scraper: failed to fetch / extract {Url}; skipping.", productUrl);
             return null;

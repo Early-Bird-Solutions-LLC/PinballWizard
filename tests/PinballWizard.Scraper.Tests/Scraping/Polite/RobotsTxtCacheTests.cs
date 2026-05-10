@@ -116,6 +116,10 @@ public sealed class RobotsTxtCacheTests : IDisposable
             _exception = exception;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;

@@ -118,8 +118,6 @@ public sealed class WizardAnswerStreamTests
     {
         // A client that never yields — simulates a long-running call so
         // we can observe the Submitted / Thinking state before any chunks arrive.
-        var tcs = new TaskCompletionSource<IAsyncEnumerable<AnswerChunk>>();
-
         var client = Substitute.For<IWizardStreamingClient>();
         client
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())

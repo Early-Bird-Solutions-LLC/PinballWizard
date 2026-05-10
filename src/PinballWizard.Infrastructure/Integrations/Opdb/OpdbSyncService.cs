@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
@@ -261,6 +262,8 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 }
                 catch (Exception aliasEx)
                 {
+                    // Broad catch: per-alias failure must not abort the loop; OOM/cancellation
+                    // still propagate via the runtime. One malformed alias must not lose 158 others.
                     skipped++;
                     _logger.LogWarning(
                         aliasEx,
@@ -335,8 +338,12 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     // failure dashboards. To record cancelled runs as
                     // failures, pass CancellationToken.None to RecordRunResultAsync.
                 }
-                catch (Exception writeBackEx)
+                catch (Exception writeBackEx) when (writeBackEx is CosmosException or HttpRequestException
+                                                                or OperationCanceledException or IOException
+                                                                or InvalidOperationException)
                 {
+                    // Write-back failure must not mask the original sync outcome — the sync
+                    // result is what the caller cares about; lastRunAt lag is recoverable.
                     _logger.LogError(
                         writeBackEx,
                         "OPDB sync completed{State} but recording the run result on " +
@@ -451,8 +458,11 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is CosmosException or HttpRequestException or OperationCanceledException)
                 {
+                    // Old-lookup cleanup: transient Cosmos or network failure. The stale
+                    // lookup row produces a warning-logged fallback in MachineGroundingTool
+                    // until the next sync repopulates it — recoverable without action.
                     _logger.LogWarning(
                         ex,
                         "OPDB sync: failed to clean up old title lookup row for machine {MachineId} (prior title '{PriorTitle}' → new title '{NewTitle}'). The stale entry will produce a logged-warning fallback in MachineGroundingTool until the next sync repopulates the row.",
@@ -480,8 +490,11 @@ public sealed class OpdbSyncService : IOpdbSyncService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is CosmosException or HttpRequestException
+                                       or OperationCanceledException or InvalidOperationException)
         {
+            // New-lookup upsert: transient Cosmos or network failure. The cross-partition
+            // fallback in MachineGroundingTool resolves queries until the next sync.
             _logger.LogWarning(
                 ex,
                 "OPDB sync: failed to update title lookup row for machine {MachineId} title '{Title}'. The cross-partition fallback in MachineGroundingTool will resolve queries for this title until the next sync repopulates the lookup.",

@@ -35,9 +35,10 @@ public sealed class FileDownloaderTests : IDisposable
             if (Directory.Exists(_tempDir))
                 Directory.Delete(_tempDir, recursive: true);
         }
-        catch
+        catch (Exception)
         {
-            // best effort cleanup
+            // Broad catch: integration test resilience to env flakiness; narrowing risks
+            // misclassifying skip vs fail. Best-effort cleanup — temp dir removal is non-critical.
         }
     }
 
@@ -239,6 +240,10 @@ public sealed class FileDownloaderTests : IDisposable
             _configure = configure;
         }
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)

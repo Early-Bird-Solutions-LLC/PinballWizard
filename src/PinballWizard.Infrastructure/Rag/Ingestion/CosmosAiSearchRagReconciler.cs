@@ -114,11 +114,13 @@ public sealed class CosmosAiSearchRagReconciler : IRagReconciler
             // truncated reconcile.
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is CosmosException or Azure.RequestFailedException
+                                       or HttpRequestException or InvalidOperationException)
         {
-            // Anything else: log and continue with whatever we did
-            // sample. Per the contract we don't throw to the caller —
-            // the worker keeps serving the change feed.
+            // Sampling-step failure: per the contract we don't throw to the caller
+            // (worker keeps serving the change feed). Realistic modes: Cosmos transient
+            // (CosmosException), AI Search transient (RequestFailedException), network
+            // (HttpRequestException), or bad query shape (InvalidOperationException).
             _logger.LogWarning(
                 ex,
                 "RAG reconcile: sampling step failed after {SampledCount} rows. Returning partial result.",
@@ -171,8 +173,12 @@ public sealed class CosmosAiSearchRagReconciler : IRagReconciler
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is Azure.RequestFailedException or HttpRequestException
+                                       or InvalidOperationException or TimeoutException)
         {
+            // AI Search verify failure: transient SDK error, network error, or
+            // bad query shape. Document is counted as sampled but not classified
+            // as drift (we don't know — the verify call itself failed).
             _logger.LogWarning(
                 ex,
                 "RAG reconcile: AI Search verify failed for document={DocumentId}; document is counted as sampled but not classified as drift.",

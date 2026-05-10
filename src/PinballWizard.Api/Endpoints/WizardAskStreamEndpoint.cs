@@ -196,6 +196,11 @@ public static class WizardAskStreamEndpoint
         }
         catch (Exception ex)
         {
+            // Broad catch: mid-stream exception — headers (200 + text/event-stream) are
+            // already flushed, so ProblemDetails is not an option. Any failure type must
+            // emit Refusal + Final so the client receives a well-formed terminal sequence
+            // (ADR-0026 § 4/5 + PR self-audit item 9(c)). OOM/cancellation still propagate
+            // via the runtime since OperationCanceledException is caught above this arm.
             // Mid-stream exception: headers are already flushed, so we cannot
             // return a ProblemDetails response. Emit a Refusal chunk then a
             // synthetic Final chunk so the client receives a well-formed

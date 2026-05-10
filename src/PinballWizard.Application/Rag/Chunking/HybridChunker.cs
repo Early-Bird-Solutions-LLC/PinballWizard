@@ -423,6 +423,17 @@ public sealed class HybridChunker : IChunker
         }
 
         var lines = pageText.Split('\n');
+        var (start, end) = TrimBoilerplateBounds(lines, header, footer);
+
+        return (start == 0 && end == lines.Length)
+            ? pageText
+            : string.Join('\n', lines, start, end - start);
+    }
+
+    // Advances `start` past leading whitespace and the header line (if present),
+    // and retreats `end` past trailing whitespace and the footer line (if present).
+    private static (int Start, int End) TrimBoilerplateBounds(string[] lines, string? header, string? footer)
+    {
         var start = 0;
         var end = lines.Length;
 
@@ -434,12 +445,7 @@ public sealed class HybridChunker : IChunker
         if (end > start && footer is not null && lines[end - 1].Trim() == footer) end--;
         while (end > start && string.IsNullOrWhiteSpace(lines[end - 1])) end--;
 
-        if (start == 0 && end == lines.Length)
-        {
-            return pageText;
-        }
-
-        return string.Join('\n', lines, start, end - start);
+        return (start, end);
     }
 
     private sealed record Section(string Heading, IReadOnlyList<ExtractedPage> Pages);

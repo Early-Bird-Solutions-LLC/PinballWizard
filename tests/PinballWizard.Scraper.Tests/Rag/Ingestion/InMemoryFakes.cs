@@ -86,6 +86,10 @@ internal sealed class InMemoryDocumentBytesSource : IDocumentBytesSource
 
     public Func<string, byte[]>? PayloadFactory { get; set; }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "CodeQuality",
+        "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the caller via the returned Task<Stream>; the caller is responsible for disposal.")]
     public Task<Stream> OpenAsync(string documentUrl, CancellationToken cancellationToken)
     {
         Calls.Add(documentUrl);

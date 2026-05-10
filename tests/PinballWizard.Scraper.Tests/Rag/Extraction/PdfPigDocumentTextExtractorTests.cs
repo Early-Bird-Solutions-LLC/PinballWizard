@@ -266,7 +266,7 @@ public sealed class PdfPigDocumentTextExtractorTests
     // back through the extractor.
     private static byte[] BuildPdfWithText(string text)
     {
-        var builder = new PdfDocumentBuilder();
+        using var builder = new PdfDocumentBuilder();
         var page = builder.AddPage(width: 612, height: 792); // US Letter
         var font = builder.AddStandard14Font(Standard14Font.Helvetica);
         page.AddText(text, fontSize: 12, position: new(50, 700), font: font);
@@ -275,7 +275,7 @@ public sealed class PdfPigDocumentTextExtractorTests
 
     private static byte[] BuildPdfWithPages(params string[] pageTexts)
     {
-        var builder = new PdfDocumentBuilder();
+        using var builder = new PdfDocumentBuilder();
         var font = builder.AddStandard14Font(Standard14Font.Helvetica);
         foreach (var text in pageTexts)
         {
@@ -291,7 +291,7 @@ public sealed class PdfPigDocumentTextExtractorTests
         // This is the synthetic equivalent of a scanned-image-only PDF
         // where PdfPig parses successfully but yields no extractable
         // text — the OcrRequired heuristic branch.
-        var builder = new PdfDocumentBuilder();
+        using var builder = new PdfDocumentBuilder();
         builder.AddPage(width: 612, height: 792);
         return builder.Build();
     }

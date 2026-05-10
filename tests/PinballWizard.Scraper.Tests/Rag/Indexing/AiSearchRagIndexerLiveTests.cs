@@ -140,11 +140,11 @@ public sealed class AiSearchRagIndexerLiveTests
             {
                 await indexClient.DeleteIndexAsync(testIndexName);
             }
-            catch
+            catch (Exception)
             {
-                // Swallow cleanup failures — the test result is what
-                // matters; orphan indexes are removed manually if
-                // they accumulate.
+                // Broad catch: integration test resilience to env flakiness; narrowing risks
+                // misclassifying skip vs fail. Swallow cleanup failures — the test result is
+                // what matters; orphan indexes are removed manually if they accumulate.
             }
         }
     }
@@ -171,9 +171,10 @@ public sealed class AiSearchRagIndexerLiveTests
         {
             await indexClient.DeleteIndexAsync(bootstrapTestIndex);
         }
-        catch
+        catch (Exception)
         {
-            /* index may not exist; that's the expected initial state */
+            // Broad catch: integration test resilience to env flakiness; narrowing risks
+            // misclassifying skip vs fail. Index may not exist — that's the expected initial state.
         }
 
         try
@@ -207,9 +208,10 @@ public sealed class AiSearchRagIndexerLiveTests
             {
                 await indexClient.DeleteIndexAsync(bootstrapTestIndex);
             }
-            catch
+            catch (Exception)
             {
-                /* swallow cleanup failures */
+                // Broad catch: integration test resilience to env flakiness; narrowing risks
+                // misclassifying skip vs fail. Swallow cleanup failures.
             }
         }
     }

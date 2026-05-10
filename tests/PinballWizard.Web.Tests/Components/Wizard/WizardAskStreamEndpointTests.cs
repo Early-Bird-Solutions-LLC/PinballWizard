@@ -209,6 +209,10 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
 
     public void Dispose() { }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "CodeQuality",
+        "cs/local-not-disposed",
+        Justification = "StringContent ownership transfers to HttpClient via PostAsync; HttpClient disposes it through HttpRequestMessage.Dispose().")]
     private static Task<HttpResponseMessage> PostAskAsync(
         HttpClient client,
         string question)
