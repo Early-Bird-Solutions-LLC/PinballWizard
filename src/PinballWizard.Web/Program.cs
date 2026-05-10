@@ -29,6 +29,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,6 +68,11 @@ builder.Services.AddControllersWithViews()
 // cascading value. Scoped lifetime = one instance per Blazor Server circuit.
 // ADR-0026 § 5 — graceful degradation surface.
 builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+
+// ── User preferences (theme / motion / sound — localStorage via JS interop) ─
+// Scoped so each Blazor Server circuit has its own initialized state.
+// ADR-0026 — sound muted by default; ADR-0027 — no captive UI.
+builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
 
 // ── Landing page client ────────────────────────────────────────────────────
 // Typed HttpClient for GET /api/wizard/landing. Returns null on non-200 so
