@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.2.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.3.0">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.2.4 -->
+    <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.3.0 -->
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
     <PackageReference Include="Aspire.Hosting.Azure.Storage" />
   </ItemGroup>
