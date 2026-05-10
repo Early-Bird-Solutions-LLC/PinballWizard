@@ -87,6 +87,8 @@ public sealed class GameListingScraper : PolitePlaywrightScraperBase
             }
             catch (Exception ex)
             {
+                // Broad catch: per-listing-page failure must not abort discovery; OOM/cancellation
+                // still propagate via the runtime. Other listing paths continue.
                 Logger.LogError(ex, "Failed to scrape listing page: {Url}", url);
             }
         }

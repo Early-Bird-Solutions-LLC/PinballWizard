@@ -153,8 +153,6 @@ public static class OpdbMachineMapper
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(dto);
 
-        if (dto.Manufacturer?.Name is { } mfgName) existing.ManufacturerDisplayName.GetType(); // no-op: ManufacturerDisplayName is init-only and rarely changes
-
         existing.Title = FirstNonBlank(dto.CommonName, dto.Name) ?? existing.Title;
         existing.Year = ParseYear(dto.ManufactureDate) ?? existing.Year;
 

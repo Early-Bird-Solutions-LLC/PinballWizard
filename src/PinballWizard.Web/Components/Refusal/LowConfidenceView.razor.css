@@ -1,0 +1,71 @@
+/* Scoped CSS for LowConfidenceView — confidence breakdown visualization.
+ *
+ * The score bars are the primary visual element here. Custom CSS is
+ * justified (locked delight surface per ADR-0026 § 6 / ADR-0008) because
+ * MudBlazor doesn't have a progress-bar-with-marker primitive.
+ *
+ * ADR-0026 § 6 — scoped CSS in Components/Refusal/, no global bleed.
+ */
+
+.confidence-breakdown {
+    border: 1px solid var(--mud-palette-divider);
+    border-radius: 6px;
+    padding: 12px 16px;
+    background-color: var(--mud-palette-surface);
+}
+
+.score-row {
+    margin-bottom: 8px;
+}
+
+.score-label {
+    min-width: 130px;
+    flex-shrink: 0;
+}
+
+/* Track: full-width background bar */
+.score-bar-track {
+    position: relative;
+    height: 8px;
+    background-color: var(--mud-palette-divider);
+    border-radius: 4px;
+    overflow: visible;
+    margin-top: 2px;
+}
+
+/* Fill: the actual score, colored by above/below threshold */
+.score-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.score-above-threshold {
+    background-color: var(--mud-palette-success);
+}
+
+.score-below-threshold {
+    background-color: var(--mud-palette-error);
+}
+
+/* Threshold marker: a thin vertical line at the threshold position */
+.score-threshold-marker {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background-color: var(--mud-palette-warning);
+    border-radius: 1px;
+    /* caller sets left: via inline style */
+}
+
+.score-threshold-marker::after {
+    content: "▼";
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    color: var(--mud-palette-warning);
+    line-height: 1;
+}

@@ -1,0 +1,91 @@
+@* RetryHint — live countdown component for degraded-session retry guidance.
+ *
+ * Takes RetryAfterSeconds (from DegradationContext.RetryAfterSeconds) and
+ * renders a live countdown: "Try again in 23s…"
+ * When the countdown reaches 0 it renders a "Try again" button that
+ * navigates back to the wizard (/wizard).
+ *
+ * Timer lifecycle:
+ *   - Initialised in OnInitializedAsync via Task.Delay loop.
+ *   - CancellationTokenSource is cancelled in Dispose to prevent the
+ *     timer firing after the component is removed from the render tree.
+ *   - Tests exercise Dispose-stops-callbacks via CancellationToken probing.
+ *
+ * Category: delight surface — explicitly listed in ADR-0026 § 6 as one
+ * of the four locked custom components.
+ *
+ * ADR-0026 § 5, § 6 — graceful degradation; delight surface.
+ *@
+
+@implements IDisposable
+
+@inject NavigationManager Nav
+
+@if (_secondsRemaining > 0)
+{
+    <MudText Typo="Typo.body2"
+             Color="Color.Secondary"
+             data-testid="retry-countdown">
+        Try again in @_secondsRemaining s…
+    </MudText>
+}
+else
+{
+    <MudButton Variant="Variant.Outlined"
+               Color="Color.Primary"
+               Size="Size.Small"
+               OnClick="@NavigateToWizard"
+               data-testid="retry-button">
+        Try again
+    </MudButton>
+}
+
+@code {
+    /// <summary>
+    /// Seconds until the user can retry. Supplied from
+    /// <see cref="DegradationContext.RetryAfterSeconds"/>.
+    /// Pass 0 to show the "Try again" button immediately.
+    /// </summary>
+    [Parameter]
+    public int RetryAfterSeconds { get; set; }
+
+    private int _secondsRemaining;
+
+    // CancellationTokenSource drives the countdown loop.
+    // Cancelled in Dispose so no callback fires after the component
+    // is removed — guards against silent resource leaks.
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _secondsRemaining = RetryAfterSeconds;
+
+        // Drive the countdown using Task.Delay rather than System.Threading.Timer
+        // so the loop runs on the Blazor sync context via InvokeAsync and
+        // cancellation is handled cleanly by the CancellationToken.
+        while (_secondsRemaining > 0)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), _cts.Token)
+                          .ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                // Component disposed — stop the loop immediately.
+                return;
+            }
+
+            _secondsRemaining--;
+            await InvokeAsync(StateHasChanged).ConfigureAwait(true);
+        }
+    }
+
+    private void NavigateToWizard() => Nav.NavigateTo("/wizard");
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

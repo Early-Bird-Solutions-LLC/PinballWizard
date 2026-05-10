@@ -1,0 +1,36 @@
+/* Scoped CSS for CommunityResourceCards.
+ * Minimal — substance comes from MudBlazor tokens + PinballTheme.cs.
+ * This file adds only layout and visual identity markers for the
+ * community resource grid.
+ *
+ * ADR-0026 § 6 — scoped CSS in Components/Refusal/, no global bleed.
+ * ADR-0008     — MudBlazor strict; custom CSS only for delight surfaces.
+ */
+
+.community-resource-cards {
+    width: 100%;
+}
+
+/* Cards are full-height within their grid cell for visual alignment. */
+.resource-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--mud-palette-divider);
+    border-radius: 6px;
+    transition: border-color 0.15s ease;
+}
+
+.resource-card:hover {
+    border-color: var(--mud-palette-primary);
+}
+
+/* Name uses slightly heavier weight to anchor the card visually. */
+.resource-name {
+    font-weight: 500;
+}
+
+/* Description is secondary — legible but not competing with the name. */
+.resource-description {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+}

@@ -1,0 +1,97 @@
+@* CitationStrip — top-level citation surface for a WizardAnswer.
+ *
+ * One of the four locked delight surfaces per ADR-0026 § 6:
+ *   WizardAnswerStream | RefusalPanel | CitationStrip family | TiltPage/TiltErrorBoundary
+ *
+ * Layout:
+ *   Mobile  (xs/sm) — vertical stack of CitationGroup components.
+ *   Desktop (md+)   — horizontal scrollable strip.
+ *
+ * Ordering: groups sorted by max RelevanceScore of their citations, descending.
+ * Null scores sort last (score treated as double.MinValue for ordering only).
+ *
+ * Provenance (guardrails.md goal #5 + ADR-0026 § 8):
+ *   Every Citation in the list must be resolvable to a real SourceUrl. This
+ *   component renders SourceUrl directly — there is no interstitial. If SourceUrl
+ *   is empty the CitationCard still renders the link element with an empty href;
+ *   the caller (AiRouter / ToolTraceCitationExtractor) is responsible for
+ *   guaranteeing non-empty SourceUrl per the Citation contract.
+ *
+ * Community-resource posture (feedback_community_resource_posture.md):
+ *   All citation links route to external source sites. No PinballWizard
+ *   interstitial — traffic goes OUT.
+ *
+ * ADR-0026 § 4, § 6 — citation surface UX, delight surface lock
+ * ADR-0023          — citation-required guardrail feeds this component
+ * ADR-0008          — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+@if (Citations is not null && Citations.Count > 0)
+{
+    var groups = BuildGroups(Citations);
+
+    <div class="citation-strip"
+         data-testid="citation-strip"
+         aria-label="Sources">
+
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="citation-strip-label mb-2">
+            Sources
+        </MudText>
+
+        @* Mobile layout: vertical stack (xs + sm breakpoints) *@
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudStack Spacing="2" Class="citation-strip-vertical">
+                @foreach (var group in groups)
+                {
+                    <CitationGroup Host="@group.Host" Citations="@group.Citations" />
+                }
+            </MudStack>
+        </MudHidden>
+
+        @* Desktop layout: horizontal scrollable strip (md+) *@
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <div class="citation-strip-horizontal"
+                 style="overflow-x: auto; display: flex; gap: 12px; padding-bottom: 4px;">
+                @foreach (var group in groups)
+                {
+                    <div style="min-width: 280px; max-width: 360px; flex-shrink: 0;">
+                        <CitationGroup Host="@group.Host" Citations="@group.Citations" />
+                    </div>
+                }
+            </div>
+        </MudHidden>
+
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Citation> Citations { get; set; } = [];
+
+    // Exposed as internal for test access to grouping + ordering logic.
+    internal record CitationGroupModel(string Host, IReadOnlyList<Citation> Citations);
+
+    internal static IReadOnlyList<CitationGroupModel> BuildGroups(IReadOnlyList<Citation> citations)
+    {
+        return citations
+            .GroupBy(c => ExtractHost(c.SourceUrl))
+            .Select(g => new CitationGroupModel(
+                Host: g.Key,
+                Citations: [.. g]))
+            .OrderByDescending(g => g.Citations.Max(c => c.RelevanceScore ?? double.MinValue))
+            .ToList();
+    }
+
+    private static string ExtractHost(string sourceUrl)
+    {
+        if (string.IsNullOrWhiteSpace(sourceUrl))
+            return "(unknown source)";
+
+        if (Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+            return uri.Host;
+
+        return sourceUrl;
+    }
+}

@@ -1,0 +1,141 @@
+@* CitationCard — renders a single Citation as a visually distinct card.
+ *
+ * One of the locked CitationStrip delight surface family (ADR-0026 § 6).
+ *
+ * Visual anatomy:
+ *   [SourceType icon]  Machine Title  [page anchor]
+ *                      Section heading (italic, when present)
+ *                      [FreshnessBadge]  [RelevanceScore %]  [external link button]
+ *
+ * Security baseline: external links carry target="_blank" rel="noopener noreferrer".
+ * MudLink does not support rel= (MUD0002 analyzer); external source links are rendered
+ * as native <a> elements to preserve the security attribute. The open-in-new icon
+ * is rendered as a Unicode glyph inside the <a> so that no MudBlazor child component
+ * (which Razor's parser can mis-handle) is nested inside the native element.
+ *
+ * Score accent: cards with RelevanceScore >= 0.85 receive the "citation-card-high-score"
+ * CSS class which renders a subtle amber accent border per ADR-0026 § 4.
+ *
+ * Community-resource posture (feedback_community_resource_posture.md):
+ *   Every citation link routes to the original source URL. No PinballWizard
+ *   interstitial. Traffic goes OUT, never captured.
+ *
+ * ADR-0026 § 4 — citation surface UX, RelevanceScore visual, page anchors
+ * ADR-0023     — citation-required guardrail (this component renders the result)
+ * ADR-0008     — MudBlazor strict
+ *@
+
+@using PinballWizard.Application.Ai
+
+@{
+    var pageAnchor  = BuildPageAnchor(Citation.PageStart, Citation.PageEnd);
+    var sourceIcon  = IconForSourceType(Citation.SourceType);
+    var isHighScore = Citation.RelevanceScore is >= 0.85;
+    var cardClass   = isHighScore ? "citation-card citation-card-high-score" : "citation-card";
+    var scoreText   = Citation.RelevanceScore is double s
+                          ? $"{(int)Math.Round(s * 100)}% match"
+                          : null;
+}
+
+<MudPaper Class="@cardClass"
+          Elevation="1"
+          data-testid="citation-card"
+          data-source-type="@Citation.SourceType.ToString()"
+          data-relevance-score="@(Citation.RelevanceScore?.ToString("F2") ?? "")">
+
+    <MudStack Row="false" Spacing="1" Class="pa-3">
+
+        @* Header row: source-type icon + title + page anchor *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+
+            <MudIcon Icon="@sourceIcon"
+                     Size="Size.Small"
+                     Color="Color.Secondary"
+                     Class="citation-source-icon"
+                     data-testid="citation-source-icon" />
+
+            <MudText Typo="Typo.subtitle2" Class="citation-title" Style="flex: 1; min-width: 0;">
+                @Citation.Title
+            </MudText>
+
+            @if (pageAnchor is not null)
+            {
+                <MudText Typo="Typo.caption"
+                         Class="citation-page-anchor"
+                         Style="font-family: var(--pw-font-mono); white-space: nowrap;"
+                         data-testid="citation-page-anchor">
+                    @pageAnchor
+                </MudText>
+            }
+        </MudStack>
+
+        @* Section heading — italic, secondary color, rendered only when present *@
+        @if (!string.IsNullOrWhiteSpace(Citation.SectionHeading))
+        {
+            <MudText Typo="Typo.body2"
+                     Color="Color.Secondary"
+                     Style="font-style: italic;"
+                     Class="citation-section-heading"
+                     data-testid="citation-section-heading">
+                @Citation.SectionHeading
+            </MudText>
+        }
+
+        @* Footer row: freshness badge + relevance score + external link *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-1" Wrap="Wrap.Wrap">
+
+            <FreshnessBadge LastScrapedUtc="@Citation.LastScrapedUtc" />
+
+            @if (scoreText is not null)
+            {
+                <MudText Typo="Typo.caption"
+                         Color="Color.Secondary"
+                         Class="citation-relevance-score"
+                         data-testid="citation-relevance-score">
+                    @scoreText
+                </MudText>
+            }
+
+            <div style="flex: 1;" />
+
+            @*
+                External link — native <a> element preserves rel="noopener noreferrer".
+                MudLink and MudButton do not support the rel= attribute (MUD0002 analyzer
+                blocks it). The open-in-new symbol (↗) is inlined as a text character
+                rather than <MudIcon/> to avoid nesting a Razor component inside a native
+                HTML element (which the Razor HTML parser handles unreliably).
+            *@
+            <a href="@Citation.SourceUrl"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="citation-source-link mud-typography mud-link mud-primary-text mud-link-underline-hover"
+               data-testid="citation-source-link"
+               aria-label="Open source: @Citation.Title">&#x2197;</a>
+
+        </MudStack>
+
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired]
+    public Citation Citation { get; set; } = null!;
+
+    // Exposed as internal so tests can call the logic without rendering.
+    internal static string? BuildPageAnchor(int? pageStart, int? pageEnd) =>
+        (pageStart, pageEnd) switch
+        {
+            (null, _)                    => null,
+            (int s, null)                => $"p. {s}",
+            (int s, int e) when s == e   => $"p. {s}",
+            (int s, int e)               => $"p. {s}–{e}", // en-dash for ranges
+        };
+
+    internal static string IconForSourceType(CitationSourceType sourceType) => sourceType switch
+    {
+        CitationSourceType.MachineRecord => Icons.Material.Filled.Storage,
+        CitationSourceType.CorpusChunk   => Icons.Material.Filled.Description,
+        CitationSourceType.CuratedLink   => Icons.Material.Filled.Link,
+        _                                => Icons.Material.Filled.Info,
+    };
+}

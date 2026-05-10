@@ -19,6 +19,7 @@
 @inherits LayoutComponentBase
 
 @using PinballWizard.Web.Components.Theming
+@using PinballWizard.Web.Components.Degraded
 
 <MudThemeProvider Theme="@_theme" IsDarkMode="true" />
 <MudPopoverProvider />
@@ -28,7 +29,15 @@
 <MudLayout>
     <MudAppBar Elevation="1">
         <BrandHeader />
+        @* SoundController: muted-by-default audio toggle per ADR-0026 § "Explicitly NOT adopted".
+           Right-side header placement. No audio plays in this PR — toggle infrastructure only. *@
+        <SoundController />
     </MudAppBar>
+
+    @* OutageBanner: shown when IClientDegradationStore carries a non-None mode.
+       Hidden by default. Positioned above MudMainContent so it spans full width
+       without competing with the AppBar chrome above or the page content below. *@
+    <OutageBanner />
 
     <MudMainContent>
         <TiltErrorBoundary>

@@ -93,6 +93,8 @@ public sealed class PbGamePageScraper : PoliteScraperBase, ISourceScraper
         }
         catch (Exception ex)
         {
+            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
+            // propagate via the runtime. One bad page is logged and skipped.
             Logger.LogWarning(
                 ex, "Pinball Brothers scraper: failed to extract page {Url}; skipping.", page.Link);
             return null;

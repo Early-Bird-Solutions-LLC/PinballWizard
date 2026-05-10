@@ -1,0 +1,85 @@
+@* FeaturedMachinesStrip — horizontal scrollable list of featured machines.
+ *
+ * Renders a "Try asking about…" section between the seed question grid and
+ * the architecture strip. Displays 4–6 machine cards. Clicking a card
+ * navigates to /wizard?q=tell+me+about+{slug} so the Wizard auto-fills
+ * the question input.
+ *
+ * Null machines = show skeletons. Empty list = renders nothing (hidden via
+ * display:none) so there's no jarring blank section if FeaturedMachines
+ * is absent from the endpoint response.
+ *
+ * ADR-0026 § Landing surface.
+ * ADR-0008 — chrome uses MudCard.
+ *@
+
+@using PinballWizard.Application.Landing
+
+@inject NavigationManager Nav
+
+@if (Machines is { Count: > 0 })
+{
+    <div class="featured-strip" data-testid="featured-machines-strip">
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="featured-strip__heading">
+            Try asking about&hellip;
+        </MudText>
+        <div class="featured-strip__scroll-row">
+            @foreach (var machine in Machines)
+            {
+                var slug = machine.MachineId;
+                <div class="featured-strip__cell"
+                     data-testid="@($"featured-machine-{slug}")">
+                    <MudCard Class="featured-card mud-clickable" Elevation="1"
+                             @onclick="@(() => OnMachineClick(slug))"
+                             role="button"
+                             tabindex="0"
+                             aria-label="@($"Ask about {machine.Title}")">
+                        <MudCardContent Class="featured-card__content">
+                            <MudText Typo="Typo.subtitle2" Class="featured-card__title">
+                                @machine.Title
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(machine.Tagline))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary"
+                                         Class="featured-card__tagline">
+                                    @machine.Tagline
+                                </MudText>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </div>
+            }
+        </div>
+    </div>
+}
+else if (Machines is null)
+{
+    @* Loading skeleton *@
+    <div class="featured-strip" data-testid="featured-machines-strip-loading">
+        <MudSkeleton SkeletonType="SkeletonType.Text" Width="140px" Class="mb-2" />
+        <div class="featured-strip__scroll-row">
+            @for (var i = 0; i < 4; i++)
+            {
+                <div class="featured-strip__cell">
+                    <MudCard Elevation="1" Class="featured-card">
+                        <MudCardContent Class="featured-card__content">
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="90%" Class="mb-1" />
+                            <MudSkeleton SkeletonType="SkeletonType.Text" Width="70%" />
+                        </MudCardContent>
+                    </MudCard>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    // Null = loading; empty = nothing to show; populated = render cards.
+    [Parameter]
+    public IReadOnlyList<FeaturedMachine>? Machines { get; set; }
+
+    private void OnMachineClick(string slug)
+    {
+        Nav.NavigateTo($"/wizard?q=tell+me+about+{Uri.EscapeDataString(slug)}");
+    }
+}

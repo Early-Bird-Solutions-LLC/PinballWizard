@@ -1,0 +1,68 @@
+@*
+    TokenRenderer — renders accumulated text from TextDelta chunks.
+
+    Each new TextDelta chunk is appended as a <span> with the "bumper-pulse"
+    CSS animation class so the user sees new tokens "land" on the surface in a
+    pinball-themed way. The animation completes quickly (300ms) and is not
+    distracting on subsequent renders.
+
+    Accessibility / prefers-reduced-motion:
+      • When the user's OS has reduced-motion enabled, no animation is applied —
+        the span is rendered statically. The CSS media query gates this.
+      • The containing element uses role="region" + aria-live="polite" so
+        screen readers announce accumulated text as it arrives.
+
+    Rendering contract:
+      • SpanTexts is the ordered list of delta strings. Each delta gets its own
+        <span> with a CSS class for the animation. Accumulated spans together
+        form the answer prose.
+      • When Final arrives, the parent replaces SpanTexts with the canonical
+        answer text from Final.Answer.Text split into a single span (or a cleared
+        list + the full text in one span). This is handled by the parent
+        WizardAnswerStream — TokenRenderer just renders whatever it receives.
+
+    Category: delight surface (within WizardAnswerStream scope per ADR-0026
+    § 6). Custom CSS animation component — within the locked set.
+
+    ADR-0026 § 3, § 5 — streaming; Final supersedes TextDelta
+    ADR-0008          — MudBlazor strict for chrome; TokenRenderer is a custom
+                        delight-surface sub-component of WizardAnswerStream
+*@
+
+@if (SpanTexts.Count > 0)
+{
+    <div class="token-renderer"
+         data-testid="token-renderer"
+         role="region"
+         aria-live="polite"
+         aria-label="Answer text">
+        <MudText Typo="Typo.body1" Class="token-renderer__text">
+            @foreach (var (text, index) in SpanTexts.Select((t, i) => (t, i)))
+            {
+                @* The "bumper-pulse" class triggers the entry animation.
+                   Only apply it to the last span (the most recently arrived delta)
+                   so prior spans are stable and don't re-animate on re-render.
+                   The parent passes IsStreaming=true while chunks are arriving;
+                   once Final lands, IsStreaming=false and no new pulse fires. *@
+                var isNewest = IsStreaming && index == SpanTexts.Count - 1;
+                <span class="@(isNewest ? "token-renderer__span token-renderer__span--new" : "token-renderer__span")"
+                      data-testid="token-span">@text</span>
+            }
+        </MudText>
+    </div>
+}
+
+@code {
+    // Ordered list of text delta strings. Each entry was yielded by a
+    // separate TextDelta chunk. The parent accumulates these and passes
+    // the full list so TokenRenderer renders them as one run of spans.
+    [Parameter, EditorRequired]
+    public IReadOnlyList<string> SpanTexts { get; set; } = [];
+
+    // True while chunks are still arriving (Streaming / CitationsArriving
+    // state). Controls whether the newest span gets the bumper-pulse class.
+    // Set to false once Final arrives so the last span doesn't re-animate
+    // during state machine transition to Complete.
+    [Parameter]
+    public bool IsStreaming { get; set; }
+}

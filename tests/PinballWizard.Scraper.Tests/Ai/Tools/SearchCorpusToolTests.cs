@@ -1,4 +1,8 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
+using Azure;
+using Azure.Identity;
+using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Degradation;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -15,8 +19,8 @@ namespace PinballWizard.Scraper.Tests.Ai.Tools;
 // gated `LiveSearchCorpusToolTests` against a deployed AI Search index.
 public sealed class SearchCorpusToolTests
 {
-    private static SearchCorpusTool NewTool(IRagRetriever retriever) =>
-        new(retriever, NullLogger<SearchCorpusTool>.Instance);
+    private static SearchCorpusTool NewTool(IRagRetriever retriever, IDegradationContext? degradationContext = null) =>
+        new(retriever, degradationContext ?? new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);
 
     private static readonly DateTimeOffset SampleLastScraped =
         new(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
@@ -247,7 +251,7 @@ public sealed class SearchCorpusToolTests
     public void Ctor_NullRetriever_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new SearchCorpusTool(null!, NullLogger<SearchCorpusTool>.Instance));
+            new SearchCorpusTool(null!, new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance));
     }
 
     // ── pinwiz.ai.tool_duration_ms emission ──────────────────────────────
@@ -358,6 +362,217 @@ public sealed class SearchCorpusToolTests
         });
         l.Start();
         l.EnableMeasurementEvents(PinballWizardTelemetry.AiToolDurationMs);
+        listener = l;
+        return samples;
+    }
+    // ─────────────────────────────────────────────────────────────────────
+    // PR-D2: SearchUnavailable degradation tests
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Ctor_NullDegradationContext_Throws()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        Assert.Throws<ArgumentNullException>(() =>
+            new SearchCorpusTool(retriever, null!, NullLogger<SearchCorpusTool>.Instance));
+    }
+
+    [Fact]
+    public void IsTimeoutCancellation_AlreadyCancelledToken_ReturnsTrue()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var oce = new OperationCanceledException(cts.Token);
+        Assert.True(SearchCorpusTool.IsTimeoutCancellation(oce));
+    }
+
+    [Fact]
+    public void IsTimeoutCancellation_DefaultToken_ReturnsFalse()
+    {
+        var oce = new OperationCanceledException();
+        Assert.False(SearchCorpusTool.IsTimeoutCancellation(oce));
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_On5xxRequestFailed_MarksSearchUnavailable_ReturnsEmpty()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new RequestFailedException(503, "Service Unavailable"));
+
+        var ctx = Substitute.For<IDegradationContext>();
+        var tool = NewTool(retriever, ctx);
+
+        var result = await tool.SearchCorpusAsync("any", null, null, null, CancellationToken.None);
+
+        Assert.Empty(result.Hits);
+        ctx.Received(1).Mark(DegradationMode.SearchUnavailable, Arg.Any<string>(), Arg.Any<int?>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_On5xxRequestFailed_EmitsSearchUnavailableCounter_TaggedHttp5xx()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new RequestFailedException(500, "Internal Server Error"));
+
+        var tool = NewTool(retriever);
+        var samples = CollectSearchUnavailableSamples(out var listener);
+
+        await tool.SearchCorpusAsync("query", null, null, null, CancellationToken.None);
+
+        listener.Dispose();
+        Assert.Contains(samples, s => s.ReasonTag == "http_5xx");
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OnAuthFailure_MarksSearchUnavailable_ReturnsEmpty()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new AuthenticationFailedException("Token expired"));
+
+        var ctx = Substitute.For<IDegradationContext>();
+        var tool = NewTool(retriever, ctx);
+
+        var result = await tool.SearchCorpusAsync("any", null, null, null, CancellationToken.None);
+
+        Assert.Empty(result.Hits);
+        ctx.Received(1).Mark(DegradationMode.SearchUnavailable, Arg.Any<string>(), Arg.Any<int?>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OnAuthFailure_EmitsSearchUnavailableCounter_TaggedAuthFailure()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new AuthenticationFailedException("Token expired"));
+
+        var tool = NewTool(retriever);
+        var samples = CollectSearchUnavailableSamples(out var listener);
+
+        await tool.SearchCorpusAsync("query", null, null, null, CancellationToken.None);
+
+        listener.Dispose();
+        Assert.Contains(samples, s => s.ReasonTag == "auth_failure");
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OnTimeout_MarksSearchUnavailable_ReturnsEmpty()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var internalToken = cts.Token;
+
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new OperationCanceledException("Timeout", internalToken));
+
+        var ctx = Substitute.For<IDegradationContext>();
+        var tool = NewTool(retriever, ctx);
+
+        var result = await tool.SearchCorpusAsync("any", null, null, null, CancellationToken.None);
+
+        Assert.Empty(result.Hits);
+        ctx.Received(1).Mark(DegradationMode.SearchUnavailable, Arg.Any<string>(), Arg.Any<int?>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OnTimeout_EmitsSearchUnavailableCounter_TaggedTimeout()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var internalToken = cts.Token;
+
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new OperationCanceledException("Timeout", internalToken));
+
+        var tool = NewTool(retriever);
+        var samples = CollectSearchUnavailableSamples(out var listener);
+
+        await tool.SearchCorpusAsync("query", null, null, null, CancellationToken.None);
+
+        listener.Dispose();
+        Assert.Contains(samples, s => s.ReasonTag == "timeout");
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OtherException_MarksSearchUnavailable_ReturnsEmpty()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new InvalidOperationException("Unexpected failure"));
+
+        var ctx = Substitute.For<IDegradationContext>();
+        var tool = NewTool(retriever, ctx);
+
+        var result = await tool.SearchCorpusAsync("any", null, null, null, CancellationToken.None);
+
+        Assert.Empty(result.Hits);
+        ctx.Received(1).Mark(DegradationMode.SearchUnavailable, Arg.Any<string>(), Arg.Any<int?>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_OtherException_EmitsSearchUnavailableCounter_TaggedOther()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<RetrievedChunk>>>(_ => throw new InvalidOperationException("Unexpected failure"));
+
+        var tool = NewTool(retriever);
+        var samples = CollectSearchUnavailableSamples(out var listener);
+
+        await tool.SearchCorpusAsync("query", null, null, null, CancellationToken.None);
+
+        listener.Dispose();
+        Assert.Contains(samples, s => s.ReasonTag == "other");
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_Success_DoesNotMarkDegradation()
+    {
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<RetrievedChunk>>([SampleChunk()]));
+
+        var ctx = Substitute.For<IDegradationContext>();
+        var tool = NewTool(retriever, ctx);
+
+        await tool.SearchCorpusAsync("query", null, null, null, CancellationToken.None);
+
+        // Success path: Mark() must not be called.
+        ctx.DidNotReceive().Mark(Arg.Any<DegradationMode>(), Arg.Any<string?>(), Arg.Any<int?>());
+    }
+
+    private static ConcurrentBag<(long Value, string? ReasonTag)> CollectSearchUnavailableSamples(out MeterListener listener)
+    {
+        _ = PinballWizardTelemetry.AiSearchUnavailable; // Ensure instrument exists
+        var samples = new ConcurrentBag<(long Value, string? ReasonTag)>();
+        var l = new MeterListener();
+        l.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            string? reasonTag = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "reason")
+                {
+                    reasonTag = t.Value as string;
+                }
+            }
+            samples.Add((value, reasonTag));
+        });
+        l.Start();
+        l.EnableMeasurementEvents(PinballWizardTelemetry.AiSearchUnavailable);
         listener = l;
         return samples;
     }

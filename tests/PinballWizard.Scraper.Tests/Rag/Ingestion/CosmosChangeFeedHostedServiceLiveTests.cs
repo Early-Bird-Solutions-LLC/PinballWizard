@@ -53,8 +53,7 @@ public sealed class CosmosChangeFeedHostedServiceLiveTests
         }
 
         var (cosmosClient, databaseName) = BuildClient();
-
-        try
+        using (cosmosClient)
         {
             var container = cosmosClient.GetContainer(databaseName, "rag_dead_letters");
             var sink = new CosmosBackedDeadLetterSink(
@@ -107,10 +106,6 @@ public sealed class CosmosChangeFeedHostedServiceLiveTests
                 }
             }
         }
-        finally
-        {
-            cosmosClient.Dispose();
-        }
     }
 
     [Fact]
@@ -122,8 +117,7 @@ public sealed class CosmosChangeFeedHostedServiceLiveTests
         }
 
         var (cosmosClient, databaseName) = BuildClient();
-
-        try
+        using (cosmosClient)
         {
             var container = cosmosClient.GetContainer(databaseName, "rag_index_state");
             var indexState = new CosmosBackedIndexState(
@@ -162,10 +156,6 @@ public sealed class CosmosChangeFeedHostedServiceLiveTests
                     // project's no-bare-catch policy.
                 }
             }
-        }
-        finally
-        {
-            cosmosClient.Dispose();
         }
     }
 

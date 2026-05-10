@@ -1,3 +1,4 @@
+using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -157,8 +158,12 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is Azure.RequestFailedException or HttpRequestException
+                                       or InvalidOperationException or TimeoutException)
         {
+            // Probe-specific failures: Azure SDK (RequestFailedException), network
+            // (HttpRequestException), misconfigured probe (InvalidOperationException),
+            // or timeout. All map to null/"unknown" — not red/green on the dashboard.
             _logger.LogWarning(ex, "SystemStatusProvider: Foundry probe threw unexpectedly.");
             return null;
         }
@@ -179,8 +184,12 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is Azure.RequestFailedException or HttpRequestException
+                                       or InvalidOperationException or TimeoutException)
         {
+            // Probe-specific failures: Azure SDK (RequestFailedException), network
+            // (HttpRequestException), misconfigured probe (InvalidOperationException),
+            // or timeout. All map to null/"unknown" — not red/green on the dashboard.
             _logger.LogWarning(ex, "SystemStatusProvider: AI Search probe threw unexpectedly.");
             return null;
         }
@@ -200,8 +209,12 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is CosmosException or HttpRequestException
+                                       or InvalidOperationException or TimeoutException)
         {
+            // Probe-specific failures: Cosmos SDK (CosmosException), network
+            // (HttpRequestException), misconfigured probe (InvalidOperationException),
+            // or timeout. All map to null/"unknown" — not red/green on the dashboard.
             _logger.LogWarning(ex, "SystemStatusProvider: Cosmos canary probe threw unexpectedly.");
             return null;
         }

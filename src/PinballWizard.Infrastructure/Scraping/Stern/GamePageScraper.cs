@@ -123,6 +123,8 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
         }
         catch (Exception ex)
         {
+            // Broad catch: per-game-page failure must not abort the loop; OOM/cancellation
+            // still propagate via the runtime. A single bad game page is logged and skipped.
             Logger.LogError(ex, "Failed to scrape game page: {Slug}", game.Slug);
         }
 
@@ -191,7 +193,9 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
                 }
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException
+                                      or NullReferenceException or FormatException
+                                      or System.Text.Json.JsonException)
         {
             Logger.LogWarning(ex, "Failed to extract metadata for game {Slug}", game.Slug);
             return null;
@@ -262,7 +266,9 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
 
             Logger.LogDebug("Tab '{Tab}' on {Slug}: found {Count} links", tabName, game.Slug, links.Count);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException
+                                      or NullReferenceException or FormatException
+                                      or System.Text.Json.JsonException)
         {
             Logger.LogWarning(ex, "Failed to scrape tab '{Tab}' on {Slug}", tabName, game.Slug);
         }
@@ -294,9 +300,10 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
                     return true;
                 }
             }
-            catch
+            catch (PlaywrightException)
             {
-                // Try next selector
+                // Try next selector — PlaywrightException is the realistic failure
+                // when a selector doesn't match or the click is intercepted.
             }
         }
 

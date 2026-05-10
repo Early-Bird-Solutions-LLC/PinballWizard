@@ -119,12 +119,12 @@ public static class SpookyGamePageExtractor
                 map.TryAdd(decoded, text);
             }
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException
+                                       or FormatException or System.Text.Json.JsonException)
         {
             // Anchor lookup is best-effort — a parse failure must not
             // block download discovery; the regex pass already captured
-            // the URLs we care about. We still scope the catch so OOM
-            // / cancellation propagate.
+            // the URLs we care about. OOM/cancellation still propagate.
         }
         return map;
     }

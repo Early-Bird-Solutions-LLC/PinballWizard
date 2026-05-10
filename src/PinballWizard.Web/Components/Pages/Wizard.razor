@@ -1,21 +1,101 @@
 @page "/wizard"
+@page "/wizard/q/{Slug}"
 @rendermode InteractiveAuto
 @attribute [AllowAnonymous]
 
-@* Wave 1 PR-F2. Mounts WizardStreamingPlaceholder — a proof component
-   that validates the SSE pipeline end-to-end (Api project →
-   /api/wizard/ask:stream → WizardStreamingClient → this page).
-   Wave 2 PR-D-stream replaces WizardStreamingPlaceholder with the real
-   WizardAnswerStream delight surface. See WizardStreamingPlaceholder.razor
-   for bridge/removal rationale.
+@* Wave 2 PR-D-stream. Replaces WizardStreamingPlaceholder (Wave 1 F2 bridge)
+   with WizardAnswerStream — the real streaming delight surface.
 
-   ADR-0026 § 1 locks /wizard as the primary Wizard surface (anonymous,
-   auto-render mode). InteractiveAuto: first response renders Server-side
-   (fast TTFB, no WASM download wait), subsequent navigations use the WASM
-   runtime once downloaded in the background. *@
+   Route /wizard — direct access; WizardAnswerStream renders in Idle state
+   with an empty question input.
+
+   Route /wizard/q/{Slug} — D-landing's SeedQuestionGrid navigates here when
+   the user clicks a seed question card. The Slug parameter is forwarded to
+   WizardAnswerStream via the Question parameter, which auto-submits on init
+   so the user immediately sees the streaming answer.
+
+   The Question text is resolved from the Slug via the compiled-in fallback
+   questions list embedded in the landing page. For Wave 2 the Slug is passed
+   directly as the question text when the landing page navigates as a URL-
+   encoded question (see Index.razor → SeedQuestionGrid → OnCardClick for the
+   navigation pattern: Nav.NavigateTo($"/wizard/q/{slug}") where slug is the
+   URL-encoded question slug from the seed question).
+
+   WizardAnswerStream handles the pre-fill + auto-submit when Question is set.
+
+   ADR-0026 § 1 — /wizard anonymous, auto-render mode (InteractiveAuto).
+   ADR-0026 § 6 — WizardAnswerStream is one of the four locked delight surfaces.
+   ADR-0008     — MudBlazor strict; only MudContainer used here as chrome. *@
+
+@using PinballWizard.Application.Landing
+@using PinballWizard.Web.Clients
+@inject IWizardLandingClient LandingClient
+@inject ILogger<Wizard> Logger
 
 <PageTitle>PinballWizard — Ask the Wizard</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
-    <WizardStreamingPlaceholder />
+    <WizardAnswerStream Question="@_resolvedQuestion" />
 </MudContainer>
+
+@code {
+    // Slug from /wizard/q/{slug} route. Null when the user navigated directly
+    // to /wizard (no pre-fill).
+    [Parameter]
+    public string? Slug { get; set; }
+
+    // Resolved question text. Null for /wizard (Idle state); populated for
+    // /wizard/q/{slug} after we look up or use the slug directly.
+    private string? _resolvedQuestion;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrEmpty(Slug))
+        {
+            _resolvedQuestion = null;
+            return;
+        }
+
+        // Attempt to resolve the slug to a question text via the landing
+        // client (which returns the seeded questions with their slugs).
+        // On failure (endpoint down / timeout), fall back to using the slug
+        // itself as the question so the UX doesn't break.
+        _resolvedQuestion = await ResolveSlugAsync(Slug).ConfigureAwait(false);
+    }
+
+    private async Task<string> ResolveSlugAsync(string slug)
+    {
+        try
+        {
+            var landing = await LandingClient
+                .GetLandingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (landing?.SeedQuestions is not null)
+            {
+                var match = landing.SeedQuestions.FirstOrDefault(q =>
+                    string.Equals(q.Slug, slug, StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                    return match.Question;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException
+                                       or TaskCanceledException or TimeoutException)
+        {
+            // Landing endpoint unavailable — fall back to slug as question text.
+            // Debug-level so ops can diagnose "slug became question" without noise on expected 503s.
+            Logger.LogDebug(ex,
+                "Landing endpoint unavailable for slug {Slug}; using slug-as-question fallback.",
+                SanitizeForLog(slug));
+        }
+
+        // Slug-as-question fallback: convert hyphens to spaces and title-case.
+        // e.g., "how-does-wizard-mode-work" → "how does wizard mode work"
+        return slug.Replace('-', ' ');
+    }
+
+    // Prevent log-forging: CR/LF in a user-supplied value can inject
+    // fake log entries or break structured-log parsers.
+    private static string SanitizeForLog(string value) =>
+        string.IsNullOrEmpty(value) ? value : value.Replace('\r', '_').Replace('\n', '_');
+}

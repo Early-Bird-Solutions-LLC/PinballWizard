@@ -108,9 +108,12 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
         await _contextInitLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_context is not null)
+            // Re-read after acquiring the lock (async DCL pattern) — local variable
+            // breaks the static-analysis alias that causes cs/constant-condition.
+            var ctx = _context;
+            if (ctx is not null)
             {
-                return _context;
+                return ctx;
             }
 
             var browser = await _playwrightFactory.GetBrowserAsync().ConfigureAwait(false);
@@ -148,8 +151,10 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
             {
                 await _context.DisposeAsync().ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException or ObjectDisposedException)
             {
+                // Dispose-time Playwright errors (context already closed, browser crashed,
+                // object disposed race) are suppressed — the resource is going away regardless.
                 Logger.LogDebug(ex, "Suppressed error disposing Playwright BrowserContext.");
             }
             _context = null;

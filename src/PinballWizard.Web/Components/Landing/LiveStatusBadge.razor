@@ -1,0 +1,65 @@
+@* LiveStatusBadge — top-right system-status indicator.
+ *
+ * Reads SystemStatus.CosmosHealthy / FoundryHealthy / AiSearchHealthy and
+ * renders a colored dot with a tooltip enumerating per-system status.
+ *
+ * Semantics (per the null-meaningful endpoint contract — ADR-0026 § Landing):
+ *   All true         → green dot  ("All systems operational")
+ *   Any null         → amber dot  ("Status unknown — dependency not wired")
+ *   Any false        → red dot    ("One or more systems degraded")
+ *
+ * Subtle by default — the badge is small and positioned in the top-right
+ * of the section it's placed in. Prospects shouldn't see red unless something
+ * IS broken.
+ *
+ * SystemStatus null (before the API call completes OR on fallback) renders an
+ * amber dot with "Status unknown" — never throws.
+ *
+ * ADR-0026 § Landing surface — LiveStatusBadge is within the landing scope.
+ * ADR-0008 — chrome uses MudTooltip.
+ *@
+
+@using PinballWizard.Application.Landing
+
+<div class="live-status-badge" data-testid="live-status-badge">
+    <MudTooltip Text="@TooltipText()" Placement="Placement.Bottom" Arrow="true">
+        <span class="@DotCssClass()" data-testid="live-status-dot" aria-label="@TooltipText()">
+        </span>
+    </MudTooltip>
+</div>
+
+@code {
+    [Parameter]
+    public SystemStatus? Status { get; set; }
+
+    private bool IsGreen =>
+        Status is { CosmosHealthy: true, FoundryHealthy: true, AiSearchHealthy: true };
+
+    private bool IsRed =>
+        Status is not null &&
+        (Status.CosmosHealthy == false || Status.FoundryHealthy == false || Status.AiSearchHealthy == false);
+
+    // Amber when: Status is null (endpoint not yet called / fallback) OR any field is null.
+    private bool IsAmber => !IsGreen && !IsRed;
+
+    private string DotCssClass() => IsGreen ? "status-dot status-dot--green"
+                                  : IsRed   ? "status-dot status-dot--red"
+                                  :           "status-dot status-dot--amber";
+
+    private string TooltipText()
+    {
+        if (Status is null)
+        {
+            return "Status unknown — service unavailable";
+        }
+
+        var lines = new System.Text.StringBuilder();
+        lines.Append("Cosmos: ").AppendLine(FormatHealth(Status.CosmosHealthy));
+        lines.Append("Foundry: ").AppendLine(FormatHealth(Status.FoundryHealthy));
+        lines.Append("AI Search: ").Append(FormatHealth(Status.AiSearchHealthy));
+        return lines.ToString();
+    }
+
+    private static string FormatHealth(bool? value) =>
+        value is null ? "Unknown" : value.Value ? "Healthy" : "Degraded";
+}
