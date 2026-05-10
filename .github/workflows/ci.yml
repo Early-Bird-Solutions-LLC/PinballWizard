@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage
-          path: coverage/**/*.cobertura.xml
+          path: coverage/*/*.cobertura.xml
           if-no-files-found: error
           retention-days: 14
 
@@ -97,7 +97,7 @@ jobs:
         if: always()
         uses: irongut/CodeCoverageSummary@v1.3.0
         with:
-          filename: coverage/**/*.cobertura.xml
+          filename: coverage/*/*.cobertura.xml
           badge: true
           fail_below_min: true
           thresholds: '70 80'
