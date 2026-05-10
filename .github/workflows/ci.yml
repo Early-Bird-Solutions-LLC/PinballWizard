@@ -59,10 +59,13 @@ jobs:
         # output our downstream summary action consumes. coverage.runsettings
         # excludes test assemblies and third-party deps so the gate measures
         # production code only — see file header for rationale.
+        # Exclude Category=Accessibility — those tests need Playwright browsers
+        # installed and run in the separate parallel `accessibility` job.
         run: |
           dotnet test \
             --no-build \
             --configuration Release \
+            --filter "Category!=Accessibility" \
             --logger "trx;LogFileName=test-results.trx" \
             --collect "Code Coverage;Format=cobertura" \
             --settings tests/coverage.runsettings \
