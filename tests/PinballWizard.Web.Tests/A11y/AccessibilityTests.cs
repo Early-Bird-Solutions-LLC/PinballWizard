@@ -32,15 +32,16 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
         ResultTypes = [ResultType.Violations],
     };
 
-    // Every anonymous public route. /wizard/q/{Slug} shares the same Razor
-    // component as /wizard and is exercised transitively; no separate row.
-    // /{**slug} (404) renders the same Error shell as /error.
+    // Every anonymous public route committed on this branch.
+    // /wizard/q/{Slug} shares the same Razor component as /wizard — covered
+    // transitively. /settings is in a separate in-progress branch; once its
+    // Settings.razor lands it will be added here. /{**slug} (404) redirects
+    // to /error via NotFound.razor so /error covers that code path.
     [Theory]
-    [InlineData("/",        "landing page")]
-    [InlineData("/wizard",  "wizard ask page")]
-    [InlineData("/settings","settings page")]
-    [InlineData("/error",   "error page")]
-    [InlineData("/tilt",    "tilt page")]
+    [InlineData("/",       "landing page")]
+    [InlineData("/wizard", "wizard ask page")]
+    [InlineData("/error",  "error page")]
+    [InlineData("/tilt",   "tilt page")]
     public async Task PublicPage_HasNoAxeViolations(string path, string description)
     {
         _ = description; // InlineData label — surfaced in test output, not asserted
