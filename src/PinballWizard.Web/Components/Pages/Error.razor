@@ -139,16 +139,10 @@
                 StringComparer.OrdinalIgnoreCase);
 
         // requestId from query (set by ProblemDetails RFC 9457 redirect).
-        if (queryParts.TryGetValue("requestId", out var reqId) &&
-            !string.IsNullOrWhiteSpace(reqId))
-        {
-            _requestId = reqId;
-        }
-        else
-        {
-            // Fall back to OTel TraceId if the query param is absent.
-            _requestId = Activity.Current?.TraceId.ToString() ?? "no-trace";
-        }
+        // Fall back to OTel TraceId if the query param is absent.
+        _requestId = (queryParts.TryGetValue("requestId", out var reqId) && !string.IsNullOrWhiteSpace(reqId))
+            ? reqId
+            : Activity.Current?.TraceId.ToString() ?? "no-trace";
 
         // reason from query (human-readable hint, optional).
         if (queryParts.TryGetValue("reason", out var reason) &&

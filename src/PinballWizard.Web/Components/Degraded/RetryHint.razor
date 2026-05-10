@@ -54,7 +54,7 @@ else
     // CancellationTokenSource drives the countdown loop.
     // Cancelled in Dispose so no callback fires after the component
     // is removed — guards against silent resource leaks.
-    private CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _cts = new();
 
     protected override async Task OnInitializedAsync()
     {

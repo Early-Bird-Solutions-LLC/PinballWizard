@@ -79,17 +79,23 @@
                     return match.Question;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException
+                                       or TaskCanceledException or TimeoutException)
         {
             // Landing endpoint unavailable — fall back to slug as question text.
             // Debug-level so ops can diagnose "slug became question" without noise on expected 503s.
             Logger.LogDebug(ex,
                 "Landing endpoint unavailable for slug {Slug}; using slug-as-question fallback.",
-                slug);
+                SanitizeForLog(slug));
         }
 
         // Slug-as-question fallback: convert hyphens to spaces and title-case.
         // e.g., "how-does-wizard-mode-work" → "how does wizard mode work"
         return slug.Replace('-', ' ');
     }
+
+    // Prevent log-forging: CR/LF in a user-supplied value can inject
+    // fake log entries or break structured-log parsers.
+    private static string SanitizeForLog(string value) =>
+        string.IsNullOrEmpty(value) ? value : value.Replace('\r', '_').Replace('\n', '_');
 }

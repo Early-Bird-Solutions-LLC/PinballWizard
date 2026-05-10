@@ -28,7 +28,7 @@ public sealed class RetryHintTests : TestContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        var _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<FakeNavigationManager>();
     }
 
     [Fact]

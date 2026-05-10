@@ -46,7 +46,7 @@ public sealed class TiltPageTests : TestContext
         Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
         // bUnit registers FakeNavigationManager automatically.
-        var _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<FakeNavigationManager>();
     }
 
     [Fact]

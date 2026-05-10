@@ -102,8 +102,11 @@ public sealed class PinballMapClient : PoliteScraperBase
             activity?.SetTag("pinwiz.pinballmap.locations", response.Locations.Count);
             return response.Locations;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Tag telemetry for any non-cancellation failure then rethrow so the
+            // caller's error handling applies. OperationCanceledException propagates
+            // unmodified so the host sees the shutdown signal cleanly.
             PinballWizardTelemetry.PinballMapFailed.Add(1, regionAttr);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;

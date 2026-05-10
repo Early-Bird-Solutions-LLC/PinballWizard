@@ -29,7 +29,10 @@ public sealed class PlaywrightFactory : IAsyncDisposable
         await _initLock.WaitAsync();
         try
         {
-            if (_browser is not null) return _browser;
+            // Re-read after acquiring the lock (async DCL pattern) — local variable
+            // breaks the static-analysis alias that causes cs/constant-condition.
+            var browser = _browser;
+            if (browser is not null) return browser;
 
             _logger.LogInformation("Initializing Playwright and launching Chromium...");
             _playwright = await Microsoft.Playwright.Playwright.CreateAsync();

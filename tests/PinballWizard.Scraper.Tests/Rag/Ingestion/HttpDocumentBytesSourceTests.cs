@@ -71,6 +71,10 @@ public sealed class HttpDocumentBytesSourceTests
 
         public StubHttpHandler(byte[] payload) => _payload = payload;
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {

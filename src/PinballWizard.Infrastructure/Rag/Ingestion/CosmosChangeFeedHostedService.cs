@@ -193,8 +193,12 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                 "RAG Change Feed lease-lag estimator started: pollInterval={PollInterval}.",
                 _changeFeedOptions.LeaseLagPollInterval);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is CosmosException or InvalidOperationException or ArgumentException or NotSupportedException)
         {
+            // Estimator startup: realistic failure modes are bad Cosmos
+            // config (CosmosException), bad processor-name (InvalidOperationException),
+            // or misconfigured poll interval (ArgumentException). Worker
+            // continues with the change feed; gauge stays at 0.
             _logger.LogWarning(
                 ex,
                 "RAG Change Feed: lease-lag estimator startup failed; `pinwiz.rag.changefeed_lease_lag` gauge will report 0 until a future deploy fixes the configuration. Worker continues serving the change feed.");
@@ -221,8 +225,11 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                     "RAG Change Feed processor stopped: processor={ProcessorName} instance={InstanceName}.",
                     _changeFeedOptions.ProcessorName, instanceName);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is CosmosException or OperationCanceledException or TaskCanceledException or InvalidOperationException)
             {
+                // StopAsync failures: CosmosException (transient Cosmos), cancellation races,
+                // or the processor not yet started (InvalidOperationException). All are
+                // non-fatal during shutdown — the next replica picks up the lease.
                 _logger.LogWarning(
                     ex,
                     "RAG Change Feed processor StopAsync failed (continuing shutdown): processor={ProcessorName}.",
@@ -235,8 +242,9 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                 {
                     await _estimator.StopAsync().ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is CosmosException or OperationCanceledException or TaskCanceledException or InvalidOperationException)
                 {
+                    // Same failure modes as processor StopAsync above — non-fatal during shutdown.
                     _logger.LogWarning(
                         ex,
                         "RAG Change Feed lease-lag estimator StopAsync failed (continuing shutdown).");
@@ -257,12 +265,12 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
         {
             PinballWizardTelemetry.RecordChangefeedLeaseLag(estimatedLag);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is InvalidOperationException or OverflowException)
         {
-            // Should never happen — the cache update is just an
-            // Interlocked.Exchange — but defending the SDK's poll loop
-            // is cheap and the alternative (estimator silently dying
-            // on a transient telemetry failure) is operationally bad.
+            // RecordChangefeedLeaseLag is an Interlocked.Exchange — in practice
+            // this should never throw, but InvalidOperationException covers a
+            // disposed meter and OverflowException covers a bad cast. Defending
+            // the SDK's poll loop is cheap; OOM/cancellation still propagate.
             _logger.LogWarning(
                 ex,
                 "RAG Change Feed: lease-lag cache update failed; gauge retains previous value.");
@@ -322,9 +330,9 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    // The dead-letter LOOKUP itself failed (transient Cosmos
-                    // failure). Log and proceed to the handler — we'd rather
-                    // re-attempt the handler than silently skip a document.
+                    // Broad catch: per-item failure must not abort the loop; OOM/cancellation
+                    // still propagate via the runtime. Dead-letter LOOKUP failed (transient
+                    // Cosmos failure) — proceed to the handler rather than silently skipping.
                     _logger.LogWarning(
                         ex,
                         "RAG Change Feed: dead-letter lookup failed for document={DocumentId}; proceeding to handler.",
@@ -353,6 +361,9 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    // Broad catch: per-item failure must not abort the loop; OOM/cancellation
+                    // still propagate via the runtime. Any handler exception dead-letters the
+                    // document and advances the batch — the loop must stay alive.
                     var newAttemptCount = (existingDeadLetter?.AttemptCount ?? 0) + 1;
                     var errorClass = TruncateClassName(ex.GetType().Name);
                     var record = new DeadLetterRecord(
@@ -381,6 +392,9 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                     }
                     catch (Exception sinkEx)
                     {
+                        // Broad catch: per-item failure must not abort the loop; OOM/cancellation
+                        // still propagate via the runtime. Dead-letter UPSERT failure is logged
+                        // as error so the operator dashboard sees the gap; batch advances.
                         _logger.LogError(
                             sinkEx,
                             "RAG Change Feed: dead-letter UPSERT failed for document={DocumentId} (original error: {OriginalError}). Batch advances regardless.",

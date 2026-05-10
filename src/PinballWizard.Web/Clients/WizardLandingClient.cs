@@ -51,7 +51,7 @@ public sealed class WizardLandingClient : IWizardLandingClient
     {
         // TryGetAsync isolates the try-catch from the caller so the caller
         // can perform simple null-check logic without nesting.
-        var response = await TryGetAsync(cancellationToken).ConfigureAwait(false);
+        using var response = await TryGetAsync(cancellationToken).ConfigureAwait(false);
         if (response is null)
         {
             return null;
@@ -62,17 +62,14 @@ public sealed class WizardLandingClient : IWizardLandingClient
             _logger.LogWarning(
                 "GET /api/wizard/landing returned {StatusCode}. Using compiled-in fallback.",
                 (int)response.StatusCode);
-            response.Dispose();
             return null;
         }
 
         try
         {
-            var landing = await response.Content
+            return await response.Content
                 .ReadFromJsonAsync<LandingResponse>(LandingJsonOptions, cancellationToken)
                 .ConfigureAwait(false);
-
-            return landing;
         }
         catch (JsonException ex)
         {
@@ -80,10 +77,6 @@ public sealed class WizardLandingClient : IWizardLandingClient
                 ex,
                 "Failed to deserialise /api/wizard/landing response. Using compiled-in fallback.");
             return null;
-        }
-        finally
-        {
-            response.Dispose();
         }
     }
 

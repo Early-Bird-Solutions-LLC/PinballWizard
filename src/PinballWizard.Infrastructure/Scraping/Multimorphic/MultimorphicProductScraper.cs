@@ -98,6 +98,8 @@ public sealed class MultimorphicProductScraper : PoliteScraperBase, ISourceScrap
         }
         catch (Exception ex)
         {
+            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
+            // propagate via the runtime. One bad page is logged and skipped.
             Logger.LogWarning(
                 ex, "Multimorphic scraper: failed to fetch / extract {Url}; skipping.", productUrl);
             return null;

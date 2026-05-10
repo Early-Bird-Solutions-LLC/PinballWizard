@@ -320,6 +320,9 @@
         }
         catch (Exception ex)
         {
+            // Broad catch: UI streaming layer must stay alive; OOM/cancellation still propagate
+            // via the runtime. Any stream-level failure transitions to Error and triggers the
+            // whole-response fallback so the user sees a result rather than a blank page.
             Logger.LogWarning(ex,
                 "wizard.stream.fallback — stream failed for question {QuestionPreview}. Reason: {Message}",
                 question.Length > 60 ? question[..60] + "…" : question,
@@ -388,6 +391,8 @@
         }
         catch (Exception ex)
         {
+            // Broad catch: fallback path must not crash the component; OOM/cancellation still
+            // propagate via the runtime. User sees the Error state alert.
             Logger.LogError(ex,
                 "wizard.stream.fallback.failed — fallback also failed for question {QuestionPreview}.",
                 question.Length > 60 ? question[..60] + "…" : question);

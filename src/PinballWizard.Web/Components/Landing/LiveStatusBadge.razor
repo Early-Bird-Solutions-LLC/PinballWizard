@@ -60,10 +60,6 @@
         return lines.ToString();
     }
 
-    private static string FormatHealth(bool? value) => value switch
-    {
-        true  => "Healthy",
-        false => "Degraded",
-        null  => "Unknown",
-    };
+    private static string FormatHealth(bool? value) =>
+        value is null ? "Unknown" : value.Value ? "Healthy" : "Degraded";
 }
