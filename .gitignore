@@ -64,3 +64,9 @@ infra/**/build/
 # These are local diagnostic artifacts; the canonical results are the
 # committed JSON files under data/eval/results/ per ADR-0016.
 *.log
+
+# Playwright responsive snapshot screenshots (written to ./screenshots/ by
+# ResponsiveSnapshotTests during local test runs). In CI the screenshots/
+# directory is captured as the `responsive-screenshots` artifact by the
+# `snapshots` job — they are NOT committed to the repo.
+screenshots/
