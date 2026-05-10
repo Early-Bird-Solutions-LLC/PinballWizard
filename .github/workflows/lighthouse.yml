@@ -1,7 +1,7 @@
 name: Lighthouse CI
 
 # Performance / Accessibility / SEO gate for the public Blazor frontend.
-# Runs on PRs that touch the Web project, tests, or this workflow file.
+# Runs on PRs that touch the Web project or this workflow/config file.
 #
 # Thresholds (quality-spec.md § Performance regression tests, Phase 5+):
 #   Performance  ≥ 70 (warn)  — starts at 70; SSR without static CSS/JS is
@@ -20,8 +20,8 @@ on:
     branches: [main]
     paths:
       - 'src/PinballWizard.Web/**'
-      - 'tests/**'
       - '.github/workflows/lighthouse.yml'
+      - '.lighthouserc.json'
 
 permissions:
   contents: read
@@ -44,9 +44,13 @@ jobs:
       ASPNETCORE_ENVIRONMENT: Development
       # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
       ASPNETCORE_URLS: 'http://localhost:5000'
-      # Microsoft Identity Web validates ClientId/TenantId on first request even
-      # for [AllowAnonymous] routes. Providing placeholder values satisfies the
-      # IDW10106 validation without enabling real OIDC (no tenant/client is real).
+      # Microsoft Identity Web's MergedOptionsValidation.Validate() fires on
+      # the first request (even for [AllowAnonymous] routes) and checks three
+      # fields in sequence: Instance → TenantId → ClientId. Any empty field
+      # throws IDW10106, which propagates as HTTP 500 through the /alive
+      # endpoint. Placeholder GUIDs satisfy the validation without enabling
+      # real OIDC — no token is ever exchanged on anonymous public routes.
+      AzureAd__Instance: 'https://login.microsoftonline.com/'
       AzureAd__TenantId: '00000000-0000-0000-0000-000000000000'
       AzureAd__ClientId: '00000000-0000-0000-0000-000000000000'
 
