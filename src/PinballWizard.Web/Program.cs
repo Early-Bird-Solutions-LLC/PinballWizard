@@ -27,6 +27,7 @@ using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.ServiceDefaults;
 using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,6 +60,13 @@ builder.Services
 
 builder.Services.AddControllersWithViews()
     .AddMicrosoftIdentityUI();
+
+// ── Degradation state store (scoped per circuit) ──────────────────────────
+// IClientDegradationStore propagates DegradationContext from WizardAnswer
+// responses to OutageBanner without requiring a global singleton or
+// cascading value. Scoped lifetime = one instance per Blazor Server circuit.
+// ADR-0026 § 5 — graceful degradation surface.
+builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
 // ── Landing page client ────────────────────────────────────────────────────
 // Typed HttpClient for GET /api/wizard/landing. Returns null on non-200 so

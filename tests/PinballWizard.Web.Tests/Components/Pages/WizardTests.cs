@@ -7,6 +7,7 @@ using NSubstitute;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Landing;
 using PinballWizard.Web.Clients;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Layout;
 using PinballWizard.Web.Components.Theming;
 using PinballWizard.Web.Components.Wizard;
@@ -50,6 +51,9 @@ public sealed class WizardTests : TestContext
 
         // Logging required by WizardAnswerStream.
         Services.AddLogging();
+
+        // PR-D-degraded: OutageBanner (in MainLayout) injects IClientDegradationStore.
+        Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
         // bUnit registers FakeNavigationManager automatically. Resolving it
         // here confirms it is in place for BrandHeader nav links. Note: this

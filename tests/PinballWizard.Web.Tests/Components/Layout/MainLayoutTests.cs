@@ -3,6 +3,7 @@ using Bunit.TestDoubles;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Layout;
 using PinballWizard.Web.Components.Theming;
 using Xunit;
@@ -29,6 +30,9 @@ public sealed class MainLayoutTests : TestContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // OutageBanner (added to MainLayout in PR-D-degraded) injects
+        // IClientDegradationStore — register the real implementation.
+        Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
         // Fake NavigationManager so BrandHeader nav links resolve.
         var navManager = Services.GetRequiredService<FakeNavigationManager>();
         _ = navManager; // registered automatically by bUnit TestContext.
