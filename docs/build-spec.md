@@ -913,10 +913,216 @@ Each hand-off, when executed, gets captured as a comment on the Phase 4 § Retro
 ## Phase 6 — Operability + launch readiness
 
 **Status:** ⏳ Not started
-**Sequence position:** Final phase before public launch. Depends on Phase 5 (the live system to operate).
-**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation.*
+**Sequence position:** Final phase before public launch. Depends on Phase 5 (the live system to operate). Phase 5's Wave 3 CI gates (axe-core accessibility, Lighthouse performance) are already in place and count as complete here — Phase 6 executes the launch-gate checklist against the live deployed system, it does not re-implement the gates.
+**Demonstrable artifact:** A prospect who lands on `pinwiz.ai` and on the GitHub repo can verify within five minutes: (1) the site is up and answering questions; (2) Application Insights dashboards are live and populated with real signal; (3) all 11 items in `guardrails.md` § Pre-public-launch gate are checked; (4) every runbook listed in `docs/runbooks/` exists, was walked through at least once, and is dated. The repo's `README.md` and `docs/vision.md` reflect the live state without aspirational language.
 
-> Will cover: SLO + SLI definitions, Application Insights dashboards, alert routing (page / notify thresholds), runbook templates (incident response, source-site outage, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation), DR drill cadence and procedure, threat model per public surface, accessibility audit (axe-core via Playwright in CI), performance audit (Lighthouse, p95 latency burn-in), content moderation policy for OCR / Strategy Tracker user input, cost-per-feature attribution dashboards, README rewrite for live-state accuracy, full pre-public-launch gate checklist execution.
+### SLO and SLI definitions
+
+The following targets govern the public Wizard surface at launch. They are enforced operationally (alerts page when breached for ≥ 15 min; `guardrails.md` § Run-time triggers); they are validated in Phase 6 before launch and reviewed monthly thereafter.
+
+| SLI | v1 Target | Instrument | Alert threshold |
+| --- | --- | --- | --- |
+| Availability — `/wizard` + `/api/wizard/ask:stream` | ≥ 99.5% monthly uptime | Application Insights availability test (synthetic ping every 5 min from two Azure regions) | < 99.5% over a rolling 7-day window → notify |
+| First-token latency p95 | ≤ 3 s | `pinwiz.ai.duration_ms` histogram (first-byte marker emitted at first SSE chunk) + `gen_ai.*` auto-emitted spans | p95 > 5 000 ms for 5 consecutive minutes → notify |
+| Full-answer latency p95 | ≤ 15 s | `pinwiz.ai.duration_ms` histogram (full `Final` chunk) | p95 > 20 000 ms for 5 consecutive minutes → notify |
+| 5xx error rate | ≤ 1% of wizard requests | Application Insights request telemetry `resultCode` 5xx / total requests to `/api/wizard/*` | > 5% 5xx over a 10-min rolling window → notify immediately |
+| Answer rate (non-refusal) | ≥ 70% of questions produce a `Final` chunk with ≥ 1 citation | `pinwiz.ai.refusals` counter ÷ total wizard requests (inverse = answer rate) | Answer rate < 60% over 1 h → notify (signals retrieval degradation or unexpected query distribution) |
+| Monthly AI cost | ≤ $300/mo all-in (AI Search + OpenAI + ACA + Cosmos + Cloudflare) | `pinwiz.ai.cost_usd_cents` daily aggregate (KQL) | Daily total > ($300/mo ÷ 30) × 1.5 → notify; > ($300/mo ÷ 30) × 3 → alert immediately |
+
+**SLO noise budget:** ≤ 1 alert page per week in steady state. An alert that fires more frequently than that is either miscalibrated or pointing at a persistent regression — in either case it is addressed (retune or fix root cause), not silenced.
+
+**Availability definition:** a request is "available" if it completes with a non-5xx status code within 30 s. Planned maintenance windows (< 5 min, announced 24 h in advance) count as scheduled downtime and are excluded from the monthly uptime calculation.
+
+**Latency budget rationale:** 3 s first-token p95 is deliberately modest — it's a Wizard serving a niche audience on a showcase app, not a high-traffic chat product. The `architecture-v2.md` § 7.1 revisit triggers (200 ms p95 for structured-record lookups, 500 ms cold-start for retrieval) inform ACA autoscaling decisions, not these user-facing SLOs. The 15 s full-answer budget accommodates multi-tool orchestration (two Foundry agent turns + one retrieval call + embedding) at gpt-4o-mini speeds without cold-start noise.
+
+### Application Insights dashboard spec
+
+Phase 6 provisions a single Application Insights workbook titled **"PinballWizard Ops"** with the following tiles, implemented as KQL-backed charts in a Bicep-defined workbook template committed to `infra/dashboards/pinwiz-ops-workbook.json`. The workbook deploys when `deployPhase2 = true` (Application Insights already exists in that tier per ADR-0013; the workbook is an additive resource).
+
+| Tile | Metric source | KQL shape | Purpose |
+| --- | --- | --- | --- |
+| **Wizard answer latency** (p50 / p95 — first-token and full duration) | `customMetrics` where `name == "pinwiz.ai.duration_ms"` | Percentile time-series, 1-h bucket, 24-h window | Primary SLO health indicator; deviation from baseline prompts investigation |
+| **5xx error rate** (% of total `/api/wizard/*` requests) | `requests` where `url contains "/api/wizard/"` | `countif(resultCode startswith "5") / count()`, 10-min bucket | Surfaces endpoint-level failures before they breach the 1% SLO |
+| **Daily AI cost** (USD cents → USD, by model + sub-agent) | `customMetrics` where `name == "pinwiz.ai.cost_usd_cents"` | Sum by `model`, `sub_agent` per calendar day; line chart + table | Per-feature cost attribution; anomaly stands out visually before the alarm fires |
+| **Refusal breakdown** (count by refusal category, trailing 24 h) | `customMetrics` where `name == "pinwiz.ai.refusals"` | `summarize count() by tostring(customDimensions.refusal_category)` | Distinguishes `InsufficientGrounding` (retrieval problem) from `NoCitation` (agent didn't call tools) from `OutOfScope` (healthy refusal) |
+| **RAG changefeed health** (lease lag gauge + dead-letter depth, trailing 1 h) | `customMetrics` where `name in ("pinwiz.rag.changefeed_lease_lag", "pinwiz.rag.changefeed_dead_letter_total")` | Latest-value gauge for lease lag; cumulative bar for dead-letter increments | Surfaces ingestion backlog before it degrades retrieval freshness |
+| **Availability synthetic test** (pass / fail, trailing 24 h) | Application Insights standard availability results | `availabilityResults` | Direct SLO indicator; failure row links to the specific failing probe and region |
+| **Alert summary** | Configured metric alert rules via ARM template | Alert rule status grid | Ops panel overview — green / red at a glance without navigating individual alert blades |
+
+**Workbook deployment:** the workbook JSON is committed to `infra/dashboards/pinwiz-ops-workbook.json` and deployed via `infra/modules/shared.bicep` under the Phase 2 block. The Bicep resource is `Microsoft.Insights/workbooks` with `kind = 'shared'` so the workbook is visible to any reader of the Application Insights instance without requiring a portal-private save.
+
+### Alert routing
+
+Five metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phase 2 block (`deployPhase2 = true`). All route to a single action group `pinwiz-ops-alerts` with the personal Earlybird email; no PagerDuty for v1 (single operator, hobby-cadence response, per `quality-spec.md` § Alerting).
+
+| Alert rule name | Condition | Severity | Action |
+| --- | --- | --- | --- |
+| `pinwiz-alert-latency-p95` | `pinwiz.ai.duration_ms` p95 > 5 000 ms for 5 consecutive evaluation periods (5 min each) | Sev 2 | Email notify; investigate per runbook `01-incident-response.md` |
+| `pinwiz-alert-5xx-rate` | 5xx requests to `/api/wizard/*` > 5% of total over 10-min window | Sev 1 | Email notify immediately; investigate per runbook `01-incident-response.md` |
+| `pinwiz-alert-daily-cost` | Daily `pinwiz.ai.cost_usd_cents` sum > ($300 ÷ 30) × 1.5 ≈ 1 500 cents/day | Sev 2 | Email notify; investigate per runbook `02-cost-anomaly.md` |
+| `pinwiz-alert-dead-letters` | `pinwiz.rag.changefeed_dead_letter_total` cumulative increment > 50 in a 1-h window | Sev 3 | Email notify; investigate per runbook `04-ai-search-rebuild.md` § triage section |
+| `pinwiz-alert-availability` | Availability test success rate < 99.5% over rolling 7-day window | Sev 1 | Email notify; investigate per runbook `01-incident-response.md` |
+
+**Alert-proven requirement (pre-launch gate item):** before launch, each alert is proven to fire by inducing a synthetic condition in a dev environment. The proof is recorded as a dated comment in `docs/decision-log.md` per the DR drill procedure.
+
+### Runbook templates
+
+Six runbooks in `docs/runbooks/` (index at `docs/runbooks/README.md`). Each runbook is a standalone Markdown file — short enough to skim in under two minutes while an incident is active, detailed enough that the operator can execute each step without context beyond the file itself. Runbooks are validated pre-launch by walking through the steps against the live dev environment. Each runbook header carries a `Last walked:` date field; stale runbooks (> 6 months) are flagged in the monthly self-evaluation cadence.
+
+| File | Scenario | Key steps |
+| --- | --- | --- |
+| `01-incident-response.md` | Wizard is down or severely degraded — first 30 minutes | Check availability tile → check ACA Container App status → check Cosmos connectivity → check Foundry endpoint → check AI Search endpoint → triage and route to specific runbook or escalate |
+| `02-cost-anomaly.md` | Daily cost alarm fires, unexpected spend spike | Identify the spiking feature (workbook cost tile + `pinwiz.ai.cost_usd_cents` by model) → check for runaway retry loops or missing cost-ceiling enforcement → throttle or disable the feature → document cause in decision-log |
+| `03-cosmos-restore.md` | Catalog corruption or data loss — restore from backup | Identify the affected container → locate the latest ARM-managed backup (Cosmos Continuous Backup, 7-day window) → initiate point-in-time restore to a new account → validate restored data against a pre-restore snapshot → cut over ACA connection strings → verify smoke test passes |
+| `04-ai-search-rebuild.md` | AI Search index corrupt, out of sync, or schema-breaking change requires rebuild | Stop `RagIngestionWorker` ACA deployment (scale to 0) → delete the `pinwiz-rag-v1` index (or create `pinwiz-rag-v2`) → trigger reconcile via `RagIngestionOptions.ReconcileOnStartup=true` on restart → monitor `pinwiz.rag.changefeed_lease_lag` until it returns to 0 → validate Wizard answers carry citations → scale worker back up |
+| `05-secret-rotation.md` | Rotate AI keys, Cosmos keys, Cloudflare API token, OPDB API token | Per-secret checklist: identify all consumers (ACA env vars, local `.env`, `appsettings.json`, CI secrets) → generate new secret in the source system → update each consumer → validate connectivity → revoke the old secret → log the rotation timestamp and next-rotation date in decision-log |
+| `06-source-site-outage.md` | An upstream scraper source returns 403/429/5xx or changes `robots.txt` | Check the source's `IngestionSource.enabled` flag → if `Disallow: /` newly present in `robots.txt`, immediately set `enabled = false` → if 5xx transient, politeness gate will back off automatically (verify `pinwiz.politeness.*` metrics) → initiate polite-outreach if permission is revoked → do not re-enable without a yes-response on file |
+
+### Scope
+
+In rough sequencing order. Items are sized for ~1 PR each; the wave plan follows Phase 5's PR-per-concern discipline.
+
+1. **Runbook stubs — `docs/runbooks/README.md` + 6 runbook files.** Create `docs/runbooks/README.md` (index), `01-incident-response.md`, `02-cost-anomaly.md`, `03-cosmos-restore.md`, `04-ai-search-rebuild.md`, `05-secret-rotation.md`, `06-source-site-outage.md`. Phase 6 scope item 1 populates the stubs with the full runbook content; they are validated (walked through against dev environment) before the pre-launch gate closes. Files: `docs/runbooks/README.md` + 6 new files.
+
+2. **Application Insights workbook (Bicep).** Commit `infra/dashboards/pinwiz-ops-workbook.json` (ARM workbook template). Add `Microsoft.Insights/workbooks` resource to `infra/modules/shared.bicep` Phase 2 block. Wire the 7 dashboard tiles defined in § Application Insights dashboard spec. Apply against dev environment; verify all tiles render with live data. Files: new `infra/dashboards/pinwiz-ops-workbook.json`, `infra/modules/shared.bicep` (modified). **Operational hand-off (H-Dash):** apply `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev` after merge; navigate to Application Insights → Workbooks → "PinballWizard Ops"; confirm each tile renders non-empty signal. Record apply timestamp + workbook URL in `decision-log.md`.
+
+3. **Metric alert rules (Bicep).** Add the 5 alert rules from § Alert routing to `infra/modules/shared.bicep` Phase 2 block. Add action group `pinwiz-ops-alerts` wired to personal Earlybird email. Apply against dev environment. **Alert-proven step (H-Alerts):** induce each synthetic condition (e.g., spike `cost_usd_cents` via a test emission, return 500 from a test endpoint) and confirm the email arrives within 5 min. Record proof in `decision-log.md`. Files: `infra/modules/shared.bicep` (modified). Depends on: scope item 2 (Application Insights deployed).
+
+4. **Threat model per public surface.** Create `docs/threat-model.md` with a STRIDE-light analysis of each public surface: anonymous `/wizard` SSE endpoint, `/api/wizard/ask:stream`, `/admin` (Entra RBAC gated), `/about`, `/status` + `/healthz` + `/alive`. For each surface: assets at risk, threat enumeration (Spoofing / Tampering / Repudiation / Info Disclosure / Denial of Service / Elevation), existing mitigations (Cloudflare WAF + Bot Fight, Entra External ID, rate limiting, no user-writeable surfaces on anonymous paths), residual risks, and a dated review field. Model is reviewed and dated pre-launch; revisit trigger: any PR that adds a new public route or changes auth on an existing one. Files: new `docs/threat-model.md`. Trigger: `/security-review` on this PR per `guardrails.md` § Heavyweight triggers.
+
+5. **ACA Container App scaling rules (Bicep).** Define explicit `scale` blocks in `infra/modules/shared.bicep` for the Wizard ACA app and the `RagIngestionWorker` ACA Job: `minReplicas = 1` (Wizard, to eliminate cold starts per quality-spec.md § SLO `p95 < 2s`), `maxReplicas = 3` (Wizard, cost ceiling), KEDA Cosmos trigger for `RagIngestionWorker` (already present conceptually; locked in Bicep). Also set CPU and memory limits appropriate for the gpt-4o-mini streaming path under realistic load. Files: `infra/modules/shared.bicep` (modified). **Operational hand-off (H-Scale):** after apply, run a 10-request burst against `/api/wizard/ask:stream` and confirm no cold-start 503s; verify ACA replica count stays ≤ 3.
+
+6. **SLO KQL library in `docs/observability.md`.** Add a § SLO queries section to `docs/observability.md` with the three canonical KQL queries that back the dashboard tiles: (a) Wizard latency p50/p95, (b) 5xx rate over rolling window, (c) daily cost aggregate (already partially in `docs/observability.md` § Daily AI cost aggregation — promote and complete). These queries are the reference implementation; alert rules and workbook tiles are derived from them. Files: `docs/observability.md` (modified).
+
+7. **DR drill — Cosmos restore.** Execute runbook `03-cosmos-restore.md` against the dev environment: trigger a point-in-time restore to a staging account, validate data integrity, cut over ACA, verify smoke test. Document the drill in `decision-log.md` with: restore timestamp, restore latency (wall-clock from initiate to validated), any gaps found. This is an **operational hand-off (H-DR-Cosmos)**, not a PR. Dependency: scope item 1 (runbook exists) + Cosmos Continuous Backup enabled (verify in Azure portal before the drill; it is the default for Cosmos serverless accounts created by the Phase 1 Bicep).
+
+8. **DR drill — AI Search rebuild.** Execute runbook `04-ai-search-rebuild.md` against the dev environment: scale worker to 0, delete and recreate index, restart worker with `ReconcileOnStartup=true`, monitor `pinwiz.rag.changefeed_lease_lag` to 0, validate citations are present. Document the drill outcome in `decision-log.md`. This is an **operational hand-off (H-DR-Search)**, not a PR. Dependency: scope item 1 (runbook exists).
+
+9. **README final rewrite.** Rewrite `README.md` for launch state: accurate phase progress (all 6 phases complete), up-to-date test count, current ADR count, live-demo URL stable, architecture diagram accurate, no aspirational language for shipped features, no known-limitations that have been resolved. Per `guardrails.md` § Per-phase gate: this is a mandatory per-phase-close review item. Specifically: re-check every customer-facing claim against Phase 5 + Phase 6 deliverables; add a "Known limitations v1" section (candidates: single-region deployment, no per-user history, curated-subset RAG corpus coverage). Files: `README.md` (rewrite), `docs/vision.md` (per-phase-close freshness check, typically no changes needed if it's been maintained per phase).
+
+10. **`docs/quality-spec.md` Phase 6 gate promotion.** Promote Phase 6 "To add" entries to "Currently in place": SLO + SLI definitions, Application Insights dashboards, alert routing, runbooks, threat model, DR drill cadence, secret rotation cadence. Also promotes accessibility (axe-core, already in CI from Phase 5 Wave 3 Q1b) and performance (Lighthouse CI, already in CI from Phase 5 Wave 3 Q1d) to "Currently in place" in the Accessibility and Performance sections. Files: `docs/quality-spec.md` (modified).
+
+11. **Lighthouse CI + performance budget validation (pre-launch gate execution).** Verify Lighthouse CI thresholds (LCP < 2.5 s, TTI < 3.8 s, CLS < 0.1) are met against the live deployed `pinwiz.ai` — not just the test environment. Run `npx lhci autorun --config .lighthouserc.json` against the live URL and capture the results. If any threshold fails, fix the root cause before declaring Phase 6 complete (this is a gate, not a metric). Document results in Phase 6 § Retrospective. **Already in CI (Phase 5 Wave 3 Q1d)** — this scope item is executing the gate against the live surface, not re-implementing it.
+
+12. **Axe-core accessibility audit pass on live surface (pre-launch gate execution).** Run the axe-core Playwright test suite against the live deployed `pinwiz.ai` (not the test-environment URL). Confirm zero WCAG AA violations on all public routes. Run NVDA screen-reader smoke test manually on `/`, `/wizard`, `/settings`. Document results in Phase 6 § Retrospective. **Already in CI (Phase 5 Wave 3 Q1b)** — this scope item is the live-surface validation, not the CI gate implementation.
+
+13. **Pre-public-launch gate checklist execution.** Execute every item in `guardrails.md` § Pre-public-launch gate against the live deployed system. Document the outcome (pass/fail/deferred) for each item. The checklist is:
+    - [ ] Threat model reviewed for every public surface (scope item 4)
+    - [ ] Accessibility audit passed — WCAG AA, axe-core zero violations, NVDA smoke test (scope item 12)
+    - [ ] Performance audit passed — Lighthouse CI thresholds met on live surface (scope item 11)
+    - [ ] SLOs defined and measured — all 6 SLIs from § SLO and SLI definitions tracked in Application Insights (scope items 2 + 6)
+    - [ ] Alerts proven — each of the 5 alert rules fired a test notification (scope item 3)
+    - [ ] Runbooks exist and have been walked through at least once, each with a dated header (scope item 1)
+    - [ ] DR drill: Cosmos restore from backup tested (scope item 7), AI Search index rebuild tested (scope item 8)
+    - [ ] Cost projections validated: ≥ 30 days actual burn data at or below the $300/mo cap (operational, not a PR)
+    - [ ] Content moderation policy + auth-gating reviewed — v1 has no user-writeable surfaces on anonymous paths; OCR / Strategy Tracker (Phase 7+) remain gated; this item is a re-confirmation that no anonymous user input has snuck in
+    - [ ] Live-demo URL stable, certs valid, Cloudflare WAF + Bot Fight Mode active, no `pinwiz.ai` DNS lapse (operational verification)
+    - [ ] README + `docs/vision.md` reflect what's actually live (scope item 9)
+    This scope item is the execution record, not new implementation — it closes after all other scope items are complete and the gate items above are checked.
+
+14. **Phase 6 retrospective + `guardrails.md` § Risk register update.** Populate Phase 6 § Retrospective: launch date, 30-day cost burn snapshot, SLO baseline, any gate items that required rework, operational lessons. Update `guardrails.md` § Risk register: mark R1 (showcase narrative undersold) resolved, R2 (Playwright dep) resolved if the Phase 5 upgrade shipped, R5 (cost overrun) migrated to monitored-in-steady-state status, R6 (schedule drift) closed, add any new risks that Phase 6 exposed. Update `CLAUDE.md` if Phase 6 produced new locked invariants (e.g., alert-tuning rule, runbook-freshness SLA). Files: `docs/build-spec.md` § Phase 6 § Retrospective, `docs/guardrails.md` § Risk register, `CLAUDE.md` (if needed). Depends on: all other scope items complete.
+
+### Key decisions
+
+- **Application Insights workbook is Bicep-managed, not portal-saved.** A portal-saved workbook is invisible to IaC review and silently lost on resource-group delete. A Bicep-defined `Microsoft.Insights/workbooks` resource with `kind = 'shared'` is visible to any reader, version-controlled alongside the infra, and re-deployable from zero. This is the same principle as containers-not-in-Bicep (inverted) — the workbook is infrastructure, not data.
+- **Alert routing via email only (no PagerDuty) for v1.** Per `quality-spec.md` § Alerting: single operator, hobby-cadence response. PagerDuty adds cost ($) and configuration complexity for no practical benefit at one-operator scale. Revisit trigger: second operator joins, or SLO breach response time proves insufficient.
+- **`minReplicas = 1` for the Wizard ACA app.** Cold starts at `minReplicas = 0` would spike the first-token p95 beyond the 3 s SLO during low-traffic periods. At showcase scale, the ~$15/mo incremental ACA cost for keeping one replica warm is justified — it is the difference between "demo-ready any time" and "demo sometimes has a 10-s pause." Phase 7+ scale economics revisit this if traffic justifies `minReplicas = 0` with a warming probe.
+- **STRIDE-light (not full STRIDE) for the threat model.** Full STRIDE at the depth a CISO audit requires is disproportionate for a personal showcase with no PII, no financial data, and no user-writeable anonymous paths. STRIDE-light targets the surfaces where real risk exists: the anonymous Wizard endpoint (prompt injection, DoS via token exhaust), the `/admin` route (elevation), and Cloudflare WAF coverage. A full STRIDE engagement would be the correct scope if a client engagement were evaluating this as production infrastructure.
+- **DR drills are operational hand-offs, not PRs.** By the same principle as Phase 3/4 H-chain hand-offs: each drill costs Azure money (restore, rebuild) and requires human triage if it surfaces a gap. A CI workflow cannot substitute for a human validating that the restore procedure actually works. The drill outcome is documented in `decision-log.md` as a dated entry.
+- **Phase 5 axe-core + Lighthouse gates count toward the pre-launch gate.** They are already running in CI per Phase 5 Wave 3 Q1b and Q1d. Phase 6's scope items 11 and 12 execute those gates against the **live surface** (not the test-env URL used in CI). The distinction matters: CI gates catch regressions in the test environment; the live-surface validation confirms that Cloudflare, CDN headers, and ACA production config don't break what CI verified.
+
+### Exit criteria
+
+All must be true to declare Phase 6 complete and the system open for public launch:
+
+- [ ] All 14 scope items shipped or operationally completed; any deferred items documented with a dated, justified deferral note in this § Retrospective
+- [ ] `guardrails.md` § Pre-public-launch gate — all 11 items checked with evidence; no item marked "skip" or "waived" without explicit user confirmation and a written rationale
+- [ ] Application Insights workbook deployed and showing live data for all 7 tiles; confirmed by opening the workbook in the Azure portal and verifying no "no data" states
+- [ ] All 5 alert rules proven to fire: synthetic conditions induced in dev, email received within 5 min of threshold breach, results recorded in `decision-log.md`
+- [ ] All 6 runbooks exist at `docs/runbooks/`; each has a `Last walked:` date within the last 30 days at time of launch; `docs/runbooks/README.md` indexes all six
+- [ ] Cosmos restore DR drill executed against dev environment and documented with wall-clock restore latency + any gaps found; gaps resolved before launch
+- [ ] AI Search rebuild DR drill executed against dev environment and documented with rebuild-to-zero-lag time + any gaps found; gaps resolved before launch
+- [ ] Threat model `docs/threat-model.md` reviewed and dated; no unmitigated Sev-High findings; Cloudflare WAF + Bot Fight Mode active
+- [ ] Lighthouse CI thresholds met on live `pinwiz.ai` surface: LCP < 2.5 s, TTI < 3.8 s, CLS < 0.1; results committed to Phase 6 § Retrospective
+- [ ] Axe-core zero WCAG AA violations on all public routes of live `pinwiz.ai`; NVDA smoke test passed; results committed to Phase 6 § Retrospective
+- [ ] ≥ 30 days of actual cost burn at or below $300/mo validated; monthly budget projection reconciled against the Application Insights cost tile
+- [ ] `README.md` and `docs/vision.md` pass the per-phase-close review — no aspirational language for shipped features, no overclaim unsupported by eval data, "Known limitations v1" section present and accurate
+- [ ] `docs/quality-spec.md` Phase 6 gates promoted from "To add" to "Currently in place"
+- [ ] Build green, all tests green, zero warnings; no existing Phase 0–5 tests broken
+- [ ] All seven main goals in `guardrails.md` re-checked against launch state — alignment confirmed
+- [ ] Phase 6 § Retrospective populated; risk register reviewed and updated; any follow-ups documented under Phase 7+ or § Deferred features
+- [ ] User confirms Phase 6 exit and public launch (single confirmed event per `guardrails.md` § Per-phase gate — the system is not "launched" until this is explicit)
+
+### Dependencies
+
+- Phase 5 complete (the live system with SSE streaming, MudBlazor frontend, Entra External ID, ACA deployment, and Phase 5 Wave 3 CI gates shipped)
+- Personal Earlybird Azure subscription accessible; `az login` works; `deployPhase2 = true` already applied from Phase 3/4 (Application Insights already provisioned)
+- `pinwiz.ai` DNS live; Cloudflare Pro routing active; ACA managed cert valid
+- OPDB API token and AI keys rotated to Phase 6 cadence (not stale from Phase 4 H1)
+- Cosmos Continuous Backup confirmed enabled in Azure portal (prerequisite for DR drill)
+
+### Non-goals
+
+- **Content moderation for OCR / Strategy Tracker / Dream Game** — Phase 7+ (no user-writeable anonymous surfaces exist in v1; this gate is a re-confirmation, not new implementation)
+- **Multi-region deployment / Azure Front Door** — locked deferral per `guardrails.md` § Locked decisions; the revisit trigger is user-geography signal that doesn't exist at launch
+- **PagerDuty / on-call rotation** — single operator; email alerting is the correct tool at this scale
+- **Redis-backed distributed cache for the Wizard** — locked deferral per Phase 2 architecture decisions; the in-process LRU cache (ADR-0015) is the v1 decision
+- **Full STRIDE audit, penetration testing, or third-party security review** — appropriate for a client production system; disproportionate for a personal showcase. The threat model (`docs/threat-model.md`) is the correct scope for v1
+- **Traffic attribution middleware** — Phase 5 § Non-goals deferred this to post-launch; it remains deferred. Outbound clicks are observable via browser `window.open` calls and Cloudflare Analytics; in-process attribution is not needed for the launch gate
+
+### Parallelism plan
+
+Phase 6 is lighter than Phase 4/5 — no new production abstractions, no new Foundry agents. Most PRs are additive docs, infra extensions, and one-time validations. Three streams run in parallel, gated by the operational hand-offs.
+
+#### Dependency core (sequential)
+
+`Scope 1 (runbooks) → H-Dash (workbook deploy) → H-Alerts (alert proven) → H-DR-Cosmos + H-DR-Search (parallel) → Scope 13 (gate checklist) → Scope 14 (retrospective)`
+
+#### Stream A — Infra + dashboards (items 2, 3, 5, 6)
+
+Items 2 (workbook), 3 (alert rules), 5 (ACA scaling), and 6 (KQL library) can ship in 2–3 PRs, then the H-Dash / H-Alerts hand-off validates them. Item 5 has no operational validation dependency (scaling is verified with the burst test during H-Scale).
+
+#### Stream B — Docs + audit (items 1, 4, 9, 10)
+
+Items 1 (runbooks), 4 (threat model), 9 (README), and 10 (quality-spec promotion) are doc-only and can ship in parallel with Stream A. The threat model (item 4) triggers `/security-review` per `guardrails.md` § Heavyweight triggers; plan for the review round-trip.
+
+#### Stream C — DR drills + gate execution (items 7, 8, 11, 12, 13)
+
+Sequenced after Streams A and B. Items 11 and 12 depend on the live surface being stable (post-Phase-5-deploy); items 7 and 8 depend on runbooks existing (item 1); item 13 depends on everything.
+
+#### Wave sizing
+
+| Wave | Items | Type | Parallelism |
+| --- | --- | --- | --- |
+| Wave 1 | 1, 2, 4 | Runbooks (stub), workbook Bicep, threat model | A + B in parallel; item 4 triggers `/security-review` |
+| Wave 2 | 3, 5, 6, 9 | Alert rules Bicep, ACA scaling, KQL library, README | Stream A + B; H-Dash + H-Alerts hand-offs after Wave 2 merges |
+| Wave 3 | 10, 11, 12 | quality-spec promotion, Lighthouse live validation, axe-core live validation | After live surface confirmed stable; items 11+12 run as operator validations |
+| Wave 4 | 7, 8, 13, 14 | DR drills (H-DR-Cosmos, H-DR-Search), gate checklist, retrospective | Sequential; H-DR drills gate item 13; item 14 closes the phase |
+
+Total: ~8–10 PRs + 4 operational hand-offs (H-Dash, H-Alerts, H-DR-Cosmos, H-DR-Search).
+
+### Risks
+
+| ID | Risk | Mitigation |
+| --- | --- | --- |
+| P6-R1 | Cosmos Continuous Backup not enabled on the dev account (it is the serverless default but may have been disabled manually) | Pre-flight check via `az cosmosdb show --name <account> --query "backupPolicy"` before scheduling H-DR-Cosmos; enable if missing; delay the drill until verified |
+| P6-R2 | AI Search restore-from-zero takes > 2 h (full reconcile on the curated-subset index) | Document the rebuild time measured during H-DR-Search; set the SLO conversation expectation correctly; at full-corpus scale (Phase 4.5), revisit whether a warm standby index is justified |
+| P6-R3 | Cloudflare WAF Bot Fight Mode blocks the axe-core Playwright probe on the live surface | Exclude the axe-core probe IP or use a CF exemption rule; document the exemption; ensure exemption is scoped narrowly (IP-specific, not "disable Bot Fight") |
+| P6-R4 | `pinwiz.ai.cost_usd_cents` reads as 0 cents (NullTokenUsageReader still default per decision-log) until agent-framework#2688 lands | Dashboard cost tile renders from the `customMetrics` table which will show 0 until the real impl ships; document this as a known limitation in the workbook description; the $300 hard-cap budget alarm still works because Azure Cost Management billing is the source of truth (the KQL query is a per-feature attribution aid, not the alarm source) |
+| P6-R5 | First-token p95 exceeds 3 s SLO at `minReplicas = 1` due to model latency variance on gpt-4o-mini | Measure actual p95 from Application Insights after 1 week of steady traffic; if consistently above target, explore: (a) prompt-cache warmth on common questions via the LRU semantic cache, (b) switching the default model to a faster tier for simple questions, (c) raising the SLO target with a documented rationale |
+
+### Operational hand-offs
+
+Four tasks fall outside this phase's PR scope — mirroring the Phase 3/4 H-chain pattern:
+
+1. **H-Dash — Application Insights workbook deploy + tile verification.** After scope item 2 merges, apply the Bicep update; navigate to Application Insights → Workbooks → "PinballWizard Ops"; confirm each of the 7 tiles renders non-empty signal. Record the workbook URL in `decision-log.md`.
+2. **H-Alerts — Metric alert rule proven.** After scope item 3 merges and H-Dash is complete, induce each of the 5 synthetic conditions (latency spike, 5xx spike, cost spike, dead-letter spike, availability probe failure) in sequence; confirm email receipt for each within 5 min; record proof in `decision-log.md`.
+3. **H-DR-Cosmos — Cosmos restore drill.** Execute `docs/runbooks/03-cosmos-restore.md` against the dev environment; document restore latency + any gaps in `decision-log.md`.
+4. **H-DR-Search — AI Search rebuild drill.** Execute `docs/runbooks/04-ai-search-rebuild.md` against the dev environment; document rebuild-to-zero-lag time + any gaps in `decision-log.md`.
+
+### Retrospective
+
+*To be populated at phase completion.*
 
 ---
 
