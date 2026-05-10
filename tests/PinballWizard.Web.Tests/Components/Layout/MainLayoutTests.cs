@@ -87,4 +87,21 @@ public sealed class MainLayoutTests : TestContext
         // Assert — TiltErrorBoundary component is in the tree.
         cut.FindComponent<TiltErrorBoundary>();
     }
+
+    [Fact]
+    public void MainLayout_Mounts_BrandFooter()
+    {
+        // The footer is part of every screen per docs/ui/screens/answer-with-citations.md
+        // § Screen zones #5 and the empty-landing § Section 4 spec. Drift guard
+        // against future MainLayout edits dropping the footer.
+        var cut = RenderComponent<MainLayout>(parameters => parameters
+            .Add(p => p.Body, builder =>
+            {
+                builder.OpenElement(0, "span");
+                builder.AddContent(1, "Body content");
+                builder.CloseElement();
+            }));
+
+        cut.FindComponent<BrandFooter>();
+    }
 }
