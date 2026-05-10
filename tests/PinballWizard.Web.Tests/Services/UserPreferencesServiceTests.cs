@@ -60,9 +60,14 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task InitializeAsync_SetsStorageAvailableFalse_OnJsException()
     {
+        // bUnit's Strict mode throws JSRuntimeUnhandledInvocationException, NOT
+        // JSException — so the service's catch (JSException) would NOT catch it
+        // and the test would fail with an unhandled exception. Instead, configure
+        // the setup to throw JSException explicitly, which is what a real browser
+        // localStorage denial produces and what the service is designed to handle.
         using var ctx = new TestContext();
-        ctx.JSInterop.Mode = JSRuntimeMode.Strict;
-        // No setup = InvokeAsync throws JSException in strict mode
+        ctx.JSInterop.Setup<string>("pinwiz.getTheme")
+            .SetException(new JSException("localStorage unavailable"));
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
