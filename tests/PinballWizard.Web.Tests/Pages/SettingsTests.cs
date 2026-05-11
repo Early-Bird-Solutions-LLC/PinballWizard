@@ -40,15 +40,17 @@ public sealed class SettingsTests : TestContext
     }
 
     [Fact]
-    public void Settings_RendersBothThemeCards_AlphabeticalOrder()
+    public void Settings_RendersAllThemeCards_AlphabeticalOrder()
     {
         var cut = RenderComponent<Settings>();
 
-        // Alphabetical: Daytime Route (D) then Modern LCD (M)
+        // Alphabetical: Backbox (B) → Cabinet (C) → Daytime Route (D) → Modern LCD (M)
         var cards = cut.FindAll("[data-testid^='theme-card-']").ToList();
-        Assert.Equal(2, cards.Count);
-        Assert.Equal("theme-card-daytime-route", cards[0].GetAttribute("data-testid"));
-        Assert.Equal("theme-card-modern-lcd", cards[1].GetAttribute("data-testid"));
+        Assert.Equal(4, cards.Count);
+        Assert.Equal("theme-card-backbox",       cards[0].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-cabinet",       cards[1].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-daytime-route", cards[2].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-modern-lcd",    cards[3].GetAttribute("data-testid"));
     }
 
     [Fact]
