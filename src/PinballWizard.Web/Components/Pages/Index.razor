@@ -115,6 +115,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Pre-render (SSR) must return fast so the browser receives HTML before
+        // Lighthouse's FCP timeout. The API call below can take 30-48 s in
+        // environments where pinwiz-api isn't configured (Polly retries DNS
+        // failures with exponential backoff). With @rendermode InteractiveAuto
+        // the component runs twice: once during SSR pre-render (IsInteractive=false)
+        // and again when the interactive circuit/WASM starts (IsInteractive=true).
+        // Populate fallback eagerly on both paths so the first render always has
+        // content; replace with live data only after the interactive circuit is up.
+        _seedQuestions = FallbackSeedQuestions;
+        _featuredMachines = FallbackFeaturedMachines;
+        _status = null;
+
+        if (!RendererInfo.IsInteractive)
+            return;
+
         var landing = await LandingClient
             .GetLandingAsync(CancellationToken.None)
             .ConfigureAwait(false);
@@ -124,14 +139,6 @@
             _seedQuestions = landing.SeedQuestions;
             _featuredMachines = landing.FeaturedMachines;
             _status = landing.SystemStatus;
-        }
-        else
-        {
-            // Endpoint down or returned non-200 — use compiled-in fallback.
-            // The prospect's first impression never shows a broken page.
-            _seedQuestions = FallbackSeedQuestions;
-            _featuredMachines = FallbackFeaturedMachines;
-            _status = null; // amber badge — status unknown
         }
     }
 
