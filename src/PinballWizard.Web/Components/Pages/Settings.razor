@@ -116,7 +116,7 @@
 </MudContainer>
 
 @code {
-    // Alphabetical by Name: Daytime Route (D) before Modern LCD (M) per ADR-0027 § 3.
+    // Alphabetical by Name: Backbox (B) → Daytime Route (D) → Modern LCD (M) per ADR-0027 § 3.
     // Swatch values match Track B (PR #181) palette constants.
     private sealed record ThemeOption(
         string Key, string Name, bool IsBeta, string Oneliner,
@@ -125,6 +125,11 @@
 
     private static readonly ThemeOption[] Themes =
     [
+        new(ThemeNames.Backbox, "Backbox", IsBeta: true,
+            "Theatrical, layered, glowing. The backbox-art-is-alive theme.",
+            SwatchBg: "#0a0e1a", SwatchAccent1: "#ff3399", SwatchAccent2: "#00e5cc",
+            SwatchText: "#e8edf5", SwatchFont: "'Barlow Condensed', sans-serif"),
+
         new(ThemeNames.DaytimeRoute, "Daytime Route", IsBeta: true,
             "Sunlit, public, social. The expo floor theme.",
             SwatchBg: "#faf6ef", SwatchAccent1: "#cc5500", SwatchAccent2: "#0d6e2d",

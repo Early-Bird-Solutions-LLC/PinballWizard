@@ -16,7 +16,7 @@
         (function () {
             try {
                 var t = localStorage.getItem('pinwiz.theme');
-                if (t === 'daytime-route') document.documentElement.classList.add('theme-daytime-route');
+                if (t && t !== 'modern-lcd') document.documentElement.classList.add('theme-' + t);
                 var m = localStorage.getItem('pinwiz.motion');
                 if (m) document.documentElement.dataset.motion = m;
             } catch (_) { }
