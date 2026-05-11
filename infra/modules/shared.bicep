@@ -77,6 +77,9 @@ var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
 var acaEnvironmentName       = '${namePrefix}-acaenv-${environment}'                         // ACA Environment names are RG-scoped
 var ragIndexerContainerAppName = '${namePrefix}-ca-ragindexer-${environment}'                // RG-scoped; W3-2 Cosmos Change Feed worker
+var wizardContainerAppName     = '${namePrefix}-ca-wizard-${environment}'                    // RG-scoped; Phase 5/6 Blazor Web App + SSE API
+var opsWorkbookName            = guid(resourceGroup().id, '${namePrefix}-ops-workbook')      // Globally unique GUID-format name per workbook contract
+var opsActionGroupName         = '${namePrefix}-ops-alerts-${environment}'
 
 // -----------------------------------------------------------------------------
 // Log Analytics + Application Insights (created first so others can wire up DS)
@@ -939,6 +942,333 @@ resource ragIndexerStorageBlobReader 'Microsoft.Authorization/roleAssignments@20
 }
 
 // -----------------------------------------------------------------------------
+// Phase 6 — Application Insights workbook ("PinballWizard Ops")
+// -----------------------------------------------------------------------------
+// Serialized workbook JSON lives in infra/dashboards/pinwiz-ops-workbook.json
+// and is embedded at deploy time via loadTextContent. The workbook surfaces
+// seven tiles covering the six Phase 6 SLIs: latency p50/p95, 5xx error rate,
+// daily AI cost by model, refusal breakdown by category, RAG changefeed health
+// (lease lag + dead-letter depth), and availability synthetic test results.
+// A header tile links to the runbooks directory for response procedures.
+//
+// Name is a deterministic GUID derived from the resource group ID + a
+// project-scoped seed — satisfies the workbook resource name contract
+// (must be a GUID) while remaining stable across redeploys of the same RG.
+resource opsWorkbook 'Microsoft.Insights/workbooks@2023-06-01' = if (deployPhase2) {
+  name: opsWorkbookName
+  location: location
+  tags: tags
+  kind: 'shared'
+  properties: {
+    displayName: 'PinballWizard Ops'
+    category: 'workbook'
+    sourceId: appInsights.id
+    serializedData: loadTextContent('../dashboards/pinwiz-ops-workbook.json')
+    version: '1.0'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Phase 6 — Alert action group + metric alert rules
+// -----------------------------------------------------------------------------
+// Action group routes to the personal Earlybird ops email. All alert rules use
+// Microsoft.Insights/scheduledQueryRules (log-based) because the OTel custom
+// metrics (pinwiz.ai.*, pinwiz.rag.*) land in the customMetrics table in Log
+// Analytics — they are NOT Azure Monitor platform metrics, so classic
+// Microsoft.Insights/metricAlerts cannot target them. The @2023-03-15-preview
+// API version is the minimum that supports the `criteria.allOf[].query` pattern
+// used here (log-search alert rules v2).
+//
+// Five rules, mirroring the six Phase 6 SLIs:
+//   Sev 1 — 5xx error rate > 5% over 10 min (immediate impact on users)
+//   Sev 1 — availability < 99.5% over 7-day rolling (SLO breach)
+//   Sev 2 — Wizard latency p95 > 5 000 ms for 5 consecutive 5-min windows
+//   Sev 2 — daily AI cost > 1 500 cents ($15/day = $300/mo × 1.5 safety factor)
+//   Sev 3 — RAG dead-letter depth > 50/h (indexer degraded, not user-facing)
+
+resource opsActionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (deployPhase2) {
+  name: opsActionGroupName
+  location: 'global'
+  tags: tags
+  properties: {
+    groupShortName: 'pinwiz-ops'
+    enabled: true
+    emailReceivers: [
+      {
+        name: 'EarlybirdOps'
+        emailAddress: 'jim@earlybirdsolutions.com'
+        useCommonAlertSchema: true
+      }
+    ]
+  }
+}
+
+resource alertLatency 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-latency-p95'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — Wizard latency p95 > 5s'
+    description: 'First-token p95 exceeded 5 000 ms for 5 consecutive evaluation periods (5 min each). Investigate per runbook 01-incident-response.md.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    scopes: [appInsights.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "pinwiz.ai.duration_ms" | summarize p95=percentile(value, 95)'
+          timeAggregation: 'Maximum'
+          metricMeasureColumn: 'p95'
+          operator: 'GreaterThan'
+          threshold: 5000
+          failingPeriods: {
+            numberOfEvaluationPeriods: 5
+            minFailingPeriodsToAlert: 5
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
+resource alert5xx 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-5xx-rate'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — 5xx error rate > 5%'
+    description: '5xx requests to /api/wizard/* exceeded 5% over a 10-min window. Investigate per runbook 01-incident-response.md immediately.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT10M'
+    scopes: [appInsights.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'requests | where url contains "/api/wizard/" | summarize errorRate = todouble(countif(resultCode startswith "5")) / todouble(count()) * 100'
+          timeAggregation: 'Maximum'
+          metricMeasureColumn: 'errorRate'
+          operator: 'GreaterThan'
+          threshold: 5
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
+resource alertCost 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-daily-cost'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — Daily AI cost > $15'
+    description: 'Daily pinwiz.ai.cost_usd_cents exceeded 1 500 cents ($15/day = $300/mo × 1.5 safety factor). Investigate per runbook 02-cost-anomaly.md.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT1H'
+    windowSize: 'P1D'
+    scopes: [appInsights.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "pinwiz.ai.cost_usd_cents" | summarize dailyCents = sum(value)'
+          timeAggregation: 'Maximum'
+          metricMeasureColumn: 'dailyCents'
+          operator: 'GreaterThan'
+          threshold: 1500
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
+resource alertDeadLetters 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-dead-letters'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — RAG dead-letter depth > 50/h'
+    description: 'pinwiz.rag.changefeed_dead_letter_total incremented > 50 in a 1-h window. Investigate per runbook 04-ai-search-rebuild.md triage section.'
+    severity: 3
+    enabled: true
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT1H'
+    scopes: [appInsights.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'customMetrics | where name == "pinwiz.rag.changefeed_dead_letter_total" | summarize depth = sum(value)'
+          timeAggregation: 'Maximum'
+          metricMeasureColumn: 'depth'
+          operator: 'GreaterThan'
+          threshold: 50
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
+resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-availability'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — Availability < 99.5% (7-day rolling)'
+    description: 'Availability test success rate dropped below 99.5% over a rolling 7-day window. Investigate per runbook 01-incident-response.md immediately.'
+    severity: 1
+    enabled: true
+    evaluationFrequency: 'PT1H'
+    windowSize: 'P7D'
+    scopes: [appInsights.id]
+    criteria: {
+      allOf: [
+        {
+          // Multiply by 1000 and truncate to int to represent 99.5% as 995 —
+          // Bicep threshold must be an integer; 99.5 is inexpressible as a
+          // literal. Query yields successRateTenths (0–1000); alert fires when
+          // the rolling 7-day value drops below 995 (= 99.5%).
+          query: 'availabilityResults | summarize successRateTenths = toint(todouble(countif(success == 1)) / todouble(count()) * 1000)'
+          timeAggregation: 'Minimum'
+          metricMeasureColumn: 'successRateTenths'
+          operator: 'LessThan'
+          threshold: 995
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Wizard Container App (Phase 5 + Phase 6 scaling)
+// -----------------------------------------------------------------------------
+// The public-facing Blazor Web App + SSE streaming API. Hosts:
+//   - PinballWizard.Web (Blazor auto-render, MudBlazor chrome)
+//   - /api/wizard/ask:stream SSE endpoint (PinballWizard.Api)
+//
+// Scale: minReplicas=1 eliminates cold-start p95 latency spikes that would
+// breach the 3s first-token SLO. At showcase scale the incremental ACA cost
+// (~$15/mo for one warm replica) is justified — "demo-ready any time."
+// maxReplicas=3 enforces the cost ceiling; burst beyond 3 replicas requires
+// an explicit operator decision. See build-spec.md § Phase 6 § Key decisions.
+//
+// Image: placeholder (quickstart) until CI/CD pipeline wires the real image.
+// Operator swap: az containerapp update --image <acr>/pinwiz-web:<sha>
+//
+// Ingress: external HTTPS on port 8080 (ACA terminates TLS; app runs HTTP).
+// UseHttpsRedirection + UseHsts are disabled in the app — the ACA-managed LB
+// handles TLS termination (see PR #188 / commit 8527060).
+resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
+  name: wizardContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: acaEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'http'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: containerRegistry.?properties.loginServer ?? ''
+          identity: 'system'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'wizard'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:8080'
+            }
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Production'
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.?properties.ConnectionString ?? ''
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 3
+      }
+    }
+  }
+}
+
+resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
+  scope: wizardApp
+  name: 'send-to-law'
+  properties: {
+    workspaceId: logAnalytics.id
+    logs: [
+      {
+        categoryGroup: 'allLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -991,3 +1321,12 @@ output appInsightsConnectionString string = appInsights.?properties.ConnectionSt
 output acaEnvironmentName string = acaEnvironment.?name ?? ''
 output ragIndexerContainerAppName string = ragIndexerApp.?name ?? ''
 output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
+
+// Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
+// `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
+//   az containerapp update -n <wizardContainerAppName> -g <rg> \
+//                          --image <containerRegistryLoginServer>/pinwiz-web:<sha>
+output wizardContainerAppName string = wizardApp.?name ?? ''
+output wizardPrincipalId string = wizardApp.?identity.principalId ?? ''
+output opsWorkbookName string = opsWorkbook.?name ?? ''
+output opsActionGroupId string = opsActionGroup.?id ?? ''
