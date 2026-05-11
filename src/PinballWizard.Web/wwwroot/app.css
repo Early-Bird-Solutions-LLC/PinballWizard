@@ -127,6 +127,35 @@ html.theme-cabinet {
     }
 }
 
+/* ── DMD Classic sibling theme ────────────────────────────────────────── */
+/* Late 80s/90s dot-matrix era: pure black base (DMDs were genuinely OFF
+   when unlit), amber accent palette, warm cream body text. No pixel font
+   in v1 — Press Start 2P deferred until the theme earns a full spec.
+   CSS-variable-only for v1 — no MudTheme companion.
+   Spec authority: docs/ui/themes/sibling-themes-overview.md § DMD Classic. */
+html.theme-dmd-classic {
+    --pw-bg-base:           #000000;
+    --pw-bg-surface:        #0a0500;
+    --pw-bg-surface-hi:     #1a0f00;
+    --pw-text-primary:      #f4d090;
+    --pw-text-secondary:    #a07050;
+    --pw-accent-primary:    #ff9900;
+    --pw-accent-grounded:   #ffaa00;
+    --pw-accent-refusal:    #ff4400;
+    --pw-accent-mode:       #ffcc66;
+    --pw-border-quiet:      #2a1500;
+    --pw-border-glow-amber:   #ff990099;
+    --pw-border-glow-green:   #ffaa0099;
+    --pw-border-glow-magenta: #ffcc6699;
+    --pw-border-glow-red:     #ff440099;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.theme-dmd-classic {
+        transition: none;
+    }
+}
+
 /* Self-hosted web fonts. Files live under wwwroot/fonts/<family>/.
    Sourced from upstream OFL repos via fontsource (woff2 only, latin subset).
    See wwwroot/fonts/README.md for license attribution and provenance.

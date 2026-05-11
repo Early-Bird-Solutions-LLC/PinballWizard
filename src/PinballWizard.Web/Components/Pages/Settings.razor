@@ -116,7 +116,7 @@
 </MudContainer>
 
 @code {
-    // Alphabetical by Name: Backbox (B) → Cabinet (C) → Daytime Route (D) → Modern LCD (M) per ADR-0027 § 3.
+    // Alphabetical by Name: Backbox (B) → Cabinet (C) → Daytime Route (D) → DMD Classic (DM) → Modern LCD (M) per ADR-0027 § 3.
     // Swatch values match Track B (PR #181) palette constants.
     private sealed record ThemeOption(
         string Key, string Name, bool IsBeta, string Oneliner,
@@ -139,6 +139,11 @@
             "Sunlit, public, social. The expo floor theme.",
             SwatchBg: "#faf6ef", SwatchAccent1: "#cc5500", SwatchAccent2: "#0d6e2d",
             SwatchText: "#1f1a14", SwatchFont: "'Barlow Condensed', sans-serif"),
+
+        new(ThemeNames.DmdClassic, "DMD Classic", IsBeta: true,
+            "Nostalgic amber-on-black dot-matrix. The Twilight Zone era.",
+            SwatchBg: "#000000", SwatchAccent1: "#ff9900", SwatchAccent2: "#ffaa00",
+            SwatchText: "#f4d090", SwatchFont: "'Barlow Condensed', sans-serif"),
 
         new(ThemeNames.ModernLcd, "Modern LCD", IsBeta: false,
             "The default. Dark arcade atmosphere, warm amber accents.",
