@@ -1,0 +1,91 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## PinballWizard Ops\n\nLive signal for the six Phase 6 SLIs. See [runbooks](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/tree/main/docs/runbooks/) for response procedures."
+      },
+      "name": "header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where timestamp > ago(24h)\n| where name == 'pinwiz.ai.duration_ms'\n| summarize p50=percentile(value,50), p95=percentile(value,95) by bin(timestamp,1h)\n| order by timestamp asc",
+        "size": 0,
+        "title": "Wizard answer latency (p50 / p95)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "latency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp > ago(24h)\n| where url contains '/api/wizard/'\n| summarize total=count(), errors5xx=countif(resultCode startswith '5') by bin(timestamp,10m)\n| extend errorRate=todouble(errors5xx)/todouble(total)*100\n| project timestamp, errorRate\n| order by timestamp asc",
+        "size": 0,
+        "title": "5xx error rate — /api/wizard/* (%)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "error-rate"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where timestamp > ago(30d)\n| where name == 'pinwiz.ai.cost_usd_cents'\n| summarize dailyCostCents=sum(value) by bin(timestamp,1d), model=tostring(customDimensions['model'])\n| order by timestamp desc",
+        "size": 0,
+        "title": "Daily AI cost (cents, by model)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart"
+      },
+      "name": "cost"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where timestamp > ago(24h)\n| where name == 'pinwiz.ai.refusals'\n| summarize count=sum(valueCount) by category=tostring(customDimensions['refusal_category'])\n| order by count desc",
+        "size": 0,
+        "title": "Refusal breakdown (trailing 24 h)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "piechart"
+      },
+      "name": "refusals"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customMetrics\n| where timestamp > ago(1h)\n| where name in ('pinwiz.rag.changefeed_lease_lag', 'pinwiz.rag.changefeed_dead_letter_total')\n| summarize latest=max(value) by name\n| project metric=name, value=latest",
+        "size": 0,
+        "title": "RAG changefeed health (trailing 1 h)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table"
+      },
+      "name": "changefeed"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "availabilityResults\n| where timestamp > ago(24h)\n| summarize pass=countif(success==1), fail=countif(success==0), total=count() by bin(timestamp,30m)\n| extend successRate=todouble(pass)/todouble(total)*100\n| order by timestamp asc",
+        "size": 0,
+        "title": "Availability synthetic test (trailing 24 h)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "availability"
+    }
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
