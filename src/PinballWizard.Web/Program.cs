@@ -126,16 +126,14 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     // Per ADR-0026 § 5 — pinball-themed /error page for unhandled exceptions.
-    // ProblemDetails middleware and TiltErrorBoundary land in PR-D3 (Wave 2).
     app.UseExceptionHandler("/error", createScopeForErrors: true);
-    app.UseHsts();
-    // HTTPS redirect inside the non-Development guard: the Playwright
-    // accessibility test host (PlaywrightWebApplicationFactory) listens on
-    // plain HTTP. Redirecting to https:// there causes Chromium to hit
-    // ERR_CONNECTION_REFUSED and axe-core scans the browser error page
-    // instead of the actual app. Standard ASP.NET Core template convention.
-    app.UseHttpsRedirection();
 }
+// UseHttpsRedirection and UseHsts are intentionally omitted.
+// PinballWizard runs in Azure Container Apps where the Azure-provided load
+// balancer terminates TLS and forwards plain HTTP to the container. Adding
+// an in-app HTTPS redirect causes a redirect loop (the container only speaks
+// HTTP; the LB already enforces HTTPS at the edge). HSTS is likewise the
+// LB's responsibility via the Azure Front Door / Application Gateway layer.
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.UseAuthentication();
