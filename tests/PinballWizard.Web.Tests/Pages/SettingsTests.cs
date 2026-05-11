@@ -44,12 +44,13 @@ public sealed class SettingsTests : TestContext
     {
         var cut = RenderComponent<Settings>();
 
-        // Alphabetical: Backbox (B) → Daytime Route (D) → Modern LCD (M)
+        // Alphabetical: Backbox (B) → Cabinet (C) → Daytime Route (D) → Modern LCD (M)
         var cards = cut.FindAll("[data-testid^='theme-card-']").ToList();
-        Assert.Equal(3, cards.Count);
-        Assert.Equal("theme-card-backbox",      cards[0].GetAttribute("data-testid"));
-        Assert.Equal("theme-card-daytime-route", cards[1].GetAttribute("data-testid"));
-        Assert.Equal("theme-card-modern-lcd",    cards[2].GetAttribute("data-testid"));
+        Assert.Equal(4, cards.Count);
+        Assert.Equal("theme-card-backbox",       cards[0].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-cabinet",       cards[1].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-daytime-route", cards[2].GetAttribute("data-testid"));
+        Assert.Equal("theme-card-modern-lcd",    cards[3].GetAttribute("data-testid"));
     }
 
     [Fact]
