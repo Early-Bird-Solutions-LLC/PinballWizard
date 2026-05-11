@@ -238,3 +238,80 @@ Per [`guardrails.md`](guardrails.md) § Spec maintenance, this doc updates **in 
 - Adding a new instrument: this doc grows by one row; `PinballWizardTelemetryTests` gains a pinning assertion.
 - Renaming an instrument: this doc updates; the test updates; dashboards and alert rules listed here are updated.
 - Removing an instrument: this doc loses a row; the test loses an assertion; no dashboard references remain.
+
+## SLO queries
+
+Canonical KQL queries for the three core SLI metrics. These back the "PinballWizard Ops"
+Application Insights workbook tiles and the metric alert rules in `infra/modules/shared.bicep`.
+
+Run these in the Application Insights → Logs blade, or copy them into the workbook editor.
+
+Alert thresholds (from `docs/build-spec.md` § Phase 6 — Alert routing):
+
+| SLI | Alert fires when |
+| --- | --- |
+| Latency p95 | > 5 000 ms for 5 consecutive 1-min evaluation periods |
+| 5xx rate | > 5% over 10-min rolling window |
+| Daily cost | > 1 500 cents/day ($300 ÷ 30 × 1.5) |
+
+### Wizard answer latency (p50 / p95)
+
+Source: `customMetrics` where `name == "pinwiz.ai.duration_ms"` — the histogram emitted by `PinballWizardTelemetry.AiDurationMs` at the `IAiRouter` boundary.
+
+```kql
+// Wizard answer latency — p50 / p95 (1-h buckets, trailing 24 h)
+// Source: OTel histogram emitted by PinballWizardTelemetry.AiDurationMs
+customMetrics
+| where timestamp > ago(24h)
+| where name == "pinwiz.ai.duration_ms"
+| summarize
+    p50 = percentile(value, 50),
+    p95 = percentile(value, 95)
+    by bin(timestamp, 1h)
+| order by timestamp asc
+```
+
+Alert rule pins against `p95 > 5000` over a 5-minute evaluation window. Note that Application Insights receives histogram metrics as pre-aggregated percentile samples — `percentile(value, 95)` over the `customMetrics` table reflects the p95 of raw observations only when the OTLP exporter sends per-observation rows (the default for histograms under the Aspire OTLP pipeline). If the exporter is configured with explicit bucket boundaries, consult the `valueMax` column as a conservative upper bound.
+
+### 5xx error rate
+
+Source: `requests` table — `/api/wizard/*` requests, 10-minute rolling buckets.
+
+```kql
+// 5xx error rate — % of /api/wizard/* requests (10-min rolling window)
+// Alert threshold: > 5% over a 10-min window → pinwiz-alert-5xx-rate fires
+requests
+| where timestamp > ago(24h)
+| where url contains "/api/wizard/"
+| summarize
+    total = count(),
+    errors5xx = countif(resultCode startswith "5")
+    by bin(timestamp, 10m)
+| extend errorRate = todouble(errors5xx) / todouble(total) * 100
+| project timestamp, total, errors5xx, errorRate
+| order by timestamp asc
+```
+
+Alert rule pins against `errorRate > 5` over the most recent 10-minute bucket. Rows where `total == 0` (no traffic in a quiet window) return `errorRate = 0.0` — the division is safe because `todouble(0) / todouble(0)` returns `NaN` in KQL, which compares false against any numeric threshold. Verify this behaviour in your alert preview pane if the app has quiet overnight periods.
+
+### Daily AI cost
+
+Source: `customMetrics` where `name == "pinwiz.ai.cost_usd_cents"` — the counter emitted by `PinballWizardTelemetry.AiCostUsdCents` per Foundry call, tagged by `model` and `sub_agent`.
+
+```kql
+// Daily AI cost — USD cents by model and sub-agent (calendar day buckets)
+// Alert threshold: > 1 500 cents/day ($15/day = $300/mo ÷ 30 × 1.5) → pinwiz-alert-daily-cost fires
+// Note: pinwiz.ai.cost_usd_cents requires the real token-usage instrumentation to be wired.
+// Until agent-framework token-usage reading is fully implemented, this may read 0.
+// Azure Cost Management billing remains the authoritative source for budget tracking.
+customMetrics
+| where timestamp > ago(30d)
+| where name == "pinwiz.ai.cost_usd_cents"
+| summarize dailyCostCents = sum(value) by
+    bin(timestamp, 1d),
+    model = tostring(customDimensions["model"]),
+    subAgent = tostring(customDimensions["sub_agent"])
+| order by timestamp desc, dailyCostCents desc
+```
+
+Until `ITokenUsageReader` returns a real `TokenUsage` snapshot (blocked on Microsoft Agent Framework issue #2688 exposing a stable `Usage` surface on `AgentResponse`), `NullTokenUsageReader` is the default and this query reads 0 cents for all rows. The alert rule should be deployed but set to a suppressed / evaluation-only state until the token-usage impl ships. Azure Cost Management billing in the Earlybird subscription is the authoritative budget signal in the interim — see `guardrails.md` § Run-time triggers for the manual monthly review cadence.
