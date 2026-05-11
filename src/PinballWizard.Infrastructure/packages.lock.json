@@ -51,11 +51,11 @@
       },
       "Azure.Search.Documents": {
         "type": "Direct",
-        "requested": "[11.7.0, )",
-        "resolved": "11.7.0",
-        "contentHash": "48yBLnsf8SSgowe/OQDCNg9+G9WjzRmLX6Bghjlshxu+5Mhh4maTXvSWKi4o568ZqV6GoOYhiKPbCm/QYoufwA==",
+        "requested": "[12.0.0, )",
+        "resolved": "12.0.0",
+        "contentHash": "HziwTmbadPNT/Q0Bau3n7ubQQJde5AWGi2LpzA30JwDasJiY5ogyrp7pALpvUy5HYcgSMRrRdLtahgTT5TPyrA==",
         "dependencies": {
-          "Azure.Core": "1.49.0"
+          "Azure.Core": "1.54.0"
         }
       },
       "Microsoft.Agents.AI.Foundry": {
@@ -732,8 +732,8 @@
       "Azure.Core": {
         "type": "CentralTransitive",
         "requested": "[1.53.0, )",
-        "resolved": "1.53.0",
-        "contentHash": "x9c/toFMOtRrlTdFuE7rlGCVAduQzWVfKmLz5juj41zJAXEhYD5hluiUyyAEzJ6OxpBnKtiaBztzwpZITAVjtg==",
+        "resolved": "1.54.0",
+        "contentHash": "m6hHbx1q9+GCBZ5A9ykzFylPdTwscX2APH7PlnqV+yu+DH3RRtuIDJMRqdU17cMyinv0hCPofpegoyQ6qWPW7g==",
         "dependencies": {
           "Microsoft.Bcl.AsyncInterfaces": "10.0.3",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.3",
