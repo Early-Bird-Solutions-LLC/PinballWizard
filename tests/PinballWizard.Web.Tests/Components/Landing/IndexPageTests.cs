@@ -26,7 +26,7 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 // the API call during SSR pre-render (fast path for Lighthouse/FCP). All
 // tests set IsInteractive=true to exercise the full interactive code path.
 //
-// Each test creates its own TestContext. Services are registered BEFORE any
+// Each test creates its own BunitContext. Services are registered BEFORE any
 // component is rendered (bUnit locks the service provider on first GetService).
 public sealed class IndexPageTests
 {
@@ -62,14 +62,14 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WithKnownLandingResponse_RendersHeroAndGrid()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         var client = BuildClient(BuildLandingResponse());
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
 
         // Wait for OnInitializedAsync to complete (client call returns synchronously
         // via NSubstitute's Task.FromResult).
@@ -91,7 +91,7 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNull_RendersFallbackSeedQuestions()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // Simulate endpoint down — client returns null.
@@ -99,7 +99,7 @@ public sealed class IndexPageTests
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
 
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
@@ -122,7 +122,7 @@ public sealed class IndexPageTests
     [Fact]
     public void Index_BeforeClientReturns_RendersFallbackNotSkeletons()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // NSubstitute returns a never-completing task to simulate "in-flight".
@@ -133,7 +133,7 @@ public sealed class IndexPageTests
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
 
         // While the client is in-flight, Questions holds the compiled-in
         // fallback (not null). The fallback is set at the start of
@@ -154,14 +154,14 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WithKnownResponse_LiveStatusBadgeIsGreen()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         var client = BuildClient(BuildLandingResponse()); // all-true SystemStatus
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -183,14 +183,14 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNull_LiveStatusBadgeIsAmber()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         var client = BuildClient(response: null);
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -213,22 +213,22 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_OnSeedCardClick_NavigatesToWizardQ()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // Register client BEFORE locking the service provider (SetRendererInfo
-        // accesses ctx.Renderer which builds the provider). FakeNavigationManager
+        // accesses ctx.Renderer which builds the provider). BunitNavigationManager
         // is retrieved AFTER rendering to avoid locking the provider early.
         var client = BuildClient(BuildLandingResponse());
         ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
-        var cut = ctx.RenderComponent<IndexPage>();
+        var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
-        // Retrieve FakeNavigationManager after render (provider already locked).
-        var navMan = cut.Services.GetRequiredService<FakeNavigationManager>();
+        // Retrieve BunitNavigationManager after render (provider already locked).
+        var navMan = cut.Services.GetRequiredService<BunitNavigationManager>();
 
         cut.WaitForAssertion(
             () =>

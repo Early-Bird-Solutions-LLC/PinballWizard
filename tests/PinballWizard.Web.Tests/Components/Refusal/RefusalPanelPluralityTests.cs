@@ -35,7 +35,7 @@ public sealed class RefusalPanelPluralityTests
     [Fact]
     public void Marketplace_refusal_renders_at_least_3_community_resource_cards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -51,7 +51,7 @@ public sealed class RefusalPanelPluralityTests
             MissingWhat: null,
             SuggestedRephrase: null);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope) // recovery-eligible
             .Add(x => x.Detail, detail));
 
@@ -85,7 +85,7 @@ public sealed class RefusalPanelPluralityTests
     [Fact]
     public void MachineReference_refusal_renders_at_least_2_machine_reference_cards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -101,7 +101,7 @@ public sealed class RefusalPanelPluralityTests
             MissingWhat: null,
             SuggestedRephrase: null);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.NoCitation) // recovery-eligible
             .Add(x => x.Detail, detail));
 
@@ -136,7 +136,7 @@ public sealed class RefusalPanelPluralityTests
     [Fact]
     public void CommunityResourceCards_renders_alphabetical_within_category()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -152,7 +152,7 @@ public sealed class RefusalPanelPluralityTests
             new("Zeta Pinball", "https://zeta.example.com", "marketplace", "Third alphabetically."),
         };
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         var cards = cut.FindAll("[data-testid='community-resource-card']");
@@ -177,7 +177,7 @@ public sealed class RefusalPanelPluralityTests
     [Fact]
     public void RefusalPanel_RendersTotalCardCount_MatchingInput()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -190,7 +190,7 @@ public sealed class RefusalPanelPluralityTests
             MissingWhat: null,
             SuggestedRephrase: null);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.InsufficientGrounding)
             .Add(x => x.Detail, detail));
 

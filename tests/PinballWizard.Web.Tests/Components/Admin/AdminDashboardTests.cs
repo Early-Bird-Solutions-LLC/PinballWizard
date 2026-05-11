@@ -11,7 +11,7 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 //
 // Per ADR-0026 PR self-audit item 9(d): every Razor component must have a
 // bUnit smoke test. AdminDashboard is behind [Authorize]; tests run with
-// AddTestAuthorization() set to authenticated so the dashboard content renders.
+// AddAuthorization() set to authenticated so the dashboard content renders.
 //
 // Tests assert structural invariants: the page title pattern, the presence of
 // summary cards for Machines / Sources / Documents, and that data-testid
@@ -20,7 +20,7 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // Note: AdminDashboard does NOT have a @rendermode directive — it inherits
 // the layout's server-side rendering in production. bUnit renders it
 // synchronously without a rendermode override, which is fine for smoke tests.
-public sealed class AdminDashboardTests : TestContext
+public sealed class AdminDashboardTests : AsyncBunitContext
 {
     public AdminDashboardTests()
     {
@@ -28,15 +28,15 @@ public sealed class AdminDashboardTests : TestContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         // Authorize the test context so [Authorize] on the page (and AdminLayout)
         // does not redirect to the login challenge.
-        this.AddTestAuthorization().SetAuthorized("test-admin@example.com");
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void AdminDashboard_Renders_WithoutThrowing()
     {
         // Arrange + Act — if this throws the test fails.
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         // Assert — component rendered and has markup.
         Assert.NotNull(cut.Markup);
@@ -45,7 +45,7 @@ public sealed class AdminDashboardTests : TestContext
     [Fact]
     public void AdminDashboard_Renders_MachinesCountSentinel()
     {
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         // Machines count placeholder is rendered.
         var el = cut.Find("[data-testid='admin-machines-count']");
@@ -55,7 +55,7 @@ public sealed class AdminDashboardTests : TestContext
     [Fact]
     public void AdminDashboard_Renders_SourcesCountSentinel()
     {
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         var el = cut.Find("[data-testid='admin-sources-count']");
         Assert.NotNull(el);
@@ -64,7 +64,7 @@ public sealed class AdminDashboardTests : TestContext
     [Fact]
     public void AdminDashboard_Renders_DocumentsCountSentinel()
     {
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         var el = cut.Find("[data-testid='admin-documents-count']");
         Assert.NotNull(el);
@@ -73,7 +73,7 @@ public sealed class AdminDashboardTests : TestContext
     [Fact]
     public void AdminDashboard_ViewCatalogButton_HrefsAdminMachines()
     {
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         // MudButton for machines catalog link.
         var link = cut.Find("a[href='/admin/machines']");
@@ -83,7 +83,7 @@ public sealed class AdminDashboardTests : TestContext
     [Fact]
     public void AdminDashboard_ViewSourcesButton_HrefsAdminSources()
     {
-        var cut = RenderComponent<AdminDashboard>();
+        var cut = Render<AdminDashboard>();
 
         var link = cut.Find("a[href='/admin/sources']");
         Assert.NotNull(link);

@@ -16,7 +16,7 @@ namespace PinballWizard.Web.Tests.Components.Pages;
 // Status.razor calls IWizardLandingClient to get SystemStatus and renders
 // three MudCard status indicators (Cosmos DB, Azure AI Foundry, AI Search).
 //
-// Each test creates its own TestContext. Services are registered BEFORE
+// Each test creates its own BunitContext. Services are registered BEFORE
 // any GetRequiredService or RenderComponent call (bUnit locks the provider
 // on first GetService). This mirrors the IndexPageTests pattern.
 //
@@ -52,12 +52,12 @@ public sealed class StatusTests
     [Fact]
     public void Status_Renders_WithoutException_WhenClientReturnsNull()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddScoped<IWizardLandingClient>(_ => BuildClient(response: null));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         cut.Find("[data-testid='status-page']");
     }
@@ -69,12 +69,12 @@ public sealed class StatusTests
     [Fact]
     public void Status_RendersThreeStatusCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddScoped<IWizardLandingClient>(_ => BuildClient(response: null));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         cut.Find("[data-testid='status-card-cosmos']");
         cut.Find("[data-testid='status-card-foundry']");
@@ -89,7 +89,7 @@ public sealed class StatusTests
     [Fact]
     public async Task Status_AllHealthy_ShowsHealthyOnAllCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -97,7 +97,7 @@ public sealed class StatusTests
         ctx.Services.AddScoped<IWizardLandingClient>(_ =>
             BuildClient(BuildLandingResponse(allHealthy)));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         // Wait for OnInitializedAsync to complete.
         await cut.InvokeAsync(async () => await Task.Yield());
@@ -127,12 +127,12 @@ public sealed class StatusTests
     [Fact]
     public async Task Status_WhenClientReturnsNull_ShowsUnknownOnAllCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddScoped<IWizardLandingClient>(_ => BuildClient(response: null));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
@@ -161,7 +161,7 @@ public sealed class StatusTests
     [Fact]
     public async Task Status_CosmosUnhealthy_ShowsDegradedOnCosmosCard()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -169,7 +169,7 @@ public sealed class StatusTests
         ctx.Services.AddScoped<IWizardLandingClient>(_ =>
             BuildClient(BuildLandingResponse(partialStatus)));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
@@ -197,12 +197,12 @@ public sealed class StatusTests
     [Fact]
     public void Status_Heading_IsPresent()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddScoped<IWizardLandingClient>(_ => BuildClient(response: null));
 
-        var cut = ctx.RenderComponent<Status>();
+        var cut = ctx.Render<Status>();
 
         var heading = cut.Find("[data-testid='status-heading']");
         Assert.Contains("Status", heading.TextContent, StringComparison.OrdinalIgnoreCase);

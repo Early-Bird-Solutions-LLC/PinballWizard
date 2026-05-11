@@ -21,9 +21,9 @@ public sealed class FreshnessBadgeTests
     // Helper
     // ──────────────────────────────────────────────────────────────────────
 
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -34,14 +34,14 @@ public sealed class FreshnessBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_3_days_ago_for_recent_timestamp()
+    public async Task Renders_3_days_ago_for_recent_timestamp()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var now = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
         var ts  = now.AddDays(-3);
 
-        var cut = ctx.RenderComponent<FreshnessBadge>(p => p
+        var cut = ctx.Render<FreshnessBadge>(p => p
             .Add(c => c.LastScrapedUtc, ts)
             .Add(c => c.Now, now));
 
@@ -64,14 +64,14 @@ public sealed class FreshnessBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_pale_amber_for_timestamps_older_than_90_days()
+    public async Task Renders_pale_amber_for_timestamps_older_than_90_days()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var now = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
         var ts  = now.AddDays(-120); // 120 days — past the 90-day stale threshold
 
-        var cut = ctx.RenderComponent<FreshnessBadge>(p => p
+        var cut = ctx.Render<FreshnessBadge>(p => p
             .Add(c => c.LastScrapedUtc, ts)
             .Add(c => c.Now, now));
 
@@ -87,11 +87,11 @@ public sealed class FreshnessBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_neutral_for_null_timestamp()
+    public async Task Renders_neutral_for_null_timestamp()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
-        var cut = ctx.RenderComponent<FreshnessBadge>(p => p
+        var cut = ctx.Render<FreshnessBadge>(p => p
             .Add(c => c.LastScrapedUtc, (DateTimeOffset?)null));
 
         var badge = cut.Find("[data-testid='freshness-badge']");
@@ -105,14 +105,14 @@ public sealed class FreshnessBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_neutral_for_60_day_old_timestamp()
+    public async Task Renders_neutral_for_60_day_old_timestamp()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var now = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
         var ts  = now.AddDays(-60);
 
-        var cut = ctx.RenderComponent<FreshnessBadge>(p => p
+        var cut = ctx.Render<FreshnessBadge>(p => p
             .Add(c => c.LastScrapedUtc, ts)
             .Add(c => c.Now, now));
 

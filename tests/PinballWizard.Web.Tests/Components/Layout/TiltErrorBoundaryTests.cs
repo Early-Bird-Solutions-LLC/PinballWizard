@@ -15,7 +15,7 @@ namespace PinballWizard.Web.Tests.Components.Layout;
 //
 // ADR-0026 § 6 — TiltErrorBoundary is a delight surface (custom component).
 // ADR-0026 § 9 — requestId (TraceId) surfaced in fallback.
-public sealed class TiltErrorBoundaryTests : TestContext
+public sealed class TiltErrorBoundaryTests : AsyncBunitContext
 {
     public TiltErrorBoundaryTests()
     {
@@ -26,7 +26,7 @@ public sealed class TiltErrorBoundaryTests : TestContext
     [Fact]
     public void TiltErrorBoundary_PassesThrough_ChildContentWhenNoException()
     {
-        var cut = RenderComponent<TiltErrorBoundary>(parameters => parameters
+        var cut = Render<TiltErrorBoundary>(parameters => parameters
             .AddChildContent("<span data-testid='child'>healthy child</span>"));
 
         // Assert — child content renders when no exception is active.
@@ -37,7 +37,7 @@ public sealed class TiltErrorBoundaryTests : TestContext
     public void TiltErrorBoundary_ShowsTiltFallback_WhenChildThrows()
     {
         // Arrange — render a child that throws synchronously on first render.
-        var cut = RenderComponent<TiltErrorBoundary>(parameters => parameters
+        var cut = Render<TiltErrorBoundary>(parameters => parameters
             .AddChildContent<ThrowingComponent>());
 
         // Act — the ErrorBoundary catches the exception during render.

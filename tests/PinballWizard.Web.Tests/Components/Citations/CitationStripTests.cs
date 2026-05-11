@@ -26,9 +26,9 @@ public sealed class CitationStripTests
             SourceUrl: $"https://{host}/{path ?? title.Replace(' ', '-').ToLowerInvariant()}",
             RelevanceScore: score);
 
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -39,9 +39,9 @@ public sealed class CitationStripTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_groups_sorted_by_max_relevance_score_desc()
+    public async Task Renders_groups_sorted_by_max_relevance_score_desc()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         // Two host groups: sternpinball.com has a lower max score,
         // opdb.org has a higher max score — opdb.org group should render first.
@@ -52,7 +52,7 @@ public sealed class CitationStripTests
             MakeCitation("opdb.org",          "OPDB Record B", score: 0.72),
         };
 
-        var cut = ctx.RenderComponent<CitationStrip>(p => p
+        var cut = ctx.Render<CitationStrip>(p => p
             .Add(c => c.Citations, citations));
 
         // Both groups must render.
@@ -69,11 +69,11 @@ public sealed class CitationStripTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Renders_no_groups_when_citations_list_is_empty()
+    public async Task Renders_no_groups_when_citations_list_is_empty()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
-        var cut = ctx.RenderComponent<CitationStrip>(p => p
+        var cut = ctx.Render<CitationStrip>(p => p
             .Add(c => c.Citations, Array.Empty<Citation>()));
 
         // When Citations is empty the strip div is not rendered.
@@ -86,16 +86,16 @@ public sealed class CitationStripTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Group_with_single_citation_does_not_show_disclosure()
+    public async Task Group_with_single_citation_does_not_show_disclosure()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var citations = new List<Citation>
         {
             MakeCitation("sternpinball.com", "Stern Manual", score: 0.80),
         };
 
-        var cut = ctx.RenderComponent<CitationStrip>(p => p
+        var cut = ctx.Render<CitationStrip>(p => p
             .Add(c => c.Citations, citations));
 
         // One group renders.
@@ -112,9 +112,9 @@ public sealed class CitationStripTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Citations_from_same_host_are_grouped()
+    public async Task Citations_from_same_host_are_grouped()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var citations = new List<Citation>
         {
@@ -122,7 +122,7 @@ public sealed class CitationStripTests
             MakeCitation("sternpinball.com", "Manual B", score: 0.70, path: "manual-b"),
         };
 
-        var cut = ctx.RenderComponent<CitationStrip>(p => p
+        var cut = ctx.Render<CitationStrip>(p => p
             .Add(c => c.Citations, citations));
 
         // Both citations from the same host → one group.
