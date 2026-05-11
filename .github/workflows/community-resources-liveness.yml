@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Parse the seed file with jq and probe each URL in sequence.
       # A 1-second sleep between requests is the politeness rate limit —

@@ -34,17 +34,17 @@ jobs:
   lighthouse:
     name: Lighthouse (Performance / Accessibility / SEO)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
       DOTNET_NOLOGO: 'true'
       DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-      # Production environment: uses the Release static web asset manifest so
-      # _content/MudBlazor/MudBlazor.min.css and blazor.web.js are served
-      # correctly. HTTPS redirect and HSTS are NOT in Program.cs — the Azure
-      # Container Apps load balancer handles TLS termination, so the app
-      # safely runs HTTP-only in any environment.
+      # Production environment matches how the app runs on Azure Container Apps.
+      # Static web assets (MudBlazor.min.css, blazor.web.js, _framework/*) are
+      # physically present in the publish output, so no development-time asset
+      # pipeline is needed. UseHttpsRedirection/UseHsts are intentionally absent
+      # (Container Apps LB terminates TLS before traffic reaches the container).
       ASPNETCORE_ENVIRONMENT: Production
       # Bind only to the plain HTTP port — no HTTPS listener needed in CI.
       ASPNETCORE_URLS: 'http://localhost:5000'
@@ -63,7 +63,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
 
@@ -78,22 +78,27 @@ jobs:
       - name: Restore (locked mode)
         run: dotnet restore --locked-mode PinballWizard.slnx
 
-      - name: Build (Release, warnings as errors)
-        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
+      # Publish (not just build) so all static web assets are physically present
+      # in the output directory. dotnet run uses a "Build" manifest that expects
+      # a StaticAssetDevelopmentRuntimeHandler to resolve NuGet package paths at
+      # runtime; those Windows-absolute paths don't exist on Linux CI, causing
+      # HTTP 500 for _content/MudBlazor/MudBlazor.min.css and
+      # _framework/blazor.web.js — the root cause of the NO_FCP Lighthouse
+      # failure. dotnet publish produces a "Publish" manifest with all assets
+      # physically copied under wwwroot/, eliminating the path-resolution problem.
+      - name: Publish (Release)
+        run: >
+          dotnet publish --no-restore --configuration Release
+          src/PinballWizard.Web/PinballWizard.Web.csproj
+          --output /tmp/pwapp
 
-      # Start the Web app in the background. Foundry and Cosmos are not
-      # configured in CI (AiFoundry:ProjectEndpoint is empty, no connection
-      # string present) — both are gated in Program.cs so the app starts
-      # cleanly without them. Public routes (/wizard, /) are [AllowAnonymous]
-      # so no Entra token is required. The AzureAd section has empty strings
-      # which is valid for the Wave 1 skeleton; auth middleware registers but
-      # does not challenge on anonymous-allowed routes.
+      # Start the published app. Foundry and Cosmos are not configured in CI
+      # (AiFoundry:ProjectEndpoint is empty, no connection string present) — both
+      # are gated in Program.cs so the app starts cleanly without them. Public
+      # routes (/wizard, /) are [AllowAnonymous] so no Entra token is required.
       - name: Start web app
         run: |
-          dotnet run \
-            --project src/PinballWizard.Web \
-            --configuration Release \
-            --no-build \
+          dotnet /tmp/pwapp/PinballWizard.Web.dll \
             > /tmp/app.log 2>&1 \
             &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
@@ -142,21 +147,10 @@ jobs:
         run: npm install -g @lhci/cli
 
       - name: Collect Lighthouse reports
-        # continue-on-error: lhci collect fails with NO_FCP when Blazor SSR +
-        # MudBlazor's FOUC prevention CSS hides content until JS initialises in
-        # the headless browser. Scores are unreliable until this is resolved.
-        # The assert + upload steps below still run (if: always()) so whatever
-        # partial data exists is preserved as an artifact for investigation.
         run: lhci collect
-        continue-on-error: true
 
       - name: Assert Lighthouse thresholds
-        # continue-on-error: paired with the collect step above. Threshold
-        # assertions are currently unreliable due to NO_FCP in the headless
-        # browser. Re-enable strict assertion once the Blazor SSR + MudBlazor
-        # FOUC CSS rendering issue is resolved (tracked as a follow-up).
         run: lhci assert
-        continue-on-error: true
 
       - name: Upload Lighthouse reports
         if: always()
