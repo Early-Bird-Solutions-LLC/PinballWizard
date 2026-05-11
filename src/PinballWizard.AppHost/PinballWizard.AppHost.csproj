@@ -35,6 +35,7 @@
     <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.3.0 -->
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
     <PackageReference Include="Aspire.Hosting.Azure.Storage" />
+  <PackageReference Include="Azure.Core" />
   </ItemGroup>
 
 </Project>
