@@ -28,7 +28,7 @@ namespace PinballWizard.Web.Tests.Components.Pages;
 //   - Register IWizardLandingClient (injected by Wizard.razor for slug resolution).
 //   - Assert WizardAnswerStream renders (question input present in Idle state).
 //   - MountsInsideMainLayout asserts the chrome is still in place.
-public sealed class WizardTests : TestContext
+public sealed class WizardTests : AsyncBunitContext
 {
     public WizardTests()
     {
@@ -55,17 +55,17 @@ public sealed class WizardTests : TestContext
         // PR-D-degraded: OutageBanner (in MainLayout) injects IClientDegradationStore.
         Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
-        // bUnit registers FakeNavigationManager automatically. Resolving it
+        // bUnit registers BunitNavigationManager automatically. Resolving it
         // here confirms it is in place for BrandHeader nav links. Note: this
         // call locks the provider so it must come after all AddSingleton calls.
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void Wizard_Renders_WithoutException()
     {
         // Act — mount the Wizard page (now contains WizardAnswerStream).
-        var cut = RenderComponent<WizardPage>();
+        var cut = Render<WizardPage>();
 
         // Assert — WizardAnswerStream renders in Idle state with the question input.
         cut.Find("[data-testid='wizard-answer-stream']");
@@ -79,7 +79,7 @@ public sealed class WizardTests : TestContext
         // This is the layout-aware mount: MainLayout provides the chrome
         // (MudAppBar + BrandHeader + TiltErrorBoundary) that Wizard renders
         // inside when the router selects DefaultLayout = typeof(MainLayout).
-        var cut = RenderComponent<MainLayout>(parameters => parameters
+        var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
                 builder.OpenComponent<WizardPage>(0);

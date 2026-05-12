@@ -19,13 +19,13 @@ namespace PinballWizard.Web.Tests.Components.Pages;
 //
 // Mermaid is injected via HeadContent which bUnit does not execute (no browser);
 // the diagram div is still rendered in the DOM and tested structurally.
-public sealed class AboutTests : TestContext
+public sealed class AboutTests : AsyncBunitContext
 {
     public AboutTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_Renders_WithoutException()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         cut.Find("[data-testid='about-page']");
     }
@@ -47,7 +47,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_Heading_ContainsPinballWizard()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         var heading = cut.Find("[data-testid='about-heading']");
         Assert.Contains("PinballWizard", heading.TextContent, StringComparison.OrdinalIgnoreCase);
@@ -60,7 +60,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_Intro_IsPresent_AndNonEmpty()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         var intro = cut.Find("[data-testid='about-intro']");
         Assert.False(string.IsNullOrWhiteSpace(intro.TextContent),
@@ -74,7 +74,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_DiagramContainer_IsPresent()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         // The diagram wrapper div is always rendered. Mermaid processes the
         // inner .mermaid div client-side (browser only); bUnit confirms the
@@ -90,7 +90,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_TechList_RendersAtLeastFiveItems()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         // MudListItem renders divs, not li elements. Count MudListItem-based
         // cells using the mud-list-item CSS class that MudBlazor emits.
@@ -124,7 +124,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_GitHubLink_PointsToCorrectRepo()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         var link = cut.Find("[data-testid='about-github-link']");
         var href = link.GetAttribute("href");
@@ -142,7 +142,7 @@ public sealed class AboutTests : TestContext
     [Fact]
     public void About_ManufacturerList_IsPresent()
     {
-        var cut = RenderComponent<About>();
+        var cut = Render<About>();
 
         cut.Find("[data-testid='about-manufacturer-list']");
     }

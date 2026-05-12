@@ -15,20 +15,20 @@ namespace PinballWizard.Web.Tests.Components.Degraded;
 //      After dispose, no callback fires (CancellationToken is cancelled).
 //
 // Note on countdown timing:
-//   bUnit's TestContext includes a fake timer infrastructure but does not
+//   bUnit's BunitContext includes a fake timer infrastructure but does not
 //   auto-advance real time. For the countdown-reaches-0 test, we pass
 //   RetryAfterSeconds=0 so the component skips the loop and goes straight
 //   to the "Try again" button — asserting the terminal state directly
 //   without waiting for real elapsed time.
 //
 // ADR-0026 § 5, § 6.
-public sealed class RetryHintTests : TestContext
+public sealed class RetryHintTests : AsyncBunitContext
 {
     public RetryHintTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class RetryHintTests : TestContext
         //
         // Note: OnInitializedAsync begins the countdown loop asynchronously.
         // After the first render, _secondsRemaining == RetryAfterSeconds.
-        var cut = RenderComponent<RetryHint>(parameters =>
+        var cut = Render<RetryHint>(parameters =>
             parameters.Add(p => p.RetryAfterSeconds, 30));
 
         // Assert — countdown text is present on the initial render.
@@ -54,7 +54,7 @@ public sealed class RetryHintTests : TestContext
     public void RetryHint_ShowsTryAgain_Button_WhenCountdownIsZero()
     {
         // Arrange — pass 0 so OnInitializedAsync skips the loop entirely.
-        var cut = RenderComponent<RetryHint>(parameters =>
+        var cut = Render<RetryHint>(parameters =>
             parameters.Add(p => p.RetryAfterSeconds, 0));
 
         // Assert — the "Try again" button is present; countdown text is absent.
@@ -80,13 +80,13 @@ public sealed class RetryHintTests : TestContext
     public void Timer_is_disposed_on_component_dispose()
     {
         // Arrange — large countdown so the Task.Delay loop is alive at dispose.
-        var cut = RenderComponent<RetryHint>(parameters =>
+        var cut = Render<RetryHint>(parameters =>
             parameters.Add(p => p.RetryAfterSeconds, 9999));
 
         // Act — dispose triggers _cts.Cancel() and _cts.Dispose().
         // If the catch in OnInitializedAsync is missing or malformed,
         // the OperationCanceledException propagates as an unobserved
-        // exception — bUnit's TestContext surfaces these as test failures.
+        // exception — bUnit's BunitContext surfaces these as test failures.
         var exception = Record.Exception(() => cut.Instance.Dispose());
 
         // Assert — no exception from the Dispose path.

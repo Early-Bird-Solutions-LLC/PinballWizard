@@ -35,9 +35,9 @@ public sealed class CitationCardTests
             SectionHeading: sectionHeading, SourceType: sourceType,
             LastScrapedUtc: lastScrapedUtc, RelevanceScore: relevanceScore);
 
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -48,12 +48,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Page_anchor_renders_p_42_for_single_page()
+    public async Task Page_anchor_renders_p_42_for_single_page()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(pageStart: 42, pageEnd: null);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var anchor = cut.Find("[data-testid='citation-page-anchor']");
@@ -67,12 +67,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Page_anchor_renders_p_42_to_47_for_range()
+    public async Task Page_anchor_renders_p_42_to_47_for_range()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(pageStart: 42, pageEnd: 47);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var anchor = cut.Find("[data-testid='citation-page-anchor']");
@@ -88,12 +88,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Page_anchor_absent_when_PageStart_is_null()
+    public async Task Page_anchor_absent_when_PageStart_is_null()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(pageStart: null, pageEnd: null);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var anchors = cut.FindAll("[data-testid='citation-page-anchor']");
@@ -105,12 +105,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Section_heading_renders_when_present()
+    public async Task Section_heading_renders_when_present()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(sectionHeading: "Wizard Mode Rules");
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var heading = cut.Find("[data-testid='citation-section-heading']");
@@ -118,12 +118,12 @@ public sealed class CitationCardTests
     }
 
     [Fact]
-    public void Section_heading_absent_when_null()
+    public async Task Section_heading_absent_when_null()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(sectionHeading: null);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var headings = cut.FindAll("[data-testid='citation-section-heading']");
@@ -139,12 +139,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void External_link_has_target_blank_and_rel_noopener_noreferrer()
+    public async Task External_link_has_target_blank_and_rel_noopener_noreferrer()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(sourceUrl: "https://sternpinball.com/manuals/test.pdf");
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var link = cut.Find("[data-testid='citation-source-link']");
@@ -161,12 +161,12 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void High_score_citation_shows_relevance_score_text()
+    public async Task High_score_citation_shows_relevance_score_text()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(relevanceScore: 0.92);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var scoreEl = cut.Find("[data-testid='citation-relevance-score']");
@@ -174,12 +174,12 @@ public sealed class CitationCardTests
     }
 
     [Fact]
-    public void Null_relevance_score_does_not_render_score_element()
+    public async Task Null_relevance_score_does_not_render_score_element()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var citation = BuildCitation(relevanceScore: null);
 
-        var cut = ctx.RenderComponent<CitationCard>(p => p
+        var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var scoreEls = cut.FindAll("[data-testid='citation-relevance-score']");

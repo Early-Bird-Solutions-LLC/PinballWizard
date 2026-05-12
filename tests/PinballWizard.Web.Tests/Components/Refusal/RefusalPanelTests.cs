@@ -13,7 +13,7 @@ namespace PinballWizard.Web.Tests.Components.Refusal;
 // locked delight surface set must have a bUnit smoke test. RefusalPanel is
 // explicitly in the locked delight surfaces per ADR-0026 § 6.
 //
-// Each test creates its own TestContext and registers all services BEFORE
+// Each test creates its own BunitContext and registers all services BEFORE
 // rendering — bUnit locks the service provider on first GetService call.
 //
 // Tests assert behavior (the right per-category subview is visible, shared
@@ -35,13 +35,13 @@ public sealed class RefusalPanelTests
     [InlineData(RefusalCategory.HarmfulContent)]
     public void RefusalPanel_Renders_WithoutException_ForEachCategory(RefusalCategory category)
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var detail = BuildDetail();
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, category)
             .Add(x => x.Detail, detail));
 
@@ -56,11 +56,11 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_OutOfScope_RendersOutOfScopeView_NotInsufficientGroundingView()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, BuildDetail()));
 
@@ -78,11 +78,11 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_InsufficientGrounding_RendersInsufficientGroundingView()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.InsufficientGrounding)
             .Add(x => x.Detail, BuildDetail()));
 
@@ -98,14 +98,14 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_UpstreamThrottled_DoesNotRender_CommunityResourceCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         // Detail carries marketplace resources to verify the panel SUPPRESSES them.
         var detail = BuildDetail(includeMarketplaceResources: true);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.UpstreamThrottled)
             .Add(x => x.Detail, detail));
 
@@ -122,13 +122,13 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_CostCeilingHit_DoesNotRender_CommunityResourceCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var detail = BuildDetail(includeMarketplaceResources: true);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.CostCeilingHit)
             .Add(x => x.Detail, detail));
 
@@ -142,7 +142,7 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_LowConfidence_RendersConfidenceBreakdown_WhenConfidenceNonNull()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -155,7 +155,7 @@ public sealed class RefusalPanelTests
 
         var detail = BuildDetail(confidence: confidence);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.LowModelConfidence)
             .Add(x => x.Detail, detail));
 
@@ -175,7 +175,7 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_LowConfidence_DoesNotRenderConfidenceBreakdown_WhenConfidenceNull()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -187,7 +187,7 @@ public sealed class RefusalPanelTests
             MissingWhat: null,
             SuggestedRephrase: null);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.LowModelConfidence)
             .Add(x => x.Detail, detail));
 
@@ -201,7 +201,7 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_OutOfScope_RendersMissingWhat_WhenProvided()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -214,7 +214,7 @@ public sealed class RefusalPanelTests
             MissingWhat: missingWhat,
             SuggestedRephrase: null);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, detail));
 
@@ -229,7 +229,7 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_OutOfScope_HidesSuggestedRephrase_WhenNull()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -240,7 +240,7 @@ public sealed class RefusalPanelTests
             MissingWhat: null,
             SuggestedRephrase: null); // explicitly null
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, detail));
 
@@ -255,7 +255,7 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_OutOfScope_RendersSuggestedRephrase_WhenProvided()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -268,7 +268,7 @@ public sealed class RefusalPanelTests
             MissingWhat: null,
             SuggestedRephrase: rephrase);
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, detail));
 
@@ -283,11 +283,11 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_UpstreamThrottled_RendersRetryHint_WithSeconds()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.UpstreamThrottled)
             .Add(x => x.Detail, null)
             .Add(x => x.RetryAfterSeconds, 30));
@@ -305,11 +305,11 @@ public sealed class RefusalPanelTests
     [Fact]
     public void RefusalPanel_NullDetail_RendersWithoutException()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<RefusalPanel>(p => p
+        var cut = ctx.Render<RefusalPanel>(p => p
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, null));
 

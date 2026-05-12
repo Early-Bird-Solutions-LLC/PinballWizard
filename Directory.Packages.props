@@ -119,14 +119,12 @@
   </ItemGroup>
 
   <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
-    <PackageVersion Include="bunit" Version="1.37.7" />
+    <PackageVersion Include="bunit" Version="2.7.2" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <!--
       System.Security.Cryptography.Xml 9.0.0 has two high-severity vulns
-      (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf). Pulled transitively by
-      bunit via AngleSharp.Css / Microsoft.AspNetCore.Components.Testing.
-      Direct-pin to 10.0.0 to satisfy TreatWarningsAsErrors + NU1903.
-      Remove this pin once bunit ships a release that depends on >= 10.x.
+      (GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf). Still pulled transitively
+      by bunit 2.x. Direct-pin to safe version.
     -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.7" />
     <!--

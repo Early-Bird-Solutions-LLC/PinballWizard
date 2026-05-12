@@ -21,7 +21,7 @@ namespace PinballWizard.Web.Tests.Components.Wizard;
 // § 5 load-bearing UX rule — after a Refusal chunk arrives, prior streamed
 // text is NOT visible in the DOM.
 //
-// Each test creates its own TestContext and registers services BEFORE rendering.
+// Each test creates its own BunitContext and registers services BEFORE rendering.
 // NSubstitute fakes provide IAsyncEnumerable<AnswerChunk> without spinning up a
 // real HTTP server or Foundry endpoint.
 public sealed class WizardAnswerStreamTests
@@ -30,9 +30,9 @@ public sealed class WizardAnswerStreamTests
     // Helpers
     // ──────────────────────────────────────────────────────────────────────
 
-    private static TestContext BuildCtx(IWizardStreamingClient? client = null)
+    private static BunitContext BuildCtx(IWizardStreamingClient? client = null)
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddSingleton(client ?? Substitute.For<IWizardStreamingClient>());
@@ -93,11 +93,11 @@ public sealed class WizardAnswerStreamTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Idle_state_renders_input_only()
+    public async Task Idle_state_renders_input_only()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
-        var cut = ctx.RenderComponent<WizardAnswerStream>();
+        var cut = ctx.Render<WizardAnswerStream>();
 
         // In Idle state the question input is present.
         cut.Find("[data-testid='question-input']");
@@ -123,8 +123,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => NeverYieldsAsync());
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>();
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>();
 
         // Find the input and set its value, then click Ask.
         // bUnit cannot simulate keyboard input directly into MudTextField,
@@ -134,7 +134,7 @@ public sealed class WizardAnswerStreamTests
         // The thinking indicator should appear once the component is in
         // Submitted state. We assert immediately after the submit action
         // (before any async chunk arrives) using WaitForAssertion.
-        cut.SetParametersAndRender(p => p.Add(c => c.Question, "Test question"));
+        cut.Render(p => p.Add(c => c.Question, "Test question"));
 
         cut.WaitForAssertion(
             () => cut.Find("[data-testid='wizard-thinking-indicator']"),
@@ -170,8 +170,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Tell me about Godzilla"));
 
         // Wait for all 3 TextDelta texts to appear in the rendered output.
@@ -228,8 +228,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Tell me about basketball"));
 
         // Wait for RefusalPanel to appear.
@@ -274,8 +274,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "What is the Godzilla mode?"));
 
         // Wait for the canonical text to appear.
@@ -316,8 +316,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Godzilla mode details"));
 
         // Wait for Final to land — the token renderer appears with the canonical text.
@@ -377,8 +377,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Citations test"));
 
         // Wait for Final to land and the canonical citations to appear.
@@ -420,8 +420,8 @@ public sealed class WizardAnswerStreamTests
                     : ToAsyncEnumerable([new AnswerChunk.Final(fallbackAnswer)]);
             });
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Exception test question"));
 
         // The fallback path eventually renders the fallback answer text.
@@ -465,8 +465,8 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
 
-        using var ctx = BuildCtx(client);
-        var cut = ctx.RenderComponent<WizardAnswerStream>(p =>
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
             p.Add(c => c.Question, "Tool call test question"));
 
         // After Final, the tool call is complete and the breadcrumb must be hidden.

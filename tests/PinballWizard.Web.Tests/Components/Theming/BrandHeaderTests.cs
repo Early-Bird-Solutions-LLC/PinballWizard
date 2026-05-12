@@ -13,19 +13,19 @@ namespace PinballWizard.Web.Tests.Components.Theming;
 // audit at docs/PHASE5-DRIFT-AUDIT.md § 3 caught this drift on Wave 1
 // (4-link nav read as generic SaaS); without a structural test the next
 // "let's add a link" edit will quietly re-introduce the same drift.
-public sealed class BrandHeaderTests : TestContext
+public sealed class BrandHeaderTests : AsyncBunitContext
 {
     public BrandHeaderTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void BrandHeader_RendersExactlyTwoAnchors_BrandAndWhatWeCover()
     {
-        var cut = RenderComponent<BrandHeader>();
+        var cut = Render<BrandHeader>();
 
         var anchors = cut.FindAll("a");
         Assert.Equal(2, anchors.Count);
@@ -34,7 +34,7 @@ public sealed class BrandHeaderTests : TestContext
     [Fact]
     public void BrandHeader_BrandMark_LinksToRoot()
     {
-        var cut = RenderComponent<BrandHeader>();
+        var cut = Render<BrandHeader>();
 
         var brandLink = cut.Find("a.brand-logo");
         Assert.Equal("/", brandLink.GetAttribute("href"));
@@ -49,7 +49,7 @@ public sealed class BrandHeaderTests : TestContext
     [Fact]
     public void BrandHeader_NavLink_LinksToAbout_WithWhatWeCoverLabel()
     {
-        var cut = RenderComponent<BrandHeader>();
+        var cut = Render<BrandHeader>();
 
         // The single nav link sits inside the <nav aria-label="Main navigation"> region.
         var navAnchor = cut.Find("nav[aria-label='Main navigation'] a");
@@ -64,7 +64,7 @@ public sealed class BrandHeaderTests : TestContext
         // The audit moved /status to the footer (handled by BrandFooter) and
         // dropped Home + Wizard as redundant. Mechanically pin the absence so
         // a future "let's add Status back to the header" edit fails this test.
-        var cut = RenderComponent<BrandHeader>();
+        var cut = Render<BrandHeader>();
 
         var hrefs = cut.FindAll("a")
             .Select(a => a.GetAttribute("href"))
