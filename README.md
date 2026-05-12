@@ -14,7 +14,7 @@ Every architectural decision is justified in an [ADR](docs/adr/). Every PR clear
 
 ## Live demo
 
-> 🚧 **In development.** The public Wizard at `pinwiz.ai` ships with Phase 5 (Blazor + MudBlazor frontend). Until then, this repository and its [documentation tree](#documentation-map) is the showcase artifact. See [`docs/vision.md`](docs/vision.md) for the full prospect-facing positioning.
+Phase 5 code is complete and the application is fully deployable. The public `pinwiz.ai` URL goes live after the Phase 6 operator H-chain completes (Bicep apply with all Phase 6 resources, Application Insights workbook wired to live telemetry, alert rules validated end-to-end). Until then, this repository and its [documentation tree](#documentation-map) is the showcase artifact. See [`docs/vision.md`](docs/vision.md) for the full prospect-facing positioning.
 
 ## Architecture at a glance
 
@@ -24,40 +24,43 @@ graph TB
     OPDB(OPDB API)
     Scrapers[Polite scrapers]
     Cosmos[(Cosmos DB)]
-    Func[Change Feed Function]
+    Worker[RAG Ingestion Worker]
     Search[(AI Search Basic)]
-    Wizard[Wizard router]
-    UI[Blazor + MudBlazor]
+    Api[Wizard API]
+    Web[Blazor + MudBlazor]
     CF(Cloudflare Pro edge)
     Site([pinwiz.ai])
+    Admin[Admin control plane]
+    Entra(Entra External ID)
 
     Mfg --> Scrapers
     OPDB --> Scrapers
     Scrapers --> Cosmos
-    Cosmos -->|Change Feed| Func
-    Func --> Search
-    Cosmos --> Wizard
-    Search --> Wizard
-    Wizard --> UI
-    UI --> CF
+    Cosmos -->|Change Feed| Worker
+    Worker --> Search
+    Cosmos --> Api
+    Search --> Api
+    Api --> Web
+    Web --> CF
     CF --> Site
+    Entra --> Admin
+    Admin --> Web
 ```
 
-Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines` and `ingestion_sources`; the Change Feed Function does PdfPig extraction + chunking + embedding into AI Search (hybrid + semantic ranker). The Wizard router (Semantic Kernel + sub-agents + threshold-driven refusal) drives the Blazor + MudBlazor chat surface with source citations and admin RBAC via Entra External ID. Cloudflare Pro provides DNS + CDN + WAF + Bot Fight.
-
-Phase 1 (scrapers + Cosmos persistence + Aspire foundation + ARM-backed deploy) is complete and validated end-to-end against deployed Azure infrastructure. Phases 2–6 are scaffolded in [`docs/build-spec.md`](docs/build-spec.md) with concrete exit criteria.
+Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines`, `ingestion_sources`, and RAG-state containers; the RAG Ingestion Worker (`PinballWizard.RagIngestionWorker`) consumes the Cosmos Change Feed, runs PdfPig text extraction, hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)), and embeds into AI Search ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)). The Wizard API (Microsoft Agent Framework + Azure Foundry orchestration, [ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) runs four agents — Wizard, Valuation, Rules, Repair — with `getMachineByTitle` + `searchCorpus` function tools, per-agent cost routing ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)), confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)), and two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)). The Blazor Web App ([ADR-0026](docs/adr/0026-user-delight-frontend-and-streaming.md)) streams answers over SSE with source citations and community-resource refusal panels; admin RBAC is gated by Entra External ID ([ADR-0009](docs/adr/0009-entra-external-id-admin-rbac-v1.md)). Cloudflare Pro provides DNS + CDN + WAF + Bot Fight. Phase 6 adds the Application Insights workbook, five metric alert rules, and the Wizard ACA app definition in Bicep.
 
 ## What this demonstrates
 
 Capabilities verifiable directly in this repository:
 
-- **Cloud-native architecture (Azure + .NET Aspire)** — Container Apps, Cosmos Serverless, AI Search Basic, Azure OpenAI, Functions on Cosmos Change Feed; Aspire-orchestrated local dev mirroring production
-- **AI engineering** — RAG with provenance-preserving chunking, hybrid (semantic + keyword) search, threshold-driven refusal, sub-agent routing, evaluation harness with held-out queries and citation-accuracy scoring
-- **Clean Architecture and engineering discipline** — Core / Application / Infrastructure / Web layering enforced by architecture fitness tests; ADRs for non-obvious decisions; behavior-asserting test culture validated by mutation testing
-- **Identity, access, and admin separation** — Microsoft Entra External ID with admin RBAC from day one; social-login federations (Google / Apple / Discord) for end-user features when those features ship
-- **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction; OpenTelemetry; defined SLOs; runbooks; periodic disaster-recovery drills
-- **Polite integration with external systems** — `robots.txt` honored unconditionally; machine-consumer metadata (OG / JSON-LD / sitemap) preferred over DOM scraping; identifying User-Agents; traffic-attribution telemetry
-- **Cost discipline** — $300–$400/month steady-state cap with cost-per-feature attribution
+- **Cloud-native architecture (Azure + .NET Aspire)** — Container Apps (Wizard app + RAG Ingestion Worker), Cosmos Serverless, AI Search Basic, Azure OpenAI / Microsoft Foundry, Application Insights; Aspire-orchestrated local dev mirroring production topology
+- **AI engineering** — Event-driven RAG (Cosmos Change Feed → PdfPig → hybrid chunking → AI Search); Microsoft Agent Framework four-agent surface with function tools; two-stage re-ranking; LRU semantic cache; per-agent cost ceiling; threshold-driven refusal; evaluation harness (Foundry `EvaluationClient`) with citation-precision baseline
+- **Real-time streaming UI** — Blazor Web App (auto-render mode) with Server-Sent Events answer streaming; MudBlazor chrome + five theme variants (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips with provenance metadata; community-resource refusal panels meeting ADR-0027 plurality thresholds
+- **Clean Architecture and engineering discipline** — Core / Application / Infrastructure / Web / Api layering enforced by architecture fitness tests; 27 ADRs for non-obvious decisions; behavior-asserting test culture; zero-warning build under `TreatWarningsAsErrors`
+- **Identity, access, and admin separation** — Microsoft Entra External ID with blanket `FallbackPolicy` (auth required by default); admin RBAC from day one; structural `/admin` control plane (AdminDashboard, AdminMachines, AdminSources)
+- **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)); OpenTelemetry throughout; Application Insights workbook (7 tiles); 5 metric alert rules; 6 operational runbooks; H-chain operator procedures
+- **Polite integration with external systems** — `robots.txt` honored unconditionally; machine-consumer metadata (OG / JSON-LD / sitemap) preferred over DOM scraping; identifying User-Agents; `IPolitenessGate` enforced at every outbound HTTP call
+- **Cost discipline** — $300–$400/month steady-state cap with cost-per-feature attribution; per-call LLM cost ceiling (ADR-0015)
 
 ## Documentation map
 
@@ -67,10 +70,12 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | --- | --- |
 | [`docs/vision.md`](docs/vision.md) | What's being built and why; how prospects encounter the project; what this is *not* |
 | [`docs/guardrails.md`](docs/guardrails.md) | Meta-spec — seven main goals, scope discipline, decision framework, phase gates, risk register, escalation triggers, monthly self-evaluation |
-| [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria; Phase 0/1 retrospectives; Phase 2 fully spec'd; Phases 3–7+ scaffolded |
+| [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria and retrospectives; Phases 0–5 closed; Phase 6 current |
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0018 committed) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0027 committed) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
+| [`docs/runbooks/`](docs/runbooks/) | Operational runbooks (incident response, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation, source-site outage) |
+| [`docs/observability.md`](docs/observability.md) | OTel instrument catalogue — scraper, RAG, AI orchestration, and user-delight instruments |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
 
 ## Project status
@@ -79,37 +84,39 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | --- | --- | --- |
 | 0 — Foundation (Clean Architecture + IaC + Aspire + Cosmos provisioning) | ✅ Complete | Deployed to personal Earlybird Azure subscription; smoke-test passes end-to-end via `ArmCosmosProvisioner` |
 | 1 — Content ingestion pipeline (8 manufacturers + OPDB) | ✅ Complete | 10 `ISourceScraper` implementations; polite-by-construction; shared JSON-LD + Open Graph parsers; family-wide test infra |
-| 2 — Runtime validation | ✅ Complete | ADRs 0012/0013 promoted, `ingestion_sources` seeded, OPDB sync against deployed Cosmos populated 2,154 base machines + 165 alias-editions, OTel groundwork, work-email denylist, Playwright 1.59 bump, Dependabot triage, Stern Playwright asymmetry documented |
-| 3 — AI & Integration layer | ✅ Complete | Microsoft Foundry orchestration ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) on `Microsoft.Agents.AI` 1.4.0 GA; four-agent surface (Wizard / Valuation / Rules / Repair) with `getMachineByTitle` function tool; confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)); cost routing + LRU semantic cache ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)); evaluation harness via Foundry `EvaluationClient` ([ADR-0016](docs/adr/0016-evaluation-harness.md)); H2 baseline captured. See [Phase 3 known limitations](#phase-3--current-capability-honest-read) for what's scaffolded vs. fully wired |
-| 4 — Event-driven RAG | ⏳ Not started | Cosmos Change Feed Function → PdfPig → chunking → embedding → AI Search index + facets |
-| 5 — Blazor + MudBlazor frontend | ⏳ Not started | Public Wizard chat, faceted browse, admin control plane, Entra auth, traffic-attribution middleware |
-| 6 — Operability + launch readiness | ⏳ Not started | SLOs, dashboards, runbooks, DR drill, threat model, accessibility audit, performance audit |
+| 2 — Runtime validation | ✅ Complete | ADRs 0012/0013 promoted; `ingestion_sources` seeded; OPDB sync against deployed Cosmos populated 2,154 base machines + 165 alias-editions; OTel groundwork; work-email denylist; Playwright 1.59 bump |
+| 3 — AI & Integration layer | ✅ Complete | Microsoft Foundry orchestration ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)); four-agent surface with `getMachineByTitle`; confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)); per-agent cost routing + LRU semantic cache ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)); evaluation harness via Foundry `EvaluationClient` ([ADR-0016](docs/adr/0016-evaluation-harness.md)); H2 baseline captured |
+| 4 — Event-driven RAG | ✅ Complete | Cosmos Change Feed → `PinballWizard.RagIngestionWorker` → PdfPig text extraction → hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)) → text-embedding-3-large ([ADR-0020](docs/adr/0020-embedding-model.md)) → AI Search index ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)); `searchCorpus` function tool with tool-call-trace citation extraction ([ADR-0022](docs/adr/0022-citation-extraction.md)); citation-required guardrail ([ADR-0023](docs/adr/0023-citation-required-guardrail.md)); two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)); connected-agents dispatch wired |
+| 5 — Blazor + MudBlazor frontend | ✅ Complete | Blazor Web App (auto-render mode) + SSE streaming answer surface; five themes (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips; community-resource refusal panels ([ADR-0027](docs/adr/0027-community-resource-posture.md)); Entra External ID auth + blanket `FallbackPolicy`; `/admin` control plane skeleton (AdminDashboard, AdminMachines, AdminSources); axe-core CI; Lighthouse CI; Cosmos for user-delight containers ([ADR-0025](docs/adr/0025-cosmos-for-user-delight.md)) |
+| 6 — Operability + launch readiness | 🚧 In progress | **Wave 1 complete:** 6 operational runbooks; Application Insights workbook (7 tiles); 5 metric alert rules; Wizard ACA app in Bicep; threat model; blanket auth `FallbackPolicy`. Wave 2 + H-chain operator procedures pending |
 | 7+ — Post-launch features | ⏳ Deferred | Strategy Tracker, OCR score capture, Dream Game generator |
 
-**Tests:** 687 passing across foundation + scrapers + Cosmos + OPDB integration + Foundry orchestration + evaluation harness. Build runs clean with `TreatWarningsAsErrors`.
+**Tests:** 1,564 passing across foundation + scrapers + Cosmos + OPDB + Foundry orchestration + RAG pipeline + Web (bUnit + Playwright + endpoint). Build runs clean with `TreatWarningsAsErrors`.
 
-### Phase 3 — current capability honest read
+### Known limitations v1
 
-Phase 3 closed operationally on 2026-05-07 ([PR #93](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/93)) with the Wizard answering end-to-end against deployed Foundry. The H2 evaluation baseline ([`data/eval/results/wizard.20260507T162529Z.json`](data/eval/results/wizard.20260507T162529Z.json)) surfaced three gaps that Phase 4 inherits as its first scope items:
+Phase 5 is code-complete and the application is fully deployable. The following limitations are accurate as of Phase 6 Wave 1:
 
-- **Connected-agents dispatch is scaffolded, not wired.** The Wizard prompt routes classification questions to Valuation / Rules / Repair sub-agents, but the structural dispatch primitive isn't in place yet — the agent either calls `getMachineByTitle` directly or refuses with its own OutOfScope text. Sub-agent routing as a *runtime mechanism* lands in Phase 4.
-- **Citation precision is the regression-detection floor, not absolute performance.** H2 baseline scored `citation_precision = 0.133`. The metric is floored by two upstream gaps: (a) citations are extracted by regexing OPDB URLs out of the agent's response prose (a Phase 3 placeholder; tool-call-trace inspection replaces it in Phase 4), and (b) eval ground-truth OPDB IDs were curated from machine titles rather than verified against the deployed catalog. Both are Phase 4 scope.
-- **RAG corpus ships in Phase 4.** Phase 3 grounds against the OPDB catalog only. Manuals / bulletins / rules-text retrieval lands when the Cosmos Change Feed → PdfPig → chunking → AI Search index pipeline ships in Phase 4.
-
-Threshold-driven refusal (ADR-0017's draft 0.65) and the evaluation harness itself ARE shipped and exercised. The full retrospective lives at [`docs/build-spec.md`](docs/build-spec.md) § Phase 3 § Retrospective.
+- **RAG corpus is a curated subset.** The AI Search index currently covers approximately 10 machines from the evaluation harness fixture set. Coverage expands as the scraper pipeline runs at scale against deployed Cosmos and the Change Feed worker processes the full `scraped_documents` backlog — this is a Phase 4.5 operator action, not a code gap.
+- **Cost attribution reads zero until upstream is resolved.** The `pinwiz.ai.cost_usd_cents` OTel instrument emits 0 because the Microsoft Agent Framework does not yet expose per-call token consumption in a consumable API surface (tracked upstream as issue #2688). Azure Cost Management is the authoritative budget signal for the $300–$400/mo cap until that issue resolves.
+- **Lighthouse CI measures the test environment.** The CI pipeline runs Lighthouse against the locally-served Blazor app. Live-surface Lighthouse validation (Core Web Vitals, TTI, LCP from the real Cloudflare-fronted edge) is a Phase 6 H-chain gate item that runs after `pinwiz.ai` goes live.
+- **`/admin` pages are structural placeholders.** AdminDashboard, AdminMachines, and AdminSources render with the correct auth guards and chrome; the backing data queries (ingestion health, source-site status, machine catalog browsing) land in Phase 7.
 
 ## Tech stack
 
 - **.NET 10 / C# 14**, `Directory.Build.props` enforcing zero warnings as errors
 - **.NET Aspire 13.2** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
-- **Azure** — Cosmos DB Serverless, AI Search Basic, Azure OpenAI, Container Apps, Container Registry, Storage, Key Vault, Application Insights, Log Analytics
+- **Azure** — Cosmos DB Serverless, AI Search Basic, Azure OpenAI / Microsoft Foundry, Container Apps, Container Registry, Storage, Key Vault, Application Insights, Log Analytics
 - **Microsoft.Azure.Cosmos** (data-plane SDK) + **Azure.ResourceManager.CosmosDB** (ARM SDK) — split per [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md): schema CRUD via ARM, item CRUD via data-plane SDK
+- **Microsoft Agent Framework (`Microsoft.Agents.AI` 1.4.0)** — Responses Agent pattern; `AIProjectClient.AsAIAgent`; OTel auto-emission
+- **MudBlazor** — strict mode per [ADR-0008](docs/adr/0008-mudblazor-strict.md); five theme variants
 - **[Microsoft.Playwright](https://playwright.dev/dotnet/)** — browser automation for Vue.js scraper targets
 - **[AngleSharp](https://anglesharp.github.io/)** — HTML parsing for static pages
+- **[PdfPig](https://uglytoad.github.io/PdfPig/)** — text extraction for PDF manuals and bulletins
 - **[System.CommandLine](https://learn.microsoft.com/en-us/dotnet/standard/commandline/)** — CLI surface
-- **xUnit + NSubstitute** — testing
+- **xUnit + NSubstitute + bUnit** — testing (bUnit 2.x for Razor component tests)
 - **Bicep** — infrastructure as code, two-tier deploy gating per [ADR-0013](docs/adr/0013-two-tier-bicep-deploy.md)
-- **Cloudflare Pro** (Phase 5+) — DNS + CDN + managed WAF + Bot Fight + DDoS
+- **Cloudflare Pro** — DNS + CDN + managed WAF + Bot Fight + DDoS
 
 ## Quickstart
 
@@ -127,7 +134,7 @@ For end-to-end local development with Cosmos and Azurite emulators, see the next
 
 ## Local development with .NET Aspire
 
-For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides) and Azurite-backed blob storage (used by Phase 4 RAG ingestion), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
+For end-to-end local dev with Cosmos persistence (required for OPDB sync and per-source politeness overrides) and Azurite-backed blob storage (used by the RAG ingestion worker), spin up the [`PinballWizard.AppHost`](src/PinballWizard.AppHost/) orchestrator:
 
 ```pwsh
 # Start the Cosmos preview emulator + Azurite + Aspire dashboard
@@ -154,7 +161,7 @@ When the CLI is run without `ConnectionStrings:cosmos` / `Cosmos:AccountEndpoint
 
 ### Running against deployed Cosmos
 
-When the CLI authenticates to a deployed Cosmos account via Managed Identity (or, in dev, your own `az login` token via `DefaultAzureCredential`), schema bootstrap (`--ensure-cosmos-containers`) goes through Azure Resource Manager — Cosmos's data-plane RBAC genuinely does not model schema-mutation actions, regardless of role definition (full rationale will live at [`docs/adr/0012-cosmos-arm-schema-data-plane-items.md`](docs/adr/0012-cosmos-arm-schema-data-plane-items.md) when Phase 2 ships it). Set both env vars:
+When the CLI authenticates to a deployed Cosmos account via Managed Identity (or, in dev, your own `az login` token via `DefaultAzureCredential`), schema bootstrap (`--ensure-cosmos-containers`) goes through Azure Resource Manager — Cosmos's data-plane RBAC genuinely does not model schema-mutation actions, regardless of role definition (full rationale at [`docs/adr/0012-cosmos-arm-schema-data-plane-items.md`](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)). Set both env vars:
 
 ```pwsh
 $env:Cosmos__AccountEndpoint   = az cosmosdb show -n <account> -g <rg> --query documentEndpoint -o tsv
@@ -167,30 +174,31 @@ dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers
 
 > ⚠️ **Run via PowerShell, not Git-Bash, for `Cosmos__AccountResourceId`.** Git-Bash's MSYS path translation rewrites the leading `/subscriptions/...` to `C:/Program Files/Git/subscriptions/...`. The friendly-error guard in `ArmCosmosProvisioner` catches this with a clean remediation message, but PowerShell avoids the trip-up entirely.
 
-## Azure deploy — two-tier (Phase 1 / Phase 2)
+## Azure deploy — two-tier (Phase 1 / Phase 2+)
 
-The Bicep at [`infra/main-shared.bicep`](infra/main-shared.bicep) accepts a `deployPhase2 bool = false` parameter that gates everything beyond the Phase 1 minimum (rationale will live at [`docs/adr/0013-two-tier-bicep-deploy.md`](docs/adr/0013-two-tier-bicep-deploy.md) when Phase 2 ships it):
+The Bicep at [`infra/main-shared.bicep`](infra/main-shared.bicep) accepts a `deployPhase2 bool = false` parameter that gates everything beyond the Phase 1 minimum (full rationale at [`docs/adr/0013-two-tier-bicep-deploy.md`](docs/adr/0013-two-tier-bicep-deploy.md)):
 
-| Phase 1 (default — `deployPhase2 = false`) | Phase 2 (set `deployPhase2 = true` when needed) |
+| Phase 1 (default — `deployPhase2 = false`) | Phase 2+ (set `deployPhase2 = true`) |
 | --- | --- |
-| Cosmos DB Serverless (NoSQL API) | App Insights |
+| Cosmos DB Serverless (NoSQL API) | App Insights + Application Insights workbook (7 tiles) |
 | Log Analytics workspace | Key Vault |
 | Cosmos diagnostic settings → Log Analytics | Container Registry (Basic) |
 | Resource group | AI Search Basic |
 | | Azure OpenAI (S0) |
 | | Storage (LRS) + 3 blob containers (`pinwiz-raw` / `pinwiz-processed` / `pinwiz-photos`) |
+| | Wizard ACA app + ACA environment |
+| | RAG Ingestion Worker ACA Job |
+| | 5 metric alert rules (latency p95, 5xx rate, cost anomaly, dead letters, availability) |
 | | Diagnostic settings + developer RBAC for the above |
 
-Phase 1 spend: **~$30/mo** (Cosmos serverless idle + Log Analytics 1 GB cap). Phase 2 brings the platform to ~$150/mo even when idle — provisioned only when consuming features land.
+Phase 1 spend: **~$30/mo** (Cosmos serverless idle + Log Analytics 1 GB cap). Phase 2+ brings the platform to **~$150/mo** even when idle.
 
 ```pwsh
 pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev -WhatIf
 pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
 ```
 
-When Phase 2 features start landing, set `deployPhase2 = true` in [`infra/main-shared.dev.bicepparam`](infra/main-shared.dev.bicepparam) (or the `.local.` override) and re-deploy. Phase 1 resources are unchanged; Phase 2 resources are added in-place.
-
-> ⚠️ **The `deployPhase2` toggle is one-way safe.** Flipping `true → false` on an *existing* Phase 2 deploy will **delete** the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable, but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. To test the Phase 1 baseline against a populated Phase 2 deploy, use a separate environment (e.g., `-Environment dev2`) rather than toggling the existing one.
+> ⚠️ **The `deployPhase2` toggle is one-way safe.** Flipping `true → false` on an *existing* Phase 2 deploy will **delete** the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable, but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment (e.g., `-Environment dev2`) rather than toggling the existing one.
 
 ## CLI flags
 
@@ -215,31 +223,35 @@ Default behavior (no action flag) is `--scrape-only` followed by `--download`.
 src/
 ├── PinballWizard.Core            ← Domain entities; ISourceScraper; no external deps
 ├── PinballWizard.Application     ← Orchestration; ScraperOrchestrator; no infra refs
-├── PinballWizard.Infrastructure  ← Scraping (per manufacturer), Persistence (Cosmos), Integrations (OPDB)
+├── PinballWizard.Infrastructure  ← Scraping (per manufacturer), Persistence (Cosmos), Integrations (OPDB, AI Search)
 ├── PinballWizard.Cli             ← Entry point; conditional Aspire + Cosmos + OPDB DI gating
+├── PinballWizard.Api             ← Wizard API — SSE streaming endpoint + Microsoft Agent Framework wiring
+├── PinballWizard.Web             ← Blazor Web App (auto-render mode) — chat surface, themes, admin pages
+├── PinballWizard.Web.Client      ← Blazor WASM client project (interactive components)
+├── PinballWizard.RagIngestionWorker ← Cosmos Change Feed worker — PdfPig, chunking, embedding, AI Search
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← OTel + service discovery + HTTP resilience + health checks
 tests/
-└── PinballWizard.Scraper.Tests   ← Single test project — 687 tests covering scrapers, Cosmos, OPDB, Foundry, evaluators, contract tests
+├── PinballWizard.Scraper.Tests   ← Phase 1–4 + AI orchestration tests (scrapers, Cosmos, OPDB, Foundry, evaluators, contract)
+└── PinballWizard.Web.Tests       ← Phase 5 Web tests (bUnit component tests, Playwright E2E, endpoint tests)
 docs/
-├── vision.md / guardrails.md / build-spec.md / quality-spec.md
-├── adr/ (0001–0018)
+├── vision.md / guardrails.md / build-spec.md / quality-spec.md / observability.md
+├── adr/ (0001–0027)
 ├── decision-log.md
-├── scraper_plan_v4.md (Phase 1 historical design)
-├── infra_analysis.md (Azure infra plan)
-└── ai_ml_ideas.md / dream_game_concept.md / strategy_tracker_concept.md (Phase 7+ concepts)
+├── runbooks/ (01–06 + h-chain-operator-runbook)
+├── ui/ (prototypes, screen specs, theme specs)
+└── scraper_plan_v4.md / infra_analysis.md / architecture-v2.md (reference / forward direction)
 infra/
 ├── main-shared.bicep (two-tier deploy)
-├── modules/ (Cosmos, AI Search, OpenAI, etc.)
+├── modules/shared.bicep
+├── dashboards/pinwiz-ops-workbook.json
 └── scripts/Deploy-SharedResources.ps1
 ```
 
 ## Deploy targets
 
 - **Local dev** — `pwsh ./start-apphost.ps1` brings up the Aspire orchestrator (Cosmos preview emulator + Azurite for blob storage), and the CLI auto-detects the emulator via `ConnectionStrings:cosmos`. See [Local development with .NET Aspire](#local-development-with-net-aspire) above.
-- **Production** — Azure Container Apps. Each manufacturer scraper runs as an ACA Job on its own per-origin schedule (politeness is per-origin); the Wizard chat surface runs as an ACA App. Deploy via [`infra/scripts/Deploy-SharedResources.ps1`](infra/scripts/Deploy-SharedResources.ps1) — see [Azure deploy — two-tier (Phase 1 / Phase 2)](#azure-deploy--two-tier-phase-1--phase-2) above. Phase 2 architecture decisions (ACA + AI Search Basic + Cosmos Serverless + Cloudflare Pro) are locked in [`docs/build-spec.md`](docs/build-spec.md) § Phase 2 and the project's memory record.
-
-The original Phase 1 design called for a self-hosted Docker container with cron-driven scraping. That design was superseded when Phase 2 architecture decisions pivoted to Azure Container Apps, where ACA Jobs replace cron and per-Job scaling replaces in-container concurrency. The Phase 1 historical design lives at [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) for reference.
+- **Production** — Azure Container Apps. The Wizard chat surface and API run as an ACA App; each manufacturer scraper runs as an ACA Job on its own per-origin schedule (politeness is per-origin); the RAG Ingestion Worker runs as a Change Feed-triggered ACA Job. Deploy via [`infra/scripts/Deploy-SharedResources.ps1`](infra/scripts/Deploy-SharedResources.ps1) — see [Azure deploy — two-tier (Phase 1 / Phase 2+)](#azure-deploy--two-tier-phase-1--phase-2) above.
 
 ## Contributing
 
