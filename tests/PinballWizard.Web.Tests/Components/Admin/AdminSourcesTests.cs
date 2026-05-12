@@ -11,26 +11,26 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 //
 // Per ADR-0026 PR self-audit item 9(d): every Razor component must have a
 // bUnit smoke test. AdminSources is behind [Authorize]; tests run with
-// AddTestAuthorization() set to authenticated.
+// AddAuthorization() set to authenticated.
 //
 // The grid binds to an empty list, so the "No sources configured" empty-state
 // is the expected render. Tests assert the grid sentinel and empty-state text
 // are present — this is a behavioral assertion: "grid with empty data shows
 // the empty state" fires the actual empty-state code path.
-public sealed class AdminSourcesTests : TestContext
+public sealed class AdminSourcesTests : AsyncBunitContext
 {
     public AdminSourcesTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        this.AddTestAuthorization().SetAuthorized("test-admin@example.com");
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void AdminSources_Renders_WithoutThrowing()
     {
-        var cut = RenderComponent<AdminSources>();
+        var cut = Render<AdminSources>();
 
         Assert.NotNull(cut.Markup);
     }
@@ -38,7 +38,7 @@ public sealed class AdminSourcesTests : TestContext
     [Fact]
     public void AdminSources_Renders_DataGridSentinel()
     {
-        var cut = RenderComponent<AdminSources>();
+        var cut = Render<AdminSources>();
 
         // The MudDataGrid wrapper element carries data-testid.
         var grid = cut.Find("[data-testid='admin-sources-grid']");
@@ -48,7 +48,7 @@ public sealed class AdminSourcesTests : TestContext
     [Fact]
     public void AdminSources_EmptyList_RendersNoSourcesConfiguredMessage()
     {
-        var cut = RenderComponent<AdminSources>();
+        var cut = Render<AdminSources>();
 
         // Behavioral assertion: empty-list path renders the "No sources configured"
         // empty-state content defined in <NoRecordsContent>.
@@ -59,7 +59,7 @@ public sealed class AdminSourcesTests : TestContext
     [Fact]
     public void AdminSources_Breadcrumb_ContainsAdminRoot()
     {
-        var cut = RenderComponent<AdminSources>();
+        var cut = Render<AdminSources>();
 
         // Breadcrumb trail includes a link back to /admin.
         var adminLink = cut.Find("a[href='/admin']");

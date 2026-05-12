@@ -23,9 +23,9 @@ namespace PinballWizard.Web.Tests.Components.Wizard;
 //      target them; we assert the data-testid and the class structure.
 public sealed class WizardThinkingIndicatorTests
 {
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -39,7 +39,7 @@ public sealed class WizardThinkingIndicatorTests
     public void Renders_with_aria_role_status_and_accessible_label()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<WizardThinkingIndicator>();
+        var cut = ctx.Render<WizardThinkingIndicator>();
 
         var indicator = cut.Find("[data-testid='wizard-thinking-indicator']");
 
@@ -60,7 +60,7 @@ public sealed class WizardThinkingIndicatorTests
     public void Renders_three_animation_dots_with_stagger_classes()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<WizardThinkingIndicator>();
+        var cut = ctx.Render<WizardThinkingIndicator>();
 
         // All three delay-modifier classes must be present.
         Assert.Single(cut.FindAll(".wizard-thinking-indicator__dot--1"));
@@ -84,7 +84,7 @@ public sealed class WizardThinkingIndicatorTests
     public void All_dots_carry_base_class_for_prefers_reduced_motion_targeting()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<WizardThinkingIndicator>();
+        var cut = ctx.Render<WizardThinkingIndicator>();
 
         // All three elements must have the base dot class.
         var dots = cut.FindAll(".wizard-thinking-indicator__dot");
@@ -99,7 +99,7 @@ public sealed class WizardThinkingIndicatorTests
     public void Dot_container_is_aria_hidden()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<WizardThinkingIndicator>();
+        var cut = ctx.Render<WizardThinkingIndicator>();
 
         var dotsContainer = cut.Find(".wizard-thinking-indicator__dots");
         Assert.Equal("true", dotsContainer.GetAttribute("aria-hidden"));
@@ -113,7 +113,7 @@ public sealed class WizardThinkingIndicatorTests
     public void Renders_thinking_label_text()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<WizardThinkingIndicator>();
+        var cut = ctx.Render<WizardThinkingIndicator>();
 
         Assert.Contains("Wizard is thinking", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }

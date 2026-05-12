@@ -32,8 +32,8 @@
     <PackageReference Include="MudBlazor" />
     <!--
       Override transitive System.Security.Cryptography.Xml to avoid
-      NU1903 (high-severity vuln in 9.0.0 pulled by bunit). Direct-pinned
-      in Directory.Packages.props. Remove when bunit ships a clean dep.
+      NU1903 (high-severity vuln in 9.0.0 pulled by bunit 2.x). Direct-pinned
+      in Directory.Packages.props.
     -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <!--

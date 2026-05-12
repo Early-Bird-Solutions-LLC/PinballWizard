@@ -24,7 +24,7 @@ namespace PinballWizard.Web.Tests.Components.Layout;
 //
 // Category: chrome wrapper — MainLayout wraps MudBlazor layout primitives.
 // ADR-0008, ADR-0026 § 6.
-public sealed class MainLayoutTests : TestContext
+public sealed class MainLayoutTests : AsyncBunitContext
 {
     public MainLayoutTests()
     {
@@ -34,15 +34,15 @@ public sealed class MainLayoutTests : TestContext
         // IClientDegradationStore — register the real implementation.
         Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
         // Fake NavigationManager so BrandHeader nav links resolve.
-        var navManager = Services.GetRequiredService<FakeNavigationManager>();
-        _ = navManager; // registered automatically by bUnit TestContext.
+        var navManager = Services.GetRequiredService<BunitNavigationManager>();
+        _ = navManager; // registered automatically by bUnit BunitContext.
     }
 
     [Fact]
     public void MainLayout_Renders_MudAppBar()
     {
         // Arrange — render MainLayout with a body stub.
-        var cut = RenderComponent<MainLayout>(parameters => parameters
+        var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
                 builder.OpenElement(0, "span");
@@ -57,7 +57,7 @@ public sealed class MainLayoutTests : TestContext
     [Fact]
     public void MainLayout_Renders_BrandHeader()
     {
-        var cut = RenderComponent<MainLayout>(parameters => parameters
+        var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
                 builder.OpenElement(0, "span");
@@ -72,7 +72,7 @@ public sealed class MainLayoutTests : TestContext
     [Fact]
     public void MainLayout_WrapsBody_InTiltErrorBoundary()
     {
-        var cut = RenderComponent<MainLayout>(parameters => parameters
+        var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
                 builder.OpenElement(0, "span");
@@ -94,7 +94,7 @@ public sealed class MainLayoutTests : TestContext
         // The footer is part of every screen per docs/ui/screens/answer-with-citations.md
         // § Screen zones #5 and the empty-landing § Section 4 spec. Drift guard
         // against future MainLayout edits dropping the footer.
-        var cut = RenderComponent<MainLayout>(parameters => parameters
+        var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
                 builder.OpenElement(0, "span");

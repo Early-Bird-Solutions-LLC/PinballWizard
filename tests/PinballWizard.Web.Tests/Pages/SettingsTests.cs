@@ -15,7 +15,7 @@ namespace PinballWizard.Web.Tests.Pages;
 //
 // docs/ui/screens/settings.md — full spec
 // ADR-0008 — MudBlazor strict (no custom components for chrome)
-public sealed class SettingsTests : TestContext
+public sealed class SettingsTests : AsyncBunitContext
 {
     private readonly IUserPreferencesService _prefs;
 
@@ -35,14 +35,14 @@ public sealed class SettingsTests : TestContext
     [Fact]
     public void Settings_RendersWithoutError()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
         Assert.NotNull(cut.Markup);
     }
 
     [Fact]
     public void Settings_RendersAllThemeCards_AlphabeticalOrder()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         // Alphabetical: Backbox (B) → Cabinet (C) → Daytime Route (D) → DMD Classic (DM) → Modern LCD (M)
         var cards = cut.FindAll("[data-testid^='theme-card-']").ToList();
@@ -57,7 +57,7 @@ public sealed class SettingsTests : TestContext
     [Fact]
     public void Settings_DaytimeRouteCard_HasBetaTag()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         var daytimeCard = cut.Find("[data-testid='theme-card-daytime-route']");
         Assert.Contains("BETA", daytimeCard.TextContent);
@@ -66,7 +66,7 @@ public sealed class SettingsTests : TestContext
     [Fact]
     public void Settings_ModernLcdCard_HasNoBetaTag()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         var modernCard = cut.Find("[data-testid='theme-card-modern-lcd']");
         Assert.DoesNotContain("BETA", modernCard.TextContent);
@@ -76,7 +76,7 @@ public sealed class SettingsTests : TestContext
     public void Settings_ThemeCard_MarksActiveThemeAsChecked()
     {
         _prefs.CurrentTheme.Returns(ThemeNames.ModernLcd);
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         var modernRadio = cut.Find("input[id='theme-modern-lcd']");
         Assert.True(modernRadio.HasAttribute("checked"));
@@ -88,7 +88,7 @@ public sealed class SettingsTests : TestContext
     [Fact]
     public async Task Settings_SelectingDaytimeRouteCard_CallsSetThemeAsync()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         var daytimeRadio = cut.Find("input[id='theme-daytime-route']");
         await cut.InvokeAsync(() => daytimeRadio.Change(ThemeNames.DaytimeRoute));
@@ -99,7 +99,7 @@ public sealed class SettingsTests : TestContext
     [Fact]
     public void Settings_ThreeMotionSections_Present()
     {
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         // Three sections identified by headings
         var headings = cut.FindAll("h5, h6")
@@ -115,7 +115,7 @@ public sealed class SettingsTests : TestContext
     public void Settings_SoundToggle_ShowsMutedLabel_WhenSoundIsOff()
     {
         _prefs.CurrentSound.Returns("muted");
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         // MudSwitch label text reflects the current state
         Assert.Contains("Muted", cut.Markup);
@@ -126,7 +126,7 @@ public sealed class SettingsTests : TestContext
     public void Settings_StorageUnavailableCaption_HiddenWhenStorageAvailable()
     {
         _prefs.StorageAvailable.Returns(true);
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         Assert.DoesNotContain("Browser storage is disabled", cut.Markup);
     }
@@ -135,7 +135,7 @@ public sealed class SettingsTests : TestContext
     public void Settings_StorageUnavailableCaption_ShownWhenStorageUnavailable()
     {
         _prefs.StorageAvailable.Returns(false);
-        var cut = RenderComponent<Settings>();
+        var cut = Render<Settings>();
 
         Assert.Contains("Browser storage is disabled", cut.Markup);
     }

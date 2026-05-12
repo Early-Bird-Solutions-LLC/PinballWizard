@@ -24,9 +24,9 @@ namespace PinballWizard.Web.Tests.Components.Wizard;
 //   6. aria-live="polite" is present for screen-reader announcements.
 public sealed class TokenRendererTests
 {
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -40,7 +40,7 @@ public sealed class TokenRendererTests
     public void Empty_SpanTexts_renders_nothing()
     {
         using var ctx = BuildCtx();
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, Array.Empty<string>()));
 
         Assert.Empty(cut.FindAll("[data-testid='token-renderer']"));
@@ -56,7 +56,7 @@ public sealed class TokenRendererTests
         using var ctx = BuildCtx();
         var texts = new[] { "Stern ", "Godzilla ", "Pro" };
 
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, texts)
             .Add(c => c.IsStreaming, false));
 
@@ -79,7 +79,7 @@ public sealed class TokenRendererTests
         using var ctx = BuildCtx();
         var texts = new[] { "Token A", "Token B", "Token C" };
 
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, texts)
             .Add(c => c.IsStreaming, true));
 
@@ -105,7 +105,7 @@ public sealed class TokenRendererTests
         using var ctx = BuildCtx();
         var texts = new[] { "Canonical answer text" };
 
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, texts)
             .Add(c => c.IsStreaming, false));
 
@@ -129,7 +129,7 @@ public sealed class TokenRendererTests
         using var ctx = BuildCtx();
         var texts = new[] { "First token", "Second token" };
 
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, texts)
             .Add(c => c.IsStreaming, true));
 
@@ -149,7 +149,7 @@ public sealed class TokenRendererTests
     {
         using var ctx = BuildCtx();
         string[] spans = ["Hello"];
-        var cut = ctx.RenderComponent<TokenRenderer>(p => p
+        var cut = ctx.Render<TokenRenderer>(p => p
             .Add(c => c.SpanTexts, spans)
             .Add(c => c.IsStreaming, false));
 
