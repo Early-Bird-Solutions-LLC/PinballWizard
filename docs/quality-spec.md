@@ -203,12 +203,12 @@ Phase 5 spec details these; gates listed here for the consolidated catalogue.
 - ADR 0010 — Personal Azure subscription only; no work tooling integration
 - **Auth flow review (Phase 5/6)**: blanket `FallbackPolicy` (`RequireAuthenticatedUser`) wired in [`src/PinballWizard.Web/Program.cs`](../src/PinballWizard.Web/Program.cs); public routes opt out with `[AllowAnonymous]`; admin routes protected by the policy without redundant `[Authorize]`. Authorization contract tests in [`tests/PinballWizard.Web.Tests/Security/AuthorizationContractTests.cs`](../tests/PinballWizard.Web.Tests/Security/AuthorizationContractTests.cs) pin every public page (must have `[AllowAnonymous]`) and every admin page (must not have `[AllowAnonymous]` or redundant `[Authorize]`). Failing contract test = failing CI.
 - **Secret rotation cadence (Phase 6)**: rotation procedure documented in [`docs/runbooks/05-secret-rotation.md`](runbooks/05-secret-rotation.md). OPDB API token: 90 days. Cloudflare API token: 90 days. Managed identity client secrets: handled by Azure (continuous). All rotations logged in decision-log.
+- **Threat model (Phase 6)**: [`docs/threat-model.md`](threat-model.md) — STRIDE-light analysis of 5 public surfaces (anonymous Wizard SSE endpoint, `/admin`, static pages, health endpoints, scraper outbound). 8 residual risks documented with severity and trigger condition. Reviewed 2026-05-11; revisit trigger: any PR that adds a new public route or changes auth on an existing one.
 
 ### To add
 
 | Gate | Phase | Notes |
 | --- | --- | --- |
-| Threat model per public surface | 6 | `docs/threat-model.md` — STRIDE-light, one entry per surface (anonymous Wizard, `/admin`, future passport / scores / OCR upload, Dream Game). Reviewed and dated pre-launch; revisit trigger: any PR that adds a new public route or changes auth on an existing one. |
 | Dependency CVE response SLA | 5 | High/critical: patch within 48 hours. Medium: 7 days. Low: next monthly review. Tracked via Dependabot alerts. Policy document not yet written. |
 | Content moderation policy | 7+ | OCR score capture, Strategy Tracker entries, Dream Game outputs. Auth-gated + abuse rate limit + denylist for high-risk inputs. Specific to each user-input surface. |
 
