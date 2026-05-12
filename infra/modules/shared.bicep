@@ -690,30 +690,12 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
       ]
       scale: {
         minReplicas: 0
-        maxReplicas: 2
-        rules: [
-          {
-            name: 'cosmos-changefeed'
-            custom: {
-              type: 'cosmos-db'
-              identity: 'system'
-              metadata: {
-                // Database name MUST match `CosmosOptions.DatabaseName` —
-                // the worker uses default `pinwiz` (also matches AppHost's
-                // `cosmos.AddCosmosDatabase("pinwiz")` for local-dev
-                // emulator parity). Drift here is silent: KEDA would
-                // watch a non-existent container's leases and never
-                // scale up.
-                databaseName: 'pinwiz'
-                containerName: 'scraped_documents'
-                leaseDatabaseName: 'pinwiz'
-                leaseContainerName: 'rag_leases'
-                processorName: 'rag-indexer'
-                activationLagInterval: 'PT30S'
-              }
-            }
-          }
-        ]
+        maxReplicas: 1
+        // ACA's KEDA version does not expose a Cosmos Change Feed scaler
+        // (the 'cosmos-db' trigger type is not in ACA's supported list).
+        // The worker scales to 1 when deployed; operators scale to 0 via
+        // 'az containerapp update --min-replicas 0 --max-replicas 0' for
+        // extended pauses. Revisit if ACA adds native CosmosDB KEDA support.
       }
     }
   }
@@ -1009,23 +991,27 @@ resource alertLatency 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview
   tags: tags
   properties: {
     displayName: 'PinballWizard — Wizard latency p95 > 5s'
-    description: 'First-token p95 exceeded 5 000 ms for 5 consecutive evaluation periods (5 min each). Investigate per runbook 01-incident-response.md.'
+    description: 'First-token p95 exceeded 5 000 ms in a 5-min window. Investigate per runbook 01-incident-response.md.'
     severity: 2
     enabled: true
-    evaluationFrequency: 'PT1M'
-    windowSize: 'PT5M'
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
     scopes: [appInsights.id]
     criteria: {
       allOf: [
         {
+          // PT1M frequency is not supported for customMetrics aggregation queries.
+          // Single evaluation period: alert fires when p95 exceeds threshold in any
+          // 15-min window. Multi-period evaluation requires a projected timestamp
+          // column (bin(timestamp,...)) which changes the query shape significantly.
           query: 'customMetrics | where name == "pinwiz.ai.duration_ms" | summarize p95=percentile(value, 95)'
           timeAggregation: 'Maximum'
           metricMeasureColumn: 'p95'
           operator: 'GreaterThan'
           threshold: 5000
           failingPeriods: {
-            numberOfEvaluationPeriods: 5
-            minFailingPeriodsToAlert: 5
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
           }
         }
       ]
@@ -1042,11 +1028,11 @@ resource alert5xx 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = 
   tags: tags
   properties: {
     displayName: 'PinballWizard — 5xx error rate > 5%'
-    description: '5xx requests to /api/wizard/* exceeded 5% over a 10-min window. Investigate per runbook 01-incident-response.md immediately.'
+    description: '5xx requests to /api/wizard/* exceeded 5% over a 15-min window. Investigate per runbook 01-incident-response.md immediately.'
     severity: 1
     enabled: true
-    evaluationFrequency: 'PT1M'
-    windowSize: 'PT10M'
+    evaluationFrequency: 'PT5M'
+    windowSize: 'PT15M'
     scopes: [appInsights.id]
     criteria: {
       allOf: [
@@ -1140,12 +1126,12 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   location: location
   tags: tags
   properties: {
-    displayName: 'PinballWizard — Availability < 99.5% (7-day rolling)'
-    description: 'Availability test success rate dropped below 99.5% over a rolling 7-day window. Investigate per runbook 01-incident-response.md immediately.'
+    displayName: 'PinballWizard — Availability < 99.5% (48-h rolling)'
+    description: 'Availability test success rate dropped below 99.5% over a 48-h rolling window. Azure Monitor log alert max window is 2880 min (48 h); the build-spec target is 7-day but this is the closest supported granularity. Investigate per runbook 01-incident-response.md immediately.'
     severity: 1
     enabled: true
     evaluationFrequency: 'PT1H'
-    windowSize: 'P7D'
+    windowSize: 'PT2880M'
     scopes: [appInsights.id]
     criteria: {
       allOf: [
