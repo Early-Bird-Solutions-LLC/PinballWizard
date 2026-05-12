@@ -7,8 +7,8 @@ using Xunit;
 namespace PinballWizard.Web.Tests.Services;
 
 // Unit tests for UserPreferencesService.
-// Uses bUnit TestContext for its fake IJSRuntime (JSInterop.Setup).
-// Each test creates its own TestContext so JSInterop setups are isolated.
+// Uses bUnit BunitContext for its fake IJSRuntime (JSInterop.Setup).
+// Each test creates its own BunitContext so JSInterop setups are isolated.
 //
 // JSInterop mode: Loose — allows unmatched JS calls to return defaults
 // without blocking. The service uses ConfigureAwait(false) on Linux which
@@ -21,7 +21,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task InitializeAsync_ReadsAllThreePreferences_FromLocalStorage()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.DaytimeRoute);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("on");
@@ -41,7 +41,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task InitializeAsync_DefaultsToModernLcd_WhenLocalStorageReturnsEmpty()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.ModernLcd);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("match");
@@ -65,7 +65,7 @@ public sealed class UserPreferencesServiceTests
         // and the test would fail with an unhandled exception. Instead, configure
         // the setup to throw JSException explicitly, which is what a real browser
         // localStorage denial produces and what the service is designed to handle.
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Setup<string>("pinwiz.getTheme")
             .SetException(new JSException("localStorage unavailable"));
 
@@ -84,7 +84,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task InitializeAsync_FiresStateChanged()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.ModernLcd);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("match");
@@ -103,7 +103,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task SetThemeAsync_UpdatesCurrentThemeAndFiresStateChanged()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose; // Loose avoids Strict-mode hang on Linux
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
@@ -120,7 +120,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task SetMotionAsync_UpdatesCurrentMotion()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
@@ -134,7 +134,7 @@ public sealed class UserPreferencesServiceTests
     [Fact]
     public async Task SetSoundAsync_UpdatesCurrentSound()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();

@@ -20,7 +20,7 @@ namespace PinballWizard.Web.Tests.Components.Degraded;
 // provides higher confidence than mocking it.
 //
 // ADR-0026 § 5, § 6.
-public sealed class OutageBannerTests : TestContext
+public sealed class OutageBannerTests : AsyncBunitContext
 {
     private readonly IClientDegradationStore _store;
 
@@ -33,7 +33,7 @@ public sealed class OutageBannerTests : TestContext
         Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
         // Resolve the store AFTER AddScoped — the service provider is
-        // lazily built on first resolution in bUnit's TestContext.
+        // lazily built on first resolution in bUnit's BunitContext.
         _store = Services.GetRequiredService<IClientDegradationStore>();
     }
 
@@ -41,7 +41,7 @@ public sealed class OutageBannerTests : TestContext
     public void OutageBanner_Hidden_ByDefault()
     {
         // Act — render with no degradation active (default state).
-        var cut = RenderComponent<OutageBanner>();
+        var cut = Render<OutageBanner>();
 
         // Assert — banner element is absent.
         Assert.Empty(cut.FindAll("[data-testid='outage-banner']"));
@@ -56,7 +56,7 @@ public sealed class OutageBannerTests : TestContext
             DegradationMode.SearchUnavailable, Detail: null, RetryAfterSeconds: null));
 
         // Act
-        var cut = RenderComponent<OutageBanner>();
+        var cut = Render<OutageBanner>();
 
         // Assert — banner element is present.
         cut.Find("[data-testid='outage-banner']");
@@ -66,7 +66,7 @@ public sealed class OutageBannerTests : TestContext
     public void OutageBanner_Renders_AfterSetDegradation_WhenAlreadyMounted()
     {
         // Arrange — mount with no active degradation.
-        var cut = RenderComponent<OutageBanner>();
+        var cut = Render<OutageBanner>();
         Assert.Empty(cut.FindAll("[data-testid='outage-banner']")); // confirm hidden
 
         // Act — push degradation state AFTER mount (simulates a live API response).
@@ -90,7 +90,7 @@ public sealed class OutageBannerTests : TestContext
         _store.SetDegradation(new DegradationContext(mode, Detail: null, RetryAfterSeconds: null));
 
         // Act
-        var cut = RenderComponent<OutageBanner>();
+        var cut = Render<OutageBanner>();
 
         // Assert — the banner text matches the expected mode-specific copy.
         var bannerText = cut.Find("[data-testid='outage-banner-text']");
@@ -103,7 +103,7 @@ public sealed class OutageBannerTests : TestContext
         // Arrange — show the banner.
         _store.SetDegradation(new DegradationContext(
             DegradationMode.SearchUnavailable, Detail: null, RetryAfterSeconds: null));
-        var cut = RenderComponent<OutageBanner>();
+        var cut = Render<OutageBanner>();
         cut.Find("[data-testid='outage-banner']"); // confirm it is visible
 
         // Act — call Dismiss on the store (simulates user clicking the X).

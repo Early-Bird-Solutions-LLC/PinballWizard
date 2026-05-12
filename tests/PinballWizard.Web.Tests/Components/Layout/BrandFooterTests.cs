@@ -14,19 +14,19 @@ namespace PinballWizard.Web.Tests.Components.Layout;
 // (ADR-0027 § 4 coverage-transparency posture). Without this test the
 // next "let's tighten the footer copy" edit can quietly drop the
 // coverage statement, the GitHub link, or the relocated Status link.
-public sealed class BrandFooterTests : TestContext
+public sealed class BrandFooterTests : AsyncBunitContext
 {
     public BrandFooterTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void BrandFooter_RendersFooterLandmark_WithLabel()
     {
-        var cut = RenderComponent<BrandFooter>();
+        var cut = Render<BrandFooter>();
 
         var footer = cut.Find("footer.brand-footer");
         Assert.Equal("Site footer", footer.GetAttribute("aria-label"));
@@ -35,7 +35,7 @@ public sealed class BrandFooterTests : TestContext
     [Fact]
     public void BrandFooter_RendersLockedCoverageStatement()
     {
-        var cut = RenderComponent<BrandFooter>();
+        var cut = Render<BrandFooter>();
 
         var coverage = cut.Find(".footer-coverage").TextContent;
         // Copy locked from docs/ui/screens/empty-landing.md § Section 4.
@@ -46,7 +46,7 @@ public sealed class BrandFooterTests : TestContext
     [Fact]
     public void BrandFooter_WhatWeCoverLink_HrefsAbout()
     {
-        var cut = RenderComponent<BrandFooter>();
+        var cut = Render<BrandFooter>();
 
         var link = cut.Find("a.footer-coverage-link");
         Assert.Equal("/about", link.GetAttribute("href"));
@@ -57,7 +57,7 @@ public sealed class BrandFooterTests : TestContext
     [Fact]
     public void BrandFooter_GitHubLink_PointsToRepo_AndOpensInNewTab_Safely()
     {
-        var cut = RenderComponent<BrandFooter>();
+        var cut = Render<BrandFooter>();
 
         var link = cut.Find("a.footer-github-link");
         Assert.Equal(
@@ -76,7 +76,7 @@ public sealed class BrandFooterTests : TestContext
     [Fact]
     public void BrandFooter_StatusLink_RelocatedFromHeader_HrefsStatus()
     {
-        var cut = RenderComponent<BrandFooter>();
+        var cut = Render<BrandFooter>();
 
         var link = cut.Find("a.footer-status-link");
         Assert.Equal("/status", link.GetAttribute("href"));

@@ -32,7 +32,7 @@ namespace PinballWizard.Web.Tests.Components.Degraded;
 //
 // ADR-0026 § 6 — SoundController locked delight surface.
 // ADR-0026 § "Explicitly NOT adopted" — mute-default mandatory.
-public sealed class SoundControllerTests : TestContext
+public sealed class SoundControllerTests : AsyncBunitContext
 {
     private const string LocalStorageKey = "pinwiz.sound.enabled";
 
@@ -80,7 +80,7 @@ public sealed class SoundControllerTests : TestContext
         SetupGetItem(returnValue: null);
 
         // Act — render; OnInitializedAsync reads localStorage.
-        var cut = RenderComponent<SoundController>();
+        var cut = Render<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is true when stored value is null.
@@ -97,7 +97,7 @@ public sealed class SoundControllerTests : TestContext
         // Arrange — localStorage returns "true" (user previously unmuted).
         SetupGetItem(returnValue: "true");
 
-        var cut = RenderComponent<SoundController>();
+        var cut = Render<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is false when stored value is "true" (sound enabled).
@@ -113,7 +113,7 @@ public sealed class SoundControllerTests : TestContext
         // Arrange — localStorage returns "false" (user previously muted).
         SetupGetItem(returnValue: "false");
 
-        var cut = RenderComponent<SoundController>();
+        var cut = Render<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is true when stored value is "false".
@@ -127,7 +127,7 @@ public sealed class SoundControllerTests : TestContext
         SetupGetItem(returnValue: null);
         SetupSetItem(); // setItem is called after toggle.
 
-        var cut = RenderComponent<SoundController>();
+        var cut = Render<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
         Assert.True(cut.Instance.IsMuted); // starts muted
 
@@ -179,7 +179,7 @@ public sealed class SoundControllerTests : TestContext
         // failing the test before we even reach the assertions below.
         SetupGetItem(returnValue: null);
 
-        var cut = RenderComponent<SoundController>();
+        var cut = Render<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — no <audio> element in the rendered markup.

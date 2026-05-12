@@ -32,13 +32,13 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_AllLinks_HaveTargetBlank_And_RelNoopenerNoreferrer()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var resources = BuildResources();
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         // All links with data-testid='resource-link' must have both attributes.
@@ -67,13 +67,13 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_DoesNotContain_FavoritismMarkup()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var resources = BuildResources();
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         var markup = cut.Markup;
@@ -98,7 +98,7 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_URLs_AreRenderedAsBarehHrefs_NoTrackingParamsInjected()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -108,7 +108,7 @@ public sealed class CommunityResourceCardsTests
             new("Pinside Market", expectedUrl, "marketplace", "Test resource."),
         };
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         // The data-href attribute mirrors the href without MudBlazor transformation.
@@ -129,13 +129,13 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_RendersOneCardPerResource()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var resources = BuildResources(); // 3 resources
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         var cards = cut.FindAll("[data-testid='community-resource-card']");
@@ -149,11 +149,11 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_EmptyList_RendersNothing()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, Array.Empty<CommunityResource>()));
 
         // No cards wrapper should render for an empty list.
@@ -167,7 +167,7 @@ public sealed class CommunityResourceCardsTests
     [Fact]
     public void CommunityResourceCards_RenderResourceNames_InCardMarkup()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -177,7 +177,7 @@ public sealed class CommunityResourceCardsTests
             new("OPDB", "https://opdb.org", "machine_reference", "Open Pinball Database."),
         };
 
-        var cut = ctx.RenderComponent<CommunityResourceCards>(p => p
+        var cut = ctx.Render<CommunityResourceCards>(p => p
             .Add(x => x.Resources, resources));
 
         Assert.Contains("IPDB", cut.Markup, StringComparison.Ordinal);

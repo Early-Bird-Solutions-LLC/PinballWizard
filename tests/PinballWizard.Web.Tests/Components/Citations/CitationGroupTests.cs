@@ -23,9 +23,9 @@ public sealed class CitationGroupTests
             SourceUrl: $"https://example.com/{title.Replace(' ', '-').ToLowerInvariant()}",
             RelevanceScore: score);
 
-    private static TestContext BuildCtx()
+    private static BunitContext BuildCtx()
     {
-        var ctx = new TestContext();
+        var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         return ctx;
@@ -36,9 +36,9 @@ public sealed class CitationGroupTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Highest_scoring_citation_in_group_visible_by_default()
+    public async Task Highest_scoring_citation_in_group_visible_by_default()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var citations = new List<Citation>
         {
@@ -47,7 +47,7 @@ public sealed class CitationGroupTests
             MakeCitation("Mid Score Doc",  score: 0.65),
         };
 
-        var cut = ctx.RenderComponent<CitationGroup>(p => p
+        var cut = ctx.Render<CitationGroup>(p => p
             .Add(c => c.Host, "example.com")
             .Add(c => c.Citations, citations));
 
@@ -67,7 +67,7 @@ public sealed class CitationGroupTests
     [Fact]
     public async Task Lower_scoring_citations_collapsed_into_more_disclosure()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var citations = new List<Citation>
         {
@@ -75,7 +75,7 @@ public sealed class CitationGroupTests
             MakeCitation("High Score Doc", score: 0.92),
         };
 
-        var cut = ctx.RenderComponent<CitationGroup>(p => p
+        var cut = ctx.Render<CitationGroup>(p => p
             .Add(c => c.Host, "example.com")
             .Add(c => c.Citations, citations));
 
@@ -97,16 +97,16 @@ public sealed class CitationGroupTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Group_with_single_citation_does_not_show_disclosure()
+    public async Task Group_with_single_citation_does_not_show_disclosure()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
 
         var citations = new List<Citation>
         {
             MakeCitation("Only Doc", score: 0.80),
         };
 
-        var cut = ctx.RenderComponent<CitationGroup>(p => p
+        var cut = ctx.Render<CitationGroup>(p => p
             .Add(c => c.Host, "example.com")
             .Add(c => c.Citations, citations));
 

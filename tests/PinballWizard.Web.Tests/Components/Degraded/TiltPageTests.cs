@@ -33,7 +33,7 @@ namespace PinballWizard.Web.Tests.Components.Degraded;
 //   "we tested the animation is actually disabled."
 //
 // ADR-0026 § 5, § 6, § 9.
-public sealed class TiltPageTests : TestContext
+public sealed class TiltPageTests : AsyncBunitContext
 {
     public TiltPageTests()
     {
@@ -45,15 +45,15 @@ public sealed class TiltPageTests : TestContext
         // when IClientDegradationStore is needed by the component tree.
         Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
 
-        // bUnit registers FakeNavigationManager automatically.
-        _ = Services.GetRequiredService<FakeNavigationManager>();
+        // bUnit registers BunitNavigationManager automatically.
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
     public void TiltPage_Renders_TiltHeading()
     {
         // Act
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the TILT heading text is present.
         Assert.Contains("TILT", cut.Markup, StringComparison.OrdinalIgnoreCase);
@@ -62,7 +62,7 @@ public sealed class TiltPageTests : TestContext
     [Fact]
     public void TiltPage_Renders_TiltHeadingElement()
     {
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the element with data-testid="tilt-heading" exists.
         var heading = cut.Find("[data-testid='tilt-heading']");
@@ -73,11 +73,11 @@ public sealed class TiltPageTests : TestContext
     public void TiltPage_Renders_RequestId_FromQueryParameter()
     {
         // Arrange — set a requestId query parameter on the navigation URL.
-        var nav = Services.GetRequiredService<FakeNavigationManager>();
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
         nav.NavigateTo("http://localhost/error?requestId=abc-test-123&reason=Timeout");
 
         // Act
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the DMD strip contains the request-id from the query param.
         var dmdValue = cut.Find("[data-testid='tilt-request-id']");
@@ -87,7 +87,7 @@ public sealed class TiltPageTests : TestContext
     [Fact]
     public void TiltPage_Renders_TryAgain_Button()
     {
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the "Try Again" action button is rendered.
         var button = cut.Find("[data-testid='tilt-try-again']");
@@ -97,7 +97,7 @@ public sealed class TiltPageTests : TestContext
     [Fact]
     public void TiltPage_Renders_BackToHome_Button()
     {
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the "Back to Home" link-button is rendered.
         var button = cut.Find("[data-testid='tilt-home']");
@@ -108,11 +108,11 @@ public sealed class TiltPageTests : TestContext
     public void TiltPage_Renders_Reason_ChipWhenPresent()
     {
         // Arrange
-        var nav = Services.GetRequiredService<FakeNavigationManager>();
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
         nav.NavigateTo("http://localhost/error?reason=SearchUnavailable");
 
         // Act
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — reason chip is visible when query param is supplied.
         var chip = cut.Find("[data-testid='tilt-reason']");
@@ -138,7 +138,7 @@ public sealed class TiltPageTests : TestContext
     public void Tilt_animation_disabled_when_prefers_reduced_motion()
     {
         // Act
-        var cut = RenderComponent<TiltPage>();
+        var cut = Render<TiltPage>();
 
         // Assert — the element carrying the animation class is present.
         // The @media (prefers-reduced-motion: reduce) rule in Error.razor.css

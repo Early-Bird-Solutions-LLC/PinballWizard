@@ -14,7 +14,7 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 //
 // Tests assert behavior (clicking a card navigates, fallback renders when
 // Questions is null) — not HTML structure or CSS class names.
-// Each test creates its own TestContext; services are registered before any
+// Each test creates its own BunitContext; services are registered before any
 // component is rendered.
 public sealed class SeedQuestionGridTests
 {
@@ -36,13 +36,13 @@ public sealed class SeedQuestionGridTests
     [Fact]
     public void SeedQuestionGrid_RendersFourCards_WhenFourQuestionsProvided()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var questions = BuildQuestions(4);
 
-        var cut = ctx.RenderComponent<SeedQuestionGrid>(p => p
+        var cut = ctx.Render<SeedQuestionGrid>(p => p
             .Add(g => g.Questions, questions));
 
         // Each card gets a data-testid="seed-card-{slug}". Use exact attribute
@@ -58,12 +58,12 @@ public sealed class SeedQuestionGridTests
     [Fact]
     public void SeedQuestionGrid_RendersSkeletons_WhenQuestionsIsNull()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         // Null = loading state — the parent hasn't received the API response yet.
-        var cut = ctx.RenderComponent<SeedQuestionGrid>(p => p
+        var cut = ctx.Render<SeedQuestionGrid>(p => p
             .Add(g => g.Questions, (IReadOnlyList<SeedQuestion>?)null));
 
         // Skeleton placeholders should be present.
@@ -83,16 +83,16 @@ public sealed class SeedQuestionGridTests
     [Fact]
     public async Task SeedQuestionGrid_OnCardClick_NavigatesToWizardSlugRoute()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        // bUnit provides a FakeNavigationManager automatically.
-        var navMan = ctx.Services.GetRequiredService<FakeNavigationManager>();
+        // bUnit provides a BunitNavigationManager automatically.
+        var navMan = ctx.Services.GetRequiredService<BunitNavigationManager>();
 
         var questions = BuildQuestions(4);
 
-        var cut = ctx.RenderComponent<SeedQuestionGrid>(p => p
+        var cut = ctx.Render<SeedQuestionGrid>(p => p
             .Add(g => g.Questions, questions));
 
         // Click the first card (slug = "question-1").
@@ -111,7 +111,7 @@ public sealed class SeedQuestionGridTests
     [Fact]
     public async Task SeedQuestionGrid_OnCardClick_RaisesQuestionSelectedWithQuestionText()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -121,7 +121,7 @@ public sealed class SeedQuestionGridTests
 
         // EventCallback.Factory.Create requires a non-null receiver — use the
         // test class itself as the receiver (any object works as receiver).
-        var cut = ctx.RenderComponent<SeedQuestionGrid>(p => p
+        var cut = ctx.Render<SeedQuestionGrid>(p => p
             .Add(g => g.Questions, questions)
             .Add(g => g.QuestionSelected, EventCallback.Factory.Create<string>(
                 this, q => selected = q)));
@@ -140,13 +140,13 @@ public sealed class SeedQuestionGridTests
     [Fact]
     public void SeedQuestionGrid_EachCard_RendersSubAgentName()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         var questions = BuildQuestions(4);
 
-        var cut = ctx.RenderComponent<SeedQuestionGrid>(p => p
+        var cut = ctx.Render<SeedQuestionGrid>(p => p
             .Add(g => g.Questions, questions));
 
         // Sub-agent names are shown in each card (data-testid=seed-card-description).

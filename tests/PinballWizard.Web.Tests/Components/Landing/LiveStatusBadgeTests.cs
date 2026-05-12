@@ -20,9 +20,9 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 public sealed class LiveStatusBadgeTests
 {
     private static IRenderedComponent<LiveStatusBadge> Render(
-        TestContext ctx, SystemStatus? status)
+        BunitContext ctx, SystemStatus? status)
     {
-        return ctx.RenderComponent<LiveStatusBadge>(p => p
+        return ctx.Render<LiveStatusBadge>(p => p
             .Add(b => b.Status, status));
     }
 
@@ -33,7 +33,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_AllTrue_RendersGreenDot()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -52,7 +52,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_AnyNull_RendersAmberDot()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -72,7 +72,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_NullStatus_RendersAmberDot()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -90,7 +90,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_AnyFalse_RendersRedDot()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -112,7 +112,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_AiSearchFalse_RendersRedDot()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -131,7 +131,7 @@ public sealed class LiveStatusBadgeTests
     [Fact]
     public void LiveStatusBadge_Tooltip_EnumeratesPerSystemStatus()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 

@@ -15,7 +15,7 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 // bUnit smoke test. LandingHero is a landing delight surface — within the
 // scope of the four locked delight surfaces (ADR-0026 § 6, CLAUDE.md #14).
 //
-// Tests assert behavior, not structure. Each test creates its own TestContext
+// Tests assert behavior, not structure. Each test creates its own BunitContext
 // so service registration (required before first GetService call) is explicit.
 public sealed class LandingHeroTests
 {
@@ -26,11 +26,11 @@ public sealed class LandingHeroTests
     [Fact]
     public void LandingHero_Renders_MudTextFieldInput()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<LandingHero>();
+        var cut = ctx.Render<LandingHero>();
 
         // MudTextField should be present — it's the question input.
         cut.FindComponent<MudTextField<string>>();
@@ -43,11 +43,11 @@ public sealed class LandingHeroTests
     [Fact]
     public void LandingHero_Tagline_IsNonEmpty()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<LandingHero>();
+        var cut = ctx.Render<LandingHero>();
 
         var tagline = cut.Find("[data-testid='landing-hero-tagline']");
         Assert.False(string.IsNullOrWhiteSpace(tagline.TextContent),
@@ -61,11 +61,11 @@ public sealed class LandingHeroTests
     [Fact]
     public void LandingHero_QuestionInput_HasAutoFocus()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<LandingHero>();
+        var cut = ctx.Render<LandingHero>();
 
         // MudTextField renders an input element. The component's AutoFocus
         // parameter is set to true — verify via the MudTextField component
@@ -82,11 +82,11 @@ public sealed class LandingHeroTests
     [Fact]
     public void LandingHero_Renders_BrandTitle()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<LandingHero>();
+        var cut = ctx.Render<LandingHero>();
 
         var title = cut.Find("[data-testid='landing-hero-title']");
         Assert.Contains("PinballWizard", title.TextContent, StringComparison.OrdinalIgnoreCase);
@@ -99,13 +99,13 @@ public sealed class LandingHeroTests
     [Fact]
     public async Task LandingHero_OnEnterKey_InvokesQuestionSubmitted()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
         string? submitted = null;
         // EventCallback.Factory.Create requires a non-null receiver — use 'this'.
-        var cut = ctx.RenderComponent<LandingHero>(p => p
+        var cut = ctx.Render<LandingHero>(p => p
             .Add(h => h.QuestionText, "How does Godzilla wizard mode work?")
             .Add(h => h.QuestionSubmitted, EventCallback.Factory.Create<string>(
                 this, q => submitted = q)));

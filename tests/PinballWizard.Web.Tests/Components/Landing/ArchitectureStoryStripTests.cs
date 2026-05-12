@@ -20,11 +20,11 @@ public sealed class ArchitectureStoryStripTests
     [Fact]
     public void ArchitectureStoryStrip_RendersAtLeastThreeCards()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<ArchitectureStoryStrip>();
+        var cut = ctx.Render<ArchitectureStoryStrip>();
 
         var cards = cut.FindAll("[data-testid^='arch-card-']");
         Assert.True(cards.Count >= 3,
@@ -38,11 +38,11 @@ public sealed class ArchitectureStoryStripTests
     [Fact]
     public void ArchitectureStoryStrip_EachCard_HasLink()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<ArchitectureStoryStrip>();
+        var cut = ctx.Render<ArchitectureStoryStrip>();
 
         var cards = cut.FindAll("[data-testid^='arch-card-']");
         Assert.True(cards.Count >= 3, "Precondition: at least 3 cards.");
@@ -70,11 +70,11 @@ public sealed class ArchitectureStoryStripTests
     [Fact]
     public void ArchitectureStoryStrip_Renders_WithoutException()
     {
-        using var ctx = new TestContext();
+        using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        var cut = ctx.RenderComponent<ArchitectureStoryStrip>();
+        var cut = ctx.Render<ArchitectureStoryStrip>();
 
         // data-testid on the container confirms the component mounted.
         cut.Find("[data-testid='architecture-story-strip']");
