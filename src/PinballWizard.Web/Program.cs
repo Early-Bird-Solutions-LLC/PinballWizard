@@ -59,6 +59,20 @@ builder.Services
     .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
     .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
 
+// Blanket authorization policy: every route requires authentication by default.
+// Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
+// opt out with [AllowAnonymous]. Admin routes (/admin/**) are protected automatically
+// without needing per-page [Authorize] attributes — new admin pages are secure by
+// default and cannot be accidentally left open. The API minimal-API endpoints
+// (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
+// (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
 builder.Services.AddControllersWithViews()
     .AddMicrosoftIdentityUI();
 

@@ -1,6 +1,5 @@
 @page "/admin"
 @layout AdminLayout
-@attribute [Authorize]
 
 @* AdminDashboard — /admin overview page (PR-Q2 Wave 3 skeleton).
  *
@@ -12,8 +11,12 @@
  * Category: admin surface — uses AdminLayout (not the public MainLayout).
  * All layout primitives are MudBlazor per ADR-0008.
  *
+ * Auth: protected by the global FallbackPolicy (RequireAuthenticatedUser) in
+ * Program.cs — no per-page [Authorize] needed. New /admin/* pages are secure
+ * by default; public routes opt out with [AllowAnonymous].
+ *
  * ADR-0008  — MudBlazor strict
- * ADR-0009  — Entra External ID; [Authorize] gates the page
+ * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin)
  *@
 

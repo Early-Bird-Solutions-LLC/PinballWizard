@@ -179,12 +179,15 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        app.MapHealthChecks("/healthz");
+        // AllowAnonymous: health probes must be reachable by ACA infrastructure
+        // without auth tokens. The FallbackPolicy in Program.cs requires auth on
+        // all undecorated routes; these endpoints need an explicit exemption.
+        app.MapHealthChecks("/healthz").AllowAnonymous();
 
         app.MapHealthChecks("/alive", new HealthCheckOptions
         {
             Predicate = r => r.Tags.Contains("live"),
-        });
+        }).AllowAnonymous();
 
         return app;
     }
