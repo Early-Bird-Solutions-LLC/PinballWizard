@@ -1,6 +1,5 @@
 @page "/admin/sources"
 @layout AdminLayout
-@attribute [Authorize]
 
 @* AdminSources — /admin/sources ingestion sources list (PR-Q2 Wave 3 skeleton).
  *
@@ -15,8 +14,10 @@
  *
  * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
  *
+ * Auth: protected by the global FallbackPolicy — see AdminDashboard.razor.
+ *
  * ADR-0008  — MudBlazor strict
- * ADR-0009  — Entra External ID; [Authorize] gates the page
+ * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/sources)
  *@
 
