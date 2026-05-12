@@ -49,7 +49,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 - [`global.json`](../global.json): SDK pinning so dev / CI builds are reproducible
 - Locked-mode NuGet restore in CI: `dotnet restore --locked-mode`; `packages.lock.json` committed
 - CodeQL static analysis: [`.github/workflows/codeql.yml`](../.github/workflows/codeql.yml)
-- Sanitization workflow: [`.github/workflows/sanitization.yml`](../.github/workflows/sanitization.yml) — blocks personal-email leakage into committed files (work email is *not* blocked; per [`feedback_personal_identity_only.md`](C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\feedback_personal_identity_only.md), add to denylist if a future change risks it)
+- Sanitization workflow: [`.github/workflows/sanitization.yml`](../.github/workflows/sanitization.yml) — blocks personal-email leakage and work-email leakage into committed files (both patterns enforced; see Security quality § Currently in place for detail)
 - Bicep syntax validation: [`.github/workflows/bicep.yml`](../.github/workflows/bicep.yml)
 - Dependabot: [`.github/dependabot.yml`](../.github/dependabot.yml) — weekly bumps
 - `.slnx` solution format
@@ -65,6 +65,11 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 ## Test quality
 
+### Currently in place
+
+- **bUnit component tests (Phase 5)**: [`tests/PinballWizard.Web.Tests/Components/`](../tests/PinballWizard.Web.Tests/Components/) — component-level unit tests for every interactive Razor component using bUnit 2.x. 29 test files covering the delight surfaces (`WizardAnswerStream`, `RefusalPanel`, `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`) and admin components. Required for any component beyond static markup; any new interactive component must add a bUnit smoke test in the same PR per PR self-audit item 9d.
+- **Lighthouse CI (Phase 5)**: [`.github/workflows/lighthouse.yml`](../.github/workflows/lighthouse.yml) — runs on every PR touching Blazor/Web files. Thresholds enforced via `.lighthouserc.json`: Performance ≥70 (warn), Accessibility ≥90 (error), Best-Practices ≥90 (error), SEO ≥90 (warn). Failing threshold = failing CI job. Complements the axe-core accessibility gate in `Code quality § Currently in place`.
+
 ### Discipline (currently cultural; mutation testing will validate mechanically from Phase 3)
 
 - **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires; "rejects merch" must include merch in the input. `/local-review` § Test quality is the enforcer.
@@ -79,9 +84,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 | --- | --- | --- |
 | Retrieval / answer-quality evaluation harness | 3 | Held-out set of pinball questions with known correct citations + expected answer themes. Scored continuously; results trended in `eval/` directory. Routing-decision tests (gpt-4o-mini vs gpt-4.1) validated. Threshold-driven refusal validated. |
 | Citation-accuracy eval set | 4 | Specifically: % of Wizard answers that include a clickable, valid citation pointing at a real source URL in the catalog. v1 target: ≥ 95%. Lower threshold = the "I don't know" path needs strengthening, not the citation pipeline. |
-| bUnit for Blazor components | 5 | Component-level unit tests for every interactive Razor component; complements end-to-end Playwright tests. Required for any component beyond static markup. Already in practice — 191 bUnit tests in `PinballWizard.Web.Tests`; row will be formally retired once every interactive component has smoke coverage. |
-| Performance regression tests | 5+ | Lighthouse CI for the public Wizard (LCP, TTI, CLS budgets); k6 or similar for Wizard p95 latency under load. Both run in CI on Blazor-touching PRs. |
-| Performance regression tests | 5+ | Lighthouse CI for the public Wizard (LCP, TTI, CLS budgets); k6 or similar for Wizard p95 latency under load. Both run in CI on Blazor-touching PRs. |
+| Load / latency regression tests (k6) | 5+ | k6 or similar for Wizard p95 latency under realistic query load. Complements Lighthouse CI (already in place). Target: Wizard p95 < 2s end-to-end. |
 
 ## Review process
 
@@ -130,42 +133,47 @@ Decisions that are smaller — tool versions within a category, threshold settin
 
 **XML doc completeness on public surface is not a quality gate.** Per [`feedback_no_xml_docs.md`](C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\feedback_no_xml_docs.md): user finds them not worth the maintenance cost; project doesn't ship a public NuGet package; `/local-review` § Comments policy explicitly does not flag missing XML docs. Revisit only if a NuGet package ships externally.
 
-## Operational quality (Phase 6+)
+## Operational quality (Phase 6)
 
-The system doesn't yet operate in production, so all gates here are forward-looking. Definitions land in Phase 6 detailed spec.
+### SLOs / SLIs (Phase 6 — shipped)
 
-### SLOs / SLIs
-
-Targets locked in [`project_phase2_architecture_decisions.md`](C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\project_phase2_architecture_decisions.md) and refined here:
+SLI targets are defined in [`build-spec.md`](build-spec.md) § Phase 6 and enforced via the alert rules below. Six SLIs with v1 targets:
 
 | SLI | v1 Target | Notes |
 | --- | --- | --- |
 | Wizard p95 query latency | < 2 seconds end-to-end | Easy with AI Search Basic + ACA min=1; hard with min=0 cold starts (acceptable during build, not in live) |
-| Availability | 99.5% | Single-region; multi-region failover deferred to v2 |
+| Wizard first-token latency p95 | < 3 seconds | SSE streaming first token; alert rule: `alertLatency` in [`infra/modules/shared.bicep`](../infra/modules/shared.bicep) |
+| 5xx error rate | < 1% over 5-minute window | Alert rule: `alert5xx` in shared.bicep |
+| Availability | 99.5% | Single-region; multi-region failover deferred to v2. Alert rule: `alertAvailability` in shared.bicep |
 | Citation accuracy | ≥ 95% of Wizard answers include a clickable valid citation | Below threshold = strengthen the "I don't know" path, not the citation pipeline |
-| Cost-per-query | Tracked + trended; threshold TBD post-launch | OTel histogram + Log Analytics query |
+| Cost-per-query | Tracked + trended; budget alarm at $300/mo | Alert rule: `alertCost` in shared.bicep; dead-letter backlog surfaced via `alertDeadLetters` |
 
-### Alerting
+### Alerting (Phase 6 — shipped in Bicep, `deployPhase2`-gated)
 
-- **Threshold-driven:** sustained breach > 15 min pages.
+- **Action group `pinwiz-ops-alerts`**: routes to `jim@earlybirdsolutions.com` via `opsActionGroup` in [`infra/modules/shared.bicep`](../infra/modules/shared.bicep).
+- **5 alert rules** (log-search, `Microsoft.Insights/scheduledQueryRules@2023-03-15-preview`): `alertLatency`, `alert5xx`, `alertCost`, `alertDeadLetters`, `alertAvailability`. All emit to `opsActionGroup`.
+- **Threshold-driven:** sustained breach > 15 min fires the rule.
 - **Noise budget:** ≤ 1 page per week in steady state. Exceeded = the alert is wrong (too sensitive, false-positive prone) and gets retuned, not the system.
-- **Routing:** TBD in Phase 6 spec — likely email + a webhook for the Aspire dashboard or a Slack channel; no PagerDuty for v1 (single operator, hobby cadence on response).
+- **Dashboard**: Application Insights workbook "PinballWizard Ops" (`opsWorkbook` in shared.bicep) — 7 tiles covering all six SLIs. Workbook JSON embedded from [`infra/dashboards/pinwiz-ops-workbook.json`](../infra/dashboards/pinwiz-ops-workbook.json) at deploy time.
 
-### Runbook inventory required for launch
+### Runbooks (Phase 6 — shipped)
 
-- **Incident response:** Wizard down, Cosmos down, AI Search down, OpenAI rate-limited, Cloudflare WAF mistuned
-- **Source-site outage:** single source returns errors → throttle further or pause via `IngestionSource.enabled = false` flip
-- **Cost anomaly response:** alarm fires → investigate, throttle, escalate if user impact, document
-- **Cosmos restore from backup:** procedure tested pre-launch + every 6 months
-- **AI Search index rebuild:** procedure tested pre-launch + every 6 months
-- **Secret rotation:** OPDB API token, managed identity client secrets (where applicable), Cloudflare API token
-- **Deploy from clean (DR scenario):** full reprovisioning from zero — Bicep + container images + Cosmos restore + AI Search rebuild
+Runbook inventory in [`docs/runbooks/README.md`](runbooks/README.md). Six runbooks shipped with `Last walked: Not yet walked` (pre-H-chain status; will be updated after first operational drill):
+
+- [`01-incident-response.md`](runbooks/01-incident-response.md) — Wizard down, Cosmos down, AI Search down, OpenAI rate-limited, Cloudflare WAF mistuned
+- [`02-cost-anomaly.md`](runbooks/02-cost-anomaly.md) — alarm fires → investigate, throttle, escalate if user impact, document
+- [`03-cosmos-restore.md`](runbooks/03-cosmos-restore.md) — restore from backup; procedure to be walked pre-launch
+- [`04-ai-search-rebuild.md`](runbooks/04-ai-search-rebuild.md) — index rebuild; procedure to be walked pre-launch
+- [`05-secret-rotation.md`](runbooks/05-secret-rotation.md) — OPDB API token, Cloudflare API token, managed identity; 90-day cadence for human-managed secrets
+- [`06-source-site-outage.md`](runbooks/06-source-site-outage.md) — single source returns errors → throttle further or pause via `IngestionSource.enabled = false` flip
 
 ### DR testing cadence
 
-- Cosmos restore drill: pre-launch + every 6 months
-- AI Search index rebuild: pre-launch + every 6 months
-- Deploy from clean: pre-launch + every 12 months
+DR drills are defined; not yet executed (pre-launch gate requires first walk-through):
+
+- Cosmos restore drill: pre-launch + every 6 months (`03-cosmos-restore.md`)
+- AI Search index rebuild: pre-launch + every 6 months (`04-ai-search-rebuild.md`)
+- Deploy from clean: pre-launch + every 12 months (H-DR-Cosmos, H-DR-Search hand-off chain)
 - Secret rotation: continuous (rotate in place every 90 days for human-managed secrets; managed identity rotation handled by Azure)
 
 ## Accessibility / UX quality (Phase 5)
@@ -188,31 +196,31 @@ Phase 5 spec details these; gates listed here for the consolidated catalogue.
 ### Currently in place
 
 - CodeQL static analysis on every PR
-- Sanitization workflow blocks personal email leakage; work email **not** proactively blocked (manual denylist addition required if risk emerges per `feedback_personal_identity_only.md`)
+- Sanitization workflow blocks personal **and** work email leakage (both patterns enforced via [`WORK_EMAIL_PATTERN`](../.github/workflows/sanitization.yml) repo secret — shipped Phase 2 § Scope item 9); failing CI on either. Closes the manual-trigger gap noted in `feedback_personal_identity_only.md`.
 - Dependabot weekly bumps catch known CVEs in direct + transitive deps
 - Personal-account isolation enforced by 7-item audit identity check (`git log -1 --format='%an <%ae>'`)
 - Locked-mode NuGet restore prevents supply-chain drift between dev and CI
 - ADR 0010 — Personal Azure subscription only; no work tooling integration
+- **Auth flow review (Phase 5/6)**: blanket `FallbackPolicy` (`RequireAuthenticatedUser`) wired in [`src/PinballWizard.Web/Program.cs`](../src/PinballWizard.Web/Program.cs); public routes opt out with `[AllowAnonymous]`; admin routes protected by the policy without redundant `[Authorize]`. Authorization contract tests in [`tests/PinballWizard.Web.Tests/Security/AuthorizationContractTests.cs`](../tests/PinballWizard.Web.Tests/Security/AuthorizationContractTests.cs) pin every public page (must have `[AllowAnonymous]`) and every admin page (must not have `[AllowAnonymous]` or redundant `[Authorize]`). Failing contract test = failing CI.
+- **Secret rotation cadence (Phase 6)**: rotation procedure documented in [`docs/runbooks/05-secret-rotation.md`](runbooks/05-secret-rotation.md). OPDB API token: 90 days. Cloudflare API token: 90 days. Managed identity client secrets: handled by Azure (continuous). All rotations logged in decision-log.
 
 ### To add
 
 | Gate | Phase | Notes |
 | --- | --- | --- |
-| Threat model per public surface | 5 | One page per surface (anonymous Wizard, `/admin`, future passport / scores / OCR upload, Dream Game). Reviewed at each major change. STRIDE-light is sufficient for the showcase scale. |
-| Secret rotation cadence | 6 | OPDB API token: 90 days. Cloudflare API token: 90 days. Managed identity client secrets: handled by Azure (continuous). All rotations logged in decision-log. |
-| Dependency CVE response SLA | 5 | High/critical: patch within 48 hours. Medium: 7 days. Low: next monthly review. Tracked via Dependabot alerts. |
+| Threat model per public surface | 6 | `docs/threat-model.md` — STRIDE-light, one entry per surface (anonymous Wizard, `/admin`, future passport / scores / OCR upload, Dream Game). Reviewed and dated pre-launch; revisit trigger: any PR that adds a new public route or changes auth on an existing one. |
+| Dependency CVE response SLA | 5 | High/critical: patch within 48 hours. Medium: 7 days. Low: next monthly review. Tracked via Dependabot alerts. Policy document not yet written. |
 | Content moderation policy | 7+ | OCR score capture, Strategy Tracker entries, Dream Game outputs. Auth-gated + abuse rate limit + denylist for high-risk inputs. Specific to each user-input surface. |
-| Auth flow review | 5 | Entra External ID admin RBAC verified pre-launch; role assignments documented; admin role separation tested (a non-admin Entra principal cannot access `/admin` routes). |
-| Work-email proactive denylist | 2 | Promote from manual-trigger ("add to denylist when risk emerges") to proactive denylist now. Sanitization workflow blocks both personal *and* work email leakage; failing CI on either. Validation: synthetic commit attempt with each pattern shows both blocked. Closes the gap noted in `feedback_personal_identity_only.md`. Tracked in `build-spec.md` Phase 2 § Scope. |
 
 ## Cost quality
 
 ### Currently in place
 
-- $300 anomaly alarm (configurable in Azure portal Cost Management → Cost alerts)
+- $300 anomaly alarm — `alertCost` log-search alert rule in [`infra/modules/shared.bicep`](../infra/modules/shared.bicep), routes to `pinwiz-ops-alerts` action group; Bicep-managed, `deployPhase2`-gated
 - $400 hard cap target (process-level; not enforced in code or infra)
-- Two-tier Bicep deploy (Phase 1 default; Phase 2 gated on `deployPhase2 = true`) — implements the cost ceiling at the infrastructure level (will be ADR-0013 per Phase 2 scope)
+- Two-tier Bicep deploy ([ADR-0013](adr/0013-two-tier-bicep-deploy.md)) — implements the cost ceiling at the infrastructure level; Phase 1 default, Phase 2 resources gated on `deployPhase2 = true`
 - Cosmos serverless billing (consumption-based, not provisioned throughput) — keeps idle cost near zero
+- **Anomaly response runbook (Phase 6)**: [`docs/runbooks/02-cost-anomaly.md`](runbooks/02-cost-anomaly.md) — when the alarm fires: investigate cause, throttle the responsible feature, escalate if persistent, document. Shipped Phase 6 Wave 1.
 
 ### To add
 
@@ -220,7 +228,6 @@ Phase 5 spec details these; gates listed here for the consolidated catalogue.
 | --- | --- | --- |
 | Per-feature cost attribution | 4+ | OTel tags + Log Analytics queries breaking down cost by feature (RAG vs scraper vs admin telemetry). Needed once Phase 2 Bicep flips and AI Search / OpenAI start billing meaningfully. |
 | Monthly cost review | 6 | Calendar event paired with the monthly self-evaluation cadence (per `guardrails.md` § Self-evaluation cadence). Review burn vs. projection; if drifting toward $300 alarm, identify cause and adjust. |
-| Anomaly response runbook | 6 | When the alarm fires, what to do — investigate cause, throttle the responsible feature, escalate to user if persistent, document. |
 | Cost burn-rate dashboard | 6 | Real-time per-feature visibility surfaced in `/admin/cost`. Renders the per-feature attribution from above. |
 
 ## How this doc evolves
