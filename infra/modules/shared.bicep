@@ -913,6 +913,19 @@ resource ragIndexerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
+// Wizard ACA app — AcrPull so the system-assigned MI can pull images from ACR.
+// Without this the revision provisioning fails (Operation expired) even for
+// placeholder images because ACA validates registry auth at create time.
+resource wizardAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, wizardApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: wizardApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource ragIndexerStorageBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
   scope: storage
   name: guid(storage.id, ragIndexerApp.id, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
