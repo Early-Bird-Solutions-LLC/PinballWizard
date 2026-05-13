@@ -706,12 +706,9 @@ resource ragIndexerAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
   name: 'send-to-law'
   properties: {
     workspaceId: logAnalytics.id
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
+    // Container Apps do not support log category groups via diagnostic settings —
+    // container stdout/stderr flow through the ACA environment's appLogsConfiguration
+    // (already wired to this Log Analytics workspace). Only metrics are available here.
     metrics: [
       {
         category: 'AllMetrics'
@@ -909,6 +906,19 @@ resource ragIndexerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
     principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Wizard ACA app — AcrPull so the system-assigned MI can pull images from ACR.
+// Without this the revision provisioning fails (Operation expired) even for
+// placeholder images because ACA validates registry auth at create time.
+resource wizardAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, wizardApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: wizardApp.?identity.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
 }
@@ -1239,12 +1249,8 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
   name: 'send-to-law'
   properties: {
     workspaceId: logAnalytics.id
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
+    // Container Apps do not support log category groups via diagnostic settings —
+    // see ragIndexerAppDiag comment above.
     metrics: [
       {
         category: 'AllMetrics'
