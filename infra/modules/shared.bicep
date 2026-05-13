@@ -706,12 +706,9 @@ resource ragIndexerAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
   name: 'send-to-law'
   properties: {
     workspaceId: logAnalytics.id
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
+    // Container Apps do not support log category groups via diagnostic settings —
+    // container stdout/stderr flow through the ACA environment's appLogsConfiguration
+    // (already wired to this Log Analytics workspace). Only metrics are available here.
     metrics: [
       {
         category: 'AllMetrics'
@@ -1252,12 +1249,8 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
   name: 'send-to-law'
   properties: {
     workspaceId: logAnalytics.id
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
+    // Container Apps do not support log category groups via diagnostic settings —
+    // see ragIndexerAppDiag comment above.
     metrics: [
       {
         category: 'AllMetrics'
