@@ -158,16 +158,19 @@ Living list. Format: `ID | description | severity | likelihood | mitigation | la
 
 | ID | Description | Severity | Likelihood | Mitigation | Last reviewed |
 | --- | --- | --- | --- | --- | --- |
-| R1 | Showcase narrative undersold while AI tracks (C/D/E) unstarted | High | Certain (current state) | README rewrite + thin Wizard slice as early Phase 4 milestone | 2026-05-04 |
-| R2 | Stale Playwright 1.12.0 dependency carries records workaround | Medium | Certain | Phase 2.x scheduled upgrade to 1.49+ | 2026-05-04 |
-| R3 | Open Dependabot PRs against deprecated path send "unmaintained" signal | Low | Certain | Triage pass; close deprecated-path PRs, merge clean ones | 2026-05-04 |
+| R1 | Showcase narrative undersold while AI tracks (C/D/E) unstarted | High | **Resolved 2026-05-13** | README rewrite (PR #209) + live system deployed through Phase 6; prospect-visible demonstrable artifact exists end-to-end. | 2026-05-13 |
+| R2 | Stale Playwright 1.12.0 dependency carries records workaround | Medium | **Resolved 2026-05-11** | Playwright upgraded to 1.59.0 (Phase 5 Wave 1). Records workaround documented in DL-0002; `SternPlaywrightDtoActivatorContractTests` pins the contract. | 2026-05-13 |
+| R3 | Open Dependabot PRs against deprecated path send "unmaintained" signal | Low | **Resolved 2026-05-13** | All Dependabot PRs triaged: deprecated-path PRs (#199, #200) closed; clean PRs (#197, #198, #203) merged. | 2026-05-13 |
 | R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Resolved (route ii) | Documented asymmetry in [`tests/PinballWizard.Scraper.Tests/README.md`](../tests/PinballWizard.Scraper.Tests/README.md) § "Stern Playwright asymmetry"; pinned by `SternPlaywrightAsymmetryDocumentationTests`. Revisit when a Playwright-route test fixture lands. | 2026-05-04 |
-| R5 | AI Search + OpenAI cost overrun if usage scales unexpectedly | High | Possible | Cost alerts at $300; per-feature attribution in quality-spec; LRU cache + threshold-driven refusal | 2026-05-04 |
-| R6 | Indefinite schedule drift without urgency forcing function | Medium | Possible | Phase gates + per-phase exit checklist; monthly self-evaluation per this doc | 2026-05-04 |
+| R5 | AI Search + OpenAI cost overrun if usage scales unexpectedly | High | **Migrated to monitored-in-steady-state 2026-05-13** | Cost alerts active ($300/day threshold) + App Insights cost tile in "PinballWizard Ops" workbook. 30-day burn snapshot pending (see Phase 6 § Retrospective). Monthly review cadence per this doc. | 2026-05-13 |
+| R6 | Indefinite schedule drift without urgency forcing function | Medium | **Closed 2026-05-13** | All 6 phases shipped. Phase gates + per-phase exit checklists held the cadence across a 10-day accelerated build. | 2026-05-13 |
 | R7 | Quality-gate erosion (deferred ⚠️ becomes routine) | Medium | Possible | Monthly review of `/local-review` outcomes; ratchet rule: never lower a gate | 2026-05-04 |
 | R8 | Locked-decision soft-erosion via small concessions | High | Possible | This doc § "Locked decisions"; explicit relitigation requirement | 2026-05-04 |
 | R9 | Source site changes (DOM, robots.txt, ToS) break a scraper or revoke permission | Medium | Likely over time | Per-source health checks; politeness-overrides in Cosmos; monthly source review | 2026-05-04 |
 | R10 | Personal-account constraint accidentally violated (work email, work tenant) | High | Low | Identity check in 7-item audit; sanitization workflow; this doc goal 6 | 2026-05-04 |
+| R11 | Bicep alert/RBAC/diagnostics bugs not caught by `what-if` validation | Medium | Likely on first deploy of new resource types | Full apply against dev before merging any PR that adds alert rules, KEDA triggers, diagnostic settings, or role assignments. Budget for fix-up PRs. (Phase 6 lesson — 7 bugs / 3 fix PRs.) | 2026-05-13 |
+| R12 | `pinwiz.ai` live surface not yet serving real app (placeholder ACA image) | High | Certain (current state) | Containerize and deploy Blazor app as first Phase 7 action. Scopes 11+12 (Lighthouse / axe-core live) are blocked until resolved. | 2026-05-13 |
+| R13 | Per-IP rate limiting not implemented in code (Cloudflare Bot Fight is sole defence) | Medium | Possible post-launch | Monitor Cloudflare logs for abuse patterns; add ASP.NET Core rate-limiting middleware if patterns emerge. Deferred from Phase 6 per threat-model.md. | 2026-05-13 |
 
 New risks land here, not in memory. Memory snapshots state at a moment; the risk register is the canonical living list.
 

@@ -912,7 +912,7 @@ Each hand-off, when executed, gets captured as a comment on the Phase 4 § Retro
 
 ## Phase 6 — Operability + launch readiness
 
-**Status:** ⏳ Not started
+**Status:** 🟡 In progress — all PRs merged; operator H-chain tasks (H-Dash, H-Alerts, H-DR-Cosmos, H-DR-Search) and live-surface gate validations (Scopes 11–13) remain
 **Sequence position:** Final phase before public launch. Depends on Phase 5 (the live system to operate). Phase 5's Wave 3 CI gates (axe-core accessibility, Lighthouse performance) are already in place and count as complete here — Phase 6 executes the launch-gate checklist against the live deployed system, it does not re-implement the gates.
 **Demonstrable artifact:** A prospect who lands on `pinwiz.ai` and on the GitHub repo can verify within five minutes: (1) the site is up and answering questions; (2) Application Insights dashboards are live and populated with real signal; (3) all 11 items in `guardrails.md` § Pre-public-launch gate are checked; (4) every runbook listed in `docs/runbooks/` exists, was walked through at least once, and is dated. The repo's `README.md` and `docs/vision.md` reflect the live state without aspirational language.
 
@@ -1122,7 +1122,55 @@ Four tasks fall outside this phase's PR scope — mirroring the Phase 3/4 H-chai
 
 ### Retrospective
 
-*To be populated at phase completion.*
+Phase 6 shipped 13 PRs between 2026-05-11 and 2026-05-13 in two waves, then three fix PRs to close Bicep deploy bugs. All code and infrastructure work is complete; operator H-chain tasks (H-Dash verification, H-Alerts proof, H-DR drills) are pending. Phase 6 closes when those hand-offs complete and the pre-launch gate checklist (Scope 13) is signed off.
+
+**PR sequence:** #204 (SLO KQL library), #205 (6 operational runbooks), #206 (STRIDE-light threat model), #207 (workbook + 5 alert rules + action group + Wizard ACA app), #208 (FallbackPolicy auth + 13 contract tests), #209 (README rewrite), #210 (quality-spec gate promotion), #211 (Bicep: KEDA trigger + alert timing + window size fixes), #212 (Bicep: wizardApp AcrPull RBAC), #213 (Bicep: remove allLogs from ACA diag settings). PR #202 (Lighthouse fix: dotnet publish NO_FCP) and #203 (bUnit 2.7.2 migration) closed Phase 5 carry-overs before Phase 6 opened. **Tests: 1,564 (unchanged from Phase 5 exit — Phase 6 is all infra/docs/operational work, with the exception of 13 auth contract tests in PR #208).**
+
+**Deploy state:** `pinwiz-shared-dev-20260513084706` — `Succeeded`. All Phase 2 resources provisioned: ACA Environment, App Insights, Wizard ACA app (`pinwiz-ca-wizard-dev`, placeholder image, `minReplicas=1`), RAG Indexer ACA app (`pinwiz-ca-ragindexer-dev`, `minReplicas=0`), workbook "PinballWizard Ops" (7 tiles), 5 alert rules + action group → `jim@earlybirdsolutions.com`, full stack (Cosmos, Key Vault, ACR, AI Search, Foundry, Storage, Log Analytics).
+
+**The Bicep deploy required seven bug fixes across three PRs.** This was the unexpected work of Phase 6; the PR sequence felt like an infra debug session rather than a controlled release, which is a pattern worth interrupting in future phases. Documented for Phase 7+ operational learning:
+
+1. `cosmos-db` KEDA trigger type not supported by ACA's KEDA extension → removed the KEDA scaling rule (PR #211)
+2. Alert rule `evaluationFrequency: PT1M` too short for `customMetrics` queries (Azure min is 5 min for that table) → `PT5M` (PR #211)
+3. `numberOfEvaluationPeriods: 5` rejected without a timestamp column in the KQL projection → `1` / `1` (PR #211)
+4. `P7D` window (10,080 min) rejected; Azure maximum for metric alert window is 2,880 min (48 h) → `PT2880M` (PR #211)
+5. `Microsoft.App` resource provider not registered in the subscription → `az provider register --namespace Microsoft.App` (operator one-time)
+6. AcrPull RBAC missing for the Wizard ACA app's managed identity → added `wizardAppAcrPull` role assignment (PR #212)
+7. `allLogs` category group not supported for Container Apps diagnostic settings → removed from `shared.bicep` (PR #213)
+
+**Lessons Phase 7 / operations inherits:**
+
+1. **Pre-deploy Bicep validation is insufficient for RBAC and diagnostics mismatches.** `az deployment group what-if` catches parameter type errors and missing resources but does not validate: (a) KEDA trigger type support per the installed KEDA extension version; (b) diagnostic category groups available on a given resource type; (c) metric alert window limits. The only reliable catch is a full apply against a dev environment — which is what Phase 6 did, and it worked, but budget for three fix-up PRs anytime a Bicep PR adds alert rules, diagnostic settings, or KEDA triggers.
+2. **RBAC role assignments need to reference the managed identity at provision time, not on first container pull.** The AcrPull gap (bug 6) caused an `Operation expired` error on first ACA deployment, not a Bicep deploy error — it failed silently at the Bicep layer because the role assignment syntax was valid, but ACA tried to pull before the identity propagated. The pattern fix: always co-locate the role assignment `dependsOn` with the ACA app resource to force ordering.
+3. **Action groups + alert rules should be a known-good module.** The three-PR iteration on alert rules suggests the Phase 6 Bicep work wasn't tested against a real Azure tenant before merge. Future phases that add alert rules should run `Deploy-SharedResources.ps1 -WhatIf` against a dev environment before the PR, not after.
+
+**H-chain outcomes (populated as hand-offs complete):**
+
+- **H-Dash — Application Insights workbook verification:** ⏳ Pending. Navigate to App Insights → Workbooks → "PinballWizard Ops"; confirm 7 tiles render non-empty signal. Record workbook URL in `decision-log.md`.
+- **H-Alerts — 5 alert rules proven to fire:** ⏳ Pending. Induce each synthetic condition; confirm email within 5 min; record in `decision-log.md`.
+- **H-DR-Cosmos — Cosmos restore drill:** ⏳ Pending. Execute `docs/runbooks/03-cosmos-restore.md` against dev; record wall-clock restore latency + gaps found. Pre-flight: verify Cosmos Continuous Backup is enabled (`az cosmosdb show --name <account> --query "backupPolicy"`).
+- **H-DR-Search — AI Search rebuild drill:** ⏳ Pending. Execute `docs/runbooks/04-ai-search-rebuild.md` against dev; record rebuild-to-zero-lag time + gaps found.
+
+**Live-surface gate validations (Scopes 11–12):**
+
+The Wizard ACA app (`pinwiz-ca-wizard-dev`) is running a placeholder image. Scopes 11 (Lighthouse) and 12 (axe-core) require the Blazor app to be containerized, pushed to ACR, and the ACA app updated to use the real image — plus `pinwiz.ai` DNS routing to the ACA ingress. These gates run after the live surface is stable per the Phase 6 dependency chain. **Phase 7 should containerize the app as its first operational action.**
+
+**Scope 13 (pre-launch gate checklist):** ⏳ Pending completion of H-chain + live-surface gates. All 14 checklist items in § Exit criteria are the pre-launch gate; the final item ("User confirms Phase 6 exit and public launch") requires explicit confirmation.
+
+**Launch date:** *To be recorded when Scope 13 is complete and the user confirms Phase 6 exit.*
+
+**30-day cost burn snapshot:** *To be recorded after ≥ 30 days of live traffic. Baseline estimate: ~$30/mo idle (Phase 1 resources) + ~$120/mo additional (Phase 2 resources) = ~$150/mo idle; actual burn depends on Wizard query volume and model token consumption.*
+
+**SLO baseline (first 30 days):** *To be recorded from App Insights workbook after live traffic. v1 targets: availability ≥ 99.5%; first-token p95 ≤ 3 s; daily cost ≤ $300.*
+
+**Gate items that required rework:** Bicep deploy (7 bugs / 3 fix PRs — see above). All other scope items shipped cleanly.
+
+**Operational follow-ups (rolled forward to Phase 7):**
+
+- **Containerize the Blazor app.** Build and push `pinwiz-ca-wizard` image to ACR; update the ACA app to use it; confirm `pinwiz.ai` routes to the live Wizard. This is the first Phase 7 action — scopes 11/12 are blocked without it.
+- **Execute the H-chain** (H-Dash → H-Alerts → H-DR-Cosmos + H-DR-Search). Only operator access is needed; code is complete.
+- **Rate limiting (R-01/R-02 from threat-model.md).** No per-IP rate limit in code; Cloudflare Bot Fight is the current defense. Deferred from Phase 6 per threat model; surfaced as a Phase 7 design conversation if Cloudflare logs show abuse patterns post-launch.
+- **`pinwiz.ai.cost_usd_cents` shows 0** until `NullTokenUsageReader` is replaced (tracked since Phase 3). The cost tile in the workbook reads from `customMetrics`; the $300 hard-cap alert reads from Azure Cost Management (correct source). Document as a known limitation in the workbook description; resolve when `Microsoft.Agents.AI` exposes `UsageDetails` on `AgentResponse`.
 
 ---
 

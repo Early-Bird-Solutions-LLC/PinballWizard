@@ -56,6 +56,7 @@ Thumbs.db
 # the compiled .json output is a build artifact (`az bicep build` /
 # Deploy-SharedResources.ps1 emit it during validation/deploy).
 infra/*.json
+infra/**/*.json
 infra/build/
 infra/**/build/
 
