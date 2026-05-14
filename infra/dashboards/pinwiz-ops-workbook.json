@@ -64,7 +64,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customMetrics\n| where timestamp > ago(1h)\n| where name in ('pinwiz.rag.changefeed_lease_lag', 'pinwiz.rag.changefeed_dead_letter_total')\n| summarize latest=max(value) by name\n| project metric=name, value=latest",
+        "query": "customMetrics\n| where timestamp > ago(1h)\n| where name in ('pinwiz.rag.changefeed_lease_lag', 'pinwiz.rag.changefeed_dead_letter_total')\n| summarize currentValue=max(value) by name\n| project metric=name, value=currentValue",
         "size": 0,
         "title": "RAG changefeed health (trailing 1 h)",
         "queryType": 0,

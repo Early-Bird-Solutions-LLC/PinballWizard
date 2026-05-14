@@ -1169,6 +1169,52 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
 }
 
 // -----------------------------------------------------------------------------
+// App Insights availability test — synthetic ping every 5 min
+// -----------------------------------------------------------------------------
+// Pings /alive on the Wizard ACA app from East US + West US. Results land in
+// the availabilityResults table, which feeds the alertAvailability rule above
+// and the workbook availability tile.
+//
+// With the placeholder image the test FAILS (container serves port 80; ACA
+// ingress expects port 8080), so the availability alert will fire until Phase 7
+// deploys the real image. This is expected — it proves the alert routing works
+// during the H-Alerts pre-launch drill.
+//
+// hidden-link tag wires the test to the App Insights component so portal
+// shows it under the AI resource's availability blade.
+//
+// wizardFqdn is extracted to a var so the conditional null-access on the
+// deployPhase2-gated wizardApp resource is guarded by the same condition.
+// The ! non-null assertion is safe inside the deployPhase2 ternary branch.
+var wizardFqdn = deployPhase2 ? wizardApp!.properties.configuration.ingress.fqdn : ''
+
+resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployPhase2) {
+  name: 'pinwiz-avail-test-dev'
+  location: location
+  tags: union(tags, {
+    'hidden-link:${appInsights.id}': 'Resource'
+  })
+  kind: 'ping'
+  properties: {
+    SyntheticMonitorId: 'pinwiz-avail-test-dev'
+    Name: 'PinballWizard /alive ping'
+    Description: '/alive is the lightest probe — no auth, no SSE warmup. Fails on placeholder image (port 80 vs ACA port 8080); passes once Phase 7 deploys the real image.'
+    Enabled: true
+    Frequency: 300
+    Timeout: 30
+    Kind: 'ping'
+    Locations: [
+      { Id: 'us-va-ash-azr' }   // East US
+      { Id: 'us-ca-sjc-azr' }   // West US
+    ]
+    Configuration: {
+      WebTest: '<WebTest Name="PinballWizard /alive ping" Id="pinwiz-avail-test-dev" Enabled="True" Timeout="30" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Items><Request Method="GET" Guid="a1b2c3d4-0000-0000-0000-a1b2c3d4e5f6" Version="1.1" Url="https://${wizardFqdn}/alive" ThinkTime="0" Timeout="30" ParseDependentRequests="False" FollowRedirects="True" RecordResult="True" Cache="False" ResponseTimeGoal="0" Encoding="utf-8" ExpectedHttpStatusCode="200" IgnoreHttpStatusCode="False" /></Items></WebTest>'
+    }
+    RetryEnabled: true
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Wizard Container App (Phase 5 + Phase 6 scaling)
 // -----------------------------------------------------------------------------
 // The public-facing Blazor Web App + SSE streaming API. Hosts:
