@@ -1359,7 +1359,18 @@ resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertif
   tags: tags
   properties: {
     subjectName: wizardCustomDomain
-    domainControlValidation: 'CNAME'
+    // HTTP validation: ACA serves the ACME challenge token at
+    // http://{domain}/.well-known/acme-challenge/<token>. Requests flow
+    // Cloudflare proxy → ACA ingress → ACA handles the challenge internally.
+    // Works transparently with the proxy active — no DNS-only toggle needed
+    // for initial issuance OR renewals.
+    //
+    // PREREQUISITE: add a Cloudflare Transform Rule to bypass the HTTPS
+    // redirect for the challenge path (documented in decision-log.md
+    // 2026-05-15 — Custom domain cert auto-renewal):
+    //   Match: URI Path contains ".well-known/acme-challenge"
+    //   Action: Rewrite scheme to HTTP  (or: disable "Always Use HTTPS" rule)
+    domainControlValidation: 'HTTP'
   }
 }
 

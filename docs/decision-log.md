@@ -351,3 +351,21 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 **Revisit when:** Phase 7 deploys the real Wizard image. Verify all 7 tiles populate with real signal at that point.
 
 **Related:** PR #207 (workbook Bicep), PR #215 (KQL fix + availability test).
+
+## 2026-05-15 — Custom domain cert: HTTP validation for Cloudflare-compatible auto-renewal
+
+**Decision:** Switch `pinwiz-wizard-cert` managed certificate from `domainControlValidation: 'CNAME'` to `'HTTP'` (PR following initial CNAME issuance).
+
+**Problem with CNAME validation + Cloudflare proxy:** ACA validates CNAME ownership by resolving the domain directly. With Cloudflare proxy active (orange cloud), the domain resolves to Cloudflare's IPs, not the ACA FQDN. This means: (a) CNAME validation requires Cloudflare to be temporarily in DNS-only mode, and (b) every Let's Encrypt renewal (~90 days) would require the same manual toggle — or automation to call the Cloudflare API.
+
+**HTTP validation:** ACA serves the ACME challenge token at `http://{domain}/.well-known/acme-challenge/<token>`. Requests flow: Let's Encrypt → Cloudflare proxy → ACA ingress. ACA handles the challenge at the ingress level (the container does not need to serve it). Works transparently with the proxy active for both initial issuance and renewals.
+
+**Cloudflare prerequisite:** Add a Transform Rule (or Page Rule) to bypass the Cloudflare HTTPS redirect for the challenge path, otherwise Cloudflare rewrites `http://pinwiz.ai/.well-known/acme-challenge/*` to HTTPS before it reaches ACA, and Let's Encrypt's HTTP-01 challenge fails.
+
+Cloudflare rule (Settings → Transform Rules → Rewrite URL):
+- **Match:** URI path contains `.well-known/acme-challenge`
+- **Action:** Off (skip "Always Use HTTPS" for this path)
+
+Or via Cloudflare Configuration Rules: disable "Automatic HTTPS Rewrites" for that path.
+
+**Revisit when:** Migrating to Cloudflare Origin Certificate (15-year validity, no ACME renewal) — would be the Option 2 follow-up documented in the renewal plan conversation.
