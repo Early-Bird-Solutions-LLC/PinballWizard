@@ -276,17 +276,19 @@ The pattern's ERE validity check (sanitization.yml:109 — `printf '' \| grep -E
 
 **Alert fire timestamps (UTC):**
 
-| Alert | Fired |
-| --- | --- |
-| `pinwiz-alert-latency-p95` — Wizard latency p95 > 5s | 2026-05-15T12:28:00Z |
-| `pinwiz-alert-5xx-rate` — 5xx error rate > 5% | 2026-05-15T12:28:45Z |
-| `pinwiz-alert-dead-letters` — RAG dead-letter depth > 50/h | 2026-05-15T12:29:40Z |
-| `pinwiz-alert-daily-cost` — Daily cost > $15 | pending (1-hour eval cycle) |
-| `pinwiz-alert-availability` — Availability < 99.5% | pending (1-hour eval cycle) |
+| Alert | Fired (UTC) | Resolved (UTC) |
+| --- | --- | --- |
+| `pinwiz-alert-latency-p95` — Wizard latency p95 > 5s | 2026-05-15T12:28:00Z | 2026-05-15T12:54:01Z (auto-resolved) |
+| `pinwiz-alert-5xx-rate` — 5xx error rate > 5% | 2026-05-15T12:28:45Z | 2026-05-15T12:54:46Z (auto-resolved) |
+| `pinwiz-alert-dead-letters` — RAG dead-letter depth > 50/h | 2026-05-15T12:29:40Z | 2026-05-15T13:40:39Z (auto-resolved) |
+| `pinwiz-alert-daily-cost` — Daily cost > $15 | 2026-05-15T13:01:23Z | — |
+| `pinwiz-alert-availability` — Availability < 99.5% | 2026-05-15T13:20:14Z | — |
 
-**Note:** Alerts 4 and 5 (cost, availability) are on 1-hour eval cycles and had not fired at time of writing. This entry will be updated when they arrive. The email routing is already proven by alerts 1–3.
+Alerts 1–3 also auto-resolved once the synthetic data aged out of their evaluation windows — proving both the fire and the clear paths work end-to-end.
 
-**Revisit when:** Update this entry with the timestamps for alerts 4 and 5 when emails arrive.
+**H-Alerts hand-off complete.** All 5 alert rules proven to fire; email routing to `jim@earlybirdsolutions.com` confirmed.
+
+**Revisit when:** Real application traffic generates genuine metrics (Phase 7). Alert thresholds may need tuning based on actual baseline.
 
 **Related:** `infra/scripts/Invoke-AlertProof.ps1`, PR #215 (availability test), PR #207 (alert rules).
 
