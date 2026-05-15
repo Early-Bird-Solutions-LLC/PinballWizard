@@ -52,6 +52,12 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
+param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Api ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder.')
+param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -80,7 +86,8 @@ var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
 var acaEnvironmentName       = '${namePrefix}-acaenv-${environment}'                         // ACA Environment names are RG-scoped
 var ragIndexerContainerAppName = '${namePrefix}-ca-ragindexer-${environment}'                // RG-scoped; W3-2 Cosmos Change Feed worker
-var wizardContainerAppName     = '${namePrefix}-ca-wizard-${environment}'                    // RG-scoped; Phase 5/6 Blazor Web App + SSE API
+var wizardContainerAppName     = '${namePrefix}-ca-wizard-${environment}'                    // RG-scoped; Phase 7 Blazor Web App (Aspire "pinwiz-web")
+var apiContainerAppName        = '${namePrefix}-ca-api-${environment}'                       // RG-scoped; Phase 7 SSE + landing API (Aspire "pinwiz-api")
 var opsWorkbookName            = guid(resourceGroup().id, '${namePrefix}-ops-workbook')      // Globally unique GUID-format name per workbook contract
 var opsActionGroupName         = '${namePrefix}-ops-alerts-${environment}'
 
@@ -913,6 +920,100 @@ resource ragIndexerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
+// -----------------------------------------------------------------------------
+// Api Container App (Phase 7 — internal SSE + landing API)
+// -----------------------------------------------------------------------------
+// Hosts PinballWizard.Api: POST /api/wizard/ask:stream (SSE) and
+// GET /api/wizard/landing. Called by the Wizard web app via Aspire service
+// discovery (services__pinwiz-api__http__0 = 'http://<apiContainerAppName>').
+//
+// Ingress: INTERNAL only — not publicly reachable. The Web app proxies all
+// public traffic through its own external ingress; the Api is unreachable
+// from outside the ACA environment.
+//
+// Image: same placeholder as the Wizard until CI/CD pushes the real image
+// tagged with the commit SHA (never :latest for deployed images).
+resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
+  name: apiContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: acaEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 8080
+        transport: 'http'
+        allowInsecure: true  // internal traffic only; TLS termination at ACA environment boundary
+      }
+      registries: [
+        {
+          server: containerRegistry.?properties.loginServer ?? ''
+          identity: 'system'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'api'
+          image: apiImageTag
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:8080'
+            }
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Production'
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.?properties.ConnectionString ?? ''
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0  // scale to zero when no inbound requests; Web app calls scale it on demand
+        maxReplicas: 3
+      }
+    }
+  }
+}
+
+resource apiAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, apiApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: apiApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource apiAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
+  scope: apiApp
+  name: 'send-to-law'
+  properties: {
+    workspaceId: logAnalytics.id
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
 // Wizard ACA app — AcrPull so the system-assigned MI can pull images from ACR.
 // Without this the revision provisioning fails (Operation expired) even for
 // placeholder images because ACA validates registry auth at create time.
@@ -1273,7 +1374,7 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
       containers: [
         {
           name: 'wizard'
-          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          image: wizardImageTag
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -1290,6 +1391,13 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.?properties.ConnectionString ?? ''
+            }
+            {
+              // Aspire service-discovery env var pointing at the internal ACA Api app.
+              // ACA resolves 'http://<app-name>' within the same environment.
+              // The value matches the Aspire registration name "pinwiz-api" in AppHost.
+              name: 'services__pinwiz-api__http__0'
+              value: 'http://${apiContainerAppName}'
             }
           ]
         }
@@ -1378,5 +1486,13 @@ output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
 //                          --image <containerRegistryLoginServer>/pinwiz-web:<sha>
 output wizardContainerAppName string = wizardApp.?name ?? ''
 output wizardPrincipalId string = wizardApp.?identity.principalId ?? ''
+output wizardFqdn string = wizardApp.?properties.configuration.ingress.fqdn ?? ''
+
+// Api Container App (Phase 7). Use apiContainerAppName + apiPrincipalId for
+// post-deploy smoke tests and image swaps via the CI/CD deploy workflow:
+//   az containerapp update -n <apiContainerAppName> -g <rg> --image <acr>/pinwiz-api:<sha>
+output apiContainerAppName string = apiApp.?name ?? ''
+output apiPrincipalId string = apiApp.?identity.principalId ?? ''
+
 output opsWorkbookName string = opsWorkbook.?name ?? ''
 output opsActionGroupId string = opsActionGroup.?id ?? ''

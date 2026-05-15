@@ -57,6 +57,12 @@ param deployAiSearch bool = true
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
 
+@description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
+param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Api ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow.')
+param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -99,6 +105,8 @@ module shared 'modules/shared.bicep' = {
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
     wizardAliveUrl: wizardAliveUrl
+    wizardImageTag: wizardImageTag
+    apiImageTag: apiImageTag
   }
 }
 
@@ -140,3 +148,12 @@ output foundryProjectEndpoint string = shared.outputs.foundryProjectEndpoint
 output foundryChatDeploymentName string = shared.outputs.foundryChatDeploymentName
 output foundryChatHeavyDeploymentName string = shared.outputs.foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = shared.outputs.foundryEmbeddingDeploymentName
+
+// Wizard + Api Container Apps (Phase 7). wizardFqdn is the ACA-assigned FQDN
+// used by the CI/CD health check and the App Insights availability test.
+// wizardPrincipalId + apiPrincipalId are used by post-deploy RBAC validation.
+output wizardContainerAppName string = shared.outputs.wizardContainerAppName
+output wizardPrincipalId string = shared.outputs.wizardPrincipalId
+output wizardFqdn string = shared.outputs.wizardFqdn
+output apiContainerAppName string = shared.outputs.apiContainerAppName
+output apiPrincipalId string = shared.outputs.apiPrincipalId

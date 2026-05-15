@@ -71,7 +71,17 @@ param(
     [switch]$WhatIf,
 
     [Parameter()]
-    [switch]$SkipGuard
+    [switch]$SkipGuard,
+
+    # Image tags for the Wizard web app and Api. If not supplied, the script
+    # reads the currently-deployed image from the running ACA app so a manual
+    # Bicep re-deploy does not revert the image to the placeholder.
+    # The CI/CD deploy workflow always supplies explicit :{sha} tags — never :latest.
+    [Parameter()]
+    [string]$WizardImageTag = '',
+
+    [Parameter()]
+    [string]$ApiImageTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,6 +99,9 @@ $EXPECTED_SUBSCRIPTION_ID = '4dce9fdd-ea5f-4f67-9a00-80279e58659d'  # Earlybird 
 # Stable Deployment Stack name (not timestamped — same name on every run so
 # Azure updates the existing stack rather than creating a new deployment).
 $stackName = "pinwiz-shared-$Environment"
+
+# Resource group where the ACA apps live — used for image tag auto-discovery.
+$rg = "rg-pinwiz-shared-$Environment"
 
 # -----------------------------------------------------------------------------
 # Paths (script-relative so it runs from anywhere)
@@ -198,6 +211,37 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '  Bicep build: OK' -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
+# Image tag resolution — preserve current deployed images on manual runs
+# -----------------------------------------------------------------------------
+# If caller didn't supply -WizardImageTag / -ApiImageTag, read what's currently
+# running in ACA. This prevents a manual Bicep re-deploy from reverting the app
+# to the quickstart placeholder after CI/CD has pushed the real image.
+# CI/CD always supplies explicit :{sha} tags; the auto-discovery only kicks in
+# for operator-initiated re-deploys (e.g. infra changes that don't touch the app).
+
+$placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+if ([string]::IsNullOrEmpty($WizardImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-wizard-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $WizardImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  wizardImageTag: $WizardImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  wizardImageTag: $WizardImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+if ([string]::IsNullOrEmpty($ApiImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-api-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $ApiImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  apiImageTag:    $ApiImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  apiImageTag:    $ApiImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+# -----------------------------------------------------------------------------
 # Deployment Stack create / update
 # -----------------------------------------------------------------------------
 
@@ -210,6 +254,8 @@ if ($WhatIf) {
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            wizardImageTag="$WizardImageTag" `
+            apiImageTag="$ApiImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
         --what-if `
@@ -230,6 +276,8 @@ else {
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            wizardImageTag="$WizardImageTag" `
+            apiImageTag="$ApiImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
         --yes
