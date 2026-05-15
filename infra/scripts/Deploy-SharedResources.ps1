@@ -1,13 +1,21 @@
 <#
 .SYNOPSIS
-    Deploys the pinwiz.ai shared-tier Azure resources.
+    Deploys the pinwiz.ai shared-tier Azure resources via an Azure Deployment Stack.
 
 .DESCRIPTION
     Orchestrates the deployment of `infra/main-shared.bicep` to the personal
-    Earlybird Azure subscription. Enforces the ADR 0010 subscription/tenant
-    guard before any deployment occurs — if the active `az` context is NOT
-    the personal Earlybird tenant + subscription, the script aborts with a
-    clear message and does NOT touch Azure.
+    Earlybird Azure subscription using an Azure Deployment Stack. Deployment
+    Stacks track every resource in the template and automatically delete orphaned
+    resources when they are removed from Bicep — preventing the silent drift that
+    plain `az deployment` creates.
+
+    Enforces the ADR 0010 subscription/tenant guard before any deployment occurs.
+    If the active `az` context is NOT the personal Earlybird tenant + subscription,
+    the script aborts with a clear message and does NOT touch Azure.
+
+    INVARIANT: this script MUST NOT use `az deployment sub create` or
+    `az deployment group create`. All resource mutations go through
+    `az stack sub create`. See CLAUDE.md § Locked invariants #16.
 
 .PARAMETER Environment
     Target environment. Must be `dev` or `prod`. Drives which `.bicepparam`
@@ -28,16 +36,23 @@
 
 .EXAMPLE
     pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
-    Performs the actual deployment. Prompts for confirmation before applying.
+    Performs the actual deployment via the pinwiz-shared-dev Deployment Stack.
 
 .NOTES
     Per the locked feedback memory `feedback_personal_identity_only.md`,
     this script must NEVER deploy to the day-job tenant. The hard guard
-    on EXPECTED_TENANT_ID + EXPECTED_SUBSCRIPTION_ID below is the
-    enforcement.
+    on EXPECTED_TENANT_ID + EXPECTED_SUBSCRIPTION_ID below is the enforcement.
 
-    Requires: Azure CLI (`az`) >= 2.50, Bicep CLI (auto-installed by
-    Azure CLI), pwsh 7+.
+    Requires: Azure CLI (`az`) >= 2.61 (deployment stacks + what-if support),
+    Bicep CLI (auto-installed by Azure CLI), pwsh 7+.
+
+    Deployment Stack behaviour:
+      --action-on-unmanage deleteResources  resources removed from Bicep are
+                                            deleted on next deploy; the resource
+                                            group itself is not deleted (safe for
+                                            resources that predate the stack).
+      --deny-settings-mode none             no read-only lock; portal edits are
+                                            allowed (appropriate for a dev showcase).
 #>
 
 # Note: NOT using SupportsShouldProcess=$true on [CmdletBinding(...)]. Doing so
@@ -70,6 +85,10 @@ $ProgressPreference = 'SilentlyContinue'
 
 $EXPECTED_TENANT_ID       = '9793cd0f-2b27-4757-9986-1f7f1e35864a'  # Earlybird
 $EXPECTED_SUBSCRIPTION_ID = '4dce9fdd-ea5f-4f67-9a00-80279e58659d'  # Earlybird personal
+
+# Stable Deployment Stack name (not timestamped — same name on every run so
+# Azure updates the existing stack rather than creating a new deployment).
+$stackName = "pinwiz-shared-$Environment"
 
 # -----------------------------------------------------------------------------
 # Paths (script-relative so it runs from anywhere)
@@ -106,6 +125,13 @@ if (-not $azVersion) {
 }
 Write-Host "  Azure CLI: $($azVersion.'azure-cli')"
 Write-Host "  Bicep:     $($azVersion.'azure-cli-extensions' -join ', ' )"
+
+# Deployment stacks require az >= 2.61 (what-if support added then).
+$azMajor = [int]($azVersion.'azure-cli'.Split('.')[0])
+$azMinor = [int]($azVersion.'azure-cli'.Split('.')[1])
+if ($azMajor -lt 2 -or ($azMajor -eq 2 -and $azMinor -lt 61)) {
+    throw "Azure CLI >= 2.61 required for deployment stack what-if support. Installed: $($azVersion.'azure-cli'). Run: az upgrade"
+}
 
 # -----------------------------------------------------------------------------
 # Subscription / tenant guard (ADR 0010)
@@ -172,19 +198,22 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '  Bicep build: OK' -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
-# Deployment
+# Deployment Stack create / update
 # -----------------------------------------------------------------------------
 
-$deploymentName = "pinwiz-shared-$Environment-$(Get-Date -Format 'yyyyMMddHHmmss')"
-$location       = 'eastus2'
+$location = 'eastus2'
 
 if ($WhatIf) {
-    Write-Host '[4/5] Running what-if (no changes will be applied)...' -ForegroundColor Cyan
-    az deployment sub what-if `
-        --name $deploymentName `
+    Write-Host '[4/5] Running what-if via Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
+    az stack sub create `
+        --name $stackName `
         --location $location `
         --template-file $templateFile `
-        --parameters $parametersFile
+        --parameters $parametersFile `
+        --action-on-unmanage deleteResources `
+        --deny-settings-mode none `
+        --what-if `
+        --yes
     if ($LASTEXITCODE -ne 0) {
         throw 'what-if failed.'
     }
@@ -192,50 +221,50 @@ if ($WhatIf) {
     Write-Host '[5/5] What-if complete. No changes applied.' -ForegroundColor Green
 }
 else {
-    Write-Host '[4/5] Deploying...' -ForegroundColor Cyan
+    Write-Host "[4/5] Deploying via Deployment Stack '$stackName'..." -ForegroundColor Cyan
+    Write-Host '  action-on-unmanage: deleteResources (orphan resources are deleted on next deploy)' -ForegroundColor DarkGray
+    Write-Host '  deny-settings-mode: none (portal edits permitted)' -ForegroundColor DarkGray
 
-    if ($PSCmdlet.ShouldProcess("subscription $EXPECTED_SUBSCRIPTION_ID", "Deploy pinwiz shared resources ($Environment)")) {
-        az deployment sub create `
-            --name $deploymentName `
-            --location $location `
-            --template-file $templateFile `
-            --parameters $parametersFile `
-            --output table
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Deployment failed.'
-        }
-        Write-Host ''
-        Write-Host "[5/5] Deployment complete. Deployment name: $deploymentName" -ForegroundColor Green
+    az stack sub create `
+        --name $stackName `
+        --location $location `
+        --template-file $templateFile `
+        --parameters $parametersFile `
+        --action-on-unmanage deleteResources `
+        --deny-settings-mode none `
+        --yes
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Deployment Stack create/update failed.'
+    }
 
-        # Print Bicep outputs so the operator can copy the cosmosAccountEndpoint
-        # (and the other endpoints when Phase 2 lands) without a separate
-        # `az deployment sub show` call. Phase 2 outputs return empty strings
-        # when deployPhase2=false (the bicep null-conditional emit) — print
-        # only the non-empty values so Phase 1 deploys aren't noisy.
-        Write-Host ''
-        Write-Host '  Outputs:' -ForegroundColor Cyan
-        $outputsJson = az deployment sub show `
-            --name $deploymentName `
-            --query 'properties.outputs' `
-            -o json
-        if ($LASTEXITCODE -eq 0 -and $outputsJson) {
-            $outputs = $outputsJson | ConvertFrom-Json
-            foreach ($prop in $outputs.PSObject.Properties) {
-                $value = $prop.Value.value
-                if (-not [string]::IsNullOrEmpty([string]$value)) {
-                    Write-Host ("    {0,-30} {1}" -f $prop.Name, $value)
-                }
-            }
-            Write-Host ''
-            Write-Host '  Smoke-test (Cosmos via Managed Identity):' -ForegroundColor Cyan
-            $endpoint = $outputs.cosmosAccountEndpoint.value
-            if (-not [string]::IsNullOrEmpty([string]$endpoint)) {
-                Write-Host "    `$env:Cosmos__AccountEndpoint = '$endpoint'"
-                Write-Host '    dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers'
+    Write-Host ''
+    Write-Host "[5/5] Deployment Stack '$stackName' updated successfully." -ForegroundColor Green
+
+    # Print Bicep outputs so the operator can copy endpoints without a
+    # separate az call. Stack outputs live at .properties.outputs.
+    Write-Host ''
+    Write-Host '  Outputs:' -ForegroundColor Cyan
+    $outputsJson = az stack sub show `
+        --name $stackName `
+        --query 'properties.outputs' `
+        -o json
+    if ($LASTEXITCODE -eq 0 -and $outputsJson) {
+        $outputs = $outputsJson | ConvertFrom-Json
+        foreach ($prop in $outputs.PSObject.Properties) {
+            $value = $prop.Value.value
+            if (-not [string]::IsNullOrEmpty([string]$value)) {
+                Write-Host ("    {0,-30} {1}" -f $prop.Name, $value)
             }
         }
-        else {
-            Write-Host '    (failed to retrieve outputs; run az deployment sub show manually)' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host '  Smoke-test (Cosmos via Managed Identity):' -ForegroundColor Cyan
+        $endpoint = $outputs.cosmosAccountEndpoint.value
+        if (-not [string]::IsNullOrEmpty([string]$endpoint)) {
+            Write-Host "    `$env:Cosmos__AccountEndpoint = '$endpoint'"
+            Write-Host '    dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers'
         }
+    }
+    else {
+        Write-Host '    (failed to retrieve outputs; run az stack sub show --name $stackName manually)' -ForegroundColor Yellow
     }
 }
