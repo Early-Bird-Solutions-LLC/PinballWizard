@@ -76,3 +76,7 @@ param deployAiSearch = true
 // Update this value if the ACA environment is ever recreated (the random
 // DNS-label suffix in the FQDN changes on environment recreation).
 param wizardAliveUrl = 'https://pinwiz-ca-wizard-dev.calmrock-938a17ac.eastus2.azurecontainerapps.io/alive'
+
+// Custom domain — requires Cloudflare DNS-only mode during cert provisioning.
+// Switch Cloudflare back to proxied (orange cloud) after deploy completes.
+param wizardCustomDomain = 'pinwiz.ai'

@@ -57,6 +57,9 @@ param deployAiSearch bool = true
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
 
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Cloudflare proxy must be in DNS-only mode during cert provisioning.')
+param wizardCustomDomain string = ''
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -105,6 +108,7 @@ module shared 'modules/shared.bicep' = {
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
     wizardAliveUrl: wizardAliveUrl
+    wizardCustomDomain: wizardCustomDomain
     wizardImageTag: wizardImageTag
     apiImageTag: apiImageTag
   }
