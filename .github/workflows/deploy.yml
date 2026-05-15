@@ -1,0 +1,156 @@
+name: Deploy
+
+# Builds and pushes container images to ACR, then updates the ACA apps
+# when source code changes land on main. Separated from ci.yml so a
+# failed deploy does not block test-coverage reporting, and so the deploy
+# can be re-triggered independently.
+#
+# Authentication: GitHub OIDC federated credentials (no long-lived secrets).
+# Required one-time operator setup in Entra before this workflow can run:
+#   1. Create an app registration in the Earlybird Entra tenant.
+#   2. Add a federated credential for:
+#        Issuer:  https://token.actions.githubusercontent.com
+#        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
+#        Audience: api://AzureADTokenExchange
+#   3. Grant the app registration these Azure RBAC roles:
+#        AcrPush   on  pinwizacrdevhlpz4  (resource scope)
+#        Contributor (or Microsoft.App/containerApps/write custom role)
+#          on  pinwiz-ca-wizard-dev  (resource scope)
+#          on  pinwiz-ca-api-dev     (resource scope)
+#   4. Add these GitHub repository secrets:
+#        AZURE_CLIENT_ID       — app registration client ID
+#        AZURE_TENANT_ID       — 9793cd0f-2b27-4757-9986-1f7f1e35864a
+#        AZURE_SUBSCRIPTION_ID — 4dce9fdd-ea5f-4f67-9a00-80279e58659d
+#   5. Add these GitHub repository variables (Settings → Variables → Actions):
+#        ACR_LOGIN_SERVER      — pinwizacrdevhlpz4.azurecr.io
+#        ACA_RESOURCE_GROUP    — rg-pinwiz-shared-dev
+#        WIZARD_APP_NAME       — pinwiz-ca-wizard-dev
+#        API_APP_NAME          — pinwiz-ca-api-dev
+#
+# Image tagging policy (locked invariant — CLAUDE.md #16):
+#   - Every build pushes :{sha} tag (explicit, immutable reference).
+#   - :latest is also pushed as a convenience alias for `docker pull`.
+#   - ACA container configuration ALWAYS uses :{sha} — never :latest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/PinballWizard.Web/**'
+      - 'src/PinballWizard.Web.Client/**'
+      - 'src/PinballWizard.Api/**'
+      - 'src/PinballWizard.Application/**'
+      - 'src/PinballWizard.Infrastructure/**'
+      - 'src/PinballWizard.Core/**'
+      - 'src/PinballWizard.ServiceDefaults/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+
+  # Allow manual trigger from the Actions tab (useful for re-deploying
+  # without a code change, e.g. after an infra-only deploy reverts the image).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC token exchange with Azure
+
+concurrency:
+  # One deploy at a time on main; a new push cancels an in-progress one.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build images + deploy to ACA
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ── Azure login via OIDC (no long-lived secret) ────────────────────────
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Build + push Web image ─────────────────────────────────────────────
+      # az acr build runs the Docker build remotely in ACR — no Docker daemon
+      # or docker/setup-buildx-action needed on the runner. The --no-wait flag
+      # is intentionally absent so the step fails fast if the build fails.
+      - name: Build and push pinwiz-web
+        run: |
+          az acr build \
+            --registry ${{ vars.ACR_LOGIN_SERVER }} \
+            --image pinwiz-web:${{ github.sha }} \
+            --image pinwiz-web:latest \
+            --file src/PinballWizard.Web/Dockerfile \
+            .
+
+      # ── Build + push Api image ─────────────────────────────────────────────
+      - name: Build and push pinwiz-api
+        run: |
+          az acr build \
+            --registry ${{ vars.ACR_LOGIN_SERVER }} \
+            --image pinwiz-api:${{ github.sha }} \
+            --image pinwiz-api:latest \
+            --file src/PinballWizard.Api/Dockerfile \
+            .
+
+      # ── Deploy Wizard web app ──────────────────────────────────────────────
+      # Always use the explicit :{sha} tag — never :latest (locked invariant).
+      - name: Update Wizard ACA image
+        run: |
+          az containerapp update \
+            --name ${{ vars.WIZARD_APP_NAME }} \
+            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:${{ github.sha }}
+
+      # ── Deploy Api app ────────────────────────────────────────────────────
+      - name: Update Api ACA image
+        run: |
+          az containerapp update \
+            --name ${{ vars.API_APP_NAME }} \
+            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:${{ github.sha }}
+
+      # ── Smoke test ────────────────────────────────────────────────────────
+      # Wait for the new revision to be healthy, then probe /alive.
+      # ACA revision rollover takes ~30–60 s; 120 s timeout is generous.
+      - name: Smoke test /alive
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ vars.WIZARD_APP_NAME }} \
+            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          echo "Probing https://${FQDN}/alive ..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/alive" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ /alive returned 200 after ${i} attempts"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 — got ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ /alive did not return 200 after 120 s"
+          exit 1
+
+      # ── Summary ──────────────────────────────────────────────────────────
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "### Deployed :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-web\` | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-api\` | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
