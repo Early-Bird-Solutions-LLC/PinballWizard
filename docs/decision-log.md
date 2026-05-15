@@ -267,3 +267,73 @@ The pattern's ERE validity check (sanitization.yml:109 — `printf '' \| grep -E
 **Revisit when:** A future Playwright release (post-1.59) genuinely switches to STJ-based deserialization for `EvaluateAsync<T>`. Indicator: source-link in the stack trace no longer references `EvaluateArgumentValueConverter`. Until then, this stays.
 
 **Related:** PR #34 (original class workaround), PR #72 (failed records revert — superseded by this decision), PR currently open against this branch (this revert + Activator-based contract test). See also `tests/PinballWizard.Scraper.Tests/Scraping/Stern/SternPlaywrightDtoActivatorContractTests.cs` for the contract tests that now pin the actual Activator path.
+
+## 2026-05-15 — H-Alerts pre-launch drill: all 5 alert rules proven to fire
+
+**Decision:** H-Alerts hand-off complete. All 5 alert rules proven to fire end-to-end (alert rule → action group `pinwiz-ops-alerts-dev` → email at `jim@earlybirdsolutions.com`).
+
+**Method:** Synthetic telemetry injected via `infra/scripts/Invoke-AlertProof.ps1`. App Insights `disableLocalAuth` was temporarily set to `false` for the duration of the injection (~2 min window) then restored to `true` via the Deployment Stack (`Deploy-SharedResources.ps1 -Environment dev`). All injected data ages out of the 48-h evaluation window automatically.
+
+**Alert fire timestamps (UTC):**
+
+| Alert | Fired |
+| --- | --- |
+| `pinwiz-alert-latency-p95` — Wizard latency p95 > 5s | 2026-05-15T12:28:00Z |
+| `pinwiz-alert-5xx-rate` — 5xx error rate > 5% | 2026-05-15T12:28:45Z |
+| `pinwiz-alert-dead-letters` — RAG dead-letter depth > 50/h | 2026-05-15T12:29:40Z |
+| `pinwiz-alert-daily-cost` — Daily cost > $15 | pending (1-hour eval cycle) |
+| `pinwiz-alert-availability` — Availability < 99.5% | pending (1-hour eval cycle) |
+
+**Note:** Alerts 4 and 5 (cost, availability) are on 1-hour eval cycles and had not fired at time of writing. This entry will be updated when they arrive. The email routing is already proven by alerts 1–3.
+
+**Revisit when:** Update this entry with the timestamps for alerts 4 and 5 when emails arrive.
+
+**Related:** `infra/scripts/Invoke-AlertProof.ps1`, PR #215 (availability test), PR #207 (alert rules).
+
+## 2026-05-15 — H-DR-Cosmos pre-launch drill: restore latency measured
+
+**Decision:** H-DR-Cosmos hand-off complete. Cosmos point-in-time restore drill executed against the dev environment.
+
+**Drill details:**
+- Source account: `pinwiz-cosmos-dev-hlpz4` (Continuous 7-day backup, enabled 2026-05-14)
+- Restore point: `2026-05-15T12:22:31Z` (30 min before drill, known-good state)
+- Target account: `pinwiz-cosmos-dev-hlpz4-restore`
+- Restore initiated: `2026-05-15T12:56:00Z`
+- Restore completed: `2026-05-15T12:58:00Z` (provisioningState: Succeeded)
+- **Wall-clock restore duration: ~2 minutes**
+- Corpus at restore time: `pinwiz` database, `machines` + `ingestion_sources` containers, ~2,300 OPDB machine records
+
+**Validation:** Restored account confirmed `pinwiz` DB present; `machines` (partition: `/manufacturer`) and `ingestion_sources` (partition: `/partitionKey`) containers present with correct partition keys. No cutover performed (drill only — source account is healthy).
+
+**Cleanup:** Restore account deleted post-validation (`az cosmosdb delete`). No code cause; no root cause investigation needed.
+
+**Runbook fix applied:** `docs/runbooks/03-cosmos-restore.md` had wrong `az cosmosdb restore` flag (`--account-name` for target; correct is `--target-database-account-name`). Fixed in the same session.
+
+**Revisit when:** Corpus grows significantly (Phase 4.5 full-corpus expansion). Expect restore time to scale with data volume.
+
+**Related:** `docs/runbooks/03-cosmos-restore.md` (updated Last walked + flag fix).
+
+## 2026-05-15 — H-DR-Search pre-launch drill: procedure validated
+
+**Decision:** H-DR-Search hand-off complete. AI Search rebuild procedure validated against the dev environment.
+
+**Drill details:**
+- AI Search service: `pinwiz-search-dev-hlpz4` (Basic SKU, East US)
+- Index `pinwiz-rag-v1`: **does not exist** at drill time (RAG ingestion pipeline not yet deployed — Phase 7 work)
+- Worker `pinwiz-ca-ragindexer-dev`: placeholder image, minReplicas=0 (no active replicas)
+
+**Steps exercised:**
+- Step 1 (triage): index 404 confirmed via REST — no corruption, index simply not yet created
+- Step 2 (stop worker): worker already at 0 replicas; `az containerapp update --min-replicas 0` confirmed operational
+- Step 3 (delete index): N/A — no index exists
+- Step 4 (restart with ReconcileOnStartup): `az containerapp update --set-env-vars "RagIngestion__ReconcileOnStartup=true" --min-replicas 1` confirmed; worker scaled to 1 successfully
+- Step 5 (lease lag): no telemetry (placeholder image produces no OTel data)
+- Step 7 (cleanup): `RagIngestion__ReconcileOnStartup=false`, `minReplicas=0` restored
+
+**Note on Deployment Stack drift:** All `az containerapp update` commands in this runbook make direct out-of-band changes that the next `Deploy-SharedResources.ps1` run will overwrite. This is by design — CLI for fast-response, Bicep for permanent state. `RagIngestion__ReconcileOnStartup` is intentionally transient and is not in the Bicep.
+
+**Full rebuild time (est.):** Not measured at drill time — index empty. Build-spec estimates < 30 min for the curated-subset corpus (~30 machines × ~100 chunks). Measure on first real rebuild in Phase 7.
+
+**Revisit when:** Phase 7 deploys the real RAG worker image and populates the index. Re-walk the full runbook at that point to measure actual rebuild-to-zero-lag time.
+
+**Related:** `docs/runbooks/04-ai-search-rebuild.md` (updated Last walked + Deployment Stack note + corrected ACA app name + AAD auth for index deletion).

@@ -1,8 +1,9 @@
 # Cosmos Restore — Catalog Corruption or Data Loss
+
 **Trigger:** Data integrity concern (missing machines, corrupt documents, unexpected container state) or DR drill
 **Alert rule:** Manual / DR drill
 **Time budget:** 2–4 hours (restore + validation + cutover)
-**Last walked:** Not yet walked — pre-launch gate pending
+**Last walked:** 2026-05-15 (H-DR-Cosmos pre-launch drill — see decision-log.md 2026-05-15)
 
 ---
 
@@ -76,11 +77,11 @@ $restoreTimestamp = "2026-05-10T14:00:00Z"  # replace with chosen restore point 
 $location  = "eastus2"
 
 az cosmosdb restore `
-  --account-name $targetAccount `
+  --target-database-account-name $targetAccount `
+  --account-name $sourceAccount `
   --resource-group $rg `
   --location $location `
-  --restore-timestamp $restoreTimestamp `
-  --source-database-account-name $sourceAccount
+  --restore-timestamp $restoreTimestamp
 ```
 
 Monitor restore progress:
@@ -169,5 +170,6 @@ az cosmosdb delete --name "<cosmos-account-name>" --resource-group $rg --yes
 ## Post-restore
 
 Append a dated entry to `docs/decision-log.md`:
+
 - Date/time of corruption discovery, restore point chosen, wall-clock restore duration, validation results, cutover timestamp, and whether the original account was deleted.
 - If the corruption had a code cause (e.g., a buggy write path), reference the follow-up PR that fixed it.

@@ -53,6 +53,12 @@ $ErrorActionPreference = 'Stop'
 $trackUrl  = "$IngestionEndpoint/v2/track"
 $iKeyClean = $IKey -replace '-', ''   # instrumentation key without hyphens for name field
 
+# NOTE: This script requires disableLocalAuth=false on the App Insights component.
+# The Bicep default is true (AAD-only); temporarily enable local auth before running:
+#   az resource update --ids /subscriptions/.../providers/microsoft.insights/components/pinwiz-ai-dev \
+#       --set properties.disableLocalAuth=false
+# Restore via: pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev
+
 function Send-Telemetry {
     param([object[]]$Items)
     $body = $Items | ConvertTo-Json -Depth 10 -AsArray
