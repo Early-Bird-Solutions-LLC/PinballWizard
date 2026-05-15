@@ -1183,10 +1183,13 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
 // hidden-link tag wires the test to the App Insights component so portal
 // shows it under the AI resource's availability blade.
 //
-// wizardFqdn is extracted to a var so the conditional null-access on the
-// deployPhase2-gated wizardApp resource is guarded by the same condition.
-// The ! non-null assertion is safe inside the deployPhase2 ternary branch.
-var wizardFqdn = deployPhase2 ? wizardApp!.properties.configuration.ingress.fqdn : ''
+// Construct the wizard FQDN from the ACA environment's stable defaultDomain
+// rather than reading wizardApp.properties.configuration.ingress.fqdn.
+// Reading a runtime property from a conditionally-deployed resource at ARM
+// evaluation time is unreliable (the property may not be resolved yet when
+// the availability test is being created in the same deployment). The
+// constructed form is identical — ACA always assigns {appName}.{env.defaultDomain}.
+var wizardFqdn = deployPhase2 ? '${wizardContainerAppName}.${acaEnvironment!.properties.defaultDomain}' : ''
 
 resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployPhase2) {
   name: 'pinwiz-avail-test-dev'
