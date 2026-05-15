@@ -2,7 +2,7 @@
 **Trigger:** Source error rate spike detected in logs, `robots.txt` change detected, or `pinwiz.politeness.*` metrics show sustained failures
 **Alert rule:** Manual / DR drill (Phase 6 note: a `pinwiz-alert-scraper-errors` alert rule targeting `pinwiz.opdb.sync.failed` and scrape error logs is a Phase 6 follow-up)
 **Time budget:** First 60 minutes
-**Last walked:** Not yet walked — pre-launch gate pending
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
 
 ---
 

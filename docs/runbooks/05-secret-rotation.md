@@ -2,7 +2,7 @@
 **Trigger:** 90-day rotation cadence (calendar reminder) or key compromise detected
 **Alert rule:** Manual / DR drill
 **Time budget:** 60–90 minutes (all four secrets)
-**Last walked:** Not yet walked — pre-launch gate pending
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
 
 ---
 
@@ -10,7 +10,7 @@
 
 | Secret | Source system | Consumers | 90-day target |
 | --- | --- | --- | --- |
-| Azure AI Foundry / OpenAI API key | Azure AI Foundry project | ACA `pinwiz-web` + `pinwiz-rag-worker` env var `AiFoundry__ApiKey` | Every 90 days |
+| Azure AI Foundry / OpenAI API key | Azure AI Foundry project | **Production uses `DefaultAzureCredential` (managed identity RBAC) — no API key in ACA env vars.** If a key exists in a local `.env` as fallback, rotate it. For ACA apps: verify no `AiFoundry__ApiKey` env var is set (managed identity is the correct auth path per ADR-0014). | N/A for prod (dev `.env` only if set) |
 | Cosmos master key | Azure Cosmos DB | Only used in local dev / Aspire emulator; production uses AAD `DefaultAzureCredential` — no key to rotate for prod | N/A for prod |
 | Cloudflare API token | Cloudflare dashboard | GitHub Actions CI secret `CLOUDFLARE_API_TOKEN`; used by the `pages` deploy step | Every 90 days |
 | OPDB API token | https://opdb.org/profile → API Keys | ACA `pinwiz-web` env var `Opdb__ApiToken`; local `.env` | Every 90 days |
