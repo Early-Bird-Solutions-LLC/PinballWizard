@@ -61,6 +61,9 @@ param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, a managed certificate is provisioned via CNAME validation and the domain is bound with SNI. Leave empty to skip (default). CNAME must resolve directly to the ACA FQDN during provisioning — Cloudflare proxy must be in DNS-only mode until cert issuance completes.')
+param wizardCustomDomain string = ''
+
 // -----------------------------------------------------------------------------
 // Naming
 // -----------------------------------------------------------------------------
@@ -1343,6 +1346,23 @@ resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployP
 // Image: placeholder (quickstart) until CI/CD pipeline wires the real image.
 // Operator swap: az containerapp update --image <acr>/pinwiz-web:<sha>
 //
+// Managed TLS certificate for the Wizard custom domain (e.g. pinwiz.ai).
+// Provisioned via CNAME validation — ACA confirms that the custom domain's
+// CNAME resolves to this app's ingress FQDN, then issues a Let's Encrypt cert.
+// REQUIREMENT: Cloudflare proxy must be in DNS-only (grey cloud) mode during
+// provisioning so the CNAME resolves directly to the ACA FQDN. Switch back to
+// proxied (orange cloud) after this deployment completes successfully.
+resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (deployPhase2 && !empty(wizardCustomDomain)) {
+  parent: acaEnvironment
+  name: 'pinwiz-wizard-cert'
+  location: location
+  tags: tags
+  properties: {
+    subjectName: wizardCustomDomain
+    domainControlValidation: 'CNAME'
+  }
+}
+
 // Ingress: external HTTPS on port 8080 (ACA terminates TLS; app runs HTTP).
 // UseHttpsRedirection + UseHsts are disabled in the app — the ACA-managed LB
 // handles TLS termination (see PR #188 / commit 8527060).
@@ -1362,6 +1382,13 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
         targetPort: 8080
         transport: 'http'
         allowInsecure: false
+        customDomains: empty(wizardCustomDomain) ? [] : [
+          {
+            name: wizardCustomDomain
+            bindingType: 'SniEnabled'
+            certificateId: wizardCustomDomainCert.id
+          }
+        ]
       }
       registries: [
         {
