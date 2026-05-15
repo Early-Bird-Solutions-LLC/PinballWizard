@@ -54,6 +54,9 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
+param wizardAliveUrl string = ''
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -95,6 +98,7 @@ module shared 'modules/shared.bicep' = {
     deployPhase2: deployPhase2
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
+    wizardAliveUrl: wizardAliveUrl
   }
 }
 
