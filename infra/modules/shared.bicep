@@ -52,6 +52,9 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
+param wizardAliveUrl string = ''
+
 // -----------------------------------------------------------------------------
 // Naming
 // -----------------------------------------------------------------------------
@@ -1183,35 +1186,41 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
 // hidden-link tag wires the test to the App Insights component so portal
 // shows it under the AI resource's availability blade.
 //
-// Construct the wizard FQDN from the ACA environment's stable defaultDomain
-// rather than reading wizardApp.properties.configuration.ingress.fqdn.
-// Reading a runtime property from a conditionally-deployed resource at ARM
-// evaluation time is unreliable (the property may not be resolved yet when
-// the availability test is being created in the same deployment). The
-// constructed form is identical — ACA always assigns {appName}.{env.defaultDomain}.
-var wizardFqdn = deployPhase2 ? '${wizardContainerAppName}.${acaEnvironment!.properties.defaultDomain}' : ''
-
-resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployPhase2) {
+// Standard (non-XML) availability test — pings wizardAliveUrl every 5 min from
+// East US + West US. Only created when wizardAliveUrl is non-empty (set in the
+// environment bicepparam). Using `standard` kind avoids the XML configuration
+// that the classic `ping` kind requires; ARM evaluates the URL as a plain string
+// param rather than a runtime property reference, eliminating the ARM evaluation-
+// time null issues seen with wizardApp/acaEnvironment property access.
+resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployPhase2 && !empty(wizardAliveUrl)) {
   name: 'pinwiz-avail-test-dev'
   location: location
+  kind: 'standard'
   tags: union(tags, {
     'hidden-link:${appInsights.id}': 'Resource'
   })
-  kind: 'ping'
   properties: {
     SyntheticMonitorId: 'pinwiz-avail-test-dev'
     Name: 'PinballWizard /alive ping'
-    Description: '/alive is the lightest probe — no auth, no SSE warmup. Fails on placeholder image (port 80 vs ACA port 8080); passes once Phase 7 deploys the real image.'
+    Description: '/alive is the lightest probe — no auth, no SSE warmup. Fails on placeholder image; passes once Phase 7 deploys the real image.'
     Enabled: true
     Frequency: 300
     Timeout: 30
-    Kind: 'ping'
+    Kind: 'standard'
     Locations: [
       { Id: 'us-va-ash-azr' }   // East US
       { Id: 'us-ca-sjc-azr' }   // West US
     ]
-    Configuration: {
-      WebTest: '<WebTest Name="PinballWizard /alive ping" Id="pinwiz-avail-test-dev" Enabled="True" Timeout="30" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Items><Request Method="GET" Guid="a1b2c3d4-0000-0000-0000-a1b2c3d4e5f6" Version="1.1" Url="https://${wizardFqdn}/alive" ThinkTime="0" Timeout="30" ParseDependentRequests="False" FollowRedirects="True" RecordResult="True" Cache="False" ResponseTimeGoal="0" Encoding="utf-8" ExpectedHttpStatusCode="200" IgnoreHttpStatusCode="False" /></Items></WebTest>'
+    Request: {
+      RequestUrl: wizardAliveUrl
+      HttpVerb: 'GET'
+      ParseDependentRequests: false
+      FollowRedirects: true
+    }
+    ValidationRules: {
+      ExpectedHttpStatusCode: 200
+      IgnoreHttpStatusCode: false
+      SSLCheck: false
     }
     RetryEnabled: true
   }

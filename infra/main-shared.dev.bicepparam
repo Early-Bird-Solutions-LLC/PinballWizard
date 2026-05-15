@@ -68,3 +68,11 @@ param deployPhase2 = true
 // Central US — Phase 1 Cosmos location stays unchanged) per Phase 3
 // lesson 3.
 param deployAiSearch = true
+
+// App Insights availability test target. Pings /alive every 5 min from East US
+// + West US. Fails on the placeholder image (quickstart listens on port 80;
+// ACA ingress expects port 8080) — intentional for the H-Alerts pre-launch
+// drill; passes once Phase 7 deploys the real image on port 8080.
+// Update this value if the ACA environment is ever recreated (the random
+// DNS-label suffix in the FQDN changes on environment recreation).
+param wizardAliveUrl = 'https://pinwiz-ca-wizard-dev.calmrock-938a17ac.eastus2.azurecontainerapps.io/alive'
