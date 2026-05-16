@@ -175,6 +175,32 @@ Routes to test: `/`, `/wizard`, `/settings`
 
 ---
 
+## Pre-launch gate — remove dev-only protections
+
+These items are active **now** to keep the site invisible during development. Remove them immediately before announcing the site publicly.
+
+### PL1 — Delete Cloudflare Access application
+
+The `PinballWizard Dev` Access application in Cloudflare Zero Trust blocks all visitors except `jim@earlybirdsolutions.com`. Delete it — don't just disable it.
+
+**Steps:** Zero Trust → Access → Applications → `PinballWizard Dev` → Delete
+
+See [cloudflare-setup.md § Zero Trust Access](cloudflare-setup.md#zero-trust-access--pre-launch-gate) for details.
+
+### PL2 — Update `robots.txt` to allow crawlers
+
+`src/PinballWizard.Web/wwwroot/robots.txt` currently has `Disallow: /` (blocks all crawlers). Replace the file contents with:
+
+```text
+User-agent: *
+Allow: /
+Sitemap: https://pinwiz.ai/sitemap.xml
+```
+
+Commit and push — the CI/CD pipeline will deploy the updated file automatically.
+
+---
+
 ## After 30 days of live traffic (~June 14)
 
 - Record cost burn snapshot from App Insights workbook cost tile
