@@ -106,6 +106,19 @@ resource "cloudflare_dns_record" "dmarc" {
 # Disable email autodiscovery to discourage spoofing tools from finding
 # mail endpoints we don't have.
 
+# ─────────────────────────────────────────────────────────────────────
+# Email Routing — explicitly disabled
+# ─────────────────────────────────────────────────────────────────────
+# pinwiz.ai has no mail use case. Disabling Email Routing prevents any
+# Cloudflare-managed MX/DKIM records from conflicting with the null MX
+# below. Currently already disabled (enabled=false, status=unconfigured).
+# Add Zone: Email Routing: Edit to the token for any future writes.
+
+resource "cloudflare_email_routing_settings" "this" {
+  zone_id = var.zone_id
+  enabled = false
+}
+
 resource "cloudflare_dns_record" "mx_null" {
   zone_id  = var.zone_id
   name     = "@"
@@ -114,12 +127,11 @@ resource "cloudflare_dns_record" "mx_null" {
   priority = 0
   ttl      = 3600
   comment  = "Null MX — RFC 7505 — domain accepts no mail"
+
+  # Email Routing must be confirmed disabled before creating null MX,
+  # otherwise Cloudflare rejects it as conflicting with routing MX records.
+  depends_on = [cloudflare_email_routing_settings.this]
 }
-# NOTE: Cloudflare Email Routing is currently enabled for pinwiz.ai (3 MX +
-# 2 DKIM TXT records). Applying mx_null will conflict with those records.
-# Decision needed before first apply: disable Email Routing in the dashboard
-# first, which removes the Cloudflare-generated MX/TXT records. Once cleared,
-# apply proceeds cleanly and this null MX takes effect.
 
 # ─────────────────────────────────────────────────────────────────────
 # Azure Container Apps custom domain verification

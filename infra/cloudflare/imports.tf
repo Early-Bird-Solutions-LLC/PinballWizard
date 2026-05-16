@@ -52,6 +52,16 @@ import {
   id = "13b7f7c8b15889652f0004d420669fe1/0acb3e7bdeafbe45ae0f6984407861a4"
 }
 
+# ─── Email Routing ───────────────────────────────────────────────────
+
+# Email Routing is already disabled (enabled=false, status=unconfigured).
+# Import brings it under IaC management so it can't be re-enabled via
+# the dashboard without going through code. No DNS changes on apply.
+import {
+  to = cloudflare_email_routing_settings.this
+  id = "13b7f7c8b15889652f0004d420669fe1"
+}
+
 # ─── DNSSEC ──────────────────────────────────────────────────────────
 
 # DNSSEC is currently disabled. Importing and applying will enable it.
