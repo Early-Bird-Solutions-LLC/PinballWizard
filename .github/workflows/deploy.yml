@@ -13,19 +13,25 @@ name: Deploy
 #        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
 #        Audience: api://AzureADTokenExchange
 #   3. Grant the app registration these Azure RBAC roles:
-#        AcrPush   on  pinwizacrdevhlpz4  (resource scope)
-#        Contributor (or Microsoft.App/containerApps/write custom role)
-#          on  pinwiz-ca-wizard-dev  (resource scope)
-#          on  pinwiz-ca-api-dev     (resource scope)
+#        AcrPush       on  <acr-resource>          (data-plane push; also covers login via token exchange)
+#        Contributor   on  pinwiz-ca-wizard-dev     (resource scope)
+#        Contributor   on  pinwiz-ca-api-dev        (resource scope)
 #   4. Add these GitHub repository secrets:
 #        AZURE_CLIENT_ID       — app registration client ID
 #        AZURE_TENANT_ID       — 9793cd0f-2b27-4757-9986-1f7f1e35864a
-#        AZURE_SUBSCRIPTION_ID — 4dce9fdd-ea5f-4f67-9a00-80279e58659d
+#        AZURE_SUBSCRIPTION_ID — b1f33f17-74a9-4ecc-b46c-c4f31776b840
 #   5. Add these GitHub repository variables (Settings → Variables → Actions):
-#        ACR_LOGIN_SERVER      — pinwizacrdevhlpz4.azurecr.io
+#        ACR_LOGIN_SERVER      — <acr-name>.azurecr.io  (full login server)
 #        ACA_RESOURCE_GROUP    — rg-pinwiz-shared-dev
 #        WIZARD_APP_NAME       — pinwiz-ca-wizard-dev
 #        API_APP_NAME          — pinwiz-ca-api-dev
+#
+# Build approach: docker buildx build --push (runner-side build).
+# This only requires AcrPush (data-plane) on the ACR — no control-plane
+# access needed. az acr build (cloud build) was dropped because it requires
+# Microsoft.ContainerRegistry/registries/runs/write which has no least-
+# privilege built-in role. Runner-side builds use GitHub compute and add
+# GHA cache layer caching (cache-from/cache-to: type=gha).
 #
 # Image tagging policy (locked invariant — CLAUDE.md #16):
 #   - Every build pushes :{sha} tag (explicit, immutable reference).
@@ -71,7 +77,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       # ── Azure login via OIDC (no long-lived secret) ────────────────────────
       - name: Azure login
@@ -81,30 +87,52 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # ── Build + push Web image ─────────────────────────────────────────────
-      # az acr build runs the Docker build remotely in ACR — no Docker daemon
-      # or docker/setup-buildx-action needed on the runner. The --no-wait flag
-      # is intentionally absent so the step fails fast if the build fails.
+      # ── Docker login to ACR ───────────────────────────────────────────────
+      # az acr login --expose-token exchanges the current OIDC AAD token for
+      # an ACR refresh token on the data plane (no ARM/control-plane call).
+      # AcrPush on the ACR resource is the only permission required.
+      - name: Login to ACR
+        run: |
+          ACR_TOKEN=$(az acr login \
+            --name ${{ vars.ACR_LOGIN_SERVER }} \
+            --expose-token \
+            --output tsv \
+            --query accessToken)
+          docker login ${{ vars.ACR_LOGIN_SERVER }} \
+            --username 00000000-0000-0000-0000-000000000000 \
+            --password "$ACR_TOKEN"
+
+      # ── Docker Buildx setup ───────────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Build + push Web image ────────────────────────────────────────────
       - name: Build and push pinwiz-web
-        run: |
-          az acr build \
-            --registry ${{ vars.ACR_LOGIN_SERVER }} \
-            --image pinwiz-web:${{ github.sha }} \
-            --image pinwiz-web:latest \
-            --file src/PinballWizard.Web/Dockerfile \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/PinballWizard.Web/Dockerfile
+          push: true
+          tags: |
+            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:${{ github.sha }}
+            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # ── Build + push Api image ─────────────────────────────────────────────
+      # ── Build + push Api image ────────────────────────────────────────────
       - name: Build and push pinwiz-api
-        run: |
-          az acr build \
-            --registry ${{ vars.ACR_LOGIN_SERVER }} \
-            --image pinwiz-api:${{ github.sha }} \
-            --image pinwiz-api:latest \
-            --file src/PinballWizard.Api/Dockerfile \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/PinballWizard.Api/Dockerfile
+          push: true
+          tags: |
+            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:${{ github.sha }}
+            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # ── Deploy Wizard web app ──────────────────────────────────────────────
+      # ── Deploy Wizard web app ─────────────────────────────────────────────
       # Always use the explicit :{sha} tag — never :latest (locked invariant).
       - name: Update Wizard ACA image
         run: |
@@ -144,7 +172,7 @@ jobs:
           echo "❌ /alive did not return 200 after 120 s"
           exit 1
 
-      # ── Summary ──────────────────────────────────────────────────────────
+      # ── Summary ───────────────────────────────────────────────────────────
       - name: Deployment summary
         if: success()
         run: |
