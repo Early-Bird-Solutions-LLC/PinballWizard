@@ -60,6 +60,9 @@ param wizardAliveUrl string = ''
 @description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Cloudflare proxy must be in DNS-only mode during cert provisioning.')
 param wizardCustomDomain string = ''
 
+@description('Two-pass flag for custom domain cert binding. false=Pass 1 (register hostname, Disabled). true=Pass 2 (create cert + SniEnabled binding). See shared.bicep wizardCustomDomainCert comment.')
+param wizardCustomDomainCertReady bool = false
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -109,6 +112,7 @@ module shared 'modules/shared.bicep' = {
     deployAiSearch: deployAiSearch
     wizardAliveUrl: wizardAliveUrl
     wizardCustomDomain: wizardCustomDomain
+    wizardCustomDomainCertReady: wizardCustomDomainCertReady
     wizardImageTag: wizardImageTag
     apiImageTag: apiImageTag
   }
