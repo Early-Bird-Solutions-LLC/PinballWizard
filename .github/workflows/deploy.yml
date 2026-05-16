@@ -13,7 +13,8 @@ name: Deploy
 #        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
 #        Audience: api://AzureADTokenExchange
 #   3. Grant the app registration these Azure RBAC roles:
-#        AcrPush       on  <acr-resource>          (data-plane push; also covers login via token exchange)
+#        Reader        on  <acr-resource>           (control-plane: az acr login resolves registry via ARM)
+#        AcrPush       on  <acr-resource>           (data-plane: push images + token exchange)
 #        Contributor   on  pinwiz-ca-wizard-dev     (resource scope)
 #        Contributor   on  pinwiz-ca-api-dev        (resource scope)
 #   4. Add these GitHub repository secrets:
