@@ -72,16 +72,18 @@ public sealed class RagChangefeedTelemetryTests
         // succeeds. If the sink throws, the dashboard shouldn't think a
         // dead-letter row landed. Pinned because a future refactor could
         // accidentally move the counter.Add() before the await.
+        //
+        // Assert via the sink snapshot rather than the MeterListener: the
+        // process-global Meter is shared across all test classes, so a
+        // sibling test emitting the same error_class tag would race and
+        // produce a false positive in an Assert.DoesNotContain assertion.
         var ctx = new TestContext(failingSink: true);
         ctx.Handler.ThrowFor.Add(DocumentIdA);
 
-        var samples = CollectDeadLetterSamples(out var listener);
-        using (listener)
-        {
-            await ctx.Service.HandleChangesAsync([NewChange(DocumentIdA)], CancellationToken.None);
-        }
+        await ctx.Service.HandleChangesAsync([NewChange(DocumentIdA)], CancellationToken.None);
 
-        Assert.DoesNotContain(samples, s => s.ErrorClass == nameof(InvalidOperationException));
+        // Sink threw → no dead-letter row persisted.
+        Assert.Empty(ctx.DeadLetterSink.Snapshot);
     }
 
     [Fact]

@@ -64,6 +64,7 @@ jobs:
           TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
           TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
           TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
         # Re-plans against current state and applies. Alternative: download
         # the plan artifact from the merged PR's workflow run and apply that.
         # The alternative is stricter (applies exactly what was reviewed)
