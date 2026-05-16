@@ -98,6 +98,7 @@ The token requires these permissions (see `PLAN.md` §4 for the full rationale):
 | Zone | SSL and Certificates | Edit |
 | Zone | Zone WAF | Edit |
 | Zone | Logs | Edit |
+| Zone | Email Routing | Edit |
 | Account | Account Settings | Read |
 | Account | Logs | Edit |
 

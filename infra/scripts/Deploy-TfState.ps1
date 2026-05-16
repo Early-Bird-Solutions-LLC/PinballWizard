@@ -91,44 +91,39 @@ $infraDir     = Split-Path -Parent $scriptDir
 $templateFile = Join-Path $infraDir 'main-tfstate.bicep'
 
 # -----------------------------------------------------------------------------
-# Build parameter object
-# -----------------------------------------------------------------------------
-
-$params = @(
-    "developerObjectId=$developerObjectId"
-)
-if ($GithubOidcSpObjectId) {
-    $params += "githubOidcSpObjectId=$GithubOidcSpObjectId"
-}
-
-$paramArgs = $params | ForEach-Object { "--parameters"; $_ }
-
-# -----------------------------------------------------------------------------
-# Deploy (or what-if)
+# Deploy (or validate)
 # -----------------------------------------------------------------------------
 
 $stackName = 'pinwiz-tfstate'
 
+# Build inline parameter string (az CLI does not support PowerShell splatting)
+$paramString = "developerObjectId=$developerObjectId"
+if ($GithubOidcSpObjectId) {
+    $paramString += " githubOidcSpObjectId=$GithubOidcSpObjectId"
+}
+
 if ($WhatIf) {
-    Write-Host "`nRunning what-if (no changes applied)..." -ForegroundColor Cyan
-    az stack sub create `
+    Write-Host "`nValidating template (no changes applied)..." -ForegroundColor Cyan
+    az stack sub validate `
         --name $stackName `
         --location eastus2 `
         --template-file $templateFile `
-        @paramArgs `
-        --action-on-unmanage detachResources `
-        --deny-settings-mode none `
-        --what-if
+        --parameters $paramString `
+        --action-on-unmanage detachAll `
+        --deny-settings-mode none
+    if ($LASTEXITCODE -ne 0) { throw 'Validation failed.' }
+    Write-Host "`nValidation complete. No changes applied." -ForegroundColor Green
 } else {
     Write-Host "`nDeploying tfstate backend stack '$stackName'..." -ForegroundColor Cyan
     az stack sub create `
         --name $stackName `
         --location eastus2 `
         --template-file $templateFile `
-        @paramArgs `
-        --action-on-unmanage detachResources `
+        --parameters $paramString `
+        --action-on-unmanage detachAll `
         --deny-settings-mode none `
         --yes
+    if ($LASTEXITCODE -ne 0) { throw 'Deployment Stack create/update failed.' }
 
     Write-Host "`nDone. Storage account: stpinballtfstate" -ForegroundColor Green
     Write-Host "Container:             tfstate"

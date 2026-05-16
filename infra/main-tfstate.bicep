@@ -13,10 +13,10 @@
 // disaster — the storage account and its state file are permanent.
 //
 // Stack settings intentionally differ from main-shared.bicep:
-//   --action-on-unmanage detachResources  (NOT deleteResources)
-//   If a stack operation is accidentally re-run, orphaned resources are
-//   detached from the stack but NOT deleted. Deleting the state backend
-//   would be catastrophic — this setting makes the operation safe.
+//   --action-on-unmanage detachAll  (NOT deleteResources)
+//   If a stack operation is accidentally re-run, ALL resources are detached
+//   from the stack rather than deleted. Deleting the state backend would be
+//   catastrophic — detachAll makes the operation safe.
 //
 // Authentication: shared-key access is DISABLED. All access (local dev + CI)
 // uses Azure AD / Entra ID auth:
