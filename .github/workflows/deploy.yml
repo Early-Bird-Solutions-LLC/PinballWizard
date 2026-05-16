@@ -13,8 +13,7 @@ name: Deploy
 #        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
 #        Audience: api://AzureADTokenExchange
 #   3. Grant the app registration these Azure RBAC roles:
-#        Reader        on  <acr-resource>           (control-plane: az acr login resolves registry via ARM)
-#        AcrPush       on  <acr-resource>           (data-plane: push images + token exchange)
+#        AcrPush       on  <acr-resource>           (data-plane only: push + OAuth2 token exchange)
 #        Contributor   on  pinwiz-ca-wizard-dev     (resource scope)
 #        Contributor   on  pinwiz-ca-api-dev        (resource scope)
 #   4. Add these GitHub repository secrets:
@@ -89,19 +88,27 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # ── Docker login to ACR ───────────────────────────────────────────────
-      # az acr login --expose-token exchanges the current OIDC AAD token for
-      # an ACR refresh token on the data plane (no ARM/control-plane call).
-      # AcrPush on the ACR resource is the only permission required.
+      # Pure data-plane approach — no ARM call, no control-plane role needed.
+      # 1. Get AAD token scoped to containerregistry.azure.net (not ARM).
+      # 2. Exchange via ACR OAuth2 endpoint for an ACR refresh token.
+      # 3. docker login with the refresh token.
+      # AcrPush is the only ACR RBAC role required.
       - name: Login to ACR
+        env:
+          REGISTRY: ${{ vars.ACR_LOGIN_SERVER }}
         run: |
-          ACR_TOKEN=$(az acr login \
-            --name ${{ vars.ACR_LOGIN_SERVER }} \
-            --expose-token \
-            --output tsv \
-            --query accessToken)
-          docker login ${{ vars.ACR_LOGIN_SERVER }} \
-            --username 00000000-0000-0000-0000-000000000000 \
-            --password "$ACR_TOKEN"
+          AAD_TOKEN=$(az account get-access-token \
+            --resource "https://containerregistry.azure.net" \
+            --query accessToken -o tsv)
+          REFRESH_TOKEN=$(curl -sSf -X POST \
+            "https://${REGISTRY}/oauth2/exchange" \
+            --data-urlencode "grant_type=access_token" \
+            --data-urlencode "service=${REGISTRY}" \
+            --data-urlencode "access_token=${AAD_TOKEN}" \
+            | jq -r '.refresh_token')
+          echo "${REFRESH_TOKEN}" | docker login "${REGISTRY}" \
+            --username "00000000-0000-0000-0000-000000000000" \
+            --password-stdin
 
       # ── Docker Buildx setup ───────────────────────────────────────────────
       - name: Set up Docker Buildx
