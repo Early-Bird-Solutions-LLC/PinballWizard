@@ -30,7 +30,7 @@ one platform for everything. Deployed via Azure Deployment Stacks.
 | --- | --- | --- |
 | Cloudflare Registrar | — | Domain `pinwiz.ai` |
 | Cloudflare DNS | Free | Authoritative DNS, traffic routes to ACA App |
-| Cloudflare Pro | $25/mo | Managed WAF (OWASP ruleset), Bot Fight Mode, DDoS, CDN, page rules |
+| Cloudflare Pro | $20/mo ($240/yr annual) | Managed WAF (OWASP + Exposed Credentials), Bot Fight Mode, DDoS, CDN, rate limits, security headers |
 
 Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloudflare Pro is the WAF tier for v1; **App Gateway WAF v2 + Front Door is explicitly deferred to v2** (§7).
 
@@ -317,7 +317,7 @@ And separately upload `catalog.json` + `games.json` to the same container.
 | Application Insights | 1GB/mo cap | $2-5 |
 | Log Analytics | 1GB/mo cap | $2-3 |
 | Key Vault | Standard | <$1 |
-| **Cloudflare Pro** | DNS + CDN + managed WAF + Bot Fight + DDoS | $25 |
+| **Cloudflare Pro** | DNS + CDN + managed WAF + Bot Fight + DDoS + rate limits | $20 ($240/yr annual) |
 | **Microsoft Entra External ID** | CIAM tenant (admin RBAC + social-login federations); free tier covers v1 monthly active users | $0 (free tier) |
 | **Steady-state (live)** | | **~$195-370/mo** |
 | **Steady-state (active build, min=0)** | | **~$165-340/mo** |
@@ -353,7 +353,7 @@ Each item below is in the architectural plan with explicit "designed but unbuilt
 | **Dream Game generator** ([concept](dream_game_concept.md)) | Text generation negligible; image generation $50-150/mo at modest scale, quota-gated | Phase 5 marquee feature OR post-launch v2; decision when Phase 4 lands and budget headroom is known |
 | **Strategy Tracker** ([concept](strategy_tracker_concept.md)) — competitive-player strategy library + session log + AI-assisted refinement, **headline module of Digital Passport** | Cost-trivial (no image gen); fits in $400/mo cap with room to spare | Sequence-dependent on OCR score capture + ≥1 tournament API integration. Strong reason to promote Passport's first module to ship alongside public Blazor launch. |
 
-The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($25/mo) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
+The WAF tier choice in particular is the headline cost/value story: **Cloudflare Pro ($20/mo amortized, $240/yr annual) hits the same OWASP threats at the edge that App Gateway WAF v2 ($330+/mo) would catch behind it**. For a public anonymous community resource at v1 traffic levels, paying 13x more for a second wall behind the first is the kind of decision a portfolio reviewer should be able to find clearly explained — that's why it's documented here rather than left implicit.
 
 > **See also: [`ai_ml_ideas.md`](ai_ml_ideas.md) — AI/ML ideas catalog.**
 > Distinct from this table. The deferred-to-v2 table above is "designed
