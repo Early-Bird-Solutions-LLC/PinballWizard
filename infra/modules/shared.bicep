@@ -61,8 +61,11 @@ param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
-@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, a managed certificate is provisioned via CNAME validation and the domain is bound with SNI. Leave empty to skip (default). CNAME must resolve directly to the ACA FQDN during provisioning — Cloudflare proxy must be in DNS-only mode until cert issuance completes.')
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, a managed certificate is provisioned and the domain is registered. Leave empty to skip.')
 param wizardCustomDomain string = ''
+
+@description('Two-pass flag for custom domain cert binding. Pass 1 (false, default): register hostname as Disabled + create cert. Pass 2 (true): switch binding to SniEnabled using the existing cert. Set true only after Pass 1 deployment has succeeded and the cert is in Approved state.')
+param wizardCustomDomainCertReady bool = false
 
 // -----------------------------------------------------------------------------
 // Naming
@@ -1349,27 +1352,29 @@ resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployP
 // Managed TLS certificate for the Wizard custom domain (e.g. pinwiz.ai).
 // Provisioned via CNAME validation — ACA confirms that the custom domain's
 // CNAME resolves to this app's ingress FQDN, then issues a Let's Encrypt cert.
-// REQUIREMENT: Cloudflare proxy must be in DNS-only (grey cloud) mode during
-// provisioning so the CNAME resolves directly to the ACA FQDN. Switch back to
-// proxied (orange cloud) after this deployment completes successfully.
-resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (deployPhase2 && !empty(wizardCustomDomain)) {
+// Two-pass custom domain cert — avoids ARM circular dependency:
+//
+// Pass 1 (wizardCustomDomainCertReady=false):
+//   Deploy wizardApp with bindingType='Disabled' (registers hostname).
+//   No cert resource in this pass — no cycle possible.
+//
+// Pass 2 (wizardCustomDomainCertReady=true):
+//   Deploy cert resource (hostname now registered, HTTP validation fires).
+//   wizardApp references cert.id → ARM infers cert must be created first.
+//   No dependsOn needed; no cycle.
+//
+// Run Deploy-SharedResources.ps1 twice, flipping wizardCustomDomainCertReady
+// in the local.bicepparam between runs.
+resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (deployPhase2 && !empty(wizardCustomDomain) && wizardCustomDomainCertReady) {
   parent: acaEnvironment
   name: 'pinwiz-wizard-cert'
   location: location
   tags: tags
   properties: {
     subjectName: wizardCustomDomain
-    // HTTP validation: ACA serves the ACME challenge token at
-    // http://{domain}/.well-known/acme-challenge/<token>. Requests flow
-    // Cloudflare proxy → ACA ingress → ACA handles the challenge internally.
-    // Works transparently with the proxy active — no DNS-only toggle needed
-    // for initial issuance OR renewals.
-    //
-    // PREREQUISITE: add a Cloudflare Transform Rule to bypass the HTTPS
-    // redirect for the challenge path (documented in decision-log.md
-    // 2026-05-15 — Custom domain cert auto-renewal):
-    //   Match: URI Path contains ".well-known/acme-challenge"
-    //   Action: Rewrite scheme to HTTP  (or: disable "Always Use HTTPS" rule)
+    // HTTP validation — works through Cloudflare proxy; auto-renews without
+    // DNS toggles. Requires a Cloudflare rule to bypass HTTPS redirect for
+    // .well-known/acme-challenge/* (see decision-log.md 2026-05-15).
     domainControlValidation: 'HTTP'
   }
 }
@@ -1393,13 +1398,18 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
         targetPort: 8080
         transport: 'http'
         allowInsecure: false
-        customDomains: empty(wizardCustomDomain) ? [] : [
+        customDomains: empty(wizardCustomDomain) ? [] : (wizardCustomDomainCertReady ? [
           {
             name: wizardCustomDomain
             bindingType: 'SniEnabled'
-            certificateId: wizardCustomDomainCert.id
+            certificateId: wizardCustomDomainCert.id  // ARM ensures cert is created first
           }
-        ]
+        ] : [
+          {
+            name: wizardCustomDomain
+            bindingType: 'Disabled'  // Pass 1: register hostname only, no cert yet
+          }
+        ])
       }
       registries: [
         {
