@@ -7,11 +7,11 @@
 # live in different phases and are configured as separate resources.
 
 # ─────────────────────────────────────────────────────────────────────
-# Managed rulesets — deploy the Cloudflare-published rules
+# Managed rulesets — Cloudflare Pro plan ($20/mo, activated 2026-05-16)
 # ─────────────────────────────────────────────────────────────────────
-# Important: deploy in LOG mode first for 48-72 hours, watch the WAF events
-# dashboard for false positives, then change action to BLOCK in a follow-up
-# PR. The configuration below shows the final (post-staging) state.
+# OWASP Core Ruleset (PL1) and Exposed Credentials Check require Pro.
+# Deploy in LOG mode first for 48-72 hours, watch WAF events dashboard
+# for false positives, then promote to BLOCK in a follow-up PR.
 
 resource "cloudflare_ruleset" "zone_waf_managed" {
   zone_id     = var.zone_id
@@ -38,21 +38,10 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
       action_parameters = {
         id = local.managed_ruleset_owasp_core
         overrides = {
-          # Paranoia Level 1 only — PL2+ produces excess false positives
-          # until baselined. Promote after analytics tuning.
           categories = [
-            {
-              category = "paranoia-level-2"
-              enabled  = false
-            },
-            {
-              category = "paranoia-level-3"
-              enabled  = false
-            },
-            {
-              category = "paranoia-level-4"
-              enabled  = false
-            },
+            { category = "paranoia-level-2", enabled = false },
+            { category = "paranoia-level-3", enabled = false },
+            { category = "paranoia-level-4", enabled = false },
           ]
         }
       }

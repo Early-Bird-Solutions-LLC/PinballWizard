@@ -28,9 +28,7 @@ resource "cloudflare_ruleset" "rate_limits" {
       }
     },
 
-    # Future RAG/chat endpoint — every request costs real money.
-    # The rule is in place ahead of the endpoint launching, so the
-    # cost ceiling is reviewed before the endpoint goes live.
+    # Chat/RAG endpoint — every request costs real money.
     {
       action      = "block"
       description = "Chat/RAG endpoint — 30 req/min per IP"
@@ -40,29 +38,21 @@ resource "cloudflare_ruleset" "rate_limits" {
          starts_with(http.request.uri.path, "/api/query"))
       EOT
       ratelimit = {
-        characteristics     = ["ip.src"]
+        characteristics     = ["ip.src", "cf.colo.id"]
         period              = 60
         requests_per_period = 30
         mitigation_timeout  = 600
       }
     },
 
-    # Future authentication endpoints. Tight limit, long mitigation —
-    # credential stuffing is patient.
-    {
-      action      = "managed_challenge"
-      description = "Auth endpoints — 5 req/min per IP, then challenge"
-      enabled     = true
-      expression  = <<-EOT
-        (starts_with(http.request.uri.path, "/api/auth") or
-         http.request.uri.path eq "/login")
-      EOT
-      ratelimit = {
-        characteristics     = ["ip.src"]
-        period              = 60
-        requests_per_period = 5
-        mitigation_timeout  = 3600
-      }
-    },
+    # Auth endpoints — deferred until auth endpoints exist (Pro allows 2 rules;
+    # adding this requires Business plan or waiting until /api/auth ships).
+    # {
+    #   action      = "managed_challenge"
+    #   description = "Auth endpoints — 5 req/min per IP, then challenge"
+    #   enabled     = true
+    #   expression  = "(starts_with(http.request.uri.path, \"/api/auth\") or http.request.uri.path eq \"/login\")"
+    #   ratelimit   = { characteristics = ["ip.src", "cf.colo.id"], period = 60, requests_per_period = 5, mitigation_timeout = 3600 }
+    # },
   ]
 }

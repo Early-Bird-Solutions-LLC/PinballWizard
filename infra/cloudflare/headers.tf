@@ -58,10 +58,9 @@ resource "cloudflare_ruleset" "security_response_headers" {
               "report-uri https://${var.domain}/_csp-reports",
             ])
           }
-          # Strip identifying server headers if the origin returns them.
-          "Server" = {
-            operation = "remove"
-          }
+          # Strip identifying headers from the origin response.
+          # Note: "Server" is a protected system header — Cloudflare does not
+          # permit removing it via Transform Rules even on paid plans.
           "X-Powered-By" = {
             operation = "remove"
           }
