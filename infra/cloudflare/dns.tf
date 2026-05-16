@@ -107,16 +107,16 @@ resource "cloudflare_dns_record" "dmarc" {
 # mail endpoints we don't have.
 
 # ─────────────────────────────────────────────────────────────────────
-# Email Routing — explicitly disabled
+# Email Routing — tracked (currently disabled)
 # ─────────────────────────────────────────────────────────────────────
-# pinwiz.ai has no mail use case. Disabling Email Routing prevents any
-# Cloudflare-managed MX/DKIM records from conflicting with the null MX
-# below. Currently already disabled (enabled=false, status=unconfigured).
-# Add Zone: Email Routing: Edit to the token for any future writes.
+# pinwiz.ai has no mail use case. Email Routing is already disabled
+# (enabled=false, status=unconfigured). This resource is imported to
+# bring it under IaC management. The v5 provider marks `enabled` as
+# read-only — state is tracked but enable/disable requires the dashboard
+# or a direct API call until the provider exposes a write path.
 
 resource "cloudflare_email_routing_settings" "this" {
   zone_id = var.zone_id
-  enabled = false
 }
 
 resource "cloudflare_dns_record" "mx_null" {
