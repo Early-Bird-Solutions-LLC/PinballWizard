@@ -220,6 +220,30 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-pr
 }
 
 // -----------------------------------------------------------------------------
+// User-assigned managed identity — shared by all ACA apps for ACR image pull.
+// Using UAMI instead of system-assigned MI eliminates the ARM race condition
+// where principalId is blank when the role assignment is evaluated in parallel
+// with resource creation. UAMI exists before any ACA app, so its principalId
+// is stable at template evaluation time.
+// -----------------------------------------------------------------------------
+
+resource acaIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (deployPhase2) {
+  name: '${namePrefix}-aca-id-${environment}'
+  location: location
+  tags: tags
+}
+
+resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, '${namePrefix}-aca-id-${environment}', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Azure AI Search (Basic)
 // -----------------------------------------------------------------------------
 
@@ -654,7 +678,10 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: acaEnvironment.id
@@ -663,7 +690,7 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
       registries: [
         {
           server: containerRegistry.?properties.loginServer ?? ''
-          identity: 'system'
+          identity: acaIdentity.?id ?? ''
         }
       ]
     }
@@ -944,7 +971,10 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: acaEnvironment.id
@@ -959,7 +989,7 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
       registries: [
         {
           server: containerRegistry.?properties.loginServer ?? ''
-          identity: 'system'
+          identity: acaIdentity.?id ?? ''
         }
       ]
     }
@@ -996,15 +1026,6 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
   }
 }
 
-resource apiAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
-  scope: containerRegistry
-  name: guid(containerRegistry.id, apiApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: apiApp.?identity.principalId ?? ''
-    principalType: 'ServicePrincipal'
-  }
-}
 
 resource apiAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
   scope: apiApp
@@ -1020,18 +1041,6 @@ resource apiAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' =
   }
 }
 
-// Wizard ACA app — AcrPull so the system-assigned MI can pull images from ACR.
-// Without this the revision provisioning fails (Operation expired) even for
-// placeholder images because ACA validates registry auth at create time.
-resource wizardAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
-  scope: containerRegistry
-  name: guid(containerRegistry.id, wizardApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: wizardApp.?identity.principalId ?? ''
-    principalType: 'ServicePrincipal'
-  }
-}
 
 resource ragIndexerStorageBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
   scope: storage
@@ -1387,7 +1396,10 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: acaEnvironment.id
@@ -1414,7 +1426,7 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
       registries: [
         {
           server: containerRegistry.?properties.loginServer ?? ''
-          identity: 'system'
+          identity: acaIdentity.?id ?? ''
         }
       ]
     }
