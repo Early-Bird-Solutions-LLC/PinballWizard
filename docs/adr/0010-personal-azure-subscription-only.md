@@ -36,7 +36,7 @@ Every Azure deployment from this repo must target the **personal Earlybird
 tenant and subscription**:
 
 - **Tenant ID:** `9793cd0f-2b27-4757-9986-1f7f1e35864a` (Earlybird)
-- **Subscription ID:** `4dce9fdd-ea5f-4f67-9a00-80279e58659d` (Earlybird personal)
+- **Subscription ID:** `b1f33f17-74a9-4ecc-b46c-c4f31776b840` (pinball.wiz — dedicated PinballWizard subscription, migrated from UpworkDemo on 2026-05-16)
 
 These IDs are **identifiers, not credentials** — committing them to the
 repo is safe and intended. Access is gated by Entra authentication, not

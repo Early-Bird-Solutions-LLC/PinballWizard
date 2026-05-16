@@ -46,7 +46,7 @@ If `missing` drift > 0, AI Search has lost chunks that the state container belie
 Scale the worker to zero before touching the index to prevent partial writes during the rebuild.
 
 ```powershell
-$rg = "rg-pinwiz-shared-dev"
+$rg = "rg-pinwiz-shared-dev"  # adjust suffix for non-dev environments; derive sub with: az account show --query id -o tsv
 
 az containerapp update --name pinwiz-ca-ragindexer-dev `
   --resource-group $rg `
