@@ -7,67 +7,60 @@
 # live in different phases and are configured as separate resources.
 
 # ─────────────────────────────────────────────────────────────────────
-# Managed rulesets — deploy the Cloudflare-published rules
+# Managed rulesets — REQUIRES CLOUDFLARE PRO ($20/mo)
 # ─────────────────────────────────────────────────────────────────────
-# Important: deploy in LOG mode first for 48-72 hours, watch the WAF events
-# dashboard for false positives, then change action to BLOCK in a follow-up
-# PR. The configuration below shows the final (post-staging) state.
+# OWASP Core Ruleset and Exposed Credentials Check are not available on
+# the Free plan. Cloudflare applies basic DDoS + managed protection
+# automatically on Free — this resource adds configurable control over
+# those managed rulesets, which requires Pro or higher.
+#
+# To enable: upgrade the zone to Pro, then uncomment this resource.
+# The custom WAF rules below work on the Free plan.
 
-resource "cloudflare_ruleset" "zone_waf_managed" {
-  zone_id     = var.zone_id
-  name        = "Zone WAF — managed rulesets"
-  description = "Cloudflare Managed, OWASP Core, and Exposed Credentials Check rulesets"
-  kind        = "zone"
-  phase       = "http_request_firewall_managed"
-
-  rules = [
-    {
-      action      = "execute"
-      description = "Execute Cloudflare Managed Ruleset"
-      expression  = "true"
-      enabled     = true
-      action_parameters = {
-        id = local.managed_ruleset_cloudflare_managed
-      }
-    },
-    {
-      action      = "execute"
-      description = "Execute OWASP Core Ruleset (PL1 — start low, tune up)"
-      expression  = "true"
-      enabled     = true
-      action_parameters = {
-        id = local.managed_ruleset_owasp_core
-        overrides = {
-          # Paranoia Level 1 only — PL2+ produces excess false positives
-          # until baselined. Promote after analytics tuning.
-          categories = [
-            {
-              category = "paranoia-level-2"
-              enabled  = false
-            },
-            {
-              category = "paranoia-level-3"
-              enabled  = false
-            },
-            {
-              category = "paranoia-level-4"
-              enabled  = false
-            },
-          ]
-        }
-      }
-    },
-    {
-      action      = "execute"
-      description = "Execute Exposed Credentials Check Ruleset"
-      expression  = "true"
-      enabled     = true
-      action_parameters = {
-        id = local.managed_ruleset_exposed_credentials
-      }
-    },
-  ]
-}
+# resource "cloudflare_ruleset" "zone_waf_managed" {
+#   zone_id     = var.zone_id
+#   name        = "Zone WAF — managed rulesets"
+#   description = "Cloudflare Managed, OWASP Core, and Exposed Credentials Check rulesets"
+#   kind        = "zone"
+#   phase       = "http_request_firewall_managed"
+#
+#   rules = [
+#     {
+#       action      = "execute"
+#       description = "Execute Cloudflare Managed Ruleset"
+#       expression  = "true"
+#       enabled     = true
+#       action_parameters = {
+#         id = local.managed_ruleset_cloudflare_managed
+#       }
+#     },
+#     {
+#       action      = "execute"
+#       description = "Execute OWASP Core Ruleset (PL1 — start low, tune up)"
+#       expression  = "true"
+#       enabled     = true
+#       action_parameters = {
+#         id        = local.managed_ruleset_owasp_core
+#         overrides = {
+#           categories = [
+#             { category = "paranoia-level-2", enabled = false },
+#             { category = "paranoia-level-3", enabled = false },
+#             { category = "paranoia-level-4", enabled = false },
+#           ]
+#         }
+#       }
+#     },
+#     {
+#       action      = "execute"
+#       description = "Execute Exposed Credentials Check Ruleset"
+#       expression  = "true"
+#       enabled     = true
+#       action_parameters = {
+#         id = local.managed_ruleset_exposed_credentials
+#       }
+#     },
+#   ]
+# }
 
 # ─────────────────────────────────────────────────────────────────────
 # Custom rules — application-specific WAF rules
