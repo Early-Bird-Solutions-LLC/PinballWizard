@@ -30,3 +30,12 @@ output "zone_id" {
   description = "Cloudflare Zone ID — passthrough for use in other stacks."
   value       = var.zone_id
 }
+
+output "prelaunch_gate" {
+  description = "Pre-launch Access gate state. When enabled, the entire apex is maintainer-only behind Zero Trust Access (PL1). Flip dev_gate_enabled=false and apply to open the site at launch."
+  value = {
+    enabled        = var.dev_gate_enabled
+    allowed_emails = var.dev_gate_enabled ? var.dev_gate_allowed_emails : []
+    application_id = var.dev_gate_enabled ? cloudflare_zero_trust_access_application.prelaunch_gate[0].id : null
+  }
+}
