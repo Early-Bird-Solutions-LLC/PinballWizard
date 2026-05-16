@@ -92,7 +92,7 @@ Modules are valuable when you have repeated patterns. With one zone and one set 
 
 ## 3. State Backend
 
-**Choice: Azure Blob Storage**, in the existing JungleTech subscription, using a dedicated container `tfstate-pinball-wizard`, with state encryption enabled.
+**Choice: Azure Blob Storage**, in the existing Earlybird Azure subscription, using a dedicated container `tfstate-pinball-wizard`, with state encryption enabled.
 
 ### Why Azure over alternatives
 
