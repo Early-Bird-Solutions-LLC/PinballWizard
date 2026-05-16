@@ -12,7 +12,7 @@
 zone_id          = "<32-char zone ID from Cloudflare dashboard>"
 account_id       = "<32-char account ID from Cloudflare dashboard>"
 domain           = "pinwiz.ai"
-origin_hostname  = "pinwiz-ca-wizard-dev.calmrock-938a17ac.eastus2.azurecontainerapps.io"
+origin_hostname  = "pinwiz-ca-wizard-dev.graybay-045982b4.eastus2.azurecontainerapps.io"
 admin_email      = "security@pinwiz.ai"
 
 # ACA custom domain verification token — value of the asuid.pinwiz.ai TXT record.
