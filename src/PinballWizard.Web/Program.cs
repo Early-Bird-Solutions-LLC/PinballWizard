@@ -20,6 +20,7 @@
 
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.FileProviders.Physical;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using MudBlazor.Services;
@@ -154,15 +155,21 @@ app.UseStaticFiles();
 // Serve .well-known/ explicitly — PhysicalFileProvider excludes dot-prefixed
 // directories by default (ExclusionFilters.DotPrefixed), so a second middleware
 // registration with ExclusionFilters.None is required.
-app.UseStaticFiles(new StaticFileOptions
+// WebRootPath can be null when no wwwroot exists (e.g. CI environments without
+// static assets); fall back to ContentRootPath/wwwroot and skip if absent.
+var wellKnownPath = Path.Combine(
+    builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"),
+    ".well-known");
+if (Directory.Exists(wellKnownPath))
 {
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(builder.Environment.WebRootPath, ".well-known"),
-        Microsoft.Extensions.FileProviders.Physical.ExclusionFilters.None),
-    RequestPath = "/.well-known",
-    ServeUnknownFileTypes = true,
-    DefaultContentType = "text/plain; charset=utf-8",
-});
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(wellKnownPath, ExclusionFilters.None),
+        RequestPath = "/.well-known",
+        ServeUnknownFileTypes = true,
+        DefaultContentType = "text/plain; charset=utf-8",
+    });
+}
 
 app.UseAntiforgery();
 app.UseAuthentication();
