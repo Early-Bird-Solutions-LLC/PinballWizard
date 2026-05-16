@@ -7,60 +7,56 @@
 # live in different phases and are configured as separate resources.
 
 # ─────────────────────────────────────────────────────────────────────
-# Managed rulesets — REQUIRES CLOUDFLARE PRO ($20/mo)
+# Managed rulesets — Cloudflare Pro plan ($20/mo, activated 2026-05-16)
 # ─────────────────────────────────────────────────────────────────────
-# OWASP Core Ruleset and Exposed Credentials Check are not available on
-# the Free plan. Cloudflare applies basic DDoS + managed protection
-# automatically on Free — this resource adds configurable control over
-# those managed rulesets, which requires Pro or higher.
-#
-# To enable: upgrade the zone to Pro, then uncomment this resource.
-# The custom WAF rules below work on the Free plan.
+# OWASP Core Ruleset (PL1) and Exposed Credentials Check require Pro.
+# Deploy in LOG mode first for 48-72 hours, watch WAF events dashboard
+# for false positives, then promote to BLOCK in a follow-up PR.
 
-# resource "cloudflare_ruleset" "zone_waf_managed" {
-#   zone_id     = var.zone_id
-#   name        = "Zone WAF — managed rulesets"
-#   description = "Cloudflare Managed, OWASP Core, and Exposed Credentials Check rulesets"
-#   kind        = "zone"
-#   phase       = "http_request_firewall_managed"
-#
-#   rules = [
-#     {
-#       action      = "execute"
-#       description = "Execute Cloudflare Managed Ruleset"
-#       expression  = "true"
-#       enabled     = true
-#       action_parameters = {
-#         id = local.managed_ruleset_cloudflare_managed
-#       }
-#     },
-#     {
-#       action      = "execute"
-#       description = "Execute OWASP Core Ruleset (PL1 — start low, tune up)"
-#       expression  = "true"
-#       enabled     = true
-#       action_parameters = {
-#         id        = local.managed_ruleset_owasp_core
-#         overrides = {
-#           categories = [
-#             { category = "paranoia-level-2", enabled = false },
-#             { category = "paranoia-level-3", enabled = false },
-#             { category = "paranoia-level-4", enabled = false },
-#           ]
-#         }
-#       }
-#     },
-#     {
-#       action      = "execute"
-#       description = "Execute Exposed Credentials Check Ruleset"
-#       expression  = "true"
-#       enabled     = true
-#       action_parameters = {
-#         id = local.managed_ruleset_exposed_credentials
-#       }
-#     },
-#   ]
-# }
+resource "cloudflare_ruleset" "zone_waf_managed" {
+  zone_id     = var.zone_id
+  name        = "Zone WAF — managed rulesets"
+  description = "Cloudflare Managed, OWASP Core, and Exposed Credentials Check rulesets"
+  kind        = "zone"
+  phase       = "http_request_firewall_managed"
+
+  rules = [
+    {
+      action      = "execute"
+      description = "Execute Cloudflare Managed Ruleset"
+      expression  = "true"
+      enabled     = true
+      action_parameters = {
+        id = local.managed_ruleset_cloudflare_managed
+      }
+    },
+    {
+      action      = "execute"
+      description = "Execute OWASP Core Ruleset (PL1 — start low, tune up)"
+      expression  = "true"
+      enabled     = true
+      action_parameters = {
+        id = local.managed_ruleset_owasp_core
+        overrides = {
+          categories = [
+            { category = "paranoia-level-2", enabled = false },
+            { category = "paranoia-level-3", enabled = false },
+            { category = "paranoia-level-4", enabled = false },
+          ]
+        }
+      }
+    },
+    {
+      action      = "execute"
+      description = "Execute Exposed Credentials Check Ruleset"
+      expression  = "true"
+      enabled     = true
+      action_parameters = {
+        id = local.managed_ruleset_exposed_credentials
+      }
+    },
+  ]
+}
 
 # ─────────────────────────────────────────────────────────────────────
 # Custom rules — application-specific WAF rules

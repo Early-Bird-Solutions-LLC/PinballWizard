@@ -28,32 +28,38 @@ resource "cloudflare_ruleset" "rate_limits" {
       }
     },
 
-    # ── REQUIRES PRO (10 rules) — uncomment on upgrade ──────────────
-    # Chat/RAG endpoint — 30 req/min per IP (every request costs money)
-    # {
-    #   action      = "block"
-    #   description = "Chat/RAG endpoint — 30 req/min per IP"
-    #   enabled     = true
-    #   expression  = "(starts_with(http.request.uri.path, \"/api/chat\") or starts_with(http.request.uri.path, \"/api/query\"))"
-    #   ratelimit = {
-    #     characteristics     = ["ip.src", "cf.colo.id"]
-    #     period              = 60
-    #     requests_per_period = 30
-    #     mitigation_timeout  = 600
-    #   }
-    # },
-    # Auth endpoints — 5 req/min per IP (credential stuffing defence)
-    # {
-    #   action      = "managed_challenge"
-    #   description = "Auth endpoints — 5 req/min per IP, then challenge"
-    #   enabled     = true
-    #   expression  = "(starts_with(http.request.uri.path, \"/api/auth\") or http.request.uri.path eq \"/login\")"
-    #   ratelimit = {
-    #     characteristics     = ["ip.src", "cf.colo.id"]
-    #     period              = 60
-    #     requests_per_period = 5
-    #     mitigation_timeout  = 3600
-    #   }
-    # },
+    # Chat/RAG endpoint — every request costs real money.
+    {
+      action      = "block"
+      description = "Chat/RAG endpoint — 30 req/min per IP"
+      enabled     = true
+      expression  = <<-EOT
+        (starts_with(http.request.uri.path, "/api/chat") or
+         starts_with(http.request.uri.path, "/api/query"))
+      EOT
+      ratelimit = {
+        characteristics     = ["ip.src", "cf.colo.id"]
+        period              = 60
+        requests_per_period = 30
+        mitigation_timeout  = 600
+      }
+    },
+
+    # Auth endpoints — credential stuffing is patient.
+    {
+      action      = "managed_challenge"
+      description = "Auth endpoints — 5 req/min per IP, then challenge"
+      enabled     = true
+      expression  = <<-EOT
+        (starts_with(http.request.uri.path, "/api/auth") or
+         http.request.uri.path eq "/login")
+      EOT
+      ratelimit = {
+        characteristics     = ["ip.src", "cf.colo.id"]
+        period              = 60
+        requests_per_period = 5
+        mitigation_timeout  = 3600
+      }
+    },
   ]
 }
