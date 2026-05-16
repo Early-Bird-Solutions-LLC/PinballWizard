@@ -94,7 +94,7 @@ $ProgressPreference = 'SilentlyContinue'
 # -----------------------------------------------------------------------------
 
 $EXPECTED_TENANT_ID       = '9793cd0f-2b27-4757-9986-1f7f1e35864a'  # Earlybird
-$EXPECTED_SUBSCRIPTION_ID = 'b1f33f17-74a9-4ecc-b46c-c4f31776b840'  # pinball.wiz
+$EXPECTED_SUBSCRIPTION_ID = 'b1f33f17-74a9-4ecc-b46c-c4f31776b840'  # pinwiz.ai
 
 # Stable Deployment Stack name (not timestamped — same name on every run so
 # Azure updates the existing stack rather than creating a new deployment).

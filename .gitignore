@@ -71,3 +71,8 @@ infra/**/build/
 # directory is captured as the `responsive-screenshots` artifact by the
 # `snapshots` job — they are NOT committed to the repo.
 screenshots/
+
+# Cloudflare inventory — raw API dumps containing sensitive values
+# (origin hostnames, cert fingerprints, error bodies). SUMMARY.md is
+# the safe-to-share output; the JSON files are never committed.
+cf-inventory/
