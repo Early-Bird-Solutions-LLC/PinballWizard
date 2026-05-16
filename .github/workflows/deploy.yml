@@ -77,30 +77,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ── Azure login via OIDC (no long-lived secret) ────────────────────────
       - name: Azure login
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # ── Diagnostics — temporary, remove after root cause confirmed ──────────
-      - name: ACR auth diagnostics
-        run: |
-          echo "=== Account type ==="
-          az account show --query "{user:user,subscription:name}" -o json
-          echo "=== ACR visible to this identity? ==="
-          az acr show --name pinwizacrdevbuutj --resource-group rg-pinwiz-shared-dev \
-            --query loginServer -o tsv || echo "FAILED: ACR not visible"
-          echo "=== Role assignments for this identity on ACR ==="
-          az role assignment list \
-            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.ContainerRegistry/registries/pinwizacrdevbuutj" \
-            --query "[].{role:roleDefinitionName}" -o table || echo "FAILED: cannot list roles"
-          echo "=== az acr login with debug output ==="
-          az acr login --name pinwizacrdevbuutj --debug 2>&1 | grep -E "CONNECTIVITY|401|exchange|token|ERROR|WARNING|login" || true
 
       # ── Docker login to ACR ───────────────────────────────────────────────
       - name: Login to ACR
@@ -108,11 +93,11 @@ jobs:
 
       # ── Docker Buildx setup ───────────────────────────────────────────────
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ── Build + push Web image ────────────────────────────────────────────
       - name: Build and push pinwiz-web
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: src/PinballWizard.Web/Dockerfile
@@ -125,7 +110,7 @@ jobs:
 
       # ── Build + push Api image ────────────────────────────────────────────
       - name: Build and push pinwiz-api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: src/PinballWizard.Api/Dockerfile
