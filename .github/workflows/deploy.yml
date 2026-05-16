@@ -87,11 +87,22 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # ── Diagnostics — temporary, remove after root cause confirmed ──────────
+      - name: ACR auth diagnostics
+        run: |
+          echo "=== Account type ==="
+          az account show --query "{user:user,subscription:name}" -o json
+          echo "=== ACR visible to this identity? ==="
+          az acr show --name pinwizacrdevbuutj --resource-group rg-pinwiz-shared-dev \
+            --query loginServer -o tsv || echo "FAILED: ACR not visible"
+          echo "=== Role assignments for this identity on ACR ==="
+          az role assignment list \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.ContainerRegistry/registries/pinwizacrdevbuutj" \
+            --query "[].{role:roleDefinitionName}" -o table || echo "FAILED: cannot list roles"
+          echo "=== az acr login with debug output ==="
+          az acr login --name pinwizacrdevbuutj --debug 2>&1 | grep -E "CONNECTIVITY|401|exchange|token|ERROR|WARNING|login" || true
+
       # ── Docker login to ACR ───────────────────────────────────────────────
-      # Plain `az acr login` after azure/login@v2 is the documented pattern
-      # for OIDC + ACR on ubuntu-latest. Uses the AAD session token, exchanges
-      # it at the ACR OAuth2 data-plane endpoint, writes docker credentials —
-      # no ARM lookup, no --expose-token, no manual curl. AcrPush only.
       - name: Login to ACR
         run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
 
