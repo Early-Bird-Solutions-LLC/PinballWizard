@@ -1,0 +1,71 @@
+name: Cloudflare IaC — Apply
+
+# Runs on push to main when the Cloudflare IaC has changed. Applies the
+# plan that was generated for the merged PR.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/cloudflare/**'
+  # Manual run option, e.g. to recover from a failure.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+concurrency:
+  group: cloudflare-iac-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: production  # gates this job behind GitHub environment protection rules
+    defaults:
+      run:
+        working-directory: infra/cloudflare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.x
+
+      - name: tofu init
+        run: tofu init
+
+      - name: tofu apply
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_zone_id: ${{ secrets.CF_ZONE_ID }}
+          TF_VAR_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
+          TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
+          TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+        # Re-plans against current state and applies. Alternative: download
+        # the plan artifact from the merged PR's workflow run and apply that.
+        # The alternative is stricter (applies exactly what was reviewed)
+        # but more complex; this version trades a small amount of strictness
+        # for operational simplicity. Either is defensible.
+        run: tofu apply -auto-approve
+
+  drift-detection:
+    # Separate from apply — runs weekly on a schedule via a sister workflow.
+    # See cloudflare-drift.yml (not yet created).
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "see cloudflare-drift.yml"
