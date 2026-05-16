@@ -24,7 +24,7 @@ If the tiles show green and the alert fired transiently, document the false posi
 The Wizard web app runs in Azure Container Apps. Check its health:
 
 ```powershell
-$sub = "4dce9fdd-ea5f-4f67-9a00-80279e58659d"
+$sub = (az account show --query id -o tsv)
 az account set --subscription $sub
 
 # List Container Apps in the resource group (adjust env suffix: dev / prod)

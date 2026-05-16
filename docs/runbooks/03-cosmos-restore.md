@@ -11,7 +11,7 @@
 
 - Azure CLI with CosmosDB extension: `az extension add --name cosmosdb-preview` (if not already installed)
 - Cosmos Continuous Backup must be enabled on the account (default for serverless accounts created by Phase 1 Bicep — verify in Azure portal before the drill: Cosmos account → Backup & Restore → Policy: Continuous 7 Days)
-- Subscription access: `4dce9fdd-ea5f-4f67-9a00-80279e58659d`
+- Subscription access: confirm with `az account show --query "{id:id,name:name}" -o jsonc` — must be the Earlybird tenant (`9793cd0f-...`)
 
 ---
 
@@ -46,8 +46,8 @@ Write-Host "Cosmos endpoint: $endpoint"
 Cosmos Continuous Backup retains a 7-day restore window at 1-second granularity.
 
 ```powershell
-$sub = "4dce9fdd-ea5f-4f67-9a00-80279e58659d"
-$rg = "pinwiz-shared-dev-<suffix>"
+$sub = (az account show --query id -o tsv)
+$rg = "rg-pinwiz-shared-dev"  # adjust suffix for non-dev environments
 
 # Find the Cosmos account name
 $accountName = az cosmosdb list --resource-group $rg `
@@ -69,8 +69,8 @@ Choose the restore point: pick the last known-good timestamp (before the corrupt
 **Important:** Cosmos point-in-time restore creates a NEW account — it does not restore in-place. Do not delete the source account until the restore is validated.
 
 ```powershell
-$sub       = "4dce9fdd-ea5f-4f67-9a00-80279e58659d"
-$rg        = "pinwiz-shared-dev-<suffix>"
+$sub       = (az account show --query id -o tsv)
+$rg        = "rg-pinwiz-shared-dev"  # adjust suffix for non-dev environments
 $sourceAccount = "<cosmos-account-name>"
 $targetAccount = "<cosmos-account-name>-restore"
 $restoreTimestamp = "2026-05-10T14:00:00Z"  # replace with chosen restore point (UTC)
