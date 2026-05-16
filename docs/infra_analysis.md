@@ -1,3 +1,11 @@
+---
+status: Superseded
+phase: Phase-2
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # pinwiz.ai — Phase 2 Infrastructure Plan
 
 This document describes the Azure infrastructure that will host the

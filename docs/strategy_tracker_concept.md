@@ -1,3 +1,11 @@
+---
+status: Draft
+phase: Phase-7
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Strategy Tracker — Phase 5+ Digital Passport Module (Concept Spec)
 
 > **Status:** Documented for future implementation. Ships as a **headline

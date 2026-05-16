@@ -1,3 +1,11 @@
+---
+status: Active
+phase: Phase-6
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Cloudflare Setup — pinwiz.ai
 
 Configuration reference for the Cloudflare account protecting and proxying `pinwiz.ai`.

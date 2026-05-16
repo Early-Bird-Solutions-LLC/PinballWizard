@@ -1,3 +1,11 @@
+---
+status: Active
+phase: Phase-5
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Community Data — How We Use It, How We Credit You
 
 > One-page plain-language explainer for community-resource operators (pricing aggregators, marketplaces, machine databases, news sites, etc.) we've reached out to about using their data inside PinballWizard. If you got an email from Jim Keeley at Earlybird Solutions and you're wondering "what would saying yes actually mean?" — this is for you.

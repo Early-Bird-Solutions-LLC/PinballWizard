@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml/badge.svg)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/codeql.yml/badge.svg)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/codeql.yml)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A570%25%20gated-brightgreen)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Early-Bird-Solutions-LLC/PinballWizard?include_prereleases&label=release&color=blue)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/releases)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Aspire](https://img.shields.io/badge/.NET%20Aspire-13.2-512BD4?logo=dotnet)](https://learn.microsoft.com/en-us/dotnet/aspire/)
 
@@ -48,6 +50,53 @@ graph TB
 ```
 
 Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines`, `ingestion_sources`, and RAG-state containers; the RAG Ingestion Worker (`PinballWizard.RagIngestionWorker`) consumes the Cosmos Change Feed, runs PdfPig text extraction, hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)), and embeds into AI Search ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)). The Wizard API (Microsoft Agent Framework + Azure Foundry orchestration, [ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) runs four agents — Wizard, Valuation, Rules, Repair — with `getMachineByTitle` + `searchCorpus` function tools, per-agent cost routing ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)), confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)), and two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)). The Blazor Web App ([ADR-0026](docs/adr/0026-user-delight-frontend-and-streaming.md)) streams answers over SSE with source citations and community-resource refusal panels; admin RBAC is gated by Entra External ID ([ADR-0009](docs/adr/0009-entra-external-id-admin-rbac-v1.md)). Cloudflare Pro provides DNS + CDN + WAF + Bot Fight. Phase 6 adds the Application Insights workbook, five metric alert rules, and the Wizard ACA app definition in Bicep.
+
+## Provenance model
+
+Every item the scraper captures becomes a `DocumentRecord` with a deterministic ID
+(`"doc_" + SHA-256(canonical_url.ToLower())[0:16]`) and a full attribution chain.
+This chain is the contract between Phase 1 and the Phase 2 RAG layer — every answer
+the Wizard gives cites a `document_id` that resolves through this record back to the
+original page on `sternpinball.com`.
+
+```json
+{
+  "id": "doc_9f3a1c7b2e004d51",
+  "source": {
+    "discovery_url": "https://sternpinball.com/game/stranger-things/",
+    "discovery_context": "game page — Manuals tab",
+    "file_url": "https://sternpinball.com/.../stranger-things-premium-manual.pdf",
+    "link_text": "Stranger Things Premium Manual",
+    "source_type": "manual",
+    "tab": "manuals"
+  },
+  "game": {
+    "title": "Stranger Things",
+    "slug": "stranger-things",
+    "edition": "Premium",
+    "game_page_url": "https://sternpinball.com/game/stranger-things/"
+  },
+  "classification": {
+    "document_type": "manual",
+    "content_categories": ["rules", "wiring", "parts"],
+    "file_format": "pdf"
+  },
+  "timeline": {
+    "first_discovered": "2026-05-04T12:01:00Z",
+    "last_checked": "2026-05-04T12:01:00Z",
+    "last_downloaded": "2026-05-04T12:01:00Z",
+    "last_content_changed": null,
+    "version_count": 1
+  },
+  "http": {
+    "etag": "\"a3f9c2b1d8e74056\"",
+    "last_modified": "2023-08-15T00:00:00Z"
+  },
+  "cross_references": []
+}
+```
+
+Every Phase 2 citation carries `document_id` + `file_url` + `discovery_url` + `page_range` — resolving through `ProvenanceService` so every answer traces to a clickable original source. See [`docs/data-model.md`](docs/data-model.md) for the full record type definitions.
 
 ## What this demonstrates
 

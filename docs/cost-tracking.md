@@ -1,3 +1,11 @@
+---
+status: Active
+phase: Phase-6
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # pinwiz.ai — Total Cost of Ownership
 
 **Hard cap: $400/mo.** Azure anomaly alert at $300/mo (wired via `Invoke-AlertProof.ps1`).

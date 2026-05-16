@@ -1,3 +1,11 @@
+---
+status: Active
+phase: Phase-6
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # PinballWizard — Threat Model
 
 **Version:** v1.0
