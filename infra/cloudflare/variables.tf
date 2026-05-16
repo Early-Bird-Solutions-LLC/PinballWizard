@@ -52,3 +52,15 @@ variable "aca_domain_verification_token" {
   type        = string
   sensitive   = true
 }
+
+variable "dev_gate_enabled" {
+  description = "Pre-launch gate (PL1). When true, the entire apex is behind Cloudflare Zero Trust Access (maintainer-only). Set to false and apply at launch to remove the gate atomically — pinwiz.ai is anonymous-public at launch per ADR-0009 Tier 1."
+  type        = bool
+  default     = true
+}
+
+variable "dev_gate_allowed_emails" {
+  description = "Identities permitted through the pre-launch gate. These are LOGIN identities (one-time-PIN email), distinct from admin_email which is the security/CAA contact, not an authenticator."
+  type        = list(string)
+  default     = ["jim@earlybirdsolutions.com"]
+}
