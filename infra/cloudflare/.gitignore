@@ -1,0 +1,22 @@
+# OpenTofu / Terraform state and locks
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.bak
+
+# Local override files
+*.auto.tfvars
+terraform.tfvars
+*.tfvars.local
+
+# Plan artifacts
+*.tfplan
+plan.tfplan
+plan.out
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Inventory and migration notes (not committed)
+notes/
