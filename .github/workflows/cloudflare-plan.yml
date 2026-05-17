@@ -15,6 +15,14 @@ permissions:
   id-token: write    # for Azure OIDC
   pull-requests: write  # to post the plan as a PR comment
 
+# One in-flight plan per PR. A new push supersedes the prior plan
+# (cancel-in-progress) so stale runs don't pile up holding state locks;
+# different PRs get distinct groups so they don't block each other. The
+# cancelled run's lock is cleared by the self-heal in the tofu plan step.
+concurrency:
+  group: cloudflare-iac-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -70,9 +78,25 @@ jobs:
         # -input=false makes a missing required variable fail immediately
         # instead of blocking on an interactive prompt until the job
         # timeout (the original cause of the multi-hour hang).
+        #
+        # -lock-timeout=120s waits out a legitimately in-progress lock
+        # before failing. NOTE: deliberately NO auto force-unlock here,
+        # unlike the apply workflow. Plan has a per-PR concurrency group,
+        # so two *different* PRs plan concurrently against the same
+        # backend state lock — a timed-out plan that force-unlocked would
+        # be voiding another PR's *live* lock, risking state corruption.
+        # A plan is recoverable (just re-run), so on a genuine stale lock
+        # we surface a clear, actionable error and let a human run
+        # `tofu force-unlock` once. Auto-heal lives only in the apply
+        # workflow, where the serialized concurrency group makes it safe.
         run: |
-          tofu plan -input=false -no-color -out=plan.tfplan 2>&1 | tee plan.txt
-          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          tofu plan -input=false -lock-timeout=120s -no-color -out=plan.tfplan 2>&1 | tee plan.txt
+          ec="${PIPESTATUS[0]}"
+          if [ "$ec" -ne 0 ] && grep -q "Error acquiring the state lock" plan.txt; then
+            LOCK_ID="$(grep -oE 'ID:[[:space:]]+[0-9a-f-]{36}' plan.txt | head -1 | awk '{print $2}')"
+            echo "::error::State lock contention (lock ID: ${LOCK_ID:-unparsed}). If no other Cloudflare plan/apply is running, a prior run was cancelled before releasing it — clear it manually from infra/cloudflare with: tofu force-unlock -force ${LOCK_ID:-<lock-id-from-log>}"
+          fi
+          echo "exitcode=${ec}" >> "$GITHUB_OUTPUT"
 
       - name: Upload plan artifact
         if: success()
