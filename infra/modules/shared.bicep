@@ -20,8 +20,8 @@
 // Each resource gets diagnostic settings routed to the Log Analytics workspace.
 //
 // Cost guard: this scaffold creates the resources but does NOT deploy any
-// Azure OpenAI model deployments (gpt-4o-mini / gpt-4.1 / text-embedding-3-large
-// / vision). Model deployments need quota and are slow to provision; they ship
+// Azure OpenAI model deployments (gpt-4o / gpt-4.1 / text-embedding-3-large).
+// Model deployments need quota and are slow to provision; they ship
 // in a follow-up PR after the account exists.
 // =============================================================================
 
@@ -84,7 +84,7 @@ var searchServiceName        = '${namePrefix}-search-${environment}-${uniqueSuff
 var openAiAccountName        = '${namePrefix}-openai-${environment}-${uniqueSuffix}'
 var foundryAccountName       = '${namePrefix}-foundry-${environment}-${uniqueSuffix}'
 var foundryProjectName       = 'pinwiz-wizard'
-var foundryChatDeploymentName       = 'gpt-4o-mini'
+var foundryChatDeploymentName       = 'gpt-4o'
 var foundryChatHeavyDeploymentName  = 'gpt-4-1' // Foundry deployment names disallow '.'; the "1" suffix maps to the gpt-4.1 model.
 var foundryEmbeddingDeploymentName  = 'text-embedding-3-large'
 var storageAccountName       = take(toLower('${namePrefix}st${environment}${uniqueSuffix}'), 24) // Storage: <=24 chars, alphanumeric
@@ -354,12 +354,13 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
 }
 
 // Model deployments live on the Foundry account (not the project) per the
-// Microsoft.CognitiveServices/accounts/deployments contract. Per ADR-0015,
-// gpt-4o-mini is the default for the Wizard / Valuation / Rules agents
-// (~80–85% of routed calls); gpt-4.1 is the escalation tier used by the
-// Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
+// Microsoft.CognitiveServices/accounts/deployments contract. Per ADR-0015
+// (amended 2026-05-17), gpt-4o is the default for the Wizard / Valuation /
+// Rules agents (~80–85% of routed calls); gpt-4.1 is the escalation tier for
+// the Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
 // 3072 dimensions is the locked embedding choice from
-// project_phase2_architecture_decisions.md.
+// project_phase2_architecture_decisions.md. Both chat tiers use Standard SKU
+// (GlobalStandard quota is zero on the personal Earlybird subscription).
 //
 // IMPORTANT: deployment capacity is in 1k-tokens-per-minute units and
 // counts against per-region quota. Defaults below are conservative; bump
@@ -369,14 +370,14 @@ resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments
   parent: foundry
   name: foundryChatDeploymentName
   sku: {
-    name: 'GlobalStandard'
+    name: 'Standard'
     capacity: 50
   }
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'gpt-4o-mini'
-      version: '2024-07-18'
+      name: 'gpt-4o'
+      version: '2024-11-20'
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
@@ -386,7 +387,7 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
   parent: foundry
   name: foundryChatHeavyDeploymentName
   sku: {
-    name: 'GlobalStandard'
+    name: 'Standard'
     capacity: 20
   }
   properties: {

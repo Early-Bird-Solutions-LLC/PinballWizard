@@ -1,6 +1,6 @@
 # 0015 — Cost routing: per-`AIAgent` model selection + per-call ceiling + LRU cache (Foundry-OTel-aware)
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-05-17)
 **Date:** 2026-05-04
 
 ## Context
@@ -49,10 +49,22 @@ deployment name. Defaults:
 
 | Agent | Default model | Rationale |
 | --- | --- | --- |
-| `Wizard` (orchestrator) | `gpt-4o-mini` | Classification + composition is light reasoning; cheap model is sufficient |
-| `Valuation` | `gpt-4o-mini` | Phase 3 stub — defers expensive valuation lookups; cheap model is sufficient |
-| `Rules` | `gpt-4o-mini` | Single-machine-grounded answers fit in mini's context |
-| `Repair` | `gpt-4.1` | Multi-step diagnosis benefits from better reasoning |
+| `Wizard` (orchestrator) | `gpt-4o` | Production-grade instruction-following + citation fidelity; see 2026-05-17 amendment |
+| `Valuation` | `gpt-4o` | Structured pricing output benefits from gpt-4o's reliable JSON adherence |
+| `Rules` | `gpt-4o` | Single-machine-grounded answers; gpt-4o citation accuracy fits showcase quality bar |
+| `Repair` | `gpt-4.1` | Multi-step diagnosis benefits from better reasoning; unchanged |
+
+**2026-05-17 amendment — chat model upgraded from `gpt-4o-mini` to `gpt-4o`:**
+
+The original `gpt-4o-mini` selection was cost-first; upon deploying for the H2 eval baseline the following factors changed the calculus:
+
+1. **`gpt-4o-mini` version `2024-07-18` is deprecated for new Standard deployments** as of 2026-03-31. No replacement version is yet surfaced in the Azure model catalog for the personal Earlybird subscription. GlobalStandard quota (where `gpt-4o-mini` is still available) was applied for 2026-05-16 but not granted on the personal subscription.
+2. **`gpt-4o` (Standard, `2024-11-20`) has 50k TPM Standard quota** and is not deprecated. It is Microsoft's current recommended model for production RAG and agent workloads.
+3. **Cost at showcase volume is negligible.** At 500 tokens/call average and ~100 demo calls/month, the delta between `gpt-4o-mini` ($0.15/1M) and `gpt-4o` ($2.50/1M) is ~$0.12/month — well within the $300–$400/mo cap. The per-call ceiling ($0.10) bounds pathological cases regardless of model.
+4. **Showcase quality bar favors `gpt-4o`.** Citation fidelity, structured-output reliability (critical for the `WizardAnswer` discriminated union), and instruction-following on complex RAG prompts are all measurably better on `gpt-4o`. A prospective customer evaluating AI quality will perceive the difference. `gpt-4o-mini` was acceptable for a development baseline; it is not the right default for a showcase intended to demonstrate enterprise-class AI.
+5. **`gpt-4.1` remains the escalation tier** — its multi-step reasoning advantage for the Repair agent is unchanged, and its cost ($2.00/1M input) is actually lower than `gpt-4o` ($2.50/1M). The per-agent override mechanism means a future ADR can re-tier individual agents based on H2 eval data without touching this decision.
+
+Per-agent `AgentModels[]` overrides remain available in configuration for further tuning after the H2 eval baseline establishes quality floors per agent.
 
 Configuration: `AiOptions.AgentModels[<agent_name>]` overrides
 default per-agent. **Escalation under the agent framework** means
