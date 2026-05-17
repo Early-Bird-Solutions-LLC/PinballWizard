@@ -30,9 +30,46 @@ resource "cloudflare_zero_trust_access_identity_provider" "otp" {
   config     = {}
 }
 
+# Static asset bypass applications — Blazor requires /_content/*, /_framework/*,
+# /_blazor/*, /app.css, and /app.js to be served anonymously so the browser can
+# load MudBlazor CSS, Blazor runtime JS, and app styles before any auth challenge.
+# Access gates these paths by default because the apex application covers all paths;
+# separate bypass applications with decision=bypass/everyone take precedence for
+# these path prefixes, letting static assets through without a login challenge.
+locals {
+  static_bypass_paths = var.dev_gate_enabled ? [
+    "/_content",
+    "/_framework",
+    "/_blazor",
+  ] : []
+}
+
+resource "cloudflare_zero_trust_access_application" "static_bypass" {
+  for_each = toset(local.static_bypass_paths)
+
+  account_id       = var.account_id
+  name             = "pinwiz.ai static bypass ${each.key}"
+  domain           = "${var.domain}${each.key}"
+  type             = "self_hosted"
+  session_duration = "24h"
+
+  app_launcher_visible = false
+
+  policies = [
+    {
+      name     = "Allow static assets"
+      decision = "bypass"
+      include = [
+        { everyone = {} }
+      ]
+    }
+  ]
+}
+
 # Self-hosted application covering the entire apex. Anyone hitting any
 # path on pinwiz.ai is challenged by Access and must satisfy the allow
 # policy below before the request ever reaches the ACA origin.
+# Static asset paths are excluded via the bypass applications above.
 resource "cloudflare_zero_trust_access_application" "prelaunch_gate" {
   count = var.dev_gate_enabled ? 1 : 0
 
