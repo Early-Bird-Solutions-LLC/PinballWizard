@@ -30,11 +30,11 @@ public sealed class AiCostCalculatorTests
     [Fact]
     public void ComputeUsdCents_KnownDeployment_AppliesPerKRates()
     {
-        // 1k input × 0.015c + 0.5k output × 0.060c = 0.015 + 0.030 = 0.045c
+        // 1k input × 0.25c + 0.5k output × 1.00c = 0.25 + 0.50 = 0.75c
         var calc = CreateCalculator();
-        var cost = calc.ComputeUsdCents(new TokenUsage("gpt-4o-mini", InputTokens: 1000, OutputTokens: 500));
+        var cost = calc.ComputeUsdCents(new TokenUsage("gpt-4o", InputTokens: 1000, OutputTokens: 500));
 
-        Assert.Equal(0.045, cost, precision: 4);
+        Assert.Equal(0.75, cost, precision: 4);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class AiCostCalculatorTests
     public void DefaultPricingTable_HasExpectedDeployments()
     {
         var options = new AiFoundryOptions();
-        Assert.Contains("gpt-4o-mini", options.PricingTable.Keys);
+        Assert.Contains("gpt-4o", options.PricingTable.Keys);
         Assert.Contains("gpt-4-1", options.PricingTable.Keys);
         Assert.Contains("text-embedding-3-large", options.PricingTable.Keys);
     }
