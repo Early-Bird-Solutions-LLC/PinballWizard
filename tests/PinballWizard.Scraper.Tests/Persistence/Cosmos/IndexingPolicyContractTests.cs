@@ -23,7 +23,7 @@ public sealed class IndexingPolicyContractTests
         // are excluded to halve the per-write RU cost.
         var indexState = AssertContainer("rag_index_state");
         var policy = Assert.IsType<CosmosIndexingPolicyOptions>(indexState.IndexingPolicy);
-        Assert.Equal(["/id/?", "/document_id/?", "/recorded_utc/?"], policy.IncludedPaths);
+        Assert.Equal(["/document_id/?", "/recorded_utc/?"], policy.IncludedPaths);
         Assert.Equal(["/*"], policy.ExcludedPaths);
     }
 
@@ -39,22 +39,19 @@ public sealed class IndexingPolicyContractTests
         var deadLetters = AssertContainer("rag_dead_letters");
         var policy = Assert.IsType<CosmosIndexingPolicyOptions>(deadLetters.IndexingPolicy);
         Assert.Equal(
-            ["/id/?", "/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
+            ["/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
             policy.IncludedPaths);
         Assert.Equal(["/*"], policy.ExcludedPaths);
     }
 
     [Fact]
-    public void Defaults_RagLeases_HasNoIndexingPolicyOverride()
+    public void Defaults_RagLeases_IsNotArmManaged_NoIndexingPolicy()
     {
-        // The lease container is owned by the SDK's
-        // `Cosmos.ChangeFeedProcessor` — its document shape and query
-        // patterns are SDK-internal. A selective policy that drifts
-        // from a future SDK version's query surface would manifest as
-        // a silent perf regression on change-feed processing. ADR-0025
-        // § 3 explicitly leaves this container at the default policy.
-        var leases = AssertContainer("rag_leases");
-        Assert.Null(leases.IndexingPolicy);
+        // rag_leases is excluded from ARM provisioning entirely — ARM rejects
+        // /id as a partition key (system property). The SDK's ChangeFeedProcessor
+        // auto-creates it. There is no IndexingPolicy to assert here.
+        var options = new CosmosOptions();
+        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
     }
 
     [Fact]
@@ -95,15 +92,14 @@ public sealed class IndexingPolicyContractTests
     public void Defaults_MachineTitleLookups_HasSelectiveIndexing()
     {
         // Per ADR-0025 § 3 — `machine_title_lookups` is a write-heavy
-        // projection (re-upserted on every OPDB sync per machine, plus
-        // the rename cleanup path). Reads are pure point-lookups
-        // by normalized title, where `id == normalizedTitle`. Indexing
-        // both `id` and `normalizedTitle` is defense-in-depth against
-        // future operator queries that name one or the other; everything
-        // else is excluded to halve the per-write RU cost.
+        // projection (re-upserted on every OPDB sync per machine). Reads
+        // are pure point-lookups by normalized title (id == normalizedTitle).
+        // Only `normalizedTitle` is in IncludedPaths; `id` is always
+        // implicitly indexed by Cosmos and is rejected by ARM if explicitly
+        // declared. Everything else excluded to halve per-write RU cost.
         var lookup = AssertContainer("machine_title_lookups");
         var policy = Assert.IsType<CosmosIndexingPolicyOptions>(lookup.IndexingPolicy);
-        Assert.Equal(["/id/?", "/normalizedTitle/?"], policy.IncludedPaths);
+        Assert.Equal(["/normalizedTitle/?"], policy.IncludedPaths);
         Assert.Equal(["/*"], policy.ExcludedPaths);
     }
 
