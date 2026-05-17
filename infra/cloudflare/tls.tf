@@ -105,8 +105,11 @@ resource "tls_cert_request" "origin" {
 }
 
 resource "cloudflare_origin_ca_certificate" "this" {
-  csr                = tls_cert_request.origin.cert_request_pem
-  hostnames          = [var.domain, "*.${var.domain}"]
+  csr = tls_cert_request.origin.cert_request_pem
+  # Order matches the materialized state (wildcard first). The provider
+  # does an order-sensitive comparison on this list, so a reorder alone
+  # forces a needless cert replacement — keep this aligned with state.
+  hostnames          = ["*.${var.domain}", var.domain]
   request_type       = "origin-rsa"
   requested_validity = 5475 # 15 years
 
