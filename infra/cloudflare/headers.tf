@@ -44,7 +44,7 @@ resource "cloudflare_ruleset" "security_response_headers" {
           # See CLOUDFLARE_PRELAUNCH_CHECKLIST.md §7.2 for the staged rollout.
           "Content-Security-Policy-Report-Only" = {
             operation = "set"
-            value     = join("; ", [
+            value = join("; ", [
               "default-src 'self'",
               "script-src 'self'",
               "style-src 'self'",
