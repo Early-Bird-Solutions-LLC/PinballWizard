@@ -76,3 +76,24 @@ screenshots/
 # (origin hostnames, cert fingerprints, error bodies). SUMMARY.md is
 # the safe-to-share output; the JSON files are never committed.
 cf-inventory/
+
+# OpenTofu / Terraform local working artifacts. The provider mirror,
+# crash logs, and saved plan files are machine-local: a plan (`tfplan`)
+# contains the proposed state and may carry sensitive values — the
+# README's "Things to avoid" section forbids committing it. The remote
+# state lives in Azure Blob, so no local *.tfstate either.
+#
+# EXCEPTION: `.terraform.lock.hcl` is intentionally NOT ignored — it is
+# the provider dependency lock and MUST be committed so CI and every
+# developer resolve identical provider versions. Do not add it here.
+.terraform/
+*.tfplan
+tfplan
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Agent worktree scratch — transient git worktrees created for isolated
+# parallel agent runs. Never committed.
+.worktrees/
