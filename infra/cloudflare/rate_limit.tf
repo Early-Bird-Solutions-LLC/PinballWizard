@@ -9,7 +9,7 @@
 resource "cloudflare_ruleset" "rate_limits" {
   zone_id     = var.zone_id
   name        = "Zone rate limits"
-  description = "Per-route rate limits scoped per client IP"
+  description = "Per-route rate limits scoped per client IP, counted per Cloudflare colo"
   kind        = "zone"
   phase       = "http_ratelimit"
 

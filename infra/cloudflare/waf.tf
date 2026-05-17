@@ -88,7 +88,12 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
 resource "cloudflare_bot_management" "this" {
   zone_id = var.zone_id
 
-  enable_js          = true
+  enable_js = true
+
+  # Blocks AI-training crawlers (GPTBot, CCBot, …) only. Verified bots
+  # (Googlebot, Bingbot, social link-preview fetchers) are exempt via
+  # sbfm_verified_bots = "allow" below, so the project's intentional
+  # OG / JSON-LD metadata serving to legitimate consumers is unaffected.
   ai_bots_protection = "block"
   crawler_protection = "enabled"
 
