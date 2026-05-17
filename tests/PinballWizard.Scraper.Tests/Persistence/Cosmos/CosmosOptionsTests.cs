@@ -55,15 +55,15 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
-    public void Defaults_Containers_IncludesRagLeasesContainer()
+    public void Defaults_Containers_DoesNotIncludeRagLeases()
     {
-        // W3-2 lease container — owned by Cosmos.ChangeFeedProcessor and by
-        // the KEDA Cosmos scaler in the Bicep ACA resource. Partition key
-        // `/id` matches the SDK's lease-document layout.
+        // rag_leases is SDK-managed: ChangeFeedProcessorBuilder.WithLeaseContainer()
+        // auto-creates it with partition key /id on first processor start.
+        // ARM rejects /id as a partition key (system property override), so it
+        // is excluded from --ensure-cosmos-containers provisioning.
         var options = new CosmosOptions();
 
-        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
-        Assert.Equal("/id", leases.PartitionKeyPath);
+        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
     }
 
     [Fact]
@@ -114,11 +114,13 @@ public sealed class CosmosOptionsTests
         // registrations or worker wiring (which would silently leave the new
         // container missing partition-key validation) trips this test as a
         // flag. Phase 1: machines + ingestion_sources. Phase 4 W3-2: adds
-        // scraped_documents + rag_leases + rag_index_state + rag_dead_letters.
-        // Cosmos for User Delight PR 5: adds machine_title_lookups.
-        // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
+        // scraped_documents + rag_index_state + rag_dead_letters (rag_leases
+        // is SDK-managed, excluded from ARM provisioning — see
+        // Defaults_Containers_DoesNotIncludeRagLeases). Cosmos for User
+        // Delight PR 5: adds machine_title_lookups. Phase 5 Wave 2 PR-L2:
+        // adds featured_machines (landing-page strip).
         var options = new CosmosOptions();
-        Assert.Equal(8, options.Containers.Count);
+        Assert.Equal(7, options.Containers.Count);
     }
 
     [Fact]
@@ -148,16 +150,15 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
-    public void Defaults_RagLeases_HasNoTtl()
+    public void Defaults_RagLeases_IsNotArmManaged()
     {
-        // Lease ownership state must persist until the lease is
-        // released by the change-feed processor — a TTL would risk
-        // expiring an in-flight lease and stranding a partition's
-        // continuation token.
+        // rag_leases is excluded from ARM provisioning (see
+        // Defaults_Containers_DoesNotIncludeRagLeases). No TTL test needed
+        // here — the SDK creates the lease container without a TTL by default,
+        // and TTL on leases would strand in-flight continuation tokens.
         var options = new CosmosOptions();
 
-        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
-        Assert.Null(leases.DefaultTtlSeconds);
+        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
     }
 
     [Fact]
