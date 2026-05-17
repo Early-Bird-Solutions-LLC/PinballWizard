@@ -114,7 +114,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/normalizedTitle",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/normalizedTitle/?"],
+                IncludedPaths = ["/normalizedTitle/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -133,7 +133,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/slug",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/slug/?", "/display_order/?"],
+                IncludedPaths = ["/slug/?", "/display_order/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -150,15 +150,13 @@ public sealed class CosmosOptions
         // worker boot. Idempotent: existing containers with matching
         // partition keys are no-ops.
         new() { Name = "scraped_documents", PartitionKeyPath = "/machine_id" },
-        // `rag_leases` intentionally has no indexing-policy override —
-        // the lease container is owned by `Cosmos.ChangeFeedProcessor`,
-        // and its document shape + query patterns are SDK-internal. A
-        // selective policy that became inconsistent with a future SDK
-        // version's query surface would manifest as a silent perf
-        // regression in change-feed processing. Default indexing is
-        // safe; the cost saving is marginal because the lease container
-        // is small (one row per partition lease).
-        new() { Name = "rag_leases", PartitionKeyPath = "/id" },
+        // `rag_leases` is intentionally absent from ARM provisioning.
+        // The Cosmos SDK's ChangeFeedProcessorBuilder.WithLeaseContainer()
+        // requires partition key /id, which ARM rejects as a system-property
+        // override. The SDK auto-creates the lease container on first
+        // processor start if the client has data-plane write access.
+        // Declaring it here would cause --ensure-cosmos-containers to fail
+        // with BadRequest on every fresh environment.
         // Selective indexing on `rag_index_state` per ADR-0025 § 3:
         // every read path is either a deterministic point-read by
         // `idx_<document_id>` (CosmosBackedIndexState) or the
@@ -174,7 +172,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/document_id",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/document_id/?", "/recorded_utc/?"],
+                IncludedPaths = ["/document_id/?", "/recorded_utc/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -206,7 +204,7 @@ public sealed class CosmosOptions
             DefaultTtlSeconds = 7_776_000,
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
+                IncludedPaths = ["/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
                 ExcludedPaths = ["/*"],
             },
         },
