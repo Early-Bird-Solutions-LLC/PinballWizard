@@ -48,16 +48,23 @@ resource "cloudflare_zero_trust_access_application" "prelaunch_gate" {
   app_launcher_visible       = false
   auto_redirect_to_identity  = true
   http_only_cookie_attribute = true
-  allowed_idps               = [cloudflare_zero_trust_access_identity_provider.otp[0].id]
+  allowed_idps               = [one(cloudflare_zero_trust_access_identity_provider.otp).id]
 
   # self_hosted_domains is materialized in state but the v5 provider
   # rejects setting it alongside destinations — destinations is the
   # supported surface. Provider reconciles the legacy field on apply.
 
+  # Both the apex and the proxied www CNAME (see dns.tf) must be gated —
+  # www → apex is a separate Cloudflare hostname and would otherwise
+  # bypass the pre-launch gate entirely.
   destinations = [
     {
       type = "public"
       uri  = var.domain
+    },
+    {
+      type = "public"
+      uri  = "www.${var.domain}"
     },
   ]
 
