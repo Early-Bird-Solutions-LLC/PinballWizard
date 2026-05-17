@@ -49,34 +49,46 @@ builder.Services.AddRazorComponents()
 builder.Services.AddMudServices();
 
 // ── Entra External ID auth scaffolding (ADR-0009) ─────────────────────────
-// AzureAd section is intentionally empty in this Wave 1 skeleton.
-// Authentication is required for /admin routes; public routes
-// (/wizard, /, /about, /status, /error) carry [AllowAnonymous].
-//
-// FOLLOW-UP: set AzureAd:TenantId, AzureAd:ClientId, and related
-// fields in appsettings.json or Key Vault before shipping admin routes.
-// Until then, the builder is registered so the wiring compiles and
-// the auth middleware pipeline is structurally correct.
-builder.Services
-    .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
+// Auth is gated on a real TenantId being present. When TenantId is empty or
+// the all-zeros placeholder (Dockerfile default), auth is skipped entirely —
+// the zero-GUID causes OIDC metadata fetch failures that crash static-file
+// requests. Set AzureAd:TenantId + AzureAd:ClientId in Key Vault / ACA env
+// vars before shipping /admin routes.
+var entraSection = builder.Configuration.GetSection("AzureAd");
+var tenantId = entraSection["TenantId"] ?? string.Empty;
+var isAuthConfigured = !string.IsNullOrWhiteSpace(tenantId)
+    && tenantId != "00000000-0000-0000-0000-000000000000";
 
-// Blanket authorization policy: every route requires authentication by default.
-// Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
-// opt out with [AllowAnonymous]. Admin routes (/admin/**) are protected automatically
-// without needing per-page [Authorize] attributes — new admin pages are secure by
-// default and cannot be accidentally left open. The API minimal-API endpoints
-// (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
-// (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
-builder.Services.AddAuthorization(options =>
+if (isAuthConfigured)
 {
-    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
-});
+    builder.Services
+        .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApp(entraSection);
 
-builder.Services.AddControllersWithViews()
-    .AddMicrosoftIdentityUI();
+    // Blanket authorization policy: every route requires authentication by default.
+    // Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
+    // opt out with [AllowAnonymous]. Admin routes (/admin/**) are protected automatically
+    // without needing per-page [Authorize] attributes — new admin pages are secure by
+    // default and cannot be accidentally left open. The API minimal-API endpoints
+    // (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
+    // (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
+    builder.Services.AddAuthorization(options =>
+    {
+        options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build();
+    });
+
+    builder.Services.AddControllersWithViews()
+        .AddMicrosoftIdentityUI();
+}
+else
+{
+    // No real Entra tenant — register permissive auth so middleware compiles.
+    builder.Services.AddAuthentication();
+    builder.Services.AddAuthorization();
+    builder.Services.AddControllersWithViews();
+}
 
 // ── Degradation state store (scoped per circuit) ──────────────────────────
 // IClientDegradationStore propagates DegradationContext from WizardAnswer
@@ -178,7 +190,10 @@ app.UseAuthorization();
 // OTel default routes (/healthz + /alive) from ServiceDefaults.
 app.MapDefaultEndpoints();
 
-app.MapStaticAssets();
+// AllowAnonymous so static assets (CSS, JS, fonts, Blazor framework files)
+// are never caught by the fallback RequireAuthenticatedUser policy. Static
+// files are not sensitive — they carry no user data and are public by design.
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()
