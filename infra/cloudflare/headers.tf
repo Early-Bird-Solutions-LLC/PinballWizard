@@ -59,9 +59,10 @@ resource "cloudflare_ruleset" "security_response_headers" {
             ])
           }
           # Strip identifying server headers if the origin returns them.
-          "Server" = {
-            operation = "remove"
-          }
+          # Note: the "Server" header cannot be removed via Transform Rules
+          # — Cloudflare sets and protects it (API rejects 'remove' on
+          # 'Server' with code 20087). It is already "Server: cloudflare"
+          # at the edge, so the origin's value never reaches the client.
           "X-Powered-By" = {
             operation = "remove"
           }

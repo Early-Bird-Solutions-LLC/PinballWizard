@@ -70,22 +70,47 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Bot Fight Mode — zone-level bot management
+# Bot management — Super Bot Fight Mode (Pro plan)
 # ─────────────────────────────────────────────────────────────────────
-# Enabled on Free/Pro plans via fight_mode = true.
-# Super Bot Fight Mode (Enterprise-only) fields are omitted — the provider
-# will default them to off, which is correct for our plan tier.
+# The legacy `fight_mode` flag is NOT writable on this Pro zone — the API
+# rejects it with "zone does not have access to fight mode" (it only
+# echoes back read-only under stale_zone_configuration). Pro zones
+# configure bot protection through the Super Bot Fight Mode (sbfm_*) and
+# the newer protection fields below.
+#
+# Values mirror the live zone state so the import is behaviour-preserving,
+# with one deliberate hardening: sbfm_definitely_automated is set to
+# "block" (was "allow") so definitely-automated traffic is dropped rather
+# than passed. Appropriate for a pre-launch, access-gated showcase.
 #
 # Import: tofu import cloudflare_bot_management.this <zone_id>
 
 resource "cloudflare_bot_management" "this" {
-  zone_id    = var.zone_id
-  fight_mode = true
+  zone_id = var.zone_id
+
+  enable_js = true
+
+  # Blocks AI-training crawlers (GPTBot, CCBot, …) only. Verified bots
+  # (Googlebot, Bingbot, social link-preview fetchers) are exempt via
+  # sbfm_verified_bots = "allow" below, so the project's intentional
+  # OG / JSON-LD metadata serving to legitimate consumers is unaffected.
+  ai_bots_protection = "block"
+  crawler_protection = "enabled"
+
+  # Super Bot Fight Mode classification handling.
+  sbfm_definitely_automated       = "block" # hardened from live "allow"
+  sbfm_verified_bots              = "allow" # don't penalise known-good crawlers
+  sbfm_static_resource_protection = false   # don't gate JS/CSS/img assets
+
+  # Content scraping protection — left at the live value ("disabled").
+  # Flipping this on can interfere with legitimate metadata consumers
+  # (OG / JSON-LD readers) the project intentionally serves; revisit
+  # post-launch with telemetry.
+  content_bots_protection = "disabled"
 
   # Keep Cloudflare's managed robots.txt on. The live zone already has
   # this enabled; omitting it lets the provider default it to false on
-  # import, silently turning it off. Pinning it true keeps the import a
-  # no-op on this field and is consistent with the project's
+  # import, silently turning it off. Consistent with the project's
   # polite-by-construction posture — the managed robots.txt advertises
   # crawler/AI-bot policy for pinwiz.ai to well-behaved clients.
   is_robots_txt_managed = true
