@@ -96,10 +96,12 @@ $templateFile = Join-Path $infraDir 'main-tfstate.bicep'
 
 $stackName = 'pinwiz-tfstate'
 
-# Build inline parameter string (az CLI does not support PowerShell splatting)
-$paramString = "developerObjectId=$developerObjectId"
+# Build parameters array — each key=value is a separate element so the az CLI
+# receives them as distinct --parameters tokens (a single concatenated string
+# would be parsed as one malformed principal ID).
+$params = @("developerObjectId=$developerObjectId")
 if ($GithubOidcSpObjectId) {
-    $paramString += " githubOidcSpObjectId=$GithubOidcSpObjectId"
+    $params += "githubOidcSpObjectId=$GithubOidcSpObjectId"
 }
 
 if ($WhatIf) {
@@ -108,7 +110,7 @@ if ($WhatIf) {
         --name $stackName `
         --location eastus2 `
         --template-file $templateFile `
-        --parameters $paramString `
+        --parameters @params `
         --action-on-unmanage detachAll `
         --deny-settings-mode none
     if ($LASTEXITCODE -ne 0) { throw 'Validation failed.' }
@@ -119,7 +121,7 @@ if ($WhatIf) {
         --name $stackName `
         --location eastus2 `
         --template-file $templateFile `
-        --parameters $paramString `
+        --parameters @params `
         --action-on-unmanage detachAll `
         --deny-settings-mode none `
         --yes
