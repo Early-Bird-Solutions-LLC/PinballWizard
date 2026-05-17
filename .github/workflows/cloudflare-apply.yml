@@ -23,6 +23,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production  # gates this job behind GitHub environment protection rules
     defaults:
       run:
