@@ -109,6 +109,15 @@ import {
   id = "13b7f7c8b15889652f0004d420669fe1/security_header"
 }
 
+# ─── Bot Management ──────────────────────────────────────────────────
+
+# Bot Fight Mode was enabled in the dashboard before IaC was introduced.
+# Importing brings it under IaC management.
+import {
+  to = cloudflare_bot_management.this
+  id = "13b7f7c8b15889652f0004d420669fe1"
+}
+
 # ─── Resources to be CREATED (no existing resource to import) ────────
 #
 # The following resources in the .tf files have no live counterpart yet.

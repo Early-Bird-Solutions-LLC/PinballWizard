@@ -70,6 +70,20 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
 }
 
 # ─────────────────────────────────────────────────────────────────────
+# Bot Fight Mode — zone-level bot management
+# ─────────────────────────────────────────────────────────────────────
+# Enabled on Free/Pro plans via fight_mode = true.
+# Super Bot Fight Mode (Enterprise-only) fields are omitted — the provider
+# will default them to off, which is correct for our plan tier.
+#
+# Import: tofu import cloudflare_bot_management.this <zone_id>
+
+resource "cloudflare_bot_management" "this" {
+  zone_id    = var.zone_id
+  fight_mode = true
+}
+
+# ─────────────────────────────────────────────────────────────────────
 # Custom rules — application-specific WAF rules
 # ─────────────────────────────────────────────────────────────────────
 # Rule order matters: first matching rule wins. Follow the pattern of:
