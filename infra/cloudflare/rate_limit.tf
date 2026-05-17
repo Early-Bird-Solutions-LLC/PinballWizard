@@ -28,28 +28,19 @@ resource "cloudflare_ruleset" "rate_limits" {
       }
     },
 
-    # Future RAG/chat endpoint — every request costs real money.
-    # The rule is in place ahead of the endpoint launching, so the
-    # cost ceiling is reviewed before the endpoint goes live.
-    {
-      action      = "block"
-      description = "Chat/RAG endpoint — 30 req/min per IP"
-      enabled     = true
-      expression  = <<-EOT
-        (starts_with(http.request.uri.path, "/api/chat") or
-         starts_with(http.request.uri.path, "/api/query"))
-      EOT
-      ratelimit = {
-        # cf.colo.id is required by the API — rate-limit counting is
-        # processed per-colocation (error code 20155 without it).
-        characteristics     = ["ip.src", "cf.colo.id"]
-        period              = 60
-        requests_per_period = 30
-        mitigation_timeout  = 600
-      }
-    },
+    # NOTE: Cloudflare Pro caps the http_ratelimit phase at 2 rules. We
+    # keep the two that protect *reachable* surface today: the zone-wide
+    # ceiling above and the auth rule below.
+    #
+    # A third rule for the future RAG/chat endpoints (30 req/min on
+    # /api/chat | /api/query) was intentionally removed — those endpoints
+    # 404 until Phase 4, so a rule on them protects nothing, and the
+    # ADR-0015 per-call cost ceiling is the primary cost guard regardless.
+    # Re-introduce that rule in the PR that lands the chat endpoints,
+    # trading out a slot or moving it to a WAF custom rule if the cap
+    # still binds.
 
-    # Future authentication endpoints. Tight limit, long mitigation —
+    # Authentication endpoints. Tight limit, long mitigation —
     # credential stuffing is patient.
     {
       action      = "managed_challenge"
