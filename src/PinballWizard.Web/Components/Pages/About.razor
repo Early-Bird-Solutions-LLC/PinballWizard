@@ -11,8 +11,11 @@
  *   - Tech stack bullets
  *   - GitHub repo link
  *
- * Mermaid is rendered by the browser after InteractiveServer wires up.
- * HeadContent injects the mermaid.min.js CDN script and initialize call.
+ * Mermaid is triggered via OnAfterRenderAsync + IJSRuntime, not startOnLoad.
+ * startOnLoad fires on DOMContentLoaded during SSR before the InteractiveServer
+ * circuit connects, so the .mermaid div is not yet hydrated and Mermaid finds
+ * nothing to render. OnAfterRenderAsync(firstRender:true) fires after Blazor
+ * has taken over the DOM — at that point mermaid.run() finds the element.
  *
  * Community-resource posture (ADR-0027 § 1): the page explains the app
  * honestly and routes users outward — no engagement-metric framing, no
@@ -27,16 +30,19 @@
 @attribute [AllowAnonymous]
 
 @using Microsoft.AspNetCore.Authorization
+@inject IJSRuntime JS
 
 <HeadContent>
-    @* Mermaid CDN — renders the architecture diagram client-side once
-       InteractiveServer mode is active. initialize() is called with
-       startOnLoad:true so it picks up any .mermaid div automatically. *@
-    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>
-        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 </HeadContent>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await JS.InvokeVoidAsync("eval", "mermaid.initialize({ startOnLoad: false, theme: 'neutral' }); mermaid.run();");
+    }
+}
 
 <PageTitle>PinballWizard — About</PageTitle>
 

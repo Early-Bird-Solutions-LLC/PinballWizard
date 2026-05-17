@@ -65,6 +65,7 @@ jobs:
           TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
           TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
           TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
         run: |
           tofu plan -no-color -out=plan.tfplan 2>&1 | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
@@ -83,7 +84,10 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('infra/cloudflare/plan.txt', 'utf8');
+            const planPath = 'infra/cloudflare/plan.txt';
+            const plan = fs.existsSync(planPath)
+              ? fs.readFileSync(planPath, 'utf8')
+              : '⚠️ Plan output not available — the plan step did not produce output (check workflow logs).';
             // Truncate very long plans for the PR comment
             const max = 60000;
             const shown = plan.length > max
