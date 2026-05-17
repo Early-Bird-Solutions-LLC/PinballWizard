@@ -23,6 +23,7 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: production  # gates this job behind GitHub environment protection rules
     defaults:
       run:
@@ -50,7 +51,7 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: "true"
-        run: tofu init
+        run: tofu init -input=false
 
       - name: tofu apply
         env:
@@ -64,12 +65,17 @@ jobs:
           TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
           TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
           TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
         # Re-plans against current state and applies. Alternative: download
         # the plan artifact from the merged PR's workflow run and apply that.
         # The alternative is stricter (applies exactly what was reviewed)
         # but more complex; this version trades a small amount of strictness
         # for operational simplicity. Either is defensible.
-        run: tofu apply -auto-approve
+        #
+        # -input=false makes a missing required variable fail immediately
+        # instead of blocking on an interactive prompt until the job
+        # timeout (the original cause of the multi-hour hang).
+        run: tofu apply -input=false -auto-approve
 
   drift-detection:
     # Separate from apply — runs weekly on a schedule via a sister workflow.

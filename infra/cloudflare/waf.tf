@@ -81,6 +81,14 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
 resource "cloudflare_bot_management" "this" {
   zone_id    = var.zone_id
   fight_mode = true
+
+  # Keep Cloudflare's managed robots.txt on. The live zone already has
+  # this enabled; omitting it lets the provider default it to false on
+  # import, silently turning it off. Pinning it true keeps the import a
+  # no-op on this field and is consistent with the project's
+  # polite-by-construction posture — the managed robots.txt advertises
+  # crawler/AI-bot policy for pinwiz.ai to well-behaved clients.
+  is_robots_txt_managed = true
 }
 
 # ─────────────────────────────────────────────────────────────────────

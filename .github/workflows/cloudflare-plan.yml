@@ -18,6 +18,7 @@ permissions:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: infra/cloudflare
@@ -47,7 +48,7 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: "true"
-        run: tofu init
+        run: tofu init -input=false
 
       - name: tofu validate
         run: tofu validate
@@ -65,8 +66,12 @@ jobs:
           TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
           TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
           TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
+        # -input=false makes a missing required variable fail immediately
+        # instead of blocking on an interactive prompt until the job
+        # timeout (the original cause of the multi-hour hang).
         run: |
-          tofu plan -no-color -out=plan.tfplan 2>&1 | tee plan.txt
+          tofu plan -input=false -no-color -out=plan.tfplan 2>&1 | tee plan.txt
           echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload plan artifact

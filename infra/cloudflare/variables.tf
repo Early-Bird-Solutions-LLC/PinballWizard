@@ -47,6 +47,18 @@ variable "logpush_destination" {
   default     = ""
 }
 
+variable "prelaunch_gate_enabled" {
+  description = "When true, pinwiz.ai is restricted to var.maintainer_email via a Cloudflare Access pre-launch gate. Set to false only when the public frontend is ready to ship (Phase 4+). Removing the gate opens the apex to the world."
+  type        = bool
+  default     = true
+}
+
+variable "maintainer_email" {
+  description = "Email allowed through the pre-launch gate. Personal Earlybird identity (see locked invariant #5)."
+  type        = string
+  default     = "jim@earlybirdsolutions.com"
+}
+
 variable "aca_domain_verification_token" {
   description = "Azure Container Apps custom domain verification token. Value of the asuid.<domain> TXT record. Find in the ACA Custom Domains blade. Required for ACA cert renewal — do not remove."
   type        = string
