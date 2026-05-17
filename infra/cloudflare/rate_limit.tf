@@ -40,7 +40,9 @@ resource "cloudflare_ruleset" "rate_limits" {
          starts_with(http.request.uri.path, "/api/query"))
       EOT
       ratelimit = {
-        characteristics     = ["ip.src"]
+        # cf.colo.id is required by the API — rate-limit counting is
+        # processed per-colocation (error code 20155 without it).
+        characteristics     = ["ip.src", "cf.colo.id"]
         period              = 60
         requests_per_period = 30
         mitigation_timeout  = 600
@@ -58,7 +60,8 @@ resource "cloudflare_ruleset" "rate_limits" {
          http.request.uri.path eq "/login")
       EOT
       ratelimit = {
-        characteristics     = ["ip.src"]
+        # cf.colo.id is required by the API (error code 20155 without it).
+        characteristics     = ["ip.src", "cf.colo.id"]
         period              = 60
         requests_per_period = 5
         mitigation_timeout  = 3600
