@@ -14,18 +14,18 @@
 resource "cloudflare_logpush_job" "http_requests" {
   count = var.logpush_destination == "" ? 0 : 1
 
-  account_id          = var.account_id
-  zone_id             = var.zone_id
-  name                = "pinwiz-http-requests"
-  dataset             = "http_requests"
-  destination_conf    = var.logpush_destination
-  enabled             = true
-  logpull_options     = "fields=BotScore,CacheCacheStatus,ClientIP,ClientRequestHost,ClientRequestMethod,ClientRequestPath,ClientRequestProtocol,ClientRequestReferer,ClientRequestUserAgent,EdgeEndTimestamp,EdgeResponseBytes,EdgeResponseStatus,EdgeStartTimestamp,RayID,WAFAction,WAFRuleID,WAFRuleMessage&timestamps=rfc3339"
-  frequency           = "high"
-  kind                = "edge"
+  account_id       = var.account_id
+  zone_id          = var.zone_id
+  name             = "pinwiz-http-requests"
+  dataset          = "http_requests"
+  destination_conf = var.logpush_destination
+  enabled          = true
+  logpull_options  = "fields=BotScore,CacheCacheStatus,ClientIP,ClientRequestHost,ClientRequestMethod,ClientRequestPath,ClientRequestProtocol,ClientRequestReferer,ClientRequestUserAgent,EdgeEndTimestamp,EdgeResponseBytes,EdgeResponseStatus,EdgeStartTimestamp,RayID,WAFAction,WAFRuleID,WAFRuleMessage&timestamps=rfc3339"
+  frequency        = "high"
+  kind             = "edge"
 
   output_options = {
-    output_type     = "ndjson"
+    output_type      = "ndjson"
     timestamp_format = "rfc3339"
   }
 }
