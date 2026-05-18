@@ -18,6 +18,8 @@
 @inject NavigationManager Nav
 
 @code {
+    [Parameter] public string? Slug { get; set; }
+
     protected override void OnInitialized()
     {
         Nav.NavigateTo("/error?reason=not-found", replace: true);
