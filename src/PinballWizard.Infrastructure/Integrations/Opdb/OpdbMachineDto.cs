@@ -36,6 +36,20 @@ public sealed class OpdbMachineDto
     [JsonPropertyName("is_alias")]
     public bool IsAlias { get; init; }
 
+    /// <summary>
+    /// OPDB's <c>physical_machine</c> flag (1 = hardware record,
+    /// 0 = an edition-grouping record whose 3-segment aliases carry the
+    /// real variants). Captured for provenance and diagnostics ONLY.
+    /// Per <see href="../../../docs/adr/0029-version-aware-answering.md">ADR-0029</see>
+    /// this is explicitly NOT a canonical-selection signal: it is a 7.3%
+    /// minority pattern (most multi-base groups are all <c>pm:1</c>), and
+    /// a prior model that picked a "canonical" row by it was rejected.
+    /// Every 2-segment <c>is_machine</c> record is a distinct machine
+    /// regardless of this value. Nullable: absent on alias records.
+    /// </summary>
+    [JsonPropertyName("physical_machine")]
+    public int? PhysicalMachine { get; init; }
+
     /// <summary>Full name including edition suffix (e.g., "Stranger Things (Pro)").</summary>
     [JsonPropertyName("name")]
     public string? Name { get; init; }
@@ -67,6 +81,42 @@ public sealed class OpdbMachineDto
     /// <summary>Last update timestamp.</summary>
     [JsonPropertyName("updated_at")]
     public DateTimeOffset? UpdatedAt { get; init; }
+}
+
+/// <summary>
+/// Wire DTO for an OPDB <c>is_machine_group</c> record — the top tier of
+/// OPDB's three-tier structure (group → base machine → alias). Returned
+/// by <c>GET /api/machines/{groupSegment}</c> where the segment is the
+/// leading part of an OPDB ID before the first hyphen (e.g. <c>GweeP</c>
+/// for the Godzilla group). Carries the clean franchise title
+/// ("Godzilla") which is absent from individual records' empty
+/// <c>common_name</c> on modern Stern machines.
+/// </summary>
+/// <remarks>
+/// This record is NOT present in the bulk <c>/api/export</c> feed — it
+/// is only reachable via the per-segment endpoint. Per
+/// <see href="../../../docs/adr/0029-version-aware-answering.md">ADR-0029</see>
+/// the group is a <em>relational</em> tier (used to resolve a clean
+/// title and discover sibling machines), never a merge target — every
+/// base machine remains a distinct <c>Machine</c>.
+/// </remarks>
+public sealed class OpdbMachineGroupDto
+{
+    /// <summary>The group segment (e.g., <c>GweeP</c>).</summary>
+    [JsonPropertyName("opdb_id")]
+    public string? OpdbId { get; init; }
+
+    /// <summary>True when this is a machine-group record (vs a machine/alias).</summary>
+    [JsonPropertyName("is_machine_group")]
+    public bool IsMachineGroup { get; init; }
+
+    /// <summary>Clean franchise title without edition suffix (e.g., "Godzilla").</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>Short / abbreviated group name if OPDB has one.</summary>
+    [JsonPropertyName("shortname")]
+    public string? ShortName { get; init; }
 }
 
 /// <summary>Manufacturer block within an OPDB machine record.</summary>

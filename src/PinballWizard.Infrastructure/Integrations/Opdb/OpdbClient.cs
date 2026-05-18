@@ -206,6 +206,45 @@ public sealed class OpdbClient : PoliteScraperBase
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Fetches an OPDB <c>is_machine_group</c> record by its group
+    /// segment (the leading part of an OPDB ID before the first hyphen,
+    /// e.g. <c>GweeP</c>). The group record carries the clean franchise
+    /// title and is NOT present in the bulk <c>/api/export</c> feed —
+    /// this per-segment call is the only way to obtain it. Returns null
+    /// if OPDB returns 404 (no group record for that segment) or if the
+    /// returned record is not actually a group (defensive: the
+    /// <c>machines/{id}</c> path also serves machine/alias records, so a
+    /// caller passing a full machine ID would otherwise get a non-group
+    /// body). Other non-success statuses throw.
+    /// </summary>
+    public async Task<OpdbMachineGroupDto?> GetMachineGroupAsync(string groupSegment, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupSegment);
+
+        var baseUri = new Uri(_options.BaseUrl, UriKind.Absolute);
+        var url = new Uri(baseUri, $"machines/{Uri.EscapeDataString(groupSegment)}");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyAuth(request);
+
+        using var response = await SendPolitelyAsync(_httpClient, request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        response.EnsureSuccessStatusCode();
+        var group = await response.Content
+            .ReadFromJsonAsync<OpdbMachineGroupDto>(JsonOptions, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The machines/{id} endpoint is polymorphic — it serves machine,
+        // alias, and group records. Only return a body that is actually a
+        // group so a mis-passed full machine ID degrades to null rather
+        // than yielding a group DTO with IsMachineGroup=false.
+        return group is { IsMachineGroup: true } ? group : null;
+    }
+
     private void ApplyAuth(HttpRequestMessage request)
     {
         if (!string.IsNullOrEmpty(_options.ApiToken))

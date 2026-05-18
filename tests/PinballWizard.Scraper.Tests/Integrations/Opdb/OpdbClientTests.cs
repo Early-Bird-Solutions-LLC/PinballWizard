@@ -142,6 +142,78 @@ public sealed class OpdbClientTests : IDisposable
         await Assert.ThrowsAnyAsync<ArgumentException>(() => _client.GetMachineAsync("", CancellationToken.None));
     }
 
+    [Fact]
+    public async Task GetMachineAsync_DeserializesPhysicalMachine()
+    {
+        // ADR-0029: physical_machine is captured for provenance only. The
+        // wire field must round-trip (nullable int) so diagnostics can see
+        // it even though it is never used for canonical selection.
+        _handler.SetResponseFor("/api/machines/GweeP-Ml9pZ", JsonSerializer.Serialize(new
+        {
+            opdb_id = "GweeP-Ml9pZ",
+            is_machine = true,
+            physical_machine = 0,
+            name = "Godzilla (Premium/LE)",
+            common_name = "",
+            manufacturer = new { manufacturer_id = 1, name = "Stern Pinball, Inc." },
+        }));
+
+        var result = await _client.GetMachineAsync("GweeP-Ml9pZ", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.PhysicalMachine);
+    }
+
+    [Fact]
+    public async Task GetMachineGroupAsync_200_ReturnsGroupWithCleanTitle()
+    {
+        _handler.SetResponseFor("/api/machines/GweeP", JsonSerializer.Serialize(new
+        {
+            opdb_id = "GweeP",
+            is_machine_group = true,
+            name = "Godzilla",
+            shortname = "GZ",
+        }));
+
+        var result = await _client.GetMachineGroupAsync("GweeP", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP", result!.OpdbId);
+        Assert.True(result.IsMachineGroup);
+        Assert.Equal("Godzilla", result.Name);
+    }
+
+    [Fact]
+    public async Task GetMachineGroupAsync_404_ReturnsNull()
+    {
+        _handler.SetResponseFor("/api/machines/NOGRP", null, HttpStatusCode.NotFound);
+
+        var result = await _client.GetMachineGroupAsync("NOGRP", CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetMachineGroupAsync_NonGroupBody_ReturnsNull()
+    {
+        // Defensive: the machines/{id} endpoint is polymorphic. A full
+        // machine ID returns a machine body (is_machine_group absent →
+        // false). GetMachineGroupAsync must degrade to null, not hand back
+        // a bogus group DTO.
+        _handler.SetResponseFor("/api/machines/GweeP-MW95j", MachineJson("GweeP-MW95j"));
+
+        var result = await _client.GetMachineGroupAsync("GweeP-MW95j", CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetMachineGroupAsync_BlankSegment_Throws()
+    {
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => _client.GetMachineGroupAsync("", CancellationToken.None));
+    }
+
     private static string MachineJson(string opdbId) => JsonSerializer.Serialize(new
     {
         opdb_id = opdbId,
