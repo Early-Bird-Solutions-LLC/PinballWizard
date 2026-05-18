@@ -36,6 +36,20 @@ public sealed class Machine : IEntity
     [JsonPropertyName("title")]
     public required string Title { get; set; }
 
+    /// <summary>
+    /// OPDB group segment — the leading part of the OPDB ID before the
+    /// first hyphen (e.g. <c>GweeP</c> for "Godzilla (Pro)"
+    /// <c>GweeP-MW95j</c>). A <em>relational</em> key for discovering
+    /// sibling machines of the same title (different editions / a
+    /// cross-year reissue), NOT a merge key — every base record stays a
+    /// distinct Machine per
+    /// <see href="../../../docs/adr/0029-version-aware-answering.md">ADR-0029</see>.
+    /// Null when the OPDB ID has no derivable segment (defensive only —
+    /// well-formed OPDB IDs always do).
+    /// </summary>
+    [JsonPropertyName("groupId")]
+    public string? GroupId { get; set; }
+
     /// <summary>Year the machine was released. Null if unknown.</summary>
     [JsonPropertyName("year")]
     public int? Year { get; set; }

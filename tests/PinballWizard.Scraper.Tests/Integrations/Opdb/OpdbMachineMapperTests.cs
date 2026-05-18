@@ -134,6 +134,134 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal("Godzilla (Pro)", machine!.Title);
     }
 
+    // --- ADR-0029 S3: group title (D1) + GroupId relation ---
+
+    [Fact]
+    public void Map_BlankCommonName_UsesGroupTitleWhenSupplied()
+    {
+        // ADR-0029 D1: modern Stern returns common_name="" and
+        // name="Godzilla (Pro)". With the group record's clean title
+        // resolved and passed in, Title must become the franchise name,
+        // NOT the edition-suffixed name.
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            CommonName = "",
+            Name = "Godzilla (Pro)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed, groupTitle: "Godzilla");
+
+        Assert.NotNull(machine);
+        Assert.Equal("Godzilla", machine!.Title);
+    }
+
+    [Fact]
+    public void Map_PopulatedCommonName_IsNotOverriddenByGroupTitle()
+    {
+        // Precedence guard: a populated common_name wins over the group
+        // title. The group title only fills an empty common_name.
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GRBN-MQR4P",
+            IsMachine = true,
+            CommonName = "Stranger Things",
+            Name = "Stranger Things (Pro)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed, groupTitle: "Something Else");
+
+        Assert.NotNull(machine);
+        Assert.Equal("Stranger Things", machine!.Title);
+    }
+
+    [Fact]
+    public void Map_NegativeFixture_LegitParentheticalTitle_LeftIntact()
+    {
+        // ADR-0029 required negative fixture. "Indiana Jones (The Pinball
+        // Adventure)" is a real title whose parenthetical is part of the
+        // name, NOT an edition suffix, and it has no multi-edition group
+        // record. With no group title supplied, the mapper must NOT strip
+        // or alter the parenthetical — Title stays the full real name.
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GR9d4-MlEK6",
+            IsMachine = true,
+            CommonName = "",
+            Name = "Indiana Jones (The Pinball Adventure)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Williams" },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed, groupTitle: null);
+
+        Assert.NotNull(machine);
+        Assert.Equal("Indiana Jones (The Pinball Adventure)", machine!.Title);
+    }
+
+    [Theory]
+    [InlineData("GweeP-MW95j", "GweeP")]
+    [InlineData("GRBN-MQR4P", "GRBN")]
+    [InlineData("GRoz4-MrRPw-A97X1", "GRoz4")]
+    public void Map_SetsGroupIdFromLeadingSegment(string opdbId, string expectedGroupId)
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = opdbId,
+            IsMachine = true,
+            CommonName = "X",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+        };
+
+        var machine = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(machine);
+        Assert.Equal(expectedGroupId, machine!.GroupId);
+    }
+
+    [Fact]
+    public void ExtractGroupSegment_NoHyphen_ReturnsNull()
+    {
+        // Defensive: a malformed single-segment OPDB ID has no group.
+        Assert.Null(OpdbMachineMapper.ExtractGroupSegment("GweeP"));
+    }
+
+    [Fact]
+    public void MergeOpdbFieldsInto_ConvergesSuffixedTitleToGroupTitle()
+    {
+        // A re-sync must converge an existing edition-suffixed title to
+        // the clean group title once the group record is resolvable.
+        var existing = OpdbMachineMapper.Map(
+            new OpdbMachineDto
+            {
+                OpdbId = "GweeP-MW95j",
+                IsMachine = true,
+                CommonName = "",
+                Name = "Godzilla (Pro)",
+                Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+            },
+            NowFixed)!; // first sync, no group title → "Godzilla (Pro)"
+        Assert.Equal("Godzilla (Pro)", existing.Title);
+
+        OpdbMachineMapper.MergeOpdbFieldsInto(
+            existing,
+            new OpdbMachineDto
+            {
+                OpdbId = "GweeP-MW95j",
+                IsMachine = true,
+                CommonName = "",
+                Name = "Godzilla (Pro)",
+                Manufacturer = new OpdbManufacturerDto { Name = "Stern" },
+            },
+            NowFixed,
+            groupTitle: "Godzilla");
+
+        Assert.Equal("Godzilla", existing.Title);
+        Assert.Equal("GweeP", existing.GroupId);
+    }
+
     [Fact]
     public void Map_BlankShortName_FallsBackToFullManufacturerName()
     {
