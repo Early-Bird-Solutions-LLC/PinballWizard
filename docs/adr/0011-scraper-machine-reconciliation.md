@@ -151,9 +151,26 @@ until Cosmos infra is deployed.
 
 ## Amendment 1 — OPDB group tier and canonical-base fold (2026-05-17)
 
-**Status:** Accepted (additive — does not reverse the original decision).
-**Driver:** [docs/plans/opdb-group-tier-modeling.md](../plans/opdb-group-tier-modeling.md),
-Option A. Live OPDB + Cosmos verification.
+**Status:** ⚠️ SUPERSEDED by [ADR-0029](0029-version-aware-answering.md)
+(2026-05-18). Retained for history (append-only log).
+
+> **Why superseded:** the "fold all editions onto a canonical `pm:1`
+> row" model below was disproven by a full OPDB data pass: `pm` is a
+> minority signal (only 7.3% of multi-base groups), the lexicographic
+> tiebreak selected semantically wrong canonicals (AC/DC → the 2017
+> Vault Edition instead of the 2012 original), and folding erases the
+> "Pro/Premium/LE are different games with substantially different
+> cost" distinction. ADR-0029 replaces this with **base = distinct
+> machine, alias = edition, version-aware answering**. The parts of
+> this amendment that survive into ADR-0029: D1 (clean `Title` from the
+> `is_machine_group` record) and `GroupId` as a *relational* (not
+> merge) field. Everything below about canonical selection and
+> cross-base folding is **void** — read ADR-0029 instead. The
+> field-ownership precedence rule (scraper merge-preserve) is carried
+> forward by ADR-0029 unchanged.
+
+**Driver (historical):** [docs/plans/opdb-group-tier-modeling.md](../plans/opdb-group-tier-modeling.md),
+then-Option A. Live OPDB + Cosmos verification.
 
 ### What this amends and what it does NOT
 
