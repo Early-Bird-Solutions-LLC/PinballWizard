@@ -847,13 +847,45 @@ public sealed class OpdbSyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncAsync_GroupRecord500_FallsBackWithoutAbortingSync()
+    {
+        // Distinct from the 404 case: a transient 5xx on the group
+        // endpoint exercises ResolveGroupTitleAsync's broad catch (404 is
+        // handled in GetMachineGroupAsync itself; 500 throws
+        // HttpRequestException). The sync must NOT abort — the record
+        // keeps its edition-suffixed title and GroupId is still set. This
+        // pins the best-effort contract against a future change that
+        // narrows the catch scope.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "")));
+        _handler.SetResponseFor("/api/machines/GweeP", "upstream error", HttpStatusCode.InternalServerError);
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var captured = new List<Machine>();
+        await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Inserted); // 5xx did NOT abort the sync
+        var m = Assert.Single(captured);
+        Assert.Equal("Godzilla (Pro)", m.Title); // fell back to name
+        Assert.Equal("GweeP", m.GroupId);
+    }
+
+    [Fact]
     public async Task SyncAsync_Singleton_NoGroupRecord_TitleFromCommonName()
     {
-        // Regression guard: a normal single-edition machine with a
-        // populated common_name is entirely unaffected — no spurious
-        // group fetch alters it, common_name wins.
+        // Regression guard: a populated common_name WINS over any group
+        // title (ADR-0029 precedence: common_name → groupTitle → name).
+        // The resolver still runs per segment (it is precedence-blind by
+        // design — the mapper decides), so we deliberately stub a
+        // *conflicting* group title and assert common_name still wins.
+        // This proves the precedence, not an (incorrect) zero-fetch
+        // claim — the resolver is memoized so the call cost is bounded.
         _handler.SetResponseFor("/api/export", JsonArray(
             MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _handler.SetResponseFor("/api/machines/GRBN", GroupJson("GRBN", "WRONG GROUP TITLE"));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
         var captured = new List<Machine>();
@@ -863,7 +895,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         var m = Assert.Single(captured);
-        Assert.Equal("Stranger Things", m.Title); // common_name wins, group title never consulted
+        Assert.Equal("Stranger Things", m.Title); // common_name wins over the conflicting group title
         Assert.Equal("GRBN", m.GroupId);
     }
 
