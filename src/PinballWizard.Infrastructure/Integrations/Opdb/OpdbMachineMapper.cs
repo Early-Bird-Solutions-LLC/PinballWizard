@@ -17,7 +17,17 @@ public static class OpdbMachineMapper
     /// list by <see cref="MapToEdition"/> in a second pass. Sync
     /// orchestrator counts non-mappable records as "skipped".
     /// </summary>
-    public static Machine? Map(OpdbMachineDto dto, DateTimeOffset now)
+    /// <param name="groupTitle">
+    /// The clean franchise title resolved once per OPDB group segment
+    /// from the <c>is_machine_group</c> record (see ADR-0029 D1). When
+    /// the record's own <c>common_name</c> is blank — true for modern
+    /// Stern records, which would otherwise produce an edition-suffixed
+    /// title like "Godzilla (Pro)" — the group title supplies the clean
+    /// name. Null when the caller could not resolve a group record
+    /// (singleton machines, or OPDB 404 on the segment); the existing
+    /// <c>name</c>/<c>opdbId</c> fallback then applies, unchanged.
+    /// </param>
+    public static Machine? Map(OpdbMachineDto dto, DateTimeOffset now, string? groupTitle = null)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -33,7 +43,14 @@ public static class OpdbMachineMapper
             Id = dto.OpdbId,
             PartitionKey = manufacturerKey,
             ManufacturerDisplayName = manufacturerName,
-            Title = FirstNonBlank(dto.CommonName, dto.Name) ?? dto.OpdbId,
+            // Title precedence (ADR-0029 D1): OPDB common_name when
+            // present; else the clean group title; else the edition-
+            // suffixed name; else the OPDB ID. The group title slots
+            // *between* common_name and name so a populated common_name
+            // is never overridden, but an empty one (modern Stern) gets
+            // the clean franchise name instead of "Godzilla (Pro)".
+            Title = FirstNonBlank(dto.CommonName, groupTitle, dto.Name) ?? dto.OpdbId,
+            GroupId = ExtractGroupSegment(dto.OpdbId),
             Year = ParseYear(dto.ManufactureDate),
             Designers = dto.Designers.Where(d => !string.IsNullOrWhiteSpace(d.Name)).Select(d => d.Name!).ToList(),
             Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList(),
@@ -43,6 +60,20 @@ public static class OpdbMachineMapper
             FirstSeenAt = now,
             LastSeenAt = now,
         };
+    }
+
+    /// <summary>
+    /// The OPDB group segment — the leading part of an OPDB ID before
+    /// the first hyphen (e.g. <c>GweeP-MW95j</c> → <c>GweeP</c>). A
+    /// relational key for sibling discovery per ADR-0029, never a merge
+    /// key. Returns null if the ID has no hyphen (defensive — well-formed
+    /// OPDB machine IDs always have at least two segments).
+    /// </summary>
+    public static string? ExtractGroupSegment(string opdbId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
+        var firstHyphen = opdbId.IndexOf('-', StringComparison.Ordinal);
+        return firstHyphen <= 0 ? null : opdbId[..firstHyphen];
     }
 
     /// <summary>
@@ -148,12 +179,19 @@ public static class OpdbMachineMapper
     /// editions, first-seen timestamp). Used on sync upsert when a
     /// matching machine already exists in the repository.
     /// </summary>
-    public static void MergeOpdbFieldsInto(Machine existing, OpdbMachineDto dto, DateTimeOffset now)
+    public static void MergeOpdbFieldsInto(Machine existing, OpdbMachineDto dto, DateTimeOffset now, string? groupTitle = null)
     {
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(dto);
 
-        existing.Title = FirstNonBlank(dto.CommonName, dto.Name) ?? existing.Title;
+        // Same title precedence as Map (ADR-0029 D1): a re-sync must
+        // converge an existing edition-suffixed title to the clean group
+        // title once the group record is resolvable.
+        existing.Title = FirstNonBlank(dto.CommonName, groupTitle, dto.Name) ?? existing.Title;
+        if (!string.IsNullOrWhiteSpace(dto.OpdbId))
+        {
+            existing.GroupId = ExtractGroupSegment(dto.OpdbId);
+        }
         existing.Year = ParseYear(dto.ManufactureDate) ?? existing.Year;
 
         if (dto.Designers.Count > 0)
