@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Azure;
 using Microsoft.Agents.AI;
@@ -391,7 +391,9 @@ public sealed class AiRouterStreamingTests
             Themes: [],
             Designers: [],
             OpdbSourceUrl: $"https://opdb.org/machines/{opdbId}",
-            Editions: []);
+            Editions: [],
+            GroupId: null,
+            Siblings: []);
         var content = new FunctionResultContent($"call_getMachineByTitle", dto);
         return new AgentResponseUpdate(ChatRole.Tool, new List<AIContent> { content });
     }

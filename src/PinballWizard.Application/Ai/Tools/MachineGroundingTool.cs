@@ -23,6 +23,13 @@ namespace PinballWizard.Application.Ai.Tools;
 // lookup case (post-deploy backfill pending, transient lookup-write
 // failure during OPDB sync, etc.) so the tool degrades gracefully
 // rather than refusing to answer.
+//
+// S5 (ADR-0029): after resolving the primary machine, if it carries a
+// GroupId the tool fetches all sibling base-machine records sharing the
+// same leading OPDB segment and includes them in the returned DTO.
+// Siblings let the agent ask one targeted clarifying question
+// (2–3 options) when the question is version-dependent (repair /
+// rules-detail / price) without fabricating edition differences.
 public sealed class MachineGroundingTool
 {
     private readonly IMachineRepository _machines;
@@ -100,9 +107,9 @@ public sealed class MachineGroundingTool
         return result;
     }
 
-    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, and OPDB source URL — everything you need to ground an answer about that machine. Returns null if no machine matches the title.")]
+    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
-        [Description("The pinball-machine title to look up, case-insensitive (for example: 'Foo Fighters', 'Stranger Things', 'Godzilla').")] string title,
+        [Description("The pinball-machine title to look up, case-insensitive (for example: 'Godzilla', 'Foo Fighters', 'Stranger Things'). Use the clean franchise title without edition suffixes.")] string title,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -183,13 +190,14 @@ public sealed class MachineGroundingTool
                 return null;
             }
 
-            var editions = match.Editions
-                .Select(e => new MachineEditionGroundingDto(
-                    Name: e.Name,
-                    Msrp: e.Msrp,
-                    Availability: e.Availability,
-                    Description: e.Description))
-                .ToList();
+            var editions = ProjectEditions(match.Editions);
+
+            // S5 (ADR-0029): fetch sibling base records when the resolved
+            // machine has a GroupId. Siblings let the agent ask a single
+            // targeted clarifying question (2–3 options max) for version-
+            // dependent questions without fabricating edition differences.
+            // Best-effort: a failure here must NOT abort the primary answer.
+            var siblings = await ResolveSiblingsAsync(match, cancellationToken).ConfigureAwait(false);
 
             return new MachineGroundingDto(
                 OpdbId: match.Id,
@@ -199,7 +207,9 @@ public sealed class MachineGroundingTool
                 Themes: match.Themes.AsReadOnly(),
                 Designers: match.Designers.AsReadOnly(),
                 OpdbSourceUrl: match.OpdbSourceUrl,
-                Editions: editions);
+                Editions: editions,
+                GroupId: match.GroupId,
+                Siblings: siblings);
         }
         finally
         {
@@ -209,4 +219,55 @@ public sealed class MachineGroundingTool
                 new KeyValuePair<string, object?>("tool", ToolTagValue));
         }
     }
+
+    private async Task<IReadOnlyList<MachineSiblingGroundingDto>> ResolveSiblingsAsync(
+        Machine primary,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(primary.GroupId))
+            return [];
+
+        var siblings = new List<MachineSiblingGroundingDto>();
+        try
+        {
+            await foreach (var sibling in _machines
+                .GetSiblingsByGroupIdAsync(primary.GroupId, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                // Exclude the primary machine from the sibling list —
+                // the caller already has it as the top-level result.
+                if (sibling.Id == primary.Id)
+                    continue;
+
+                siblings.Add(new MachineSiblingGroundingDto(
+                    OpdbId: sibling.Id,
+                    Title: sibling.Title,
+                    Year: sibling.Year,
+                    Editions: ProjectEditions(sibling.Editions)));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Sibling fetch is best-effort. A Cosmos failure here must
+            // not prevent the agent from grounding the primary machine —
+            // it degrades to single-machine mode (no clarifying question
+            // for version-dependent topics). Logged at Warning so the gap
+            // surfaces on dashboards without polluting Error budgets.
+            _logger.LogWarning(ex,
+                "MachineGroundingTool: sibling fetch for GroupId '{GroupId}' (primary '{OpdbId}') failed. Returning empty sibling list.",
+                primary.GroupId, primary.Id);
+        }
+
+        return siblings;
+    }
+
+    private static List<MachineEditionGroundingDto> ProjectEditions(
+        IEnumerable<MachineEdition> editions) =>
+        editions
+            .Select(e => new MachineEditionGroundingDto(
+                Name: e.Name,
+                Msrp: e.Msrp,
+                Availability: e.Availability,
+                Description: e.Description))
+            .ToList();
 }

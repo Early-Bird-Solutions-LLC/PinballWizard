@@ -32,4 +32,15 @@ public interface IMachineRepository : IRepository<Machine>
     // STRINGEQUALS-with-case-insensitive comparison; the function tool
     // typically takes the first match.
     IAsyncEnumerable<Machine> QueryByTitleAsync(string title, CancellationToken cancellationToken);
+
+    // Cross-partition groupId lookup per ADR-0029. Returns all base-
+    // machine records sharing the same leading OPDB segment (GroupId),
+    // which are the distinct Pro / Premium / LE / Collector editions of
+    // a single franchise title. The resolved primary machine is included
+    // in the results — callers should filter it out if they only want
+    // siblings. Expected cardinality: 1–10 records (ADR-0029 § data
+    // observation). Cross-partition is unavoidable here because siblings
+    // may span manufacturers (unusual but possible), and the groupId
+    // field is not the partition key.
+    IAsyncEnumerable<Machine> GetSiblingsByGroupIdAsync(string groupId, CancellationToken cancellationToken);
 }
