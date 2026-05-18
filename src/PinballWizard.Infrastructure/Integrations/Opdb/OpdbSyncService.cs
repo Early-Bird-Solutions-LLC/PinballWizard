@@ -84,6 +84,18 @@ public sealed class OpdbSyncService : IOpdbSyncService
         // stream past, so pass-2 always sees them in Cosmos.
         var aliasBuffer = new List<OpdbMachineDto>();
 
+        // Per-run cache of OPDB group-segment → clean franchise title
+        // (ADR-0029 D1). The is_machine_group record is NOT in the bulk
+        // export, so each distinct segment costs one extra polite OPDB
+        // GET — but only ONCE per run regardless of how many editions
+        // share the segment (Godzilla Pro+Premium/LE → one fetch).
+        // Bounded: ~hundreds of distinct segments. A null value is a
+        // cached miss (404 / non-group / no clean name) so a segment is
+        // never re-fetched; the existing name/opdbId title fallback then
+        // applies, unchanged. Local, not a field — per-run lifetime, GC'd
+        // after, and single-threaded by the sequential await foreach.
+        var groupTitleCache = new Dictionary<string, string?>(StringComparer.Ordinal);
+
         if (isDryRun)
         {
             _logger.LogInformation("OPDB sync starting (DRY RUN — fetch only, no Cosmos writes)...");
@@ -110,7 +122,8 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 }
 
                 var now = _timeProvider.GetUtcNow();
-                var mapped = OpdbMachineMapper.Map(dto, now);
+                var groupTitle = await ResolveGroupTitleAsync(dto.OpdbId, groupTitleCache, cancellationToken).ConfigureAwait(false);
+                var mapped = OpdbMachineMapper.Map(dto, now, groupTitle);
                 if (mapped is null)
                 {
                     skipped++;
@@ -150,7 +163,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     // Merge runs in both modes: in dry-run the mutated `existing`
                     // is discarded by the GC, but performing the merge confirms
                     // the mapping itself doesn't throw on real OPDB data.
-                    OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now);
+                    OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now, groupTitle);
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
@@ -500,5 +513,66 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 "OPDB sync: failed to update title lookup row for machine {MachineId} title '{Title}'. The cross-partition fallback in MachineGroundingTool will resolve queries for this title until the next sync repopulates the lookup.",
                 machineId, newTitle);
         }
+    }
+
+    /// <summary>
+    /// Resolves the clean franchise title for an OPDB record's group
+    /// segment (ADR-0029 D1), memoized per run. Returns null when there
+    /// is no derivable segment, no group record (OPDB 404 / non-group),
+    /// the group name is blank, or the per-segment fetch fails — in every
+    /// such case the caller (<see cref="OpdbMachineMapper.Map"/>) falls
+    /// back to the record's own name/opdbId, exactly as before this
+    /// feature. A failed or empty lookup is cached as null so a segment
+    /// is fetched at most once per run.
+    /// </summary>
+    /// <remarks>
+    /// Best-effort by design: a transient OPDB failure on the group
+    /// endpoint MUST NOT abort the catalog refresh — it only means the
+    /// affected records keep their edition-suffixed title until the next
+    /// sync (the documented D1 degradation). Cancellation propagates so a
+    /// host-stop signal still works.
+    /// </remarks>
+    private async Task<string?> ResolveGroupTitleAsync(
+        string? opdbId,
+        Dictionary<string, string?> cache,
+        CancellationToken cancellationToken)
+    {
+        var segment = string.IsNullOrWhiteSpace(opdbId)
+            ? null
+            : OpdbMachineMapper.ExtractGroupSegment(opdbId);
+        if (segment is null)
+        {
+            return null;
+        }
+
+        if (cache.TryGetValue(segment, out var cached))
+        {
+            return cached;
+        }
+
+        string? resolved = null;
+        try
+        {
+            var group = await _client.GetMachineGroupAsync(segment, cancellationToken).ConfigureAwait(false);
+            resolved = string.IsNullOrWhiteSpace(group?.Name) ? null : group!.Name;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: log at debug (not warning) — a missing group
+            // title is an expected, non-actionable degradation for
+            // singletons and OPDB hiccups, not an operational fault.
+            _logger.LogDebug(
+                ex,
+                "OPDB sync: group-title lookup failed for segment {Segment}; records in this group keep their edition-suffixed title until the next sync.",
+                segment);
+            resolved = null;
+        }
+
+        cache[segment] = resolved;
+        return resolved;
     }
 }

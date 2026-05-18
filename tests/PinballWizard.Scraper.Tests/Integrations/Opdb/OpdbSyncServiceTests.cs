@@ -744,6 +744,138 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _repository.Received(1).UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
     }
 
+    // --- ADR-0029 S4: per-segment group-title resolution (D1) ---
+    // The model: every is_machine base record stays a DISTINCT Machine
+    // (no fold, no canonical pick). When common_name is empty (modern
+    // Stern), Title comes from the is_machine_group record; GroupId
+    // relates siblings. These tests assert that behavior end-to-end
+    // through SyncAsync.
+
+    [Fact]
+    public async Task SyncAsync_Godzilla_BothBasesStayDistinctWithCleanGroupTitle()
+    {
+        // Godzilla: pm:1 Pro (GweeP-MW95j) + pm:0 Premium/LE
+        // (GweeP-Ml9pZ). Both have empty common_name. ADR-0029: TWO
+        // distinct Machine docs, BOTH titled "Godzilla" (from the group
+        // record), both GroupId=GweeP. NOT folded into one.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")));
+        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var captured = new List<Machine>();
+        await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(2, result.Inserted); // two distinct machines, NOT one
+        var pro = Assert.Single(captured, m => m.Id == "GweeP-MW95j");
+        var prem = Assert.Single(captured, m => m.Id == "GweeP-Ml9pZ");
+        Assert.Equal("Godzilla", pro.Title);   // clean group title (D1), not "Godzilla (Pro)"
+        Assert.Equal("Godzilla", prem.Title);
+        Assert.Equal("GweeP", pro.GroupId);    // related by GroupId
+        Assert.Equal("GweeP", prem.GroupId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_Metallica_ThreeBasesAllDistinctSameGroupTitle()
+    {
+        // Metallica: 3 separate base records, all pm:1 (no pm:0). ADR-0029:
+        // three distinct Machine docs, all titled "Metallica", all
+        // GroupId=GRBE4 — the "all-pm:1" majority pattern the fold model
+        // could not handle.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBE4-MQK1Z", manufacturer: "Stern Pinball, Inc.", name: "Metallica (Pro)", commonName: ""),
+            MachineJson("GRBE4-MJ9rE", manufacturer: "Stern Pinball, Inc.", name: "Metallica (Premium)", commonName: ""),
+            MachineJson("GRBE4-MOE4l", manufacturer: "Stern Pinball, Inc.", name: "Metallica (LE)", commonName: "")));
+        _handler.SetResponseFor("/api/machines/GRBE4", GroupJson("GRBE4", "Metallica"));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var captured = new List<Machine>();
+        await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(3, result.Inserted);
+        Assert.All(captured, m => Assert.Equal("Metallica", m.Title));
+        Assert.All(captured, m => Assert.Equal("GRBE4", m.GroupId));
+        Assert.Equal(3, captured.Select(m => m.Id).Distinct().Count()); // genuinely 3 distinct
+    }
+
+    [Fact]
+    public async Task SyncAsync_GroupRecordFetchedOncePerSegment()
+    {
+        // The is_machine_group fetch is memoized per run: two editions
+        // sharing GweeP must trigger exactly ONE GET /api/machines/GweeP.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "")));
+        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, _handler.RequestCountFor("/api/machines/GweeP"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_GroupRecord404_FallsBackToEditionSuffixedTitle()
+    {
+        // Graceful degradation (ADR-0029 D1): if the group record 404s,
+        // the machine keeps its name-derived title rather than the sync
+        // failing. The title is the edition-suffixed name (the documented
+        // pre-D1 behavior), and GroupId is still set for sibling relation.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "")));
+        _handler.SetResponseFor("/api/machines/GweeP", "{}", HttpStatusCode.NotFound);
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var captured = new List<Machine>();
+        await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, result.Inserted); // sync did NOT fail
+        var m = Assert.Single(captured);
+        Assert.Equal("Godzilla (Pro)", m.Title); // fell back to name
+        Assert.Equal("GweeP", m.GroupId);        // GroupId still derived
+    }
+
+    [Fact]
+    public async Task SyncAsync_Singleton_NoGroupRecord_TitleFromCommonName()
+    {
+        // Regression guard: a normal single-edition machine with a
+        // populated common_name is entirely unaffected — no spurious
+        // group fetch alters it, common_name wins.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        var captured = new List<Machine>();
+        await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        var m = Assert.Single(captured);
+        Assert.Equal("Stranger Things", m.Title); // common_name wins, group title never consulted
+        Assert.Equal("GRBN", m.GroupId);
+    }
+
+    private static string GroupJson(string segment, string name) =>
+        JsonSerializer.Serialize(new
+        {
+            opdb_id = segment,
+            is_machine_group = true,
+            name,
+            shortname = (string?)null,
+        });
+
     private static string MachineJson(string opdbId, string manufacturer, string name, string commonName) =>
         JsonSerializer.Serialize(new
         {
@@ -768,11 +900,15 @@ public sealed class OpdbSyncServiceTests : IDisposable
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, (string Body, HttpStatusCode Status)> _responses = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, int> _requestCounts = new(StringComparer.OrdinalIgnoreCase);
 
         public void SetResponseFor(string pathAndQuery, string body, HttpStatusCode status = HttpStatusCode.OK)
         {
             _responses[pathAndQuery] = (body, status);
         }
+
+        public int RequestCountFor(string pathAndQuery) =>
+            _requestCounts.TryGetValue(pathAndQuery, out var n) ? n : 0;
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage(
             "CodeQuality",
@@ -781,6 +917,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var key = request.RequestUri!.PathAndQuery;
+            _requestCounts[key] = RequestCountFor(key) + 1;
             if (_responses.TryGetValue(key, out var entry))
             {
                 return Task.FromResult(new HttpResponseMessage(entry.Status)
