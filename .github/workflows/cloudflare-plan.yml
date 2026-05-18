@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload plan artifact
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-${{ github.event.pull_request.head.sha }}
           path: infra/cloudflare/plan.tfplan
