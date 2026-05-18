@@ -25,6 +25,10 @@ concurrency:
 
 jobs:
   plan:
+    # Dependabot PRs run with isolated secret access — org secrets are not
+    # available, so Azure OIDC login fails. Skip the job for Dependabot since
+    # a Cloudflare plan is not meaningful for dependency-only bumps.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
