@@ -79,7 +79,9 @@ public sealed class ToolTraceCitationExtractorTests
             Themes: [],
             Designers: [],
             OpdbSourceUrl: null,
-            Editions: []);
+            Editions: [],
+            GroupId: null,
+            Siblings: []);
         var response = BuildAgentResponseWithToolResult(
             functionName: "getMachineByTitle",
             result: dto);
@@ -575,7 +577,9 @@ public sealed class ToolTraceCitationExtractorTests
             Themes: [],
             Designers: [],
             OpdbSourceUrl: $"https://opdb.org/machines/{opdbId}",
-            Editions: []);
+            Editions: [],
+            GroupId: null,
+            Siblings: []);
     }
 
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)

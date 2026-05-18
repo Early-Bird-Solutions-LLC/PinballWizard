@@ -227,6 +227,158 @@ public sealed class MachineGroundingToolTests
         await repo.DidNotReceive().GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>());
     }
 
+    // ── ADR-0029 S5: sibling-returning behavior ───────────────────────
+    // After resolving the primary machine, if it has a GroupId the tool
+    // fetches all base-machine records in the same group so the agent
+    // can ask a targeted clarifying question for version-dependent
+    // questions. The primary machine is excluded from Siblings.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_WithGroupId_FetchesSiblingsAndExcludesPrimary()
+    {
+        // Fixture: Godzilla Pro (GweeP-MW95j) resolved as primary.
+        // Group GweeP also contains Premium/LE (GweeP-Ml9pZ).
+        // Sibling fetch returns both; only the non-primary should land in Siblings.
+        var primary = new Machine
+        {
+            Id = "GweeP-MW95j",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla Pro",
+            Year = 2021,
+            GroupId = "GweeP",
+            Editions = [new MachineEdition { Name = "Pro", Msrp = "$7,999" }],
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sibling = new Machine
+        {
+            Id = "GweeP-Ml9pZ",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla Premium/LE",
+            Year = 2021,
+            GroupId = "GweeP",
+            Editions = [new MachineEdition { Name = "Premium", Msrp = "$9,999" }],
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Godzilla", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary));
+        // GetSiblingsByGroupIdAsync returns both primary and sibling —
+        // the tool must exclude the primary from Siblings.
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary, sibling));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j", result!.OpdbId);
+        Assert.Equal("GweeP", result.GroupId);
+
+        // Siblings contains the Premium/LE but NOT the primary Pro.
+        Assert.Single(result.Siblings);
+        Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
+        Assert.Equal("Godzilla Premium/LE", result.Siblings[0].Title);
+        Assert.Equal("Premium", result.Siblings[0].Editions[0].Name);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_NoGroupId_ReturnEmptySiblings()
+    {
+        // A machine with no GroupId (solo title, no OPDB group) must
+        // return an empty Siblings list — not null — so the agent prompt
+        // can safely check Siblings.Count without null-checking.
+        var machine = NewMachine("GRBN-SOLO", "Solo Title", 2020);
+        // GroupId is null by default in NewMachine.
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Solo Title", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(machine));
+
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Solo Title", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Null(result!.GroupId);
+        Assert.Empty(result.Siblings);
+        // GetSiblingsByGroupIdAsync must NOT be called when GroupId is absent.
+        repo.DidNotReceiveWithAnyArgs().GetSiblingsByGroupIdAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_SiblingFetchFails_StillReturnsPrimary()
+    {
+        // Sibling fetch is best-effort. A Cosmos failure during sibling
+        // fetch must NOT prevent the primary machine from being returned.
+        // The tool degrades to single-machine mode (empty Siblings).
+        var primary = new Machine
+        {
+            Id = "GweeP-MW95j",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla Pro",
+            Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Godzilla Pro", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary));
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Cosmos unavailable"));
+
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
+
+        // Must not throw — degrades gracefully.
+        var result = await tool.GetMachineByTitleAsync("Godzilla Pro", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j", result!.OpdbId);
+        Assert.Empty(result.Siblings);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_GroupWithOnlyPrimary_ReturnEmptySiblings()
+    {
+        // Group fetch returns only the primary machine (sole member of
+        // its group in the catalog — not yet backfilled with siblings).
+        // Siblings must be empty, not contain the primary itself.
+        var primary = new Machine
+        {
+            Id = "GweeP-MW95j",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla Pro",
+            Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Godzilla Pro", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary));
+        // Only the primary in the group (sibling fetch returns only it).
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary));
+
+        var tool = new MachineGroundingTool(repo, Substitute.For<IMachineTitleLookupRepository>(), NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Godzilla Pro", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.Siblings);
+    }
+
     [Fact]
     public void Ctor_NullRepository_Throws()
     {

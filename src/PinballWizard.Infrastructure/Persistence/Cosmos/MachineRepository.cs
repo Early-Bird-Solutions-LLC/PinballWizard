@@ -85,4 +85,41 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             }
         }
     }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<Machine> GetSiblingsByGroupIdAsync(
+        string groupId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+
+        // Cross-partition equality match on groupId. Expected cardinality
+        // is 1–10 per ADR-0029 § data observation (typically 3: Pro /
+        // Premium / LE). MaxItemCount=10 fetches all siblings in a single
+        // page at the expected sizes; a second page fetch only occurs for
+        // unusually large groups (>10 editions).
+        var queryDefinition = new QueryDefinition(
+            "SELECT * FROM c WHERE c.groupId = @groupId")
+            .WithParameter("@groupId", groupId);
+        var requestOptions = new QueryRequestOptions { MaxItemCount = 10 };
+
+        using var iterator = Container.GetItemQueryIterator<Machine>(
+            queryDefinition,
+            requestOptions: requestOptions);
+        while (iterator.HasMoreResults)
+        {
+            var page = await ExecuteWithMetricsAsync(
+                "query",
+                async ct =>
+                {
+                    var p = await iterator.ReadNextAsync(ct).ConfigureAwait(false);
+                    return (p, p.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
+            foreach (var machine in page)
+            {
+                yield return machine;
+            }
+        }
+    }
 }
