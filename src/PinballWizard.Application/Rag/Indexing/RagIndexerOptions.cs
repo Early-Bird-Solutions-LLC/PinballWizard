@@ -12,7 +12,9 @@ namespace PinballWizard.Application.Rag.Indexing;
 // the standard `text-embedding-3-large` deployment's per-second TPM
 // budget. Set to 1 to serialize for cold-start runs against
 // throttled environments.
-public sealed record RagIndexerOptions(
-    int BatchSize = 1000,
-    int IndexUploadConcurrency = 4,
-    int EmbeddingMaxConcurrency = 8);
+public sealed record RagIndexerOptions
+{
+    public int BatchSize { get; init; } = 1000;
+    public int IndexUploadConcurrency { get; init; } = 4;
+    public int EmbeddingMaxConcurrency { get; init; } = 8;
+}

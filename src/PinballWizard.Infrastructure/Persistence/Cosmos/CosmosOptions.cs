@@ -150,13 +150,13 @@ public sealed class CosmosOptions
         // worker boot. Idempotent: existing containers with matching
         // partition keys are no-ops.
         new() { Name = "scraped_documents", PartitionKeyPath = "/machine_id" },
-        // `rag_leases` is intentionally absent from ARM provisioning.
-        // The Cosmos SDK's ChangeFeedProcessorBuilder.WithLeaseContainer()
-        // requires partition key /id, which ARM rejects as a system-property
-        // override. The SDK auto-creates the lease container on first
-        // processor start if the client has data-plane write access.
-        // Declaring it here would cause --ensure-cosmos-containers to fail
-        // with BadRequest on every fresh environment.
+        // `rag_leases` — Change Feed processor lease container. Partition key
+        // /id is required by the Cosmos SDK's ChangeFeedProcessorBuilder.
+        // ARM accepts /id as a partition key path (it is not a system-property
+        // restriction — see ADR-0012). Declaring it here keeps --ensure-cosmos-
+        // containers fully idempotent: a fresh environment gets the container
+        // before the worker starts (avoiding the 404 crash on first boot).
+        new() { Name = "rag_leases", PartitionKeyPath = "/id" },
         // Selective indexing on `rag_index_state` per ADR-0025 § 3:
         // every read path is either a deterministic point-read by
         // `idx_<document_id>` (CosmosBackedIndexState) or the

@@ -45,13 +45,14 @@ public sealed class IndexingPolicyContractTests
     }
 
     [Fact]
-    public void Defaults_RagLeases_IsNotArmManaged_NoIndexingPolicy()
+    public void Defaults_RagLeases_HasNoIndexingPolicyOverride()
     {
-        // rag_leases is excluded from ARM provisioning entirely — ARM rejects
-        // /id as a partition key (system property). The SDK's ChangeFeedProcessor
-        // auto-creates it. There is no IndexingPolicy to assert here.
-        var options = new CosmosOptions();
-        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
+        // rag_leases is ARM-provisioned with no indexing policy override.
+        // The Cosmos SDK's ChangeFeedProcessorBuilder accesses it via system
+        // fields only (_lsn, _ts, id) — all auto-indexed regardless of policy.
+        // A custom policy here would add overhead without benefit.
+        var leases = AssertContainer("rag_leases");
+        Assert.Null(leases.IndexingPolicy);
     }
 
     [Fact]
