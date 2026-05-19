@@ -154,6 +154,12 @@ public static class ServiceCollectionExtensions
             return new IngestionSourceRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<IngestionSourceRepository>>());
         });
 
+        services.AddSingleton<IScrapedDocumentRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scraped_documents");
+            return new CosmosScrapedDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosScrapedDocumentRepository>>());
+        });
+
         // Title→OPDB-ID lookup for the user-delight critical path per
         // ADR-0025 § 4. Inherits metering from `CosmosRepository<T>` so
         // every point-read here lands on `pinwiz.cosmos.*` tagged
