@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Application.Rag.Ingestion;
@@ -25,6 +26,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddOptions<RagIngestionOptions>();
+        services.AddOptions<RagIndexerOptions>();
         services.TryAddSingleton<IRagIngestionPipeline, ScrapedDocumentIngestionPipeline>();
 
         return services;

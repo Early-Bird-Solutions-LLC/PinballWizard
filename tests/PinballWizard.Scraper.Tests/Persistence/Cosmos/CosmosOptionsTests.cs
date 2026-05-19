@@ -55,15 +55,17 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
-    public void Defaults_Containers_DoesNotIncludeRagLeases()
+    public void Defaults_Containers_IncludesRagLeases()
     {
-        // rag_leases is SDK-managed: ChangeFeedProcessorBuilder.WithLeaseContainer()
-        // auto-creates it with partition key /id on first processor start.
-        // ARM rejects /id as a partition key (system property override), so it
-        // is excluded from --ensure-cosmos-containers provisioning.
+        // rag_leases must be ARM-provisioned so --ensure-cosmos-containers
+        // creates it before the first worker boot. The prior claim that ARM
+        // rejects /id as a partition key is incorrect — ARM accepts it.
+        // See the correction in CosmosOptions.cs and the investigation that
+        // disproved the "system-property override" restriction.
         var options = new CosmosOptions();
 
-        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
+        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
+        Assert.Equal("/id", leases.PartitionKeyPath);
     }
 
     [Fact]
@@ -114,13 +116,13 @@ public sealed class CosmosOptionsTests
         // registrations or worker wiring (which would silently leave the new
         // container missing partition-key validation) trips this test as a
         // flag. Phase 1: machines + ingestion_sources. Phase 4 W3-2: adds
-        // scraped_documents + rag_index_state + rag_dead_letters (rag_leases
-        // is SDK-managed, excluded from ARM provisioning — see
-        // Defaults_Containers_DoesNotIncludeRagLeases). Cosmos for User
-        // Delight PR 5: adds machine_title_lookups. Phase 5 Wave 2 PR-L2:
-        // adds featured_machines (landing-page strip).
+        // scraped_documents + rag_leases + rag_index_state + rag_dead_letters
+        // (rag_leases is now ARM-provisioned — the prior claim that ARM rejects
+        // /id was incorrect; see Defaults_Containers_IncludesRagLeases).
+        // Cosmos for User Delight PR 5: adds machine_title_lookups.
+        // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
         var options = new CosmosOptions();
-        Assert.Equal(7, options.Containers.Count);
+        Assert.Equal(8, options.Containers.Count);
     }
 
     [Fact]
@@ -150,15 +152,15 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
-    public void Defaults_RagLeases_IsNotArmManaged()
+    public void Defaults_RagLeases_HasNoTtl()
     {
-        // rag_leases is excluded from ARM provisioning (see
-        // Defaults_Containers_DoesNotIncludeRagLeases). No TTL test needed
-        // here — the SDK creates the lease container without a TTL by default,
-        // and TTL on leases would strand in-flight continuation tokens.
+        // rag_leases is ARM-provisioned with no TTL. A TTL on leases would
+        // strand in-flight continuation tokens — the lease rows must outlive
+        // any Change Feed processor instance that holds them.
         var options = new CosmosOptions();
 
-        Assert.DoesNotContain(options.Containers, c => c.Name == "rag_leases");
+        var leases = Assert.Single(options.Containers, c => c.Name == "rag_leases");
+        Assert.Null(leases.DefaultTtlSeconds);
     }
 
     [Fact]

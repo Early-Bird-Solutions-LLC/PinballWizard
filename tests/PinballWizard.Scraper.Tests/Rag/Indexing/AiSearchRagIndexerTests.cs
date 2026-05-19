@@ -289,11 +289,11 @@ public sealed class AiSearchRagIndexerTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             sut.UpsertAsync(SampleRequest, [MakeChunk(0)],
-                new RagIndexerOptions(BatchSize: 0), CancellationToken.None));
+                new RagIndexerOptions { BatchSize = 0 }, CancellationToken.None));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             sut.UpsertAsync(SampleRequest, [MakeChunk(0)],
-                new RagIndexerOptions(BatchSize: 2000), CancellationToken.None));
+                new RagIndexerOptions { BatchSize = 2000 }, CancellationToken.None));
     }
 
     [Fact]
@@ -304,11 +304,11 @@ public sealed class AiSearchRagIndexerTests
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             sut.UpsertAsync(SampleRequest, [MakeChunk(0)],
-                new RagIndexerOptions(IndexUploadConcurrency: 0), CancellationToken.None));
+                new RagIndexerOptions { IndexUploadConcurrency = 0 }, CancellationToken.None));
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
             sut.UpsertAsync(SampleRequest, [MakeChunk(0)],
-                new RagIndexerOptions(EmbeddingMaxConcurrency: 0), CancellationToken.None));
+                new RagIndexerOptions { EmbeddingMaxConcurrency = 0 }, CancellationToken.None));
     }
 
     [Fact]
