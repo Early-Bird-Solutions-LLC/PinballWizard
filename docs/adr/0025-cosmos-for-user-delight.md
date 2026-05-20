@@ -27,9 +27,9 @@ For projections off `machines`, dual-write from the single writer (`OpdbSyncServ
 
 | Setting | Value | Rationale |
 | --- | --- | --- |
-| `ConnectionMode` | `Direct` (TCP) | -10–30ms vs Gateway; the cost of an additional managed network hop on every call. |
+| `ConnectionMode` | **Environment-conditional** — `Gateway + LimitToEndpoint` in Development; `Direct` (TCP) in Production | Direct TCP to Cosmos partition replicas is unreachable from outside Azure (dev machine → Azure Cosmos). In Direct mode the Change Feed processor silently fails to deliver batches because it cannot open the direct TCP channels. `Gateway + LimitToEndpoint` routes all requests over HTTPS through the account endpoint, which is reachable from any network. In Production (ACA worker co-located with Cosmos) Direct is correct and saves 10–30ms vs Gateway. `LimitToEndpoint` and `ApplicationPreferredRegions` are mutually exclusive in the SDK, so the two paths are fully separated on the `IHostEnvironment.IsDevelopment()` signal. |
 | `ConsistencyLevel` | `Session` | Read-your-writes within a client session; lowest read latency that preserves correctness. Single-region deploy makes the cross-region staleness implications inert. |
-| `ApplicationPreferredRegions` | `["East US 2"]` | Match the deployed Cosmos account's primary region. Single-region today; multi-region deferred until user-geography signal. |
+| `ApplicationPreferredRegions` | `["East US 2"]` (Production only) | Match the deployed Cosmos account's primary region. Not set in Development (`LimitToEndpoint` takes precedence). Single-region today; multi-region deferred until user-geography signal. |
 | `EnableContentResponseOnWrite` | `false` | Saves one round-trip + ~1 RU per write. Callers must consume `entity` (the value passed in) not `response.Resource`. |
 | `AllowBulkExecution` | `true` | Auto-batches concurrent same-partition operations. Zero risk for current single-op call sites; meaningful win for OPDB sync (~2,400 sequential upserts) and the future Phase 1 → Cosmos backfill. |
 | `ApplicationName` | per-host (`pinwiz-cli` / `pinwiz-rag-worker` / future `pinwiz-wizard-host`) | Distinguishes hosts in Cosmos diagnostic logs + custom-metric tagging without changing the underlying client behavior. |
@@ -111,7 +111,7 @@ These have been considered and rejected. Rationale recorded so future PRs don't 
 | # | Option | Latency | RU cost | Complexity | Decision |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Session consistency | Low (single-region) | Neutral | None | **Lock** — § 2 |
-| 2 | Direct connection mode | -10–30ms vs gateway | Neutral | None | **Lock** — § 2 |
+| 2 | Environment-conditional connection mode (Gateway+LimitToEndpoint in Dev, Direct in Prod) | -10–30ms vs Gateway in Prod; Change Feed reliable in Dev | Neutral | Low (env signal) | **Lock** — § 2 |
 | 3 | Selective indexing on write-heavy | Neutral read | -30–60% RU on write | Low | **Lock** — § 3 |
 | 4 | EnableContentResponseOnWrite=false | -1 round-trip on write | -1 RU/write | Low | **Lock** — § 2 |
 | 5 | Title→OpdbId lookup container | -50–145ms p95 | -3–8 RU/lookup | Medium | **Lock** — § 4 |

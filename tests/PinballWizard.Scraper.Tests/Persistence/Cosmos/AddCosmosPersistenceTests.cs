@@ -1,6 +1,7 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
@@ -37,6 +38,7 @@ public sealed class AddCosmosPersistenceTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
         services.AddCosmosPersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
@@ -62,6 +64,7 @@ public sealed class AddCosmosPersistenceTests
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
         services.AddCosmosPersistence(configuration);
 
         using var provider = services.BuildServiceProvider();
@@ -76,4 +79,5 @@ public sealed class AddCosmosPersistenceTests
         // pinned by the WithoutApplicationName_ResolvesCosmosClientWithoutThrowing
         // test above.
     }
+
 }
