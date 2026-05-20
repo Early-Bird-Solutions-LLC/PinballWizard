@@ -176,7 +176,7 @@ public sealed class CosmosChangeFeedHostedServiceTests
     {
         var ctx = new TestContext();
         ctx.Handler.ThrowFor.Add(DocumentIdA);
-        var change = NewChange(DocumentIdA, lsn: "987");
+        var change = NewChange(DocumentIdA, lsn: 987L);
 
         await ctx.Service.HandleChangesAsync([change], CancellationToken.None);
 
@@ -188,7 +188,7 @@ public sealed class CosmosChangeFeedHostedServiceTests
     // Test fixture
     // ────────────────────────────────────────────────────────────────
 
-    private static RagSourceDocument NewChange(string documentId, string? lsn = null) => new()
+    private static RagSourceDocument NewChange(string documentId, long? lsn = null) => new()
     {
         Id = documentId,
         DocumentId = documentId,
@@ -208,7 +208,7 @@ public sealed class CosmosChangeFeedHostedServiceTests
         public Action<RagSourceDocument>? OnInvoke { get; set; }
         public Action<RagSourceDocument>? ThrowOverride { get; set; }
 
-        public Task HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
+        public Task<IngestionOutcome?> HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
         {
             Invocations.Add(change.DocumentId);
             OnInvoke?.Invoke(change);
@@ -221,7 +221,7 @@ public sealed class CosmosChangeFeedHostedServiceTests
             {
                 throw new InvalidOperationException($"simulated handler failure for {change.DocumentId}");
             }
-            return Task.CompletedTask;
+            return Task.FromResult<IngestionOutcome?>(null);
         }
     }
 
@@ -256,7 +256,7 @@ public sealed class CosmosChangeFeedHostedServiceTests
                 Handler,
                 DeadLetterSink,
                 static d => d.DocumentId,
-                static d => d.Lsn,
+                static d => d.Lsn?.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ingestionOptions,
                 changeFeedOptions,
                 TimeProvider.System,

@@ -60,6 +60,9 @@ public sealed class RagSourceDocument
     [JsonPropertyName("_etag")]
     public string? Etag { get; init; }
 
+    // _lsn is a JSON number in both the Change Feed Processor payload and
+    // the raw stream iterator response. Using long? here; the DI lambda
+    // converts to string for the dead-letter sink via .ToString().
     [JsonPropertyName("_lsn")]
-    public string? Lsn { get; init; }
+    public long? Lsn { get; init; }
 }

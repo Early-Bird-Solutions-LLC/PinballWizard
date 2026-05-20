@@ -117,12 +117,69 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ICosmosChangeFeedHandler<RagSourceDocument>>(),
                 sp.GetRequiredService<IDeadLetterSink>(),
                 static d => d.DocumentId,
-                static d => d.Lsn,
+                static d => d.Lsn?.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 sp.GetRequiredService<IOptions<RagIngestionOptions>>(),
                 sp.GetRequiredService<IOptions<CosmosChangeFeedHostedServiceOptions>>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosChangeFeedHostedService<RagSourceDocument>>>(),
                 sp.GetService<IRagReconciler>());
+        });
+
+        return services;
+    }
+
+    // Registers `IRagBackfillService` for the `--run-rag-backfill` CLI
+    // command. Requires Cosmos + AI Search + AI Foundry integration to
+    // already be wired by the caller. Only registers the handler and the
+    // backfill service — does NOT register the BackgroundService, the
+    // lease-lag estimator, the dead-letter sink, or the reconciler
+    // (those belong to the worker host, not the CLI).
+    //
+    // The caller must also bind `Rag:Ingestion` options before calling
+    // this method (typically via AddOptions<RagIngestionOptions>().Bind(...)).
+    public static IServiceCollection AddRagBackfillService(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<RagIngestionOptions>()
+            .Bind(configuration.GetSection(RagIngestionOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<CosmosChangeFeedHostedServiceOptions>()
+            .Bind(configuration.GetSection(CosmosChangeFeedHostedServiceOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Cosmos-backed IIndexState — same as the worker host wires.
+        // RemoveAll first so the Application-layer TryAddSingleton
+        // placeholder doesn't win.
+        services.RemoveAll<IIndexState>();
+        services.AddSingleton<IIndexState>(sp => new CosmosBackedIndexState(
+            ResolveContainer(sp, "rag_index_state"),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosBackedIndexState>>(),
+            sp.GetRequiredService<TimeProvider>()));
+
+        services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
+
+        // HttpClient for IDocumentBytesSource — same as the worker host.
+        services.AddHttpClient<IDocumentBytesSource, HttpDocumentBytesSource>();
+
+        services.AddSingleton<IRagBackfillService>(sp =>
+        {
+            var changeFeedOpts = sp.GetRequiredService<IOptions<CosmosChangeFeedHostedServiceOptions>>().Value;
+            var sourceContainer = ResolveContainer(sp, changeFeedOpts.SourceContainerName);
+
+            return new CosmosRagBackfillService(
+                sourceContainer,
+                sp.GetRequiredService<ICosmosChangeFeedHandler<RagSourceDocument>>(),
+                sp.GetRequiredService<IOptions<RagIngestionOptions>>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosRagBackfillService>>());
         });
 
         return services;

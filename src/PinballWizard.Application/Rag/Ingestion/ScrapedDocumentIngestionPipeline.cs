@@ -160,19 +160,25 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         var upsertResult = await _indexer.UpsertAsync(chunkRequest, chunks, _indexerOptions, cancellationToken)
             .ConfigureAwait(false);
 
-        // Record state. Failures are surfaced (as failureCount on the
-        // state row) but DO NOT change the IngestionOutcome — partial
-        // failures are common at curated-subset scale (e.g., one chunk
-        // exceeds the AI Search size cap, the rest succeed) and the
-        // alarm path is `pinwiz.rag.changefeed_dead_letter_total` from
-        // the hosted service when failureCount exceeds
-        // RagIngestionOptions.MaxFailuresPerDocument.
-        await _indexState.RecordIndexedAsync(
-            change.DocumentId,
-            change.ContentHash,
-            chunkCount: upsertResult.Indexed,
-            failureCount: upsertResult.Failures.Count,
-            cancellationToken).ConfigureAwait(false);
+        // Record state only when the source document carries a content hash.
+        // Seeded documents (from catalog.json) may have an empty ContentHash;
+        // without a hash there is no short-circuit value to store, so skip
+        // state recording — the document will re-embed on the next backfill
+        // run rather than being erroneously dead-lettered.
+        // Failures are surfaced (as failureCount on the state row) but DO NOT
+        // change the IngestionOutcome — partial failures are common at curated-
+        // subset scale (e.g., one chunk exceeds the AI Search size cap, the
+        // rest succeed) and the alarm path is the dead-letter counter from
+        // the hosted service when failureCount exceeds MaxFailuresPerDocument.
+        if (!string.IsNullOrWhiteSpace(change.ContentHash))
+        {
+            await _indexState.RecordIndexedAsync(
+                change.DocumentId,
+                change.ContentHash,
+                chunkCount: upsertResult.Indexed,
+                failureCount: upsertResult.Failures.Count,
+                cancellationToken).ConfigureAwait(false);
+        }
 
         if (upsertResult.Failures.Count > 0)
         {

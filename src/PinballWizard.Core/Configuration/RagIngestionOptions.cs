@@ -19,7 +19,7 @@ public sealed class RagIngestionOptions
     // filter clause entirely, NOT this option, so production never
     // sees an unbounded curated subset config.
     [Required]
-    public IReadOnlyList<string> CuratedSubsetMachineIds { get; init; } = [];
+    public List<string> CuratedSubsetMachineIds { get; init; } = [];
 
     // Document types accepted by the pipeline. Manuals + service
     // bulletins for Phase 4. The metadata-card path (W3-1) flows
@@ -28,7 +28,7 @@ public sealed class RagIngestionOptions
     // error. Anything outside this list returns `Skipped_DocumentTypeFiltered`.
     [Required]
     [MinLength(1)]
-    public IReadOnlyList<DocumentType> AcceptedDocumentTypes { get; init; } =
+    public List<DocumentType> AcceptedDocumentTypes { get; init; } =
         [DocumentType.Manual, DocumentType.ServiceBulletin];
 
     // Optional reconciliation pass on worker startup: sample N rows

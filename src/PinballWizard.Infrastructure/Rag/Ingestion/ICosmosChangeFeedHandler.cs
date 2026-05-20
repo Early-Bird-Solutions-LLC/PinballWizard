@@ -1,3 +1,5 @@
+using PinballWizard.Application.Rag.Ingestion;
+
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
 
 // Per-change handler invoked by `CosmosChangeFeedHostedService<T>`
@@ -16,8 +18,15 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // `OperationCanceledException` carrying the host's stopping token
 // MUST be allowed to propagate so the BackgroundService shuts down
 // cleanly on host stop.
+//
+// Return value: `IngestionOutcome?` — callers such as the backfill
+// service use the returned outcome to separate "indexed" from
+// "skipped" in progress counters. The hosted service discards the
+// return value (it has no per-document outcome accounting). Handlers
+// that don't have a meaningful pipeline outcome (e.g., test fakes,
+// non-RAG handlers) may return `null`.
 public interface ICosmosChangeFeedHandler<in T>
     where T : class
 {
-    Task HandleAsync(T change, CancellationToken cancellationToken);
+    Task<IngestionOutcome?> HandleAsync(T change, CancellationToken cancellationToken);
 }
