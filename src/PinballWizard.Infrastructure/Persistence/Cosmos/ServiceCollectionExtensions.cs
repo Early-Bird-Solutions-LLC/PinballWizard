@@ -65,11 +65,24 @@ public static class ServiceCollectionExtensions
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             };
 
+            // Connection mode strategy (per Neighborli reference pattern + ADR-0025):
+            // - Gateway + LimitToEndpoint in Development: dev machine → Azure Cosmos
+            //   over HTTPS. Direct TCP to partition replicas is unreachable from outside
+            //   Azure — Change Feed silently fails to deliver batches in Direct mode.
+            // - Direct + PreferredRegions in Production: ACA worker is co-located with
+            //   Cosmos so direct TCP works and saves 10–30ms vs Gateway.
+            // LimitToEndpoint and ApplicationPreferredRegions are mutually exclusive in
+            // the SDK, so the two paths are fully separated on the environment signal.
+            var hostEnv = sp.GetRequiredService<IHostEnvironment>();
+            var isDevelopment = hostEnv.IsDevelopment();
+            var connectionMode = isDevelopment
+                ? ConnectionMode.Gateway
+                : ConnectionMode.Direct;
+
             var clientOptions = new CosmosClientOptions
             {
-                ApplicationPreferredRegions = [.. options.PreferredRegions],
                 Serializer = new SystemTextJsonCosmosSerializer(jsonOptions),
-                ConnectionMode = ConnectionMode.Direct,
+                ConnectionMode = connectionMode,
                 ConsistencyLevel = ConsistencyLevel.Session,
                 // Per ADR-0025 § 2 — saves one round-trip + ~1 RU per
                 // write. `IRepository<T>.UpsertAsync` returns the input
@@ -85,6 +98,15 @@ public static class ServiceCollectionExtensions
                 // upserts; future Phase 1 → Cosmos backfill).
                 AllowBulkExecution = true,
             };
+
+            if (isDevelopment)
+            {
+                clientOptions.LimitToEndpoint = true;
+            }
+            else if (options.PreferredRegions.Count > 0)
+            {
+                clientOptions.ApplicationPreferredRegions = [.. options.PreferredRegions];
+            }
 
             // CosmosClientOptions.ApplicationName is appended to the
             // User-Agent header, and the HTTP-headers parser throws on
