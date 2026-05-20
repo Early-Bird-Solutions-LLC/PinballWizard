@@ -42,7 +42,7 @@ public sealed class ScrapedDocumentChangeFeedHandler
         _logger = logger;
     }
 
-    public async Task HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
+    public async Task<IngestionOutcome?> HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(change);
 
@@ -72,6 +72,8 @@ public sealed class ScrapedDocumentChangeFeedHandler
         _logger.LogDebug(
             "RAG Change Feed handler: document={DocumentId} machine={MachineId} outcome={Outcome}.",
             change.DocumentId, change.MachineId, outcome);
+
+        return outcome;
     }
 
     internal static DocumentType ParseDocumentType(string raw) =>

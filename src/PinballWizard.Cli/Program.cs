@@ -21,7 +21,11 @@ using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
+using PinballWizard.Application.Rag.Chunking;
+using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Ingestion;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -125,6 +129,11 @@ var seedScrapedDocumentsOption = new Option<bool>("--seed-scraped-documents")
     Description = "Read data/metadata/catalog.json and upsert each Manual or ServiceBulletin entry whose game title resolves to a machine in the Cosmos machines container into the scraped_documents container. Idempotent: re-runs overwrite existing records without data loss. Seeds the Change Feed source that drives the RAG ingestion pipeline. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
+{
+    Description = "One-shot RAG index backfill: iterates all scraped_documents via the raw Change Feed stream iterator (no lease checkpoints) and runs each document through the full RAG ingestion pipeline (extract → chunk → embed → AI Search upsert). Idempotent: documents already indexed with the same content hash are skipped. Use after provisioning a fresh RAG index to populate it from existing scraped documents before the Change Feed Processor starts handling ongoing writes. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -143,6 +152,7 @@ rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(seedScrapedDocumentsOption);
+rootCommand.Options.Add(runRagBackfillOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -163,6 +173,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
     var seedScrapedDocuments = parseResult.GetValue(seedScrapedDocumentsOption);
+    var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -279,6 +290,37 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var seedResult = await seeder.SeedAsync(catalogPath, cancellationToken);
         Console.WriteLine();
         Console.WriteLine($"Scraped documents seeded: {seedResult.Upserted} upserted, {seedResult.Skipped} skipped.");
+        return;
+    }
+
+    // Handle --run-rag-backfill (one-shot RAG index population for the
+    // curated subset of scraped_documents). Resolves IRagBackfillService
+    // from DI; only registered when Cosmos + AI Search + AI Foundry are
+    // all configured. Mirrors the --ensure-cosmos-containers exit-code-2
+    // remediation pattern.
+    if (runRagBackfill)
+    {
+        var backfill = host.Services.GetService<IRagBackfillService>();
+        if (backfill is null)
+        {
+            Console.Error.WriteLine(
+                "--run-rag-backfill requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("RAG backfill starting — this may take several minutes for the curated subset...");
+        var result = await backfill.RunAsync(cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"RAG backfill complete: {result.Processed} processed, " +
+                          $"{result.Indexed} indexed, {result.Skipped} skipped, " +
+                          $"{result.Failed} failed, duration {result.Duration.TotalSeconds:N1}s");
+        if (result.Failed > 0)
+        {
+            Console.Error.WriteLine($"  {result.Failed} documents failed — check logs for details.");
+            Environment.ExitCode = 1;
+        }
         return;
     }
 
@@ -651,6 +693,19 @@ static IHost CreateHost(string[] args)
     if (aiSearchWired)
     {
         builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
+    }
+
+    // RAG backfill service — gated on all three backend services being present.
+    // Registers the full ingestion stack (pipeline + chunker + extractor +
+    // Cosmos-backed IIndexState + backfill service) so `--run-rag-backfill`
+    // can populate the AI Search index from existing scraped_documents without
+    // running the Change Feed Processor.
+    if (cosmosWired && aiSearchWired && foundryWired)
+    {
+        builder.Services.AddRagIngestionPipeline();
+        builder.Services.AddHybridChunker();
+        builder.Services.AddPdfDocumentTextExtractor();
+        builder.Services.AddRagBackfillService(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)

@@ -239,7 +239,7 @@ public sealed class RagChangefeedTelemetryTests
     // Test fixture
     // ────────────────────────────────────────────────────────────────
 
-    private static RagSourceDocument NewChange(string documentId, string? lsn = null) => new()
+    private static RagSourceDocument NewChange(string documentId, long? lsn = null) => new()
     {
         Id = documentId,
         DocumentId = documentId,
@@ -257,7 +257,7 @@ public sealed class RagChangefeedTelemetryTests
         public List<string> Invocations { get; } = [];
         public HashSet<string> ThrowFor { get; } = [];
 
-        public Task HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
+        public Task<IngestionOutcome?> HandleAsync(RagSourceDocument change, CancellationToken cancellationToken)
         {
             Invocations.Add(change.DocumentId);
             cancellationToken.ThrowIfCancellationRequested();
@@ -265,7 +265,7 @@ public sealed class RagChangefeedTelemetryTests
             {
                 throw new InvalidOperationException($"simulated handler failure for {change.DocumentId}");
             }
-            return Task.CompletedTask;
+            return Task.FromResult<IngestionOutcome?>(null);
         }
     }
 
@@ -307,7 +307,7 @@ public sealed class RagChangefeedTelemetryTests
                 Handler,
                 sink,
                 static d => d.DocumentId,
-                static d => d.Lsn,
+                static d => d.Lsn?.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ingestionOptions,
                 changeFeedOptions,
                 TimeProvider.System,
