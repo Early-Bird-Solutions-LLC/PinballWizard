@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
 
@@ -41,18 +42,27 @@ public sealed class CosmosBackedDeadLetterSink : IDeadLetterSink
 
         try
         {
-            var response = await _container.ReadItemAsync<DeadLetterDocument>(
-                DeadLetterDocument.RowIdPrefix + documentId,
-                new PartitionKey(documentId),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            var d = response.Resource;
-            return new DeadLetterRecord(
-                DocumentId: d.DocumentId,
-                AttemptCount: d.AttemptCount,
-                LastAttemptUtc: d.LastAttemptUtc,
-                ErrorClass: d.ErrorClass,
-                ErrorMessage: d.ErrorMessage,
-                ChangeLsn: d.ChangeLsn);
+            return await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+                _container.Id,
+                "read",
+                _logger,
+                async ct =>
+                {
+                    var response = await _container.ReadItemAsync<DeadLetterDocument>(
+                        DeadLetterDocument.RowIdPrefix + documentId,
+                        new PartitionKey(documentId),
+                        cancellationToken: ct).ConfigureAwait(false);
+                    var d = response.Resource;
+                    var record = new DeadLetterRecord(
+                        DocumentId: d.DocumentId,
+                        AttemptCount: d.AttemptCount,
+                        LastAttemptUtc: d.LastAttemptUtc,
+                        ErrorClass: d.ErrorClass,
+                        ErrorMessage: d.ErrorMessage,
+                        ChangeLsn: d.ChangeLsn);
+                    return (record, response.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -78,10 +88,19 @@ public sealed class CosmosBackedDeadLetterSink : IDeadLetterSink
             ChangeLsn = record.ChangeLsn,
         };
 
-        await _container.UpsertItemAsync(
-            doc,
-            new PartitionKey(record.DocumentId),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+            _container.Id,
+            "upsert",
+            _logger,
+            async ct =>
+            {
+                var response = await _container.UpsertItemAsync(
+                    doc,
+                    new PartitionKey(record.DocumentId),
+                    cancellationToken: ct).ConfigureAwait(false);
+                return (true, response.RequestCharge);
+            },
+            cancellationToken).ConfigureAwait(false);
 
         _logger.LogWarning(
             "RAG dead-letter: document={DocumentId} attempt={AttemptCount} error={ErrorClass} ({ErrorMessage}).",

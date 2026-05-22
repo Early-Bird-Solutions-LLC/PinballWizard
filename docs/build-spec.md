@@ -926,21 +926,109 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 
 ## Phase 4.5 — Manuals corpus expansion
 
-**Status:** ⏳ Not started
-**Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they can run concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
-**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation. The headline artifact should be: every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged).*
+**Status:** 🔵 In progress — W0 + W1 complete; W2 (corpus expansion) next
+**Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they ran concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
+**Demonstrable artifact:** Every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged). H5 eval baseline demonstrates a meaningful lift from the all-refused H4 floor.
 
-> Will cover: removing the `Rag:CuratedSubsetMachineIds[]` filter on the Cosmos Change Feed Function; long-tail PDF edge cases (encrypted, scanned, complex layouts) and the OCR fallback decision (Azure Document Intelligence vs. defer); per-manufacturer chunking-quality spot-check (Stern manuals vs. JJP manuals vs. CGC remake docs); bounded long-tail failure handling + triage runbook; embedding cost projection vs. $300–$400/mo cap (full corpus run is ~50–100× the curated-subset cost — pre-flight estimate before flipping the filter); extending bulletin coverage to non-Stern manufacturers (Phase 4 indexed Stern bulletins for the curated subset's two Stern machines; Phase 4.5 brings JJP / AP / Spooky / CGC / PB bulletin sources online if available); Phase 4 patterns (hybrid chunker, AI Search index v1, citation-required guardrail, ADR-0024 re-rank stack) re-validated against full corpus before declaring expansion complete; conditional Cohere Rerank cross-encoder integration if H3 triggered the gate but the implementation rolled here.
+### Wave sequence
+
+| Wave | Status | Scope |
+| --- | --- | --- |
+| W0 — Eval set realignment | ✅ Complete (PR #265) | Replace 26 licensed-IP questions with OPDB-grounded questions matching the indexed curated subset; capture H4 eval baseline |
+| W1 — Azure Document Intelligence OCR fallback | ✅ Complete (PR #266) | `AzureDocumentIntelligenceExtractor` behind `FallbackDocumentTextExtractor`; `ExtractionStatus.OcrFailed`; conditional DI on `DocumentIntelligence:Endpoint`; ADI Bicep resource in Phase 2 tier |
+| W2 — Corpus expansion | 🔵 Next | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
+| W3a — Metadata-card synthesis | ⏳ Planned | Machine records → `metadata_card` chunks → AI Search |
+| W3b — Bulletin discovery pass | ⏳ Planned | Extend bulletin ingestion to non-Stern manufacturers |
+| W4 — Phase exit + H5 eval | ⏳ Planned | H5 baseline; ADR-0024 re-rank gate re-evaluation |
+
+### W0: Eval set realignment (PR #265, complete)
+
+Replaced the 26 licensed-IP Phase 3 questions (Foo Fighters, Stranger Things, Metallica, etc.) with 27 questions targeting machines confirmed present in both OPDB and the indexed curated subset, plus 3 explicit refusal test cases. Captured H4 eval baseline: `citation_precision=0.100`, `subagent_accuracy=0.233`. All 30 eval questions refused — expected pre-backfill behavior (index exists; curated subset documents not yet ingested via the live change feed). H4 baseline files: `data/eval/results/wizard.20260521T172258Z.json` and `.h4.json`. The eval set is now correctly aligned; H5 (after W4) is the first meaningful quality gate.
+
+### W1: Azure Document Intelligence OCR fallback (PR #266, complete)
+
+Added `AzureDocumentIntelligenceExtractor` as an OCR fallback behind `PdfPigDocumentTextExtractor`. When PdfPig returns `OcrRequired` (near-zero text extraction, consistent with scanned-image PDFs), `FallbackDocumentTextExtractor` delegates to the ADI `prebuilt-read` model. On ADI success, returns `ExtractionStatus.Success` with extracted text. On ADI empty content or exception, returns `ExtractionStatus.OcrFailed` — a permanently-unrecoverable state that prevents infinite re-delivery. All other PdfPig statuses (`Encrypted`, `Malformed`, `SizeExceeded`, `Success`) pass through unchanged.
+
+Key design decisions:
+
+- **Dual constructor pattern**: `AzureDocumentIntelligenceExtractor` instantiates `DocumentIntelligenceClient` in the public constructor (requires a real endpoint); an `internal` constructor accepts a pre-built client for unit testing — same seam pattern as `FallbackDocumentTextExtractor`.
+- **Conditional DI**: `ServiceCollectionExtensions.AddPdfDocumentTextExtractor(IConfiguration?)` registers the fallback chain only when `DocumentIntelligence:Endpoint` is present; falls back to a simple `PdfPigDocumentTextExtractor` singleton otherwise. Phase 4 call sites pass no configuration and continue to work unchanged.
+- **Bicep in Phase 2 tier**: ADI resource (`CognitiveServices/accounts` kind `FormRecognizer`, `S0`, `disableLocalAuth: true`) provisioned behind `deployPhase2 = true` gate. Outputs `documentIntelligenceName` and `documentIntelligenceEndpoint` forwarded through `main-shared.bicep`.
+- **Operational H1**: `pinwiz-docint-dev-buutj` provisioned in `rg-pinwiz-shared-dev` (East US 2); `Cognitive Services User` role assigned to RAG indexer MI (`ad9ea109-c33a-4f53-88df-e1397922de42`); `DocumentIntelligence__Endpoint` env var set on `pinwiz-ca-ragindexer-dev`. Decision-log entry to be committed on the W2 branch (blocked by branch protection on main).
+
+New files: `Application/Rag/Extraction/DocumentIntelligenceOptions.cs`, `Infrastructure/Rag/Extraction/{AzureDocumentIntelligenceExtractor,FallbackDocumentTextExtractor}.cs`, `Infrastructure/Rag/Extraction/ServiceCollectionExtensions.cs` (rewritten), `tests/.../Rag/Extraction/{AzureDocumentIntelligenceExtractorTests,FallbackDocumentTextExtractorTests}.cs`. `ExtractionStatus.OcrFailed` added; `Directory.Packages.props` pinned `Azure.AI.DocumentIntelligence` v1.0.0.
+
+### Retrospective (W0 + W1)
+
+Both waves landed cleanly. The ADI integration demonstrated that the `IDocumentTextExtractor` abstraction absorbs a significant new backend without touching the pipeline orchestrator — `ScrapedDocumentIngestionPipeline` sees only the decorator's `IDocumentTextExtractor` interface. The `OcrRequired` vs `OcrFailed` distinction in `ExtractionStatus` pays off operationally: telemetry can distinguish "ADI not configured" from "ADI tried and came up empty," enabling targeted triage without log-diving.
+
+Learnings:
+
+- **ADI SDK v1.0.0 API**: `AnalyzeDocumentOptions(string modelId, BinaryData content)` — NOT `AnalyzeDocumentContent`. `WaitUntil` is in the `Azure` namespace.
+- **PdfPig `PageSize`**: `PageSize.A4` requires `UglyToad.PdfPig.Writer` but conflicts; use raw dimensions `builder.AddPage(width: 595, height: 842)` in tests.
+- **`init` vs `set` on Options**: `DocumentIntelligenceOptions.Endpoint` requires `set` not `init` — `services.Configure<T>(section)` uses reflection-based assignment which doesn't support `init`-only properties.
+- **Decision-log entries need a feature branch**: even a one-liner doc edit is blocked on `main` by branch protection. The ADI deploy entry was drafted but not committed; it folds into the W2 branch.
 
 ---
 
 ## Phase 5 — Blazor + MudBlazor frontend
 
-**Status:** ⏳ Not started
-**Sequence position:** Depends on Phase 4 (real Wizard answers) for the public chat surface, but admin / faceted browse / game detail can mock D-dependencies.
-**Demonstrable artifact:** *To be specified — placeholder pending dedicated drafting conversation.*
+**Status:** ✅ Complete — all PRs merged; ACA deployment pending live image (Phase 6 scope)
+**Sequence position:** Ran concurrently with Phase 4.5. Depends on Phase 4 for real Wizard answers on the chat surface. Admin and landing surfaces completed against stubs; Wizard chat surface integrated against the live API. Unblocks Phase 6 (operability work requires the real app deployed to ACA).
+**Demonstrable artifact:** A fully functional Blazor Web App (`PinballWizard.Web`) with SSE streaming Wizard chat, MudBlazor chrome, per-category refusal recovery with plural community-resource cards, pinball-themed error pages, a self-hosted font stack, three BETA sibling themes, and a settings page backed by `localStorage`. A companion `PinballWizard.Api` exposes `/api/wizard/ask:stream` (SSE) and `/api/wizard/landing`. 308 bUnit + Playwright Web tests green.
 
-> Will cover: page inventory (public Wizard, faceted browse, game detail, location map, admin /admin/ingestion-sources, /admin/telemetry, /admin/users), MudBlazor component standards, accessibility targets (WCAG AA), performance budgets (LCP, TTI, Wizard p95 latency), mobile-first responsive stance, Entra External ID auth flows (admin via Entra RBAC v1; social-login federations configured but gated behind passport features), traffic-attribution middleware, Cloudflare Pro routing + ACA managed cert for `pinwiz.ai`.
+### What shipped
+
+#### Wave 1 — Foundation + token rendering (PRs #159–#167)
+
+SSE streaming architecture: `IAiRouter.AnswerStreamingAsync` returns `IAsyncEnumerable<AnswerChunk>`; the `WizardAskStreamEndpoint` serializes each chunk as discriminated-union JSON over `text/event-stream`; `WizardStreamingClient` in Blazor reads the stream and drives `WizardAnswerStream` via `IWizardStreamingClient`. `AnswerChunk` types: `TextDelta`, `ToolCall`, `Citation`, `Refusal`, `Final` — wire format is always JSON-discriminator, never raw text deltas. `first_token_ms` latency instrumented. `SearchCorpusHit.RelevanceScore` + `Citation.RelevanceScore` threaded end-to-end. `last_scraped_utc` field added to AI Search index + `Citation.LastScrapedUtc` populated. `ISystemStatusProvider` + `/api/wizard/landing` endpoint added.
+
+#### Wave 2 — User delight surfaces (PRs #162–#178)
+
+- **`RefusalPanel`** + six per-category views (`InsufficientGroundingView`, `NoCitationView`, `OutOfScopeView`, `LowConfidenceView`, `CostCeilingView`, `UpstreamThrottledView`). Each names what is missing in concrete terms and routes outward via `CommunityResourceCards`.
+- **`CommunityResourceCards`**: plural community-resource recovery per ADR-0027 (≥3 marketplace, ≥2 machine-reference). `community_resources.v1.json` seeded; CI URL-liveness check added for non-link-only entries. `pinside_slug_aliases.v1.json` offline curation added.
+- **`CitationStrip` family**: `CitationStrip`, `CitationGroup`, `CitationCard`, `FreshnessBadge`. Every citation row renders `LastScrapedUtc` + `RelevanceScore`.
+- **Landing page**: `LandingHero`, `SeedQuestionGrid`, `LiveStatusBadge`, `ArchitectureStoryStrip`, `FeaturedMachinesStrip`.
+- **`TiltPage` / `TiltErrorBoundary`**: pinball-themed error surface. `WizardThinkingIndicator` + `ToolCallBreadcrumb` during streaming.
+- **RFC 9457 ProblemDetails middleware**: all API errors return `application/problem+json` with `requestId`.
+- **`SearchUnavailable` degradation**: `ISystemStatusProvider` drives `OutageBanner` + `RetryHint` when AI Search is unreachable.
+- **`IRefusalRecoveryService` + `RelatedMachines`**: enriches refusals with related-machine suggestions from the catalog.
+- **`WizardShell`** page: full Wizard chat UI with streaming answer display, citation strip, refusal recovery, and tool-call breadcrumb.
+- **Refusal text strategy**: `MissingWhat` + `SuggestedRephrase` per category — every refusal names what's missing and routes outward.
+
+#### Wave F — Chrome + theming (PRs #166, #169, #171–#172, #181, #187, #193–#195)
+
+MudBlazor strict chrome (`MainLayout`, `AdminLayout`, `BrandHeader`, `BrandFooter`). Self-hosted web font stack (Barlow Condensed, Inter, JetBrains Mono, Roboto — eliminates Google Fonts outbound calls). Modern LCD base theme + three BETA sibling themes (Backbox, Cabinet, DMD Classic). `IUserPreferencesService` backed by `localStorage` (theme selection, sound toggle). Settings page. Nav reworked: single "What we cover" entry point replacing multiple coverage links.
+
+#### Phase 6 infrastructure prep (PRs #196, #208, #216–#220, #228, #234)
+
+`UseHttpsRedirection`/`UseHsts` removed (Container Apps LB terminates TLS). Blanket `FallbackPolicy` — admin routes secure by default. Deployment Stacks migration (`az stack sub create`; enforcement hook added). Api ACA app Bicep resource + deploy script params. Dockerfiles for Web + Api. `security.txt`, `robots.txt`, pre-launch gate docs. Static-asset auth gate fixed (anonymous on `MapStaticAssets`, gated on Entra for admin routes).
+
+### Key architectural decisions honored
+
+- **SSE over SignalR/WebSocket**: per ADR-0026. `text/event-stream` with `AnswerChunk`-shaped JSON payloads throughout; no raw text deltas on the wire.
+- **Blazor Web App auto-render mode**: static SSR for landing/about/error; Interactive Server for the Wizard chat surface. Not Blazor WebAssembly.
+- **MudBlazor strict**: per ADR-0008. No custom components outside the four locked delight surfaces (`WizardAnswerStream`, `RefusalPanel`, `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`).
+- **Audio muted by default**: `SoundController` toggle persisted to `localStorage`. Auto-play never fires.
+- **Community-resource posture**: alphabetical within-set ordering; no editorial ranking; no "primary" CTA elevated; single-CTA refusals forbidden for non-singular categories. Per ADR-0027.
+- **`Refusal` chunk supersedes prior `TextDelta`**: SSE stream can pivot to refusal mid-stream; the client replaces streamed text with the refusal panel on receipt.
+
+### Retrospective
+
+Phase 5 ran concurrently with Phase 4.5 and completed ahead of Phase 6 operability work. The SSE streaming architecture proved clean: the discriminated-union `AnswerChunk` wire format eliminated the ambiguity of raw text deltas and made the client-side rendering logic straightforward to test with bUnit. The `WizardStreamingClient` / `IWizardStreamingClient` seam was the right call — it allows bUnit tests to inject a fake stream without a live API, which is how 308 Web tests run sub-second.
+
+The refusal surfaces took the most design iteration. The per-category recovery payload (plural community resources, concrete `MissingWhat` text, no "try again later") is the most visible embodiment of ADR-0027's outbound-routing posture. Getting the plurality thresholds right (≥3 marketplace, ≥2 machine-reference) required multiple passes against the `community_resources.v1.json` dataset.
+
+The self-hosted font decision (Wave F) was operationally correct but added 2–3 PRs of CSS scaffolding that weren't anticipated. The Barlow Condensed + JetBrains Mono combination reads well on the pinball-themed UI and is worth it for the brand identity — the machine readout aesthetic is a differentiator in a showcase context.
+
+Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist analogous to the Phase 4 exit criteria table was not written at phase close. The work was done; the spec section was not updated. This is the gap the current PR corrects.
+
+### Phase 5 follow-ups inherited by Phase 6
+
+- Live `pinwiz.ai` ACA deployment with the real Web image (currently placeholder) — Phase 6 H-chain scope.
+- Lighthouse CI score validation against the live deployed app (CI gate passes on the test build; live-surface validation deferred).
+- axe-core accessibility validation on the live deployed app (CI gate passes; live-surface validation deferred).
+- `NullTokenUsageReader` real impl — pending agent-framework#2688; cost tile on the ops dashboard shows $0 until resolved.
 
 ---
 

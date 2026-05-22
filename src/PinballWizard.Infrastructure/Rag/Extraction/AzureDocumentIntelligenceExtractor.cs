@@ -28,6 +28,18 @@ public sealed class AzureDocumentIntelligenceExtractor : IDocumentTextExtractor
         _logger = logger;
     }
 
+    // Test seam: accepts a pre-built client so tests can mock ADI without a
+    // live endpoint. Mirrors the pattern in FallbackDocumentTextExtractor.
+    internal AzureDocumentIntelligenceExtractor(
+        DocumentIntelligenceClient client,
+        ILogger<AzureDocumentIntelligenceExtractor> logger)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(logger);
+        _client = client;
+        _logger = logger;
+    }
+
     public async Task<ExtractedDocument> ExtractAsync(Stream pdfStream, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(pdfStream);

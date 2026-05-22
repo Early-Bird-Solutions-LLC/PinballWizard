@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
 
@@ -49,11 +50,19 @@ public sealed class CosmosBackedIndexState : IIndexState
 
         try
         {
-            var response = await _container.ReadItemAsync<IndexStateDocument>(
-                IndexStateDocument.RowIdPrefix + documentId,
-                new PartitionKey(documentId),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-            return response.Resource.LastIndexedHash;
+            return await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+                _container.Id,
+                "read",
+                _logger,
+                async ct =>
+                {
+                    var response = await _container.ReadItemAsync<IndexStateDocument>(
+                        IndexStateDocument.RowIdPrefix + documentId,
+                        new PartitionKey(documentId),
+                        cancellationToken: ct).ConfigureAwait(false);
+                    return (response.Resource.LastIndexedHash, response.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -81,10 +90,19 @@ public sealed class CosmosBackedIndexState : IIndexState
             RecordedUtc = _clock.GetUtcNow(),
         };
 
-        await _container.UpsertItemAsync(
-            record,
-            new PartitionKey(documentId),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+            _container.Id,
+            "upsert",
+            _logger,
+            async ct =>
+            {
+                var response = await _container.UpsertItemAsync(
+                    record,
+                    new PartitionKey(documentId),
+                    cancellationToken: ct).ConfigureAwait(false);
+                return (true, response.RequestCharge);
+            },
+            cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
             "RAG index state: recorded document={DocumentId} hash={Hash} chunks={Chunks} failures={Failures}.",
