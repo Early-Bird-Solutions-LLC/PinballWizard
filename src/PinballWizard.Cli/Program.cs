@@ -704,7 +704,7 @@ static IHost CreateHost(string[] args)
     {
         builder.Services.AddRagIngestionPipeline();
         builder.Services.AddHybridChunker();
-        builder.Services.AddPdfDocumentTextExtractor();
+        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
         builder.Services.AddRagBackfillService(builder.Configuration);
     }
 

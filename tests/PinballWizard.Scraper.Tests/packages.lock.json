@@ -787,6 +787,7 @@
         "type": "Project",
         "dependencies": {
           "AngleSharp": "[1.4.0, )",
+          "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
           "Azure.Identity": "[1.21.0, )",
@@ -815,6 +816,16 @@
         "requested": "[1.4.0, )",
         "resolved": "1.4.0",
         "contentHash": "6ph8mpaQx0KL0COYRt0kI8MB9gSp1PtKijKMhJU//+aVFgKAJLKDesG/+26JSaVCOrHNgPf12wpfoyRcMYOeXg=="
+      },
+      "Azure.AI.DocumentIntelligence": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.0, )",
+        "resolved": "1.0.0",
+        "contentHash": "RSpMmlRY5vvGy2TrAk4djJTqOsdHUunvhcSoSN+FJtexqZh6RFn+a2ylehIA/N+HV2IK0i+XK4VG3rDa8h2tsA==",
+        "dependencies": {
+          "Azure.Core": "1.44.1",
+          "System.ClientModel": "1.2.1"
+        }
       },
       "Azure.AI.OpenAI": {
         "type": "CentralTransitive",

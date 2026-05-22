@@ -44,7 +44,7 @@ builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
 // Application-layer chunker + Infrastructure-layer extractor — the
 // pipeline depends on both.
 builder.Services.AddHybridChunker();
-builder.Services.AddPdfDocumentTextExtractor();
+builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
 
 // Application-layer pipeline orchestrator.
 builder.Services.AddRagIngestionPipeline();
