@@ -336,8 +336,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
     // Handle --sync-metadata-cards (Phase 4.5 W3a — synthesize one metadata_card
     // chunk per Cosmos machine record and upsert into AI Search). Gated on the
-    // same three backend services as --run-rag-backfill. Idempotent: AI Search
-    // upserts by chunk_id = "meta_{opdbId}", so re-running overwrites in-place.
+    // same three backend services as --run-rag-backfill. Idempotent: re-running
+    // overwrites in-place (AI Search upsert semantics; chunk_id is a hash of the
+    // machine+document+position key computed by AiSearchRagIndexer.ComputeChunkId).
     if (syncMetadataCards)
     {
         var machineRepo = host.Services.GetService<IMachineRepository>();
@@ -386,10 +387,19 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
                 try
                 {
-                    await indexer.UpsertAsync(chunkRequest, [chunk], indexerOptions, cancellationToken);
-                    upserted++;
+                    var result = await indexer.UpsertAsync(chunkRequest, [chunk], indexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                            Console.Error.WriteLine($"  AI Search rejected chunk '{failure.ChunkId}' for {machine.Title} ({machine.Id}): HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        upserted++;
+                    }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     Console.Error.WriteLine($"  Failed to index metadata card for {machine.Title} ({machine.Id}): {ex.Message}");
                     failed++;
