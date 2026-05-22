@@ -87,6 +87,7 @@ var foundryProjectName       = 'pinwiz-wizard'
 var foundryChatDeploymentName       = 'gpt-4o'
 var foundryChatHeavyDeploymentName  = 'gpt-4-1' // Foundry deployment names disallow '.'; the "1" suffix maps to the gpt-4.1 model.
 var foundryEmbeddingDeploymentName  = 'text-embedding-3-large'
+var documentIntelligenceName = '${namePrefix}-docint-${environment}-${uniqueSuffix}'
 var storageAccountName       = take(toLower('${namePrefix}st${environment}${uniqueSuffix}'), 24) // Storage: <=24 chars, alphanumeric
 var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
@@ -289,6 +290,33 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPh
   }
   properties: {
     customSubDomainName: openAiAccountName
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Azure Document Intelligence — OCR fallback for scanned-image-only PDFs
+// (Phase 4.5 W1). Uses the prebuilt-read model via DefaultAzureCredential.
+// Endpoint output consumed by DocumentIntelligenceOptions:Endpoint in the
+// CLI and RagIngestionWorker when ADI is configured.
+// -----------------------------------------------------------------------------
+resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPhase2) {
+  name: documentIntelligenceName
+  location: location
+  tags: tags
+  kind: 'FormRecognizer'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    customSubDomainName: documentIntelligenceName
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: true
     networkAcls: {
@@ -1513,6 +1541,9 @@ output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'h
 
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''
+
+output documentIntelligenceName string = documentIntelligence.?name ?? ''
+output documentIntelligenceEndpoint string = documentIntelligence.?properties.endpoint ?? ''
 
 // Foundry outputs. The project endpoint URL is the canonical value
 // consumed by AiFoundryOptions.ProjectEndpoint (per ADR-0014). Operators

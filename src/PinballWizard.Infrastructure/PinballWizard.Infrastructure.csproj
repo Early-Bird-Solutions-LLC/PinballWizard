@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
+    <PackageReference Include="Azure.AI.DocumentIntelligence" />
     <PackageReference Include="Azure.Identity" />
     <!-- Azure.AI.Projects 2.0 is GA (April 2026) and is the data-plane SDK
          for the Foundry project endpoint per ADR-0014. Phase 3 PR 2a uses

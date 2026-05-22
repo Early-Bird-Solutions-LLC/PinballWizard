@@ -135,6 +135,8 @@ output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
 output openAiAccountName string = shared.outputs.openAiAccountName
+output documentIntelligenceName string = shared.outputs.documentIntelligenceName
+output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint
 output storageAccountName string = shared.outputs.storageAccountName
 output appInsightsName string = shared.outputs.appInsightsName
 
