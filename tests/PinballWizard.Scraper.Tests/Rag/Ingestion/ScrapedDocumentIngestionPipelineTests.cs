@@ -136,6 +136,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
 
     [Theory]
     [InlineData(ExtractionStatus.OcrRequired)]
+    [InlineData(ExtractionStatus.OcrFailed)]
     [InlineData(ExtractionStatus.Encrypted)]
     [InlineData(ExtractionStatus.Malformed)]
     [InlineData(ExtractionStatus.SizeExceeded)]
