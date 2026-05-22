@@ -14,6 +14,7 @@ using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
@@ -22,7 +23,9 @@ using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Application.Rag.Chunking;
+using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Application.Rag.MetadataCards;
 using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using PinballWizard.Infrastructure.Rag.Ingestion;
@@ -134,6 +137,11 @@ var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
     Description = "One-shot RAG index backfill: iterates all scraped_documents via the raw Change Feed stream iterator (no lease checkpoints) and runs each document through the full RAG ingestion pipeline (extract → chunk → embed → AI Search upsert). Idempotent: documents already indexed with the same content hash are skipped. Use after provisioning a fresh RAG index to populate it from existing scraped documents before the Change Feed Processor starts handling ongoing writes. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
 };
 
+var syncMetadataCardsOption = new Option<bool>("--sync-metadata-cards")
+{
+    Description = "Synthesize metadata_card chunks from the Cosmos machines container and upsert them into AI Search. One card per machine record — covers title, manufacturer, year, designers, themes, editions, and MSRP. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -153,6 +161,7 @@ rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(seedScrapedDocumentsOption);
 rootCommand.Options.Add(runRagBackfillOption);
+rootCommand.Options.Add(syncMetadataCardsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -174,6 +183,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var eval = parseResult.GetValue(evalOption);
     var seedScrapedDocuments = parseResult.GetValue(seedScrapedDocumentsOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
+    var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -321,6 +331,86 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Console.Error.WriteLine($"  {result.Failed} documents failed — check logs for details.");
             Environment.ExitCode = 1;
         }
+        return;
+    }
+
+    // Handle --sync-metadata-cards (Phase 4.5 W3a — synthesize one metadata_card
+    // chunk per Cosmos machine record and upsert into AI Search). Gated on the
+    // same three backend services as --run-rag-backfill. Idempotent: re-running
+    // overwrites in-place (AI Search upsert semantics; chunk_id is a hash of the
+    // machine+document+position key computed by AiSearchRagIndexer.ComputeChunkId).
+    if (syncMetadataCards)
+    {
+        var machineRepo = host.Services.GetService<IMachineRepository>();
+        var synthesizer = host.Services.GetService<IMetadataCardSynthesizer>();
+        var indexer = host.Services.GetService<IRagIndexer>();
+
+        if (machineRepo is null || synthesizer is null || indexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-metadata-cards requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Synthesizing metadata cards from Cosmos machines...");
+
+        var upserted = 0;
+        var failed = 0;
+        var indexerOptions = new RagIndexerOptions();
+
+        string[] allManufacturers =
+        [
+            ScraperManufacturerKey.Stern,
+            ScraperManufacturerKey.Jjp,
+            ScraperManufacturerKey.AmericanPinball,
+            ScraperManufacturerKey.Spooky,
+            ScraperManufacturerKey.PinballBrothers,
+            ScraperManufacturerKey.BarrelsOfFun,
+            ScraperManufacturerKey.ChicagoGaming,
+            ScraperManufacturerKey.Multimorphic,
+        ];
+
+        foreach (var manufacturer in allManufacturers)
+        {
+            await foreach (var machine in machineRepo.StreamByManufacturerAsync(manufacturer, cancellationToken))
+            {
+                var chunk = synthesizer.Synthesize(machine);
+                var chunkRequest = new ChunkRequest(
+                    MachineId: machine.Id,
+                    MachineTitle: machine.Title,
+                    Manufacturer: machine.ManufacturerDisplayName,
+                    DocumentId: $"meta_{machine.Id}",
+                    DocumentUrl: machine.OpdbSourceUrl ?? $"https://opdb.org/machines/{machine.Id}",
+                    DocumentType: DocumentType.MetadataCard);
+
+                try
+                {
+                    var result = await indexer.UpsertAsync(chunkRequest, [chunk], indexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                            Console.Error.WriteLine($"  AI Search rejected chunk '{failure.ChunkId}' for {machine.Title} ({machine.Id}): HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        upserted++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index metadata card for {machine.Title} ({machine.Id}): {ex.Message}");
+                    failed++;
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-metadata-cards complete: upserted={upserted} failed={failed}");
+        if (failed > 0)
+            Environment.ExitCode = 1;
         return;
     }
 
@@ -706,6 +796,7 @@ static IHost CreateHost(string[] args)
         builder.Services.AddHybridChunker();
         builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
         builder.Services.AddRagBackfillService(builder.Configuration);
+        builder.Services.AddMetadataCardSynthesizer();
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
