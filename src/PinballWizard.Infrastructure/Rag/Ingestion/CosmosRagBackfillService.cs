@@ -59,10 +59,9 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
         int processed = 0, indexed = 0, skipped = 0, failed = 0;
 
         _logger.LogInformation(
-            "RAG backfill starting: source={SourceContainer} database={Database} curatedMachines={CuratedCount} acceptedTypes={AcceptedTypes}.",
+            "RAG backfill starting: source={SourceContainer} database={Database} acceptedTypes={AcceptedTypes}.",
             _sourceContainer.Id,
             _sourceContainer.Database.Id,
-            _options.CuratedSubsetMachineIds.Count,
             string.Join(",", _options.AcceptedDocumentTypes));
 
         // Raw change-feed stream iterator — reads every document ever

@@ -235,7 +235,6 @@ public sealed class CosmosChangeFeedHostedServiceTests
         {
             var ingestionOptions = Options.Create(new RagIngestionOptions
             {
-                CuratedSubsetMachineIds = ["GRBN-MQR4P"],
                 AcceptedDocumentTypes = [Core.Models.DocumentType.Manual, Core.Models.DocumentType.ServiceBulletin],
                 MaxFailuresPerDocument = maxFailuresPerDocument,
             });

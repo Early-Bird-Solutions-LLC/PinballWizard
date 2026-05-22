@@ -293,8 +293,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --run-rag-backfill (one-shot RAG index population for the
-    // curated subset of scraped_documents). Resolves IRagBackfillService
+    // Handle --run-rag-backfill (one-shot RAG index population of all
+    // eligible scraped_documents). Resolves IRagBackfillService
     // from DI; only registered when Cosmos + AI Search + AI Foundry are
     // all configured. Mirrors the --ensure-cosmos-containers exit-code-2
     // remediation pattern.
@@ -310,7 +310,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        Console.WriteLine("RAG backfill starting — this may take several minutes for the curated subset...");
+        Console.WriteLine("RAG backfill starting — this may take several minutes depending on corpus size...");
         var result = await backfill.RunAsync(cancellationToken);
         Console.WriteLine();
         Console.WriteLine($"RAG backfill complete: {result.Processed} processed, " +
