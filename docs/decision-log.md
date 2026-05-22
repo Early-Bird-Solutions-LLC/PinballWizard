@@ -30,6 +30,26 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-22 — Azure Document Intelligence instance provisioned for Phase 4.5 W1 OCR fallback
+
+**Decision:** Provisioned a single Azure Document Intelligence resource (`pinwiz-docint-dev-buutj`, S0 tier, East US 2) as the ADI OCR fallback for `AzureDocumentIntelligenceExtractor`. The RAG indexer managed identity (`ad9ea109-c33a-4f53-88df-e1397922de42`) was granted `Cognitive Services User` on the resource. The endpoint (`https://pinwiz-docint-dev-buutj.cognitiveservices.azure.com/`) is injected via env var `DocumentIntelligence__Endpoint` on the `pinwiz-ca-ragindexer-dev` Container App. `FallbackDocumentTextExtractor` activates the ADI extractor only when this endpoint is configured; local dev without the env var stays PdfPig-only.
+
+**Alternatives considered:**
+
+- **Computer Vision OCR (Read API).** Rejected — superseded by Document Intelligence for document-class inputs; Document Intelligence's Read model handles multi-page PDFs with layout awareness that CV OCR lacks.
+- **Form Recognizer (legacy).** Rejected — Document Intelligence is its successor; Form Recognizer is in maintenance mode.
+- **Shared/multi-purpose DI resource.** Deferred — at this scale (one indexer, low-volume ingestion) a dedicated resource is simpler to reason about and avoids quota contention with other workloads.
+
+**Rationale:** ADI S0 tier is pay-per-use at $1.50/1,000 pages on the Read model, consistent with the project's $300–$400/mo cost envelope. The `FallbackDocumentTextExtractor` decorator keeps ADI as a fallback-only code path; PdfPig handles the majority of PDFs that are digitally created (text layer present). ADI fires only when PdfPig returns `ExtractionStatus.OcrRequired` (no extractable text). The 404/cancellation/empty-content failure modes are covered by `AzureDocumentIntelligenceExtractorTests` (PR #266 + #267).
+
+**Revisit when:**
+
+- Monthly ADI page cost exceeds ~$30 (signals volume large enough to re-evaluate tier or batch-processing strategy).
+- Document Intelligence introduces a serverless/consumption-pricing option that better matches the bursty-ingestion pattern.
+- Phase 6 multi-region expansion requires a second DI resource or cross-region replication.
+
+**Related:** PR #266 (ADI extractor + fallback decorator), PR #267 (pre-W2 quality fixes including `AzureDocumentIntelligenceExtractorTests`), ADR-0025 § 8 (Cosmos metrics — ADI calls go through `CosmosMetricsHelper` equivalently for its own instrumentation).
+
 ## 2026-05-09 — eBay excluded from community_resources.v1.json (CI URL-liveness false positive)
 
 **Decision:** PR-R3's `data/seeds/community_resources.v1.json` does NOT include eBay even though it's a major used-pinball marketplace. The marketplace category meets its ≥3 plurality minimum (per ADR-0026 § 6 + `feedback_destination_plurality.md`) via Facebook Marketplace + Mr. Pinball + Pinside Market.

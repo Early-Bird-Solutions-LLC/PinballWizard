@@ -23,7 +23,7 @@ namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
 // construction.
 public sealed class ScrapedDocumentChangeFeedHandlerTests
 {
-    private const string CuratedMachineId = "GRBN-MQR4P";
+    private const string TestMachineId = "GRBN-MQR4P"; // arbitrary stable ID for test assertions
 
     [Fact]
     public async Task HandleAsync_HappyPath_InvokesPipelineWithMappedChange()
@@ -36,7 +36,7 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
 
         var call = Assert.Single(ctx.Indexer.Calls);
         Assert.Equal("doc_x", call.DocumentId);
-        Assert.Equal(CuratedMachineId, call.MachineId);
+        Assert.Equal(TestMachineId, call.MachineId);
         // Bytes source invoked once with the source URL.
         Assert.Contains("https://example/doc_x.pdf", ctx.BytesSource.Calls);
     }
@@ -60,18 +60,6 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
         Assert.Empty(ctx.Indexer.Calls);
         // Bytes WERE fetched (handler doesn't know about the short-circuit).
         Assert.Single(ctx.BytesSource.Calls);
-    }
-
-    [Fact]
-    public async Task HandleAsync_OutOfCuratedSubset_DoesNotInvokeIndexer()
-    {
-        var ctx = new TestContext();
-        ctx.SeedExtractionAndChunking();
-
-        var change = NewChange(machineId: "OUT-OF-SCOPE");
-        await ctx.Handler.HandleAsync(change, CancellationToken.None);
-
-        Assert.Empty(ctx.Indexer.Calls);
     }
 
     [Fact]
@@ -107,7 +95,7 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
 
     private static RagSourceDocument NewChange(
         string documentId = "doc_default",
-        string machineId = CuratedMachineId,
+        string machineId = TestMachineId,
         string contentHash = "hash-default") => new()
     {
         Id = documentId,
@@ -133,7 +121,6 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
         {
             var ingestionOptions = Options.Create(new RagIngestionOptions
             {
-                CuratedSubsetMachineIds = [CuratedMachineId],
                 AcceptedDocumentTypes = [DocumentType.Manual, DocumentType.ServiceBulletin],
                 MaxFailuresPerDocument = 3,
             });

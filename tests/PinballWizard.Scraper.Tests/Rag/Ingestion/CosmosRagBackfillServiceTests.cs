@@ -21,7 +21,7 @@ namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
 // matches what CosmosRagBackfillService.ChangeFeedPage expects.
 public sealed class CosmosRagBackfillServiceTests
 {
-    private const string MachineIdInSubset = "GRBN-MQR4P";
+    private const string TestMachineId = "GRBN-MQR4P";
     private const string DocA = "doc_a";
     private const string DocB = "doc_b";
 
@@ -79,11 +79,11 @@ public sealed class CosmosRagBackfillServiceTests
     [Fact]
     public async Task RunAsync_HandlerReturnsSkippedOutcome_CountedAsSkipped()
     {
-        // Documents filtered by the pipeline (curated-subset miss,
-        // type filter, hash short-circuit) return a Skipped_* outcome.
-        // The backfill service must NOT count these as indexed.
+        // Documents filtered by the pipeline (type filter, hash short-circuit,
+        // etc.) return a Skipped_* outcome. The backfill service must NOT
+        // count these as indexed.
         var ctx = new TestContext();
-        ctx.Handler.OutcomeOverride = IngestionOutcome.Skipped_NotInCuratedSubset;
+        ctx.Handler.OutcomeOverride = IngestionOutcome.Skipped_DocumentTypeFiltered;
         ctx.Iterator.SetPages([
             [NewDoc(DocA), NewDoc(DocB)]
         ]);
@@ -176,7 +176,7 @@ public sealed class CosmosRagBackfillServiceTests
         Id = documentId,
         DocumentId = documentId,
         DocumentUrl = $"https://example/{documentId}.pdf",
-        MachineId = MachineIdInSubset,
+        MachineId = TestMachineId,
         MachineTitle = "Foo Fighters",
         Manufacturer = "Stern Pinball",
         DocumentType = "Manual",
@@ -265,7 +265,6 @@ public sealed class CosmosRagBackfillServiceTests
         {
             var options = Options.Create(new RagIngestionOptions
             {
-                CuratedSubsetMachineIds = [MachineIdInSubset],
                 AcceptedDocumentTypes = [Core.Models.DocumentType.Manual, Core.Models.DocumentType.ServiceBulletin],
             });
 

@@ -10,9 +10,9 @@ namespace PinballWizard.Application.Rag.Ingestion;
 // Default `IRagIngestionPipeline` implementation per W3-2 design
 // (build-spec § Phase 4 item 18). Pure orchestration: every dependency
 // is an Application abstraction; no Infrastructure types reach this
-// class. The branches up front (curated subset, document type, hash
-// short-circuit) avoid expensive work for documents that wouldn't
-// land in the index anyway.
+// class. The filter branches up front (document type, hash short-circuit)
+// avoid expensive work for documents that wouldn't land in the index
+// anyway.
 //
 // Failure posture: a per-document exception inside the pipeline does
 // NOT bubble up to the caller. The hosted service's wrapper catches
@@ -35,9 +35,7 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
     private readonly IChunker _chunker;
     private readonly IRagIndexer _indexer;
     private readonly IIndexState _indexState;
-    private readonly RagIngestionOptions _options;
     private readonly RagIndexerOptions _indexerOptions;
-    private readonly HashSet<string> _curatedSet;
     private readonly HashSet<Core.Models.DocumentType> _acceptedTypes;
     private readonly ILogger<ScrapedDocumentIngestionPipeline> _logger;
 
@@ -62,12 +60,10 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         _chunker = chunker;
         _indexer = indexer;
         _indexState = indexState;
-        _options = options.Value;
         _indexerOptions = indexerOptions.Value;
         _logger = logger;
 
-        _curatedSet = new HashSet<string>(_options.CuratedSubsetMachineIds, StringComparer.OrdinalIgnoreCase);
-        _acceptedTypes = [.. _options.AcceptedDocumentTypes];
+        _acceptedTypes = [.. options.Value.AcceptedDocumentTypes];
     }
 
     public async Task<IngestionOutcome> IngestAsync(
@@ -78,19 +74,7 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         ArgumentNullException.ThrowIfNull(change);
         ArgumentNullException.ThrowIfNull(pdfStream);
 
-        // Filter 1 — curated subset. First so the rest of the pipeline
-        // (extract, embed, upsert) never runs for an out-of-scope
-        // machine. Phase 4.5 corpus expansion removes this filter
-        // entirely, not this branch.
-        if (!_curatedSet.Contains(change.MachineId))
-        {
-            _logger.LogDebug(
-                "RAG ingestion skipped — machine {MachineId} not in curated subset (document {DocumentId}).",
-                change.MachineId, change.DocumentId);
-            return IngestionOutcome.Skipped_NotInCuratedSubset;
-        }
-
-        // Filter 2 — document type. Manuals + service bulletins for
+        // Filter 1 — document type. Manuals + service bulletins for
         // Phase 4 (per RagIngestionOptions defaults). The metadata-card
         // path is a sibling pipeline.
         if (!_acceptedTypes.Contains(change.DocumentType))
@@ -101,11 +85,11 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
             return IngestionOutcome.Skipped_DocumentTypeFiltered;
         }
 
-        // Filter 3 — content-hash short-circuit. Avoids re-embedding when
+        // Filter 2 — content-hash short-circuit. Avoids re-embedding when
         // a Phase 1 scraper re-polled the source and refreshed metadata
         // without touching the body. Embedding a 200-page manual is the
-        // dominant per-doc cost; this is the biggest cost saver on the
-        // curated subset's steady-state.
+        // dominant per-doc cost; this is the biggest cost saver on
+        // steady-state re-deliveries.
         var lastHash = await _indexState.GetLastIndexedHashAsync(change.DocumentId, cancellationToken)
             .ConfigureAwait(false);
         if (lastHash is not null && string.Equals(lastHash, change.ContentHash, StringComparison.Ordinal))
@@ -166,10 +150,10 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         // state recording — the document will re-embed on the next backfill
         // run rather than being erroneously dead-lettered.
         // Failures are surfaced (as failureCount on the state row) but DO NOT
-        // change the IngestionOutcome — partial failures are common at curated-
-        // subset scale (e.g., one chunk exceeds the AI Search size cap, the
-        // rest succeed) and the alarm path is the dead-letter counter from
-        // the hosted service when failureCount exceeds MaxFailuresPerDocument.
+        // change the IngestionOutcome — partial failures are common (e.g., one
+        // chunk exceeds the AI Search size cap, the rest succeed) and the alarm
+        // path is the dead-letter counter from the hosted service when
+        // failureCount exceeds MaxFailuresPerDocument.
         if (!string.IsNullOrWhiteSpace(change.ContentHash))
         {
             await _indexState.RecordIndexedAsync(

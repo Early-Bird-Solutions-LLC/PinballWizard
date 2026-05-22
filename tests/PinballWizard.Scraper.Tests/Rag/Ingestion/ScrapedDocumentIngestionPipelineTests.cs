@@ -13,36 +13,12 @@ using Xunit;
 namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
 
 // Behavior tests for the W3-2 ScrapedDocumentIngestionPipeline.
-// Targets the orchestrator's three-filter path (curated subset →
-// document-type → hash) plus the extract / chunk / index / state-record
-// happy path. All dependencies are NSubstitute fakes; no Cosmos, no
-// AI Search, no embedding model.
+// Targets the two-filter path (document-type → hash) plus the extract /
+// chunk / index / state-record happy path. All dependencies are NSubstitute
+// fakes; no Cosmos, no AI Search, no embedding model.
 public sealed class ScrapedDocumentIngestionPipelineTests
 {
-    private const string CuratedMachineId = "GRBN-MQR4P";
-    private const string OutOfScopeMachineId = "OUT-OF-SCOPE";
-
-    [Fact]
-    public async Task IngestAsync_OutOfCuratedSubset_ReturnsNotInCuratedSubset_NoExtraction()
-    {
-        // Filter 1 short-circuit: out-of-subset machine never reaches
-        // the extractor. Verifies the cost-saving filter ordering — a
-        // 200-page manual extraction must NOT happen for an out-of-
-        // scope machine.
-        var fakes = new Fakes();
-        var pipeline = fakes.BuildPipeline();
-
-        var change = NewChange(machineId: OutOfScopeMachineId);
-        await using var stream = NewStream();
-
-        var outcome = await pipeline.IngestAsync(change, stream, CancellationToken.None);
-
-        Assert.Equal(IngestionOutcome.Skipped_NotInCuratedSubset, outcome);
-        await fakes.Extractor.DidNotReceiveWithAnyArgs().ExtractAsync(default!, default);
-        fakes.Chunker.DidNotReceiveWithAnyArgs().Chunk(default!, default!);
-        await fakes.Indexer.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default!, default);
-        await fakes.IndexState.DidNotReceiveWithAnyArgs().RecordIndexedAsync(default!, default!, default, default, default);
-    }
+    private const string TestMachineId = "GRBN-MQR4P";
 
     [Fact]
     public async Task IngestAsync_DocumentTypeFiltered_ReturnsDocumentTypeFiltered_NoExtraction()
@@ -102,7 +78,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         Assert.Equal(IngestionOutcome.Indexed, outcome);
         await fakes.Indexer.Received(1).UpsertAsync(
             Arg.Is<ChunkRequest>(r =>
-                r.MachineId == CuratedMachineId
+                r.MachineId == TestMachineId
                 && r.DocumentId == "doc_1"
                 && r.DocumentType == DocumentType.Manual),
             Arg.Any<IReadOnlyList<Chunk>>(),
@@ -235,7 +211,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         var change = new ScrapedDocumentChange(
             DocumentId: "doc_x",
             DocumentUrl: "https://example/foo.pdf",
-            MachineId: CuratedMachineId,
+            MachineId: TestMachineId,
             MachineTitle: "Foo Fighters",
             Manufacturer: "Stern Pinball",
             DocumentType: DocumentType.ServiceBulletin,
@@ -247,7 +223,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         fakes.Chunker.Received(1).Chunk(
             Arg.Any<ExtractedDocument>(),
             Arg.Is<ChunkRequest>(r =>
-                r.MachineId == CuratedMachineId
+                r.MachineId == TestMachineId
                 && r.MachineTitle == "Foo Fighters"
                 && r.Manufacturer == "Stern Pinball"
                 && r.DocumentId == "doc_x"
@@ -297,7 +273,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
 
     private static ScrapedDocumentChange NewChange(
         string documentId = "doc_default",
-        string machineId = CuratedMachineId,
+        string machineId = TestMachineId,
         DocumentType documentType = DocumentType.Manual,
         string contentHash = "hash-default") =>
         new(
@@ -320,7 +296,6 @@ public sealed class ScrapedDocumentIngestionPipelineTests
 
         public IOptions<RagIngestionOptions> IngestionOptions { get; } = Options.Create(new RagIngestionOptions
         {
-            CuratedSubsetMachineIds = [CuratedMachineId],
             AcceptedDocumentTypes = [DocumentType.Manual, DocumentType.ServiceBulletin],
         });
 

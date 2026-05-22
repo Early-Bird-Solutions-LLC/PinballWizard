@@ -11,18 +11,6 @@ public sealed class RagIngestionOptions
 {
     public const string SectionName = "Rag:Ingestion";
 
-    // Per build-spec § Phase 4: corpus expansion is Phase 4.5; Phase 4
-    // ships the full architecture against a curated 7-machine subset.
-    // The orchestrator's first filter is membership in this list.
-    // Empty list disables ingestion (every document is filtered as
-    // NotInCuratedSubset). The Phase 4.5 expansion PR removes the
-    // filter clause entirely, NOT this option, so production never
-    // sees an unbounded curated subset config.
-    [Required]
-    // `set` not `init`: IConfiguration.Bind() silently produces an empty
-    // list for init-only collection properties bound from JSON arrays.
-    public List<string> CuratedSubsetMachineIds { get; set; } = [];
-
     // Document types accepted by the pipeline. Manuals + service
     // bulletins for Phase 4. The metadata-card path (W3-1) flows
     // through a sibling pipeline keyed off `MachineDocument` Change
@@ -53,10 +41,9 @@ public sealed class RagIngestionOptions
     // recorded N rows (ORDER BY recorded_utc DESC) — recency-biased
     // sampling because recent ingests are the documents most likely to
     // have hit a transient AI Search outage that would surface as
-    // drift. Default 50 covers the curated-subset's typical write
-    // volume while keeping the reconcile pass under one second on
-    // Cosmos serverless. Range 1-1000 — larger than 1000 starts to
-    // burn meaningful Cosmos RU on every cold start.
+    // drift. Default 50 is fast (under one second on Cosmos serverless).
+    // Range 1-1000 — larger than 1000 starts to burn meaningful Cosmos
+    // RU on every cold start.
     [Range(1, 1000)]
     public int ReconcileSampleSize { get; init; } = 50;
 
