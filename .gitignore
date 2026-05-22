@@ -9,14 +9,20 @@ publish/
 .claude/
 # Project-scoped skills + commands are checked in (they apply for every
 # contributor); the shared settings.json (allowlist) is also checked in
-# so every clone gets the same baseline. Everything else under .claude/
-# — runtime history, scheduled-task locks, per-user settings.local.json
-# — stays ignored.
+# so every clone gets the same baseline. INVARIANTS.md and PR-AUDIT.md
+# are durable architectural artifacts — they tell the story of how this
+# repo is maintained. Everything else under .claude/ — runtime history,
+# scheduled-task locks, per-user settings.local.json — stays ignored.
+!.claude/
+.claude/*
 !.claude/skills/
 !.claude/skills/**
 !.claude/commands/
 !.claude/commands/**
 !.claude/settings.json
+!.claude/INVARIANTS.md
+!.claude/PR-AUDIT.md
+!.claude/README.md
 *.user
 *.suo
 *.DotSettings.user
