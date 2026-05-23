@@ -1,9 +1,5 @@
 namespace PinballWizard.Application.Linking;
 
-/// <summary>
-/// Shared utilities for document-to-game linking: slug normalization,
-/// word-boundary matching, and edition extraction.
-/// </summary>
 public static class LinkingUtilities
 {
     // Edition markers in priority order (longer strings first to avoid
@@ -18,13 +14,6 @@ public static class LinkingUtilities
         ("ce", "CE"),
     ];
 
-    /// <summary>
-    /// Normalizes a string for slug-substring matching: lowercases, then replaces
-    /// <c>_</c>, <c>-</c>, <c>.</c>, and runs of whitespace with single spaces.
-    /// This preserves word boundaries for <see cref="IsWordBoundaryMatch"/> to work correctly.
-    /// For example, <c>stranger-things</c>, <c>StrangerThings</c>, and <c>stranger_things</c>
-    /// all normalize to <c>stranger things</c>.
-    /// </summary>
     public static string NormalizeForMatch(string value)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
@@ -52,13 +41,6 @@ public static class LinkingUtilities
         return sb.ToString().Trim();
     }
 
-    /// <summary>
-    /// Word-boundary match on already-normalized strings.
-    /// Pads both sides with a space so short slugs like "tron" or "kiss"
-    /// don't match mid-word (e.g., "tron" inside "electronic").
-    /// Both <paramref name="normText"/> and <paramref name="normSlug"/> must
-    /// already be <see cref="NormalizeForMatch"/> output.
-    /// </summary>
     public static bool IsWordBoundaryMatch(string normText, string normSlug)
     {
         if (string.IsNullOrEmpty(normSlug) || string.IsNullOrEmpty(normText))
@@ -68,10 +50,6 @@ public static class LinkingUtilities
         return paddedText.Contains(paddedSlug, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Scans <paramref name="normalizedText"/> for any edition marker anywhere in the
-    /// string. Used when we have link_text but no slug position to anchor from.
-    /// </summary>
     public static string? ExtractEditionFromText(string normalizedText)
     {
         foreach (var (marker, canonical) in EditionMarkers)
@@ -82,11 +60,6 @@ public static class LinkingUtilities
         return null;
     }
 
-    /// <summary>
-    /// Anchored edition extraction: finds the slug within <paramref name="normFilename"/>,
-    /// then checks what immediately follows for an edition marker.
-    /// Skips any leading space and checks if the next token starts with an edition marker.
-    /// </summary>
     public static string? ExtractEdition(string normFilename, string normSlug)
     {
         var idx = normFilename.IndexOf(normSlug, StringComparison.Ordinal);
@@ -113,10 +86,6 @@ public static class LinkingUtilities
         return null;
     }
 
-    /// <summary>
-    /// Extracts the game slug from a URL of the form
-    /// <c>https://sternpinball.com/game/{slug}[/...]</c>.
-    /// </summary>
     public static string? ExtractGameSlugFromUrl(string url)
     {
         if (string.IsNullOrEmpty(url)) return null;

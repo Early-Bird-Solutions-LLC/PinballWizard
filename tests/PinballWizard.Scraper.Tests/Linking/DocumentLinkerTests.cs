@@ -72,21 +72,10 @@ public class DocumentLinkerTests
         overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
             .Returns(overrides ?? new Dictionary<string, LinkOverrideRecord>());
 
-        // Stub all manufacturer streams to empty by default.
-        var manufacturers = new[] { "stern", "jjp", "americanpinball", "spooky", "pinballbrothers", "barrelsoffun", "multimorphic", "chicagogaming" };
-        foreach (var mfr in manufacturers)
-        {
-            machineRepo.StreamByManufacturerAsync(mfr, Arg.Any<CancellationToken>())
-                .Returns(AsyncEnumerable.Empty<Machine>());
-        }
-
-        // Override "stern" stream if any machines provided.
-        if (machines is not null)
-        {
-            var sternMachines = machines.ToList();
-            machineRepo.StreamByManufacturerAsync("stern", Arg.Any<CancellationToken>())
-                .Returns(sternMachines.ToAsyncEnumerable());
-        }
+        // InitializeAsync now uses StreamAllAsync — stub it directly.
+        var machineList = machines?.ToList() ?? [];
+        machineRepo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(machineList.ToAsyncEnumerable());
 
         return new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
             NullLogger<DocumentLinker>.Instance);
@@ -235,6 +224,89 @@ public class DocumentLinkerTests
         Assert.Null(result.ResolutionStrategy);
     }
 
+    [Fact]
+    public async Task LinkAsync_Tier1XrefSlug_AmbiguousDistinctMachines_FallsThrough()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machineA = MakeMachine(id: "AAAA-0001", title: "Deadpool", slug: "deadpool");
+        var machineB = MakeMachine(id: "BBBB-0002", title: "Godzilla", slug: "godzilla");
+
+        // Two xrefs that resolve to two different machines — Tier 1 should fall through.
+        var xrefs = new List<CrossReference>
+        {
+            new() { AlsoFoundAt = "https://sternpinball.com/game/deadpool/", DiscoveryContext = "Game page", DiscoveredAt = DateTime.UtcNow },
+            new() { AlsoFoundAt = "https://sternpinball.com/game/godzilla/", DiscoveryContext = "Game page", DiscoveredAt = DateTime.UtcNow },
+        };
+        // Filename doesn't match either slug to avoid Tier 2 resolving.
+        var raw = MakeRaw(fileUrl: "https://example.com/files/service_bulletin.pdf", crossRefs: xrefs);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machineA, machineB]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Ambiguous Tier 1 should fall through — NotInCatalog (Tier 2 also misses).
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Null(result.ResolutionStrategy);
+    }
+
+    // -------------------------------------------------------------------------
+    // FanOut: partial-link → Failed
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task FanOutAndUpdateAsync_MachineNotInIndex_StampsFailedNotLinked()
+    {
+        // A result claims a machineId that is NOT in the slug index (e.g., from
+        // an override record that references a machine not yet synced from OPDB).
+        // FanOutAndUpdateAsync must stamp Failed, not Linked, so the raw record
+        // doesn't falsely claim success while scraped_documents has no record.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        const string unknownMachineId = "ZZZZ-UNKNOWN";
+
+        var raw = MakeRaw();
+        var pattern = LinkOverrideRecord.BuildSourcePattern(raw.Source.DiscoveryUrl, raw.DocumentType);
+        var overrides = new Dictionary<string, LinkOverrideRecord>
+        {
+            [pattern] = new LinkOverrideRecord
+            {
+                SourcePattern = pattern,
+                MachineIds = [unknownMachineId],  // not in the machine catalog
+                CreatedBy = "test",
+                CreatedAt = DateTimeOffset.UtcNow,
+            },
+        };
+
+        // No machines in the index — the override's machineId won't be found.
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, overrides: overrides);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // The result from TryTier0Override still says ManuallyLinked, but FanOutAndUpdateAsync
+        // should have downgraded the UpdateLinkStatusAsync call to Failed.
+        await rawRepo.Received(1).UpdateLinkStatusAsync(
+            raw.DocumentId,
+            LinkStatus.Failed,
+            "override",
+            Arg.Is<string?>(r => r != null && r.Contains(unknownMachineId)),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+
+        // No scraped_documents record should have been written.
+        await docWriter.DidNotReceive().UpsertFromRawAsync(
+            Arg.Any<RawDocumentRecord>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
     // -------------------------------------------------------------------------
     // Tier 2 — Filename word-boundary
     // -------------------------------------------------------------------------
@@ -302,23 +374,9 @@ public class DocumentLinkerTests
         // "tron_manual.pdf" → norm "tron manual pdf" — both slugs ("tron") match.
         var raw = MakeRaw(fileUrl: "https://example.com/files/tron_manual.pdf");
 
-        // Both machines need to be in the stern stream.
-        var overrideRepo2 = Substitute.For<ILinkOverrideRepository>();
-        overrideRepo2.LoadAllAsync(Arg.Any<CancellationToken>())
-            .Returns(new Dictionary<string, LinkOverrideRecord>());
-
-        var machineRepo2 = Substitute.For<IMachineRepository>();
-        var allManufacturers = new[] { "stern", "jjp", "americanpinball", "spooky", "pinballbrothers", "barrelsoffun", "multimorphic", "chicagogaming" };
-        foreach (var mfr in allManufacturers)
-        {
-            machineRepo2.StreamByManufacturerAsync(mfr, Arg.Any<CancellationToken>())
-                .Returns(AsyncEnumerable.Empty<Machine>());
-        }
-        machineRepo2.StreamByManufacturerAsync("stern", Arg.Any<CancellationToken>())
-            .Returns(new List<Machine> { machineA, machineB }.ToAsyncEnumerable());
-
-        var linker = new DocumentLinker(rawRepo, overrideRepo2, machineRepo2, docWriter,
-            NullLogger<DocumentLinker>.Instance);
+        // Both machines in the StreamAllAsync stub.
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machineA, machineB]);
 
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);

@@ -65,22 +65,19 @@ public sealed class DocumentLinker : IDocumentLinker
         var slugIndex = new List<(Machine Machine, string NormalizedSlug)>();
         var bySlug = new Dictionary<string, Machine>(StringComparer.OrdinalIgnoreCase);
 
-        // Cross-partition stream — all manufacturers.
-        var manufacturers = new[] { "stern", "jjp", "americanpinball", "spooky", "pinballbrothers", "barrelsoffun", "multimorphic", "chicagogaming" };
-        foreach (var manufacturer in manufacturers)
+        // StreamAllAsync issues a single cross-partition query — no need to
+        // enumerate a hard-coded manufacturer list in the Application layer.
+        await foreach (var machine in _machineRepo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
-            await foreach (var machine in _machineRepo.StreamByManufacturerAsync(manufacturer, cancellationToken).ConfigureAwait(false))
+            foreach (var (_, slug) in machine.ManufacturerSlugs)
             {
-                foreach (var (_, slug) in machine.ManufacturerSlugs)
-                {
-                    if (string.IsNullOrWhiteSpace(slug)) continue;
-                    var normSlug = LinkingUtilities.NormalizeForMatch(slug);
-                    if (string.IsNullOrEmpty(normSlug)) continue;
+                if (string.IsNullOrWhiteSpace(slug)) continue;
+                var normSlug = LinkingUtilities.NormalizeForMatch(slug);
+                if (string.IsNullOrEmpty(normSlug)) continue;
 
-                    // Last writer wins for duplicate slugs (shouldn't happen across manufacturers).
-                    bySlug[slug] = machine;
-                    slugIndex.Add((machine, normSlug));
-                }
+                // Last writer wins for duplicate slugs (shouldn't happen across manufacturers).
+                bySlug[slug] = machine;
+                slugIndex.Add((machine, normSlug));
             }
         }
 
@@ -233,6 +230,10 @@ public sealed class DocumentLinker : IDocumentLinker
 
     private LinkingResult? TryTier1XrefSlug(RawDocumentRecord raw)
     {
+        // Collect all distinct machine IDs resolved from xref slugs.
+        var resolvedMachineIds = new List<string>();
+        var resolvedSlugs = new List<string>();
+
         foreach (var xref in raw.CrossReferences)
         {
             var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
@@ -240,18 +241,33 @@ public sealed class DocumentLinker : IDocumentLinker
 
             if (!_machinesBySlug.TryGetValue(slug, out var machine)) continue;
 
-            _logger.LogDebug("Tier1 xref_slug: {DocumentId} → {MachineId} via slug={Slug}.",
-                raw.DocumentId, machine.Id, slug);
-
-            return new LinkingResult(
-                raw.DocumentId,
-                LinkStatus.Linked,
-                "xref_slug",
-                [machine.Id],
-                FailureReason: null);
+            if (!resolvedMachineIds.Contains(machine.Id))
+            {
+                resolvedMachineIds.Add(machine.Id);
+                resolvedSlugs.Add(slug);
+            }
         }
 
-        return null;
+        if (resolvedMachineIds.Count == 0) return null;
+
+        // Multiple distinct machines from different xref slugs — ambiguous; fall through.
+        if (resolvedMachineIds.Count > 1)
+        {
+            _logger.LogDebug(
+                "Tier1 xref_slug: {DocumentId} → ambiguous (multiple distinct machines via slugs={Slugs}).",
+                raw.DocumentId, string.Join(",", resolvedSlugs));
+            return null;
+        }
+
+        _logger.LogDebug("Tier1 xref_slug: {DocumentId} → {MachineId} via slug={Slug}.",
+            raw.DocumentId, resolvedMachineIds[0], resolvedSlugs[0]);
+
+        return new LinkingResult(
+            raw.DocumentId,
+            LinkStatus.Linked,
+            "xref_slug",
+            [resolvedMachineIds[0]],
+            FailureReason: null);
     }
 
     private LinkingResult? TryTier2FilenameSlug(RawDocumentRecord raw)
@@ -320,6 +336,8 @@ public sealed class DocumentLinker : IDocumentLinker
         LinkingResult result,
         CancellationToken cancellationToken)
     {
+        var missingMachineIds = new List<string>();
+
         if (result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked)
         {
             foreach (var machineId in result.LinkedMachineIds)
@@ -334,6 +352,7 @@ public sealed class DocumentLinker : IDocumentLinker
                     _logger.LogWarning(
                         "FanOut: machine {MachineId} not found in slug index for doc {DocumentId} — skipping scraped_documents write.",
                         machineId, raw.DocumentId);
+                    missingMachineIds.Add(machineId);
                     continue;
                 }
 
@@ -372,11 +391,29 @@ public sealed class DocumentLinker : IDocumentLinker
             ? LinkOverrideRecord.BuildSourcePattern(raw.Source.DiscoveryUrl, raw.DocumentType)
             : null;
 
+        // If any machine lookup failed, stamp Failed rather than Linked/ManuallyLinked
+        // to avoid a raw record claiming success while scraped_documents is incomplete.
+        LinkStatus finalStatus;
+        string? failureReason;
+        if (missingMachineIds.Count > 0)
+        {
+            finalStatus = LinkStatus.Failed;
+            failureReason = $"machine_not_found: {string.Join(',', missingMachineIds)}";
+            _logger.LogWarning(
+                "FanOut: stamping {DocumentId} as Failed — {Count} machine(s) not found in slug index: {MissingIds}",
+                raw.DocumentId, missingMachineIds.Count, failureReason);
+        }
+        else
+        {
+            finalStatus = result.FinalStatus;
+            failureReason = result.FailureReason;
+        }
+
         await _rawRepo.UpdateLinkStatusAsync(
             raw.DocumentId,
-            result.FinalStatus,
+            finalStatus,
             result.ResolutionStrategy,
-            result.FailureReason,
+            failureReason,
             overrideId,
             cancellationToken).ConfigureAwait(false);
     }
