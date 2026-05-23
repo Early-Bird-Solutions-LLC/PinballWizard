@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Downloading;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -482,19 +483,10 @@ public sealed class CatalogBuilder
     /// <summary>
     /// Extracts the game slug from a URL of the form
     /// <c>https://sternpinball.com/game/{slug}/</c>.
-    /// Returns null for any other URL shape.
+    /// Delegates to <see cref="LinkingUtilities.ExtractGameSlugFromUrl"/>.
     /// </summary>
     private static string? ExtractGameSlugFromUrl(string url)
-    {
-        if (string.IsNullOrEmpty(url)) return null;
-        var segments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        for (var i = 0; i < segments.Length - 1; i++)
-        {
-            if (segments[i].Equals("game", StringComparison.OrdinalIgnoreCase))
-                return segments[i + 1];
-        }
-        return null;
-    }
+        => LinkingUtilities.ExtractGameSlugFromUrl(url);
 
     /// <summary>
     /// Syncs <see cref="GameReference.Title"/> on a document to the canonical
@@ -544,64 +536,21 @@ public sealed class CatalogBuilder
     }
 
     /// <summary>
-    /// Normalizes a string for slug-substring matching: lowercases, then strips
-    /// <c>_</c>, <c>-</c>, <c>.</c>, and whitespace so that <c>stranger-things</c>,
-    /// <c>StrangerThings</c>, and <c>stranger_things</c> all collapse to <c>strangerthings</c>.
+    /// Normalizes a string for slug-substring matching. Delegates to the authoritative
+    /// <see cref="LinkingUtilities.NormalizeForMatch"/> implementation.
     /// </summary>
     private static string NormalizeForMatch(string value)
-    {
-        if (string.IsNullOrEmpty(value)) return string.Empty;
-        var lower = value.ToLowerInvariant();
-        var sb = new System.Text.StringBuilder(lower.Length);
-        foreach (var c in lower)
-        {
-            if (c == '_' || c == '-' || c == '.' || char.IsWhiteSpace(c)) continue;
-            sb.Append(c);
-        }
-        return sb.ToString();
-    }
-
-    // Edition suffixes checked against the text immediately following the matched slug
-    // in the normalized filename. Order matters: longer prefixes first so that
-    // "limited" doesn't lose to "le" and "premium" doesn't lose to "pro".
-    private static readonly (string Marker, string Canonical)[] EditionMarkers =
-    [
-        ("premium", "Premium"),
-        ("limited", "Limited"),
-        ("pro", "Pro"),
-        ("le", "LE")
-    ];
+        => LinkingUtilities.NormalizeForMatch(value);
 
     /// <summary>
     /// Scans <paramref name="normalizedText"/> for any edition marker anywhere in the
-    /// string. Used when we have link_text but no slug position to anchor from.
+    /// string. Delegates to <see cref="LinkingUtilities.ExtractEditionFromText"/>.
     /// </summary>
     private static string? ExtractEditionFromText(string normalizedText)
-    {
-        foreach (var (marker, canonical) in EditionMarkers)
-        {
-            if (normalizedText.Contains(marker, StringComparison.Ordinal))
-                return canonical;
-        }
-        return null;
-    }
+        => LinkingUtilities.ExtractEditionFromText(normalizedText);
 
-    private static string? ExtractEdition(string normalizedFilename, string normalizedSlug)
-    {
-        var idx = normalizedFilename.IndexOf(normalizedSlug, StringComparison.Ordinal);
-        if (idx < 0) return null;
-
-        var afterSlug = idx + normalizedSlug.Length;
-        if (afterSlug >= normalizedFilename.Length) return null;
-
-        var tail = normalizedFilename[afterSlug..];
-        foreach (var (marker, canonical) in EditionMarkers)
-        {
-            if (tail.StartsWith(marker, StringComparison.Ordinal))
-                return canonical;
-        }
-        return null;
-    }
+    private static string? ExtractEdition(string normFilename, string normalizedSlug)
+        => LinkingUtilities.ExtractEdition(normFilename, normalizedSlug);
 
     /// <summary>
     /// Saves the catalog to disk atomically (temp file + rename) to prevent

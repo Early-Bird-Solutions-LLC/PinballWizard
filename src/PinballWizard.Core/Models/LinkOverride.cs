@@ -43,4 +43,9 @@ public sealed class LinkOverrideRecord
     /// Optional human-readable explanation for why this override exists.
     /// </summary>
     public string? Notes { get; init; }
+
+    // Builds the deterministic source pattern key from a discovery URL and document type.
+    // The pattern is the canonical partition key / id for this container.
+    public static string BuildSourcePattern(string discoveryUrl, DocumentType documentType)
+        => $"{discoveryUrl.TrimEnd('/')}|{documentType}";
 }

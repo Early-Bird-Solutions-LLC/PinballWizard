@@ -41,6 +41,8 @@ public class LinkingUtilitiesTests
     [InlineData("metallica le rules", "LE")]
     [InlineData("mandalorian pro manual", "Pro")]
     [InlineData("batman no edition", null)]
+    [InlineData("batman vault edition manual", "Vault")]
+    [InlineData("batman ce manual", "CE")]
     public void ExtractEditionFromText_returnsCanonical(string text, string? expected)
         => Assert.Equal(expected, LinkingUtilities.ExtractEditionFromText(
             LinkingUtilities.NormalizeForMatch(text)));

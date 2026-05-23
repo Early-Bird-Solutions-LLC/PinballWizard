@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PinballWizard.Core.Models;
 
 /// <summary>
@@ -48,7 +50,8 @@ public sealed class RawDocumentRecord
     /// <summary>
     /// Document type (Manual, Schematic, ServiceBulletin, etc.) from classification.
     /// </summary>
-    public required string DocumentType { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public required DocumentType DocumentType { get; init; }
 
     /// <summary>
     /// Where and when we discovered this file.
@@ -121,4 +124,8 @@ public sealed class RawDocumentRecord
     /// Reference to the LinkOverrideRecord that applied to this document (if any).
     /// </summary>
     public string? OverrideId { get; set; }
+
+    // Machine IDs this document was linked to. Set by the linker after resolution.
+    // Mirrors the scraped_documents records written for audit/display purposes.
+    public List<string> LinkedMachineIds { get; set; } = [];
 }
