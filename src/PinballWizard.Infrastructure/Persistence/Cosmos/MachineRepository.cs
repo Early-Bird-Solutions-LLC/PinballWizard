@@ -31,6 +31,16 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             cancellationToken: cancellationToken);
     }
 
+    // Cross-partition scan (partitionKey: null) so all manufacturers are
+    // covered in a single pass. RU cost scales with total item count —
+    // acceptable for the infrequent InitializeAsync call on the linker.
+    public IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken) =>
+        StreamAsync(
+            "SELECT * FROM c",
+            parameters: null,
+            partitionKey: null,
+            cancellationToken: cancellationToken);
+
     /// <inheritdoc />
     public async IAsyncEnumerable<Machine> QueryByTitleAsync(
         string title,

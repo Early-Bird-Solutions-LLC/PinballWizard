@@ -1,0 +1,91 @@
+@page "/admin/link-overrides"
+@layout AdminLayout
+
+@* AdminLinkOverrides — /admin/link-overrides admin-configured document-to-machine mapping view.
+ *
+ * Renders a MudDataGrid of link overrides — admin-authored rules that force
+ * a scraped document's source pattern to resolve to a specific set of machine
+ * IDs, bypassing the heuristic linker. No real data transport yet — the grid
+ * binds to an empty list and shows the "No overrides configured" empty state.
+ * A follow-up PR will wire the ILinkOverrideRepository query here.
+ *
+ * LinkOverrideRow is a nested record that mirrors the link_overrides Cosmos
+ * container shape. Columns: Source Pattern, Machine IDs, Created By,
+ * Created At, Notes, Actions.
+ *
+ * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
+ *
+ * Auth: protected by the global FallbackPolicy — see AdminDashboard.razor.
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth
+ * ADR-0026  § 1 — routing inventory (/admin/link-overrides)
+ *@
+
+<PageTitle>Link Overrides — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Link Overrides</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Admin-configured document-to-machine mappings.
+    </MudText>
+
+    <MudDataGrid T="LinkOverrideRow"
+                 Items="@_overrides"
+                 Hover="true"
+                 Striped="true"
+                 Dense="true"
+                 Elevation="2"
+                 data-testid="admin-link-overrides-grid">
+
+        <Columns>
+            <PropertyColumn Property="x => x.SourcePattern" Title="Source Pattern" />
+            <PropertyColumn Property="x => x.MachineIds" Title="Machine IDs" />
+            <PropertyColumn Property="x => x.CreatedBy" Title="Created By" />
+            <PropertyColumn Property="x => x.CreatedAt" Title="Created At" />
+            <PropertyColumn Property="x => x.Notes" Title="Notes" />
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    @* Placeholder — edit and delete actions land in a follow-up PR *@
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+
+        <NoRecordsContent>
+            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                         Size="Size.Large"
+                         Color="Color.Tertiary" />
+                <MudText Typo="Typo.body1" data-testid="admin-link-overrides-empty">
+                    No overrides configured.
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Overrides are created manually to resolve ambiguous or failed document links.
+                </MudText>
+            </MudStack>
+        </NoRecordsContent>
+
+    </MudDataGrid>
+</MudContainer>
+
+@code {
+    // Placeholder row type — mirrors the link_overrides Cosmos container shape.
+    // No deps on Infrastructure; real transport arrives in a follow-up PR.
+    private sealed record LinkOverrideRow(
+        string SourcePattern,
+        string MachineIds,
+        string CreatedBy,
+        string CreatedAt,
+        string Notes);
+
+    // Empty list — grid renders the "No overrides configured" empty state.
+    private readonly IEnumerable<LinkOverrideRow> _overrides = [];
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Link Overrides", href: "/admin/link-overrides", icon: Icons.Material.Filled.LinkOff),
+    ];
+}

@@ -25,6 +25,11 @@ public interface IMachineRepository : IRepository<Machine>
     /// </summary>
     IAsyncEnumerable<Machine> StreamByManufacturerAsync(string manufacturer, CancellationToken cancellationToken);
 
+    // Cross-partition stream over all machines regardless of manufacturer.
+    // Used by DocumentLinker.InitializeAsync to build the slug index
+    // without hard-coding the manufacturer list in the Application layer.
+    IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken);
+
     // Cross-partition case-insensitive title lookup, introduced in
     // Phase 3 Wave 2 PR 5 as the backing store for the
     // getMachineByTitle Foundry function tool (per ADR-0014). Returns

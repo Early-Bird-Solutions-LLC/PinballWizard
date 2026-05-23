@@ -52,4 +52,39 @@ internal sealed class CosmosScrapedDocumentRepository
 
         await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task UpsertFromRawAsync(
+        RawDocumentRecord raw,
+        string machineId,
+        string machineTitle,
+        string manufacturer,
+        string? edition,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(raw);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineTitle);
+        ArgumentException.ThrowIfNullOrWhiteSpace(manufacturer);
+
+        // Id = "{documentId}_{machineId}" so a single raw record that fans
+        // out to multiple machines produces one Cosmos item per machine
+        // without collision on the shared document_id.
+        var cosmos = new ScrapedDocumentRecord
+        {
+            Id = $"{raw.DocumentId}_{machineId}",
+            PartitionKey = machineId,
+            DocumentId = raw.DocumentId,
+            DocumentUrl = raw.Source.FileUrl,
+            MachineTitle = machineTitle,
+            Manufacturer = manufacturer,
+            DocumentType = raw.DocumentType.ToString(),
+            ContentHash = raw.ContentHash ?? string.Empty,
+            LastDownloadedAt = raw.Timeline.LastDownloadedAt is { } lda
+                ? new DateTimeOffset(lda, TimeSpan.Zero)
+                : null,
+            Edition = edition,
+        };
+
+        await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
+    }
 }

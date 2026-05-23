@@ -57,6 +57,9 @@ public sealed class RagSourceDocument
     [JsonPropertyName("last_downloaded_at")]
     public DateTimeOffset? LastDownloadedAt { get; init; }
 
+    [JsonPropertyName("edition")]
+    public string? Edition { get; init; }
+
     [JsonPropertyName("_etag")]
     public string? Etag { get; init; }
 

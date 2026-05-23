@@ -50,4 +50,7 @@ internal sealed class ScrapedDocumentRecord : IEntity
 
     [JsonPropertyName("last_downloaded_at")]
     public DateTimeOffset? LastDownloadedAt { get; init; }
+
+    [JsonPropertyName("edition")]
+    public string? Edition { get; init; }
 }

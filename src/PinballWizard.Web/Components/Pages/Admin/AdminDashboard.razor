@@ -93,11 +93,35 @@
                     </MudStack>
                 </MudCardContent>
                 <MudCardActions>
-                    <MudButton Variant="Variant.Text"
+                    <MudButton Href="/admin/document-triage"
+                               Variant="Variant.Text"
                                Color="Color.Tertiary"
-                               Size="Size.Small"
-                               Disabled="true">
-                        Coming soon
+                               Size="Size.Small">
+                        Triage unlinked
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2" Class="admin-summary-card">
+                <MudCardContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.LinkOff"
+                                 Color="Color.Warning"
+                                 Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.h5" data-testid="admin-link-overrides-count">—</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Link Overrides</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Href="/admin/link-overrides"
+                               Variant="Variant.Text"
+                               Color="Color.Warning"
+                               Size="Size.Small">
+                        View overrides
                     </MudButton>
                 </MudCardActions>
             </MudCard>

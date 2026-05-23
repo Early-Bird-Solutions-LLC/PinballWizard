@@ -642,8 +642,9 @@ public sealed class CatalogBuilderTests
         var games = new GameCatalog();
 
         // Seed a manual discovered on /manuals/ with no game association
+        // Filename uses underscores as word separators (consistent with space-preserving normalization)
         builder.MergeScrapedItem(catalog, MakeItem(
-            fileUrl: "https://sternpinball.com/manuals/StrangerThings_Pro_web.pdf",
+            fileUrl: "https://sternpinball.com/manuals/Stranger_Things_Pro_web.pdf",
             discoveryUrl: "https://sternpinball.com/manuals/",
             discoveryContext: "Manuals Page",
             sourceType: SourceType.ManualsPage,
@@ -798,9 +799,9 @@ public sealed class CatalogBuilderTests
         var catalog = new Catalog();
         var games = new GameCatalog();
 
-        // Filename normalizes to "metallicavaulteditionv1pdf" — both slugs are substrings
+        // Filename uses underscores so both slugs appear as word-boundary substrings
         builder.MergeScrapedItem(catalog, MakeItem(
-            fileUrl: "https://sternpinball.com/manuals/MetallicaVaultEdition_v1.pdf",
+            fileUrl: "https://sternpinball.com/manuals/Metallica_Vault_Edition_v1.pdf",
             discoveryUrl: "https://sternpinball.com/manuals/",
             discoveryContext: "Manuals Page",
             sourceType: SourceType.ManualsPage));
@@ -927,8 +928,9 @@ public sealed class CatalogBuilderTests
         var catalog = new Catalog();
         var games = new GameCatalog();
 
+        // AC_DC uses underscores so slug "ac dc" matches as a substring
         builder.MergeScrapedItem(catalog, MakeItem(
-            fileUrl: "https://sternpinball.com/wp-content/uploads/ACDC_Prem_web.pdf",
+            fileUrl: "https://sternpinball.com/wp-content/uploads/AC_DC_Prem_web.pdf",
             discoveryUrl: "https://sternpinball.com/manuals/",
             discoveryContext: "Manuals Page",
             sourceType: SourceType.ManualsPage,

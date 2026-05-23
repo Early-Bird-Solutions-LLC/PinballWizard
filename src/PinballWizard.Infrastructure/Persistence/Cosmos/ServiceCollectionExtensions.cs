@@ -12,7 +12,10 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Landing;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Landing;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -192,6 +195,19 @@ public static class ServiceCollectionExtensions
             return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
         });
 
+        services.AddSingleton<IRawDocumentRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scraped_documents_raw");
+            return new CosmosRawDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosRawDocumentRepository>>());
+        });
+
+        services.AddSingleton<ILinkOverrideRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "link_overrides");
+            return new CosmosLinkOverrideRepository(container,
+                sp.GetRequiredService<ILogger<CosmosLinkOverrideRepository>>());
+        });
+
         // Curated landing-page featured machines per ADR-0026 § Landing surface.
         // Inherits metering from `CosmosRepository<T>` so every SDK call here
         // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.
@@ -199,6 +215,19 @@ public static class ServiceCollectionExtensions
         {
             var container = ResolveContainer(sp, "featured_machines");
             return new FeaturedMachineRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FeaturedMachineRepository>>());
+        });
+
+        services.AddSingleton<IDocumentLinker>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var overrideRepo = sp.GetRequiredService<ILinkOverrideRepository>();
+            var machineRepo = sp.GetRequiredService<IMachineRepository>();
+            var linkedRepo = sp.GetRequiredService<IScrapedDocumentRepository>();
+            var textExtractor = sp.GetService<IDocumentTextExtractor>();
+            var logger = sp.GetRequiredService<ILogger<DocumentLinker>>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath;
+            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
