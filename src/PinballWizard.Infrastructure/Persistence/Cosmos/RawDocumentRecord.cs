@@ -157,10 +157,10 @@ internal sealed class RawTimelineInfo
     public DateTime? LastCheckedAt { get; set; }
 
     [JsonPropertyName("last_downloaded_at")]
-    public DateTime? LastDownloadedAt { get; init; }
+    public DateTime? LastDownloadedAt { get; set; }
 
     [JsonPropertyName("last_content_changed_at")]
-    public DateTime? LastContentChangedAt { get; init; }
+    public DateTime? LastContentChangedAt { get; set; }
 
     [JsonPropertyName("version_count")]
     public int VersionCount { get; init; }

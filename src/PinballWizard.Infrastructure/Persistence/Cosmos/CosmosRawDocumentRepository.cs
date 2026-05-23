@@ -61,6 +61,17 @@ internal sealed class CosmosRawDocumentRepository
                 }
             }
 
+            // Propagate download/content timestamps if the scraper produced new ones.
+            if (record.Timeline.LastDownloadedAt.HasValue)
+            {
+                existing.Timeline.LastDownloadedAt = record.Timeline.LastDownloadedAt;
+            }
+
+            if (record.Timeline.LastContentChangedAt.HasValue)
+            {
+                existing.Timeline.LastContentChangedAt = record.Timeline.LastContentChangedAt;
+            }
+
             // Update content_hash if the scraper produced a new one.
             if (record.File?.Sha256 is { } newHash && !string.IsNullOrWhiteSpace(newHash))
             {
@@ -129,6 +140,13 @@ internal sealed class CosmosRawDocumentRepository
         existing.LinkFailureReason = failureReason;
         existing.OverrideId = overrideId;
         existing.LinkAttemptedAt = DateTimeOffset.UtcNow;
+
+        // Stamp LinkedAt on terminal resolution. LinkedBy stays null for
+        // automated linking; the admin UI sets it directly when a human links.
+        if (status is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric)
+        {
+            existing.LinkedAt = DateTimeOffset.UtcNow;
+        }
 
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
