@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Downloading;
+using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
@@ -18,6 +19,7 @@ public sealed class CatalogBuilder
 {
     private readonly ScraperSettings _settings;
     private readonly ILogger<CatalogBuilder> _logger;
+    private readonly IDocumentTextExtractor? _extractor;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,10 +31,12 @@ public sealed class CatalogBuilder
 
     public CatalogBuilder(
         IOptions<ScraperSettings> settings,
-        ILogger<CatalogBuilder> logger)
+        ILogger<CatalogBuilder> logger,
+        IDocumentTextExtractor? extractor = null)
     {
         _settings = settings.Value;
         _logger = logger;
+        _extractor = extractor;
     }
 
     /// <summary>
@@ -184,20 +188,23 @@ public sealed class CatalogBuilder
 
     /// <summary>
     /// Cross-source linking pass: walks every <see cref="DocumentRecord"/> and tries to
-    /// associate it with a known game. Two complementary jobs:
-    ///  * Documents with <c>Game == null</c> (e.g. manuals discovered on <c>/manuals/</c>)
-    ///    get a <see cref="GameReference"/> populated when their filename contains a known
-    ///    game slug (case-insensitive, separator-insensitive substring match).
-    ///  * Documents that already have a <see cref="GameReference"/> get their
-    ///    <see cref="GameReference.Title"/> synced to the canonical
-    ///    <see cref="GameRecord.Title"/>. The doc reference is a denormalization of game
-    ///    data, so it always follows the latest canonical title — including healing stale
-    ///    titles left by earlier buggy scrapes (see <see cref="SyncGameReferenceToCanonical"/>).
+    /// associate it with a known game. Three complementary jobs, tried in priority order:
+    ///  1. Documents with <c>Game == null</c> that have a cross-reference URL containing
+    ///     <c>/game/{slug}/</c> are resolved definitively from that slug — no filename
+    ///     inference needed. Edition is extracted from <c>link_text</c> on the cross-ref.
+    ///  2. Remaining unlinked documents get a <see cref="GameReference"/> when their
+    ///     filename contains a known game slug (case-insensitive, separator-insensitive
+    ///     substring match). Edition missing from the filename is filled from <c>link_text</c>.
+    ///  3. Documents that already have a <see cref="GameReference"/> get their
+    ///     <see cref="GameReference.Title"/> synced to the canonical
+    ///     <see cref="GameRecord.Title"/>. The doc reference is a denormalization of game
+    ///     data, so it always follows the latest canonical title — including healing stale
+    ///     titles left by earlier buggy scrapes (see <see cref="SyncGameReferenceToCanonical"/>).
     /// </summary>
     /// <remarks>
-    /// Ambiguity rule: when multiple slugs match a filename, the LONGEST wins. If two or
-    /// more slugs of equal (longest) length match, the document is left unlinked and a
-    /// debug message is logged — we do not guess.
+    /// Filename-match ambiguity rule: when multiple slugs match a filename, the LONGEST
+    /// wins. If two or more slugs of equal (longest) length match, the document is left
+    /// unlinked and a debug message is logged — we do not guess.
     /// </remarks>
     public void LinkDocumentsToGames(Catalog catalog, GameCatalog gameCatalog)
     {
@@ -212,6 +219,11 @@ public sealed class CatalogBuilder
 
         if (normalizedGames.Count == 0) return;
 
+        // Fast slug→game lookup used by cross-reference resolution (Pass 1).
+        var gamesBySlug = gameCatalog.Games
+            .Where(g => !string.IsNullOrEmpty(g.Slug))
+            .ToDictionary(g => g.Slug, g => g, StringComparer.OrdinalIgnoreCase);
+
         foreach (var doc in catalog.Documents)
         {
             // Always sync title for docs that already have a Game reference —
@@ -223,13 +235,41 @@ public sealed class CatalogBuilder
                 continue;
             }
 
+            // Pass 1: cross-reference slug resolution.
+            // When GamePageScraper visited /game/{slug}/ and found this same PDF it wrote
+            // the game-page URL into CrossReferences. Extract the slug from that URL —
+            // it's a definitive identity, no filename inference needed.
+            var xrefGame = ResolveGameFromCrossReferences(doc, gamesBySlug);
+            if (xrefGame is not null)
+            {
+                var xrefLinkText = doc.CrossReferences
+                    .Select(cr => cr.LinkText)
+                    .FirstOrDefault(lt => !string.IsNullOrEmpty(lt));
+                var xrefEdition = xrefLinkText is not null
+                    ? ExtractEditionFromText(NormalizeForMatch(xrefLinkText))
+                    : null;
+
+                doc.Game = new GameReference
+                {
+                    Title = xrefGame.Title,
+                    Slug = xrefGame.Slug,
+                    Edition = xrefEdition,
+                    GamePageUrl = xrefGame.GamePageUrl
+                };
+
+                _logger.LogDebug(
+                    "Linked {DocId} to game {Slug} via cross-reference (edition: {Edition})",
+                    doc.DocumentId, xrefGame.Slug, xrefEdition ?? "none");
+                continue;
+            }
+
+            // Pass 2: filename-slug substring match.
             var filename = ExtractFilename(doc.Source.FileUrl);
             if (string.IsNullOrEmpty(filename)) continue;
 
             var normalizedFilename = NormalizeForMatch(filename);
             if (normalizedFilename.Length == 0) continue;
 
-            // Find every slug that appears as a substring of the normalized filename.
             var matches = normalizedGames
                 .Where(t => normalizedFilename.Contains(t.Normalized, StringComparison.Ordinal))
                 .ToList();
@@ -243,14 +283,17 @@ public sealed class CatalogBuilder
             if (longest.Count > 1)
             {
                 _logger.LogDebug(
-                    "Ambiguous match for {Filename}: candidates {Slugs}",
+                    "Ambiguous filename match for {Filename}: candidates {Slugs}",
                     filename,
                     string.Join(", ", longest.Select(m => m.Game.Slug)));
                 continue;
             }
 
             var (matchedGame, matchedNormalized) = longest[0];
-            var edition = ExtractEdition(normalizedFilename, matchedNormalized);
+            var edition = ExtractEdition(normalizedFilename, matchedNormalized)
+                ?? (doc.Source.LinkText is not null
+                    ? ExtractEditionFromText(NormalizeForMatch(doc.Source.LinkText))
+                    : null);
 
             doc.Game = new GameReference
             {
@@ -261,9 +304,196 @@ public sealed class CatalogBuilder
             };
 
             _logger.LogDebug(
-                "Linked document {DocId} to game {Slug} (edition: {Edition})",
+                "Linked document {DocId} to game {Slug} via filename (edition: {Edition})",
                 doc.DocumentId, matchedGame.Slug, edition ?? "none");
         }
+    }
+
+    /// <summary>
+    /// Pass 3 of the document-to-game linking pipeline. For every document
+    /// that still has no <see cref="GameReference"/> after
+    /// <see cref="LinkDocumentsToGames"/> runs, opens the local PDF, reads
+    /// page 1, and scans the text for a known canonical game title or slug.
+    /// The first match wins; the document is left unlinked if no match is
+    /// found or if extraction fails.
+    /// </summary>
+    /// <remarks>
+    /// Runs inline (the caller awaits all ADI calls before saving the
+    /// catalog) because the typical unresolved count is ~7 documents — the
+    /// added latency is negligible. If the corpus grows past ~50 unresolved
+    /// documents or this pass takes more than ~30 s, switch to a deferred
+    /// <c>--resolve-covers</c> CLI command / ACA Job that saves docs with an
+    /// <c>adi_pending</c> status and processes the backlog asynchronously.
+    /// Monitor <c>pinwiz.catalog.unlinked_documents{resolution_pass="adi_pending"}</c>
+    /// as the primary signal.
+    /// </remarks>
+    public async Task<int> ResolveCoverPageLinksAsync(
+        Catalog catalog,
+        GameCatalog gameCatalog,
+        CancellationToken cancellationToken = default)
+    {
+        if (_extractor is null)
+        {
+            _logger.LogDebug("No IDocumentTextExtractor registered; skipping cover-page link resolution.");
+            return 0;
+        }
+
+        var candidates = catalog.Documents
+            .Where(d => d.Game is null
+                     && d.File?.LocalPath is not null
+                     && d.Classification.FileFormat == "pdf")
+            .ToList();
+
+        if (candidates.Count == 0) return 0;
+
+        _logger.LogInformation(
+            "Cover-page link resolution: {Count} unlinked PDF(s) to probe",
+            candidates.Count);
+
+        // Pre-compute normalized game titles and slugs for matching against
+        // cover-page text. Both title and slug are checked so that a cover
+        // reading "Stranger Things" matches by title, while a cover that
+        // prints the slug form "stranger-things" still matches by slug.
+        var gameTokens = gameCatalog.Games
+            .Where(g => !string.IsNullOrEmpty(g.Slug))
+            .Select(g => (
+                Game: g,
+                NormalizedTitle: NormalizeForMatch(g.Title),
+                NormalizedSlug: NormalizeForMatch(g.Slug)))
+            .Where(t => t.NormalizedTitle.Length > 0 || t.NormalizedSlug.Length > 0)
+            .ToList();
+
+        var resolved = 0;
+
+        foreach (var doc in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var absolutePath = Path.Combine(_settings.DownloadsPath, doc.File!.LocalPath!);
+            if (!File.Exists(absolutePath))
+            {
+                _logger.LogDebug("Skipping cover-page probe for {DocId}: file not on disk", doc.DocumentId);
+                continue;
+            }
+
+            ExtractedDocument extracted;
+            try
+            {
+                await using var stream = File.OpenRead(absolutePath);
+                extracted = await _extractor.ExtractAsync(stream, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "Cover-page extraction failed for {DocId}; skipping",
+                    doc.DocumentId);
+                continue;
+            }
+
+            if (extracted.Status != ExtractionStatus.Success || extracted.Pages.Count == 0)
+            {
+                _logger.LogDebug(
+                    "Cover-page extraction non-success for {DocId}: {Status}",
+                    doc.DocumentId, extracted.Status);
+                continue;
+            }
+
+            var coverText = NormalizeForMatch(extracted.Pages[0].Text);
+            if (coverText.Length == 0) continue;
+
+            // Longest title/slug match wins — same tie-breaking rule as
+            // the filename pass so the behaviour is consistent.
+            var matches = gameTokens
+                .Select(t =>
+                {
+                    var titleLen = t.NormalizedTitle.Length > 0
+                        && coverText.Contains(t.NormalizedTitle, StringComparison.Ordinal)
+                        ? t.NormalizedTitle.Length : 0;
+                    var slugLen = t.NormalizedSlug.Length > 0
+                        && coverText.Contains(t.NormalizedSlug, StringComparison.Ordinal)
+                        ? t.NormalizedSlug.Length : 0;
+                    return (t.Game, MatchLen: Math.Max(titleLen, slugLen));
+                })
+                .Where(m => m.MatchLen > 0)
+                .ToList();
+
+            if (matches.Count == 0)
+            {
+                _logger.LogDebug("No game match on cover page for {DocId}", doc.DocumentId);
+                continue;
+            }
+
+            var maxLen = matches.Max(m => m.MatchLen);
+            var longest = matches.Where(m => m.MatchLen == maxLen).ToList();
+
+            if (longest.Count > 1)
+            {
+                _logger.LogDebug(
+                    "Ambiguous cover-page match for {DocId}: candidates {Slugs}",
+                    doc.DocumentId,
+                    string.Join(", ", longest.Select(m => m.Game.Slug)));
+                continue;
+            }
+
+            var matchedGame = longest[0].Game;
+            var edition = doc.Source.LinkText is not null
+                ? ExtractEditionFromText(NormalizeForMatch(doc.Source.LinkText))
+                : null;
+
+            doc.Game = new GameReference
+            {
+                Title = matchedGame.Title,
+                Slug = matchedGame.Slug,
+                Edition = edition,
+                GamePageUrl = matchedGame.GamePageUrl
+            };
+
+            resolved++;
+            _logger.LogDebug(
+                "Linked {DocId} to game {Slug} via cover-page text (edition: {Edition})",
+                doc.DocumentId, matchedGame.Slug, edition ?? "none");
+        }
+
+        _logger.LogInformation(
+            "Cover-page link resolution complete: {Resolved}/{Total} newly linked",
+            resolved, candidates.Count);
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Extracts a game slug from any cross-reference URL matching
+    /// <c>/game/{slug}/</c> and looks it up in the game catalog.
+    /// Returns null if no cross-reference resolves to a known game.
+    /// </summary>
+    private static GameRecord? ResolveGameFromCrossReferences(
+        DocumentRecord doc,
+        Dictionary<string, GameRecord> gamesBySlug)
+    {
+        foreach (var xref in doc.CrossReferences)
+        {
+            var slug = ExtractGameSlugFromUrl(xref.AlsoFoundAt);
+            if (slug is not null && gamesBySlug.TryGetValue(slug, out var game))
+                return game;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts the game slug from a URL of the form
+    /// <c>https://sternpinball.com/game/{slug}/</c>.
+    /// Returns null for any other URL shape.
+    /// </summary>
+    private static string? ExtractGameSlugFromUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        var segments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < segments.Length - 1; i++)
+        {
+            if (segments[i].Equals("game", StringComparison.OrdinalIgnoreCase))
+                return segments[i + 1];
+        }
+        return null;
     }
 
     /// <summary>
@@ -298,7 +528,7 @@ public sealed class CatalogBuilder
             Title = match.Title,
             Slug = current.Slug,
             Edition = current.Edition,
-            GamePageUrl = current.GamePageUrl
+            GamePageUrl = match.GamePageUrl  // heal stale URLs (BuildGameReference hardcodes the Stern domain)
         };
     }
 
@@ -341,6 +571,20 @@ public sealed class CatalogBuilder
         ("pro", "Pro"),
         ("le", "LE")
     ];
+
+    /// <summary>
+    /// Scans <paramref name="normalizedText"/> for any edition marker anywhere in the
+    /// string. Used when we have link_text but no slug position to anchor from.
+    /// </summary>
+    private static string? ExtractEditionFromText(string normalizedText)
+    {
+        foreach (var (marker, canonical) in EditionMarkers)
+        {
+            if (normalizedText.Contains(marker, StringComparison.Ordinal))
+                return canonical;
+        }
+        return null;
+    }
 
     private static string? ExtractEdition(string normalizedFilename, string normalizedSlug)
     {

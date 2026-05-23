@@ -7,7 +7,9 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Application.Provenance;
+using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Infrastructure.Scraping.Stern;
+using NSubstitute;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests;
@@ -389,7 +391,7 @@ public sealed class CatalogBuilderTests
         Assert.InRange(doc.Timeline.LastDownloadedAt!.Value, before, after);
         Assert.InRange(doc.Timeline.FirstDownloadedAt!.Value, before, after);
         Assert.Null(doc.Timeline.LastContentChangedAt); // first download, not a change
-        Assert.Equal(1, doc.Timeline.VersionCount);
+        Assert.Equal(1, doc.Timeline.VersionCount);   // first download leaves VersionCount at its initial value of 1; only a hash change increments it
     }
 
     [Fact]
@@ -843,6 +845,106 @@ public sealed class CatalogBuilderTests
     }
 
     [Fact]
+    public void LinkDocumentsToGames_CrossReferenceSlugResolution_PopulatesGameReference()
+    {
+        // Simulates the Batman TDK case: filename "Batman_TDK_Manual.pdf" has no slug
+        // substring match, but the doc has a cross-reference from the game page.
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/Batman_TDK_Manual.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            linkText: "Batman The Dark Knight Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        Assert.Null(doc.Game);
+
+        // Simulate GamePageScraper adding a cross-reference when it found the same PDF
+        doc.CrossReferences.Add(new CrossReference
+        {
+            AlsoFoundAt = "https://sternpinball.com/game/batman-the-dark-knight/",
+            DiscoveryContext = "Game Page → Specs & Manual tab",
+            LinkText = "Batman The Dark Knight Manual",
+            DiscoveredAt = DateTime.UtcNow
+        });
+
+        builder.MergeGameRecord(games, MakeGame("batman-the-dark-knight", "Batman - \"The Dark Knight\""));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("batman-the-dark-knight", doc.Game!.Slug);
+        Assert.Equal("Batman - \"The Dark Knight\"", doc.Game.Title);
+        Assert.Equal("https://sternpinball.com/game/batman-the-dark-knight/", doc.Game.GamePageUrl);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_CrossReferenceSlugResolution_ExtractsEditionFromLinkText()
+    {
+        // Cross-reference resolution must populate edition from the cross-ref link_text
+        // when the filename alone doesn't encode edition info.
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/Guardians_Pro_web.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            linkText: "Guardians of the Galaxy Pro Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        doc.CrossReferences.Add(new CrossReference
+        {
+            AlsoFoundAt = "https://sternpinball.com/game/guardians-of-the-galaxy/",
+            DiscoveryContext = "Game Page → Specs & Manual tab",
+            LinkText = "Guardians Of The Galaxy Pro Manual\t Open PDF",
+            DiscoveredAt = DateTime.UtcNow
+        });
+
+        builder.MergeGameRecord(games, MakeGame("guardians-of-the-galaxy", "Guardians Of The Galaxy"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("guardians-of-the-galaxy", doc.Game!.Slug);
+        Assert.Equal("Pro", doc.Game.Edition);
+        Assert.Equal("https://sternpinball.com/game/guardians-of-the-galaxy/", doc.Game.GamePageUrl);
+    }
+
+    [Fact]
+    public void LinkDocumentsToGames_FilenameMatchWithNoEditionInFilename_FallsBackToLinkTextEdition()
+    {
+        // Simulates AC/DC Premium Manual: filename "ACDC_Prem_web.pdf" slug-matches "ac-dc"
+        // but "prem" is not in EditionMarkers so filename extraction yields null.
+        // Edition must be recovered from link_text "AC/DC Premium Manual".
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/ACDC_Prem_web.pdf",
+            discoveryUrl: "https://sternpinball.com/manuals/",
+            discoveryContext: "Manuals Page",
+            sourceType: SourceType.ManualsPage,
+            linkText: "AC/DC Premium Manual"));
+
+        var doc = Assert.Single(catalog.Documents);
+        builder.MergeGameRecord(games, MakeGame("ac-dc", "AC/DC"));
+
+        builder.LinkDocumentsToGames(catalog, games);
+
+        Assert.NotNull(doc.Game);
+        Assert.Equal("ac-dc", doc.Game!.Slug);
+        Assert.Equal("Premium", doc.Game.Edition);
+    }
+
+    [Fact]
     public void MergeGameRecord_ExistingGame_DoesNotDuplicateDiscoveredOn()
     {
         var builder = CreateBuilder();
@@ -872,5 +974,229 @@ public sealed class CatalogBuilderTests
 
         var stored = Assert.Single(games.Games);
         Assert.Single(stored.DiscoveredOn);
+    }
+
+    // -------- ResolveCoverPageLinksAsync: Pass 3 cover-page resolution --------
+
+    // Helpers for cover-page tests: writes a temp PDF-shaped file, returns
+    // a ScraperSettings pointed at the temp root, and a CatalogBuilder wired
+    // with the supplied extractor.
+
+    private static (CatalogBuilder Builder, string TempRoot) CreateBuilderWithExtractor(
+        IDocumentTextExtractor extractor)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"pwiz-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempRoot, "downloads"));
+        var settings = Options.Create(new ScraperSettings { DataPath = tempRoot });
+        var builder = new CatalogBuilder(settings, NullLogger<CatalogBuilder>.Instance, extractor);
+        return (builder, tempRoot);
+    }
+
+    private static DocumentRecord MakeUnlinkedPdfDoc(
+        string relPath,
+        string tempRoot,
+        string? linkText = null)
+    {
+        var absPath = Path.Combine(tempRoot, "downloads", relPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absPath)!);
+        File.WriteAllText(absPath, "placeholder");
+
+        return new DocumentRecord
+        {
+            DocumentId = DocumentRecord.GenerateId($"https://example.com/{relPath}"),
+            Source = new SourceInfo
+            {
+                DiscoveryUrl = "https://sternpinball.com/manuals/",
+                DiscoveryContext = "Manuals Page",
+                FileUrl = $"https://example.com/{relPath}",
+                LinkText = linkText,
+                ActionType = ActionType.OpenPdf,
+                SourceType = SourceType.ManualsPage,
+                ScrapedAt = DateTime.UtcNow
+            },
+            Classification = new ClassificationInfo { DocumentType = DocumentType.Manual, FileFormat = "pdf" },
+            Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
+            File = new DownloadedFileInfo
+            {
+                LocalPath = relPath,
+                Filename = Path.GetFileName(relPath),
+                SizeBytes = 0
+            }
+        };
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_MatchesByTitleOnCoverPage_PopulatesGameReference()
+    {
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(
+                Status: ExtractionStatus.Success,
+                Text: "Stranger Things Owner's Manual",
+                Pages: [new ExtractedPage(1, "Stranger Things Owner's Manual")],
+                Outline: [],
+                Error: null));
+
+        var (builder, tempRoot) = CreateBuilderWithExtractor(extractor);
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        var doc = MakeUnlinkedPdfDoc("manuals/st_manual.pdf", tempRoot, linkText: "Stranger Things Pro Manual");
+        catalog.Documents.Add(doc);
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        var resolved = await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        Assert.Equal(1, resolved);
+        Assert.NotNull(doc.Game);
+        Assert.Equal("stranger-things", doc.Game!.Slug);
+        Assert.Equal("Stranger Things", doc.Game.Title);
+        Assert.Equal("Pro", doc.Game.Edition); // extracted from link_text
+        Assert.Equal("https://sternpinball.com/game/stranger-things/", doc.Game.GamePageUrl);
+
+        Directory.Delete(tempRoot, recursive: true);
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_NoMatchOnCoverPage_LeavesGameNull()
+    {
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(
+                Status: ExtractionStatus.Success,
+                Text: "General Installation Instructions",
+                Pages: [new ExtractedPage(1, "General Installation Instructions")],
+                Outline: [],
+                Error: null));
+
+        var (builder, tempRoot) = CreateBuilderWithExtractor(extractor);
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        var doc = MakeUnlinkedPdfDoc("manuals/general.pdf", tempRoot);
+        catalog.Documents.Add(doc);
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        var resolved = await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        Assert.Equal(0, resolved);
+        Assert.Null(doc.Game);
+
+        Directory.Delete(tempRoot, recursive: true);
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_ExtractionFails_LeavesGameNull()
+    {
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(ExtractedDocument.Failure(ExtractionStatus.Malformed, "bad pdf"));
+
+        var (builder, tempRoot) = CreateBuilderWithExtractor(extractor);
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        var doc = MakeUnlinkedPdfDoc("manuals/bad.pdf", tempRoot);
+        catalog.Documents.Add(doc);
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        var resolved = await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        Assert.Equal(0, resolved);
+        Assert.Null(doc.Game);
+
+        Directory.Delete(tempRoot, recursive: true);
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_AlreadyLinkedDoc_IsSkipped()
+    {
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        var (builder, tempRoot) = CreateBuilderWithExtractor(extractor);
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        var doc = MakeUnlinkedPdfDoc("manuals/st.pdf", tempRoot);
+        doc.Game = new GameReference
+        {
+            Title = "Stranger Things",
+            Slug = "stranger-things",
+            GamePageUrl = "https://sternpinball.com/game/stranger-things/"
+        };
+        catalog.Documents.Add(doc);
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        // Extractor must not be called — doc already has a Game reference
+        await extractor.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+
+        Directory.Delete(tempRoot, recursive: true);
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_NoExtractor_ReturnsZero()
+    {
+        // CatalogBuilder without an extractor (the default) silently skips Pass 3.
+        var builder = CreateBuilder();
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        builder.MergeScrapedItem(catalog, MakeItem(
+            "https://sternpinball.com/manuals/foo.pdf",
+            "https://sternpinball.com/manuals/",
+            "Manuals Page"));
+
+        var resolved = await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        Assert.Equal(0, resolved);
+    }
+
+    [Fact]
+    public async Task ResolveCoverPageLinksAsync_FileNotOnDisk_IsSkipped()
+    {
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"pwiz-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempRoot, "downloads"));
+        var settings = Options.Create(new ScraperSettings { DataPath = tempRoot });
+        var builder = new CatalogBuilder(settings, NullLogger<CatalogBuilder>.Instance, extractor);
+
+        var catalog = new Catalog();
+        var games = new GameCatalog();
+
+        // Doc has File set but the actual file does not exist on disk
+        var doc = new DocumentRecord
+        {
+            DocumentId = DocumentRecord.GenerateId("https://example.com/missing.pdf"),
+            Source = new SourceInfo
+            {
+                DiscoveryUrl = "https://sternpinball.com/manuals/",
+                DiscoveryContext = "Manuals Page",
+                FileUrl = "https://example.com/missing.pdf",
+                ActionType = ActionType.OpenPdf,
+                SourceType = SourceType.ManualsPage,
+                ScrapedAt = DateTime.UtcNow
+            },
+            Classification = new ClassificationInfo { DocumentType = DocumentType.Manual, FileFormat = "pdf" },
+            Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
+            File = new DownloadedFileInfo
+            {
+                LocalPath = "manuals/missing.pdf",
+                Filename = "missing.pdf",
+                SizeBytes = 0
+            }
+        };
+        catalog.Documents.Add(doc);
+        builder.MergeGameRecord(games, MakeGame("stranger-things", "Stranger Things"));
+
+        var resolved = await builder.ResolveCoverPageLinksAsync(catalog, games);
+
+        Assert.Equal(0, resolved);
+        Assert.Null(doc.Game);
+        await extractor.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+
+        Directory.Delete(tempRoot, recursive: true);
     }
 }
