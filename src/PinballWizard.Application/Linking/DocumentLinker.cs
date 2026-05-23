@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
@@ -27,6 +29,20 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly IDocumentTextExtractor? _textExtractor;
     private readonly ILogger<DocumentLinker> _logger;
     private readonly string? _downloadsRoot;
+
+    private static readonly Meter LinkerMeter =
+        new("PinballWizard.Linking", "1.0");
+
+    private static readonly Counter<long> DocumentsProcessedCounter =
+        LinkerMeter.CreateCounter<long>(
+            "pinwiz.linker.documents_processed_total",
+            description: "Total documents processed by the linker, tagged by resolution_strategy and link_status.");
+
+    private static readonly Histogram<double> RunDurationHistogram =
+        LinkerMeter.CreateHistogram<double>(
+            "pinwiz.linker.run_duration_ms",
+            unit: "ms",
+            description: "Wall-clock duration of a full linker batch run.");
 
     // Populated by InitializeAsync — safe to read after that call.
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
@@ -113,6 +129,9 @@ public sealed class DocumentLinker : IDocumentLinker
         if (overrideResult is not null)
         {
             await FanOutAndUpdateAsync(raw, overrideResult, cancellationToken).ConfigureAwait(false);
+            DocumentsProcessedCounter.Add(1,
+                new KeyValuePair<string, object?>("resolution_strategy", overrideResult.ResolutionStrategy),
+                new KeyValuePair<string, object?>("link_status", overrideResult.FinalStatus.ToString().ToLowerInvariant()));
             return overrideResult;
         }
 
@@ -121,6 +140,9 @@ public sealed class DocumentLinker : IDocumentLinker
         if (xrefResult is not null)
         {
             await FanOutAndUpdateAsync(raw, xrefResult, cancellationToken).ConfigureAwait(false);
+            DocumentsProcessedCounter.Add(1,
+                new KeyValuePair<string, object?>("resolution_strategy", xrefResult.ResolutionStrategy),
+                new KeyValuePair<string, object?>("link_status", xrefResult.FinalStatus.ToString().ToLowerInvariant()));
             return xrefResult;
         }
 
@@ -129,6 +151,9 @@ public sealed class DocumentLinker : IDocumentLinker
         if (filenameResult is not null)
         {
             await FanOutAndUpdateAsync(raw, filenameResult, cancellationToken).ConfigureAwait(false);
+            DocumentsProcessedCounter.Add(1,
+                new KeyValuePair<string, object?>("resolution_strategy", filenameResult.ResolutionStrategy),
+                new KeyValuePair<string, object?>("link_status", filenameResult.FinalStatus.ToString().ToLowerInvariant()));
             return filenameResult;
         }
 
@@ -142,6 +167,9 @@ public sealed class DocumentLinker : IDocumentLinker
                 if (tier3Result is not null)
                 {
                     await FanOutAndUpdateAsync(raw, tier3Result, cancellationToken).ConfigureAwait(false);
+                    DocumentsProcessedCounter.Add(1,
+                        new KeyValuePair<string, object?>("resolution_strategy", tier3Result.ResolutionStrategy),
+                        new KeyValuePair<string, object?>("link_status", tier3Result.FinalStatus.ToString().ToLowerInvariant()));
                     return tier3Result;
                 }
 
@@ -149,6 +177,9 @@ public sealed class DocumentLinker : IDocumentLinker
                 if (tier4Result is not null)
                 {
                     await FanOutAndUpdateAsync(raw, tier4Result, cancellationToken).ConfigureAwait(false);
+                    DocumentsProcessedCounter.Add(1,
+                        new KeyValuePair<string, object?>("resolution_strategy", tier4Result.ResolutionStrategy),
+                        new KeyValuePair<string, object?>("link_status", tier4Result.FinalStatus.ToString().ToLowerInvariant()));
                     return tier4Result;
                 }
             }
@@ -177,6 +208,10 @@ public sealed class DocumentLinker : IDocumentLinker
         _logger.LogDebug(
             "DocumentLinker: {DocumentId} → NotInCatalog (no tier matched).", raw.DocumentId);
 
+        DocumentsProcessedCounter.Add(1,
+            new KeyValuePair<string, object?>("resolution_strategy", noMatchResult.ResolutionStrategy ?? "none"),
+            new KeyValuePair<string, object?>("link_status", noMatchResult.FinalStatus.ToString().ToLowerInvariant()));
+
         return noMatchResult;
     }
 
@@ -186,6 +221,8 @@ public sealed class DocumentLinker : IDocumentLinker
         int processed = 0, linked = 0, platformGeneric = 0, notInCatalog = 0, failed = 0;
 
         var statuses = new[] { LinkStatus.Pending, LinkStatus.Failed, LinkStatus.NotInCatalog };
+
+        var sw = Stopwatch.StartNew();
 
         await foreach (var raw in _rawRepo.StreamByStatusAsync(statuses, cancellationToken).ConfigureAwait(false))
         {
@@ -230,6 +267,9 @@ public sealed class DocumentLinker : IDocumentLinker
                     break;
             }
         }
+
+        sw.Stop();
+        RunDurationHistogram.Record(sw.Elapsed.TotalMilliseconds);
 
         _logger.LogInformation(
             "DocumentLinker batch complete: processed={Processed} linked={Linked} platformGeneric={PlatformGeneric} notInCatalog={NotInCatalog} failed={Failed}",
