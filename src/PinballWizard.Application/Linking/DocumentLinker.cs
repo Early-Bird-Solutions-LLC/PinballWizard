@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 
@@ -7,13 +8,12 @@ namespace PinballWizard.Application.Linking;
 
 // Tiered document-to-machine linker.
 //
-// Tiers 0-3 are implemented here. Tiers 4-5 (page-text OCR / ADI) are stubs
-// that return no match; T8 will fill them in.
-//
 // Tier 0 — Admin override lookup: source_pattern key.
 // Tier 1 — Cross-reference slug: /game/{slug}/ in xref URLs.
 // Tier 2 — Filename word-boundary: normalized filename ⊃ normalized machine slug.
-// Tier 3 — Page-1 text / ADI: stub, always returns no match.
+// Tier 3 — Page-1 text: extract first page text, word-boundary match against slug index.
+// Tier 4 — Page-2 fallback: same as Tier 3 but on page index 1 (covers letterhead-only p.1).
+// Tier 5 — ADI OCR stub: deferred until IDocumentTextExtractor exposes an OCR mode.
 //
 // Fan-out: when a tier resolves to one or more machine IDs, one
 // `scraped_documents` record is written per machine. The raw record is then
@@ -24,7 +24,9 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly ILinkOverrideRepository _overrideRepo;
     private readonly IMachineRepository _machineRepo;
     private readonly IScrapedDocumentRepository _docWriter;
+    private readonly IDocumentTextExtractor? _textExtractor;
     private readonly ILogger<DocumentLinker> _logger;
+    private readonly string? _downloadsRoot;
 
     // Populated by InitializeAsync — safe to read after that call.
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
@@ -40,7 +42,9 @@ public sealed class DocumentLinker : IDocumentLinker
         ILinkOverrideRepository overrideRepo,
         IMachineRepository machineRepo,
         IScrapedDocumentRepository docWriter,
-        ILogger<DocumentLinker> logger)
+        IDocumentTextExtractor? textExtractor,
+        ILogger<DocumentLinker> logger,
+        string? downloadsRoot = null)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
@@ -51,7 +55,9 @@ public sealed class DocumentLinker : IDocumentLinker
         _overrideRepo = overrideRepo;
         _machineRepo = machineRepo;
         _docWriter = docWriter;
+        _textExtractor = textExtractor;
         _logger = logger;
+        _downloadsRoot = downloadsRoot;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -91,6 +97,17 @@ public sealed class DocumentLinker : IDocumentLinker
     {
         ArgumentNullException.ThrowIfNull(raw);
 
+        // Idempotency: skip documents that are already in a terminal state.
+        if (raw.LinkStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric)
+        {
+            return new LinkingResult(
+                raw.DocumentId,
+                raw.LinkStatus,
+                raw.ResolutionStrategy,
+                raw.LinkedMachineIds,
+                FailureReason: null);
+        }
+
         // Tier 0: admin override.
         var overrideResult = TryTier0Override(raw);
         if (overrideResult is not null)
@@ -115,8 +132,31 @@ public sealed class DocumentLinker : IDocumentLinker
             return filenameResult;
         }
 
-        // Tier 3: page-1 text / ADI — stub; T8 fills this in.
-        // (no-op: falls through to NotInCatalog)
+        // Tier 3: page-1 text extraction.
+        if (_textExtractor is not null && raw.File?.LocalPath is not null)
+        {
+            var tier3Result = await TryPageExtractAsync(raw, pageIndex: 0, "page_1", cancellationToken).ConfigureAwait(false);
+            if (tier3Result is not null)
+            {
+                await FanOutAndUpdateAsync(raw, tier3Result, cancellationToken).ConfigureAwait(false);
+                return tier3Result;
+            }
+        }
+
+        // Tier 4: page-2 fallback (when page-1 text is letterhead-only or low-density).
+        if (_textExtractor is not null && raw.File?.LocalPath is not null)
+        {
+            var tier4Result = await TryPageExtractAsync(raw, pageIndex: 1, "page_2", cancellationToken).ConfigureAwait(false);
+            if (tier4Result is not null)
+            {
+                await FanOutAndUpdateAsync(raw, tier4Result, cancellationToken).ConfigureAwait(false);
+                return tier4Result;
+            }
+        }
+
+        // Tier 5 (ADI OCR) deferred: requires IDocumentTextExtractor.ExtractWithOcrAsync
+        // or an OCR-mode parameter. Currently ~2 docs qualify. Wire when extractor
+        // exposes the mode; for now those docs fall to NotInCatalog and surface in the admin UI.
 
         // No tier resolved.
         var noMatchResult = new LinkingResult(
@@ -327,6 +367,64 @@ public sealed class DocumentLinker : IDocumentLinker
             "filename_slug",
             [best.Id],
             FailureReason: null);
+    }
+
+    private async Task<LinkingResult?> TryPageExtractAsync(
+        RawDocumentRecord raw,
+        int pageIndex,
+        string strategyName,
+        CancellationToken cancellationToken)
+    {
+        if (raw.File?.LocalPath is null) return null;
+        if (_downloadsRoot is null) return null;
+
+        var absolutePath = Path.Combine(_downloadsRoot, raw.File.LocalPath);
+        if (!File.Exists(absolutePath))
+        {
+            _logger.LogDebug("DocumentLinker: {Tier} skipped for {DocId} — file not on disk.", strategyName, raw.DocumentId);
+            return null;
+        }
+
+        ExtractedDocument extracted;
+        try
+        {
+            await using var stream = File.OpenRead(absolutePath);
+            extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "DocumentLinker: {Tier} extraction failed for {DocId}.", strategyName, raw.DocumentId);
+            return null;
+        }
+
+        if (extracted.Status != ExtractionStatus.Success || extracted.Pages.Count <= pageIndex)
+            return null;
+
+        var pageText = LinkingUtilities.NormalizeForMatch(extracted.Pages[pageIndex].Text);
+        if (string.IsNullOrEmpty(pageText)) return null;
+
+        var matchedMachines = _machineSlugIndex
+            .Where(t => LinkingUtilities.IsWordBoundaryMatch(pageText, t.NormalizedSlug))
+            .Select(t => t.Machine)
+            .DistinctBy(m => m.Id)
+            .ToList();
+
+        if (matchedMachines.Count == 0)
+        {
+            _logger.LogDebug("DocumentLinker: {Tier} — no game match in page text for {DocId}.", strategyName, raw.DocumentId);
+            return null;
+        }
+
+        _logger.LogDebug(
+            "DocumentLinker: {Tier} matched {Count} machine(s) for {DocId} ({Slugs}).",
+            strategyName, matchedMachines.Count, raw.DocumentId,
+            string.Join(", ", matchedMachines.Select(m => m.Id)));
+
+        return new LinkingResult(
+            raw.DocumentId,
+            LinkStatus.Linked,
+            strategyName,
+            matchedMachines.Select(m => m.Id).ToList());
     }
 
     // --- Fan-out helpers ---
