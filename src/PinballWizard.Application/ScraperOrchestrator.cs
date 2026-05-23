@@ -85,8 +85,11 @@ public sealed class ScraperOrchestrator
             }
         }
 
-        // Cross-source linking: associate manuals with known games by filename slug.
+        // Cross-source linking: Pass 1 (xref slug) + Pass 2 (filename slug).
         _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
+
+        // Pass 3: read cover page of still-unlinked PDFs via IDocumentTextExtractor.
+        await _catalogBuilder.ResolveCoverPageLinksAsync(catalog, gameCatalog, cancellationToken);
 
         if (!dryRun)
         {
@@ -190,6 +193,7 @@ public sealed class ScraperOrchestrator
     public async Task<BuildCatalogSummary> BuildCatalogAsync(CancellationToken cancellationToken = default)
     {
         var catalog = await _catalogBuilder.LoadCatalogAsync(cancellationToken);
+        var gameCatalog = await _catalogBuilder.LoadGameCatalogAsync(cancellationToken);
         var summary = new BuildCatalogSummary { TotalDocuments = catalog.Documents.Count };
 
         foreach (var doc in catalog.Documents)
@@ -213,6 +217,12 @@ public sealed class ScraperOrchestrator
                 summary.MissingFromDisk++;
             }
         }
+
+        // Re-run all three link passes so --build-catalog heals any
+        // previously unlinked documents (e.g. after a slug is added to
+        // games.json or a new PDF is downloaded since the last scrape).
+        _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
+        await _catalogBuilder.ResolveCoverPageLinksAsync(catalog, gameCatalog, cancellationToken);
 
         await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
 
