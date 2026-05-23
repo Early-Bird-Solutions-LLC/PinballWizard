@@ -192,6 +192,12 @@ public static class ServiceCollectionExtensions
             return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
         });
 
+        services.AddSingleton<IRawDocumentRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scraped_documents_raw");
+            return new CosmosRawDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosRawDocumentRepository>>());
+        });
+
         // Curated landing-page featured machines per ADR-0026 § Landing surface.
         // Inherits metering from `CosmosRepository<T>` so every SDK call here
         // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.
