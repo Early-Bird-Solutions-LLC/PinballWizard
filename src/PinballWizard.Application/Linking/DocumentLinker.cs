@@ -132,25 +132,25 @@ public sealed class DocumentLinker : IDocumentLinker
             return filenameResult;
         }
 
-        // Tier 3: page-1 text extraction.
-        if (_textExtractor is not null && raw.File?.LocalPath is not null)
+        // Tiers 3–4: page-text matching. Extract once, try pages 0 and 1.
+        if (_textExtractor is not null && _downloadsRoot is not null && raw.File?.LocalPath is not null)
         {
-            var tier3Result = await TryPageExtractAsync(raw, pageIndex: 0, "page_1", cancellationToken).ConfigureAwait(false);
-            if (tier3Result is not null)
+            var extracted = await TryExtractDocumentAsync(raw, cancellationToken).ConfigureAwait(false);
+            if (extracted is not null)
             {
-                await FanOutAndUpdateAsync(raw, tier3Result, cancellationToken).ConfigureAwait(false);
-                return tier3Result;
-            }
-        }
+                var tier3Result = TryMatchPage(raw, extracted, pageIndex: 0, "page_1");
+                if (tier3Result is not null)
+                {
+                    await FanOutAndUpdateAsync(raw, tier3Result, cancellationToken).ConfigureAwait(false);
+                    return tier3Result;
+                }
 
-        // Tier 4: page-2 fallback (when page-1 text is letterhead-only or low-density).
-        if (_textExtractor is not null && raw.File?.LocalPath is not null)
-        {
-            var tier4Result = await TryPageExtractAsync(raw, pageIndex: 1, "page_2", cancellationToken).ConfigureAwait(false);
-            if (tier4Result is not null)
-            {
-                await FanOutAndUpdateAsync(raw, tier4Result, cancellationToken).ConfigureAwait(false);
-                return tier4Result;
+                var tier4Result = TryMatchPage(raw, extracted, pageIndex: 1, "page_2");
+                if (tier4Result is not null)
+                {
+                    await FanOutAndUpdateAsync(raw, tier4Result, cancellationToken).ConfigureAwait(false);
+                    return tier4Result;
+                }
             }
         }
 
@@ -369,36 +369,37 @@ public sealed class DocumentLinker : IDocumentLinker
             FailureReason: null);
     }
 
-    private async Task<LinkingResult?> TryPageExtractAsync(
+    private async Task<ExtractedDocument?> TryExtractDocumentAsync(
         RawDocumentRecord raw,
-        int pageIndex,
-        string strategyName,
         CancellationToken cancellationToken)
     {
-        if (raw.File?.LocalPath is null) return null;
-        if (_downloadsRoot is null) return null;
-
-        var absolutePath = Path.Combine(_downloadsRoot, raw.File.LocalPath);
+        var absolutePath = Path.Combine(_downloadsRoot!, raw.File!.LocalPath!);
         if (!File.Exists(absolutePath))
         {
-            _logger.LogDebug("DocumentLinker: {Tier} skipped for {DocId} — file not on disk.", strategyName, raw.DocumentId);
+            _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — file not on disk.", raw.DocumentId);
             return null;
         }
 
-        ExtractedDocument extracted;
         try
         {
             await using var stream = File.OpenRead(absolutePath);
-            extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
+            var extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
+            return extracted.Status == ExtractionStatus.Success ? extracted : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "DocumentLinker: {Tier} extraction failed for {DocId}.", strategyName, raw.DocumentId);
+            _logger.LogWarning(ex, "DocumentLinker: text extraction failed for {DocId}.", raw.DocumentId);
             return null;
         }
+    }
 
-        if (extracted.Status != ExtractionStatus.Success || extracted.Pages.Count <= pageIndex)
-            return null;
+    private LinkingResult? TryMatchPage(
+        RawDocumentRecord raw,
+        ExtractedDocument extracted,
+        int pageIndex,
+        string strategyName)
+    {
+        if (extracted.Pages.Count <= pageIndex) return null;
 
         var pageText = LinkingUtilities.NormalizeForMatch(extracted.Pages[pageIndex].Text);
         if (string.IsNullOrEmpty(pageText)) return null;
@@ -411,14 +412,13 @@ public sealed class DocumentLinker : IDocumentLinker
 
         if (matchedMachines.Count == 0)
         {
-            _logger.LogDebug("DocumentLinker: {Tier} — no game match in page text for {DocId}.", strategyName, raw.DocumentId);
+            _logger.LogDebug("DocumentLinker: {Tier} — no slug match in page text for {DocId}.", strategyName, raw.DocumentId);
             return null;
         }
 
         _logger.LogDebug(
-            "DocumentLinker: {Tier} matched {Count} machine(s) for {DocId} ({Slugs}).",
-            strategyName, matchedMachines.Count, raw.DocumentId,
-            string.Join(", ", matchedMachines.Select(m => m.Id)));
+            "DocumentLinker: {Tier} matched {Count} machine(s) for {DocId}.",
+            strategyName, matchedMachines.Count, raw.DocumentId);
 
         return new LinkingResult(
             raw.DocumentId,
