@@ -121,8 +121,9 @@ public sealed class CosmosOptionsTests
         // /id was incorrect; see Defaults_Containers_IncludesRagLeases).
         // Cosmos for User Delight PR 5: adds machine_title_lookups.
         // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
+        // Document-linking Pass 1: adds scraped_documents_raw + link_overrides.
         var options = new CosmosOptions();
-        Assert.Equal(8, options.Containers.Count);
+        Assert.Equal(10, options.Containers.Count);
     }
 
     [Fact]
