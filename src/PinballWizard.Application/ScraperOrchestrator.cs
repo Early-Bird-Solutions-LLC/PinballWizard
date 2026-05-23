@@ -78,8 +78,18 @@ public sealed class ScraperOrchestrator
                             // Link passes (Pass 1-3) are deferred to the dedicated linker
                             // job; game catalog is still maintained for the file-based path.
                             var record = BuildDocumentRecord(item);
-                            await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
-                            result.NewDocuments++;
+                            try
+                            {
+                                await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                                // new vs. existing distinction requires a Cosmos pre-check;
+                                // counts reflect total processed
+                                result.TotalLinks++;
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException)
+                            {
+                                _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
+                                result.Errors.Add($"{record.DocumentId}: {ex.Message}");
+                            }
                         }
                         else
                         {
@@ -91,9 +101,9 @@ public sealed class ScraperOrchestrator
 
                             if (isNew) result.NewDocuments++;
                             else result.ExistingDocuments++;
-                        }
 
-                        result.TotalLinks++;
+                            result.TotalLinks++;
+                        }
                     }
                 }
             }
@@ -217,11 +227,17 @@ public sealed class ScraperOrchestrator
         var slug = item.Link?.GameSlug;
         if (string.IsNullOrEmpty(slug)) return null;
 
+        // GamePageUrl comes from the actual discovery URL — the page where this
+        // document was found. Scrapers that set GameSlug are always visiting a
+        // game page, so DiscoveryUrl is the correct game page URL regardless of
+        // manufacturer. SyncGameReferenceToCanonical will overwrite with the
+        // canonical GameRecord.GamePageUrl on the next --build-catalog or
+        // LinkDocumentsToGames pass if the URL ever drifts.
         return new GameReference
         {
-            Title = slug.Replace('-', ' '),
+            Title = slug.Replace('-', ' '),  // Best guess; updated from game metadata
             Slug = slug,
-            GamePageUrl = $"https://sternpinball.com/game/{slug}/"
+            GamePageUrl = item.DiscoveryUrl
         };
     }
 

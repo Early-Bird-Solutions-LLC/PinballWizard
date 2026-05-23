@@ -669,11 +669,17 @@ public sealed class CatalogBuilder
         var slug = item.Link?.GameSlug;
         if (string.IsNullOrEmpty(slug)) return null;
 
+        // GamePageUrl comes from the actual discovery URL — the page where this
+        // document was found. Scrapers that set GameSlug are always visiting a
+        // game page, so DiscoveryUrl is the correct game page URL regardless of
+        // manufacturer. SyncGameReferenceToCanonical will overwrite with the
+        // canonical GameRecord.GamePageUrl on the next --build-catalog or
+        // LinkDocumentsToGames pass if the URL ever drifts.
         return new GameReference
         {
             Title = slug.Replace('-', ' '),  // Best guess; will be updated from game metadata
             Slug = slug,
-            GamePageUrl = $"https://sternpinball.com/game/{slug}/"
+            GamePageUrl = item.DiscoveryUrl
         };
     }
 }
