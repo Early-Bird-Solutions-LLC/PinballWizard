@@ -61,7 +61,8 @@ public sealed class ScrapedDocumentChangeFeedHandler
             // field (PR-C3). Null when the source document is legacy (pre-
             // PR-C3 scraper writes that didn't capture the field) — the
             // indexer propagates null gracefully.
-            LastScrapedUtc: change.LastDownloadedAt);
+            LastScrapedUtc: change.LastDownloadedAt,
+            Edition: change.Edition);
 
         await using var pdfStream = await _bytesSource
             .OpenAsync(change.DocumentUrl, cancellationToken).ConfigureAwait(false);

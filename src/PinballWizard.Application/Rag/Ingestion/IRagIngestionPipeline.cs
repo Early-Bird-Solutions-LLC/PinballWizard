@@ -59,7 +59,8 @@ public sealed record ScrapedDocumentChange(
     // Threaded to the AI Search index as `last_scraped_utc` in Wave 2 PR-C3.
     // Nullable because legacy Cosmos documents written before PR-C3 may not
     // carry this field; the indexer and retriever propagate null gracefully.
-    DateTimeOffset? LastScrapedUtc = null);
+    DateTimeOffset? LastScrapedUtc = null,
+    string? Edition = null);
 
 // Possible outcomes of one pipeline invocation. Surfaced via telemetry
 // (`pinwiz.rag.changefeed_short_circuit_total{reason}` and
