@@ -6,7 +6,8 @@ namespace PinballWizard.Application.Persistence;
 // The read side (Change Feed consumer projection) lives in the Infrastructure
 // layer (`RagSourceDocument`) because it is tightly coupled to the Cosmos
 // SDK's change-feed deserialization path. This interface covers only the
-// upsert path needed by the CLI seeder (`--seed-scraped-documents`).
+// upsert path needed by the CLI seeder (`--seed-scraped-documents`) and
+// the document linker (`DocumentLinker`).
 public interface IScrapedDocumentRepository
 {
     // Idempotently upsert a `scraped_documents` record derived from a
@@ -19,5 +20,17 @@ public interface IScrapedDocumentRepository
         string machineId,
         string machineTitle,
         string manufacturer,
+        CancellationToken cancellationToken);
+
+    // Linker-side upsert: writes a `scraped_documents` record from a
+    // `RawDocumentRecord` after the linker has resolved the machine.
+    // The document `Id` is "{raw.DocumentId}_{machineId}" so one raw
+    // record can fan-out to multiple machine partitions without collision.
+    Task UpsertFromRawAsync(
+        RawDocumentRecord raw,
+        string machineId,
+        string machineTitle,
+        string manufacturer,
+        string? edition,
         CancellationToken cancellationToken);
 }
