@@ -40,10 +40,6 @@ public sealed class ScraperOrchestrator
     /// <summary>
     /// Run discovery only: scrape all sources for URLs and metadata, update catalog,
     /// but don't download any files.
-    /// When <see cref="IRawDocumentRepository"/> is wired (Cosmos configured), scraped
-    /// documents are upserted directly to the raw Cosmos container and the catalog-file
-    /// link passes are skipped. Game records are always merged into the file-based game
-    /// catalog regardless of path.
     /// </summary>
     public async Task<ScrapeResult> ScrapeAsync(
         string? sourceFilter = null,
@@ -144,11 +140,6 @@ public sealed class ScraperOrchestrator
         return result;
     }
 
-    /// <summary>
-    /// Constructs a <see cref="DocumentRecord"/> from a <see cref="ScrapedItem"/> for
-    /// direct insertion into the raw document repository (Cosmos wired path).
-    /// Mirrors the construction logic in <see cref="CatalogBuilder.MergeScrapedItem"/>.
-    /// </summary>
     private static DocumentRecord BuildDocumentRecord(ScrapedItem item)
     {
         var link = item.Link!;

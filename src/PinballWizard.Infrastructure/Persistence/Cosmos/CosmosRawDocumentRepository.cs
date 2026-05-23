@@ -131,8 +131,12 @@ internal sealed class CosmosRawDocumentRepository
 
         if (existing is null)
         {
-            Logger.LogWarning("UpdateLinkStatusAsync: document {DocumentId} not found — skipping.", documentId);
-            return;
+            // A missing raw record means the scraped_documents write already went through
+            // but the raw record was never created, or the record was deleted out of band.
+            // Either way the caller's status stamp would be silently lost — throw so the
+            // caller can decide whether to treat this as Failed and surface it in the admin UI.
+            throw new InvalidOperationException(
+                $"UpdateLinkStatusAsync: document {documentId} not found in scraped_documents_raw.");
         }
 
         existing.LinkStatus = ToWireStatus(status);
@@ -260,11 +264,24 @@ internal sealed class CosmosRawDocumentRepository
         };
     }
 
-    private static RawDocumentRecord MapToDomain(RawDocumentCosmosRecord cosmos)
+    private RawDocumentRecord MapToDomain(RawDocumentCosmosRecord cosmos)
     {
-        _ = Enum.TryParse<LinkStatus>(ToPascalStatus(cosmos.LinkStatus), out var linkStatus);
+        var pascalStatus = ToPascalStatus(cosmos.LinkStatus);
+        if (!Enum.TryParse<LinkStatus>(pascalStatus, out var linkStatus))
+        {
+            Logger.LogWarning(
+                "MapToDomain: unrecognised link_status wire value '{WireStatus}' for doc {DocId} — treating as Pending.",
+                cosmos.LinkStatus, cosmos.PartitionKey);
+            linkStatus = LinkStatus.Pending;
+        }
 
-        _ = Enum.TryParse<DocumentType>(cosmos.DocumentType, out var documentType);
+        if (!Enum.TryParse<DocumentType>(cosmos.DocumentType, out var documentType))
+        {
+            Logger.LogWarning(
+                "MapToDomain: unrecognised document_type wire value '{WireType}' for doc {DocId} — treating as Other.",
+                cosmos.DocumentType, cosmos.PartitionKey);
+            documentType = DocumentType.Other;
+        }
 
         return new RawDocumentRecord
         {
@@ -363,10 +380,12 @@ internal sealed class CosmosRawDocumentRepository
         LinkStatus.NotInCatalog => "not_in_catalog",
         LinkStatus.Failed => "failed",
         LinkStatus.ManuallyLinked => "manually_linked",
-        _ => "pending",
+        _ => throw new InvalidOperationException($"Unhandled LinkStatus value: {status}"),
     };
 
     // Convert wire snake_case string back to PascalCase for Enum.TryParse.
+    // Unrecognised values return an empty string so TryParse fails and the caller
+    // can log a warning and choose a safe default (see MapToDomain).
     private static string ToPascalStatus(string wireStatus) => wireStatus switch
     {
         "pending" => "Pending",
@@ -375,6 +394,6 @@ internal sealed class CosmosRawDocumentRepository
         "not_in_catalog" => "NotInCatalog",
         "failed" => "Failed",
         "manually_linked" => "ManuallyLinked",
-        _ => "Pending",
+        _ => string.Empty,
     };
 }

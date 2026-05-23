@@ -480,11 +480,6 @@ public sealed class CatalogBuilder
         return null;
     }
 
-    /// <summary>
-    /// Extracts the game slug from a URL of the form
-    /// <c>https://sternpinball.com/game/{slug}/</c>.
-    /// Delegates to <see cref="LinkingUtilities.ExtractGameSlugFromUrl"/>.
-    /// </summary>
     private static string? ExtractGameSlugFromUrl(string url)
         => LinkingUtilities.ExtractGameSlugFromUrl(url);
 
@@ -535,17 +530,9 @@ public sealed class CatalogBuilder
         return slashIdx >= 0 ? pathPart[(slashIdx + 1)..] : pathPart;
     }
 
-    /// <summary>
-    /// Normalizes a string for slug-substring matching. Delegates to the authoritative
-    /// <see cref="LinkingUtilities.NormalizeForMatch"/> implementation.
-    /// </summary>
     private static string NormalizeForMatch(string value)
         => LinkingUtilities.NormalizeForMatch(value);
 
-    /// <summary>
-    /// Scans <paramref name="normalizedText"/> for any edition marker anywhere in the
-    /// string. Delegates to <see cref="LinkingUtilities.ExtractEditionFromText"/>.
-    /// </summary>
     private static string? ExtractEditionFromText(string normalizedText)
         => LinkingUtilities.ExtractEditionFromText(normalizedText);
 

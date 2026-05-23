@@ -224,7 +224,16 @@ public sealed class DocumentLinker : IDocumentLinker
 
         var sw = Stopwatch.StartNew();
 
-        await foreach (var raw in _rawRepo.StreamByStatusAsync(statuses, cancellationToken).ConfigureAwait(false))
+        // Materialize before iterating: UpdateLinkStatusAsync writes back to the same
+        // container mid-stream, which can cause the cross-partition iterator to skip
+        // or double-visit pages as the continuation token advances.
+        var candidates = new List<RawDocumentRecord>();
+        await foreach (var doc in _rawRepo.StreamByStatusAsync(statuses, cancellationToken).ConfigureAwait(false))
+        {
+            candidates.Add(doc);
+        }
+
+        foreach (var raw in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
             processed++;
@@ -514,13 +523,23 @@ public sealed class DocumentLinker : IDocumentLinker
                     edition = LinkingUtilities.ExtractEditionFromText(LinkingUtilities.NormalizeForMatch(lt));
                 }
 
-                await _docWriter.UpsertFromRawAsync(
-                    raw,
-                    machineId,
-                    machine.Title,
-                    machine.ManufacturerDisplayName,
-                    edition,
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _docWriter.UpsertFromRawAsync(
+                        raw,
+                        machineId,
+                        machine.Title,
+                        machine.ManufacturerDisplayName,
+                        edition,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex,
+                        "FanOut: UpsertFromRawAsync failed for doc {DocumentId} machine {MachineId} — stamping Failed.",
+                        raw.DocumentId, machineId);
+                    missingMachineIds.Add(machineId);
+                }
             }
         }
 

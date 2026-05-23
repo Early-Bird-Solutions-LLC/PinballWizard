@@ -31,7 +31,6 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             cancellationToken: cancellationToken);
     }
 
-    /// <inheritdoc />
     // Cross-partition scan (partitionKey: null) so all manufacturers are
     // covered in a single pass. RU cost scales with total item count —
     // acceptable for the infrequent InitializeAsync call on the linker.
