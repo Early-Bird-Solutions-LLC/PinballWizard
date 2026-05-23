@@ -389,3 +389,24 @@ Cloudflare rule (Settings → Transform Rules → Rewrite URL):
 Or via Cloudflare Configuration Rules: disable "Automatic HTTPS Rewrites" for that path.
 
 **Revisit when:** Migrating to Cloudflare Origin Certificate (15-year validity, no ACME renewal) — would be the Option 2 follow-up documented in the renewal plan conversation.
+
+## 2026-05-22 — Catalog document-to-game linking: three-pass strategy and inline vs. deferred execution
+
+**Decision:** Implement document-to-game linking as three ordered passes in `CatalogBuilder.LinkDocumentsToGames` / `ResolveCoverPageLinksAsync`, executed inline (synchronously awaited before catalog save). Pass 1: xref-URL slug extraction. Pass 2: `Source.LinkText` edition fallback. Pass 3: cover-page ADI text extraction for remaining unlinked PDFs.
+
+**Alternatives considered:**
+
+- *Single-pass filename heuristic only (status quo):* Left ~7 documents per scrape run unlinked. Acceptable technically but weakens RAG citation fidelity — an unlinked document has no `GameSlug` and cannot be attributed to a game in Phase 2 answers.
+- *Deferred CLI flag (`--resolve-covers`):* Would keep `ScrapeAsync` leaner and allow Pass 3 to run as a scheduled ACA Job. Rejected at current scale (~7 unlinked docs) because inline adds negligible latency and avoids a separate operational step. Scale-watch rule (see below) defines the switchover threshold.
+- *All three passes inline vs. Pass 3 deferred from the start:* Chose inline-for-now with an explicit scale-watch rule rather than speculative ACA Job infrastructure. The revisit criterion is concrete and observable.
+- *Longest-match tie-breaking (Pass 2 + 3):* Ties leave the document unlinked rather than picking arbitrarily. This is consistent across passes and avoids silently wrong attribution — a provenance miss is safer than a provenance lie.
+
+**Rationale:** Provenance is the differentiator for Phase 2 RAG citations. Every document that reaches the chunker without a `GameSlug` produces a citation that says "source: unknown game." Pass 1 is zero-cost (dictionary lookup on already-loaded xref data). Pass 2 is a string scan with no I/O. Pass 3 is the only pass with real cost (PDF open + page extraction), and its cost is bounded by the number of unlinked PDFs, which is small and expected to remain so as xref coverage improves.
+
+`SyncGameReferenceToCanonical` was also fixed to sync `GamePageUrl` from the canonical `GameRecord` rather than preserving whatever `BuildGameReference` wrote. `BuildGameReference` hardcodes `https://sternpinball.com/game/{slug}/` for all manufacturers — a latent provenance bug that only surfaces for non-Stern games whose slug happens to match a Stern slug pattern. Now healed on every `--build-catalog` run.
+
+**Scale-watch rule (authoritative — also in `memory/project_adi_inline_scale_watch.md`):** Switch Pass 3 to a deferred `--resolve-covers` CLI command / ACA Job if either: (a) the unresolved count after a scrape run exceeds ~50 documents, or (b) inline Pass 3 execution adds more than ~30 seconds to the scrape run. Monitor via `pinwiz.catalog.unlinked_documents{resolution_pass="adi_pending"}`.
+
+**Revisit when:** Post-merge backfill run (`dotnet run -- --build-catalog`) shows the actual post-Pass-3 unresolved count. If count is 0 or near-0 and stays there as new manufacturers are added, the scale-watch rule can be relaxed. If count grows past the threshold, implement the deferred path.
+
+**Related:** PR #271, `memory/project_adi_inline_scale_watch.md`, ADR-0012 (Cosmos ARM vs data-plane — relevant if Pass 3 is later wired into the RAG ingestion pipeline).
