@@ -198,6 +198,13 @@ public static class ServiceCollectionExtensions
             return new CosmosRawDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosRawDocumentRepository>>());
         });
 
+        services.AddSingleton<ILinkOverrideRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "link_overrides");
+            return new CosmosLinkOverrideRepository(container,
+                sp.GetRequiredService<ILogger<CosmosLinkOverrideRepository>>());
+        });
+
         // Curated landing-page featured machines per ADR-0026 § Landing surface.
         // Inherits metering from `CosmosRepository<T>` so every SDK call here
         // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.

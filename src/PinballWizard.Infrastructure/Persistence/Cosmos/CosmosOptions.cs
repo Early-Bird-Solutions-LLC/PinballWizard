@@ -208,6 +208,30 @@ public sealed class CosmosOptions
                 ExcludedPaths = ["/*"],
             },
         },
+        // scraped_documents_raw: scraper write target (Phase 4.5 document-linking)
+        // Partition key: /document_id (one record per unique file URL).
+        // Written by scrapers; read + updated by the linker.
+        // Selective indexing: link_status and document_type queried in bulk;
+        // everything else is point-reads by document_id.
+        new()
+        {
+            Name = "scraped_documents_raw",
+            PartitionKeyPath = "/document_id",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
+        // link_overrides: admin feedback store (Phase 4.5 document-linking)
+        // Partition key: /source_pattern (= id). One record per
+        // {discovery_url}|{document_type} pattern. Upsert semantics.
+        // No TTL — overrides are permanent until explicitly revoked.
+        new()
+        {
+            Name = "link_overrides",
+            PartitionKeyPath = "/source_pattern",
+        },
     ];
 
     /// <summary>
