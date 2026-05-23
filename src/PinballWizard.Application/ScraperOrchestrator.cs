@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Downloading;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Provenance;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -18,24 +19,31 @@ public sealed class ScraperOrchestrator
     private readonly CatalogBuilder _catalogBuilder;
     private readonly ScraperSettings _settings;
     private readonly ILogger<ScraperOrchestrator> _logger;
+    private readonly IRawDocumentRepository? _rawDocRepo;
 
     public ScraperOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
         IFileDownloader downloader,
         CatalogBuilder catalogBuilder,
         IOptions<ScraperSettings> settings,
-        ILogger<ScraperOrchestrator> logger)
+        ILogger<ScraperOrchestrator> logger,
+        IRawDocumentRepository? rawDocRepo = null)
     {
         _scrapers = scrapers;
         _downloader = downloader;
         _catalogBuilder = catalogBuilder;
         _settings = settings.Value;
         _logger = logger;
+        _rawDocRepo = rawDocRepo;
     }
 
     /// <summary>
     /// Run discovery only: scrape all sources for URLs and metadata, update catalog,
     /// but don't download any files.
+    /// When <see cref="IRawDocumentRepository"/> is wired (Cosmos configured), scraped
+    /// documents are upserted directly to the raw Cosmos container and the catalog-file
+    /// link passes are skipped. Game records are always merged into the file-based game
+    /// catalog regardless of path.
     /// </summary>
     public async Task<ScrapeResult> ScrapeAsync(
         string? sourceFilter = null,
@@ -64,13 +72,26 @@ public sealed class ScraperOrchestrator
 
                     if (item.Link is not null)
                     {
-                        var docId = DocumentRecord.GenerateId(item.Link.FileUrl);
-                        var isNew = !catalog.Documents.Any(d => d.DocumentId == docId);
+                        if (_rawDocRepo is not null)
+                        {
+                            // Cosmos wired path: write directly to raw document repository.
+                            // Link passes (Pass 1-3) are deferred to the dedicated linker
+                            // job; game catalog is still maintained for the file-based path.
+                            var record = BuildDocumentRecord(item);
+                            await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                            result.NewDocuments++;
+                        }
+                        else
+                        {
+                            // Catalog-only path (no Cosmos): use existing CatalogBuilder merge.
+                            var docId = DocumentRecord.GenerateId(item.Link.FileUrl);
+                            var isNew = !catalog.Documents.Any(d => d.DocumentId == docId);
 
-                        _catalogBuilder.MergeScrapedItem(catalog, item);
+                            _catalogBuilder.MergeScrapedItem(catalog, item);
 
-                        if (isNew) result.NewDocuments++;
-                        else result.ExistingDocuments++;
+                            if (isNew) result.NewDocuments++;
+                            else result.ExistingDocuments++;
+                        }
 
                         result.TotalLinks++;
                     }
@@ -85,15 +106,23 @@ public sealed class ScraperOrchestrator
             }
         }
 
-        // Cross-source linking: Pass 1 (xref slug) + Pass 2 (filename slug).
-        _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
+        if (_rawDocRepo is null)
+        {
+            // Catalog-only path: run link passes and save catalog.
+            // Cross-source linking: Pass 1 (xref slug) + Pass 2 (filename slug).
+            _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
 
-        // Pass 3: read cover page of still-unlinked PDFs via IDocumentTextExtractor.
-        await _catalogBuilder.ResolveCoverPageLinksAsync(catalog, gameCatalog, cancellationToken);
+            // Pass 3: read cover page of still-unlinked PDFs via IDocumentTextExtractor.
+            await _catalogBuilder.ResolveCoverPageLinksAsync(catalog, gameCatalog, cancellationToken);
+
+            if (!dryRun)
+            {
+                await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
+            }
+        }
 
         if (!dryRun)
         {
-            await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
             await _catalogBuilder.SaveGameCatalogAsync(gameCatalog, cancellationToken);
         }
 
@@ -103,6 +132,97 @@ public sealed class ScraperOrchestrator
             result.GamesDiscovered, result.Errors.Count);
 
         return result;
+    }
+
+    /// <summary>
+    /// Constructs a <see cref="DocumentRecord"/> from a <see cref="ScrapedItem"/> for
+    /// direct insertion into the raw document repository (Cosmos wired path).
+    /// Mirrors the construction logic in <see cref="CatalogBuilder.MergeScrapedItem"/>.
+    /// </summary>
+    private static DocumentRecord BuildDocumentRecord(ScrapedItem item)
+    {
+        var link = item.Link!;
+        var fileFormat = Path.GetExtension(link.FileUrl).TrimStart('.').ToLowerInvariant();
+
+        return new DocumentRecord
+        {
+            DocumentId = DocumentRecord.GenerateId(link.FileUrl),
+            Source = new SourceInfo
+            {
+                DiscoveryUrl = item.DiscoveryUrl,
+                DiscoveryContext = item.DiscoveryContext,
+                FileUrl = link.FileUrl,
+                LinkText = link.LinkText,
+                ActionType = ClassifyActionType(link.FileUrl),
+                SourceType = item.SourceType,
+                Tab = link.Tab,
+                ScrapedAt = DateTime.UtcNow
+            },
+            Classification = new ClassificationInfo
+            {
+                DocumentType = ClassifyDocumentType(link, item.DiscoveryContext),
+                FileFormat = string.IsNullOrEmpty(fileFormat) ? "unknown" : fileFormat
+            },
+            Game = BuildGameReference(item),
+            Timeline = new TimelineInfo
+            {
+                FirstDiscoveredAt = DateTime.UtcNow,
+                LastCheckedAt = DateTime.UtcNow
+            }
+        };
+    }
+
+    private static ActionType ClassifyActionType(string fileUrl)
+    {
+        var ext = Path.GetExtension(fileUrl).ToLowerInvariant();
+        return ext switch
+        {
+            ".pdf" => ActionType.OpenPdf,
+            ".zip" or ".spk" => ActionType.DownloadFile,
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" => ActionType.ViewImage,
+            _ => ActionType.DownloadFile
+        };
+    }
+
+    private static DocumentType ClassifyDocumentType(DiscoveredLink link, string context)
+    {
+        var url = link.FileUrl.ToLowerInvariant();
+        var text = (link.LinkText ?? "").ToLowerInvariant();
+        var ctx = context.ToLowerInvariant();
+
+        if (ctx.Contains("service bulletin")) return DocumentType.ServiceBulletin;
+        if (ctx.Contains("game code")) return DocumentType.Firmware;
+        if (ctx.Contains("promotional")) return DocumentType.Flyer;
+
+        if (text.Contains("manual")) return DocumentType.Manual;
+        if (text.Contains("schematic")) return DocumentType.Schematic;
+        if (text.Contains("firmware") || text.Contains("game code")) return DocumentType.Firmware;
+        if (text.Contains("bulletin") || text.Contains("sb ") || text.Contains("sb#")) return DocumentType.ServiceBulletin;
+        if (text.Contains("flyer") || text.Contains("feature")) return DocumentType.Flyer;
+        if (text.Contains("spec")) return DocumentType.SpecSheet;
+
+        if (url.Contains("manual")) return DocumentType.Manual;
+        if (url.Contains("schematic")) return DocumentType.Schematic;
+        if (url.Contains("sb") && url.Contains(".pdf")) return DocumentType.ServiceBulletin;
+        if (url.EndsWith(".zip") || url.EndsWith(".spk")) return DocumentType.Firmware;
+
+        return DocumentType.Other;
+    }
+
+    private static GameReference? BuildGameReference(ScrapedItem item)
+    {
+        if (item.Link?.GameSlug is null && item.SourceType != SourceType.GamePage)
+            return null;
+
+        var slug = item.Link?.GameSlug;
+        if (string.IsNullOrEmpty(slug)) return null;
+
+        return new GameReference
+        {
+            Title = slug.Replace('-', ' '),
+            Slug = slug,
+            GamePageUrl = $"https://sternpinball.com/game/{slug}/"
+        };
     }
 
     /// <summary>

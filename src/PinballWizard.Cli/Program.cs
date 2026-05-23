@@ -439,6 +439,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --migrate-to-raw (one-time backfill: reads catalog.json and upserts
+    // each DocumentRecord into scraped_documents_raw so the async linker can
+    // process it). Gated on IRawDocumentRepository being registered, which
+    // requires Cosmos.
+    if (migrateToRaw)
+    {
+        await MigrateToRawCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
     // Handle --ensure-azure-foundry (post-deploy Foundry smoke-test, ADR-0014).
     // Resolves IAzureFoundrySmokeProbe from DI; the probe is only registered
     // when AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
@@ -901,8 +911,17 @@ static IHost CreateHost(string[] args)
     // Provenance
     builder.Services.AddTransient<CatalogBuilder>();
 
-    // Orchestrator
-    builder.Services.AddTransient<ScraperOrchestrator>();
+    // Orchestrator — factory registration so the optional IRawDocumentRepository
+    // (only present when Cosmos is wired) is passed through without forcing
+    // a required dependency on it at the DI container level.
+    builder.Services.AddTransient<ScraperOrchestrator>(sp => new ScraperOrchestrator(
+        sp.GetRequiredService<IEnumerable<ISourceScraper>>(),
+        sp.GetRequiredService<IFileDownloader>(),
+        sp.GetRequiredService<CatalogBuilder>(),
+        sp.GetRequiredService<IOptions<ScraperSettings>>(),
+        sp.GetRequiredService<ILogger<ScraperOrchestrator>>(),
+        sp.GetService<IRawDocumentRepository>()
+    ));
 
     // Ensure data directories exist
     var settings = builder.Configuration.GetSection(ScraperSettings.SectionName)
