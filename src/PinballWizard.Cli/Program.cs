@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Microsoft.Extensions.Configuration;
+using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
@@ -142,6 +143,16 @@ var syncMetadataCardsOption = new Option<bool>("--sync-metadata-cards")
     Description = "Synthesize metadata_card chunks from the Cosmos machines container and upsert them into AI Search. One card per machine record — covers title, manufacturer, year, designers, themes, editions, and MSRP. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
 };
 
+var linkDocumentsOption = new Option<bool>("--link-documents")
+{
+    Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
+var migrateToRawOption = new Option<bool>("--migrate-to-raw")
+{
+    Description = "One-time backfill: reads data/metadata/catalog.json and upserts each DocumentRecord into the scraped_documents_raw Cosmos container via IRawDocumentRepository. Idempotent: re-runs update existing records. Use after provisioning scraped_documents_raw for the first time to migrate the existing catalog into the cloud-native write path. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
@@ -162,6 +173,8 @@ rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(seedScrapedDocumentsOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
+rootCommand.Options.Add(linkDocumentsOption);
+rootCommand.Options.Add(migrateToRawOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -184,6 +197,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var seedScrapedDocuments = parseResult.GetValue(seedScrapedDocumentsOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
+    var linkDocuments = parseResult.GetValue(linkDocumentsOption);
+    var migrateToRaw = parseResult.GetValue(migrateToRawOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -411,6 +426,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine($"--sync-metadata-cards complete: upserted={upserted} failed={failed}");
         if (failed > 0)
             Environment.ExitCode = 1;
+        return;
+    }
+
+    // Handle --link-documents (document-to-machine linking pass; processes all
+    // pending, failed, and not_in_catalog records in scraped_documents_raw via
+    // the 5-tier algorithm and fans resolved documents into scraped_documents).
+    // Gated on IDocumentLinker being registered, which requires Cosmos.
+    if (linkDocuments)
+    {
+        await LinkDocumentsCommand.RunAsync(host.Services, cancellationToken);
         return;
     }
 
