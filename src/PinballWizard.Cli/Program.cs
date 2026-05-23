@@ -68,11 +68,6 @@ var downloadAllOption = new Option<bool>("--download-all")
     Description = "Force re-download everything"
 };
 
-var buildCatalogOption = new Option<bool>("--build-catalog")
-{
-    Description = "Rebuild catalog from current state"
-};
-
 var statusOption = new Option<bool>("--status")
 {
     Description = "Show catalog summary"
@@ -128,11 +123,6 @@ var evalOption = new Option<bool>("--eval")
     Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
 };
 
-var seedScrapedDocumentsOption = new Option<bool>("--seed-scraped-documents")
-{
-    Description = "Read data/metadata/catalog.json and upsert each Manual or ServiceBulletin entry whose game title resolves to a machine in the Cosmos machines container into the scraped_documents container. Idempotent: re-runs overwrite existing records without data loss. Seeds the Change Feed source that drives the RAG ingestion pipeline. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
-};
-
 var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
 {
     Description = "One-shot RAG index backfill: iterates all scraped_documents via the raw Change Feed stream iterator (no lease checkpoints) and runs each document through the full RAG ingestion pipeline (extract → chunk → embed → AI Search upsert). Idempotent: documents already indexed with the same content hash are skipped. Use after provisioning a fresh RAG index to populate it from existing scraped documents before the Change Feed Processor starts handling ongoing writes. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
@@ -158,7 +148,6 @@ rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(scrapeOnlyOption);
 rootCommand.Options.Add(downloadOption);
 rootCommand.Options.Add(downloadAllOption);
-rootCommand.Options.Add(buildCatalogOption);
 rootCommand.Options.Add(statusOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
@@ -170,7 +159,6 @@ rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
-rootCommand.Options.Add(seedScrapedDocumentsOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
@@ -182,7 +170,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var scrapeOnly = parseResult.GetValue(scrapeOnlyOption);
     var download = parseResult.GetValue(downloadOption);
     var downloadAll = parseResult.GetValue(downloadAllOption);
-    var buildCatalog = parseResult.GetValue(buildCatalogOption);
     var status = parseResult.GetValue(statusOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
@@ -194,7 +181,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
-    var seedScrapedDocuments = parseResult.GetValue(seedScrapedDocumentsOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
@@ -290,31 +276,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine($"Featured machines seeded: {upserted} upserted.");
-        return;
-    }
-
-    // Handle --seed-scraped-documents (one-shot bootstrap for the
-    // scraped_documents Cosmos container — the Change Feed source that drives
-    // the Phase 4 RAG ingestion pipeline). Resolves IScrapedDocumentSeeder from
-    // DI; the seeder is only registered when AddCosmosPersistence was wired
-    // (i.e., Cosmos config is present). Mirrors the --seed-ingestion-sources
-    // exit-code-2 remediation pattern.
-    if (seedScrapedDocuments)
-    {
-        var seeder = host.Services.GetService<IScrapedDocumentSeeder>();
-        if (seeder is null)
-        {
-            Console.Error.WriteLine(
-                "--seed-scraped-documents requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
-                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
-            Environment.ExitCode = 2;
-            return;
-        }
-
-        var catalogPath = Path.Combine("data", "metadata", "catalog.json");
-        var seedResult = await seeder.SeedAsync(catalogPath, cancellationToken);
-        Console.WriteLine();
-        Console.WriteLine($"Scraped documents seeded: {seedResult.Upserted} upserted, {seedResult.Skipped} skipped.");
         return;
     }
 
@@ -637,7 +598,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     }
 
     // Default behavior: if no action flags, do scrape + download
-    if (!scrapeOnly && !download && !downloadAll && !buildCatalog)
+    if (!scrapeOnly && !download && !downloadAll)
     {
         scrapeOnly = true;
         download = true;
@@ -668,18 +629,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine($"Downloads: {summary.Downloaded} files " +
                           $"({summary.BytesDownloaded / (1024.0 * 1024.0):N1} MB), " +
                           $"{summary.Unchanged} unchanged, {summary.Failed} failed");
-    }
-
-    // Phase 3: Reconcile catalog with disk
-    if (buildCatalog && !dryRun)
-    {
-        var summary = await orchestrator.BuildCatalogAsync(cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Catalog: {summary.TotalDocuments} documents " +
-                          $"({summary.OnDisk} on disk, " +
-                          $"{summary.MissingFromDisk} missing, " +
-                          $"{summary.NotDownloaded} not downloaded)");
     }
 });
 
@@ -757,13 +706,6 @@ static IHost CreateHost(string[] args)
         // gated alongside Cosmos because there's nothing for it to write to
         // without the repository.
         builder.Services.AddTransient<IIngestionSourceSeeder, IngestionSourceSeeder>();
-
-        // Scraped-document seeder. Seeds the scraped_documents container from
-        // data/metadata/catalog.json so the Change Feed-driven RAG ingestion
-        // pipeline has source documents to process. Depends on
-        // IScrapedDocumentRepository + IMachineRepository, both registered by
-        // AddCosmosPersistence above.
-        builder.Services.AddTransient<IScrapedDocumentSeeder, ScrapedDocumentSeeder>();
 
         // Featured-machine seed loader. Application-layer service depending on
         // IFeaturedMachineRepository (registered by AddCosmosPersistence above);
