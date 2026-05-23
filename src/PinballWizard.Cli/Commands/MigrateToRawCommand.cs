@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Provenance;
 
@@ -8,6 +9,9 @@ internal static class MigrateToRawCommand
 {
     internal static async Task RunAsync(IServiceProvider services, CancellationToken cancellationToken)
     {
+        var loggerFactory = services.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger(typeof(MigrateToRawCommand).FullName!);
+
         var rawRepo = services.GetService<IRawDocumentRepository>();
         if (rawRepo is null)
         {
@@ -26,22 +30,31 @@ internal static class MigrateToRawCommand
         var upserted = 0;
         var failed = 0;
 
-        foreach (var doc in catalog.Documents)
+        using var semaphore = new SemaphoreSlim(initialCount: 8, maxCount: 8);
+
+        var tasks = catalog.Documents.Select(async doc =>
         {
+            await semaphore.WaitAsync(cancellationToken);
             try
             {
                 await rawRepo.UpsertRawAsync(doc, cancellationToken);
-                upserted++;
+                var current = Interlocked.Increment(ref upserted);
 
-                if (upserted % 100 == 0)
-                    Console.WriteLine($"  Progress: {upserted}/{catalog.Documents.Count} upserted...");
+                if (current % 100 == 0)
+                    Console.WriteLine($"  Progress: {current}/{catalog.Documents.Count} upserted...");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Console.Error.WriteLine($"  Failed to upsert {doc.DocumentId}: {ex.Message}");
-                failed++;
+                logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", doc.DocumentId);
+                Interlocked.Increment(ref failed);
             }
-        }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
 
         Console.WriteLine();
         Console.WriteLine($"--migrate-to-raw complete: {upserted} upserted, {failed} failed.");
