@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -8,26 +7,21 @@ using PinballWizard.Core.Scraping;
 
 namespace PinballWizard.Application;
 
-/// <summary>
-/// Orchestrates the full scraper pipeline: discover → persist to Cosmos.
-/// </summary>
+// Orchestrates the full scraper pipeline: discover → persist to Cosmos.
 public sealed class ScraperOrchestrator
 {
     private readonly IEnumerable<ISourceScraper> _scrapers;
-    private readonly IFileDownloader _downloader;
     private readonly IRawDocumentRepository _rawDocRepo;
     private readonly ScraperSettings _settings;
     private readonly ILogger<ScraperOrchestrator> _logger;
 
     public ScraperOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
-        IFileDownloader downloader,
         IRawDocumentRepository rawDocRepo,
         IOptions<ScraperSettings> settings,
         ILogger<ScraperOrchestrator> logger)
     {
         _scrapers = scrapers;
-        _downloader = downloader;
         _rawDocRepo = rawDocRepo;
         _settings = settings.Value;
         _logger = logger;

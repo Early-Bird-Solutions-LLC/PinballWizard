@@ -37,6 +37,4 @@ public sealed class ScraperSettings
     public string LogsPath => Path.Combine(DataPath, "logs");
     public string SnapshotsPath => Path.Combine(DataPath, "metadata", "snapshots");
     public string HistoryPath => Path.Combine(DataPath, "metadata", "history");
-    public string CatalogPath => Path.Combine(DataPath, "metadata", "catalog.json");
-    public string GamesCatalogPath => Path.Combine(DataPath, "metadata", "games.json");
 }

@@ -1,14 +1,11 @@
 using PinballWizard.Application;
-using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Scraping;
-using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
@@ -52,15 +49,10 @@ public sealed class ScraperOrchestratorTests : IDisposable
         settings ??= new ScraperSettings { DataPath = _tempDir };
         var options = Options.Create(settings);
 
-        // FileDownloader is sealed; the orchestrator only uses it from DownloadAsync,
-        // which these tests do not exercise. A real instance with a stub handler is fine.
-        var httpClient = new HttpClient(new NoopHandler());
-        var downloader = new FileDownloader(httpClient, options, NullLogger<FileDownloader>.Instance);
         rawDocRepo ??= Substitute.For<IRawDocumentRepository>();
 
         return new ScraperOrchestrator(
             scrapers,
-            downloader,
             rawDocRepo,
             options,
             NullLogger<ScraperOrchestrator>.Instance);
@@ -269,17 +261,4 @@ public sealed class ScraperOrchestratorTests : IDisposable
         }
     }
 
-    private sealed class NoopHandler : HttpMessageHandler
-    {
-        [System.Diagnostics.CodeAnalysis.SuppressMessage(
-            "CodeQuality",
-            "cs/local-not-disposed",
-            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-        }
-    }
 }

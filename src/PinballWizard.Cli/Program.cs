@@ -52,11 +52,6 @@ var sourceOption = new Option<string?>("--source", "-s")
     DefaultValueFactory = _ => "all"
 };
 
-var scrapeOnlyOption = new Option<bool>("--scrape-only")
-{
-    Description = "Discover URLs and metadata only, don't download files"
-};
-
 var dryRunOption = new Option<bool>("--dry-run")
 {
     Description = "Scrape but don't persist changes"
@@ -124,7 +119,6 @@ var linkDocumentsOption = new Option<bool>("--link-documents")
 
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
-rootCommand.Options.Add(scrapeOnlyOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
@@ -142,7 +136,6 @@ rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
     var source = parseResult.GetValue(sourceOption);
-    var scrapeOnly = parseResult.GetValue(scrapeOnlyOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
@@ -168,7 +161,21 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
     // Build host with DI
     using var host = CreateHost(args);
-    var orchestrator = host.Services.GetRequiredService<ScraperOrchestrator>();
+
+    // ScraperOrchestrator is only registered when AddCosmosPersistence was wired
+    // (i.e., Cosmos config is present). GetService<T>() returns null rather than
+    // throwing an opaque DI exception; the null-check below surfaces a friendly
+    // remediation message instead.
+    var orchestrator = host.Services.GetService<ScraperOrchestrator>();
+    if (orchestrator is null)
+    {
+        Console.Error.WriteLine(
+            "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+            "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
+            "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
+        Environment.ExitCode = 2;
+        return;
+    }
 
     // Handle --ensure-cosmos-containers (post-deploy Cosmos smoke-test).
     // Resolves CosmosBootstrapper from DI; the bootstrapper is only registered
