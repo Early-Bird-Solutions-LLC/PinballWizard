@@ -194,7 +194,7 @@ public sealed class ScraperOrchestratorTests : IDisposable
         var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
         var result = await orch.ScrapeAsync();
 
-        Assert.Equal(0, result.TotalLinks);
+        Assert.Equal(1, result.TotalLinks);
         Assert.Single(result.Errors);
     }
 

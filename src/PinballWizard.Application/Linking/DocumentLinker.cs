@@ -29,6 +29,7 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly IDocumentTextExtractor? _textExtractor;
     private readonly ILogger<DocumentLinker> _logger;
     private readonly string? _downloadsRoot;
+    private readonly int _cosmosWriteConcurrency;
 
     private static readonly Meter LinkerMeter =
         new("PinballWizard.Linking", "1.0");
@@ -60,7 +61,8 @@ public sealed class DocumentLinker : IDocumentLinker
         IScrapedDocumentRepository docWriter,
         IDocumentTextExtractor? textExtractor,
         ILogger<DocumentLinker> logger,
-        string? downloadsRoot = null)
+        string? downloadsRoot = null,
+        int cosmosWriteConcurrency = 20)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
@@ -74,6 +76,7 @@ public sealed class DocumentLinker : IDocumentLinker
         _textExtractor = textExtractor;
         _logger = logger;
         _downloadsRoot = downloadsRoot;
+        _cosmosWriteConcurrency = cosmosWriteConcurrency;
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -258,49 +261,58 @@ public sealed class DocumentLinker : IDocumentLinker
             candidates.Add(doc);
         }
 
-        foreach (var raw in candidates)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            processed++;
-
-            LinkingResult result;
-            try
+        await Parallel.ForEachAsync(
+            candidates,
+            new ParallelOptions { MaxDegreeOfParallelism = _cosmosWriteConcurrency, CancellationToken = cancellationToken },
+            async (raw, ct) =>
             {
-                result = await LinkAsync(raw, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "DocumentLinker: exception linking {DocumentId}.", raw.DocumentId);
+                Interlocked.Increment(ref processed);
 
-                await _rawRepo.UpdateLinkStatusAsync(
-                    raw.DocumentId,
-                    LinkStatus.Failed,
-                    resolutionStrategy: null,
-                    failureReason: ex.Message,
-                    overrideId: null,
-                    cancellationToken).ConfigureAwait(false);
+                LinkingResult result;
+                try
+                {
+                    result = await LinkAsync(raw, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "DocumentLinker: exception linking {DocumentId}.", raw.DocumentId);
 
-                failed++;
-                continue;
-            }
+                    // CancellationToken.None: once the decision to stamp Failed is made, the
+                    // write-back must land even if the batch is being cancelled, otherwise the
+                    // document stays in an incorrect state until the next run corrects it.
+                    await _rawRepo.UpdateLinkStatusAsync(
+                        raw.DocumentId,
+                        LinkStatus.Failed,
+                        resolutionStrategy: null,
+                        failureReason: ex.Message,
+                        overrideId: null,
+                        CancellationToken.None).ConfigureAwait(false);
 
-            switch (result.FinalStatus)
-            {
-                case LinkStatus.Linked:
-                case LinkStatus.ManuallyLinked:
-                    linked++;
-                    break;
-                case LinkStatus.PlatformGeneric:
-                    platformGeneric++;
-                    break;
-                case LinkStatus.NotInCatalog:
-                    notInCatalog++;
-                    break;
-                case LinkStatus.Failed:
-                    failed++;
-                    break;
-            }
-        }
+                    Interlocked.Increment(ref failed);
+                    return;
+                }
+
+                switch (result.FinalStatus)
+                {
+                    case LinkStatus.Linked:
+                    case LinkStatus.ManuallyLinked:
+                        Interlocked.Increment(ref linked);
+                        break;
+                    case LinkStatus.PlatformGeneric:
+                        Interlocked.Increment(ref platformGeneric);
+                        break;
+                    case LinkStatus.NotInCatalog:
+                        Interlocked.Increment(ref notInCatalog);
+                        break;
+                    case LinkStatus.Failed:
+                        Interlocked.Increment(ref failed);
+                        break;
+                }
+            });
 
         sw.Stop();
         RunDurationHistogram.Record(sw.Elapsed.TotalMilliseconds);
