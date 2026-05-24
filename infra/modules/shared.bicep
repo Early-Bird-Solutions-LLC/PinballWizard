@@ -58,6 +58,9 @@ param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Api ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder.')
 param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false.')
+param linkerCronExpression string = '0 2 * * *'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -1316,6 +1319,39 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   }
 }
 
+resource alertLinkerJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-linker-job-failure'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — Linker ACA Job failed'
+    description: 'The nightly document-to-machine linker job completed with status Failed or did not complete. Investigate via az containerapp job execution list.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT1H'
+    windowSize: 'PT25H'
+    scopes: [logAnalytics.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppSystemLogs_CL | where ContainerAppName_s startswith "pinwiz-job-linker" | where Log_s contains "Failed" | summarize failCount = count()'
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'failCount'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
 // -----------------------------------------------------------------------------
 // App Insights availability test — synthetic ping every 5 min
 // -----------------------------------------------------------------------------
@@ -1533,6 +1569,7 @@ module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) 
     cosmosResourceId: cosmosAccount.id
     managedIdentityId: acaIdentity.id
     containerAppsEnvironmentId: acaEnvironment.id
+    cronExpression: linkerCronExpression
   }
 }
 

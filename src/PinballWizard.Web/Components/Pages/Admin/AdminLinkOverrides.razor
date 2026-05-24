@@ -107,7 +107,7 @@
         <MudButton Color="Color.Primary"
                    Variant="Variant.Filled"
                    OnClick="ConfirmCreateAsync"
-                   Disabled="@string.IsNullOrWhiteSpace(_newPattern)">
+                   Disabled="@(string.IsNullOrWhiteSpace(_newPattern) || _createBusy)">
             Create
         </MudButton>
     </DialogActions>
@@ -124,6 +124,7 @@
     private List<LinkOverrideRow> _overrides = [];
     private bool _loading = true;
     private bool _showCreateDialog;
+    private bool _createBusy;
     private string _newPattern = string.Empty;
     private string _newMachineIds = string.Empty;
     private string _newNotes = string.Empty;
@@ -136,9 +137,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
-            var all = await OverrideRepo.LoadAllAsync(CancellationToken.None);
+            var all = await OverrideRepo.LoadAllAsync(cts.Token);
             _overrides = all.Values
                 .Select(r => new LinkOverrideRow(
                     SourcePattern: r.SourcePattern,
@@ -168,20 +170,22 @@
 
     private async Task ConfirmCreateAsync()
     {
-        var machineIds = _newMachineIds
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var record = new LinkOverrideRecord
-        {
-            SourcePattern = _newPattern.Trim(),
-            MachineIds = machineIds,
-            CreatedBy = "admin",
-            CreatedAt = DateTimeOffset.UtcNow,
-            Notes = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes.Trim()
-        };
-
+        if (_createBusy) return;
+        _createBusy = true;
         try
         {
+            var machineIds = _newMachineIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var record = new LinkOverrideRecord
+            {
+                SourcePattern = _newPattern.Trim(),
+                MachineIds = machineIds,
+                CreatedBy = "admin",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Notes = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes.Trim()
+            };
+
             await OverrideRepo.UpsertAsync(record, CancellationToken.None);
             _overrides.Add(new LinkOverrideRow(
                 SourcePattern: record.SourcePattern,
@@ -195,6 +199,10 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Create failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _createBusy = false;
         }
     }
 
