@@ -149,6 +149,13 @@ output acaEnvironmentName string = shared.outputs.acaEnvironmentName
 output ragIndexerContainerAppName string = shared.outputs.ragIndexerContainerAppName
 output ragIndexerPrincipalId string = shared.outputs.ragIndexerPrincipalId
 
+// Linker ACA Job (nightly document-to-machine linking batch).
+// linkerJobPrincipalId is the post-deploy validation handle:
+//   az cosmosdb sql role assignment list --account-name <name> --resource-group <rg>
+// confirms the Cosmos sqlRoleAssignment propagated.
+output linkerJobName string = shared.outputs.linkerJobName
+output linkerJobPrincipalId string = shared.outputs.linkerJobPrincipalId
+
 // Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
 // operators export as $env:AiFoundry__ProjectEndpoint for the
 // --ensure-azure-foundry smoke probe and Wave 2 PR 4 IAiRouter.
