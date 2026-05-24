@@ -160,7 +160,32 @@ public sealed class DocumentLinker : IDocumentLinker
         // Tiers 3–4: page-text matching. Extract once, try pages 0 and 1.
         if (_textExtractor is not null && _downloadsRoot is not null && raw.File?.LocalPath is not null)
         {
-            var extracted = await TryExtractDocumentAsync(raw, cancellationToken).ConfigureAwait(false);
+            var (extracted, extractionFailed) = await TryExtractDocumentAsync(raw, cancellationToken).ConfigureAwait(false);
+
+            if (extractionFailed)
+            {
+                var failedResult = new LinkingResult(
+                    raw.DocumentId,
+                    LinkStatus.Failed,
+                    ResolutionStrategy: null,
+                    LinkedMachineIds: [],
+                    FailureReason: "text_extraction_exception");
+
+                await _rawRepo.UpdateLinkStatusAsync(
+                    raw.DocumentId,
+                    failedResult.FinalStatus,
+                    failedResult.ResolutionStrategy,
+                    failedResult.FailureReason,
+                    overrideId: null,
+                    cancellationToken).ConfigureAwait(false);
+
+                DocumentsProcessedCounter.Add(1,
+                    new KeyValuePair<string, object?>("resolution_strategy", "none"),
+                    new KeyValuePair<string, object?>("link_status", "failed"));
+
+                return failedResult;
+            }
+
             if (extracted is not null)
             {
                 var tier3Result = TryMatchPage(raw, extracted, pageIndex: 0, "page_1");
@@ -418,7 +443,10 @@ public sealed class DocumentLinker : IDocumentLinker
             FailureReason: null);
     }
 
-    private async Task<ExtractedDocument?> TryExtractDocumentAsync(
+    // Returns (doc, false) on success, (null, false) when file is missing or extraction
+    // returned a non-Success status, and (null, true) when the extractor threw — so the
+    // caller can distinguish a normal fall-through from an error that warrants Failed status.
+    private async Task<(ExtractedDocument? Doc, bool ExtractionFailed)> TryExtractDocumentAsync(
         RawDocumentRecord raw,
         CancellationToken cancellationToken)
     {
@@ -426,19 +454,19 @@ public sealed class DocumentLinker : IDocumentLinker
         if (!File.Exists(absolutePath))
         {
             _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — file not on disk.", raw.DocumentId);
-            return null;
+            return (null, false);
         }
 
         try
         {
             await using var stream = File.OpenRead(absolutePath);
             var extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
-            return extracted.Status == ExtractionStatus.Success ? extracted : null;
+            return extracted.Status == ExtractionStatus.Success ? (extracted, false) : (null, false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "DocumentLinker: text extraction failed for {DocId}.", raw.DocumentId);
-            return null;
+            return (null, true);
         }
     }
 
