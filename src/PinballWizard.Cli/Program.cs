@@ -12,7 +12,6 @@ using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Downloading;
-using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -51,26 +50,6 @@ var sourceOption = new Option<string?>("--source", "-s")
     Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, opdb, all. " +
                   "NOTE: 'all' runs every ISourceScraper but does NOT include 'opdb' — OPDB writes to IMachineRepository instead of yielding ScrapedItems and is special-cased; run --source opdb explicitly to sync the OPDB catalog.",
     DefaultValueFactory = _ => "all"
-};
-
-var scrapeOnlyOption = new Option<bool>("--scrape-only")
-{
-    Description = "Discover URLs and metadata only, don't download files"
-};
-
-var downloadOption = new Option<bool>("--download")
-{
-    Description = "Download new/changed files"
-};
-
-var downloadAllOption = new Option<bool>("--download-all")
-{
-    Description = "Force re-download everything"
-};
-
-var statusOption = new Option<bool>("--status")
-{
-    Description = "Show catalog summary"
 };
 
 var dryRunOption = new Option<bool>("--dry-run")
@@ -138,17 +117,8 @@ var linkDocumentsOption = new Option<bool>("--link-documents")
     Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
-var migrateToRawOption = new Option<bool>("--migrate-to-raw")
-{
-    Description = "One-time backfill: reads data/metadata/catalog.json and upserts each DocumentRecord into the scraped_documents_raw Cosmos container via IRawDocumentRepository. Idempotent: re-runs update existing records. Use after provisioning scraped_documents_raw for the first time to migrate the existing catalog into the cloud-native write path. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
-};
-
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
-rootCommand.Options.Add(scrapeOnlyOption);
-rootCommand.Options.Add(downloadOption);
-rootCommand.Options.Add(downloadAllOption);
-rootCommand.Options.Add(statusOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
@@ -162,15 +132,10 @@ rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
-rootCommand.Options.Add(migrateToRawOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
     var source = parseResult.GetValue(sourceOption);
-    var scrapeOnly = parseResult.GetValue(scrapeOnlyOption);
-    var download = parseResult.GetValue(downloadOption);
-    var downloadAll = parseResult.GetValue(downloadAllOption);
-    var status = parseResult.GetValue(statusOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
@@ -184,7 +149,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
-    var migrateToRaw = parseResult.GetValue(migrateToRawOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -197,7 +161,21 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
     // Build host with DI
     using var host = CreateHost(args);
-    var orchestrator = host.Services.GetRequiredService<ScraperOrchestrator>();
+
+    // ScraperOrchestrator is only registered when AddCosmosPersistence was wired
+    // (i.e., Cosmos config is present). GetService<T>() returns null rather than
+    // throwing an opaque DI exception; the null-check below surfaces a friendly
+    // remediation message instead.
+    var orchestrator = host.Services.GetService<ScraperOrchestrator>();
+    if (orchestrator is null)
+    {
+        Console.Error.WriteLine(
+            "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+            "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
+            "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
+        Environment.ExitCode = 2;
+        return;
+    }
 
     // Handle --ensure-cosmos-containers (post-deploy Cosmos smoke-test).
     // Resolves CosmosBootstrapper from DI; the bootstrapper is only registered
@@ -400,16 +378,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --migrate-to-raw (one-time backfill: reads catalog.json and upserts
-    // each DocumentRecord into scraped_documents_raw so the async linker can
-    // process it). Gated on IRawDocumentRepository being registered, which
-    // requires Cosmos.
-    if (migrateToRaw)
-    {
-        await MigrateToRawCommand.RunAsync(host.Services, cancellationToken);
-        return;
-    }
-
     // Handle --ensure-azure-foundry (post-deploy Foundry smoke-test, ADR-0014).
     // Resolves IAzureFoundrySmokeProbe from DI; the probe is only registered
     // when AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
@@ -555,13 +523,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --status
-    if (status)
-    {
-        await orchestrator.PrintStatusAsync(cancellationToken);
-        return;
-    }
-
     // Handle --source opdb (sync OPDB → Cosmos). Special-cased rather than
     // adapted into ISourceScraper because OPDB doesn't yield ScrapedItems —
     // it writes directly to IMachineRepository.
@@ -597,38 +558,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Default behavior: if no action flags, do scrape + download
-    if (!scrapeOnly && !download && !downloadAll)
+    // Default behavior: scrape (discover + upsert to Cosmos).
+    var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
+
+    Console.WriteLine();
+    Console.WriteLine($"Discovery: {scrapeResult.TotalLinks} links");
+
+    if (scrapeResult.Errors.Count > 0)
     {
-        scrapeOnly = true;
-        download = true;
-    }
-
-    // Phase 1: Discover
-    if (scrapeOnly || download || downloadAll)
-    {
-        var result = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Discovery: {result.TotalLinks} links " +
-                          $"({result.NewDocuments} new, {result.ExistingDocuments} existing), " +
-                          $"{result.GamesDiscovered} games");
-
-        if (result.Errors.Count > 0)
-        {
-            Console.WriteLine($"  {result.Errors.Count} errors during discovery");
-        }
-    }
-
-    // Phase 2: Download
-    if ((download || downloadAll) && !dryRun)
-    {
-        var summary = await orchestrator.DownloadAsync(downloadAll, cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Downloads: {summary.Downloaded} files " +
-                          $"({summary.BytesDownloaded / (1024.0 * 1024.0):N1} MB), " +
-                          $"{summary.Unchanged} unchanged, {summary.Failed} failed");
+        Console.WriteLine($"  {scrapeResult.Errors.Count} errors during discovery");
     }
 });
 
@@ -850,20 +788,10 @@ static IHost CreateHost(string[] args)
     // their respective studios per OPDB attribution).
     builder.Services.AddMultimorphicScraping(builder.Configuration);
 
-    // Provenance
-    builder.Services.AddTransient<CatalogBuilder>();
-
-    // Orchestrator — factory registration so the optional IRawDocumentRepository
-    // (only present when Cosmos is wired) is passed through without forcing
-    // a required dependency on it at the DI container level.
-    builder.Services.AddTransient<ScraperOrchestrator>(sp => new ScraperOrchestrator(
-        sp.GetRequiredService<IEnumerable<ISourceScraper>>(),
-        sp.GetRequiredService<IFileDownloader>(),
-        sp.GetRequiredService<CatalogBuilder>(),
-        sp.GetRequiredService<IOptions<ScraperSettings>>(),
-        sp.GetRequiredService<ILogger<ScraperOrchestrator>>(),
-        sp.GetService<IRawDocumentRepository>()
-    ));
+    // Orchestrator — DI resolves all constructor parameters automatically.
+    // IRawDocumentRepository is registered by AddCosmosPersistence; the CLI
+    // requires Cosmos to be configured for the scraping path.
+    builder.Services.AddTransient<ScraperOrchestrator>();
 
     // Ensure data directories exist
     var settings = builder.Configuration.GetSection(ScraperSettings.SectionName)

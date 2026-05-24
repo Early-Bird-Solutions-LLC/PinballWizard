@@ -1,17 +1,16 @@
+using NSubstitute;
 using PinballWizard.Infrastructure.Scraping.Playwright;
 using PinballWizard.Application;
 using PinballWizard.Application.Downloading;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Scraping;
 using System.Net;
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
-using PinballWizard.Core.Models;
-using PinballWizard.Application.Provenance;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Polite;
@@ -87,12 +86,11 @@ public sealed class IntegrationTests : IDisposable
     }
 
     [Fact]
-    public void Host_CatalogBuilderAndDependenciesResolve()
+    public void Host_CoreDependenciesResolve()
     {
         using var host = BuildTestHost();
 
         // Each piece the orchestrator depends on must be independently resolvable.
-        Assert.NotNull(host.Services.GetRequiredService<CatalogBuilder>());
         Assert.NotNull(host.Services.GetRequiredService<FileDownloader>());
         Assert.NotNull(host.Services.GetRequiredService<GameListingScraper>());
         Assert.NotNull(host.Services.GetRequiredService<PlaywrightFactory>());
@@ -141,85 +139,6 @@ public sealed class IntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(sequenced.CallCount >= 2,
             $"Expected resilience pipeline to retry; got {sequenced.CallCount} call(s).");
-    }
-
-    // -------- Catalog build round-trips through disk --------
-
-    [Fact]
-    public async Task Host_BuildCatalogAsync_ProducesValidCatalogJson()
-    {
-        // Seed a catalog with one document whose local path doesn't exist on disk.
-        // BuildCatalogAsync should clear `File` (signaling "not on disk") while
-        // PRESERVING `Timeline.LastDownloadedAt` (regression guard for the
-        // missing-file behaviour fixed in a prior session).
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        Directory.CreateDirectory(settings.MetadataPath);
-        Directory.CreateDirectory(settings.DownloadsPath);
-
-        var lastDownloadedAt = new DateTime(2025, 6, 1, 12, 0, 0, DateTimeKind.Utc);
-        var seed = new Catalog
-        {
-            GeneratedAt = DateTime.UtcNow,
-            Documents =
-            {
-                new DocumentRecord
-                {
-                    DocumentId = DocumentRecord.GenerateId("https://sternpinball.com/manuals/missing.pdf"),
-                    Source = new SourceInfo
-                    {
-                        DiscoveryUrl = "https://sternpinball.com/manuals/",
-                        DiscoveryContext = "Manuals Page",
-                        FileUrl = "https://sternpinball.com/manuals/missing.pdf",
-                        SourceType = SourceType.ManualsPage,
-                        ScrapedAt = lastDownloadedAt
-                    },
-                    Classification = new ClassificationInfo { FileFormat = "pdf" },
-                    File = new DownloadedFileInfo
-                    {
-                        LocalPath = "manuals/missing.pdf",
-                        Filename = "missing.pdf",
-                        SizeBytes = 100,
-                        Sha256 = new string('a', 64)
-                    },
-                    Timeline = new TimelineInfo
-                    {
-                        FirstDiscoveredAt = lastDownloadedAt,
-                        FirstDownloadedAt = lastDownloadedAt,
-                        LastDownloadedAt = lastDownloadedAt
-                    }
-                }
-            }
-        };
-
-        // Write seed catalog using the same JSON shape CatalogBuilder uses.
-        await File.WriteAllTextAsync(
-            settings.CatalogPath,
-            JsonSerializer.Serialize(seed, CatalogJsonOptions));
-
-        using var host = BuildTestHost();
-        var orchestrator = host.Services.GetRequiredService<ScraperOrchestrator>();
-
-        var summary = await orchestrator.BuildCatalogAsync();
-
-        Assert.Equal(1, summary.TotalDocuments);
-        Assert.Equal(1, summary.MissingFromDisk);
-        Assert.Equal(0, summary.OnDisk);
-
-        // Reload from disk and verify shape.
-        var json = await File.ReadAllTextAsync(settings.CatalogPath);
-
-        // Valid JSON — round-trips through JsonDocument.
-        using var parsed = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Object, parsed.RootElement.ValueKind);
-
-        var reloaded = JsonSerializer.Deserialize<Catalog>(json, CatalogJsonOptions);
-        Assert.NotNull(reloaded);
-        Assert.Equal(1, reloaded!.TotalDocuments);
-
-        var doc = Assert.Single(reloaded.Documents);
-        Assert.Null(doc.File);                                 // missing-on-disk → File cleared
-        Assert.NotNull(doc.Timeline.LastDownloadedAt);         // ...but Timeline preserved
-        Assert.Equal(lastDownloadedAt, doc.Timeline.LastDownloadedAt!.Value);
     }
 
     // -------- Test infrastructure --------
@@ -305,7 +224,10 @@ public sealed class IntegrationTests : IDisposable
         builder.Services.AddJjpScraping(builder.Configuration);
         builder.Services.AddAmericanPinballScraping(builder.Configuration);
 
-        builder.Services.AddTransient<CatalogBuilder>();
+        // IRawDocumentRepository is required by ScraperOrchestrator; in the
+        // integration test host Cosmos is not wired, so register a substitute
+        // to satisfy the DI graph without a real Cosmos connection.
+        builder.Services.AddSingleton(Substitute.For<IRawDocumentRepository>());
         builder.Services.AddTransient<ScraperOrchestrator>();
 
         configureExtras?.Invoke(builder.Services);
@@ -352,14 +274,6 @@ public sealed class IntegrationTests : IDisposable
             ShouldRetryAfterHeader = true
         });
     }
-
-    private static readonly JsonSerializerOptions CatalogJsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) }
-    };
 
     /// <summary>
     /// Returns a sequence of pre-set status codes, one per request. After the sequence
