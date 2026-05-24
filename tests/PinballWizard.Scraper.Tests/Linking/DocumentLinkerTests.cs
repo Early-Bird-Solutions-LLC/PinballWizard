@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
@@ -578,7 +579,7 @@ public class DocumentLinkerTests
     }
 
     [Fact]
-    public async Task LinkAsync_Tier3Page1_ExtractionFails_FallsThrough()
+    public async Task LinkAsync_Tier3Page1_ExtractionMalformed_FallsThrough()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -601,7 +602,8 @@ public class DocumentLinkerTests
                 fileUrl: "https://example.com/files/corrupt.pdf",
                 file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "corrupt.pdf" });
 
-            // Extractor returns Malformed — no extractable text.
+            // Extractor returns Malformed — non-Success status, no exception.
+            // This path returns (null, false) → falls through to NotInCatalog normally.
             extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
                 .Returns(ExtractedDocument.Failure(ExtractionStatus.Malformed, "corrupt pdf"));
 
@@ -611,9 +613,61 @@ public class DocumentLinkerTests
             await linker.InitializeAsync(CancellationToken.None);
             var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            // Both tier 3 and tier 4 receive Malformed → fall through to NotInCatalog.
             Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
             Assert.Null(result.ResolutionStrategy);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page1_ExtractorThrows_StampsFailed()
+    {
+        // When the extractor throws (e.g. corrupt I/O, missing library), the document
+        // must be stamped Failed — not silently fall through to NotInCatalog, which would
+        // make the failure invisible in the admin triage UI.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        var relativePath = "docs/bad.pdf";
+        var absolutePath = Path.Combine(tmpDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllBytesAsync(absolutePath, []);
+
+        try
+        {
+            var raw = MakeRaw(
+                fileUrl: "https://example.com/files/bad.pdf",
+                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "bad.pdf" });
+
+            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                .Throws(new InvalidOperationException("pdf library crash"));
+
+            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+                machines: [machine], textExtractor: extractor, downloadsRoot: tmpDir);
+
+            await linker.InitializeAsync(CancellationToken.None);
+            var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+            Assert.Equal(LinkStatus.Failed, result.FinalStatus);
+            Assert.Equal("text_extraction_exception", result.FailureReason);
+
+            await rawRepo.Received(1).UpdateLinkStatusAsync(
+                raw.DocumentId,
+                LinkStatus.Failed,
+                resolutionStrategy: null,
+                "text_extraction_exception",
+                overrideId: null,
+                Arg.Any<CancellationToken>());
         }
         finally
         {
