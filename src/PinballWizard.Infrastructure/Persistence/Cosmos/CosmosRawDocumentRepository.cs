@@ -169,24 +169,45 @@ internal sealed class CosmosRawDocumentRepository
     }
 
     // IRawDocumentRepository.StreamBySourcePatternAsync
-    // Matches records where source.discovery_url contains sourcePattern
-    // or document_type equals sourcePattern. Callers use this for the
-    // LinkOverrideRecord source_pattern lookup.
+    // sourcePattern is either a plain URL prefix (e.g. "https://sternpinball.com/support")
+    // or a pipe-delimited composite key produced by LinkOverrideRecord.BuildSourcePattern:
+    // "{discoveryUrl}|{documentType}". The pipe form queries both fields independently;
+    // the plain form falls back to the original OR-based CONTAINS query.
     public async IAsyncEnumerable<RawDocumentRecord> StreamBySourcePatternAsync(
         string sourcePattern,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourcePattern);
 
-        const string query =
-            "SELECT * FROM c WHERE " +
-            "CONTAINS(c.source.discovery_url, @pattern, true) OR " +
-            "c.document_type = @pattern";
+        string query;
+        Dictionary<string, object> parameters;
 
-        var parameters = new Dictionary<string, object>
+        var pipeIdx = sourcePattern.IndexOf('|');
+        if (pipeIdx >= 0)
         {
-            ["pattern"] = sourcePattern,
-        };
+            var urlPart = sourcePattern[..pipeIdx];
+            var typePart = sourcePattern[(pipeIdx + 1)..];
+            query =
+                "SELECT * FROM c WHERE " +
+                "CONTAINS(c.source.discovery_url, @urlPart, true) AND " +
+                "c.document_type = @typePart";
+            parameters = new Dictionary<string, object>
+            {
+                ["urlPart"] = urlPart,
+                ["typePart"] = typePart,
+            };
+        }
+        else
+        {
+            query =
+                "SELECT * FROM c WHERE " +
+                "CONTAINS(c.source.discovery_url, @pattern, true) OR " +
+                "c.document_type = @pattern";
+            parameters = new Dictionary<string, object>
+            {
+                ["pattern"] = sourcePattern,
+            };
+        }
 
         await foreach (var cosmos in StreamAsync(query, parameters, partitionKey: null, cancellationToken).ConfigureAwait(false))
         {

@@ -704,7 +704,7 @@ public sealed class CosmosRawDocumentRepositoryTests
     }
 
     [Fact]
-    public async Task StreamBySourcePatternAsync_BindsPatternParameter()
+    public async Task StreamBySourcePatternAsync_PlainUrlPattern_BindsSinglePatternParameter()
     {
         QueryDefinition? capturedQuery = null;
         _container
@@ -719,6 +719,29 @@ public sealed class CosmosRawDocumentRepositoryTests
         var paramList = capturedQuery!.GetQueryParameters();
         Assert.Single(paramList);
         Assert.Contains(paramList, p => p.Name == "@pattern" && (string)p.Value == "https://sternpinball.com/support");
+    }
+
+    [Fact]
+    public async Task StreamBySourcePatternAsync_PipeDelimitedPattern_BindsUrlPartAndTypePart()
+    {
+        // "url|type" composite key produced by LinkOverrideRecord.BuildSourcePattern.
+        // Prior to the fix the whole string was passed as @pattern against discovery_url,
+        // so the '|' char never matched and the query returned 0 results.
+        QueryDefinition? capturedQuery = null;
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Do<QueryDefinition>(q => capturedQuery = q),
+                Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[]]));
+
+        const string pattern = "https://sternpinball.com/support/service-bulletins|Manual";
+        await foreach (var _ in _repository.StreamBySourcePatternAsync(pattern, CancellationToken.None)) { }
+
+        Assert.NotNull(capturedQuery);
+        var paramList = capturedQuery!.GetQueryParameters();
+        Assert.Equal(2, paramList.Count);
+        Assert.Contains(paramList, p => p.Name == "@urlPart" && (string)p.Value == "https://sternpinball.com/support/service-bulletins");
+        Assert.Contains(paramList, p => p.Name == "@typePart" && (string)p.Value == "Manual");
     }
 
     [Theory]
