@@ -1516,6 +1516,41 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
 }
 
 // -----------------------------------------------------------------------------
+// Linker ACA Job (document-to-machine linking nightly batch)
+// -----------------------------------------------------------------------------
+// Calls deploy/linker-job/linker-job.bicep, which is a self-contained ACA Job
+// definition. The calling module (this file) owns the ACA environment + UAMI
+// and is responsible for granting the job's system-assigned MI Cosmos access.
+// Gated on deployPhase2 — the ACA environment is a Phase 2 resource.
+
+module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) {
+  name: 'linker-job-${environment}'
+  params: {
+    location: location
+    tags: tags
+    containerImage: 'mcr.microsoft.com/k8se/quickstart:latest'
+    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
+    cosmosResourceId: cosmosAccount.id
+    managedIdentityId: acaIdentity.id
+    containerAppsEnvironmentId: acaEnvironment.id
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the linker job's system-assigned MI.
+// Follows the identical pattern as ragIndexerCosmosDataContrib (line 945).
+// guid() uses the module deployment name as the stable variable component so
+// the assignment name is deterministic and idempotent across redeploys.
+resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'linker-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -1571,6 +1606,9 @@ output appInsightsConnectionString string = appInsights.?properties.ConnectionSt
 output acaEnvironmentName string = acaEnvironment.?name ?? ''
 output ragIndexerContainerAppName string = ragIndexerApp.?name ?? ''
 output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
+
+output linkerJobName string = linkerJob.?outputs.linkerJobName ?? ''
+output linkerJobPrincipalId string = linkerJob.?outputs.linkerJobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
