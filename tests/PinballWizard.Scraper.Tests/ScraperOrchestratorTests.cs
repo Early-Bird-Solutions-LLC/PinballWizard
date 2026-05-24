@@ -159,7 +159,11 @@ public sealed class ScraperOrchestratorTests : IDisposable
         // use the return value, so the default (null!) substitute return is fine.
 
         var scraper = new StubScraper("Manuals", [
-            MakeLinkItem("https://example.com/manual.pdf", "Manuals Page", SourceType.ManualsPage)
+            MakeLinkItem(
+                fileUrl: "https://example.com/manual.pdf",
+                discoveryContext: "Manuals Page",
+                sourceType: SourceType.ManualsPage,
+                gameSlug: "test-game")
         ]);
 
         var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
@@ -168,7 +172,11 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Equal(1, result.TotalLinks);
         Assert.Empty(result.Errors);
         await rawRepo.Received(1).UpsertRawAsync(
-            Arg.Is<DocumentRecord>(d => d.Source.FileUrl == "https://example.com/manual.pdf"),
+            Arg.Is<DocumentRecord>(d =>
+                d.Source.FileUrl == "https://example.com/manual.pdf" &&
+                d.Source.DiscoveryUrl == "https://sternpinball.com/page/" &&
+                d.Source.DiscoveryContext == "Manuals Page" &&
+                d.Game != null && d.Game.Slug == "test-game"),
             Arg.Any<CancellationToken>());
     }
 

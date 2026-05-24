@@ -69,6 +69,9 @@ param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Api ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow.')
 param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak). Has no effect when deployPhase2=false.')
+param linkerCronExpression string = '0 2 * * *'
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -115,6 +118,7 @@ module shared 'modules/shared.bicep' = {
     wizardCustomDomainCertReady: wizardCustomDomainCertReady
     wizardImageTag: wizardImageTag
     apiImageTag: apiImageTag
+    linkerCronExpression: linkerCronExpression
   }
 }
 
