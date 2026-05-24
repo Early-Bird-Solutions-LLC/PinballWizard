@@ -1,22 +1,23 @@
 using PinballWizard.Application;
 using PinballWizard.Application.Downloading;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Scraping;
 using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
-using PinballWizard.Application.Provenance;
-using PinballWizard.Infrastructure.Scraping.Stern;
 using Xunit;
 
 namespace PinballWizard.Scraper.Tests;
 
 /// <summary>
 /// Defends the orchestrator's source-filter aliases, dry-run semantics,
-/// new/existing accounting, error capture, and BuildCatalogAsync reconciliation.
+/// error capture, and Cosmos upsert behaviour.
 /// Uses stub <see cref="ISourceScraper"/> implementations so no network is involved.
 /// </summary>
 public sealed class ScraperOrchestratorTests : IDisposable
@@ -45,21 +46,22 @@ public sealed class ScraperOrchestratorTests : IDisposable
 
     private ScraperOrchestrator CreateOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
+        IRawDocumentRepository? rawDocRepo = null,
         ScraperSettings? settings = null)
     {
         settings ??= new ScraperSettings { DataPath = _tempDir };
         var options = Options.Create(settings);
-        var catalogBuilder = new CatalogBuilder(options, NullLogger<CatalogBuilder>.Instance);
 
         // FileDownloader is sealed; the orchestrator only uses it from DownloadAsync,
         // which these tests do not exercise. A real instance with a stub handler is fine.
         var httpClient = new HttpClient(new NoopHandler());
         var downloader = new FileDownloader(httpClient, options, NullLogger<FileDownloader>.Instance);
+        rawDocRepo ??= Substitute.For<IRawDocumentRepository>();
 
         return new ScraperOrchestrator(
             scrapers,
             downloader,
-            catalogBuilder,
+            rawDocRepo,
             options,
             NullLogger<ScraperOrchestrator>.Instance);
     }
@@ -133,63 +135,6 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Equal(0, result.TotalLinks);
     }
 
-    // -------- Dry run --------
-
-    [Fact]
-    public async Task ScrapeAsync_DryRun_DoesNotPersistCatalogFiles()
-    {
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        var scraper = new StubScraper("Manuals", new[]
-        {
-            MakeLinkItem("https://sternpinball.com/x.pdf", "Manuals Page", SourceType.ManualsPage)
-        });
-
-        var orch = CreateOrchestrator([scraper], settings);
-        await orch.ScrapeAsync(dryRun: true);
-
-        Assert.False(File.Exists(settings.CatalogPath),
-            "Dry-run must not write catalog.json");
-        Assert.False(File.Exists(settings.GamesCatalogPath),
-            "Dry-run must not write games.json");
-    }
-
-    [Fact]
-    public async Task ScrapeAsync_NotDryRun_PersistsCatalogFiles()
-    {
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        var scraper = new StubScraper("Manuals", new[]
-        {
-            MakeLinkItem("https://sternpinball.com/x.pdf", "Manuals Page", SourceType.ManualsPage)
-        });
-
-        var orch = CreateOrchestrator([scraper], settings);
-        await orch.ScrapeAsync(dryRun: false);
-
-        Assert.True(File.Exists(settings.CatalogPath));
-        Assert.True(File.Exists(settings.GamesCatalogPath));
-    }
-
-    // -------- Counting: New vs Existing --------
-
-    [Fact]
-    public async Task ScrapeAsync_CountsNewAndExistingDocuments()
-    {
-        // Two distinct URLs — both new — and one repeat to count as existing
-        var scraper = new StubScraper("Manuals", new[]
-        {
-            MakeLinkItem("https://sternpinball.com/a.pdf", "Manuals Page", SourceType.ManualsPage),
-            MakeLinkItem("https://sternpinball.com/b.pdf", "Manuals Page", SourceType.ManualsPage),
-            MakeLinkItem("https://sternpinball.com/a.pdf", "Manuals Page", SourceType.ManualsPage)
-        });
-
-        var orch = CreateOrchestrator([scraper]);
-        var result = await orch.ScrapeAsync(dryRun: true);
-
-        Assert.Equal(3, result.TotalLinks);
-        Assert.Equal(2, result.NewDocuments);
-        Assert.Equal(1, result.ExistingDocuments);
-    }
-
     // -------- Error capture --------
 
     [Fact]
@@ -208,101 +153,49 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Contains("Manuals", error);
         Assert.Contains("boom", error);
         Assert.True(good.WasInvoked, "Good scraper should still run after bad one fails");
-        Assert.Equal(1, result.NewDocuments);
+        // Good scraper yields 1 link
+        Assert.Equal(1, result.TotalLinks);
     }
 
-    // -------- BuildCatalogAsync --------
+    // -------- Cosmos upsert path --------
 
     [Fact]
-    public async Task BuildCatalogAsync_AllFilesPresent_ReportsOnDiskMatchesTotal()
+    public async Task ScrapeAsync_WithRawDocRepo_UpsertsEachLink()
     {
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        var orch = CreateOrchestrator([], settings);
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        // UpsertRawAsync returns Task<RawDocumentRecord>; the orchestrator does not
+        // use the return value, so the default (null!) substitute return is fine.
 
-        // Seed a catalog with two documents whose files we'll create on disk
-        var catalog = new Catalog();
-        SeedDocument(catalog, "https://sternpinball.com/a.pdf", "manuals/a.pdf");
-        SeedDocument(catalog, "https://sternpinball.com/b.pdf", "manuals/b.pdf");
-        await SaveCatalogAsync(settings, catalog);
+        var scraper = new StubScraper("Manuals", [
+            MakeLinkItem("https://example.com/manual.pdf", "Manuals Page", SourceType.ManualsPage)
+        ]);
 
-        // Materialise both files
-        CreatePhysicalFile(settings, "manuals/a.pdf");
-        CreatePhysicalFile(settings, "manuals/b.pdf");
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
+        var result = await orch.ScrapeAsync();
 
-        var summary = await orch.BuildCatalogAsync();
-
-        Assert.Equal(2, summary.TotalDocuments);
-        Assert.Equal(2, summary.OnDisk);
-        Assert.Equal(0, summary.MissingFromDisk);
-        Assert.Equal(0, summary.NotDownloaded);
-    }
-
-    [Fact]
-    public async Task BuildCatalogAsync_OneFileMissing_ClearsFileAndCountsMissing()
-    {
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        var orch = CreateOrchestrator([], settings);
-
-        var catalog = new Catalog();
-        SeedDocument(catalog, "https://sternpinball.com/a.pdf", "manuals/a.pdf");
-        SeedDocument(catalog, "https://sternpinball.com/b.pdf", "manuals/b.pdf");
-        await SaveCatalogAsync(settings, catalog);
-
-        // Only create one of the two
-        CreatePhysicalFile(settings, "manuals/a.pdf");
-        // (manuals/b.pdf intentionally missing)
-
-        var summary = await orch.BuildCatalogAsync();
-
-        Assert.Equal(2, summary.TotalDocuments);
-        Assert.Equal(1, summary.OnDisk);
-        Assert.Equal(1, summary.MissingFromDisk);
-
-        // Reload and verify the missing doc had its File cleared but
-        // Timeline.LastDownloadedAt is preserved — the absence of File plus
-        // a non-null LastDownloadedAt encodes "was downloaded, now missing"
-        var reloaded = await LoadCatalogAsync(settings);
-        var missing = reloaded.Documents.First(d =>
-            d.Source.FileUrl == "https://sternpinball.com/b.pdf");
-        Assert.Null(missing.File);
-        Assert.NotNull(missing.Timeline.LastDownloadedAt);
-
-        var present = reloaded.Documents.First(d =>
-            d.Source.FileUrl == "https://sternpinball.com/a.pdf");
-        Assert.NotNull(present.File);
+        Assert.Equal(1, result.TotalLinks);
+        Assert.Empty(result.Errors);
+        await rawRepo.Received(1).UpsertRawAsync(
+            Arg.Is<DocumentRecord>(d => d.Source.FileUrl == "https://example.com/manual.pdf"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task BuildCatalogAsync_DocumentNeverDownloaded_CountsAsNotDownloaded()
+    public async Task ScrapeAsync_UpsertThrows_CapturesErrorAndContinues()
     {
-        var settings = new ScraperSettings { DataPath = _tempDir };
-        var orch = CreateOrchestrator([], settings);
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        rawRepo.UpsertRawAsync(Arg.Any<DocumentRecord>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Cosmos unavailable"));
 
-        var catalog = new Catalog();
-        // Seed a document with NO File set (i.e. discovered but not yet downloaded)
-        catalog.Documents.Add(new DocumentRecord
-        {
-            DocumentId = DocumentRecord.GenerateId("https://sternpinball.com/x.pdf"),
-            Source = new SourceInfo
-            {
-                DiscoveryUrl = "https://sternpinball.com/manuals/",
-                DiscoveryContext = "Manuals Page",
-                FileUrl = "https://sternpinball.com/x.pdf",
-                ActionType = ActionType.OpenPdf,
-                SourceType = SourceType.ManualsPage,
-                ScrapedAt = DateTime.UtcNow
-            },
-            Classification = new ClassificationInfo { FileFormat = "pdf" },
-            Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow }
-        });
-        await SaveCatalogAsync(settings, catalog);
+        var scraper = new StubScraper("Manuals", [
+            MakeLinkItem("https://example.com/manual.pdf", "Manuals Page", SourceType.ManualsPage)
+        ]);
 
-        var summary = await orch.BuildCatalogAsync();
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo);
+        var result = await orch.ScrapeAsync();
 
-        Assert.Equal(1, summary.TotalDocuments);
-        Assert.Equal(0, summary.OnDisk);
-        Assert.Equal(0, summary.MissingFromDisk);
-        Assert.Equal(1, summary.NotDownloaded);
+        Assert.Equal(0, result.TotalLinks);
+        Assert.Single(result.Errors);
     }
 
     // -------- Helpers --------
@@ -326,54 +219,6 @@ public sealed class ScraperOrchestratorTests : IDisposable
             DiscoveryUrl = "https://sternpinball.com/page/",
             DiscoveryContext = discoveryContext
         };
-
-    private static void SeedDocument(Catalog catalog, string fileUrl, string localPath)
-    {
-        catalog.Documents.Add(new DocumentRecord
-        {
-            DocumentId = DocumentRecord.GenerateId(fileUrl),
-            Source = new SourceInfo
-            {
-                DiscoveryUrl = "https://sternpinball.com/manuals/",
-                DiscoveryContext = "Manuals Page",
-                FileUrl = fileUrl,
-                ActionType = ActionType.OpenPdf,
-                SourceType = SourceType.ManualsPage,
-                ScrapedAt = DateTime.UtcNow
-            },
-            Classification = new ClassificationInfo { FileFormat = "pdf" },
-            File = new DownloadedFileInfo
-            {
-                LocalPath = localPath,
-                Filename = Path.GetFileName(localPath),
-                SizeBytes = 1
-            },
-            Timeline = new TimelineInfo
-            {
-                FirstDiscoveredAt = DateTime.UtcNow,
-                LastDownloadedAt = DateTime.UtcNow
-            }
-        });
-    }
-
-    private static void CreatePhysicalFile(ScraperSettings settings, string relativePath)
-    {
-        var absolute = Path.Combine(settings.DownloadsPath, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
-        File.WriteAllText(absolute, "x");
-    }
-
-    private static async Task SaveCatalogAsync(ScraperSettings settings, Catalog catalog)
-    {
-        var builder = new CatalogBuilder(Options.Create(settings), NullLogger<CatalogBuilder>.Instance);
-        await builder.SaveCatalogAsync(catalog);
-    }
-
-    private static async Task<Catalog> LoadCatalogAsync(ScraperSettings settings)
-    {
-        var builder = new CatalogBuilder(Options.Create(settings), NullLogger<CatalogBuilder>.Instance);
-        return await builder.LoadCatalogAsync();
-    }
 
     // -------- Stubs --------
 
