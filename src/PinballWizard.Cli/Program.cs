@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
@@ -787,6 +788,12 @@ static IHost CreateHost(string[] args)
     // product schema; deliberately excludes 3rd-party kits which belong to
     // their respective studios per OPDB attribution).
     builder.Services.AddMultimorphicScraping(builder.Configuration);
+
+    // TimeProvider is required by ScraperReconciliationService. Registered here so
+    // the reconciler works in Phase 1/2 environments where the RAG pipeline (which
+    // also registers TimeProvider.System) is not wired.
+    builder.Services.TryAddSingleton(TimeProvider.System);
+    builder.Services.AddTransient<IScraperReconciliationService, ScraperReconciliationService>();
 
     // Orchestrator — DI resolves all constructor parameters automatically.
     // IRawDocumentRepository is registered by AddCosmosPersistence; the CLI

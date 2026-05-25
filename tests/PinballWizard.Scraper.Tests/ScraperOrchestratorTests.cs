@@ -1,5 +1,6 @@
 using PinballWizard.Application;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Scraping;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -44,16 +45,19 @@ public sealed class ScraperOrchestratorTests : IDisposable
     private ScraperOrchestrator CreateOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
         IRawDocumentRepository? rawDocRepo = null,
-        ScraperSettings? settings = null)
+        ScraperSettings? settings = null,
+        IScraperReconciliationService? reconciler = null)
     {
         settings ??= new ScraperSettings { DataPath = _tempDir };
         var options = Options.Create(settings);
 
         rawDocRepo ??= Substitute.For<IRawDocumentRepository>();
+        reconciler ??= Substitute.For<IScraperReconciliationService>();
 
         return new ScraperOrchestrator(
             scrapers,
             rawDocRepo,
+            reconciler,
             options,
             NullLogger<ScraperOrchestrator>.Instance);
     }

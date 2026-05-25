@@ -87,47 +87,9 @@ Schema CRUD (databases, containers, partition keys, throughput) goes through ARM
 
 Bicep is split into two tiers gated by `deployPhase2 bool = false`. Phase 1 (default) provisions Cosmos serverless + Log Analytics + Cosmos diagnostics (~$30/mo idle). Phase 2 (`deployPhase2 = true`) adds App Insights, Key Vault, ACR, AI Search Basic, Azure OpenAI, Storage + blob containers, and developer RBAC (~$120/mo additional idle). Phase 2 ships when consuming features land, not preemptively. Full per-tier resource list, alternatives considered, and the destructive-toggle warning live in [ADR-0013](docs/adr/0013-two-tier-bicep-deploy.md). Deploy script: `pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev [-WhatIf]`; outputs include `cosmosAccountEndpoint`, `cosmosAccountResourceId`, etc. (captured to stdout).
 
-## Tech Stack
-
-- .NET 10 / C# 14 / `Directory.Build.props` enforces zero warnings as errors
-- **.NET Aspire 13.2.4** — local orchestration (AppHost + ServiceDefaults)
-- **Microsoft.Azure.Cosmos** — data-plane SDK (item CRUD)
-- **Azure.ResourceManager.CosmosDB** — ARM SDK (schema CRUD)
-- **Azure.Identity** — `DefaultAzureCredential` for AAD
-- **Microsoft.Extensions.\*** 10.5.0 — Hosting, DI, configuration, logging
-- **Microsoft.Extensions.Http.Resilience** 10.5.0 — standard HTTP resilience pipeline
-- AngleSharp — HTML parsing
-- Microsoft.Playwright 1.59.0 — Stern's Vue.js pages. DTOs (`LinkRaw`, `BulletinRaw`) stay as `internal sealed class` with `[JsonPropertyName]` properties because Playwright's `EvaluateArgumentValueConverter` deserializes via `Activator.CreateInstance` + property setters, not STJ — see [DL-0002](docs/decision-log.md) and `SternPlaywrightDtoActivatorContractTests`.
-- System.CommandLine — CLI
-- xUnit + NSubstitute — testing
-- Docker + cron — Phase 1 deployment + scheduling
-
 ## CLI
 
-```text
-dotnet run --project src/PinballWizard.Cli -- [options]
-
---source <alias>            manuals | games | bulletins | jjp | ap | spooky |
-                            pinballbrothers | barrelsoffun | multimorphic |
-                            cgc | opdb | all
---scrape-only               Discover URLs + metadata, don't download
---download                  Download new/changed files
---download-all              Force re-download
---build-catalog             Reconcile catalog vs disk (preserves Timeline.LastDownloadedAt)
---status                    Summary of tracked documents (file catalog only; does NOT exercise Cosmos)
---ensure-cosmos-containers  Post-deploy smoke-test: bootstraps DB + containers via the
-                            ICosmosProvisioner selected for the configured endpoint.
-                            Idempotent. Exit 2 + remediation if Cosmos isn't configured.
---seed-ingestion-sources    Upsert `data/seeds/ingestion_sources.v1.json` into the
-                            ingestion_sources Cosmos container. Idempotent. Canonical
-                            seeder — do not seed via portal or `az cosmosdb` ad-hoc.
---dry-run                   Scrape without persisting (OPDB sync respects this via
-                            OpdbSyncMode.DryRun: logs fetch + would-write counts only).
---install-playwright        Install Playwright browsers
---verbose                   Debug logging
-```
-
-`SourceAliasContractTests` pins every `ISourceScraper.Name` to its `--source` alias. Adding a scraper without that test passing is a 🔴.
+Run `dotnet run --project src/PinballWizard.Cli -- --help` for all options. `SourceAliasContractTests` pins every `ISourceScraper.Name` to its `--source` alias — adding a scraper without that test passing is a 🔴.
 
 ## Locked invariants (do not relitigate)
 
@@ -143,15 +105,7 @@ Key invariants to keep top-of-mind:
 
 ## Documentation map
 
-- [`docs/adr/`](docs/adr/) — 28 ADRs covering domain ID, Playwright choice, contract, infra, Clean Architecture, ingestion-sources-as-data, MudBlazor strict, Entra External ID, personal-sub-only, scraper↔Machine reconciliation, Cosmos ARM-vs-data-plane split (0012), two-tier Bicep deploy gate (0013), Microsoft Foundry orchestration (0014), per-agent cost routing + LRU cache (0015), evaluation harness via Foundry EvaluationClient (0016), confidence-threshold refusal (0017), code-resource prompt management (0018), hybrid chunking (0019), embedding model (0020), AI Search index schema (0021), tool-call-trace citation extraction (0022), citation-required guardrail (0023), two-stage re-ranking (0024), Cosmos for User Delight (0025), User Delight Frontend and Streaming (0026), Community-Resource Posture and Outbound-Routing Contract (0027), Cloudflare IaC via OpenTofu (0028)
-- [`docs/vision.md`](docs/vision.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/quality-spec.md`](docs/quality-spec.md), [`docs/decision-log.md`](docs/decision-log.md) — canonical spec system (vision / rules / phased plan / quality gates / sub-ADR decisions)
-- [`docs/scraper_plan_v4.md`](docs/scraper_plan_v4.md) — Phase 1 scraper design (Stern only)
-- [`docs/infra_analysis.md`](docs/infra_analysis.md) — Azure infrastructure reference architecture (RAG-only mental model superseded by `architecture-v2.md`)
-- [`docs/knowledge-sources.md`](docs/knowledge-sources.md) — knowledge domains the wizard should cover, sources, and acquisition strategy
-- [`docs/architecture-v2.md`](docs/architecture-v2.md) — agent-orchestrated polymorphic knowledge layer (supersedes the pure-RAG Phase 2 design)
-- [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md) — coding, testing, and operational standards
-
-Volatile session-state (current PR list, last deploy hash, recently-fixed bugs, day's outstanding follow-ups) lives in **memory** under `C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`, not here. The freshest handoff is `session_handoff_2026_05_22_phase45_w1w2_complete.md` (Phase 4.5 W1+W2 merged; corpus expansion complete; W3a metadata-card CLI wired; next: W2 backfill + W3b bulletin discovery).
+ADRs: [`docs/adr/`](docs/adr/) (0001–0028). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`).
 
 ## Phase 2 Preview (NOT building yet)
 

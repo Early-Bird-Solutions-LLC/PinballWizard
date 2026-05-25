@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
@@ -13,17 +14,20 @@ public sealed class ScraperOrchestrator
 {
     private readonly IEnumerable<ISourceScraper> _scrapers;
     private readonly IRawDocumentRepository _rawDocRepo;
+    private readonly IScraperReconciliationService _reconciler;
     private readonly ScraperSettings _settings;
     private readonly ILogger<ScraperOrchestrator> _logger;
 
     public ScraperOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
         IRawDocumentRepository rawDocRepo,
+        IScraperReconciliationService reconciler,
         IOptions<ScraperSettings> settings,
         ILogger<ScraperOrchestrator> logger)
     {
         _scrapers = scrapers;
         _rawDocRepo = rawDocRepo;
+        _reconciler = reconciler;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -40,6 +44,7 @@ public sealed class ScraperOrchestrator
         var result = new ScrapeResult();
         var scrapers = FilterScrapers(sourceFilter);
         var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
+        var gameCatalog = new GameCatalog { GeneratedAt = DateTime.UtcNow };
 
         foreach (var scraper in scrapers)
         {
@@ -51,6 +56,11 @@ public sealed class ScraperOrchestrator
             {
                 await foreach (var item in scraper.ScrapeAsync(cancellationToken))
                 {
+                    if (item.Game is not null)
+                    {
+                        gameCatalog.Games.Add(item.Game);
+                    }
+
                     if (item.Link is null) continue;
 
                     var record = BuildDocumentRecord(item);
@@ -108,9 +118,31 @@ public sealed class ScraperOrchestrator
             }
         }
 
+        if (!dryRun && gameCatalog.Games.Count > 0)
+        {
+            try
+            {
+                var reconcileResult = await _reconciler.ReconcileAsync(gameCatalog, cancellationToken)
+                    .ConfigureAwait(false);
+                _logger.LogInformation(
+                    "Reconciliation complete: considered={Considered} upserts={Upserts} unmatched={Unmatched} ambiguous={Ambiguous} failed={Failed}",
+                    reconcileResult.Considered, reconcileResult.Upserts,
+                    reconcileResult.Unmatched, reconcileResult.AmbiguousTitle, reconcileResult.FailedMapping);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Reconciliation failed after scrape — ManufacturerSlugs will not be updated this run.");
+                result.Errors.Add($"reconcile: {ex.Message}");
+            }
+        }
+
         _logger.LogInformation(
-            "Scrape complete: {Total} links, {Errors} errors",
-            result.TotalLinks, result.Errors.Count);
+            "Scrape complete: {Total} links, {Games} game records collected, {Errors} errors",
+            result.TotalLinks, gameCatalog.Games.Count, result.Errors.Count);
 
         return result;
     }
@@ -144,7 +176,21 @@ public sealed class ScraperOrchestrator
             {
                 FirstDiscoveredAt = DateTime.UtcNow,
                 LastCheckedAt = DateTime.UtcNow
-            }
+            },
+            // When a scraper discovers this file from a game-specific page
+            // (GameSlug is set), record the discovery URL as a cross-reference
+            // so that UpsertRawAsync can merge it into existing records. This
+            // enables Tier 1 slug matching in DocumentLinker even when the same
+            // file was first discovered from a flat listing page (e.g. /manuals/).
+            CrossReferences = !string.IsNullOrEmpty(link.GameSlug)
+                ? [new CrossReference
+                    {
+                        AlsoFoundAt = item.DiscoveryUrl,
+                        DiscoveryContext = item.DiscoveryContext,
+                        LinkText = link.LinkText,
+                        DiscoveredAt = DateTime.UtcNow,
+                    }]
+                : []
         };
     }
 

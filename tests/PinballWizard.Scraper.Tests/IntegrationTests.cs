@@ -3,6 +3,7 @@ using PinballWizard.Infrastructure.Scraping.Playwright;
 using PinballWizard.Application;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Scraping;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
@@ -224,10 +225,11 @@ public sealed class IntegrationTests : IDisposable
         builder.Services.AddJjpScraping(builder.Configuration);
         builder.Services.AddAmericanPinballScraping(builder.Configuration);
 
-        // IRawDocumentRepository is required by ScraperOrchestrator; in the
-        // integration test host Cosmos is not wired, so register a substitute
-        // to satisfy the DI graph without a real Cosmos connection.
+        // IRawDocumentRepository and IScraperReconciliationService are required by
+        // ScraperOrchestrator; Cosmos is not wired in the integration test host so
+        // register substitutes to satisfy the DI graph without a real connection.
         builder.Services.AddSingleton(Substitute.For<IRawDocumentRepository>());
+        builder.Services.AddSingleton(Substitute.For<IScraperReconciliationService>());
         builder.Services.AddTransient<ScraperOrchestrator>();
 
         configureExtras?.Invoke(builder.Services);
