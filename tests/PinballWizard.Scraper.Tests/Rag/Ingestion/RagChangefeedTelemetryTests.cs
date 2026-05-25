@@ -81,7 +81,10 @@ public sealed class RagChangefeedTelemetryTests
             await ctx.Service.HandleChangesAsync([NewChange(DocumentIdA)], CancellationToken.None);
         }
 
-        Assert.DoesNotContain(samples, s => s.ErrorClass == nameof(InvalidOperationException));
+        // The sink throws DeadLetterSinkFailureException (not InvalidOperationException)
+        // so this assertion is immune to concurrent tests that also emit InvalidOperationException
+        // to the same process-global instrument.
+        Assert.DoesNotContain(samples, s => s.ErrorClass == nameof(DeadLetterSinkFailureException));
     }
 
     [Fact]
@@ -269,13 +272,19 @@ public sealed class RagChangefeedTelemetryTests
         }
     }
 
+    // Distinct exception type so the dead-letter-sink-fails test can assert
+    // DoesNotContain on its own error_class without being poisoned by sibling
+    // tests that also throw InvalidOperationException on the same global instrument.
+    private sealed class DeadLetterSinkFailureException()
+        : Exception("simulated dead-letter sink failure");
+
     private sealed class FailingDeadLetterSink : IDeadLetterSink
     {
         public Task<DeadLetterRecord?> GetAsync(string documentId, CancellationToken cancellationToken) =>
             Task.FromResult<DeadLetterRecord?>(null);
 
         public Task UpsertAsync(DeadLetterRecord record, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("simulated dead-letter sink failure");
+            throw new DeadLetterSinkFailureException();
     }
 
     private sealed class TestContext
