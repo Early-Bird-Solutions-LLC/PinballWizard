@@ -1329,7 +1329,7 @@ resource alertLinkerJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-1
     severity: 2
     enabled: true
     evaluationFrequency: 'PT1H'
-    windowSize: 'PT25H'
+    windowSize: 'PT2880M'
     scopes: [logAnalytics.id]
     criteria: {
       allOf: [
