@@ -14,30 +14,27 @@ namespace PinballWizard.Application.Ai.Citations;
 //    OpdbId + OpdbSourceUrl — those become a Citation directly. The DTO
 //    is the authoritative grounding surface for OPDB-keyed answers.
 //
-// 2. Connected sub-agent function results (Valuation / Rules / Repair,
-//    wired in W1-1) return the sub-agent's text response. Each sub-agent
-//    is also instrumented with getMachineByTitle and instructed to
-//    include the OPDB URL in its reply, so the embedded URL appears in
-//    the function-result text. We extract OPDB URLs from that text via
-//    the same regex pattern used in the legacy extractor — but applied
-//    to function-result payloads rather than the Wizard's final prose,
-//    so hallucinated URLs in the Wizard's outer text can no longer be
-//    counted.
+// 2. searchCorpus results return a SearchCorpusResult whose Hits →
+//    one Citation per unique DocumentUrl, page-anchored via SectionHeading
+//    + page range in the title. Multiple chunks from the same DocumentId
+//    collapse to one citation. The Wizard calls searchCorpus directly
+//    (Wizard.md Step 4) before dispatching to sub-agents, so these
+//    results appear in the Wizard's AgentResponse.Messages where this
+//    extractor reads them. ADR-0022 § Negative consequence #4 notes a
+//    Phase 5 layering for union-of-page-ranges across collapsed chunks.
 //
-// 3. The Wizard's final assistant text content is NOT scanned. If the
-//    Wizard summarizes/paraphrases the sub-agent's reply and drops the
-//    URL from prose, that's a Wizard-prompt fidelity issue — but the
-//    citation already exists on the function-result side. Provenance
-//    is preserved through the structural channel even if the prose
-//    representation drops it.
+// 3. Connected sub-agent function results (Valuation / Rules / Repair)
+//    return the sub-agent's text response as a string. OPDB URLs in
+//    that text are extracted via regex and become MachineRecord citations.
+//    Sub-agents no longer call searchCorpus internally (removed in
+//    fix/wizard-citation-extraction) — corpus retrieval moved to the
+//    Wizard level where results are observable. The string regex arm
+//    therefore fires only for opdb.org identity URLs that the sub-agent
+//    echoes back in its answer prose.
 //
-// Phase 4 W4-1 (build-spec § scope item 21) extends this extractor
-// with a searchCorpus arm: SearchCorpusResult.Hits → one Citation per
-// unique DocumentId, page-anchored via SectionHeading + page range
-// in the title. Multiple chunks from the same DocumentId collapse to
-// one citation; ADR-0022 § Negative consequence #4 notes a Phase 5
-// layering for union-of-page-ranges across collapsed chunks. The
-// public surface (ICitationExtractor) is stable across that addition.
+// 4. The Wizard's final assistant text content is NOT scanned. Provenance
+//    is preserved through the structural channel (tool-call results)
+//    even if the Wizard's outer prose doesn't repeat every URL.
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
     [GeneratedRegex(@"https://opdb\.org/machines/(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

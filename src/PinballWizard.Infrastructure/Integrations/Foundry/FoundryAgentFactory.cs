@@ -104,36 +104,41 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         var projectClient = new AIProjectClient(endpoint, new DefaultAzureCredential());
         var result = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
-        // The getMachineByTitle + searchCorpus function tools are shared
-        // across all four agents per ADR-0014.
+        // getMachineByTitle is shared across all four agents. searchCorpus
+        // is attached to the Wizard only — see the two-pass construction
+        // block below for rationale.
         // Microsoft.Extensions.AI.AIFunctionFactory wraps the typed C#
         // methods into AIFunctions with auto-generated JSON schema (from
         // [Description] attributes on the method + its arguments).
-        // searchCorpus is added in this PR (Phase 4 W4-1, build-spec §
-        // scope item 21) — RAG retrieval over the AI Search index
-        // defined by ADR-0021. Both tools are attached to every agent
-        // so any sub-agent's prompt can use either grounding surface
-        // as fits its question.
         //
-        // The same AIFunction instance is shared across every agent
-        // (see subAgentTools / wizardTools below) — the underlying
-        // tool objects (MachineGroundingTool, SearchCorpusTool) are
-        // stateless singletons so concurrent invocations across agents
-        // are safe.
+        // The same AIFunction instances are reused across agents: sub-agents
+        // share the getMachineByTitle reference; the Wizard references the
+        // same getMachineByTitle instance plus the searchCorpus instance
+        // (see wizardTools initialization below, + 2 = getMachineByTitle +
+        // searchCorpus). The underlying tool objects (MachineGroundingTool,
+        // SearchCorpusTool) are stateless singletons so concurrent
+        // invocations across agents are safe.
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
         var searchCorpus = AIFunctionFactory.Create(_searchCorpusTool.SearchCorpusAsync);
 
-        // Two-pass construction (Phase 4 W1-1):
-        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get
-        //            getMachineByTitle + searchCorpus. They never
-        //            dispatch to peers so they don't need each other's
-        //            function-tool wrappers.
-        //   Pass 2 — Wizard gets both grounding tools PLUS each
+        // Two-pass construction (Phase 4 W1-1, revised fix/wizard-citation-extraction):
+        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
+        //            getMachineByTitle. searchCorpus is NOT included
+        //            because sub-agent tool results execute in an internal
+        //            agent execution context whose FunctionResultContent
+        //            objects are not surfaced in the Wizard's
+        //            AgentResponse.Messages — ToolTraceCitationExtractor
+        //            cannot observe them. The Wizard calls searchCorpus itself (Step 4
+        //            of Wizard.md) and passes the retrieved context inline
+        //            to the sub-agent, ensuring SearchCorpusResult objects
+        //            appear in the Wizard's AgentResponse.Messages where
+        //            the extractor reads them.
+        //   Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
         //            function name defaults to the AIAgent's name
         //            (passed to AsAIAgent), which matches the routing
         //            table in Wizard.md.
-        AITool[] subAgentTools = [getMachineByTitle, searchCorpus];
+        AITool[] subAgentTools = [getMachineByTitle];
         var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
         var wizardTools = new List<AITool>(subAgentNames.Length + 2)
         {
