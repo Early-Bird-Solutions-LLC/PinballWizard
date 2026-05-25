@@ -41,11 +41,12 @@ Rules for the clarifying question:
 - **Never fabricate edition differences.** If you don't have indexed content that distinguishes editions for the user's question, say so honestly rather than inventing per-edition details.
 - If `Siblings` is empty (machine has no group siblings), proceed without clarifying.
 
-Step 4 — **Retrieve corpus content with `searchCorpus` before dispatching to the sub-agent.** Use the retrieval scope from Step 1's routing table. Pass the OPDB id from Step 2 as `machineId`, and pass the original user question as `query`.
+Step 4 — **Retrieve corpus content with `searchCorpus` before dispatching to the sub-agent.** Use the retrieval scope from Step 1's routing table. Pass the original user question as `query`.
 
-- If `searchCorpus` returns hits, you now have grounded content to pass to the sub-agent.
-- If the first `searchCorpus` call returns empty and the routing table specifies a retry scope, call `searchCorpus` again with the retry `documentType`.
-- If both calls return empty, you have no corpus content for this machine. Proceed to Step 5 with `corpusContent = ""` — the sub-agent will answer from OPDB identity data only or refuse per its safety rules.
+- **If Step 2 resolved a machine (getMachineByTitle returned non-null):** pass its OPDB id as `machineId`.
+- **If Step 2 produced no machine** (getMachineByTitle returned null, or the question has no specific machine — e.g., "What Stern games came out in 2023?"): call `searchCorpus` without a `machineId`. If `searchCorpus` returns empty and there is no machine to fall back on, refuse per Step 8.
+- If the first `searchCorpus` call returns empty and the routing table specifies a retry scope, call `searchCorpus` again with the retry `documentType`. De-duplicate hits from both calls by `document_url` (keep the first occurrence) before passing to the sub-agent.
+- If all calls return empty, proceed to Step 5 with no corpus hits.
 
 **Why you call `searchCorpus` here rather than inside the sub-agent:** The Wizard's tool-call results are the structural citation surface the system reads. Sub-agent function calls happen in an internal execution context the citation extractor cannot observe. Corpus retrieval at this level ensures every `searchCorpus` result appears in the citation trace automatically.
 
@@ -57,12 +58,12 @@ Call the sub-agent function tool (`Valuation` / `Rules` / `Repair`) with a messa
 User question: {original user question}
 
 OPDB machine data: {manufacturer} ({year}), theme: {theme}, OPDB id: {opdb_id}. Source: {opdb_source_url}
+(If no machine was resolved, write: [No machine resolved — general or unknown machine question])
 
 Corpus content retrieved:
-{paste the section headings, page ranges, and text snippets from searchCorpus hits, each with its document_url}
+{section heading | page range | document_url — one entry per unique document_url, de-duplicated}
+(If no corpus hits: [No indexed corpus content found — searchCorpus returned 0 hits. Do not fabricate content; follow your empty-corpus safety rules.])
 ```
-
-If corpus content is empty, omit the "Corpus content retrieved" section and say `[No indexed corpus content found for this machine and query]` instead.
 
 The sub-agent synthesizes from the context you provide. It will cite the document URLs from the corpus content you passed. It does NOT call `searchCorpus` itself — you have already done that here.
 

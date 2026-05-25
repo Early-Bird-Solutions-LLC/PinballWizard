@@ -144,12 +144,32 @@ public sealed class SearchCorpusTool
                     query);
                 return new SearchCorpusResult([]);
             }
+            catch (RequestFailedException rfe) when (rfe.Status is >= 400 and < 500)
+            {
+                // AI Search 4xx (wrong index name, auth scope mismatch,
+                // malformed query). These indicate misconfiguration, not a
+                // transient outage. Log at Error so monitoring fires on first
+                // occurrence; return empty so the NoCitation guardrail handles
+                // the turn gracefully rather than propagating a 500 to the user.
+                // Previously these were allowed to propagate unhandled — that was
+                // safe when sub-agents called searchCorpus (framework isolated the
+                // failure) but breaks the Wizard turn now that searchCorpus is
+                // called at the Wizard level before sub-agent dispatch.
+                MarkAndCountSearchUnavailable(
+                    "http_4xx",
+                    $"AI Search returned HTTP {rfe.Status} — likely misconfiguration.",
+                    rfe,
+                    options,
+                    query);
+                _logger.LogError(rfe,
+                    "SearchCorpusTool: AI Search returned HTTP {Status} — check index name, RBAC assignment, and query syntax. query={Query}",
+                    rfe.Status,
+                    query);
+                return new SearchCorpusResult([]);
+            }
             catch (RequestFailedException rfe) when (rfe.Status >= 500)
             {
-                // AI Search 5xx (service outage, gateway timeout). The
-                // when-guard keeps 4xx (auth, not-found) from being
-                // silently swallowed — those would indicate a misconfigured
-                // index and should propagate so they're surfaced as errors.
+                // AI Search 5xx (service outage, gateway timeout).
                 MarkAndCountSearchUnavailable(
                     "http_5xx",
                     $"AI Search returned HTTP {rfe.Status}.",
