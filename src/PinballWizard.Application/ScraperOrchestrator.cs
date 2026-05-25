@@ -120,11 +120,28 @@ public sealed class ScraperOrchestrator
 
         if (!dryRun && gameCatalog.Games.Count > 0)
         {
-            await _reconciler.ReconcileAsync(gameCatalog, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var reconcileResult = await _reconciler.ReconcileAsync(gameCatalog, cancellationToken)
+                    .ConfigureAwait(false);
+                _logger.LogInformation(
+                    "Reconciliation complete: considered={Considered} upserts={Upserts} unmatched={Unmatched} ambiguous={Ambiguous} failed={Failed}",
+                    reconcileResult.Considered, reconcileResult.Upserts,
+                    reconcileResult.Unmatched, reconcileResult.AmbiguousTitle, reconcileResult.FailedMapping);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Reconciliation failed after scrape — ManufacturerSlugs will not be updated this run.");
+                result.Errors.Add($"reconcile: {ex.Message}");
+            }
         }
 
         _logger.LogInformation(
-            "Scrape complete: {Total} links, {Games} game records reconciled, {Errors} errors",
+            "Scrape complete: {Total} links, {Games} game records collected, {Errors} errors",
             result.TotalLinks, gameCatalog.Games.Count, result.Errors.Count);
 
         return result;
