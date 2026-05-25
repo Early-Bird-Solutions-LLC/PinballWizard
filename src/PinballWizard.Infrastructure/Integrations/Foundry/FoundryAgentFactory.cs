@@ -123,17 +123,22 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
         var searchCorpus = AIFunctionFactory.Create(_searchCorpusTool.SearchCorpusAsync);
 
-        // Two-pass construction (Phase 4 W1-1):
-        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get
-        //            getMachineByTitle + searchCorpus. They never
-        //            dispatch to peers so they don't need each other's
-        //            function-tool wrappers.
-        //   Pass 2 — Wizard gets both grounding tools PLUS each
+        // Two-pass construction (Phase 4 W1-1, revised fix/wizard-citation-extraction):
+        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
+        //            getMachineByTitle. searchCorpus is NOT included
+        //            because sub-agent tool results execute in an internal
+        //            Foundry thread that ToolTraceCitationExtractor cannot
+        //            observe. The Wizard calls searchCorpus itself (Step 4
+        //            of Wizard.md) and passes the retrieved context inline
+        //            to the sub-agent, ensuring SearchCorpusResult objects
+        //            appear in the Wizard's AgentResponse.Messages where
+        //            the extractor reads them.
+        //   Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
         //            function name defaults to the AIAgent's name
         //            (passed to AsAIAgent), which matches the routing
         //            table in Wizard.md.
-        AITool[] subAgentTools = [getMachineByTitle, searchCorpus];
+        AITool[] subAgentTools = [getMachineByTitle];
         var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
         var wizardTools = new List<AITool>(subAgentNames.Length + 2)
         {
