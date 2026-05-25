@@ -159,7 +159,21 @@ public sealed class ScraperOrchestrator
             {
                 FirstDiscoveredAt = DateTime.UtcNow,
                 LastCheckedAt = DateTime.UtcNow
-            }
+            },
+            // When a scraper discovers this file from a game-specific page
+            // (GameSlug is set), record the discovery URL as a cross-reference
+            // so that UpsertRawAsync can merge it into existing records. This
+            // enables Tier 1 slug matching in DocumentLinker even when the same
+            // file was first discovered from a flat listing page (e.g. /manuals/).
+            CrossReferences = !string.IsNullOrEmpty(link.GameSlug)
+                ? [new CrossReference
+                    {
+                        AlsoFoundAt = item.DiscoveryUrl,
+                        DiscoveryContext = item.DiscoveryContext,
+                        LinkText = link.LinkText,
+                        DiscoveredAt = DateTime.UtcNow,
+                    }]
+                : []
         };
     }
 
