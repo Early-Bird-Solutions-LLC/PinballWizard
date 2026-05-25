@@ -227,7 +227,8 @@ public static class ServiceCollectionExtensions
             var logger = sp.GetRequiredService<ILogger<DocumentLinker>>();
             var settings = sp.GetService<IOptions<ScraperSettings>>();
             var downloadsRoot = settings?.Value.DownloadsPath;
-            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot);
+            var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
+            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot, concurrency);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection

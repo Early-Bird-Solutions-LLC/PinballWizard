@@ -564,7 +564,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     Console.WriteLine();
     Console.WriteLine($"Discovery: {scrapeResult.TotalLinks} links");
 
-    if (scrapeResult.Errors.Count > 0)
+    if (!scrapeResult.Errors.IsEmpty)
     {
         Console.WriteLine($"  {scrapeResult.Errors.Count} errors during discovery");
     }

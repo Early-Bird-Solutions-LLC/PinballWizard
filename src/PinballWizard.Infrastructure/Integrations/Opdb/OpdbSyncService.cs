@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Infrastructure.Integrations.Opdb;
@@ -29,6 +32,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
     private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpdbSyncService> _logger;
+    private readonly int _cosmosWriteConcurrency;
 
     /// <summary>Initializes a new <see cref="OpdbSyncService"/>.</summary>
     public OpdbSyncService(
@@ -37,6 +41,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         IIngestionSourceRepository ingestionSources,
         IMachineTitleLookupRepository titleLookups,
         ILogger<OpdbSyncService> logger,
+        IOptions<ScraperSettings>? scraperSettings = null,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -50,6 +55,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         _titleLookups = titleLookups;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _cosmosWriteConcurrency = scraperSettings?.Value.CosmosWriteConcurrency ?? 20;
     }
 
     /// <inheritdoc />
@@ -108,9 +114,12 @@ public sealed class OpdbSyncService : IOpdbSyncService
         try
         {
             // ── Pass 1 — base machines ──────────────────────────────────
-            // Aliases are buffered for pass 2. Buffering happens BEFORE
-            // the Cosmos round-trip to avoid spending RUs on a read we
-            // know will not be used in this pass.
+            // Two-phase: (a) stream all DTOs sequentially — this resolves
+            // group titles via polite HTTP calls and must stay sequential;
+            // (b) dispatch Cosmos read+write pairs concurrently since those
+            // are internal writes with no politeness constraint.
+            var baseMachines = new List<(OpdbMachineDto Dto, Machine Mapped, DateTimeOffset Now)>();
+
             await foreach (var dto in _client.StreamAllMachinesAsync(cancellationToken).ConfigureAwait(false))
             {
                 fetched++;
@@ -118,75 +127,80 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 if (OpdbMachineMapper.IsAlias(dto))
                 {
                     aliasBuffer.Add(dto);
+                    if (fetched % 100 == 0)
+                        _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped, {AliasesBuffered} aliases buffered).",
+                            fetched, inserted, updated, skipped, aliasBuffer.Count);
                     continue;
                 }
 
                 var now = _timeProvider.GetUtcNow();
+                // Group title resolution is a polite HTTP call — stays sequential.
                 var groupTitle = await ResolveGroupTitleAsync(dto.OpdbId, groupTitleCache, cancellationToken).ConfigureAwait(false);
                 var mapped = OpdbMachineMapper.Map(dto, now, groupTitle);
-                if (mapped is null)
-                {
-                    skipped++;
-                    continue;
-                }
+                if (mapped is null) { skipped++; continue; }
 
-                // Read existing in both modes — the read is required to
-                // distinguish projected-insert from projected-update counts.
-                var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, cancellationToken).ConfigureAwait(false);
-                if (existing is null)
-                {
-                    if (!isDryRun)
-                    {
-                        await _machines.UpsertAsync(mapped, cancellationToken).ConfigureAwait(false);
-                        // Dual-write the title lookup row per ADR-0025 § 4 —
-                        // machine first (so a failed lookup write leaves the
-                        // machine resolvable via the QueryByTitleAsync
-                        // fallback), then the lookup. Session consistency on
-                        // the same client gives read-your-writes; the next
-                        // Wizard query against this title lands on the
-                        // point-read path.
-                        await UpdateTitleLookupAsync(
-                            mapped.Id,
-                            mapped.PartitionKey,
-                            priorTitle: null,
-                            newTitle: mapped.Title,
-                            now: now,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    inserted++;
-                }
-                else
-                {
-                    // Capture the prior title BEFORE the merge so the rename
-                    // case (OPDB renamed a base record) detects correctly.
-                    var priorTitle = existing.Title;
-                    // Merge runs in both modes: in dry-run the mutated `existing`
-                    // is discarded by the GC, but performing the merge confirms
-                    // the mapping itself doesn't throw on real OPDB data.
-                    OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now, groupTitle);
-                    if (!isDryRun)
-                    {
-                        await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
-                        // Dual-write per ADR-0025 § 4 — the helper handles the
-                        // rename case: when the normalized title changes, the
-                        // (machineId, manufacturer) entry is removed from the
-                        // OLD lookup row (deleting the row if it becomes
-                        // empty) before the new row is upserted.
-                        await UpdateTitleLookupAsync(
-                            existing.Id,
-                            existing.PartitionKey,
-                            priorTitle: priorTitle,
-                            newTitle: existing.Title,
-                            now: now,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    updated++;
-                }
+                baseMachines.Add((dto, mapped, now));
 
                 if (fetched % 100 == 0)
-                {
                     _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped, {AliasesBuffered} aliases buffered).",
                         fetched, inserted, updated, skipped, aliasBuffer.Count);
+            }
+
+            // Phase (b): parallel Cosmos machine-upserts — internal writes, no politeness gate.
+            // Title-lookup RMW is deferred to phase (c): multiple base machines can share a
+            // normalized title (e.g. Metallica Pro / Premium / LE → same lookup row). Running
+            // UpdateTitleLookupAsync concurrently would cause a classic read-modify-write race
+            // where two parallel tasks both read the same row, each add their own entry, and
+            // the last writer silently overwrites the other — violating ADR-0025 § 4's invariant
+            // that all machine entries for a shared title coexist on one row.
+            // groupTitleCacheReadOnly: populated exclusively in phase (a). Cast to IReadOnlyDictionary
+            // so accidental writes from this lambda produce a compile error, not a data race.
+            IReadOnlyDictionary<string, string?> groupTitleCacheReadOnly = groupTitleCache;
+            var titleLookupQueue = new ConcurrentBag<(string MachineId, string PartitionKey, string? PriorTitle, string NewTitle, DateTimeOffset Now)>();
+
+            await Parallel.ForEachAsync(
+                baseMachines,
+                new ParallelOptions { MaxDegreeOfParallelism = _cosmosWriteConcurrency, CancellationToken = cancellationToken },
+                async (item, ct) =>
+                {
+                    var (dto, mapped, now) = item;
+
+                    // Read existing in both modes — required to count inserts vs updates.
+                    var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, ct).ConfigureAwait(false);
+                    if (existing is null)
+                    {
+                        if (!isDryRun)
+                        {
+                            await _machines.UpsertAsync(mapped, ct).ConfigureAwait(false);
+                        }
+                        titleLookupQueue.Add((mapped.Id, mapped.PartitionKey, null, mapped.Title, now));
+                        Interlocked.Increment(ref inserted);
+                    }
+                    else
+                    {
+                        var priorTitle = existing.Title;
+                        OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now,
+                            dto.OpdbId is not null
+                                ? groupTitleCacheReadOnly.GetValueOrDefault(OpdbMachineMapper.ExtractGroupSegment(dto.OpdbId) ?? string.Empty)
+                                : null);
+                        if (!isDryRun)
+                        {
+                            await _machines.UpsertAsync(existing, ct).ConfigureAwait(false);
+                        }
+                        titleLookupQueue.Add((existing.Id, existing.PartitionKey, priorTitle, existing.Title, now));
+                        Interlocked.Increment(ref updated);
+                    }
+                });
+
+            // Phase (c): sequential title-lookup RMW. Each row is a shared document that maps
+            // a normalized title to all machines with that title. Sequential execution is required
+            // to avoid the lost-update race described above; the number of distinct titles (~2,400)
+            // is small relative to the machine count so the serialization cost is negligible.
+            if (!isDryRun)
+            {
+                foreach (var (machineId, partitionKey, priorTitle, newTitle, now) in titleLookupQueue)
+                {
+                    await UpdateTitleLookupAsync(machineId, partitionKey, priorTitle, newTitle, now, cancellationToken).ConfigureAwait(false);
                 }
             }
 

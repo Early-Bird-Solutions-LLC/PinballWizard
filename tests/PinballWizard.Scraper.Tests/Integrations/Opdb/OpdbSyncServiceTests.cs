@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -73,7 +74,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
@@ -101,7 +102,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -125,7 +126,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
         _handler.SetResponseFor("/api/export", $"[{nonMachine}]");
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -146,7 +147,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
         _repository.GetByOpdbIdAsync("XYZ", "jjp", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         // Counters reflect what WOULD have been written.
@@ -172,7 +173,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         await _ingestionSources.Received(1).RecordRunResultAsync(
@@ -192,7 +193,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         // Dry-run should NOT touch the IngestionSource document — operator-visible
@@ -214,7 +215,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
             .When(x => x.RecordRunResultAsync(Arg.Any<string>(), Arg.Any<IngestionSourceRunResult>(), Arg.Any<CancellationToken>()))
             .Do(_ => throw new InvalidOperationException("simulated cosmos hiccup"));
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
 
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
@@ -238,7 +239,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(simulatedFailure);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(
             () => sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None));
@@ -276,7 +277,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -319,7 +320,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
             .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Fetched);
@@ -353,7 +354,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -398,7 +399,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.AliasesAppended);
@@ -431,7 +432,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         };
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.AliasesAppended);
@@ -474,7 +475,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
             .Returns(call => { lastUpserted = call.Arg<Machine>(); return call.Arg<Machine>(); });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         var snapshot = $"AliasesAppended={result.AliasesAppended} AliasesOrphaned={result.AliasesOrphaned} Skipped={result.Skipped} Inserted={result.Inserted}";
@@ -500,7 +501,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         });
         _handler.SetResponseFor("/api/export", $"[{aliasWithoutManufacturer}]");
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Fetched);
@@ -541,7 +542,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
                 return m;
             });
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(3, result.Fetched);
@@ -564,7 +565,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
             .Returns(_ => lastUpserted);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         Assert.Equal(1, result.Inserted);
@@ -599,7 +600,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((MachineTitleLookup?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         // Lookup row was upserted with the normalized title.
@@ -646,7 +647,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
             .Returns((MachineTitleLookup?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         // Old row was upserted (sibling entry remains; our entry removed).
@@ -695,7 +696,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
             .Returns((MachineTitleLookup?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         // Old row was deleted (would have been empty otherwise).
@@ -712,7 +713,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
 
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.DryRun, CancellationToken.None);
 
         await _titleLookups.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default);
@@ -736,7 +737,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _titleLookups.UpsertAsync(Arg.Any<MachineTitleLookup>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("simulated lookup write failure"));
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         // Sync completed despite the lookup failure.
@@ -764,10 +765,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var captured = new List<Machine>();
+        var captured = new ConcurrentBag<Machine>();
         await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(2, result.Inserted); // two distinct machines, NOT one
@@ -793,10 +794,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GRBE4", GroupJson("GRBE4", "Metallica"));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var captured = new List<Machine>();
+        var captured = new ConcurrentBag<Machine>();
         await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(3, result.Inserted);
@@ -816,7 +817,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, _handler.RequestCountFor("/api/machines/GweeP"));
@@ -834,10 +835,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GweeP", "{}", HttpStatusCode.NotFound);
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var captured = new List<Machine>();
+        var captured = new ConcurrentBag<Machine>();
         await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Inserted); // sync did NOT fail
@@ -861,10 +862,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GweeP", "upstream error", HttpStatusCode.InternalServerError);
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var captured = new List<Machine>();
+        var captured = new ConcurrentBag<Machine>();
         await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         Assert.Equal(1, result.Inserted); // 5xx did NOT abort the sync
@@ -888,10 +889,10 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _handler.SetResponseFor("/api/machines/GRBN", GroupJson("GRBN", "WRONG GROUP TITLE"));
         _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
 
-        var captured = new List<Machine>();
+        var captured = new ConcurrentBag<Machine>();
         await _repository.UpsertAsync(Arg.Do<Machine>(captured.Add), Arg.Any<CancellationToken>());
 
-        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, _time);
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
         await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
 
         var m = Assert.Single(captured);

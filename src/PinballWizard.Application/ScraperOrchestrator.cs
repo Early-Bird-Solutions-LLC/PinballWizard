@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
@@ -37,42 +38,73 @@ public sealed class ScraperOrchestrator
         CancellationToken cancellationToken = default)
     {
         var result = new ScrapeResult();
-
         var scrapers = FilterScrapers(sourceFilter);
+        var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
 
         foreach (var scraper in scrapers)
         {
             _logger.LogInformation("Starting scraper: {Name}", scraper.Name);
 
+            var pending = new List<Task>();
+
             try
             {
                 await foreach (var item in scraper.ScrapeAsync(cancellationToken))
                 {
-                    if (item.Link is not null)
+                    if (item.Link is null) continue;
+
+                    var record = BuildDocumentRecord(item);
+                    result.TotalLinks++;
+
+                    if (dryRun) continue;
+
+                    await semaphore.WaitAsync(cancellationToken);
+                    pending.Add(Task.Run(async () =>
                     {
-                        var record = BuildDocumentRecord(item);
                         try
                         {
-                            if (!dryRun)
-                            {
-                                await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
-                            }
-                            result.TotalLinks++;
+                            await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
                             _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
                             result.Errors.Add($"{record.DocumentId}: {ex.Message}");
                         }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }, cancellationToken));
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Drain in-flight writes before re-throwing so no tasks are abandoned.
+                if (pending.Count > 0)
+                {
+                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                    catch (Exception drainEx)
+                    {
+                        _logger.LogError(drainEx, "Scraper {Name}: in-flight writes faulted during cancellation drain.", scraper.Name);
                     }
                 }
+                throw;
             }
             catch (Exception ex)
             {
-                // Broad catch: per-scraper failure must not abort other scrapers in the loop;
-                // OOM/cancellation still propagate via the runtime.
                 _logger.LogError(ex, "Scraper {Name} failed", scraper.Name);
                 result.Errors.Add($"{scraper.Name}: {ex.Message}");
+            }
+            finally
+            {
+                // Always drain pending writes — ensures no tasks are abandoned on normal
+                // completion or on per-scraper exceptions. The OCE path above drains and
+                // re-throws before reaching this block; errors here are already logged.
+                if (pending.Count > 0)
+                {
+                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                    catch { /* per-task errors already logged inside each Task.Run lambda */ }
+                }
             }
         }
 
@@ -224,5 +256,5 @@ public sealed class ScraperOrchestrator
 public sealed class ScrapeResult
 {
     public int TotalLinks { get; set; }
-    public List<string> Errors { get; set; } = [];
+    public ConcurrentBag<string> Errors { get; } = [];
 }

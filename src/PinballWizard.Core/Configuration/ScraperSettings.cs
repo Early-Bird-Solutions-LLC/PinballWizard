@@ -19,6 +19,9 @@ public sealed class ScraperSettings
     /// <summary>Maximum concurrent file downloads.</summary>
     public int MaxConcurrentDownloads { get; set; } = 3;
 
+    /// <summary>Maximum concurrent Cosmos upserts during scrape and link passes. Internal writes only — never applied to external HTTP.</summary>
+    public int CosmosWriteConcurrency { get; set; } = 20;
+
     /// <summary>HTTP request timeout in seconds.</summary>
     public int HttpTimeoutSeconds { get; set; } = 120;
 
