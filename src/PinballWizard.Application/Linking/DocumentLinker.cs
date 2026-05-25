@@ -89,11 +89,13 @@ public sealed class DocumentLinker : IDocumentLinker
         // mapping to the manufacturer's canonical slug for the machine.
         var slugIndex = new List<(Machine Machine, string NormalizedSlug)>();
         var bySlug = new Dictionary<string, Machine>(StringComparer.OrdinalIgnoreCase);
+        var totalMachines = 0;
 
         // StreamAllAsync issues a single cross-partition query — no need to
         // enumerate a hard-coded manufacturer list in the Application layer.
         await foreach (var machine in _machineRepo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
+            totalMachines++;
             foreach (var (_, slug) in machine.ManufacturerSlugs)
             {
                 if (string.IsNullOrWhiteSpace(slug)) continue;
@@ -108,8 +110,19 @@ public sealed class DocumentLinker : IDocumentLinker
 
         _machinesBySlug = bySlug;
         _machineSlugIndex = slugIndex;
-        _logger.LogInformation("DocumentLinker: indexed {Count} machine slugs across {Machines} machines.",
-            slugIndex.Count, bySlug.Count);
+
+        if (bySlug.Count == 0)
+        {
+            _logger.LogWarning(
+                "DocumentLinker: indexed 0 slugs across {Total} machines — ManufacturerSlugs are empty. Run scrapers before --link-documents to populate them.",
+                totalMachines);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "DocumentLinker: indexed {Count} machine slugs across {MachinesWithSlugs} machines (of {Total} total).",
+                slugIndex.Count, bySlug.Count, totalMachines);
+        }
     }
 
     public async Task<LinkingResult> LinkAsync(RawDocumentRecord raw, CancellationToken cancellationToken)

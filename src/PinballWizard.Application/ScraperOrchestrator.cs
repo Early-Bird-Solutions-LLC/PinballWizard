@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
@@ -13,17 +14,20 @@ public sealed class ScraperOrchestrator
 {
     private readonly IEnumerable<ISourceScraper> _scrapers;
     private readonly IRawDocumentRepository _rawDocRepo;
+    private readonly IScraperReconciliationService _reconciler;
     private readonly ScraperSettings _settings;
     private readonly ILogger<ScraperOrchestrator> _logger;
 
     public ScraperOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
         IRawDocumentRepository rawDocRepo,
+        IScraperReconciliationService reconciler,
         IOptions<ScraperSettings> settings,
         ILogger<ScraperOrchestrator> logger)
     {
         _scrapers = scrapers;
         _rawDocRepo = rawDocRepo;
+        _reconciler = reconciler;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -40,6 +44,7 @@ public sealed class ScraperOrchestrator
         var result = new ScrapeResult();
         var scrapers = FilterScrapers(sourceFilter);
         var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
+        var gameCatalog = new GameCatalog { GeneratedAt = DateTime.UtcNow };
 
         foreach (var scraper in scrapers)
         {
@@ -51,6 +56,11 @@ public sealed class ScraperOrchestrator
             {
                 await foreach (var item in scraper.ScrapeAsync(cancellationToken))
                 {
+                    if (item.Game is not null)
+                    {
+                        gameCatalog.Games.Add(item.Game);
+                    }
+
                     if (item.Link is null) continue;
 
                     var record = BuildDocumentRecord(item);
@@ -108,9 +118,14 @@ public sealed class ScraperOrchestrator
             }
         }
 
+        if (!dryRun && gameCatalog.Games.Count > 0)
+        {
+            await _reconciler.ReconcileAsync(gameCatalog, cancellationToken).ConfigureAwait(false);
+        }
+
         _logger.LogInformation(
-            "Scrape complete: {Total} links, {Errors} errors",
-            result.TotalLinks, result.Errors.Count);
+            "Scrape complete: {Total} links, {Games} game records reconciled, {Errors} errors",
+            result.TotalLinks, gameCatalog.Games.Count, result.Errors.Count);
 
         return result;
     }

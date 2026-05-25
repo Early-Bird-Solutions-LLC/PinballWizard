@@ -10,12 +10,9 @@ namespace PinballWizard.Application.Sync;
 /// manufacturer-site slug back-reference.
 /// </summary>
 /// <remarks>
-/// In production this is invoked from the <c>scraper-mfg-sync</c>
-/// ACA Job, scheduled to run after the per-manufacturer scrapers
-/// have written to <c>games.json</c>. CLI integration in
-/// <c>PinballWizard.Cli</c> is deferred until Cosmos infrastructure
-/// is deployed; the service is exercised in isolation by unit tests
-/// against a mocked repository.
+/// Invoked by <c>ScraperOrchestrator</c> after each scraper run and,
+/// in production, from the <c>scraper-mfg-sync</c> ACA Job scheduled
+/// to run after the per-manufacturer scrapers complete.
 /// </remarks>
 public interface IScraperReconciliationService
 {

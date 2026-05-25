@@ -788,6 +788,10 @@ static IHost CreateHost(string[] args)
     // their respective studios per OPDB attribution).
     builder.Services.AddMultimorphicScraping(builder.Configuration);
 
+    // Reconciler — populates ManufacturerSlugs on Machine records from scraped
+    // GameRecord data after each scraper run. Called by ScraperOrchestrator.
+    builder.Services.AddTransient<IScraperReconciliationService, ScraperReconciliationService>();
+
     // Orchestrator — DI resolves all constructor parameters automatically.
     // IRawDocumentRepository is registered by AddCosmosPersistence; the CLI
     // requires Cosmos to be configured for the scraping path.
