@@ -489,6 +489,63 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("G5po2-MeP6B", result!.OpdbId);
     }
 
+    // ── Task 4: full Sega/Stern scenario ─────────────────────────────────
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_SternGodzillaScenario_NeverReturnsSega()
+    {
+        // Full realistic scenario matching the H5 eval failure:
+        // User says "Stern Godzilla". Lookup row has Sega 1998 at [0],
+        // Stern 2021 at [1]. Scoring must pick Stern.
+        // Siblings (Premium/LE within GweeP) are also returned.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+        };
+        lookup.UpsertEntry("G5po2-MeP6B", "sega");   // index 0 — old loser
+        lookup.UpsertEntry("GweeP-MW95j", "stern");   // index 1 — correct
+
+        var sternPro = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla",
+            Year = 2021, GroupId = "GweeP",
+            Editions = [new MachineEdition { Name = "Pro", Msrp = "$7,999" }],
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sternPremiumLe = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla",
+            Year = 2021, GroupId = "GweeP",
+            Editions = [new MachineEdition { Name = "Premium", Msrp = "$9,999" }],
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
+            .Returns(sternPro);
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(sternPro, sternPremiumLe));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j", result!.OpdbId);
+        Assert.Equal("Stern Pinball", result.Manufacturer);
+        Assert.Equal(2021, result.Year);
+        // Sega must never be fetched.
+        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+        // Siblings (Premium/LE) are surfaced for the clarifying question path.
+        Assert.Single(result.Siblings);
+        Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
+    }
+
     [Fact]
     public void Ctor_NullRepository_Throws()
     {
