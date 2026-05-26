@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using PinballWizard.Application.Ai;
@@ -580,6 +581,93 @@ public sealed class ToolTraceCitationExtractorTests
             Editions: [],
             GroupId: null,
             Siblings: []);
+    }
+
+    // ── JsonElement arm (live Foundry path) ──────────────────────────────
+    // AIFunctionFactory.Create serializes C# return values to JSON before
+    // storing them in FunctionResultContent.Result, so real Foundry calls
+    // produce JsonElement rather than typed objects. These tests cover that
+    // path using hand-serialized JsonElements that match the live shape.
+
+    [Fact]
+    public void Extract_SearchCorpusResult_AsJsonElement_ProducesCitations()
+    {
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual_a.pdf",
+                      machineId: "GRBE-MJL05", section: "Coil Replacement",
+                      pageStart: 12, pageEnd: 14),
+        ]);
+        var element = JsonSerializer.SerializeToElement(corpus);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", element);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("https://example/manual_a.pdf", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_AsJsonElement_EmptyHits_NoCitations()
+    {
+        var element = JsonSerializer.SerializeToElement(new SearchCorpusResult([]));
+        var response = BuildAgentResponseWithToolResult("searchCorpus", element);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_MachineGroundingDto_AsJsonElement_ProducesCitation()
+    {
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var element = JsonSerializer.SerializeToElement(dto);
+        var response = BuildAgentResponseWithToolResult("getMachineByTitle", element);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal($"https://opdb.org/machines/GRBE-MJL05", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_MachineGroundingDto_AsJsonElement_NullOpdbSourceUrl_NoCitation()
+    {
+        var dto = new MachineGroundingDto(
+            OpdbId: "GRBE-MJL05", Title: "Godzilla (Premium)",
+            Manufacturer: "Stern", Year: 2021,
+            Themes: [], Designers: [], OpdbSourceUrl: null,
+            Editions: [], GroupId: null, Siblings: []);
+        var element = JsonSerializer.SerializeToElement(dto);
+        var response = BuildAgentResponseWithToolResult("getMachineByTitle", element);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_JsonElement_StringKind_ExtractsOpdbUrlsViaRegex()
+    {
+        // Sub-agent text responses serialized as JSON string values (not objects)
+        // should fall through to the OPDB URL regex arm without throwing.
+        const string subAgentText = "Source: https://opdb.org/machines/GRBE-MJL05";
+        var element = JsonSerializer.SerializeToElement(subAgentText);
+        var response = BuildAgentResponseWithToolResult("Rules", element);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("https://opdb.org/machines/GRBE-MJL05", citation.SourceUrl);
+    }
+
+    [Fact]
+    public void Extract_JsonElement_StringKind_NoOpdbUrl_NoCitation()
+    {
+        // A JSON string element with no recognizable URL should produce no citations
+        // and must not throw (handles "Error: Function failed." from Foundry).
+        var element = JsonSerializer.SerializeToElement("Error: Function failed.");
+        var response = BuildAgentResponseWithToolResult("Rules", element);
+
+        Assert.Empty(Extractor.Extract(response));
     }
 
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)

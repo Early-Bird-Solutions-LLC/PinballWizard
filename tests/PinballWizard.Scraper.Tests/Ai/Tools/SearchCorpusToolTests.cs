@@ -98,6 +98,8 @@ public sealed class SearchCorpusToolTests
     [Fact]
     public async Task SearchCorpusAsync_PassesArgsThroughToRetrievalOptions()
     {
+        // documentType is normalized from prompt-friendly snake_case to
+        // the indexed PascalCase before reaching the retriever.
         var retriever = Substitute.For<IRagRetriever>();
         retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
             .Returns([]);
@@ -114,9 +116,27 @@ public sealed class SearchCorpusToolTests
             "service bulletin",
             Arg.Is<RetrievalOptions>(o =>
                 o.MachineId == "GRBE-MJL05"
-                && o.DocumentType == "service_bulletin"
+                && o.DocumentType == "ServiceBulletin"
                 && o.TopK == 3),
             Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("manual", "Manual")]
+    [InlineData("service_bulletin", "ServiceBulletin")]
+    [InlineData("metadata_card", "MetadataCard")]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("Manual", "Manual")]
+    [InlineData("unknown_type", "unknown_type")]
+    public void NormalizeDocumentType_MapsPromptValuesToIndexedForm(string? input, string? expected)
+    {
+        // The AI Search index stores document_type as DocumentType enum's
+        // .ToString() (PascalCase). Wizard prompt uses lowercase snake_case
+        // aliases. NormalizeDocumentType bridges the contract so OData
+        // filter eq clauses match the indexed values.
+        Assert.Equal(expected, SearchCorpusTool.NormalizeDocumentType(input));
     }
 
     [Fact]
