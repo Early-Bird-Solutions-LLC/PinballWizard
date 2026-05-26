@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -35,6 +36,14 @@ namespace PinballWizard.Application.Ai.Citations;
 // 4. The Wizard's final assistant text content is NOT scanned. Provenance
 //    is preserved through the structural channel (tool-call results)
 //    even if the Wizard's outer prose doesn't repeat every URL.
+//
+// NOTE on result types: AIFunctionFactory.Create (Microsoft.Extensions.AI)
+// serializes C# return values to JSON before storing them in
+// FunctionResultContent.Result. At runtime the result is a JsonElement,
+// not the original typed object. The extractor dispatches on the JSON
+// shape to determine the target type and deserializes before extracting.
+// Unit tests use hand-constructed AgentResponse with typed objects (which
+// the typed-check arms handle); the JSON arms cover the real Foundry path.
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
     [GeneratedRegex(@"https://opdb\.org/machines/(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -90,16 +99,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         HashSet<string> seenUrls,
         List<Citation> citations)
     {
-        // Microsoft.Extensions.AI's FunctionResultContent.Result is the
-        // raw object the function returned (typed at the call site).
-        // For getMachineByTitle that's a MachineGroundingDto?; for
-        // sub-agent connected agents that's the sub-agent's text reply.
         var result = functionResult.Result;
         if (result is null)
         {
             return;
         }
 
+        // Typed object arm (unit tests and any future SDK that preserves type).
         if (result is MachineGroundingDto dto)
         {
             AddCitationFromGroundingDto(dto, seenUrls, citations);
@@ -112,13 +118,61 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
-        // String result: either a JSON-serialized DTO (some SDK call
-        // paths serialize tool returns to string before placing them in
-        // the trace) or a sub-agent's text response. In either case, the
-        // OPDB URL is the structural anchor we want — extract via regex
-        // applied to the function-result payload (NOT the agent's outer
-        // prose, per ADR-0022).
+        // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
+        // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
+        // array; MachineGroundingDto has a top-level "OpdbId" string.
+        if (result is JsonElement element)
+        {
+            ExtractFromJsonElement(element, seenUrls, citations);
+            return;
+        }
+
+        // String result: sub-agent text response or an SDK path that
+        // serializes to string rather than JsonElement. Extract OPDB URLs
+        // via regex — the only structural anchor available in plain text.
         if (result is string text && !string.IsNullOrWhiteSpace(text))
+        {
+            AddCitationsFromText(text, seenUrls, citations);
+        }
+    }
+
+    private static void ExtractFromJsonElement(
+        JsonElement element,
+        HashSet<string> seenUrls,
+        List<Citation> citations)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            // SearchCorpusResult shape: { "Hits": [ ... ] }
+            if (element.TryGetProperty("Hits", out var hitsElement)
+                && hitsElement.ValueKind == JsonValueKind.Array)
+            {
+                var deserialized = element.Deserialize<SearchCorpusResult>(JsonSerializerOptions.Default);
+                if (deserialized is not null)
+                {
+                    AddCitationsFromCorpusHits(deserialized.Hits, seenUrls, citations);
+                }
+                return;
+            }
+
+            // MachineGroundingDto shape: { "OpdbId": "...", "OpdbSourceUrl": "...", ... }
+            if (element.TryGetProperty("OpdbId", out _))
+            {
+                var deserialized = element.Deserialize<MachineGroundingDto>(JsonSerializerOptions.Default);
+                if (deserialized is not null)
+                {
+                    AddCitationFromGroundingDto(deserialized, seenUrls, citations);
+                }
+                return;
+            }
+        }
+
+        // Non-object or unrecognized shape — serialize to string and apply
+        // OPDB URL regex. Covers JsonValueKind.String (sub-agent text reply
+        // serialized as a JSON string), JsonValueKind.Null, and any
+        // unrecognized JSON object shape.
+        var text = element.ToString();
+        if (!string.IsNullOrWhiteSpace(text))
         {
             AddCitationsFromText(text, seenUrls, citations);
         }

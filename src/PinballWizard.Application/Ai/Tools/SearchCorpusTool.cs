@@ -103,7 +103,7 @@ public sealed class SearchCorpusTool
             var options = new RetrievalOptions(
                 TopK: clampedTopK,
                 MachineId: NormalizeOptional(machineId),
-                DocumentType: NormalizeOptional(documentType));
+                DocumentType: NormalizeDocumentType(documentType));
 
             IReadOnlyList<RetrievedChunk> chunks;
             try
@@ -302,4 +302,30 @@ public sealed class SearchCorpusTool
     // looks like.
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    // The index stores document_type as the DocumentType enum's .ToString()
+    // representation (e.g. "Manual", "ServiceBulletin", "MetadataCard").
+    // The Wizard prompt and SearchCorpusTool [Description] expose lowercase
+    // snake_case aliases ("manual", "service_bulletin", "metadata_card") for
+    // readability. This method maps prompt-friendly values to the indexed form
+    // so the OData filter matches the stored data.
+    //
+    // Unknown values are passed through unchanged so the retriever's filter
+    // returns an empty result (→ NoCitation refuse) rather than silently
+    // widening the query by ignoring the constraint.
+    internal static string? NormalizeDocumentType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "manual" => "Manual",
+            "service_bulletin" => "ServiceBulletin",
+            "metadata_card" => "MetadataCard",
+            _ => value.Trim(),
+        };
+    }
 }
