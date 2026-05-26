@@ -196,7 +196,11 @@ public sealed class IngestionSourceSeederTests : IDisposable
     // Pins that the actual data/seeds/ingestion_sources.v1.json deserializes
     // and contains the expected entries. Catches manifest edits that break
     // the schema before they ship. Phase 3 Wave 1 added "pinballmap" as
-    // the 10th entry.
+    // the 10th entry. Phase 4.5 W3b added 5 bulletin discovery entries
+    // (jjp_bulletins, ap_bulletins, spooky_bulletins, cgc_bulletins,
+    // pb_bulletins) — enabled=false for NoSource/Deferred, enabled=true for
+    // Active (ap_bulletins). Unknown JSON properties (discoveryStatus,
+    // discoveryNotes, discoveryDate) are tolerated by System.Text.Json defaults.
 
     [Fact]
     public void ProductionManifest_DeserializesCleanlyAndContainsExpectedEntries()
@@ -209,7 +213,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(10, seeds!.Count);
+        Assert.Equal(15, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
@@ -217,10 +221,13 @@ public sealed class IngestionSourceSeederTests : IDisposable
         // "pinballmap" is the Phase 3 Wave 1 addition (read-side API client,
         // no ISourceScraper, no --source alias — its key is used by
         // RecordRunResultAsync only).
+        // Phase 4.5 W3b adds 5 bulletin discovery entries (enabled=false for
+        // NoSource/Deferred; ap_bulletins enabled=true with ApBulletinScraper wired).
         var expectedIds = new[]
         {
             "stern", "jjp", "ap", "spooky", "pinballbrothers",
             "barrelsoffun", "multimorphic", "cgc", "opdb", "pinballmap",
+            "jjp_bulletins", "ap_bulletins", "spooky_bulletins", "cgc_bulletins", "pb_bulletins",
         };
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }

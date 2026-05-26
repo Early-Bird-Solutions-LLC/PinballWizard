@@ -258,6 +258,7 @@ public sealed class ScraperOrchestrator
         ["bulletins"] = "Service Bulletins",
         ["jjp"] = "JJP",
         ["ap"] = "American Pinball",
+        ["ap_bulletins"] = "American Pinball Bulletins",
         ["spooky"] = "Spooky Pinball",
         ["pinballbrothers"] = "Pinball Brothers",
         ["barrelsoffun"] = "Barrels of Fun",
