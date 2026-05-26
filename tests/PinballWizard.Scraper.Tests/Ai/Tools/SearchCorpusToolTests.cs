@@ -125,10 +125,12 @@ public sealed class SearchCorpusToolTests
     [InlineData("manual", "Manual")]
     [InlineData("service_bulletin", "ServiceBulletin")]
     [InlineData("metadata_card", "MetadataCard")]
+    [InlineData("MANUAL", "Manual")]
+    [InlineData("SERVICE_BULLETIN", "ServiceBulletin")]
+    [InlineData("Manual", "Manual")]
     [InlineData(null, null)]
     [InlineData("", null)]
     [InlineData("   ", null)]
-    [InlineData("Manual", "Manual")]
     [InlineData("unknown_type", "unknown_type")]
     public void NormalizeDocumentType_MapsPromptValuesToIndexedForm(string? input, string? expected)
     {

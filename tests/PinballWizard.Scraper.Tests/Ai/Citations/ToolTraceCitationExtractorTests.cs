@@ -670,6 +670,29 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Empty(Extractor.Extract(response));
     }
 
+    [Fact]
+    public void Extract_JsonElement_UnrecognizedObjectShape_FallsThroughToRegex()
+    {
+        // An object with neither "Hits" nor "OpdbId" falls through to the
+        // OPDB URL regex on its JSON string representation.
+        var element = JsonSerializer.SerializeToElement(new { SomeField = "https://opdb.org/machines/GRBE-MJL05" });
+        var response = BuildAgentResponseWithToolResult("UnknownTool", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("https://opdb.org/machines/GRBE-MJL05", citation.SourceUrl);
+    }
+
+    [Fact]
+    public void Extract_JsonElement_NullKind_NoCitation()
+    {
+        // JsonValueKind.Null → element.ToString() returns "null" → whitespace
+        // guard discards it. Must not throw.
+        var element = JsonSerializer.SerializeToElement<string?>(null);
+        var response = BuildAgentResponseWithToolResult("UnknownTool", element);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)
     {
         // FunctionResultContent's CallId is conventionally the tool-call's

@@ -320,7 +320,7 @@ public sealed class SearchCorpusTool
             return null;
         }
 
-        return value.Trim() switch
+        return value.Trim().ToLowerInvariant() switch
         {
             "manual" => "Manual",
             "service_bulletin" => "ServiceBulletin",

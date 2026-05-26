@@ -99,11 +99,6 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         HashSet<string> seenUrls,
         List<Citation> citations)
     {
-        // AIFunctionFactory.Create (Microsoft.Extensions.AI) JSON-serializes
-        // C# return values before storing them in FunctionResultContent.Result,
-        // so the live Foundry path stores JsonElement rather than the original
-        // typed objects. Unit tests build AgentResponse directly with typed
-        // objects, so both paths must be handled.
         var result = functionResult.Result;
         if (result is null)
         {
