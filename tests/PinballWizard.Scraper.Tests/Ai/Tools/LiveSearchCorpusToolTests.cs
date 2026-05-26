@@ -7,6 +7,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
@@ -74,6 +75,8 @@ public sealed class LiveSearchCorpusToolTests
             searchClient,
             queryEmbedder,
             Options.Create(aiSearchOptions),
+            Options.Create(new CrossEncoderOptions()),
+            new NullCrossEncoderReranker(),
             NullLogger<AiSearchRagRetriever>.Instance);
 
         var tool = new SearchCorpusTool(retriever, new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);

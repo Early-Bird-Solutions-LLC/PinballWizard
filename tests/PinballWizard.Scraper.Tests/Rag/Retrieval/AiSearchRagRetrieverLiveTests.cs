@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
+using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
@@ -78,6 +79,8 @@ public sealed class AiSearchRagRetrieverLiveTests
             searchClient,
             queryEmbedder,
             Options.Create(aiSearchOptions),
+            Options.Create(new CrossEncoderOptions()),
+            new NullCrossEncoderReranker(),
             NullLogger<AiSearchRagRetriever>.Instance);
 
         // Ask a question whose retrieval target is the curated subset.
