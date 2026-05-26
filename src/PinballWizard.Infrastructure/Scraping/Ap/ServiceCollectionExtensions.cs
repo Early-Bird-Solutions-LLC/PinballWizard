@@ -52,6 +52,18 @@ public static class ServiceCollectionExtensions
 
         services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<ApGamePageScraper>());
 
+        services.AddHttpClient<ApBulletinScraper>((sp, client) =>
+        {
+            var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
+            var ap = sp.GetRequiredService<IOptions<ApOptions>>().Value;
+            client.BaseAddress = new Uri(ap.BaseUrl);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
+        services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<ApBulletinScraper>());
+
         return services;
     }
 }
