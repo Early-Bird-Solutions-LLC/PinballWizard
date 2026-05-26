@@ -151,6 +151,16 @@ use?**
   Rejected — the H3 gate exists to determine if this is
   acceptable; without the gate the question stays open.
 
+## Phase 4.5 H5 outcome (2026-05-26)
+
+H5 eval run: `citation_precision=0.478` on the Phase 4.5 realigned eval set (30 questions, 7 curated machines). Results file: `data/eval/results/wizard.20260526T143313Z.json`.
+
+Full H5 metrics: `citation_recall=0.500`, `citation_coverage=0.533`, `subagent_accuracy=0.167`, `refusal_correctness=0.933`.
+
+Gate status: **Triggered** (`citation_precision=0.478 < 0.50`).
+
+Proceeding to W4 fix-up PR: wire `CohereRerankReranker` per the locked implementation path above. Cohere Rerank-v3 via Foundry connection; `ICrossEncoderReranker` abstraction in `Application/Ai/Retrieval/`; `CohereRerankReranker` in `Infrastructure`; injected into `AiSearchRagRetriever`. Re-run eval as H5b to confirm precision lift.
+
 ## References
 
 - [ADR-0014](0014-microsoft-foundry-orchestration.md) —

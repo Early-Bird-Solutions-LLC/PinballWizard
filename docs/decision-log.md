@@ -30,6 +30,37 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-05-26 — Phase 4.5 H5 eval baseline; ADR-0024 Cohere Rerank gate triggered
+
+**Decision:** H5 eval run on the Phase 4.5 full corpus (30 questions, 7 curated machines) returned `citation_precision=0.478`, triggering the ADR-0024 cross-encoder gate (`< 0.50`). Proceeding with a W4 fix-up PR to wire `CohereRerankReranker` (Cohere Rerank-v3 via Foundry connection). Full H5 metrics: `citation_recall=0.500`, `citation_coverage=0.533`, `subagent_accuracy=0.167`, `refusal_correctness=0.933`. Results file: `data/eval/results/wizard.20260526T143313Z.json`.
+
+**Alternatives considered:**
+
+- **Treat 0.478 as close enough, skip Cohere.** Rejected — the gate threshold was set deliberately at 0.50; the ADR's purpose is to make this decision data-driven, not opinion-driven.
+- **Re-evaluate the gate threshold.** Rejected — threshold was set before H5 numbers existed; raising it after the fact undermines the value of the gate.
+
+**Rationale:** The ADR-0024 gate is the mechanism for deciding whether the cross-encoder layer is needed. H5 triggered it cleanly. The locked implementation path (Cohere Rerank-v3 via Foundry, `ICrossEncoderReranker` abstraction) is ready to execute.
+
+**Revisit when:** H5b eval after Cohere integration lands. If `citation_precision ≥ 0.50` post-rerank, Phase 4.5 closes; if not, investigate retrieval-side root causes before proceeding to Phase 5.
+
+**Related:** ADR-0024, `data/eval/results/wizard.20260526T143313Z.json`
+
+## 2026-05-26 — Phase 4.5 deferred items logged at phase close
+
+**Decision:** Three items deferred out of Phase 4.5 scope:
+
+1. **Flyers (208 docs in corpus)** — chunking strategy TBD. Flyers are visually dense, short-text, promotional layouts. PdfPig extracts minimal text; ADI layout mode extracts more but produces noisy chunks. Decision deferred until a Phase 5+ eval question set explicitly targets flyer content to justify the investment.
+2. **Other bucket (98 docs)** — classification TBD. `document_type=Other` items are a mixed bag (press kits, show programs, promotional PDFs). Require manual review to determine if they belong in separate document types or should be chunked with their closest sibling type.
+3. **`NullTokenUsageReader` real implementation** — pending upstream fix in `azure-sdk-for-net#2688`. The `NullTokenUsageReader` stub in `Infrastructure/Integrations/Foundry/` is intentional; the real implementation cannot be wired until the SDK surfaces token usage in the Responses API response surface. Revisit when azure-sdk-for-net ships the fix.
+
+**Alternatives considered:** N/A — these are explicit scope deferrals, not trade-off decisions.
+
+**Rationale:** Phase 4.5's demonstrable artifact is manuals in the index with bounded long-tail failure rate and a meaningful H5 lift from H4. Flyers and Other documents expand scope without improving the core citation story; `NullTokenUsageReader` is blocked on an upstream SDK gap.
+
+**Revisit when:** Phase 5+ eval questions target flyer content (flyers); manual review batch is scheduled (Other); azure-sdk-for-net#2688 is resolved (`NullTokenUsageReader`).
+
+**Related:** `docs/superpowers/plans/2026-05-21-phase45-corpus-expansion.md` Task 16
+
 ## 2026-05-22 — Azure Document Intelligence instance provisioned for Phase 4.5 W1 OCR fallback
 
 **Decision:** Provisioned a single Azure Document Intelligence resource (`pinwiz-docint-dev-buutj`, S0 tier, East US 2) as the ADI OCR fallback for `AzureDocumentIntelligenceExtractor`. The RAG indexer managed identity (`ad9ea109-c33a-4f53-88df-e1397922de42`) was granted `Cognitive Services User` on the resource. The endpoint (`https://pinwiz-docint-dev-buutj.cognitiveservices.azure.com/`) is injected via env var `DocumentIntelligence__Endpoint` on the `pinwiz-ca-ragindexer-dev` Container App. `FallbackDocumentTextExtractor` activates the ADI extractor only when this endpoint is configured; local dev without the env var stays PdfPig-only.
