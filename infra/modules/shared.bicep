@@ -457,6 +457,40 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
 }
 
 // -----------------------------------------------------------------------------
+// Cohere Rerank-v3 external connection (ADR-0024 W4 fix-up)
+// -----------------------------------------------------------------------------
+// Wires Cohere Rerank-v3 as a Foundry external-model connection. The
+// CohereRerankReranker in Infrastructure calls the project connection
+// endpoint, which Foundry proxies to Cohere's API under the managed identity
+// credential. Cost: ~$1 / 1,000 reranks of 50 chunks — at 1K Wizard queries/day
+// that's ~$30/mo, well within the $300–$400/mo cap.
+//
+// The API key must be set on the connection's credentials after provisioning —
+// Bicep cannot set it because secrets must not appear in deployment outputs.
+// Operator runbook: after first deploy with deployPhase2=true, run:
+//   az cognitiveservices account project connection update \
+//     --name pinwiz-foundry-<env>-<suffix> \
+//     --project-name pinwiz-wizard \
+//     --connection-name cohere-rerank-v3 \
+//     --api-key <Cohere API key from Key Vault>
+// The Key Vault secret name is 'cohere-api-key'.
+//
+// Connection name is stable across environments — Rag:CrossEncoder:ModelEndpoint
+// points at the project endpoint, not the connection endpoint. Foundry routes
+// internally via the connection name; no per-env config change needed.
+
+resource cohereRerankConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = if (deployPhase2) {
+  parent: foundryProject
+  name: 'cohere-rerank-v3'
+  properties: {
+    authType: 'ApiKey'
+    category: 'CohereRerank'
+    target: 'https://api.cohere.com/v2/rerank'
+    isSharedToAll: false
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Storage Account (Standard LRS)
 // -----------------------------------------------------------------------------
 
@@ -755,6 +789,19 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
             {
               name: 'AiFoundry__EmbeddingDeploymentName'
               value: foundryEmbeddingDeploymentName
+            }
+            {
+              // ADR-0024 cross-encoder reranker. Disabled by default (Null
+              // reranker); operator flips Enabled=true once Cohere API key
+              // is set on the Foundry connection (see Cohere connection
+              // provisioning comment above). ModelEndpoint points at the
+              // Foundry project's Cohere connection proxy endpoint.
+              name: 'Rag__CrossEncoder__Enabled'
+              value: 'false'
+            }
+            {
+              name: 'Rag__CrossEncoder__ModelEndpoint'
+              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -1627,6 +1674,9 @@ output foundryProjectEndpoint string = empty(foundry.?name ?? '') ? '' : 'https:
 output foundryChatDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatDeploymentName
 output foundryChatHeavyDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryEmbeddingDeploymentName
+
+@description('Cohere Rerank-v3 Foundry connection proxy endpoint (ADR-0024). Set Rag:CrossEncoder:ModelEndpoint to this value and Rag:CrossEncoder:Enabled=true to activate the cross-encoder reranker.')
+output cohereRerankEndpoint string = empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
 
 output storageAccountName string = storage.?name ?? ''
 output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ?? ''

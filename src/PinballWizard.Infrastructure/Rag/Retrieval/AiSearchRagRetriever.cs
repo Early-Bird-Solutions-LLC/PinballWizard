@@ -27,22 +27,30 @@ public sealed class AiSearchRagRetriever : IRagRetriever
 {
     private readonly SearchClient _searchClient;
     private readonly IQueryEmbedder _queryEmbedder;
-    private readonly AiSearchOptions _options;
+    private readonly AiSearchOptions _aiSearchOptions;
+    private readonly CrossEncoderOptions _crossEncoderOptions;
+    private readonly ICrossEncoderReranker _reranker;
     private readonly ILogger<AiSearchRagRetriever> _logger;
 
     public AiSearchRagRetriever(
         SearchClient searchClient,
         IQueryEmbedder queryEmbedder,
         IOptions<AiSearchOptions> options,
+        IOptions<CrossEncoderOptions> crossEncoderOptions,
+        ICrossEncoderReranker reranker,
         ILogger<AiSearchRagRetriever> logger)
     {
         ArgumentNullException.ThrowIfNull(searchClient);
         ArgumentNullException.ThrowIfNull(queryEmbedder);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(crossEncoderOptions);
+        ArgumentNullException.ThrowIfNull(reranker);
         ArgumentNullException.ThrowIfNull(logger);
         _searchClient = searchClient;
         _queryEmbedder = queryEmbedder;
-        _options = options.Value;
+        _aiSearchOptions = options.Value;
+        _crossEncoderOptions = crossEncoderOptions.Value;
+        _reranker = reranker;
         _logger = logger;
     }
 
@@ -89,17 +97,30 @@ public sealed class AiSearchRagRetriever : IRagRetriever
                 chunks.Add(MapToChunk(result.Document, score));
             }
 
+            // ADR-0024 cross-encoder pass: when Rag:CrossEncoder:Enabled=true,
+            // re-score the AI Search results with Cohere Rerank-v3 and replace
+            // the per-chunk score with the Cohere relevance score. When disabled
+            // (default), NullCrossEncoderReranker returns the first TopN unchanged.
+            IReadOnlyList<RetrievedChunk> finalChunks = chunks;
+            if (_crossEncoderOptions.Enabled)
+            {
+                finalChunks = await ApplyRerankingAsync(
+                    queryText, chunks, _crossEncoderOptions.TopN, _reranker, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             _logger.LogInformation(
-                "RAG retrieval: query length={QueryLength}, returned {ChunkCount} chunks above minimum score {MinimumScore} (top {TopK}, machine={MachineFilter}, document_type={DocumentTypeFilter}, duration={DurationMs:F1}ms).",
+                "RAG retrieval: query length={QueryLength}, returned {ChunkCount} chunks above minimum score {MinimumScore} (top {TopK}, reranked={Reranked}, machine={MachineFilter}, document_type={DocumentTypeFilter}, duration={DurationMs:F1}ms).",
                 queryText.Length,
-                chunks.Count,
+                finalChunks.Count,
                 options.MinimumScore,
                 options.TopK,
+                _crossEncoderOptions.Enabled,
                 options.MachineId ?? "(any)",
                 options.DocumentType ?? "(any)",
                 stopwatch.Elapsed.TotalMilliseconds);
 
-            return chunks;
+            return finalChunks;
         }
         finally
         {
@@ -140,10 +161,34 @@ public sealed class AiSearchRagRetriever : IRagRetriever
         }
     }
 
+    // Maps RankedChunk results from the cross-encoder back to RetrievedChunk,
+    // replacing Score with the Cohere RelevanceScore (cast to double). Static
+    // and internal so AiSearchRagRetrieverRerankerTests can exercise it without
+    // constructing a full retriever (which needs a live SearchClient).
+    internal static async Task<IReadOnlyList<RetrievedChunk>> ApplyRerankingAsync(
+        string query,
+        IReadOnlyList<RetrievedChunk> candidates,
+        int topN,
+        ICrossEncoderReranker reranker,
+        CancellationToken cancellationToken)
+    {
+        var ranked = await reranker
+            .RerankAsync(query, candidates, topN, cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new RetrievedChunk[ranked.Count];
+        for (var i = 0; i < ranked.Count; i++)
+        {
+            var r = ranked[i];
+            result[i] = r.Chunk with { Score = r.RelevanceScore };
+        }
+        return result;
+    }
+
     private SearchOptions BuildSearchOptions(
         ReadOnlyMemory<float> queryVector,
         RetrievalOptions options)
-        => BuildSearchOptionsCore(queryVector, options, _options.SemanticConfigName);
+        => BuildSearchOptionsCore(queryVector, options, _aiSearchOptions.SemanticConfigName);
 
     internal static SearchOptions BuildSearchOptionsCore(
         ReadOnlyMemory<float> queryVector,
