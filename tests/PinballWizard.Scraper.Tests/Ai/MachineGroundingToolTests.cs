@@ -175,6 +175,42 @@ public sealed class MachineGroundingToolTests
     }
 
     [Fact]
+    public async Task GetMachineByTitleAsync_ScoredEntryMissing_FallsBackToCrossPartitionQuery()
+    {
+        // Scoring elevates a non-index-0 entry (Stern wins "Stern Godzilla"),
+        // but that entry's machine row is absent (stale lookup). The tool must
+        // fall through to the cross-partition fallback and still resolve.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+        };
+        lookup.UpsertEntry("G5po2-MeP6B", "sega");   // index 0 — not picked
+        lookup.UpsertEntry("GweeP-MW95j", "stern");   // index 1 — scored best, but stale
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        // Scored entry (Stern) is missing from the machines container.
+        repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+        // Fallback cross-partition query finds a current record.
+        var current = NewMachine("GweeP-MW95j-current", "Godzilla", 2021);
+        repo.QueryByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(current));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j-current", result!.OpdbId);
+        repo.Received(1).QueryByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>());
+        // Sega entry must never be fetched — scoring correctly chose Stern first.
+        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task GetMachineByTitleAsync_LookupMissing_FallsBackToCrossPartitionQuery()
     {
         // Lookup row doesn't exist (post-deploy backfill pending, or a
@@ -382,41 +418,42 @@ public sealed class MachineGroundingToolTests
     // ── Task 2: manufacturer/year scoring ──────────────────────────────────
 
     [Fact]
-    public void ScoreEntryAgainstTokens_ManufacturerMatch_ReturnsPositiveScore()
+    public void ScoreEntryAgainstTokens_ManufacturerMatch_ReturnsOne()
     {
         // "Stern Godzilla" tokens: ["stern", "godzilla"]
-        // Entry manufacturer "stern" → 1 token match
+        // Entry manufacturer "stern" → exactly 1 token match
         var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
-        var score = MachineGroundingTool.ScoreEntryAgainstTokens("stern", year: null, tokens);
-        Assert.True(score > 0);
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens);
+        Assert.Equal(1, score);
     }
 
     [Fact]
     public void ScoreEntryAgainstTokens_ManufacturerNoMatch_ReturnsZero()
     {
         var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
-        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: null, tokens);
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens);
         Assert.Equal(0, score);
     }
 
     [Fact]
-    public void ScoreEntryAgainstTokens_YearMatch_ReturnsPositiveScore()
+    public void ScoreEntryAgainstTokens_ManufacturerInTitle_ScoresHigherThanMismatch()
     {
-        // "Godzilla 2021" tokens include "2021"
-        var tokens = MachineGroundingTool.TokenizeForOverlap("Godzilla 2021");
-        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: 2021, tokens);
-        Assert.True(score > 0);
+        // Confirms the scoring correctly distinguishes manufacturer presence vs absence.
+        // MachineTitleLookup has no year column; scoring is manufacturer-token-only.
+        var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
+        var sternScore = MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens);
+        var segaScore = MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens);
+        Assert.True(sternScore > segaScore);
     }
 
     [Fact]
-    public void ScoreEntryAgainstTokens_NoSignal_ReturnsZero()
+    public void ScoreEntryAgainstTokens_NoManufacturerSignal_ReturnsZero()
     {
-        // bare "Godzilla" has no manufacturer/year signal — all entries score 0
+        // bare "Godzilla" has no manufacturer qualifier — all entries score 0
+        // and insertion order wins (backward-compatible behaviour)
         var tokens = MachineGroundingTool.TokenizeForOverlap("Godzilla");
-        var scoreSega = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: 1998, tokens);
-        var scoreStern = MachineGroundingTool.ScoreEntryAgainstTokens("stern", year: 2021, tokens);
-        Assert.Equal(0, scoreSega);
-        Assert.Equal(0, scoreStern);
+        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens));
+        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens));
     }
 
     [Fact]

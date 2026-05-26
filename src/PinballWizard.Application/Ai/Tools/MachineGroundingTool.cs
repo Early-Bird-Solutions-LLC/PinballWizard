@@ -107,27 +107,25 @@ public sealed class MachineGroundingTool
         return result;
     }
 
-    // Scores a collision-row entry (manufacturer key + optional year) against
-    // tokens extracted from the user-supplied title string. Returns an integer
-    // score: +1 per matching token. Zero means no signal — used as a tie-break
-    // sentinel to preserve insertion-order behaviour when the input carries no
-    // manufacturer/year qualifier.
+    // Scores a collision-row entry (manufacturer key) against tokens extracted
+    // from the user-supplied title string. Returns an integer score: +1 per
+    // matching token. Zero means no signal — used as a tie-break sentinel to
+    // preserve insertion-order behaviour when the input carries no manufacturer
+    // qualifier (e.g. bare "Godzilla" scores 0 for all entries, so the first
+    // entry wins as before).
     //
-    // The manufacturer key (e.g. "stern", "sega", "cgc") is compared directly
-    // against the token list because TokenizeForOverlap lowercases input.
-    // The year is converted to a string and compared as a token so that a user
-    // typing "Godzilla 2021" scores the Stern 2021 entry over the Sega 1998 one.
+    // MachineTitleLookup stores only OpdbIds + Manufacturers (no year column),
+    // so year disambiguation would require extending the lookup schema. Scoring
+    // is manufacturer-token-only for now; "Stern Godzilla" correctly resolves
+    // Stern over Sega via the "stern" token match.
     internal static int ScoreEntryAgainstTokens(
         string manufacturerKey,
-        int? year,
         IReadOnlyList<string> titleTokens)
     {
         var score = 0;
         foreach (var token in titleTokens)
         {
-            if (string.Equals(token, manufacturerKey, StringComparison.OrdinalIgnoreCase))
-                score++;
-            if (year.HasValue && token == year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            if (string.Equals(token, manufacturerKey, StringComparison.Ordinal))
                 score++;
         }
         return score;
@@ -135,7 +133,7 @@ public sealed class MachineGroundingTool
 
     [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
-        [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name and/or year if the user stated them (for example: 'Stern Godzilla', 'Godzilla 2021', 'Foo Fighters', 'Attack from Mars Remake'). Manufacturer and year qualifiers help resolve ambiguity when multiple machines share the same franchise title. Omit edition suffixes like Pro/Premium/LE — those are resolved via the returned Siblings list.")] string title,
+        [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). Omit edition suffixes like Pro/Premium/LE — those are resolved via the returned Siblings list.")] string title,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -154,25 +152,33 @@ public sealed class MachineGroundingTool
             Machine? match = null;
             var lookupHit = lookup is not null && lookup.OpdbIds.Count > 0;
 
+            // Guard: OpdbIds and Manufacturers must be the same length (maintained
+            // by UpsertEntry / RemoveEntry). A mismatch indicates data corruption
+            // (direct Cosmos edit, buggy migration, or partial write). Degrade to
+            // the cross-partition fallback so the user query still resolves; the
+            // next OPDB sync will rewrite the row correctly.
+            if (lookupHit && lookup!.OpdbIds.Count != lookup.Manufacturers.Count)
+            {
+                _logger.LogWarning(
+                    "MachineGroundingTool: lookup row for '{Title}' has mismatched OpdbIds ({OpdbCount}) and Manufacturers ({ManufacturerCount}) — possible data corruption. Falling back to cross-partition query. Re-run OPDB sync to remediate.",
+                    title, lookup.OpdbIds.Count, lookup.Manufacturers.Count);
+                lookupHit = false;
+            }
+
             if (lookupHit)
             {
-                // Score every collision-row entry against tokens extracted from
-                // the input title. Manufacturer keys (e.g. "stern", "sega") and
-                // year strings (e.g. "2021") each contribute +1 when they appear
-                // in the token list. The highest-scoring entry is resolved first;
-                // ties preserve insertion order (existing first-hit semantics).
-                // When the user passes a bare franchise title ("Godzilla") with
-                // no qualifier, all entries score 0 and insertion order wins —
-                // keeping backward-compatible behaviour.
+                // Score every collision-row entry against manufacturer tokens
+                // extracted from the input title. The highest-scoring entry is
+                // resolved first; ties (all-zero or equal scores) preserve
+                // insertion order — backward-compatible with the pre-scoring
+                // first-hit behaviour for bare franchise titles ("Godzilla").
                 var titleTokens = TokenizeForOverlap(title);
                 var bestIdx = 0;
-                var bestScore = ScoreEntryAgainstTokens(
-                    lookup!.Manufacturers[0], year: null, titleTokens);
+                var bestScore = ScoreEntryAgainstTokens(lookup!.Manufacturers[0], titleTokens);
 
                 for (var i = 1; i < lookup.OpdbIds.Count; i++)
                 {
-                    var score = ScoreEntryAgainstTokens(
-                        lookup.Manufacturers[i], year: null, titleTokens);
+                    var score = ScoreEntryAgainstTokens(lookup.Manufacturers[i], titleTokens);
                     if (score > bestScore)
                     {
                         bestScore = score;
