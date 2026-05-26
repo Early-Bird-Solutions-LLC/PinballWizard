@@ -107,9 +107,35 @@ public sealed class MachineGroundingTool
         return result;
     }
 
+    // Scores a collision-row entry (manufacturer key + optional year) against
+    // tokens extracted from the user-supplied title string. Returns an integer
+    // score: +1 per matching token. Zero means no signal — used as a tie-break
+    // sentinel to preserve insertion-order behaviour when the input carries no
+    // manufacturer/year qualifier.
+    //
+    // The manufacturer key (e.g. "stern", "sega", "cgc") is compared directly
+    // against the token list because TokenizeForOverlap lowercases input.
+    // The year is converted to a string and compared as a token so that a user
+    // typing "Godzilla 2021" scores the Stern 2021 entry over the Sega 1998 one.
+    internal static int ScoreEntryAgainstTokens(
+        string manufacturerKey,
+        int? year,
+        IReadOnlyList<string> titleTokens)
+    {
+        var score = 0;
+        foreach (var token in titleTokens)
+        {
+            if (string.Equals(token, manufacturerKey, StringComparison.OrdinalIgnoreCase))
+                score++;
+            if (year.HasValue && token == year.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                score++;
+        }
+        return score;
+    }
+
     [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
-        [Description("The pinball-machine title to look up, case-insensitive (for example: 'Godzilla', 'Foo Fighters', 'Stranger Things'). Use the clean franchise title without edition suffixes.")] string title,
+        [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name and/or year if the user stated them (for example: 'Stern Godzilla', 'Godzilla 2021', 'Foo Fighters', 'Attack from Mars Remake'). Manufacturer and year qualifiers help resolve ambiguity when multiple machines share the same franchise title. Omit edition suffixes like Pro/Premium/LE — those are resolved via the returned Siblings list.")] string title,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title))
@@ -130,28 +156,39 @@ public sealed class MachineGroundingTool
 
             if (lookupHit)
             {
-                // First entry on the lookup row matches the existing
-                // first-OPDB-ordered-hit semantics. Title collisions
-                // (multiple machines with the same normalized title)
-                // are resolved by insertion order; PR 6 of the
-                // delight-or-future-track may surface ambiguity to the
-                // agent if eval data warrants.
-                var opdbId = lookup!.OpdbIds[0];
-                var manufacturer = lookup.Manufacturers[0];
+                // Score every collision-row entry against tokens extracted from
+                // the input title. Manufacturer keys (e.g. "stern", "sega") and
+                // year strings (e.g. "2021") each contribute +1 when they appear
+                // in the token list. The highest-scoring entry is resolved first;
+                // ties preserve insertion order (existing first-hit semantics).
+                // When the user passes a bare franchise title ("Godzilla") with
+                // no qualifier, all entries score 0 and insertion order wins —
+                // keeping backward-compatible behaviour.
+                var titleTokens = TokenizeForOverlap(title);
+                var bestIdx = 0;
+                var bestScore = ScoreEntryAgainstTokens(
+                    lookup!.Manufacturers[0], year: null, titleTokens);
+
+                for (var i = 1; i < lookup.OpdbIds.Count; i++)
+                {
+                    var score = ScoreEntryAgainstTokens(
+                        lookup.Manufacturers[i], year: null, titleTokens);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestIdx = i;
+                    }
+                }
+
+                var opdbId = lookup.OpdbIds[bestIdx];
+                var manufacturer = lookup.Manufacturers[bestIdx];
                 match = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
 
                 if (match is null)
                 {
-                    // Stale lookup — the row points at a machine that no
-                    // longer exists in the `machines` container. Falls
-                    // through to the cross-partition fallback below;
-                    // logged at warning so the gap surfaces. Self-corrects
-                    // on the next OPDB sync (the writer either updates
-                    // or removes the lookup row when it processes the
-                    // missing machine's id).
                     _logger.LogWarning(
-                        "MachineGroundingTool: lookup '{Title}' pointed at opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' but the machine row is missing. Falling back to cross-partition QueryByTitleAsync. Stale lookup will self-correct on the next OPDB sync.",
-                        title, opdbId, manufacturer);
+                        "MachineGroundingTool: lookup '{Title}' pointed at opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' (score={Score}) but the machine row is missing. Falling back to cross-partition QueryByTitleAsync. Stale lookup will self-correct on the next OPDB sync.",
+                        title, opdbId, manufacturer, bestScore);
                 }
             }
 

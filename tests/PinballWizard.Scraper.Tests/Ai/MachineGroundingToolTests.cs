@@ -379,6 +379,116 @@ public sealed class MachineGroundingToolTests
         Assert.Empty(result!.Siblings);
     }
 
+    // ── Task 2: manufacturer/year scoring ──────────────────────────────────
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_ManufacturerMatch_ReturnsPositiveScore()
+    {
+        // "Stern Godzilla" tokens: ["stern", "godzilla"]
+        // Entry manufacturer "stern" → 1 token match
+        var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens("stern", year: null, tokens);
+        Assert.True(score > 0);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_ManufacturerNoMatch_ReturnsZero()
+    {
+        var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: null, tokens);
+        Assert.Equal(0, score);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_YearMatch_ReturnsPositiveScore()
+    {
+        // "Godzilla 2021" tokens include "2021"
+        var tokens = MachineGroundingTool.TokenizeForOverlap("Godzilla 2021");
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: 2021, tokens);
+        Assert.True(score > 0);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_NoSignal_ReturnsZero()
+    {
+        // bare "Godzilla" has no manufacturer/year signal — all entries score 0
+        var tokens = MachineGroundingTool.TokenizeForOverlap("Godzilla");
+        var scoreSega = MachineGroundingTool.ScoreEntryAgainstTokens("sega", year: 1998, tokens);
+        var scoreStern = MachineGroundingTool.ScoreEntryAgainstTokens("stern", year: 2021, tokens);
+        Assert.Equal(0, scoreSega);
+        Assert.Equal(0, scoreStern);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_CollisionWithManufacturerQualifier_ResolvesCorrectEntry()
+    {
+        // "Stern Godzilla" should resolve to Stern 2021 (GweeP-Ml9pZ), NOT
+        // Sega 1998 (G5po2-MeP6B), even though Sega is at index 0 of the
+        // lookup row. The manufacturer token "stern" in the title breaks the tie.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
+        };
+        // Sega first (index 0), Stern second — insertion-order would pick Sega.
+        lookup.UpsertEntry("G5po2-MeP6B", "sega");
+        lookup.UpsertEntry("GweeP-Ml9pZ", "stern");
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>())
+            .Returns(new Machine
+            {
+                Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+                ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
+                FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            });
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
+        Assert.Equal("Stern Pinball", result.Manufacturer);
+        // Sega's GetByOpdbIdAsync must never be called.
+        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_CollisionNoQualifier_ReturnsBestInsertionOrder()
+    {
+        // Bare "Godzilla" — no manufacturer/year tokens — all scores = 0.
+        // Falls back to insertion order: first entry (Sega) wins.
+        // This preserves existing behaviour for unqualified lookups.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Godzilla"),
+        };
+        lookup.UpsertEntry("G5po2-MeP6B", "sega");
+        lookup.UpsertEntry("GweeP-MW95j", "stern");
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>())
+            .Returns(new Machine
+            {
+                Id = "G5po2-MeP6B", PartitionKey = "sega",
+                ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+                FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            });
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("G5po2-MeP6B", result!.OpdbId);
+    }
+
     [Fact]
     public void Ctor_NullRepository_Throws()
     {
