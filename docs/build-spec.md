@@ -926,7 +926,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 
 ## Phase 4.5 — Manuals corpus expansion
 
-**Status:** 🔵 In progress — W0 + W1 complete; W2 (corpus expansion) next
+**Status:** 🔵 In progress — W0–W3b complete; W4 (phase exit + H5 eval) next
 **Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they ran concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
 **Demonstrable artifact:** Every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged). H5 eval baseline demonstrates a meaningful lift from the all-refused H4 floor.
 
@@ -936,10 +936,10 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 | --- | --- | --- |
 | W0 — Eval set realignment | ✅ Complete (PR #265) | Replace 26 licensed-IP questions with OPDB-grounded questions matching the indexed curated subset; capture H4 eval baseline |
 | W1 — Azure Document Intelligence OCR fallback | ✅ Complete (PR #266) | `AzureDocumentIntelligenceExtractor` behind `FallbackDocumentTextExtractor`; `ExtractionStatus.OcrFailed`; conditional DI on `DocumentIntelligence:Endpoint`; ADI Bicep resource in Phase 2 tier |
-| W2 — Corpus expansion | 🔵 Next | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
-| W3a — Metadata-card synthesis | ⏳ Planned | Machine records → `metadata_card` chunks → AI Search |
-| W3b — Bulletin discovery pass | ⏳ Planned | Extend bulletin ingestion to non-Stern manufacturers |
-| W4 — Phase exit + H5 eval | ⏳ Planned | H5 baseline; ADR-0024 re-rank gate re-evaluation |
+| W2 — Corpus expansion | ✅ Complete (PR #268) | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
+| W3a — Metadata-card synthesis | ✅ Complete (PR #269) | Machine records → `metadata_card` chunks → AI Search |
+| W3b — Bulletin discovery pass | ✅ Complete (PR #289) | Extend bulletin ingestion to non-Stern manufacturers |
+| W4 — Phase exit + H5 eval | 🔵 Next | H5 baseline; ADR-0024 re-rank gate re-evaluation |
 
 ### W0: Eval set realignment (PR #265, complete)
 
