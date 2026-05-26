@@ -56,7 +56,11 @@ public static class ServiceCollectionExtensions
         // CohereRerankReranker is wired with a dedicated named HttpClient.
         services.AddOptions<CrossEncoderOptions>()
             .Bind(configuration.GetSection(CrossEncoderOptions.SectionName))
-            .ValidateDataAnnotations();
+            .ValidateDataAnnotations()
+            .Validate(
+                static o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ModelEndpoint),
+                $"{CrossEncoderOptions.SectionName}:ModelEndpoint is required when {CrossEncoderOptions.SectionName}:Enabled=true.")
+            .ValidateOnStart();
 
         // Named HttpClient for CohereRerankReranker — only resolved when
         // Rag:CrossEncoder:Enabled=true. Attaches a DefaultAzureCredential

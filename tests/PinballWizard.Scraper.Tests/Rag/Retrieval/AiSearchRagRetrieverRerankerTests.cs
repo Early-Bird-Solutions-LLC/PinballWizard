@@ -54,6 +54,27 @@ public sealed class AiSearchRagRetrieverRerankerTests
     }
 
     [Fact]
+    public async Task ApplyRerankingAsync_WhenRerankerThrows_PropagatesExceptionForCallerDegradation()
+    {
+        // RetrieveAsync catches HttpRequestException from this call and falls back
+        // to unranked results. Verify the exception propagates (not swallowed here).
+        var query = "What is the ball-save timer?";
+        var chunk = MakeChunk("chunk_A");
+        var candidates = new[] { chunk };
+
+        var reranker = Substitute.For<ICrossEncoderReranker>();
+        reranker.RerankAsync(query, candidates, topN: 5, CancellationToken.None)
+                .Returns<Task<IReadOnlyList<RankedChunk>>>(_ =>
+                    Task.FromException<IReadOnlyList<RankedChunk>>(
+                        new HttpRequestException("Cohere 503 Service Unavailable")));
+
+        // Act & Assert: the exception propagates out of ApplyRerankingAsync.
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            AiSearchRagRetriever.ApplyRerankingAsync(
+                query, candidates, topN: 5, reranker, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ApplyRerankingAsync_PreservesAllOtherChunkFields()
     {
         // The reranker must not drop citation fields (DocumentUrl, PageStart, etc.)

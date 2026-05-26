@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Core.Configuration;
 using Xunit;
@@ -61,5 +64,29 @@ public sealed class CrossEncoderRerankerContractTests
     {
         var opts = new CrossEncoderOptions();
         Assert.Equal(5, opts.TopN);
+    }
+
+    [Fact]
+    public void CrossEncoderOptions_WhenEnabledTrueAndModelEndpointEmpty_ValidateFails()
+    {
+        // Validates the ServiceCollectionExtensions guard:
+        //   .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ModelEndpoint), ...)
+        // An operator who sets Enabled=true but omits ModelEndpoint must get a
+        // startup-time failure, not a silent runtime UriFormatException.
+        var services = new ServiceCollection();
+        services.AddOptions<CrossEncoderOptions>()
+            .Configure(o => { o.Enabled = true; o.ModelEndpoint = ""; })
+            .ValidateDataAnnotations()
+            .Validate(
+                static o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ModelEndpoint),
+                $"{CrossEncoderOptions.SectionName}:ModelEndpoint is required when {CrossEncoderOptions.SectionName}:Enabled=true.")
+            .ValidateOnStart();
+
+        var sp = services.BuildServiceProvider();
+
+        // IStartupValidator forces ValidateOnStart to fire.
+        var validator = sp.GetRequiredService<IStartupValidator>();
+        var ex = Assert.Throws<OptionsValidationException>(validator.Validate);
+        Assert.Contains("ModelEndpoint is required", ex.Message);
     }
 }

@@ -101,12 +101,23 @@ public sealed class AiSearchRagRetriever : IRagRetriever
             // re-score the AI Search results with Cohere Rerank-v3 and replace
             // the per-chunk score with the Cohere relevance score. When disabled
             // (default), NullCrossEncoderReranker returns the first TopN unchanged.
+            // On a transient Cohere error (429, 503, network) we degrade gracefully
+            // to the unranked AI Search results rather than failing the whole query.
             IReadOnlyList<RetrievedChunk> finalChunks = chunks;
             if (_crossEncoderOptions.Enabled)
             {
-                finalChunks = await ApplyRerankingAsync(
-                    queryText, chunks, _crossEncoderOptions.TopN, _reranker, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    finalChunks = await ApplyRerankingAsync(
+                        queryText, chunks, _crossEncoderOptions.TopN, _reranker, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex,
+                        "Cohere reranker failed; falling back to unranked AI Search results ({ChunkCount} chunks).",
+                        chunks.Count);
+                }
             }
 
             _logger.LogInformation(
