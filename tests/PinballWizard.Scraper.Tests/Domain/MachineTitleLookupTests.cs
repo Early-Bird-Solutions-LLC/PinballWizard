@@ -3,15 +3,6 @@ using Xunit;
 
 namespace PinballWizard.Scraper.Tests.Domain;
 
-/// <summary>
-/// Unit tests for the <see cref="MachineTitleLookup"/> entity:
-/// normalization rules and the parallel-array invariant maintained by
-/// <see cref="MachineTitleLookup.UpsertEntry"/> /
-/// <see cref="MachineTitleLookup.RemoveEntry"/>. Per ADR-0025 § 4 the
-/// normalization is the contract that lets dual-writes from
-/// <c>OpdbSyncService</c> agree with point-reads from
-/// <c>MachineGroundingTool</c> on which row to address.
-/// </summary>
 public sealed class MachineTitleLookupTests
 {
     [Theory]
@@ -51,7 +42,7 @@ public sealed class MachineTitleLookupTests
     {
         var lookup = NewLookup("foo fighters");
 
-        lookup.UpsertEntry("GRBN-MQR4P", "stern");
+        lookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
 
         Assert.Equal(["GRBN-MQR4P"], lookup.OpdbIds);
         Assert.Equal(["stern"], lookup.Manufacturers);
@@ -66,11 +57,11 @@ public sealed class MachineTitleLookupTests
         // moving it to the END of the list — a fresh insert from a
         // re-run of OPDB sync should not promote a stale ordering.
         var lookup = NewLookup("godzilla");
-        lookup.UpsertEntry("GRBN-AAA", "stern");
-        lookup.UpsertEntry("GRBN-BBB", "jjp");
+        lookup.UpsertEntry("GRBN-AAA", "stern", ["stern"]);
+        lookup.UpsertEntry("GRBN-BBB", "jjp", ["jjp"]);
 
         // Re-upsert GRBN-AAA — should move to the end.
-        lookup.UpsertEntry("GRBN-AAA", "stern");
+        lookup.UpsertEntry("GRBN-AAA", "stern", ["stern"]);
 
         Assert.Equal(["GRBN-BBB", "GRBN-AAA"], lookup.OpdbIds);
         Assert.Equal(["jjp", "stern"], lookup.Manufacturers);
@@ -80,8 +71,8 @@ public sealed class MachineTitleLookupTests
     public void RemoveEntry_ReturnsTrueAndRemovesPair()
     {
         var lookup = NewLookup("godzilla");
-        lookup.UpsertEntry("GRBN-AAA", "stern");
-        lookup.UpsertEntry("GRBN-BBB", "jjp");
+        lookup.UpsertEntry("GRBN-AAA", "stern", ["stern"]);
+        lookup.UpsertEntry("GRBN-BBB", "jjp", ["jjp"]);
 
         var removed = lookup.RemoveEntry("GRBN-AAA");
 
@@ -94,7 +85,7 @@ public sealed class MachineTitleLookupTests
     public void RemoveEntry_MissingId_ReturnsFalseAndPreservesArrays()
     {
         var lookup = NewLookup("foo fighters");
-        lookup.UpsertEntry("GRBN-MQR4P", "stern");
+        lookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
 
         var removed = lookup.RemoveEntry("GRBN-DOES-NOT-EXIST");
 
@@ -112,10 +103,123 @@ public sealed class MachineTitleLookupTests
         var lookup = NewLookup("multi");
         for (int i = 0; i < 5; i++)
         {
-            lookup.UpsertEntry($"ID-{i:D3}", $"mfr-{i}");
+            lookup.UpsertEntry($"ID-{i:D3}", $"mfr-{i}", [$"mfr-{i}"]);
         }
         Assert.Equal(5, lookup.OpdbIds.Count);
         Assert.Equal(5, lookup.Manufacturers.Count);
+        Assert.Equal(5, lookup.MatchTokens!.Count);
+    }
+
+    [Fact]
+    public void UpsertEntry_NewEntry_StoresMatchTokensAtSameIndex()
+    {
+        var lookup = new MachineTitleLookup { Id = "godzilla", PartitionKey = "godzilla" };
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
+        lookup.UpsertEntry("G5po2-MeP6B", "sega",  ["sega"]);
+
+        Assert.Equal(2, lookup.OpdbIds.Count);
+        Assert.Equal(2, lookup.MatchTokens!.Count);
+        Assert.Equal(["stern"], lookup.MatchTokens[0]);
+        Assert.Equal(["sega"],  lookup.MatchTokens[1]);
+    }
+
+    [Fact]
+    public void UpsertEntry_ReplaceExisting_UpdatesMatchTokensInPlace()
+    {
+        var lookup = new MachineTitleLookup { Id = "godzilla", PartitionKey = "godzilla" };
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
+        // Re-upsert same opdbId with new tokens (simulates sync updating a row)
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern", "newtoken"]);
+
+        Assert.Single(lookup.OpdbIds);
+        Assert.Single(lookup.MatchTokens!);
+        Assert.Equal(["stern", "newtoken"], lookup.MatchTokens![0]);
+    }
+
+    [Fact]
+    public void RemoveEntry_ExistingEntry_RemovesMatchTokensAtSameIndex()
+    {
+        var lookup = new MachineTitleLookup { Id = "godzilla", PartitionKey = "godzilla" };
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
+        lookup.UpsertEntry("G5po2-MeP6B", "sega",  ["sega"]);
+
+        var removed = lookup.RemoveEntry("GweeP-MW95j");
+
+        Assert.True(removed);
+        Assert.Single(lookup.OpdbIds);
+        Assert.Single(lookup.MatchTokens!);
+        Assert.Equal("G5po2-MeP6B", lookup.OpdbIds[0]);
+        Assert.Equal(["sega"], lookup.MatchTokens![0]);
+    }
+
+    [Fact]
+    public void UpsertEntry_MultiTokenManufacturer_StoresAllTokens()
+    {
+        var lookup = new MachineTitleLookup { Id = "pirates of the caribbean", PartitionKey = "pirates of the caribbean" };
+        lookup.UpsertEntry("GR7ZX-MQ23b", "stern", ["stern"]);
+        lookup.UpsertEntry("GRbPY-MePOP", "jjp",   ["jjp", "jersey", "jack"]);
+
+        Assert.Equal(["jjp", "jersey", "jack"], lookup.MatchTokens![1]);
+    }
+
+    [Fact]
+    public void RemoveEntry_LegacyNullMatchTokens_PadsBeforeRemoval()
+    {
+        // Simulates a Cosmos row written before MatchTokens existed (MatchTokens == null).
+        // RemoveEntry must pad with separate empty lists so a subsequent UpsertEntry keeps
+        // all three arrays in sync. Also verifies pad entries are distinct instances so
+        // mutating one does not affect others.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = null,
+        };
+
+        var removed = lookup.RemoveEntry("G5po2-MeP6B");
+
+        Assert.True(removed);
+        Assert.Single(lookup.OpdbIds);
+        Assert.Equal("GweeP-MW95j", lookup.OpdbIds[0]);
+        Assert.NotNull(lookup.MatchTokens);
+        Assert.Single(lookup.MatchTokens);
+        // Pad entry must be an empty list, not null
+        Assert.Empty(lookup.MatchTokens[0]);
+    }
+
+    [Fact]
+    public void RemoveEntry_LegacyNullMatchTokens_PadEntriesAreDistinctInstances()
+    {
+        // Verify Enumerable.Range (not Repeat) so mutating one pad does not alias others.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "test",
+            PartitionKey = "test",
+            OpdbIds = ["A", "B"],
+            Manufacturers = ["stern", "sega"],
+            MatchTokens = null,
+        };
+
+        // Trigger padding without removing — call RemoveEntry on an id that doesn't exist
+        // won't pad (guard is idx >= 0). Use a known id to trigger the pad then undo.
+        // Instead: directly verify that after RemoveEntry fires padding, the two remaining
+        // pads (if any) are independent. Use 3-entry lookup so 2 remain after removal.
+        var lookup3 = new MachineTitleLookup
+        {
+            Id = "test3",
+            PartitionKey = "test3",
+            OpdbIds = ["A", "B", "C"],
+            Manufacturers = ["stern", "sega", "jjp"],
+            MatchTokens = null,
+        };
+
+        lookup3.RemoveEntry("A"); // pads 3 entries, removes index 0
+
+        Assert.Equal(2, lookup3.MatchTokens!.Count);
+        // Must be distinct instances
+        Assert.NotSame(lookup3.MatchTokens[0], lookup3.MatchTokens[1]);
     }
 
     private static MachineTitleLookup NewLookup(string normalized) => new()

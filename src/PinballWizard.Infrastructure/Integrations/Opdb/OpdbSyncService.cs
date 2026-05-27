@@ -509,7 +509,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 Id = newNormalized,
                 PartitionKey = newNormalized,
             };
-            lookup.UpsertEntry(machineId, manufacturer);
+            lookup.UpsertEntry(machineId, manufacturer, OpdbMachineMapper.GetMatchTokens(manufacturer));
             lookup.LastSyncedUtc = now;
             await _titleLookups.UpsertAsync(lookup, cancellationToken).ConfigureAwait(false);
         }
