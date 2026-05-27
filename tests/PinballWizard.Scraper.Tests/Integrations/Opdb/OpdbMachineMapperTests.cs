@@ -527,4 +527,37 @@ public sealed class OpdbMachineMapperTests
         var alias = new OpdbMachineDto { OpdbId = "GROUP-MACHINE-ALIAS", IsAlias = true };
         Assert.Null(OpdbMachineMapper.MapToEdition(alias));
     }
+
+    // ── GetMatchTokens ──────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("stern",           new[] { "stern" })]
+    [InlineData("jjp",            new[] { "jjp", "jersey", "jack" })]
+    [InlineData("americanpinball",new[] { "americanpinball", "american", "pinball", "ap" })]
+    [InlineData("spooky",         new[] { "spooky" })]
+    [InlineData("multimorphic",   new[] { "multimorphic" })]
+    [InlineData("cgc",            new[] { "cgc", "chicago", "gaming" })]
+    [InlineData("haggis",         new[] { "haggis" })]
+    [InlineData("pinballbrothers",new[] { "pinballbrothers", "pinball", "brothers", "pb" })]
+    [InlineData("dutch",          new[] { "dutch" })]
+    [InlineData("barrelsoffun",   new[] { "barrelsoffun", "barrels", "fun", "bof" })]
+    public void GetMatchTokens_KnownKey_ReturnsExpectedTokens(string key, string[] expected)
+    {
+        var tokens = OpdbMachineMapper.GetMatchTokens(key);
+        Assert.Equal(expected, tokens);
+    }
+
+    [Fact]
+    public void GetMatchTokens_UnknownKey_ReturnsKeyAsSingleElement()
+    {
+        var tokens = OpdbMachineMapper.GetMatchTokens("somelongtailmanufacturer");
+        Assert.Equal(["somelongtailmanufacturer"], tokens);
+    }
+
+    [Fact]
+    public void GetMatchTokens_ReturnsIReadOnlyList()
+    {
+        IReadOnlyList<string> tokens = OpdbMachineMapper.GetMatchTokens("stern");
+        Assert.NotNull(tokens);
+    }
 }

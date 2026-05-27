@@ -207,6 +207,29 @@ public static class OpdbMachineMapper
         existing.LastSeenAt = now;
     }
 
+    private static readonly Dictionary<string, IReadOnlyList<string>> ManufacturerMatchTokens =
+        new(StringComparer.Ordinal)
+        {
+            ["stern"]           = ["stern"],
+            ["jjp"]             = ["jjp", "jersey", "jack"],
+            ["americanpinball"] = ["americanpinball", "american", "pinball", "ap"],
+            ["spooky"]          = ["spooky"],
+            ["multimorphic"]    = ["multimorphic"],
+            ["cgc"]             = ["cgc", "chicago", "gaming"],
+            ["haggis"]          = ["haggis"],
+            ["pinballbrothers"] = ["pinballbrothers", "pinball", "brothers", "pb"],
+            ["dutch"]           = ["dutch"],
+            ["barrelsoffun"]    = ["barrelsoffun", "barrels", "fun", "bof"],
+        };
+
+    public static IReadOnlyList<string> GetMatchTokens(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return ManufacturerMatchTokens.TryGetValue(key, out var tokens)
+            ? tokens
+            : [key];
+    }
+
     // Returns the first argument that is non-null AND non-whitespace,
     // or null if every candidate is null/empty/whitespace. C#'s null-
     // coalescing operator (??) preserves empty strings — `null ?? "" ??
