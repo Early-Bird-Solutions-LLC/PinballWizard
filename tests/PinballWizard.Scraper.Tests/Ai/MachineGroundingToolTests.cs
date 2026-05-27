@@ -423,7 +423,7 @@ public sealed class MachineGroundingToolTests
         // "Stern Godzilla" tokens: ["stern", "godzilla"]
         // Entry manufacturer "stern" → exactly 1 token match
         var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
-        var score = MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens);
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens(["stern"], tokens);
         Assert.Equal(1, score);
     }
 
@@ -431,7 +431,7 @@ public sealed class MachineGroundingToolTests
     public void ScoreEntryAgainstTokens_ManufacturerNoMatch_ReturnsZero()
     {
         var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
-        var score = MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens);
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens(["sega"], tokens);
         Assert.Equal(0, score);
     }
 
@@ -441,8 +441,8 @@ public sealed class MachineGroundingToolTests
         // Confirms the scoring correctly distinguishes manufacturer presence vs absence.
         // MachineTitleLookup has no year column; scoring is manufacturer-token-only.
         var tokens = MachineGroundingTool.TokenizeForOverlap("Stern Godzilla");
-        var sternScore = MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens);
-        var segaScore = MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens);
+        var sternScore = MachineGroundingTool.ScoreEntryAgainstTokens(["stern"], tokens);
+        var segaScore = MachineGroundingTool.ScoreEntryAgainstTokens(["sega"], tokens);
         Assert.True(sternScore > segaScore);
     }
 
@@ -452,8 +452,8 @@ public sealed class MachineGroundingToolTests
         // bare "Godzilla" has no manufacturer qualifier — all entries score 0
         // and insertion order wins (backward-compatible behaviour)
         var tokens = MachineGroundingTool.TokenizeForOverlap("Godzilla");
-        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens("sega", tokens));
-        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens("stern", tokens));
+        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens(["sega"], tokens));
+        Assert.Equal(0, MachineGroundingTool.ScoreEntryAgainstTokens(["stern"], tokens));
     }
 
     [Fact]
@@ -716,11 +716,141 @@ public sealed class MachineGroundingToolTests
         return samples;
     }
 
+    // ── Task 4: ScoreEntryAgainstTokens (IReadOnlyList<string> signature) ───
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_SingleToken_ExactMatch_ReturnsOne()
+    {
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["stern"],
+            titleTokens: ["stern", "godzilla"]);
+        Assert.Equal(1, score);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_MultiToken_PartialMatch_ReturnsMatchCount()
+    {
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["jjp", "jersey", "jack"],
+            titleTokens: ["jersey", "jack", "pirates"]);
+        Assert.Equal(2, score);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_NoOverlap_ReturnsZero()
+    {
+        var score = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["cgc", "chicago", "gaming"],
+            titleTokens: ["stern", "godzilla"]);
+        Assert.Equal(0, score);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_JjpVsStern_JerseyJackWins()
+    {
+        var jjpScore = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["jjp", "jersey", "jack"],
+            titleTokens: ["jersey", "jack", "pirates"]);
+        var sternScore = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["stern"],
+            titleTokens: ["jersey", "jack", "pirates"]);
+        Assert.True(jjpScore > sternScore);
+    }
+
+    [Fact]
+    public void ScoreEntryAgainstTokens_CgcVsBally_ChicagoGamingWins()
+    {
+        var cgcScore = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["cgc", "chicago", "gaming"],
+            titleTokens: ["chicago", "gaming", "attack", "mars"]);
+        var ballyScore = MachineGroundingTool.ScoreEntryAgainstTokens(
+            matchTokens: ["bally"],
+            titleTokens: ["chicago", "gaming", "attack", "mars"]);
+        Assert.True(cgcScore > ballyScore);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_JjpQualifier_PicksJjpOverStern()
+    {
+        var lookup = new MachineTitleLookup
+        {
+            Id = "pirates of the caribbean",
+            PartitionKey = "pirates of the caribbean",
+        };
+        lookup.UpsertEntry("GR7ZX-MQ23b", "stern", ["stern"]);
+        lookup.UpsertEntry("GRbPY-MePOP", "jjp",   ["jjp", "jersey", "jack"]);
+
+        var sternMachine = BuildMachine("GR7ZX-MQ23b", "stern", "Stern Pinball", "Pirates of the Caribbean", 2006);
+        var jjpMachine   = BuildMachine("GRbPY-MePOP", "jjp",   "Jersey Jack Pinball", "Pirates of the Caribbean", 2019);
+
+        var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
+        titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MachineTitleLookup?>(lookup));
+
+        var machines = Substitute.For<IMachineRepository>();
+        machines.GetByOpdbIdAsync("GRbPY-MePOP", "jjp", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(jjpMachine));
+        machines.GetByOpdbIdAsync("GR7ZX-MQ23b", "stern", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(sternMachine));
+        machines.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(machines, titleLookups, NullLogger<MachineGroundingTool>.Instance);
+
+        var result = await tool.GetMachineByTitleAsync("Jersey Jack Pirates of the Caribbean", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRbPY-MePOP", result!.OpdbId);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_NullMatchTokens_FallsBackToManufacturerKeyScoring()
+    {
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = null,
+        };
+
+        var sternMachine = BuildMachine("GweeP-MW95j", "stern", "Stern Pinball", "Godzilla", 2021);
+
+        var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
+        titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MachineTitleLookup?>(lookup));
+
+        var machines = Substitute.For<IMachineRepository>();
+        machines.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(sternMachine));
+        machines.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(machines, titleLookups, NullLogger<MachineGroundingTool>.Instance);
+
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j", result!.OpdbId);
+    }
+
     private static Machine NewMachine(string id, string title, int year) => new()
     {
         Id = id,
         PartitionKey = "stern",
         ManufacturerDisplayName = "Stern Pinball",
+        Title = title,
+        Year = year,
+        FirstSeenAt = DateTimeOffset.UtcNow,
+        LastSeenAt = DateTimeOffset.UtcNow,
+    };
+
+    private static Machine BuildMachine(string id, string partitionKey, string displayName, string title, int year) => new()
+    {
+        Id = id,
+        PartitionKey = partitionKey,
+        ManufacturerDisplayName = displayName,
         Title = title,
         Year = year,
         FirstSeenAt = DateTimeOffset.UtcNow,
