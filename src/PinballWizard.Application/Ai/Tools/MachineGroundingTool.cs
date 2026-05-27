@@ -158,17 +158,26 @@ public sealed class MachineGroundingTool
             Machine? match = null;
             var lookupHit = lookup is not null && lookup.OpdbIds.Count > 0;
 
-            // Guard: OpdbIds and Manufacturers must be the same length (maintained
-            // by UpsertEntry / RemoveEntry). A mismatch indicates data corruption
-            // (direct Cosmos edit, buggy migration, or partial write). Degrade to
-            // the cross-partition fallback so the user query still resolves; the
-            // next OPDB sync will rewrite the row correctly.
-            if (lookupHit && lookup!.OpdbIds.Count != lookup.Manufacturers.Count)
+            // Guard: OpdbIds, Manufacturers, and (when present) MatchTokens must all
+            // be the same length (maintained by UpsertEntry / RemoveEntry). A mismatch
+            // indicates data corruption (direct Cosmos edit, buggy migration, or partial
+            // write). Degrade to the cross-partition fallback so the user query still
+            // resolves; the next OPDB sync will rewrite the row correctly.
+            if (lookupHit)
             {
-                _logger.LogWarning(
-                    "MachineGroundingTool: lookup row for '{Title}' has mismatched OpdbIds ({OpdbCount}) and Manufacturers ({ManufacturerCount}) — possible data corruption. Falling back to cross-partition query. Re-run OPDB sync to remediate.",
-                    title, lookup.OpdbIds.Count, lookup.Manufacturers.Count);
-                lookupHit = false;
+                var matchTokensLengthOk = lookup!.MatchTokens is null
+                    || lookup.MatchTokens.Count == lookup.OpdbIds.Count;
+
+                if (lookup.OpdbIds.Count != lookup.Manufacturers.Count || !matchTokensLengthOk)
+                {
+                    _logger.LogWarning(
+                        "MachineGroundingTool: lookup row for '{Title}' has mismatched array lengths — OpdbIds={OpdbCount}, Manufacturers={ManufacturerCount}, MatchTokens={MatchTokensCount}. Possible data corruption. Falling back to cross-partition query. Re-run OPDB sync to remediate.",
+                        title,
+                        lookup.OpdbIds.Count,
+                        lookup.Manufacturers.Count,
+                        lookup.MatchTokens?.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null");
+                    lookupHit = false;
+                }
             }
 
             if (lookupHit)
