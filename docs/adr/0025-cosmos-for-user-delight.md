@@ -50,7 +50,9 @@ Drift detection follows the existing partition-key drift pattern in `ArmCosmosPr
 
 ### 4. Point-read over cross-partition for hot-path queries
 
-Cross-partition queries are the highest-latency, highest-RU shape Cosmos exposes. The user-facing critical path must NOT use them. Today's only such query — `MachineRepository.QueryByTitleAsync` — gets a deterministic-id lookup container alongside it: `machine_title_lookups`, partitioned by `/normalizedTitle`, doc shape `{ id: normalizedTitle, normalizedTitle, opdbIds: string[], manufacturers: string[], lastSyncedUtc }`.
+Cross-partition queries are the highest-latency, highest-RU shape Cosmos exposes. The user-facing critical path must NOT use them. Today's only such query — `MachineRepository.QueryByTitleAsync` — gets a deterministic-id lookup container alongside it: `machine_title_lookups`, partitioned by `/normalizedTitle`, doc shape `{ id: normalizedTitle, normalizedTitle, opdbIds: string[], manufacturers: string[], matchTokens: string[][], lastSyncedUtc }`.
+
+**Amendment (AB#259):** `machine_title_lookups` entries now carry a third parallel array `matchTokens` populated at OPDB sync time by `OpdbMachineMapper.GetMatchTokens`. Each element is the expanded set of user-typeable tokens for the manufacturer key at the same index (e.g., `"jjp"` → `["jjp","jersey","jack"]`). `MachineGroundingTool.ScoreEntryAgainstTokens` scores against these stored tokens instead of the raw key, fixing disambiguation for abbreviated/compound manufacturer keys (jjp, cgc, americanpinball, pinballbrothers, barrelsoffun). Rows written before this change have `matchTokens=null`; the scorer falls back to the raw key as a single-element list, preserving pre-feature behaviour during the backfill window. The next OPDB sync run backfills all rows automatically.
 
 `MachineGroundingTool` becomes two point reads (~5ms + ~5ms = ~10ms total) instead of one cross-partition fan-out (~50-150ms p95). RU drop from ~5-10 to ~2 (1 RU per point read).
 

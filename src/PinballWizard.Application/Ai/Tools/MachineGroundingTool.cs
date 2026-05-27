@@ -139,7 +139,7 @@ public sealed class MachineGroundingTool
 
     [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
-        [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). Omit edition suffixes like Pro/Premium/LE — those are resolved via the returned Siblings list.")] string title,
+        [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). On an initial lookup, omit edition suffixes like Pro/Premium/LE — those are surfaced via the returned Siblings list. When re-calling to resolve a specific edition named by the user, include the edition qualifier (e.g. 'Godzilla Premium', 'Attack from Mars Remake').")] string title,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(title))
