@@ -835,6 +835,40 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GweeP-MW95j", result!.OpdbId);
     }
 
+    [Fact]
+    public async Task GetMachineByTitleAsync_MismatchedMatchTokensLength_FallsBackToCrossPartition()
+    {
+        // MatchTokens.Count = 1 but OpdbIds.Count = 2 → corruption, must fall back
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = [["sega"]],   // length 1, mismatched
+        };
+
+        var sternMachine = BuildMachine("GweeP-MW95j", "stern", "Stern Pinball", "Godzilla", 2021);
+
+        var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
+        titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MachineTitleLookup?>(lookup));
+
+        var machines = Substitute.For<IMachineRepository>();
+        machines.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(new[] { sternMachine }));
+        machines.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(machines, titleLookups, NullLogger<MachineGroundingTool>.Instance);
+
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        // Falls back to cross-partition QueryByTitleAsync and gets a result
+        machines.Received(1).QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static Machine NewMachine(string id, string title, int year) => new()
     {
         Id = id,
