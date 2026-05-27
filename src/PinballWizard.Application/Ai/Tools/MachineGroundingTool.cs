@@ -107,26 +107,32 @@ public sealed class MachineGroundingTool
         return result;
     }
 
-    // Scores a collision-row entry (manufacturer key) against tokens extracted
+    // Scores a collision-row entry (stored MatchTokens) against tokens extracted
     // from the user-supplied title string. Returns an integer score: +1 per
-    // matching token. Zero means no signal — used as a tie-break sentinel to
+    // titleToken that appears in matchTokens (each titleToken counted at most
+    // once per entry). Zero means no signal — used as a tie-break sentinel to
     // preserve insertion-order behaviour when the input carries no manufacturer
     // qualifier (e.g. bare "Godzilla" scores 0 for all entries, so the first
     // entry wins as before).
     //
-    // MachineTitleLookup stores only OpdbIds + Manufacturers (no year column),
-    // so year disambiguation would require extending the lookup schema. Scoring
-    // is manufacturer-token-only for now; "Stern Godzilla" correctly resolves
-    // Stern over Sega via the "stern" token match.
+    // Using the stored MatchTokens (e.g. ["jjp", "jersey", "jack"]) rather than
+    // the raw manufacturer key ("jjp") means expanded display names like
+    // "Jersey Jack Pirates" now resolve correctly to JJP entries.
     internal static int ScoreEntryAgainstTokens(
-        string manufacturerKey,
+        IReadOnlyList<string> matchTokens,
         IReadOnlyList<string> titleTokens)
     {
         var score = 0;
         foreach (var token in titleTokens)
         {
-            if (string.Equals(token, manufacturerKey, StringComparison.Ordinal))
-                score++;
+            foreach (var matchToken in matchTokens)
+            {
+                if (string.Equals(token, matchToken, StringComparison.Ordinal))
+                {
+                    score++;
+                    break; // count each titleToken at most once per entry
+                }
+            }
         }
         return score;
     }
@@ -167,18 +173,26 @@ public sealed class MachineGroundingTool
 
             if (lookupHit)
             {
-                // Score every collision-row entry against manufacturer tokens
-                // extracted from the input title. The highest-scoring entry is
-                // resolved first; ties (all-zero or equal scores) preserve
-                // insertion order — backward-compatible with the pre-scoring
-                // first-hit behaviour for bare franchise titles ("Godzilla").
+                // Score every collision-row entry against tokens extracted from
+                // the input title. MatchTokens (e.g. ["jjp", "jersey", "jack"])
+                // are used when available so expanded display names ("Jersey Jack
+                // Pirates") resolve correctly. Null fallback uses the raw
+                // manufacturer key as a single-element list — backward-compatible
+                // for rows written before MatchTokens was introduced.
+                // The highest-scoring entry is resolved first; ties (all-zero or
+                // equal scores) preserve insertion order — backward-compatible with
+                // the pre-scoring first-hit behaviour for bare franchise titles.
                 var titleTokens = TokenizeForOverlap(title);
                 var bestIdx = 0;
-                var bestScore = ScoreEntryAgainstTokens(lookup!.Manufacturers[0], titleTokens);
+                var bestScore = ScoreEntryAgainstTokens(
+                    lookup!.MatchTokens?[0] ?? [lookup.Manufacturers[0]],
+                    titleTokens);
 
                 for (var i = 1; i < lookup.OpdbIds.Count; i++)
                 {
-                    var score = ScoreEntryAgainstTokens(lookup.Manufacturers[i], titleTokens);
+                    var score = ScoreEntryAgainstTokens(
+                        lookup.MatchTokens?[i] ?? [lookup.Manufacturers[i]],
+                        titleTokens);
                     if (score > bestScore)
                     {
                         bestScore = score;
