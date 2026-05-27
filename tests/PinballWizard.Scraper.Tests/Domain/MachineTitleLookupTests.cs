@@ -162,6 +162,66 @@ public sealed class MachineTitleLookupTests
         Assert.Equal(["jjp", "jersey", "jack"], lookup.MatchTokens![1]);
     }
 
+    [Fact]
+    public void RemoveEntry_LegacyNullMatchTokens_PadsBeforeRemoval()
+    {
+        // Simulates a Cosmos row written before MatchTokens existed (MatchTokens == null).
+        // RemoveEntry must pad with separate empty lists so a subsequent UpsertEntry keeps
+        // all three arrays in sync. Also verifies pad entries are distinct instances so
+        // mutating one does not affect others.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = null,
+        };
+
+        var removed = lookup.RemoveEntry("G5po2-MeP6B");
+
+        Assert.True(removed);
+        Assert.Single(lookup.OpdbIds);
+        Assert.Equal("GweeP-MW95j", lookup.OpdbIds[0]);
+        Assert.NotNull(lookup.MatchTokens);
+        Assert.Single(lookup.MatchTokens);
+        // Pad entry must be an empty list, not null
+        Assert.Empty(lookup.MatchTokens[0]);
+    }
+
+    [Fact]
+    public void RemoveEntry_LegacyNullMatchTokens_PadEntriesAreDistinctInstances()
+    {
+        // Verify Enumerable.Range (not Repeat) so mutating one pad does not alias others.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "test",
+            PartitionKey = "test",
+            OpdbIds = ["A", "B"],
+            Manufacturers = ["stern", "sega"],
+            MatchTokens = null,
+        };
+
+        // Trigger padding without removing — call RemoveEntry on an id that doesn't exist
+        // won't pad (guard is idx >= 0). Use a known id to trigger the pad then undo.
+        // Instead: directly verify that after RemoveEntry fires padding, the two remaining
+        // pads (if any) are independent. Use 3-entry lookup so 2 remain after removal.
+        var lookup3 = new MachineTitleLookup
+        {
+            Id = "test3",
+            PartitionKey = "test3",
+            OpdbIds = ["A", "B", "C"],
+            Manufacturers = ["stern", "sega", "jjp"],
+            MatchTokens = null,
+        };
+
+        lookup3.RemoveEntry("A"); // pads 3 entries, removes index 0
+
+        Assert.Equal(2, lookup3.MatchTokens!.Count);
+        // Must be distinct instances
+        Assert.NotSame(lookup3.MatchTokens[0], lookup3.MatchTokens[1]);
+    }
+
     private static MachineTitleLookup NewLookup(string normalized) => new()
     {
         Id = normalized,

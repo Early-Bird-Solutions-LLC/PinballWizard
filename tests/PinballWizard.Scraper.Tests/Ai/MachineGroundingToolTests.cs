@@ -801,6 +801,7 @@ public sealed class MachineGroundingToolTests
 
         Assert.NotNull(result);
         Assert.Equal("GRbPY-MePOP", result!.OpdbId);
+        await machines.DidNotReceive().GetByOpdbIdAsync("GR7ZX-MQ23b", "stern", Arg.Any<CancellationToken>());
     }
 
     [Fact]

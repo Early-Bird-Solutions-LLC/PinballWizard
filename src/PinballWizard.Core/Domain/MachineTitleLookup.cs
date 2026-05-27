@@ -68,7 +68,8 @@ public sealed class MachineTitleLookup : IEntity
         // so all three arrays stay in sync through remove + any subsequent upsert.
         if (MatchTokens is null && OpdbIds.Count > 0)
         {
-            MatchTokens = [.. Enumerable.Repeat(new List<string>(), OpdbIds.Count)];
+            // Pad with separate empty lists (not Repeat — that aliases the same instance).
+            MatchTokens = Enumerable.Range(0, OpdbIds.Count).Select(_ => new List<string>()).ToList();
         }
         OpdbIds.RemoveAt(idx);
         Manufacturers.RemoveAt(idx);
