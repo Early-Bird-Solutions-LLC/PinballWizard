@@ -123,7 +123,7 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
         };
-        lookup.UpsertEntry("GRBN-MQR4P", "stern");
+        lookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -153,7 +153,7 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Stranger Things"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Stranger Things"),
         };
-        lookup.UpsertEntry("GRBN-STALE", "stern");
+        lookup.UpsertEntry("GRBN-STALE", "stern", ["stern"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Stranger Things", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -185,8 +185,8 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
         };
-        lookup.UpsertEntry("G5po2-MeP6B", "sega");   // index 0 — not picked
-        lookup.UpsertEntry("GweeP-MW95j", "stern");   // index 1 — scored best, but stale
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);   // index 0 — not picked
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);   // index 1 — scored best, but stale
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -243,8 +243,8 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Godzilla"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Godzilla"),
         };
-        lookup.UpsertEntry("GRBN-G1995", "sega");
-        lookup.UpsertEntry("GRBN-G2021", "stern");
+        lookup.UpsertEntry("GRBN-G1995", "sega", ["sega"]);
+        lookup.UpsertEntry("GRBN-G2021", "stern", ["stern"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -468,8 +468,8 @@ public sealed class MachineGroundingToolTests
             PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
         };
         // Sega first (index 0), Stern second — insertion-order would pick Sega.
-        lookup.UpsertEntry("G5po2-MeP6B", "sega");
-        lookup.UpsertEntry("GweeP-Ml9pZ", "stern");
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);
+        lookup.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -504,8 +504,8 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Godzilla"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Godzilla"),
         };
-        lookup.UpsertEntry("G5po2-MeP6B", "sega");
-        lookup.UpsertEntry("GweeP-MW95j", "stern");
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
@@ -540,8 +540,8 @@ public sealed class MachineGroundingToolTests
             Id = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Stern Godzilla"),
         };
-        lookup.UpsertEntry("G5po2-MeP6B", "sega");   // index 0 — old loser
-        lookup.UpsertEntry("GweeP-MW95j", "stern");   // index 1 — correct
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);   // index 0 — old loser
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);   // index 1 — correct
 
         var sternPro = new Machine
         {

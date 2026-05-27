@@ -640,8 +640,8 @@ public sealed class OpdbSyncServiceTests : IDisposable
             Id = "old name",
             PartitionKey = "old name",
         };
-        oldLookup.UpsertEntry("GRBN-MQR4P", "stern");
-        oldLookup.UpsertEntry("GRBN-OTHER", "jjp");
+        oldLookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
+        oldLookup.UpsertEntry("GRBN-OTHER", "jjp", ["jjp"]);
         _titleLookups.GetByTitleAsync("Old Name", Arg.Any<CancellationToken>()).Returns(oldLookup);
         // New lookup row doesn't exist yet.
         _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
@@ -691,7 +691,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
 
         var oldLookup = new MachineTitleLookup { Id = "old name", PartitionKey = "old name" };
-        oldLookup.UpsertEntry("GRBN-MQR4P", "stern"); // only entry
+        oldLookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]); // only entry
         _titleLookups.GetByTitleAsync("Old Name", Arg.Any<CancellationToken>()).Returns(oldLookup);
         _titleLookups.GetByTitleAsync("New Name", Arg.Any<CancellationToken>())
             .Returns((MachineTitleLookup?)null);
