@@ -46,6 +46,7 @@ public sealed class MachineTitleLookupTests
 
         Assert.Equal(["GRBN-MQR4P"], lookup.OpdbIds);
         Assert.Equal(["stern"], lookup.Manufacturers);
+        Assert.Equal([["stern"]], lookup.MatchTokens);
     }
 
     [Fact]
@@ -79,6 +80,7 @@ public sealed class MachineTitleLookupTests
         Assert.True(removed);
         Assert.Equal(["GRBN-BBB"], lookup.OpdbIds);
         Assert.Equal(["jjp"], lookup.Manufacturers);
+        Assert.Equal([["jjp"]], lookup.MatchTokens);
     }
 
     [Fact]
@@ -193,20 +195,8 @@ public sealed class MachineTitleLookupTests
     public void RemoveEntry_LegacyNullMatchTokens_PadEntriesAreDistinctInstances()
     {
         // Verify Enumerable.Range (not Repeat) so mutating one pad does not alias others.
+        // Use a 3-entry lookup so 2 pad entries remain after removal.
         var lookup = new MachineTitleLookup
-        {
-            Id = "test",
-            PartitionKey = "test",
-            OpdbIds = ["A", "B"],
-            Manufacturers = ["stern", "sega"],
-            MatchTokens = null,
-        };
-
-        // Trigger padding without removing — call RemoveEntry on an id that doesn't exist
-        // won't pad (guard is idx >= 0). Use a known id to trigger the pad then undo.
-        // Instead: directly verify that after RemoveEntry fires padding, the two remaining
-        // pads (if any) are independent. Use 3-entry lookup so 2 remain after removal.
-        var lookup3 = new MachineTitleLookup
         {
             Id = "test3",
             PartitionKey = "test3",
@@ -215,11 +205,36 @@ public sealed class MachineTitleLookupTests
             MatchTokens = null,
         };
 
-        lookup3.RemoveEntry("A"); // pads 3 entries, removes index 0
+        lookup.RemoveEntry("A"); // pads 3 entries, removes index 0
 
-        Assert.Equal(2, lookup3.MatchTokens!.Count);
+        Assert.Equal(2, lookup.MatchTokens!.Count);
         // Must be distinct instances
-        Assert.NotSame(lookup3.MatchTokens[0], lookup3.MatchTokens[1]);
+        Assert.NotSame(lookup.MatchTokens[0], lookup.MatchTokens[1]);
+    }
+
+    [Fact]
+    public void UpsertEntry_LegacyNullMatchTokens_PadsBeforeRemoveOnCollisionRow()
+    {
+        // Regression: a Cosmos collision row written before MatchTokens existed has
+        // MatchTokens=null but OpdbIds/Manufacturers with 2+ entries. UpsertEntry must
+        // pad MatchTokens to OpdbIds.Count *before* calling RemoveAt(idx), otherwise
+        // RemoveAt throws ArgumentOutOfRangeException on the freshly-initialised empty list.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = null,
+        };
+
+        // Re-upserting an existing id is what the OPDB sync does on every run.
+        // This must not throw.
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);
+
+        Assert.Equal(2, lookup.OpdbIds.Count);
+        Assert.Equal(2, lookup.MatchTokens!.Count);
+        Assert.Equal(["sega"], lookup.MatchTokens[1]); // moved to end by upsert
     }
 
     private static MachineTitleLookup NewLookup(string normalized) => new()

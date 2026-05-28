@@ -42,7 +42,9 @@ public sealed class MachineTitleLookup : IEntity
         ArgumentException.ThrowIfNullOrWhiteSpace(manufacturer);
         ArgumentNullException.ThrowIfNull(matchTokens);
 
-        MatchTokens ??= [];
+        // Pad MatchTokens if it was null (legacy Cosmos row written before this field existed).
+        // Must pad to OpdbIds.Count *before* the remove so RemoveAt(idx) is in-range.
+        MatchTokens ??= Enumerable.Range(0, OpdbIds.Count).Select(_ => new List<string>()).ToList();
 
         var idx = OpdbIds.IndexOf(opdbId);
         if (idx >= 0)
