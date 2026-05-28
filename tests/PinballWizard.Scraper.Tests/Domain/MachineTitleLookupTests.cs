@@ -234,6 +234,7 @@ public sealed class MachineTitleLookupTests
 
         Assert.Equal(2, lookup.OpdbIds.Count);
         Assert.Equal(2, lookup.MatchTokens!.Count);
+        Assert.Empty(lookup.MatchTokens[0]);            // surviving pad entry is empty
         Assert.Equal(["sega"], lookup.MatchTokens[1]); // moved to end by upsert
     }
 
