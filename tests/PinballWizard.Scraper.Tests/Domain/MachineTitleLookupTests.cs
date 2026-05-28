@@ -222,6 +222,31 @@ public sealed class MachineTitleLookupTests
         Assert.NotSame(lookup3.MatchTokens[0], lookup3.MatchTokens[1]);
     }
 
+    [Fact]
+    public void UpsertEntry_LegacyNullMatchTokens_PadsBeforeRemoveOnCollisionRow()
+    {
+        // Regression: a Cosmos collision row written before MatchTokens existed has
+        // MatchTokens=null but OpdbIds/Manufacturers with 2+ entries. UpsertEntry must
+        // pad MatchTokens to OpdbIds.Count *before* calling RemoveAt(idx), otherwise
+        // RemoveAt throws ArgumentOutOfRangeException on the freshly-initialised empty list.
+        var lookup = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["G5po2-MeP6B", "GweeP-MW95j"],
+            Manufacturers = ["sega", "stern"],
+            MatchTokens = null,
+        };
+
+        // Re-upserting an existing id is what the OPDB sync does on every run.
+        // This must not throw.
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);
+
+        Assert.Equal(2, lookup.OpdbIds.Count);
+        Assert.Equal(2, lookup.MatchTokens!.Count);
+        Assert.Equal(["sega"], lookup.MatchTokens[1]); // moved to end by upsert
+    }
+
     private static MachineTitleLookup NewLookup(string normalized) => new()
     {
         Id = normalized,
