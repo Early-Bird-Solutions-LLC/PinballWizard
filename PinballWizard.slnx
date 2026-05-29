@@ -17,6 +17,7 @@
     <Project Path="tests/PinballWizard.Core.Tests/PinballWizard.Core.Tests.csproj" />
     <Project Path="tests/PinballWizard.Application.Tests/PinballWizard.Application.Tests.csproj" />
     <Project Path="tests/PinballWizard.Infrastructure.Tests/PinballWizard.Infrastructure.Tests.csproj" />
+    <Project Path="tests/PinballWizard.Api.Tests/PinballWizard.Api.Tests.csproj" />
     <Project Path="tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj" />
     <Project Path="tests/PinballWizard.ServiceDefaults.Tests/PinballWizard.ServiceDefaults.Tests.csproj" />
   </Folder>

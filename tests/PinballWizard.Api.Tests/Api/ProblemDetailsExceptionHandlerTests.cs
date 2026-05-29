@@ -14,7 +14,7 @@ using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Degradation;
 using Xunit;
 
-namespace PinballWizard.Web.Tests.Api;
+namespace PinballWizard.Api.Tests.Api;
 
 // Behavioral tests for ProblemDetailsExceptionHandler using TestServer.
 //

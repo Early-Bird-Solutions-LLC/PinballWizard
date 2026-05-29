@@ -15,7 +15,7 @@ using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Landing;
 using Xunit;
 
-namespace PinballWizard.Web.Tests.Api;
+namespace PinballWizard.Api.Tests.Api;
 
 // Integration tests verifying that the existing minimal-API fallback paths
 // (router not wired, landing service not wired) emit RFC 9457
