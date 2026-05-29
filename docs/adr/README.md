@@ -38,6 +38,9 @@ negative) it carries.
 | [0025](0025-cosmos-for-user-delight.md) | Cosmos for User Delight — locked client options + selective indexing + point-read over cross-partition + observability + 5-layer enforcement | Accepted |
 | [0026](0026-user-delight-frontend-and-streaming.md) | User Delight Frontend and Streaming — Blazor Web App + SSE + dual `IAiRouter` contract + MudBlazor strict + plural recovery + pinball-themed degradation | Accepted |
 | [0027](0027-community-resource-posture.md) | Community-Resource Posture and Outbound-Routing Contract — outbound is a feature + plurality thresholds + closed `QuestionTopic` enum + refusal-routing matrix + Pinside slug-alias table + 5-layer enforcement | Accepted |
+| [0028](0028-cloudflare-iac-via-opentofu.md) | Cloudflare IaC via OpenTofu | Accepted |
+| [0029](0029-version-aware-answering.md) | Version-aware answering for multi-edition machines | Accepted |
+| [0030](0030-test-project-naming.md) | Test project naming and structure conventions | Accepted |
 
 ## Conventions
 
