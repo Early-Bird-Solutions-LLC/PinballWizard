@@ -16,6 +16,10 @@
       <DataCollector friendlyName="Code Coverage" uri="datacollector://Microsoft/CodeCoverage/2.0" assemblyQualifiedName="Microsoft.VisualStudio.Coverage.DynamicCoverageDataCollector, Microsoft.VisualStudio.TraceDataCollector, Version=11.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
         <Configuration>
           <CodeCoverage>
+            <!-- Per-assembly coverage policy (docs/quality-spec.md):
+                 Core/Application >= 80% | Api/ServiceDefaults >= 75% | Infrastructure/Web >= 65%
+                 Cli/RagIngestionWorker: excluded (DI composition only, see Exclude block below)
+                 Aggregate floor: >= 70% (enforced by CI; ratchet up at phase boundaries) -->
             <ModulePaths>
               <Exclude>
                 <!-- Our own test assemblies — coverage of test code is meaningless. -->

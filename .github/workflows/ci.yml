@@ -92,6 +92,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Per-assembly coverage policy (docs/quality-spec.md § Coverage policy):
+      # Core/Application >= 80%, Api/ServiceDefaults >= 75%, Infrastructure/Web >= 65%.
+      # irongut/CodeCoverageSummary enforces only the aggregate floor here.
+      # Per-assembly compliance is verified via the coverage table posted on each PR.
+
       # Threshold gate: fails the job if production-code line coverage drops
       # below the floor. Initial threshold 70% line (current ~73%, rounded
       # down to nearest 5% per quality-spec § Code quality). Ratchet up at

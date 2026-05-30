@@ -440,4 +440,20 @@ Or via Cloudflare Configuration Rules: disable "Automatic HTTPS Rewrites" for th
 
 **Revisit when:** Post-merge backfill run (`dotnet run -- --build-catalog`) shows the actual post-Pass-3 unresolved count. If count is 0 or near-0 and stays there as new manufacturers are added, the scale-watch rule can be relaxed. If count grows past the threshold, implement the deferred path.
 
+## 2026-05-30 — Per-assembly coverage policy: tiered floors replacing single aggregate
+
+**Decision:** Adopt tiered per-assembly coverage floors. Core/Application ≥80%, Api/ServiceDefaults ≥75%, Infrastructure/Web ≥65%, Cli/RagIngestionWorker excluded. Aggregate floor stays at 70% as the mechanically-enforced CI gate.
+
+**Problem with single aggregate:** The 70% gate was passing (74% aggregate) while two assemblies sat below a reasonable floor — Infrastructure at 66% and Web at 65%. These have structural coverage ceilings from architecturally untestable code: Playwright-driven scrapers (browser I/O), Cosmos SDK error paths delegated to SDK retry policies, and Razor render-tree components (pure parameter-in / HTML-out, not worth unit testing).
+
+**Alternative rejected:** Raise Infrastructure and Web to 70%+ by adding tests. Rejected — marginal tests would test Playwright page navigation and SDK internals, not application behavior. Violates the "tests assert behavior, not structure" rule.
+
+**Why not mechanically enforce per-assembly:** irongut/CodeCoverageSummary only supports a single aggregate threshold. The PR coverage table already shows per-assembly rates on every PR — cultural enforcement via review is sufficient.
+
+**Ratchet rule applies:** Both aggregate and per-assembly floors can only move up. Permanent lowering requires a new decision-log entry.
+
+**Phase 5 baselines (2026-05-30):** Core 75%, Application 90%, Api 84%, ServiceDefaults 84%, Infrastructure 66%, Web 65%, aggregate 74%.
+
+**Related:** quality-spec.md § Code quality / Coverage policy, tests/coverage.runsettings, .github/workflows/ci.yml.
+
 **Related:** PR #271, `memory/project_adi_inline_scale_watch.md`, ADR-0012 (Cosmos ARM vs data-plane — relevant if Pass 3 is later wired into the RAG ingestion pipeline).
