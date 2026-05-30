@@ -22,8 +22,12 @@
     file is used and is part of every resource name.
 
 .PARAMETER WhatIf
-    Run the deployment in what-if mode (Azure shows the diff but applies
-    nothing). Use this on every PR before merging Bicep changes.
+    Validate the deployment without applying it (via `az stack sub validate`).
+    Azure runs full template + parameter + resource validation but mutates
+    nothing. Note: deployment stacks do not expose the old property-level
+    what-if diff (the `--what-if` flag was removed from `az stack sub` in CLI
+    2.7x); validate is the supported pre-apply safety check. Use on every PR
+    before merging Bicep changes.
 
 .PARAMETER SkipGuard
     Skip the subscription/tenant guard. NEVER use this in normal operation.
@@ -248,8 +252,18 @@ else {
 $location = 'eastus2'
 
 if ($WhatIf) {
-    Write-Host '[4/5] Running what-if via Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
-    az stack sub create `
+    # `az stack sub create --what-if` was removed in Azure CLI 2.7x+ (the flag
+    # no longer exists on the stacks command). The supported no-apply preview for
+    # deployment stacks is now `az stack sub validate`, which runs the same
+    # template + parameter validation Azure performs before a real create/update
+    # (template compile, parameter binding, RBAC-assignment shape, resource API
+    # validation) without mutating any resource. It does not render a
+    # property-level resource diff the way the old subscription-level what-if did
+    # — that capability is not exposed for stacks — but it is the canonical
+    # pre-apply safety check and catches the failures a preview is meant to catch.
+    Write-Host '[4/5] Validating the Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
+    Write-Host '  Note: az stack sub has no --what-if (removed in CLI 2.7x); using `validate`.' -ForegroundColor DarkGray
+    az stack sub validate `
         --name $stackName `
         --location $location `
         --template-file $templateFile `
@@ -257,14 +271,12 @@ if ($WhatIf) {
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
         --action-on-unmanage deleteResources `
-        --deny-settings-mode none `
-        --what-if `
-        --yes
+        --deny-settings-mode none
     if ($LASTEXITCODE -ne 0) {
-        throw 'what-if failed.'
+        throw 'Deployment Stack validation failed.'
     }
     Write-Host ''
-    Write-Host '[5/5] What-if complete. No changes applied.' -ForegroundColor Green
+    Write-Host '[5/5] Validation complete. No changes applied.' -ForegroundColor Green
 }
 else {
     Write-Host "[4/5] Deploying via Deployment Stack '$stackName'..." -ForegroundColor Cyan
