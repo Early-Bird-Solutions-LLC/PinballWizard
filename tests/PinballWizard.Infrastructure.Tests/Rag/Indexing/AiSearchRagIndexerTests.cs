@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Azure.Search.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -196,17 +197,22 @@ public sealed class AiSearchRagIndexerTests
 
         var sut = NewIndexer(embedder);
 
-        var samples = new List<(double Value, string? DocumentTypeTag)>();
+        // Force PinballWizardTelemetry's static cctor to complete before
+        // wiring the listener. The InstrumentPublished callback fires
+        // synchronously during Start() when Instrument.Publish() is called,
+        // and accessing PinballWizardTelemetry inside that callback (before
+        // the cctor finishes) causes a TypeInitializationException. The
+        // correct pattern is to touch the instrument first so the cctor is
+        // complete, then Start() + EnableMeasurementEvents() directly.
+        // ConcurrentBag handles parallel test-class callbacks on the
+        // process-global Meter (mirrors MachineGroundingToolTests pattern).
+        _ = PinballWizardTelemetry.RagIndexingDurationMs;
+        var samples = new ConcurrentBag<(double Value, string? DocumentTypeTag)>();
         using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
         {
-            if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-        {
+            if (instrument.Name != PinballWizardTelemetry.RagIndexingDurationMs.Name)
+                return;
             string? docTypeTag = null;
             foreach (var t in tags)
             {
@@ -218,6 +224,7 @@ public sealed class AiSearchRagIndexerTests
             samples.Add((value, docTypeTag));
         });
         listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.RagIndexingDurationMs);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             sut.UpsertAsync(
@@ -241,18 +248,16 @@ public sealed class AiSearchRagIndexerTests
         var embedder = Substitute.For<IChunkEmbedder>();
         var sut = NewIndexer(embedder);
 
-        var samples = new List<double>();
+        _ = PinballWizardTelemetry.RagIndexingDurationMs; // ensure cctor complete before listener wires
+        var samples = new ConcurrentBag<double>();
         using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
+        listener.SetMeasurementEventCallback<double>((instrument, value, _, _) =>
         {
             if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-            samples.Add(value));
+                samples.Add(value);
+        });
         listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.RagIndexingDurationMs);
 
         var result = await sut.UpsertAsync(
             SampleRequest, [], new RagIndexerOptions(), CancellationToken.None);
@@ -331,6 +336,52 @@ public sealed class AiSearchRagIndexerTests
                 [MakeChunk(0), MakeChunk(1)], // 2 chunks but embedder returns 1 vector
                 new RagIndexerOptions(),
                 CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpsertAsync_OneEmbedBatchFails_CancelsSiblingBatchesAndThrows()
+    {
+        // Source guarantee (lines 202–209): a batch that hits a transport-level failure
+        // calls `linkedCts.Cancel()` before rethrowing, so sibling batches waiting on
+        // `embedGate.WaitAsync(workToken)` receive OperationCanceledException instead of
+        // continuing to burn embed-TPM.  With BatchSize=1 and 2 chunks we get 2 batches
+        // running concurrently (EmbeddingMaxConcurrency defaults to >=2); the embedder
+        // is configured to throw on first call, then stall on any subsequent call
+        // (which would time out the test if cancellation didn't fire).
+        //
+        // Assertion: UpsertAsync propagates an exception (the original or the linked
+        // cancellation) and the embedder is invoked at most once — proof that the second
+        // batch was cancelled before it could call EmbedBatchAsync.
+        var callCount = 0;
+        var embedder = Substitute.For<IChunkEmbedder>();
+        embedder
+            .EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var count = System.Threading.Interlocked.Increment(ref callCount);
+                if (count == 1)
+                    throw new InvalidOperationException("embed batch 0 failed — transport error");
+
+                // If the sibling-cancel wiring is broken the second call reaches here
+                // and hangs for the full test timeout; the at-most-one assertion below
+                // then catches any slip-through that completes without hanging.
+                callInfo.Arg<CancellationToken>().ThrowIfCancellationRequested();
+                return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(
+                    [new ReadOnlyMemory<float>([1f])]);
+            });
+
+        var sut = NewIndexer(embedder);
+
+        // 2 chunks, BatchSize=1 → 2 batches; EmbeddingMaxConcurrency=2 lets them both start.
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            sut.UpsertAsync(
+                SampleRequest,
+                [MakeChunk(0), MakeChunk(1)],
+                new RagIndexerOptions { BatchSize = 1, EmbeddingMaxConcurrency = 2 },
+                CancellationToken.None));
+
+        Assert.True(callCount <= 1,
+            $"Expected embedder to be called at most once (sibling-cancel wiring), but was called {callCount} time(s).");
     }
 
     private static AiSearchRagIndexer NewIndexer(IChunkEmbedder embedder)
