@@ -74,7 +74,8 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 - **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires; "rejects merch" must include merch in the input. `/local-review` § Test quality is the enforcer.
 - **Test naming:** `Method_State_Expectation` (e.g., `ExtractSlug_NullArg_Throws`, `Sync_FetchedItemAlreadyPresent_SkipsWrite`).
-- **Integration test infrastructure:** `FakePolitenessGate` + `QueueingHttpMessageHandler` in `tests/PinballWizard.Scraper.Tests/Infrastructure/Scraping/Pipelines/`; pins yield order, full provenance, gate-vs-wire URL equality, per-page failure isolation, and `PolitenessException` propagation on both Acquire and Report paths.
+- **Test project naming:** `<ProductionProject>.Tests` for unit tests, `<ProductionProject>.IntegrationTests` for tests requiring live dependencies, `<ProductionProject>.E2ETests` for browser-driven tests. One project per production project. See [ADR-0030](adr/0030-test-project-naming.md) for the full convention and the project mapping table.
+- **Integration test infrastructure:** `FakePolitenessGate` + `QueueingHttpMessageHandler` in `tests/PinballWizard.Infrastructure.Tests/Scraping/Pipelines/`; pins yield order, full provenance, gate-vs-wire URL equality, per-page failure isolation, and `PolitenessException` propagation on both Acquire and Report paths.
 - **Contract tests pin invariants:** `SourceAliasContractTests` ensures every `ISourceScraper.Name` matches its `--source` alias; adding a scraper without that test passing is a 🔴.
 - **Behavior over coverage padding.** Coverage measures lines exercised; mutation testing measures whether tests would catch a bug. The latter is the load-bearing metric from Phase 3 onward.
 
