@@ -27,6 +27,11 @@
                 <ModulePath>.*Microsoft\.AspNetCore\.TestHost\.dll$</ModulePath>
                 <ModulePath>.*xunit.*\.dll$</ModulePath>
                 <ModulePath>.*NSubstitute.*\.dll$</ModulePath>
+                <!-- CLI + worker entry points — composition-only, coverage not meaningful. -->
+                <ModulePath>.*PinballWizard\.Cli\.dll$</ModulePath>
+                <ModulePath>.*PinballWizard\.Cli\.exe$</ModulePath>
+                <ModulePath>.*PinballWizard\.RagIngestionWorker\.dll$</ModulePath>
+                <ModulePath>.*PinballWizard\.RagIngestionWorker\.exe$</ModulePath>
                 <!-- Microsoft and Azure framework / SDK assemblies. -->
                 <ModulePath>.*Microsoft\..*\.dll$</ModulePath>
                 <ModulePath>.*Azure\..*\.dll$</ModulePath>
