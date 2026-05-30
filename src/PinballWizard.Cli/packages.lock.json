@@ -4,9 +4,9 @@
     "net10.0": {
       "Aspire.Microsoft.Azure.Cosmos": {
         "type": "Direct",
-        "requested": "[13.3.0, )",
-        "resolved": "13.3.0",
-        "contentHash": "nGseACMdpry2N34rZsXNxFtaYgJiJsuoZz7uczTjDmIUNMlG7BdLo+dUIPzPQ65uj52MAwyPhayTMDDHg8lMXA==",
+        "requested": "[13.3.5, )",
+        "resolved": "13.3.5",
+        "contentHash": "huTW2MSkiJpMx+fBSubzK2rrQP6ExxxwYFLPwK6nARnQg71xIuSxXMKzJ9v6sESLio37eWV5HN1Qgoszyv0RLw==",
         "dependencies": {
           "Azure.Core": "1.53.0",
           "Azure.Identity": "1.21.0",
