@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Azure.Search.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -196,17 +197,22 @@ public sealed class AiSearchRagIndexerTests
 
         var sut = NewIndexer(embedder);
 
-        var samples = new List<(double Value, string? DocumentTypeTag)>();
+        // Force PinballWizardTelemetry's static cctor to complete before
+        // wiring the listener. The InstrumentPublished callback fires
+        // synchronously during Start() when Instrument.Publish() is called,
+        // and accessing PinballWizardTelemetry inside that callback (before
+        // the cctor finishes) causes a TypeInitializationException. The
+        // correct pattern is to touch the instrument first so the cctor is
+        // complete, then Start() + EnableMeasurementEvents() directly.
+        // ConcurrentBag handles parallel test-class callbacks on the
+        // process-global Meter (mirrors MachineGroundingToolTests pattern).
+        _ = PinballWizardTelemetry.RagIndexingDurationMs;
+        var samples = new ConcurrentBag<(double Value, string? DocumentTypeTag)>();
         using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
         {
-            if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-        {
+            if (instrument.Name != PinballWizardTelemetry.RagIndexingDurationMs.Name)
+                return;
             string? docTypeTag = null;
             foreach (var t in tags)
             {
@@ -218,6 +224,7 @@ public sealed class AiSearchRagIndexerTests
             samples.Add((value, docTypeTag));
         });
         listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.RagIndexingDurationMs);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             sut.UpsertAsync(
@@ -241,18 +248,16 @@ public sealed class AiSearchRagIndexerTests
         var embedder = Substitute.For<IChunkEmbedder>();
         var sut = NewIndexer(embedder);
 
-        var samples = new List<double>();
+        _ = PinballWizardTelemetry.RagIndexingDurationMs; // ensure cctor complete before listener wires
+        var samples = new ConcurrentBag<double>();
         using var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
+        listener.SetMeasurementEventCallback<double>((instrument, value, _, _) =>
         {
             if (instrument.Name == PinballWizardTelemetry.RagIndexingDurationMs.Name)
-            {
-                l.EnableMeasurementEvents(instrument);
-            }
-        };
-        listener.SetMeasurementEventCallback<double>((instrument, value, tags, state) =>
-            samples.Add(value));
+                samples.Add(value);
+        });
         listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.RagIndexingDurationMs);
 
         var result = await sut.UpsertAsync(
             SampleRequest, [], new RagIndexerOptions(), CancellationToken.None);
