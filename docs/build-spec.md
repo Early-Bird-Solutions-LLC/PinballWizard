@@ -926,7 +926,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 
 ## Phase 4.5 — Manuals corpus expansion
 
-**Status:** 🔵 In progress — W0–W3b complete; W4 (phase exit + H5 eval) next
+**Status:** 🔵 In progress — W0–W4 implemented (H5 eval ran, `citation_precision=0.478`, ADR-0024 Cohere Rerank gate triggered and `CohereRerankReranker` wired, PR #292); the post-rerank **H5b confirmation eval is outstanding** (needs live Azure access) — Phase 4.5 closes only once H5b shows `citation_precision ≥ 0.50` per ADR-0024.
 **Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they ran concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
 **Demonstrable artifact:** Every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged). H5 eval baseline demonstrates a meaningful lift from the all-refused H4 floor.
 
@@ -939,7 +939,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 | W2 — Corpus expansion | ✅ Complete (PR #268) | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
 | W3a — Metadata-card synthesis | ✅ Complete (PR #269) | Machine records → `metadata_card` chunks → AI Search |
 | W3b — Bulletin discovery pass | ✅ Complete (PR #289) | Extend bulletin ingestion to non-Stern manufacturers |
-| W4 — Phase exit + H5 eval | 🔵 Next | H5 baseline; ADR-0024 re-rank gate re-evaluation |
+| W4 — Phase exit + H5 eval | 🔵 Implemented; H5b confirmation pending | H5 eval ran (`citation_precision=0.478`, PR #291) → ADR-0024 gate triggered → `CohereRerankReranker` wired (PR #292). Outstanding: run post-rerank **H5b** eval to confirm `citation_precision ≥ 0.50` and formally close the phase (needs live Azure). |
 
 ### W0: Eval set realignment (PR #265, complete)
 
