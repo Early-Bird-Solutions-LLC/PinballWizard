@@ -4,7 +4,7 @@ using Azure.Core;
 using PinballWizard.Application.Ai;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Ai;
+namespace PinballWizard.Application.Tests.Application.Ai;
 
 // Pins the ADR-0026 § 9 DegradationContext contract at the seam layer:
 //

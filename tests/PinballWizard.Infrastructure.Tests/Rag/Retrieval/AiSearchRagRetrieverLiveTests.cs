@@ -10,7 +10,7 @@ using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Retrieval;
+namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 
 // Live-contract tests for AiSearchRagRetriever against a deployed
 // Foundry + AI Search environment. Per the DL-0002 / DL-0003 lessons

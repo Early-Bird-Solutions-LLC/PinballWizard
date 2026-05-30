@@ -8,7 +8,7 @@ using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.Opdb;
+namespace PinballWizard.Infrastructure.Tests.Integrations.Opdb;
 
 /// <summary>
 /// Tests for the on-disk cache layer in <see cref="OpdbClient.StreamAllMachinesAsync"/>.

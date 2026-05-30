@@ -6,7 +6,7 @@ using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Sync;
+namespace PinballWizard.Application.Tests.Sync;
 
 /// <summary>
 /// Tests for <see cref="ScraperReconciliationService"/>. Mocks

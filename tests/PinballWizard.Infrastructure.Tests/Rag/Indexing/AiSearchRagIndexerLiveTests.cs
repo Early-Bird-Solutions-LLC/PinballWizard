@@ -11,7 +11,7 @@ using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Indexing;
+namespace PinballWizard.Infrastructure.Tests.Rag.Indexing;
 
 // Live-contract tests for AiSearchRagIndexer + RagIndexBootstrapper
 // against a deployed Foundry + AI Search environment. Per the same

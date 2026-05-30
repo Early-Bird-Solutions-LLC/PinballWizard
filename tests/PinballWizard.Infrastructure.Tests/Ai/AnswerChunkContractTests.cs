@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using PinballWizard.Application.Ai;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Pins the ADR-0026 § 4 AnswerChunk discriminated-union contract and the
 // Wave-1 thin-wrapper semantics of IAiRouter.AnswerStreamingAsync.

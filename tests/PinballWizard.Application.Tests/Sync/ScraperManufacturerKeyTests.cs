@@ -1,7 +1,7 @@
 using PinballWizard.Application.Sync;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Sync;
+namespace PinballWizard.Application.Tests.Sync;
 
 /// <summary>
 /// Tests for <see cref="ScraperManufacturerKey.FromGameId"/>. The

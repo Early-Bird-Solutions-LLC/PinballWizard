@@ -4,7 +4,7 @@ using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Landing;
+namespace PinballWizard.Application.Tests.Application.Landing;
 
 public sealed class LandingServiceTests
 {

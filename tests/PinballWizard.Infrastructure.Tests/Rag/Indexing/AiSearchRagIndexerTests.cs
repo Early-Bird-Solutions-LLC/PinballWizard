@@ -10,7 +10,7 @@ using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Indexing;
+namespace PinballWizard.Infrastructure.Tests.Rag.Indexing;
 
 // Behavior-asserting tests for AiSearchRagIndexer (build-spec § Phase
 // 4 item 16, ADR-0021). Pure-function units (ComputeChunkId,

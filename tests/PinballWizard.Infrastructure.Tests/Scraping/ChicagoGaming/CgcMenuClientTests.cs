@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.ChicagoGaming;
+namespace PinballWizard.Infrastructure.Tests.Scraping.ChicagoGaming;
 
 /// <summary>
 /// Tests for the static parsing surface of <see cref="CgcMenuClient"/>.

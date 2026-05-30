@@ -4,7 +4,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.AiSearch;
+namespace PinballWizard.Infrastructure.Tests.Integrations.AiSearch;
 
 // Unit tests for AzureAiSearchSmokeProbe's misconfiguration paths. The
 // success path requires a deployed AI Search service + AAD; that's

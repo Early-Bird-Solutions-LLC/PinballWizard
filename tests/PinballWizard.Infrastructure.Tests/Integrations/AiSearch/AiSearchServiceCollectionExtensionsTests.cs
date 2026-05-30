@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.AiSearch;
+namespace PinballWizard.Infrastructure.Tests.Integrations.AiSearch;
 
 // Pin the URL-derivation rule used to construct the AzureOpenAIClient
 // endpoint from the configured Foundry project endpoint. Foundry's

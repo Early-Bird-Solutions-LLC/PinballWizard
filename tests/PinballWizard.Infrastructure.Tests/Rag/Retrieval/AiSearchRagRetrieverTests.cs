@@ -3,7 +3,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Retrieval;
+namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 
 // Behavior-asserting tests for AiSearchRagRetriever (build-spec §
 // Phase 4 item 20, ADR-0021 — index schema, ADR-0022 — citation

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization.Metadata;
 using PinballWizard.Application.Ai;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Pins the JSON wire format for AnswerChunk per ADR-0026 § 4.
 //

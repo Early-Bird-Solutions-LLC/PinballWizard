@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Pure-function tests for CosmosAiSearchRagReconciler. The end-to-end
 // I/O path (Cosmos sample query → SearchClient filter call → telemetry

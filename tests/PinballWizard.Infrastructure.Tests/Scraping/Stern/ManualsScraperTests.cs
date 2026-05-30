@@ -5,10 +5,10 @@ using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Stern;
-using PinballWizard.Scraper.Tests.Scraping._TestInfra;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Stern;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Stern;
 
 /// <summary>
 /// Scraper-pipeline integration tests for <see cref="ManualsScraper"/>.

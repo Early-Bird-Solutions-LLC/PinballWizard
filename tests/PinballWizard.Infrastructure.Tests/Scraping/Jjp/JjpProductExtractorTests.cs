@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Jjp;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Jjp;
 
 /// <summary>
 /// Tests for <see cref="JjpProductExtractor"/>: pure-function HTML →

@@ -3,7 +3,7 @@ using AngleSharp.Html.Parser;
 using PinballWizard.Infrastructure.Scraping.OpenGraph;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.OpenGraph;
+namespace PinballWizard.Infrastructure.Tests.Scraping.OpenGraph;
 
 /// <summary>
 /// Tests for <see cref="OpenGraphExtractor"/>. Pin the byte-for-byte

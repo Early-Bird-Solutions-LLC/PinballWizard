@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PinballWizard.Application.Landing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Landing;
+namespace PinballWizard.Application.Tests.Application.Landing;
 
 // Exercises SeedQuestionLoader in isolation using temp-file fixtures so
 // the test project does not depend on the on-disk wizard_seed_questions.v1.json.

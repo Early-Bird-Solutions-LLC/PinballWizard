@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Landing;
+namespace PinballWizard.Application.Tests.Application.Landing;
 
 // Pins the on-disk data/seeds/featured_machines.v1.json contract:
 //   - schema_version = 1

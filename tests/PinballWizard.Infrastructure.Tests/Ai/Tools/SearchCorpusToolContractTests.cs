@@ -7,7 +7,7 @@ using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Tools;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Tools;
+namespace PinballWizard.Infrastructure.Tests.Ai.Tools;
 
 // JSON-Schema contract test for the searchCorpus function tool. Pins
 // the shape Microsoft.Extensions.AI auto-generates from

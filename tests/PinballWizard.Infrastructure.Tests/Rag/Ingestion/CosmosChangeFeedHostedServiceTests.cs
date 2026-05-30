@@ -7,7 +7,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Integration tests for CosmosChangeFeedHostedService<T>. Drives the
 // HandleChangesAsync entry point directly (no Cosmos emulator) against

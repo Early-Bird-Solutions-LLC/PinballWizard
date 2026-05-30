@@ -11,7 +11,7 @@ using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Application.Observability;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Tools;
+namespace PinballWizard.Infrastructure.Tests.Ai.Tools;
 
 // Behavior-asserting tests for SearchCorpusTool (build-spec § Phase 4
 // item 21, ADR-0014 + ADR-0022). The retriever is mocked via NSubstitute

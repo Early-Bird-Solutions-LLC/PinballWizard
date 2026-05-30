@@ -10,7 +10,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Behavioral emission tests for the W3-2 hosted-service instruments
 // (`pinwiz.rag.changefeed_*`). Drives `HandleChangesAsync` against

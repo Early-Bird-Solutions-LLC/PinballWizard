@@ -1,7 +1,7 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 internal sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
 {

@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.BarrelsOfFun;
+namespace PinballWizard.Infrastructure.Tests.Scraping.BarrelsOfFun;
 
 /// <summary>
 /// Tests for <see cref="BofProductExtractor"/>. The extractor reads

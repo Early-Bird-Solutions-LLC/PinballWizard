@@ -2,7 +2,7 @@ using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Evaluation;
+namespace PinballWizard.Infrastructure.Tests.Ai.Evaluation;
 
 // Sanity-check on the committed data/eval/wizard.v1.jsonl: it must
 // parse cleanly, every row's expected_sub_agent must be a valid

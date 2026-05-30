@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Spooky;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
 
 /// <summary>
 /// Tests for the static parsing surface of <see cref="SpookyWpPagesClient"/>.

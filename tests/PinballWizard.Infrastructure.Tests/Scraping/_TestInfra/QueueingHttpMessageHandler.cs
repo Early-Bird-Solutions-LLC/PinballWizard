@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 
-namespace PinballWizard.Scraper.Tests.Scraping._TestInfra;
+namespace PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 
 /// <summary>
 /// Test fake for <see cref="HttpMessageHandler"/>. Maps absolute URLs

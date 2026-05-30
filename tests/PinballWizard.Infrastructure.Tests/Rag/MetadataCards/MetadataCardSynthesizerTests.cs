@@ -3,7 +3,7 @@ using PinballWizard.Application.Rag.MetadataCards;
 using PinballWizard.Core.Domain;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.MetadataCards;
+namespace PinballWizard.Infrastructure.Tests.Rag.MetadataCards;
 
 // Behavior-asserting tests for MetadataCardSynthesizer (build-spec
 // § Phase 4 item 17). Each test covers a behavior the build-spec or

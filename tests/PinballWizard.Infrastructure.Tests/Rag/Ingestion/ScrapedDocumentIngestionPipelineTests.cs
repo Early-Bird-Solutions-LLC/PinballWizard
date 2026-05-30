@@ -10,7 +10,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Behavior tests for the W3-2 ScrapedDocumentIngestionPipeline.
 // Targets the two-filter path (document-type → hash) plus the extract /

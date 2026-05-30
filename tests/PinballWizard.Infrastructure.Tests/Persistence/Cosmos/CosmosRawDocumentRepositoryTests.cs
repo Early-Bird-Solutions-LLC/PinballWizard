@@ -9,7 +9,7 @@ using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 public sealed class CosmosRawDocumentRepositoryTests
 {

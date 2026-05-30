@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using PinballWizard.Application.Ai;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Behavior tests for SubAgentTraceReader (Phase 4 W2-1, build-spec
 // § Phase 4 scope item 11 / Phase 3 follow-up #4). The Wizard's

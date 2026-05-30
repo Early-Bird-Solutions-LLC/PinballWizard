@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Pins the selective indexing policy decisions from ADR-0025 § 3 onto

@@ -2,7 +2,7 @@ using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Degradation;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Ai;
+namespace PinballWizard.Application.Tests.Application.Ai;
 
 // Behavior-asserting tests for AmbientDegradationContext (PR-D2).
 //

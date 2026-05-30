@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Tests for the <see cref="ServiceCollectionExtensions.AddCosmosPersistence"/>

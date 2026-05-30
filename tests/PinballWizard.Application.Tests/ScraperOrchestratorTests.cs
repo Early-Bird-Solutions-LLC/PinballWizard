@@ -11,7 +11,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Application.Tests;
 
 /// <summary>
 /// Defends the orchestrator's source-filter aliases, dry-run semantics,

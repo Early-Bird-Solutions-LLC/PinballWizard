@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.Ap;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Ap;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Ap;
 
 public sealed class ApBulletinExtractorTests
 {

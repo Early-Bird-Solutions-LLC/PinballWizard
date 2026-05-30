@@ -6,7 +6,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Polite;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Polite;
 
 /// <summary>
 /// Tests for <see cref="PolitenessGate"/>. Verifies the four invariants:

@@ -9,7 +9,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Evaluation;
+namespace PinballWizard.Infrastructure.Tests.Ai.Evaluation;
 
 public sealed class EvaluationHarnessTests
 {

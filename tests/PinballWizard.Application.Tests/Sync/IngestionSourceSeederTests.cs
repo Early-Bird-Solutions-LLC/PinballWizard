@@ -6,7 +6,7 @@ using PinballWizard.Application.Sync;
 using PinballWizard.Core.Domain;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Sync;
+namespace PinballWizard.Application.Tests.Sync;
 
 public sealed class IngestionSourceSeederTests : IDisposable
 {

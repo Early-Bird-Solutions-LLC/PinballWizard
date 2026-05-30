@@ -4,7 +4,7 @@ using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 /// <summary>
 /// Pins the contract between <see cref="ISourceScraper"/> implementations

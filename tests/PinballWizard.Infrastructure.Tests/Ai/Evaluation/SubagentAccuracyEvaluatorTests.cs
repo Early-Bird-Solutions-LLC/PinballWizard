@@ -1,7 +1,7 @@
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Evaluation;
+namespace PinballWizard.Infrastructure.Tests.Ai.Evaluation;
 
 public sealed class SubagentAccuracyEvaluatorTests
 {

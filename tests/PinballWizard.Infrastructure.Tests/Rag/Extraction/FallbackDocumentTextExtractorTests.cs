@@ -8,7 +8,7 @@ using UglyToad.PdfPig.Fonts.Standard14Fonts;
 using UglyToad.PdfPig.Writer;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Extraction;
+namespace PinballWizard.Infrastructure.Tests.Rag.Extraction;
 
 // Unit tests for FallbackDocumentTextExtractor. The ADI extractor is
 // stubbed via IDocumentTextExtractor so no live Azure endpoint is

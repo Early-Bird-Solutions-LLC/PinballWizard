@@ -1,7 +1,7 @@
 using PinballWizard.Application.Ai;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Pins the contract that the IAiRouter refusal surface presents to
 // callers + dashboards. Two layers:

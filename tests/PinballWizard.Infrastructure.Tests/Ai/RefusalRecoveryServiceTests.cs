@@ -6,7 +6,7 @@ using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Behavioral tests for RefusalRecoveryService per ADR-0026 § 4 and the
 // Wave 2 PR-R2/R3 spec. Each test exercises a distinct behavior path

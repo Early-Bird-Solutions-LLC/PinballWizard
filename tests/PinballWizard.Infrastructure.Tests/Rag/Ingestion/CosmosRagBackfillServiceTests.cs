@@ -10,7 +10,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Behavioral tests for CosmosRagBackfillService. Drives RunAsync with
 // NSubstitute fakes for the Cosmos Container + FeedIterator so the

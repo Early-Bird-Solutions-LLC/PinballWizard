@@ -6,7 +6,7 @@ using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Chunking;
+namespace PinballWizard.Infrastructure.Tests.Rag.Chunking;
 
 // Behavior-asserting tests for HybridChunker (ADR-0019). Each test
 // covers a behavior the build-spec § Phase 4 item 15 calls out, OR one

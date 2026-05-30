@@ -5,7 +5,7 @@ using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.PinballMap;
+namespace PinballWizard.Infrastructure.Tests.Integrations.PinballMap;
 
 /// <summary>
 /// Live-contract tests for <see cref="PinballMapClient"/> against the

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Hosting;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Pins the <see cref="CosmosClientOptions"/> values that

@@ -11,7 +11,7 @@ using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Tools;
+namespace PinballWizard.Infrastructure.Tests.Ai.Tools;
 
 // Live-contract tests for SearchCorpusTool against a deployed Foundry
 // + AI Search environment. Per the same DL-0002 / DL-0003 lessons that

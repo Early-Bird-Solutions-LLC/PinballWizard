@@ -2,7 +2,7 @@ using Azure.Search.Documents.Indexes.Models;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Indexing;
+namespace PinballWizard.Infrastructure.Tests.Rag.Indexing;
 
 // Behavior-asserting tests for the v1 RAG index schema (ADR-0021).
 // Each test pins a specific row of ADR-0021 § Schema, the vector

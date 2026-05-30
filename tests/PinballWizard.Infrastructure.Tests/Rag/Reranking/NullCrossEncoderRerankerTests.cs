@@ -2,7 +2,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Infrastructure.Rag.Reranking;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Reranking;
+namespace PinballWizard.Infrastructure.Tests.Rag.Reranking;
 
 // Behaviour tests for NullCrossEncoderReranker — the passthrough
 // implementation used when Rag:CrossEncoder:Enabled=false (ADR-0024).

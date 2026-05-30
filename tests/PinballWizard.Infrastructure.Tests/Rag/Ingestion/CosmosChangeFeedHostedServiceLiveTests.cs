@@ -8,7 +8,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Live-contract tests for the W3-2 hosted-service stack against a
 // deployed Cosmos account. Mirrors the gating + env-var layout of

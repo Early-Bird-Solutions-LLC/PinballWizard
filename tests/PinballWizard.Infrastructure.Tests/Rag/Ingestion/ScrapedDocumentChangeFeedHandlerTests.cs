@@ -9,7 +9,7 @@ using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Behavior tests for the ScrapedDocumentChangeFeedHandler bridge —
 // the Infrastructure adapter between Cosmos's RagSourceDocument

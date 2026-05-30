@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Behavior tests for HttpDocumentBytesSource. Pins the SSRF
 // hardening guard (https-only) and the response-buffering contract

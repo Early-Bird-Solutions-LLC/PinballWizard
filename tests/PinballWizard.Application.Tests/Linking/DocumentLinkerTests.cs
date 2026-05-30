@@ -8,7 +8,7 @@ using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Linking;
+namespace PinballWizard.Application.Tests.Linking;
 
 // Unit tests for DocumentLinker tiers 0-5.
 // All external dependencies are NSubstitute mocks — no Cosmos / network calls.

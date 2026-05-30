@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.Multimorphic;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Multimorphic;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Multimorphic;
 
 /// <summary>
 /// Tests for the static parsing surface of <see cref="MultimorphicSitemapClient"/>.

@@ -2,7 +2,7 @@ using AngleSharp.Html.Parser;
 using PinballWizard.Infrastructure.Scraping.JsonLd;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.JsonLd;
+namespace PinballWizard.Infrastructure.Tests.Scraping.JsonLd;
 
 /// <summary>
 /// Tests for <see cref="JsonLdProductParser"/>. Pin every shape we've

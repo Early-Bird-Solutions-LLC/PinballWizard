@@ -3,7 +3,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Retrieval;
+namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 
 // Tests for the AiSearchRagRetriever reranker integration path
 // (ADR-0024 W4 fix-up). Verifies that ApplyRerankingAsync correctly

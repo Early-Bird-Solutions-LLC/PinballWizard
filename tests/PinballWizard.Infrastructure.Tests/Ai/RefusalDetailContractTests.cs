@@ -9,7 +9,7 @@ using PinballWizard.Core.Configuration;
 using System.Threading;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Pins the RefusalDetail surface per ADR-0026 § 4. Four behavioral
 // contracts:

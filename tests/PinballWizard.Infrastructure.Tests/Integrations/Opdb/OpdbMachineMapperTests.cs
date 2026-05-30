@@ -2,7 +2,7 @@ using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.Opdb;
+namespace PinballWizard.Infrastructure.Tests.Integrations.Opdb;
 
 /// <summary>
 /// Unit tests for <see cref="OpdbMachineMapper"/>: mapping OPDB DTOs

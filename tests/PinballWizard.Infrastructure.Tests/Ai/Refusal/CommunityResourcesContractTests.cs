@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Refusal;
+namespace PinballWizard.Infrastructure.Tests.Ai.Refusal;
 
 // Pins the on-disk community_resources.v1.json contract:
 //   - schema_version = 1

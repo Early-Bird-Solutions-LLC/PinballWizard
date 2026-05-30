@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using PinballWizard.Application.Ai.Refusal;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Refusal;
+namespace PinballWizard.Infrastructure.Tests.Ai.Refusal;
 
 // Exercises CommunityResourceLoader in isolation using temp-file fixtures
 // so the test project does not depend on the on-disk

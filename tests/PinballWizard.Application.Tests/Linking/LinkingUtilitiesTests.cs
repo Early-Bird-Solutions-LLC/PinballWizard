@@ -1,7 +1,7 @@
 using PinballWizard.Application.Linking;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Linking;
+namespace PinballWizard.Application.Tests.Linking;
 
 public class LinkingUtilitiesTests
 {

@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using PinballWizard.Application.Ai.Citations;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Citations;
+namespace PinballWizard.Infrastructure.Tests.Ai.Citations;
 
 // The Phase 3 regex extractor is retained behind AiFoundryOptions
 // .RetainRegexCitationCutover for the cutover observability window per

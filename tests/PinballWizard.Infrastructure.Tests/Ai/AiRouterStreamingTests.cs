@@ -15,7 +15,7 @@ using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 // Behavioral tests for AiRouter.AnswerStreamingAsync post Wave-2 PR-S2.
 //

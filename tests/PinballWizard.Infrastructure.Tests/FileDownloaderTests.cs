@@ -11,7 +11,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 /// <summary>
 /// Defends conditional-download semantics, hashing, size guard, and error handling

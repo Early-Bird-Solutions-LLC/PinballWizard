@@ -9,7 +9,7 @@ using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Landing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Landing;
+namespace PinballWizard.Infrastructure.Tests.Application.Landing;
 
 // Unit tests for SystemStatusProvider.
 //

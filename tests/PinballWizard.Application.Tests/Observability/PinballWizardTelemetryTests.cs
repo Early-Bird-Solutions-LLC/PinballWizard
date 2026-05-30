@@ -1,7 +1,7 @@
 using PinballWizard.Application.Observability;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Observability;
+namespace PinballWizard.Application.Tests.Observability;
 
 // Pins the public surface of the project's Meter and ActivitySource —
 // names, instrument names, units, and descriptions. These values are

@@ -1,7 +1,7 @@
 using System.Net;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
-namespace PinballWizard.Scraper.Tests.Scraping._TestInfra;
+namespace PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 
 /// <summary>
 /// Test fake for <see cref="IPolitenessGate"/>. Records every

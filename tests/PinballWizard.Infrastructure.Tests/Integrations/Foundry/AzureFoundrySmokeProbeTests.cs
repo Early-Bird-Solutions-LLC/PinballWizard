@@ -4,7 +4,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.Foundry;
+namespace PinballWizard.Infrastructure.Tests.Integrations.Foundry;
 
 // Unit tests for AzureFoundrySmokeProbe's misconfiguration paths. The
 // success path requires a deployed Foundry project + AAD; that's

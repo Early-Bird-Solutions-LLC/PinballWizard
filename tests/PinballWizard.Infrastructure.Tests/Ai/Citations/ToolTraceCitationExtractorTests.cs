@@ -6,7 +6,7 @@ using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Tools;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Citations;
+namespace PinballWizard.Infrastructure.Tests.Ai.Citations;
 
 public sealed class ToolTraceCitationExtractorTests
 {

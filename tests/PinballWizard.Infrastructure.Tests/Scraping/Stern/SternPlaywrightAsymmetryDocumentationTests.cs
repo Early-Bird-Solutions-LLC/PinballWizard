@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Stern;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Stern;
 
 // Pins the Stern Playwright asymmetry as documented (route ii of Phase 2
 // § Scope item 8). The family-wide scraper-pipeline integration test
@@ -22,7 +22,7 @@ public sealed class SternPlaywrightAsymmetryDocumentationTests
     public void Stern_Playwright_Pipeline_Test_Asymmetry_IsAcknowledged()
     {
         var repoRoot = FindRepoRoot();
-        var readmePath = Path.Combine(repoRoot, "tests", "PinballWizard.Scraper.Tests", "README.md");
+        var readmePath = Path.Combine(repoRoot, "tests", "PinballWizard.Infrastructure.Tests", "README.md");
 
         Assert.True(
             File.Exists(readmePath),

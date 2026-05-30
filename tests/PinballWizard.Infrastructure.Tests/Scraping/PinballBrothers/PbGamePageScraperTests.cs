@@ -5,10 +5,10 @@ using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
-using PinballWizard.Scraper.Tests.Scraping._TestInfra;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.PinballBrothers;
+namespace PinballWizard.Infrastructure.Tests.Scraping.PinballBrothers;
 
 /// <summary>
 /// Scraper-pipeline integration tests for <see cref="PbGamePageScraper"/>.

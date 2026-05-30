@@ -12,7 +12,7 @@ using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Unit tests for the generic <see cref="CosmosRepository{T}"/> base.

@@ -3,7 +3,7 @@ using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
 
-namespace PinballWizard.Scraper.Tests.Rag.Ingestion;
+namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
 // Test-only in-memory fakes for the W3-2 ingestion stack.
 //

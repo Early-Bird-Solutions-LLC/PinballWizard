@@ -7,7 +7,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Reranking;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Reranking;
+namespace PinballWizard.Infrastructure.Tests.Rag.Reranking;
 
 // Behaviour tests for CohereRerankReranker using a fake HttpMessageHandler
 // that intercepts the Cohere Rerank API call without hitting the network

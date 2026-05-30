@@ -8,7 +8,7 @@ using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai;
+namespace PinballWizard.Infrastructure.Tests.Ai;
 
 public sealed class MachineGroundingToolTests
 {

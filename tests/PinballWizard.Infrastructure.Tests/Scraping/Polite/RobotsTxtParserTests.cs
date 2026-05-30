@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Polite;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Polite;
 
 /// <summary>
 /// Direct tests for the robots.txt parser. The cache + fetch logic is

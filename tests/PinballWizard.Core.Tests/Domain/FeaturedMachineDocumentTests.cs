@@ -1,7 +1,7 @@
 using PinballWizard.Core.Domain;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Domain;
+namespace PinballWizard.Core.Tests.Domain;
 
 /// <summary>
 /// Unit tests for <see cref="FeaturedMachineDocument"/>: structural invariants

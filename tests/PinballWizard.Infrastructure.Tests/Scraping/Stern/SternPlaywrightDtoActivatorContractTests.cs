@@ -8,7 +8,7 @@ using Xunit;
 using LinkRaw = PinballWizard.Infrastructure.Scraping.Stern.GamePageScraper.LinkRaw;
 using BulletinRaw = PinballWizard.Infrastructure.Scraping.Stern.ServiceBulletinScraper.BulletinRaw;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Stern;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Stern;
 
 // Pins the deserialization contract Playwright actually invokes for the
 // DTO types the Stern Playwright scrapers receive from page.EvaluateAsync.

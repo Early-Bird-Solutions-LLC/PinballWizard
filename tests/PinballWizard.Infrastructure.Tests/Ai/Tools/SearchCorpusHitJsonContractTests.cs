@@ -2,7 +2,7 @@ using System.Text.Json;
 using PinballWizard.Application.Ai.Tools;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Ai.Tools;
+namespace PinballWizard.Infrastructure.Tests.Ai.Tools;
 
 // JSON serialization contract tests for SearchCorpusHit. Pins the
 // invariant that `Score` and `LastScrapedUtc` are NEVER emitted in

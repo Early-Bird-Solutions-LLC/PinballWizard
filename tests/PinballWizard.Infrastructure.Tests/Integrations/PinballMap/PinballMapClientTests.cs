@@ -6,10 +6,10 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Scraping.Polite;
-using PinballWizard.Scraper.Tests.Scraping._TestInfra;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.PinballMap;
+namespace PinballWizard.Infrastructure.Tests.Integrations.PinballMap;
 
 /// <summary>
 /// Unit tests for <see cref="PinballMapClient"/>: response shape parsing,

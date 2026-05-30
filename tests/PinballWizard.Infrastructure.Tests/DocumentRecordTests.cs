@@ -5,7 +5,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Core.Models;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 public class DocumentRecordTests
 {

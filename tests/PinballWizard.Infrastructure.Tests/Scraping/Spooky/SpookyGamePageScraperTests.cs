@@ -5,10 +5,10 @@ using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
-using PinballWizard.Scraper.Tests.Scraping._TestInfra;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.Spooky;
+namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
 
 /// <summary>
 /// Scraper-pipeline integration tests for <see cref="SpookyGamePageScraper"/>.

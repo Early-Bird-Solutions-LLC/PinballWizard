@@ -14,7 +14,7 @@ using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Integrations.Opdb;
+namespace PinballWizard.Infrastructure.Tests.Integrations.Opdb;
 
 /// <summary>
 /// Tests for <see cref="OpdbSyncService"/>. Drives a stub OPDB

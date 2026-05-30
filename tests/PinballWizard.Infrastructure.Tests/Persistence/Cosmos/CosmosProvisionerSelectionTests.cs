@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Pins the contract that <see cref="ServiceCollectionExtensions.AddCosmosPersistence"/>

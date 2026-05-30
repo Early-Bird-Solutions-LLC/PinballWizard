@@ -7,7 +7,7 @@ using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Extraction;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Extraction;
+namespace PinballWizard.Infrastructure.Tests.Rag.Extraction;
 
 // Unit tests for AzureDocumentIntelligenceExtractor covering the two
 // failure paths that cannot be exercised through FallbackDocumentTextExtractor

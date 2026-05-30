@@ -5,7 +5,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Core.Configuration;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Rag.Reranking;
+namespace PinballWizard.Infrastructure.Tests.Rag.Reranking;
 
 // Compile-time contract tests for the ICrossEncoderReranker abstraction
 // (ADR-0024 W4 fix-up — Cohere Rerank gate triggered at H5 eval).

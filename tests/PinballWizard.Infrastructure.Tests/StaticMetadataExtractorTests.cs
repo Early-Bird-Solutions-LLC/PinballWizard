@@ -7,7 +7,7 @@ using AngleSharp.Html.Parser;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 /// <summary>
 /// Pinned-down behavior for <see cref="StaticMetadataExtractor"/>. Fixtures

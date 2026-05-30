@@ -5,7 +5,7 @@ using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 /// <summary>
 /// Pinned-down behavior for the post-DOM helpers in GamePageExtractors.

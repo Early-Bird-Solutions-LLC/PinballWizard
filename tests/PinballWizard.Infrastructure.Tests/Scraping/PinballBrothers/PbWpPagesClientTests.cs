@@ -1,7 +1,7 @@
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Scraping.PinballBrothers;
+namespace PinballWizard.Infrastructure.Tests.Scraping.PinballBrothers;
 
 /// <summary>
 /// Tests for the static parsing surface of <see cref="PbWpPagesClient"/>.

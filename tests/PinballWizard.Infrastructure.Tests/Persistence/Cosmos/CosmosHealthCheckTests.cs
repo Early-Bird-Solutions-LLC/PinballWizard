@@ -7,7 +7,7 @@ using NSubstitute.ExceptionExtensions;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Persistence.Cosmos;
+namespace PinballWizard.Infrastructure.Tests.Persistence.Cosmos;
 
 /// <summary>
 /// Behavior tests for <see cref="CosmosHealthCheck"/>. Mocks the

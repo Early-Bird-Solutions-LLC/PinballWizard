@@ -4,7 +4,7 @@ using PinballWizard.Application.Ai;
 using PinballWizard.Application.Landing;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests.Application.Landing;
+namespace PinballWizard.Application.Tests.Application.Landing;
 
 // Pins the on-disk wizard_seed_questions.v1.json contract:
 //   - schema_version = 1

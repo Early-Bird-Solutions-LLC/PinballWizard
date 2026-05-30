@@ -21,7 +21,7 @@ using Polly;
 using Polly.Retry;
 using Xunit;
 
-namespace PinballWizard.Scraper.Tests;
+namespace PinballWizard.Infrastructure.Tests;
 
 /// <summary>
 /// End-to-end DI graph and pipeline tests. These mirror the host-builder configuration
