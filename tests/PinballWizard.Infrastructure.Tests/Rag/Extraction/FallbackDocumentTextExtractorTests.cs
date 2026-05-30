@@ -168,6 +168,29 @@ public sealed class FallbackDocumentTextExtractorTests
         Assert.Equal(0, capturedPosition);
     }
 
+    [Fact]
+    public async Task ExtractAsync_OcrRequired_FallbackThrows_ExceptionPropagatesNotSwallowed()
+    {
+        // FallbackDocumentTextExtractor has no try/catch around the fallback call.
+        // If the fallback throws (e.g. ADI endpoint is unreachable), the exception
+        // must propagate to the caller — it must NOT be silently swallowed or
+        // converted to an empty / OcrFailed result.  This guards against a future
+        // refactor that adds a catch-all and masks transport failures as silent
+        // no-ops, which would let the caller believe extraction succeeded with no text.
+        var throwingFallback = Substitute.For<IDocumentTextExtractor>();
+        throwingFallback
+            .ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns<ExtractedDocument>(_ => throw new InvalidOperationException("ADI endpoint unreachable"));
+
+        // ocrRequiredCharFloor raised so any real PDF returns OcrRequired,
+        // routing us into the fallback code path.
+        var extractor = NewFallback(throwingFallback, ocrRequiredCharFloor: 1_000_000);
+        using var stream = new MemoryStream(BuildPdfWithText("short text"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => extractor.ExtractAsync(stream, CancellationToken.None));
+    }
+
     // --- Fixture helpers -------------------------------------------------------
 
     private static FallbackDocumentTextExtractor NewFallback(
