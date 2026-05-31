@@ -483,4 +483,62 @@ public sealed class WizardAnswerStreamTests
 
         await Task.CompletedTask;
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Streaming_chunks_resuming_off_dispatcher_still_render
+    //
+    // Regression guard for the "UI stuck on thinking" bug: StreamAnswerAsync
+    // enumerates the SSE stream with ConfigureAwait(false), so each chunk's
+    // continuation resumes on a thread-pool thread — NOT the Blazor render
+    // Dispatcher. If the component mutates state / calls StateHasChanged()
+    // directly off the Dispatcher, Blazor throws "The current thread is not
+    // associated with the Dispatcher", the circuit faults, and the answer never
+    // renders. The fix marshals all per-chunk state mutation through
+    // InvokeAsync. This test reproduces the off-Dispatcher resumption by
+    // completing each MoveNextAsync on the thread pool (Task.Run), which is what
+    // the real HttpClient SSE read does. Before the fix this render never
+    // completes; after the fix the answer text appears.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Streaming_chunks_resuming_off_dispatcher_still_render()
+    {
+        var chunks = new AnswerChunk[]
+        {
+            new AnswerChunk.TextDelta("Off-dispatcher "),
+            new AnswerChunk.TextDelta("streaming "),
+            new AnswerChunk.TextDelta("works."),
+            new AnswerChunk.Final(BuildAnswer("Off-dispatcher streaming works.")),
+        };
+
+        var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ThreadPoolResumingAsync(chunks, ci.ArgAt<CancellationToken>(1)));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
+            p.Add(c => c.Question, "Force the off-dispatcher path"));
+
+        // If the component mutated state off the Dispatcher this assertion would
+        // never pass (the circuit faults before rendering the final text).
+        cut.WaitForAssertion(
+            () => Assert.Contains("Off-dispatcher streaming works.", cut.Markup, StringComparison.OrdinalIgnoreCase),
+            timeout: TimeSpan.FromSeconds(5));
+
+        // Each MoveNextAsync forces its continuation onto the thread pool, so the
+        // ConfigureAwait(false) resumption in StreamAnswerAsync runs off the
+        // Blazor Dispatcher — the exact condition the live SSE read produces.
+        static async IAsyncEnumerable<AnswerChunk> ThreadPoolResumingAsync(
+            IEnumerable<AnswerChunk> source,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            foreach (var chunk in source)
+            {
+                ct.ThrowIfCancellationRequested();
+                await Task.Run(() => Thread.Sleep(1), ct).ConfigureAwait(false);
+                yield return chunk;
+            }
+        }
+    }
 }

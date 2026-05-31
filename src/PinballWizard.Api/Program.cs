@@ -20,8 +20,11 @@
 using PinballWizard.Api.Endpoints;
 using PinballWizard.Api.Middleware;
 using PinballWizard.Application.Landing;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Landing;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -58,6 +61,33 @@ var foundryWired = !string.IsNullOrWhiteSpace(foundryEndpoint);
 if (foundryWired)
 {
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
+}
+
+// ── Cosmos persistence (gated — mirrors CLI Program.cs wiring) ────────────
+// The Wizard's getMachineByTitle grounding tool (MachineGroundingTool) depends
+// on IMachineRepository, which AddCosmosPersistence registers. AddAiRouter
+// registers MachineGroundingTool as a singleton, so without this the router's
+// tool graph fails to resolve the first time a question is asked. Gated on
+// Cosmos:AccountEndpoint; AddCosmosPersistence builds a Managed-Identity
+// CosmosClient from that endpoint (deployed account and local Phase-0 runs
+// both use this path — the Api host has no Aspire Cosmos client dependency,
+// unlike the Cli which also supports the loopback emulator connection string).
+// Absent in unit tests / clean local dev — the Api starts without Cosmos.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
+{
+    builder.Services.AddCosmosPersistence(builder.Configuration);
+}
+
+// ── Azure AI Search (gated — mirrors CLI Program.cs wiring) ───────────────
+// The Wizard's searchCorpus tool (SearchCorpusTool) depends on IRagRetriever,
+// which AddAzureAiSearchIntegration registers. AddAiRouter registers
+// SearchCorpusTool as a singleton, so without this the router's tool graph
+// fails to resolve. Gated on AiSearch:Endpoint; the retriever's IQueryEmbedder
+// additionally requires AiFoundry:ProjectEndpoint (already wired above when
+// present). Absent in local dev before the AI Search hand-off — start clean.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[AiSearchOptions.EndpointKey]))
+{
+    builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
 }
 
 var app = builder.Build();
