@@ -870,6 +870,58 @@ public class DocumentLinkerTests
         Assert.Single(result.LinkedMachineIds);
         Assert.Equal("G5po2-MeP6B", result.LinkedMachineIds[0]); // single candidate still links
     }
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page_GodzillaCollision_FansOutToSternOnlyBySource()
+    {
+        // Tiers 3/4 page-text path: page 1 of a Stern Godzilla manual mentions
+        // "godzilla", which matches BOTH Sega and Stern. Without manufacturer
+        // scoping this fans out to both (mislabeling the doc onto Sega). The
+        // source manufacturer narrows the fan-out to Stern only.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        var machines = new[] { SegaGodzilla(), SternGodzilla() };
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        var relativePath = "docs/godzilla_pro.pdf";
+        var absolutePath = Path.Combine(tmpDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllBytesAsync(absolutePath, []);
+
+        try
+        {
+            // No xref + filename that won't slug-match → forces the Tier 3 page path.
+            var raw = MakeRaw(
+                fileUrl: "https://sternpinball.com/files/manual_2022.pdf",
+                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "manual_2022.pdf" },
+                sourceType: SourceType.ManualsPage); // Stern
+
+            var pageText = "Owner's manual for the Godzilla pinball machine.";
+            var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
+            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+
+            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+                machines: machines, textExtractor: extractor, downloadsRoot: tmpDir);
+
+            await linker.InitializeAsync(CancellationToken.None);
+            var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+            Assert.Equal("page_1", result.ResolutionStrategy);
+            Assert.Single(result.LinkedMachineIds); // narrowed, not fanned to both
+            Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
 }
 
 // Extension helpers for test-only async enumerable construction.
