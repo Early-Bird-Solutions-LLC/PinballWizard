@@ -52,7 +52,10 @@ public sealed class LinkDocumentsCommandTests : IDisposable
     /// Uses the assembly-qualified name to resolve the type across assembly
     /// boundaries, which works even when the type is <c>internal</c>.
     /// </summary>
-    private static async Task InvokeRunAsync(IServiceProvider services, CancellationToken ct = default)
+    private static async Task InvokeRunAsync(
+        IServiceProvider services,
+        bool relinkAll = false,
+        CancellationToken ct = default)
     {
         var type = Type.GetType("PinballWizard.Cli.Commands.LinkDocumentsCommand, PinballWizard.Cli");
         Assert.NotNull(type);
@@ -62,7 +65,9 @@ public sealed class LinkDocumentsCommandTests : IDisposable
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        var task = (Task)method!.Invoke(null, [services, ct])!;
+        // RunAsync(IServiceProvider, CancellationToken, bool relinkAll = false) —
+        // reflection requires all parameters; pass relinkAll explicitly.
+        var task = (Task)method!.Invoke(null, [services, ct, relinkAll])!;
         await task;
     }
 

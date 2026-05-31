@@ -83,6 +83,45 @@ public sealed class RagIndexBootstrapper
             return new RagIndexBootstrapResult(_options.IndexName, Created: true);
         }
     }
+
+    // Drops the index entirely and recreates it from the current schema.
+    //
+    // This is the ONE place a delete happens — and deliberately so: the index is
+    // a rebuildable projection of the Cosmos source of truth, so corrections
+    // (e.g. re-linking documents to the right machine) are applied by wiping the
+    // whole index and re-ingesting, NOT by surgically deleting/mutating chunks.
+    // The ingestion + backfill flows stay strictly upsert-only; no per-document
+    // or per-machine delete primitive exists. This whole-index drop is an
+    // explicit, operator-invoked bootstrap step (CLI --rebuild-rag-index), never
+    // part of an automated data flow. Idempotent: a missing index is treated as
+    // an already-dropped no-op before the create.
+    public async Task<RagIndexBootstrapResult> RecreateAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_options.IndexName))
+        {
+            throw new InvalidOperationException(
+                "AiSearch:IndexName is empty; cannot rebuild RAG index without a target name.");
+        }
+
+        try
+        {
+            await _indexClient
+                .DeleteIndexAsync(_options.IndexName, cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogWarning(
+                "RAG index DROPPED for rebuild: name={IndexName}. All chunks removed; re-ingest required.",
+                _options.IndexName);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            _logger.LogInformation(
+                "RAG index already absent before rebuild: name={IndexName} (treating as dropped).",
+                _options.IndexName);
+        }
+
+        // Recreate from schema via the existing create path.
+        return await EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+    }
 }
 
 public sealed record RagIndexBootstrapResult(string IndexName, bool Created);

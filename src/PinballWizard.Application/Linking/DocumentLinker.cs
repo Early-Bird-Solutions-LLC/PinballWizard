@@ -49,8 +49,14 @@ public sealed class DocumentLinker : IDocumentLinker
     private IReadOnlyDictionary<string, LinkOverrideRecord> _overrides
         = new Dictionary<string, LinkOverrideRecord>(StringComparer.Ordinal);
 
-    private Dictionary<string, Machine> _machinesBySlug
-        = new Dictionary<string, Machine>(StringComparer.OrdinalIgnoreCase);
+    // Slug → ALL machines sharing that normalized slug. Title slugs collide
+    // across manufacturers (e.g. "godzilla" = Sega 1998 + Stern 2021 remake),
+    // so this MUST keep every colliding machine; the linker disambiguates by
+    // manufacturer provenance (see PreferByManufacturer). A prior single-valued
+    // "last writer wins" dict silently dropped all-but-one and mis-resolved
+    // every Stern remake to the original manufacturer.
+    private Dictionary<string, List<Machine>> _machinesBySlug
+        = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
 
     private IReadOnlyList<(Machine Machine, string NormalizedSlug)> _machineSlugIndex = [];
 
@@ -88,7 +94,7 @@ public sealed class DocumentLinker : IDocumentLinker
         // ManufacturerSlugs is a dictionary keyed by manufacturer name (e.g., "stern")
         // mapping to the manufacturer's canonical slug for the machine.
         var slugIndex = new List<(Machine Machine, string NormalizedSlug)>();
-        var bySlug = new Dictionary<string, Machine>(StringComparer.OrdinalIgnoreCase);
+        var bySlug = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
         var totalMachines = 0;
 
         // StreamAllAsync issues a single cross-partition query — no need to
@@ -102,9 +108,35 @@ public sealed class DocumentLinker : IDocumentLinker
                 var normSlug = LinkingUtilities.NormalizeForMatch(slug);
                 if (string.IsNullOrEmpty(normSlug)) continue;
 
-                // Last writer wins for duplicate slugs (shouldn't happen across manufacturers).
-                bySlug[slug] = machine;
+                // Keep EVERY machine for a slug — title collisions across
+                // manufacturers are expected (Stern remakes of classic titles).
+                // Disambiguation happens at resolve time via manufacturer
+                // provenance, not by dropping colliding entries here.
+                if (!bySlug.TryGetValue(slug, out var list))
+                {
+                    list = [];
+                    bySlug[slug] = list;
+                }
+                if (!list.Any(m => m.Id == machine.Id))
+                {
+                    list.Add(machine);
+                }
                 slugIndex.Add((machine, normSlug));
+            }
+        }
+
+        // Operability: surface cross-manufacturer slug collisions so new ones
+        // (every future Stern remake) are visible in logs rather than silently
+        // mis-resolved.
+        foreach (var (slug, machines) in bySlug)
+        {
+            var distinctMfrs = machines.Select(m => m.PartitionKey).Distinct().ToList();
+            if (distinctMfrs.Count > 1)
+            {
+                _logger.LogWarning(
+                    "DocumentLinker: slug '{Slug}' collides across {Count} manufacturers ({Mfrs}); " +
+                    "documents will be disambiguated by source provenance.",
+                    slug, distinctMfrs.Count, string.Join(",", distinctMfrs));
             }
         }
 
@@ -337,6 +369,46 @@ public sealed class DocumentLinker : IDocumentLinker
         return (processed, linked, platformGeneric, notInCatalog, failed);
     }
 
+    public async Task<int> ResetForRelinkAsync(CancellationToken cancellationToken)
+    {
+        // Reset algorithm-derived terminal states to Pending so RunBatchAsync
+        // re-runs the (now-fixed) tiers against them. Excludes ManuallyLinked
+        // (admin overrides) and PlatformGeneric (deliberate non-machine docs).
+        // Materialize first — UpdateLinkStatusAsync writes back to the same
+        // container mid-stream (same iterator-stability reason as RunBatchAsync).
+        var toReset = new List<RawDocumentRecord>();
+        await foreach (var doc in _rawRepo
+            .StreamByStatusAsync([LinkStatus.Linked, LinkStatus.NotInCatalog], cancellationToken)
+            .ConfigureAwait(false))
+        {
+            toReset.Add(doc);
+        }
+
+        var sw = Stopwatch.StartNew();
+        await Parallel.ForEachAsync(
+            toReset,
+            new ParallelOptions { MaxDegreeOfParallelism = _cosmosWriteConcurrency, CancellationToken = cancellationToken },
+            async (raw, ct) =>
+            {
+                // Clear resolution metadata so the re-run starts clean; failureReason
+                // and overrideId null. RunBatchAsync streams Pending next.
+                await _rawRepo.UpdateLinkStatusAsync(
+                    raw.DocumentId,
+                    LinkStatus.Pending,
+                    resolutionStrategy: null,
+                    failureReason: null,
+                    overrideId: null,
+                    ct).ConfigureAwait(false);
+            });
+        sw.Stop();
+
+        _logger.LogInformation(
+            "DocumentLinker: reset {Count} Linked/NotInCatalog documents to Pending for re-link in {Ms}ms.",
+            toReset.Count, sw.Elapsed.TotalMilliseconds);
+
+        return toReset.Count;
+    }
+
     // --- Tier implementations ---
 
     private LinkingResult? TryTier0Override(RawDocumentRecord raw)
@@ -367,18 +439,44 @@ public sealed class DocumentLinker : IDocumentLinker
             FailureReason: null);
     }
 
+    // Disambiguates a set of slug-colliding machine candidates using the
+    // document's manufacturer provenance (InferManufacturerKey from SourceType).
+    // Preference-with-fallback, never a hard filter:
+    //   - exactly one candidate → return it (no collision);
+    //   - hint resolves to exactly one candidate of that manufacturer → return it;
+    //   - otherwise → null (caller keeps its existing ambiguous/fall-through path),
+    //     so a document that legitimately matches only a different manufacturer
+    //     still links and we never regress a previously-working resolution.
+    private static Machine? PreferByManufacturer(List<Machine> candidates, string? mfrKey)
+    {
+        if (candidates.Count == 1) return candidates[0];
+        if (candidates.Count == 0 || mfrKey is null) return null;
+
+        var preferred = candidates
+            .Where(m => string.Equals(m.PartitionKey, mfrKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return preferred.Count == 1 ? preferred[0] : null;
+    }
+
     private LinkingResult? TryTier1XrefSlug(RawDocumentRecord raw)
     {
         // Collect all distinct machine IDs resolved from xref slugs.
         var resolvedMachineIds = new List<string>();
         var resolvedSlugs = new List<string>();
+        var mfrHint = LinkingUtilities.InferManufacturerKey(raw.Source);
 
         foreach (var xref in raw.CrossReferences)
         {
             var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
             if (slug is null) continue;
 
-            if (!_machinesBySlug.TryGetValue(slug, out var machine)) continue;
+            if (!_machinesBySlug.TryGetValue(slug, out var candidates)) continue;
+
+            // Disambiguate slug collisions (e.g. Sega vs Stern Godzilla) by the
+            // document's source manufacturer; falls through to ambiguity below
+            // when the hint can't pick a single machine.
+            var machine = PreferByManufacturer(candidates, mfrHint);
+            if (machine is null) continue;
 
             if (!resolvedMachineIds.Contains(machine.Id))
             {
@@ -421,9 +519,10 @@ public sealed class DocumentLinker : IDocumentLinker
         var normFilename = LinkingUtilities.NormalizeForMatch(filename);
         if (string.IsNullOrEmpty(normFilename)) return null;
 
-        Machine? best = null;
+        // Collect the longest-slug match set, keeping ALL machines tied at the
+        // winning length so a manufacturer hint can break the tie.
         int bestSlugLength = 0;
-        bool ambiguous = false;
+        var bestMatches = new List<Machine>();
 
         foreach (var (machine, normSlug) in _machineSlugIndex)
         {
@@ -432,15 +531,24 @@ public sealed class DocumentLinker : IDocumentLinker
             var len = normSlug.Length;
             if (len > bestSlugLength)
             {
-                best = machine;
                 bestSlugLength = len;
-                ambiguous = false;
+                bestMatches.Clear();
+                bestMatches.Add(machine);
             }
-            else if (len == bestSlugLength && best is not null && best.Id != machine.Id)
+            else if (len == bestSlugLength && !bestMatches.Any(m => m.Id == machine.Id))
             {
-                ambiguous = true;
+                bestMatches.Add(machine);
             }
         }
+
+        // Single longest match → use it. Multiple distinct machines tied at the
+        // longest length → disambiguate by source manufacturer (e.g. a Stern
+        // Godzilla_Pro_web.pdf resolves to Stern, not Sega) before falling back
+        // to NotInCatalog ambiguity.
+        Machine? best = bestMatches.Count == 1
+            ? bestMatches[0]
+            : PreferByManufacturer(bestMatches, LinkingUtilities.InferManufacturerKey(raw.Source));
+        bool ambiguous = best is null && bestMatches.Count > 1;
 
         if (ambiguous)
         {
@@ -516,6 +624,24 @@ public sealed class DocumentLinker : IDocumentLinker
         {
             _logger.LogDebug("DocumentLinker: {Tier} — no slug match in page text for {DocId}.", strategyName, raw.DocumentId);
             return null;
+        }
+
+        // When page text matches multiple machines (a title collision — page 1
+        // of a Stern Godzilla manual matches both Sega and Stern Godzilla),
+        // scope the fan-out to the document's source manufacturer so we don't
+        // mislabel the doc onto the wrong maker. If the hint resolves a single
+        // machine, link only that one; otherwise keep the original all-match
+        // fan-out (no regression for genuinely multi-machine documents).
+        if (matchedMachines.Count > 1)
+        {
+            var preferred = PreferByManufacturer(matchedMachines, LinkingUtilities.InferManufacturerKey(raw.Source));
+            if (preferred is not null)
+            {
+                _logger.LogDebug(
+                    "DocumentLinker: {Tier} disambiguated {Count} matches to {MachineId} by source manufacturer for {DocId}.",
+                    strategyName, matchedMachines.Count, preferred.Id, raw.DocumentId);
+                matchedMachines = [preferred];
+            }
         }
 
         _logger.LogDebug(

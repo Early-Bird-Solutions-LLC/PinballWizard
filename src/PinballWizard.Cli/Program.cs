@@ -93,6 +93,11 @@ var ensureRagIndexOption = new Option<bool>("--ensure-rag-index")
     Description = "Idempotently creates the Phase 4 RAG index (ADR-0021, default name `pinwiz-rag-v1`) on the configured Azure AI Search service if it does not yet exist. No-op when the index is already present — schema mutations follow the v1→v2 cutover documented in ADR-0021 § Versioning strategy, not in-place updates. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the create call fails."
 };
 
+var rebuildRagIndexOption = new Option<bool>("--rebuild-rag-index")
+{
+    Description = "DESTRUCTIVE: drops the RAG index entirely and recreates it empty from the current schema, then exits. Removes ALL indexed chunks — you must re-ingest afterwards (--run-rag-backfill + --sync-metadata-cards). This is the supported way to correct mislabeled chunks (e.g. after the linker re-link): the index is a rebuildable projection of Cosmos, so corrections happen by wipe-and-rebuild, never by per-chunk deletion. Requires AiSearch:Endpoint to be configured."
+};
+
 var askOption = new Option<string?>("--ask")
 {
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
@@ -118,6 +123,11 @@ var linkDocumentsOption = new Option<bool>("--link-documents")
     Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var relinkAllOption = new Option<bool>("--relink-all")
+{
+    Description = "Re-run the linker over ALL previously-linked documents: first resets every Linked / NotInCatalog record in scraped_documents_raw back to Pending (preserving ManuallyLinked admin overrides and PlatformGeneric), then runs the standard --link-documents pass. Use after the linker logic changes (e.g. the manufacturer-disambiguation fix) so existing mislabeled links are re-resolved. Implies --link-documents. Requires Cosmos to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -128,11 +138,13 @@ rootCommand.Options.Add(seedFeaturedMachinesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
+rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
+rootCommand.Options.Add(relinkAllOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -145,11 +157,13 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
+    var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
+    var relinkAll = parseResult.GetValue(relinkAllOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -369,13 +383,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --link-documents (document-to-machine linking pass; processes all
-    // pending, failed, and not_in_catalog records in scraped_documents_raw via
-    // the 5-tier algorithm and fans resolved documents into scraped_documents).
-    // Gated on IDocumentLinker being registered, which requires Cosmos.
-    if (linkDocuments)
+    // Handle --link-documents / --relink-all (document-to-machine linking pass;
+    // processes all pending, failed, and not_in_catalog records in
+    // scraped_documents_raw via the 5-tier algorithm and fans resolved documents
+    // into scraped_documents). --relink-all first resets prior Linked/NotInCatalog
+    // records to Pending so they re-resolve. Gated on IDocumentLinker (Cosmos).
+    if (linkDocuments || relinkAll)
     {
-        await LinkDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        await LinkDocumentsCommand.RunAsync(host.Services, cancellationToken, relinkAll);
         return;
     }
 
@@ -465,6 +480,30 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine(bootstrapResult.Created
             ? $"AI Search RAG index created: {bootstrapResult.IndexName}"
             : $"AI Search RAG index already present: {bootstrapResult.IndexName}");
+        return;
+    }
+
+    // Handle --rebuild-rag-index (DESTRUCTIVE drop + recreate). The only delete
+    // in the system, and an explicit operator step — the index is a rebuildable
+    // projection, so corrections happen by wipe-and-re-ingest, never by per-chunk
+    // deletion. After this, re-ingest with --run-rag-backfill + --sync-metadata-cards.
+    if (rebuildRagIndex)
+    {
+        var bootstrapper = host.Services.GetService<RagIndexBootstrapper>();
+        if (bootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--rebuild-rag-index requires Azure AI Search to be configured. Set " +
+                $"{AiSearchOptions.EndpointKey} (the deployed search service endpoint URL).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
+        var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
+        Console.WriteLine(
+            $"AI Search RAG index rebuilt: {rebuildResult.IndexName}. " +
+            "Re-ingest now: --run-rag-backfill then --sync-metadata-cards.");
         return;
     }
 
