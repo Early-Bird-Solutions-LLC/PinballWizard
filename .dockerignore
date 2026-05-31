@@ -1,0 +1,52 @@
+# Build context exclusions for `az acr build` / `docker build`.
+#
+# The API + Web Dockerfiles restore and publish from source in-image, so none of
+# the host build outputs are needed in the context. Excluding them cut the ACR
+# upload from >1 GB (full tree incl. .terraform provider binaries + stale agent
+# worktrees) to a few MB, turning ~18-minute builds into ~2-minute builds.
+#
+# Keep this list aligned with .gitignore where the intent overlaps; this file
+# governs the DOCKER build context specifically (a superset — it also drops
+# things that ARE tracked in git but are useless to a container build, e.g.
+# infra/, docs/, tests/).
+
+# Version control / IDE
+.git
+.gitignore
+.vs
+.vscode
+.idea
+*.user
+
+# .NET build outputs (Dockerfile runs its own restore/publish)
+**/bin/
+**/obj/
+**/*.binlog
+
+# Agent worktrees + local tooling state (hundreds of MB of stale bin/obj)
+.claude/
+.playwright-mcp/
+
+# Infrastructure-as-code (not part of any app image)
+infra/
+**/.terraform/
+**/*.tfstate*
+
+# Docs, plans, research, thoughts (not shipped in images)
+docs/
+thoughts/
+*.md
+
+# Test projects + fixtures (images build only src/ app projects)
+tests/
+
+# Data + eval artifacts
+data/eval/results/
+tools/
+
+# Node / Playwright
+node_modules/
+
+# OS cruft
+.DS_Store
+Thumbs.db
