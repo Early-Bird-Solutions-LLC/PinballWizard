@@ -250,67 +250,76 @@
                 if (ct.IsCancellationRequested)
                     break;
 
-                if (!gotFirstChunk)
+                // The async-stream enumeration above uses ConfigureAwait(false), so each
+                // chunk continuation resumes on a thread-pool thread — NOT the Blazor
+                // Server render Dispatcher. All component-state mutation + StateHasChanged
+                // MUST be marshalled back onto the Dispatcher via InvokeAsync, or Blazor
+                // throws "The current thread is not associated with the Dispatcher" and the
+                // circuit faults (leaving the UI stuck on "thinking"). See ADR-0026 § 2.
+                await InvokeAsync(() =>
                 {
-                    gotFirstChunk = true;
-                    // First chunk — transition out of Thinking.
-                    if (_state is AnswerState.Submitted or AnswerState.Thinking)
+                    if (!gotFirstChunk)
                     {
-                        TransitionTo(AnswerState.Streaming);
-                    }
-                }
-
-                switch (chunk)
-                {
-                    case AnswerChunk.TextDelta td:
-                        _textDeltas.Add(td.Text);
-                        if (_state == AnswerState.Submitted || _state == AnswerState.Thinking)
-                            TransitionTo(AnswerState.Streaming);
-                        break;
-
-                    case AnswerChunk.ToolCallStarted ts:
-                        _currentToolCallName = ts.ToolName;
-                        _currentToolCallId = ts.ToolCallId;
-                        break;
-
-                    case AnswerChunk.ToolCallCompleted tc:
-                        // Clear the breadcrumb when this ToolCallCompleted matches the
-                        // currently-active tool call. Match on ToolCallId when both are
-                        // non-null; otherwise match on ToolName (ToolCallId may be null in
-                        // dev/mock scenarios where Foundry doesn't assign an ID).
-                        var idMatch = string.IsNullOrEmpty(tc.ToolCallId) ||
-                                      string.IsNullOrEmpty(_currentToolCallId) ||
-                                      tc.ToolCallId == _currentToolCallId;
-                        var nameMatch = tc.ToolName == _currentToolCallName;
-                        if (idMatch && nameMatch)
+                        gotFirstChunk = true;
+                        // First chunk — transition out of Thinking.
+                        if (_state is AnswerState.Submitted or AnswerState.Thinking)
                         {
-                            _currentToolCallName = null;
-                            _currentToolCallId = null;
+                            TransitionTo(AnswerState.Streaming);
                         }
-                        break;
+                    }
 
-                    case AnswerChunk.CitationArrived ca:
-                        _citations.Add(ca.Citation);
-                        if (_state == AnswerState.Streaming)
-                            TransitionTo(AnswerState.CitationsArriving);
-                        break;
+                    switch (chunk)
+                    {
+                        case AnswerChunk.TextDelta td:
+                            _textDeltas.Add(td.Text);
+                            if (_state == AnswerState.Submitted || _state == AnswerState.Thinking)
+                                TransitionTo(AnswerState.Streaming);
+                            break;
 
-                    case AnswerChunk.Refusal r:
-                        // ADR-0026 § 5 — Refusal supersedes all prior TextDelta.
-                        // Clear accumulated text so TokenRenderer does not render it.
-                        _textDeltas.Clear();
-                        _refusalCategory = r.Category;
-                        // RefusalDetail is not carried in the stream chunk (it lives on
-                        // WizardAnswer). The detail will arrive on the Final chunk.
-                        TransitionTo(AnswerState.Refusal);
-                        break;
+                        case AnswerChunk.ToolCallStarted ts:
+                            _currentToolCallName = ts.ToolName;
+                            _currentToolCallId = ts.ToolCallId;
+                            break;
 
-                    case AnswerChunk.Final f:
-                        ApplyFinal(f.Answer);
-                        break;
-                }
+                        case AnswerChunk.ToolCallCompleted tc:
+                            // Clear the breadcrumb when this ToolCallCompleted matches the
+                            // currently-active tool call. Match on ToolCallId when both are
+                            // non-null; otherwise match on ToolName (ToolCallId may be null in
+                            // dev/mock scenarios where Foundry doesn't assign an ID).
+                            var idMatch = string.IsNullOrEmpty(tc.ToolCallId) ||
+                                          string.IsNullOrEmpty(_currentToolCallId) ||
+                                          tc.ToolCallId == _currentToolCallId;
+                            var nameMatch = tc.ToolName == _currentToolCallName;
+                            if (idMatch && nameMatch)
+                            {
+                                _currentToolCallName = null;
+                                _currentToolCallId = null;
+                            }
+                            break;
 
-                StateHasChanged();
+                        case AnswerChunk.CitationArrived ca:
+                            _citations.Add(ca.Citation);
+                            if (_state == AnswerState.Streaming)
+                                TransitionTo(AnswerState.CitationsArriving);
+                            break;
+
+                        case AnswerChunk.Refusal r:
+                            // ADR-0026 § 5 — Refusal supersedes all prior TextDelta.
+                            // Clear accumulated text so TokenRenderer does not render it.
+                            _textDeltas.Clear();
+                            _refusalCategory = r.Category;
+                            // RefusalDetail is not carried in the stream chunk (it lives on
+                            // WizardAnswer). The detail will arrive on the Final chunk.
+                            TransitionTo(AnswerState.Refusal);
+                            break;
+
+                        case AnswerChunk.Final f:
+                            ApplyFinal(f.Answer);
+                            break;
+                    }
+
+                    StateHasChanged();
+                }).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -328,8 +337,13 @@
                 question.Length > 60 ? question[..60] + "…" : question,
                 ex.Message);
 
-            TransitionTo(AnswerState.Error);
-            StateHasChanged();
+            // Off-Dispatcher (exception propagated from the ConfigureAwait(false) loop) —
+            // marshal the Error transition + render onto the Dispatcher.
+            await InvokeAsync(() =>
+            {
+                TransitionTo(AnswerState.Error);
+                StateHasChanged();
+            }).ConfigureAwait(false);
 
             // Fallback: attempt a whole-response-style call.
             // The streaming client's fallback mode yields TextDelta + Final for
@@ -356,33 +370,39 @@
                 if (ct.IsCancellationRequested)
                     break;
 
-                switch (chunk)
+                // Same Dispatcher-marshalling requirement as StreamAnswerAsync: the
+                // ConfigureAwait(false) enumeration resumes off-Dispatcher, so all state
+                // mutation + StateHasChanged must run inside InvokeAsync.
+                await InvokeAsync(() =>
                 {
-                    case AnswerChunk.TextDelta td:
-                        _textDeltas.Add(td.Text);
-                        if (_state is AnswerState.Error or AnswerState.Submitted)
-                            TransitionTo(AnswerState.Streaming);
-                        break;
+                    switch (chunk)
+                    {
+                        case AnswerChunk.TextDelta td:
+                            _textDeltas.Add(td.Text);
+                            if (_state is AnswerState.Error or AnswerState.Submitted)
+                                TransitionTo(AnswerState.Streaming);
+                            break;
 
-                    case AnswerChunk.CitationArrived ca:
-                        _citations.Add(ca.Citation);
-                        break;
+                        case AnswerChunk.CitationArrived ca:
+                            _citations.Add(ca.Citation);
+                            break;
 
-                    case AnswerChunk.Refusal r:
-                        _textDeltas.Clear();
-                        _refusalCategory = r.Category;
-                        TransitionTo(AnswerState.Refusal);
-                        break;
+                        case AnswerChunk.Refusal r:
+                            _textDeltas.Clear();
+                            _refusalCategory = r.Category;
+                            TransitionTo(AnswerState.Refusal);
+                            break;
 
-                    case AnswerChunk.Final f:
-                        ApplyFinal(f.Answer);
-                        break;
+                        case AnswerChunk.Final f:
+                            ApplyFinal(f.Answer);
+                            break;
 
-                    default:
-                        break;
-                }
+                        default:
+                            break;
+                    }
 
-                StateHasChanged();
+                    StateHasChanged();
+                }).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -396,8 +416,8 @@
             Logger.LogError(ex,
                 "wizard.stream.fallback.failed — fallback also failed for question {QuestionPreview}.",
                 question.Length > 60 ? question[..60] + "…" : question);
-            // Leave in Error state — user sees the alert.
-            StateHasChanged();
+            // Leave in Error state — user sees the alert. Off-Dispatcher: marshal render.
+            await InvokeAsync(StateHasChanged).ConfigureAwait(false);
         }
     }
 
