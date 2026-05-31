@@ -27,7 +27,8 @@ public class DocumentLinkerTests
         string discoveryUrl = "https://sternpinball.com/manuals/",
         DocumentType docType = DocumentType.Manual,
         List<CrossReference>? crossRefs = null,
-        DownloadedFileInfo? file = null)
+        DownloadedFileInfo? file = null,
+        SourceType sourceType = SourceType.ManualsPage)
         => new()
         {
             DocumentId = documentId,
@@ -39,6 +40,7 @@ public class DocumentLinkerTests
                 DiscoveryContext = "Manuals page",
                 FileUrl = fileUrl,
                 ScrapedAt = DateTime.UtcNow,
+                SourceType = sourceType,
             },
             Timeline = new TimelineInfo
             {
@@ -763,6 +765,162 @@ public class DocumentLinkerTests
         Assert.Equal(0, platformGeneric);
         Assert.Equal(1, notInCatalog);
         Assert.Equal(0, failed);
+    }
+
+    // -------------------------------------------------------------------------
+    // Manufacturer disambiguation on title-slug collisions
+    //
+    // Regression guard for the linker mislabel: a title ("godzilla") exists for
+    // both a vintage maker (Sega 1998) and a Stern remake (2021). The linker
+    // must resolve a Stern-sourced document to the STERN machine, not the
+    // first/oldest-streamed one. Each fixture seeds BOTH colliding machines so
+    // the disambiguation actually fires (per the showcase "tests assert
+    // behavior, not structure" bar). Sega has no scraper, so a Sega-sourced
+    // document is not a real case — the negative test instead proves we don't
+    // regress when the source manufacturer isn't among the candidates.
+    // -------------------------------------------------------------------------
+
+    private static Machine SegaGodzilla() =>
+        MakeMachine(id: "G5po2-MeP6B", manufacturer: "sega", title: "Godzilla", slug: "godzilla");
+
+    private static Machine SternGodzilla() =>
+        MakeMachine(id: "GweeP-Ml9pZ", manufacturer: "stern", title: "Godzilla", slug: "godzilla");
+
+    [Fact]
+    public async Task LinkAsync_Tier1Xref_GodzillaCollision_ResolvesToSternBySource()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // Sega seeded FIRST (oldest-streamed) — the pre-fix bug picked it.
+        var machines = new[] { SegaGodzilla(), SternGodzilla() };
+        var xref = new CrossReference
+        {
+            AlsoFoundAt = "https://sternpinball.com/game/godzilla/",
+            DiscoveryContext = "Game page",
+            DiscoveredAt = DateTime.UtcNow,
+        };
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            crossRefs: [xref],
+            sourceType: SourceType.GamePage); // Stern owns GamePage
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: machines);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("xref_slug", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2Filename_GodzillaCollision_ResolvesToSternBySource()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machines = new[] { SegaGodzilla(), SternGodzilla() };
+        // No xref → Tier 1 misses; filename carries "godzilla" → Tier 2 collides
+        // on equal-length slug across Sega+Stern. Source manufacturer breaks the tie.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage); // Stern owns ManualsPage
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: machines);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega / not NotInCatalog
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1Xref_NoSternCandidate_DoesNotRegress()
+    {
+        // Negative: a Stern-sourced doc whose slug matches ONLY a non-Stern
+        // machine still links to that machine (preference-with-fallback, never
+        // a hard filter). Proves the disambiguator doesn't drop legitimate links.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var onlySega = SegaGodzilla(); // no Stern Godzilla in the catalog
+        var xref = new CrossReference
+        {
+            AlsoFoundAt = "https://sternpinball.com/game/godzilla/",
+            DiscoveryContext = "Game page",
+            DiscoveredAt = DateTime.UtcNow,
+        };
+        var raw = MakeRaw(crossRefs: [xref], sourceType: SourceType.GamePage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [onlySega]);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal("G5po2-MeP6B", result.LinkedMachineIds[0]); // single candidate still links
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page_GodzillaCollision_FansOutToSternOnlyBySource()
+    {
+        // Tiers 3/4 page-text path: page 1 of a Stern Godzilla manual mentions
+        // "godzilla", which matches BOTH Sega and Stern. Without manufacturer
+        // scoping this fans out to both (mislabeling the doc onto Sega). The
+        // source manufacturer narrows the fan-out to Stern only.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        var machines = new[] { SegaGodzilla(), SternGodzilla() };
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        var relativePath = "docs/godzilla_pro.pdf";
+        var absolutePath = Path.Combine(tmpDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllBytesAsync(absolutePath, []);
+
+        try
+        {
+            // No xref + filename that won't slug-match → forces the Tier 3 page path.
+            var raw = MakeRaw(
+                fileUrl: "https://sternpinball.com/files/manual_2022.pdf",
+                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "manual_2022.pdf" },
+                sourceType: SourceType.ManualsPage); // Stern
+
+            var pageText = "Owner's manual for the Godzilla pinball machine.";
+            var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
+            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+
+            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+                machines: machines, textExtractor: extractor, downloadsRoot: tmpDir);
+
+            await linker.InitializeAsync(CancellationToken.None);
+            var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+            Assert.Equal("page_1", result.ResolutionStrategy);
+            Assert.Single(result.LinkedMachineIds); // narrowed, not fanned to both
+            Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
     }
 }
 

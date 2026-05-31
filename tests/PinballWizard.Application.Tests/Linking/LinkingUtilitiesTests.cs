@@ -1,10 +1,43 @@
 using PinballWizard.Application.Linking;
+using PinballWizard.Core.Models;
 using Xunit;
 
 namespace PinballWizard.Application.Tests.Linking;
 
 public class LinkingUtilitiesTests
 {
+    private static SourceInfo SourceWith(SourceType type) => new()
+    {
+        DiscoveryUrl = "https://example.com/",
+        DiscoveryContext = "test",
+        FileUrl = "https://example.com/x.pdf",
+        ScrapedAt = DateTime.UtcNow,
+        SourceType = type,
+    };
+
+    // Exhaustiveness guard: EVERY SourceType maps to a manufacturer key. Each of
+    // the current values is a manufacturer-specific scraper page, so all must
+    // resolve — a future scraper that adds a SourceType without updating
+    // InferManufacturerKey would silently fall to the un-disambiguated path and
+    // could reintroduce the title-collision mislabel. This test fails loudly
+    // (rather than that bug recurring undetected) when that happens.
+    [Theory]
+    [MemberData(nameof(AllSourceTypes))]
+    public void InferManufacturerKey_MapsEverySourceType(SourceType type)
+        => Assert.False(
+            string.IsNullOrEmpty(LinkingUtilities.InferManufacturerKey(SourceWith(type))),
+            $"SourceType.{type} has no manufacturer key — update InferManufacturerKey when adding a scraper.");
+
+    public static TheoryData<SourceType> AllSourceTypes()
+    {
+        var data = new TheoryData<SourceType>();
+        foreach (var t in Enum.GetValues<SourceType>())
+        {
+            data.Add(t);
+        }
+        return data;
+    }
+
     // NormalizeForMatch
     [Theory]
     [InlineData("stranger-things", "stranger things")]

@@ -52,4 +52,12 @@ public interface IDocumentLinker
     // Returns aggregate counters.
     Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed)>
         RunBatchAsync(CancellationToken cancellationToken);
+
+    // Resets algorithm-derived terminal records (Linked / NotInCatalog) back to
+    // Pending so a subsequent RunBatchAsync re-runs the tiers against them — used
+    // when the linker logic changed (e.g. the manufacturer-disambiguation fix)
+    // and previously-Linked documents need re-resolving. Deliberately does NOT
+    // reset ManuallyLinked (Tier-0 admin overrides — human decisions, and they
+    // re-apply first anyway) or PlatformGeneric. Returns the count reset.
+    Task<int> ResetForRelinkAsync(CancellationToken cancellationToken);
 }
