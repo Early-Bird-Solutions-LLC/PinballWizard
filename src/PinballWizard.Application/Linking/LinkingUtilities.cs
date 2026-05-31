@@ -1,7 +1,42 @@
+using PinballWizard.Application.Sync;
+using PinballWizard.Core.Models;
+
 namespace PinballWizard.Application.Linking;
 
 public static class LinkingUtilities
 {
+    // Maps a scraped document's SourceType to the canonical manufacturer
+    // partition key (matching Machine.PartitionKey). Each manufacturer-specific
+    // scraper only ever discovers that manufacturer's own documents, so the
+    // SourceType is an authoritative manufacturer signal — used to disambiguate
+    // title-slug collisions across manufacturers (e.g. "Godzilla" exists for
+    // both Sega 1998 and Stern 2021; a ManualsPage/GamePage document is Stern's).
+    // Keys are sourced from ScraperManufacturerKey — never hand-typed — so they
+    // match the partition keys the OPDB sync wrote (e.g. CGC is "cgc",
+    // American Pinball is "americanpinball"). Returns null for any future
+    // SourceType not yet mapped, so the linker falls back to its existing
+    // (un-disambiguated) behavior rather than mis-resolving.
+    public static string? InferManufacturerKey(SourceInfo source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        return source.SourceType switch
+        {
+            // Stern's three scrapers (the original, unprefixed manufacturer).
+            SourceType.ManualsPage => ScraperManufacturerKey.Stern,
+            SourceType.GamePage => ScraperManufacturerKey.Stern,
+            SourceType.ServiceBulletinPage => ScraperManufacturerKey.Stern,
+            SourceType.JjpProductPage => ScraperManufacturerKey.Jjp,
+            SourceType.AmericanPinballGamePage => ScraperManufacturerKey.AmericanPinball,
+            SourceType.SpookyPinballGamePage => ScraperManufacturerKey.Spooky,
+            SourceType.PinballBrothersGamePage => ScraperManufacturerKey.PinballBrothers,
+            SourceType.BarrelsOfFunProductPage => ScraperManufacturerKey.BarrelsOfFun,
+            SourceType.ChicagoGamingGamePage => ScraperManufacturerKey.ChicagoGaming,
+            SourceType.MultimorphicProductPage => ScraperManufacturerKey.Multimorphic,
+            _ => null,
+        };
+    }
+
     // Edition markers in priority order (longer strings first to avoid
     // "le" winning before "limited" when both appear).
     private static readonly (string Marker, string Canonical)[] EditionMarkers =
