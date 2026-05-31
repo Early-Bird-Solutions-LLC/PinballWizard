@@ -54,6 +54,9 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024). Default FALSE — a Foundry ApiKey connection cannot be created without a non-empty credentials.key, and the cross-encoder reranker is disabled by default, so the connection is inert. Flip true only in the change that provisions the Cohere key and enables the reranker. Has no effect when deployPhase2=false.')
+param deployCohereConnection bool = false
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
 
@@ -113,6 +116,7 @@ module shared 'modules/shared.bicep' = {
     deployPhase2: deployPhase2
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
+    deployCohereConnection: deployCohereConnection
     wizardAliveUrl: wizardAliveUrl
     wizardCustomDomain: wizardCustomDomain
     wizardCustomDomainCertReady: wizardCustomDomainCertReady

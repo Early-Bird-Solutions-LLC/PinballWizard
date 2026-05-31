@@ -52,6 +52,9 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024 cross-encoder). Default FALSE: a Foundry ApiKey connection is rejected at create unless credentials.key is non-empty (Azure returns "Credentials Property cannot be empty for auth type ApiKey"), and the Cohere key is provisioned out-of-band (see the runbook by the resource). The cross-encoder reranker is disabled by default (Rag:CrossEncoder:Enabled=false), so the connection is inert until that gate work happens — flip this true in the same change that provisions the key and enables the reranker. Has no effect when deployPhase2=false.')
+param deployCohereConnection bool = false
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -545,12 +548,20 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
 // points at the project endpoint, not the connection endpoint. Foundry routes
 // internally via the connection name; no per-env config change needed.
 
-resource cohereRerankConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = if (deployPhase2) {
+resource cohereRerankConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = if (deployPhase2 && deployCohereConnection) {
   parent: foundryProject
   name: 'cohere-rerank-v3'
   properties: {
     authType: 'ApiKey'
-    category: 'CohereRerank'
+    // 'CohereRerank' is NOT a valid ConnectionCategory — Azure rejects it at
+    // request deserialization ("unable to deserialize request body"), which has
+    // been silently failing every stack deploy since this resource landed in
+    // #292. The generic external API-key category is 'ApiKey' (per the
+    // 2025-06-01 Project Connections schema). The Cohere API key is set
+    // post-deploy via the runbook above (credentials is non-required at create
+    // time — two-phase creation), so the reranker stays inert until that key is
+    // provisioned AND Rag__CrossEncoder__Enabled is flipped to true.
+    category: 'ApiKey'
     target: 'https://api.cohere.com/v2/rerank'
     isSharedToAll: false
   }
