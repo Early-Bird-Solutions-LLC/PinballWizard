@@ -11,6 +11,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
@@ -229,6 +230,21 @@ public static class ServiceCollectionExtensions
             var downloadsRoot = settings?.Value.DownloadsPath;
             var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
             return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot, concurrency);
+        });
+
+        // Document downloader (--download-documents) — fetches not-yet-downloaded
+        // raw documents so the linker's page-text tiers can read page-1 content.
+        // Reuses the registered IFileDownloader (polite, resilient) + the same
+        // DownloadsPath the linker reads from.
+        services.AddSingleton<DocumentDownloadService>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var downloader = sp.GetRequiredService<IFileDownloader>();
+            var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath
+                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
+            return new DocumentDownloadService(rawRepo, downloader, logger, downloadsRoot);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
