@@ -39,4 +39,76 @@ public sealed class EditionResolverTests
     {
         Assert.Equal(expected, EditionResolver.IsGroupLevelDoc(filename));
     }
+
+    // ── Resolve candidate set → edition-correct base ─────────────────────
+
+    private static Machine Base(string id, string title) => new()
+    {
+        Id = id, PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball",
+        Title = title, GroupId = "GweeP", Year = 2021,
+    };
+
+    private static readonly Machine Pro = Base("GweeP-MW95j", "Godzilla (Pro)");
+    private static readonly Machine PremLe = Base("GweeP-Ml9pZ", "Godzilla (Premium/LE)");
+
+    [Fact]
+    public void Resolve_ProToken_PicksProBase()
+    {
+        var result = EditionResolver.Resolve("Godzilla_Pro_web.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.False(result.IsGroupFanOut);
+        Assert.False(result.IsUnresolved);
+        Assert.Single(result.Machines);
+        Assert.Equal("GweeP-MW95j", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_LeToken_PicksPremiumLeBase()
+    {
+        var result = EditionResolver.Resolve("Godzilla_LE_Pre_web.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.Single(result.Machines);
+        Assert.Equal("GweeP-Ml9pZ", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_GroupLevelDoc_FansOutToAllBases()
+    {
+        var result = EditionResolver.Resolve("Godzilla-Rulesheet.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.True(result.IsGroupFanOut);
+        Assert.Equal(2, result.Machines.Count);
+    }
+
+    [Fact]
+    public void Resolve_Page1OverridesMisleadingFilename()
+    {
+        // Filename says LE, but the PDF page 1 self-identifies as PRO — page 1 wins.
+        var result = EditionResolver.Resolve(
+            "Godzilla_LE_mislabeled.pdf",
+            page1Text: "GODZILLA PRO MANUAL 500-55T5-01 TABLE OF CONTENTS",
+            [Pro, PremLe]);
+
+        Assert.Single(result.Machines);
+        Assert.Equal("GweeP-MW95j", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_NoEditionSignal_ReturnsUnresolved()
+    {
+        var result = EditionResolver.Resolve("Godzilla_mystery.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.True(result.IsUnresolved);
+        Assert.Empty(result.Machines);
+    }
+
+    [Fact]
+    public void Resolve_SingleCandidate_ReturnsItDirectly()
+    {
+        var result = EditionResolver.Resolve("anything.pdf", page1Text: null, [Pro]);
+
+        Assert.False(result.IsUnresolved);
+        Assert.Single(result.Machines);
+        Assert.Equal("GweeP-MW95j", result.Machines[0].Id);
+    }
 }
