@@ -2,6 +2,9 @@ using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Application.Linking;
 
+/// <summary>Which editions of a franchise a document applies to.</summary>
+public enum EditionScope { SingleEdition, EditionSubset, FranchiseWide }
+
 /// <summary>
 /// Resolves a candidate set of OPDB base machines that form an edition family
 /// (same franchise, manufacturer, group segment, and year) plus a document, to
@@ -15,10 +18,11 @@ public static class EditionResolver
     // Ordered most-specific-first so "_le_pre_" matches "le" before "premium".
     private static readonly (string Marker, string Token)[] FilenameMarkers =
     {
-        ("70th", "70th"),
+        ("70th", "70th"), ("60th", "60th"), ("30th", "30th"),
         ("_pro_", "pro"), ("-pro-", "pro"),
         ("_le_", "le"), ("-le-", "le"),
         ("_prem", "premium"), ("-prem", "premium"), ("premium", "premium"),
+        ("_sle_", "sle"), ("_ve_", "ve"), ("_vault_", "vault"), ("_brk_", "brk"),
     };
 
     private static readonly string[] GroupLevelMarkers =
@@ -42,24 +46,18 @@ public static class EditionResolver
         return null;
     }
 
-    /// <summary>True when the filename signals an all-editions document.</summary>
-    public static bool IsGroupLevelDoc(string filename)
+    /// <summary>
+    /// True when the document signals an all-editions document. Markers are
+    /// matched in the filename and, when supplied, the discovery link text — a
+    /// rulesheet whose href is opaque is often only identifiable by its anchor.
+    /// </summary>
+    public static bool IsGroupLevelDoc(string filename, string? linkText = null)
     {
-        if (string.IsNullOrEmpty(filename)) return false;
-        var lower = filename.ToLowerInvariant();
+        var combined = $"{filename} {linkText}";
+        if (string.IsNullOrWhiteSpace(combined)) return false;
+        var lower = combined.ToLowerInvariant();
         return GroupLevelMarkers.Any(m => lower.Contains(m, StringComparison.Ordinal));
     }
-
-    // Edition token → marker words expected (case-insensitively) in a candidate
-    // base machine's edition-qualified Title. "le" and "premium" both accept the
-    // combined "Premium/LE" base title OPDB uses for the Premium/LE machine.
-    private static readonly Dictionary<string, string[]> TokenTitleMarkers = new(StringComparer.Ordinal)
-    {
-        ["pro"]     = ["pro"],
-        ["le"]      = ["premium/le", "le", "premium"],
-        ["premium"] = ["premium/le", "premium", "le"],
-        ["70th"]    = ["70th", "anniversary"],
-    };
 
     /// <summary>
     /// Resolve a document to the edition-correct base machine within an edition
@@ -77,13 +75,13 @@ public static class EditionResolver
 
         // Page-1 text is authoritative; fall back to the filename token.
         var token = ExtractEditionFromPageText(page1Text) ?? ExtractEditionToken(filename);
-        if (token is null || !TokenTitleMarkers.TryGetValue(token, out var markers))
+        if (token is null)
         {
             return EditionResolution.Unresolved();
         }
 
         var match = candidates.FirstOrDefault(m =>
-            markers.Any(marker => m.Title.Contains(marker, StringComparison.OrdinalIgnoreCase)));
+            m.EditionTokens.Any(t => t.Equals(token, StringComparison.OrdinalIgnoreCase)));
 
         return match is not null ? EditionResolution.ForSingleEdition(match) : EditionResolution.Unresolved();
     }
@@ -106,6 +104,9 @@ public sealed record EditionResolution(
 {
     /// <summary>The document resolved to one specific edition's base machine.</summary>
     public static EditionResolution ForSingleEdition(Machine m) => new([m], IsGroupFanOut: false, IsUnresolved: false);
+
+    /// <summary>The document applies to a known subset of bases (more than one, but not the whole family).</summary>
+    public static EditionResolution ForSubset(IReadOnlyList<Machine> bases) => new(bases, IsGroupFanOut: false, IsUnresolved: false);
 
     /// <summary>A group-level document fans out to every base in the family.</summary>
     public static EditionResolution FanOut(IReadOnlyList<Machine> all) => new(all, IsGroupFanOut: true, IsUnresolved: false);

@@ -32,24 +32,28 @@ public sealed class EditionResolverTests
     }
 
     [Theory]
-    [InlineData("Godzilla-Pinball-Feature-Matrix-3kjhasdf.pdf", true)]
-    [InlineData("Godzilla-Rulesheet.pdf", true)]
-    [InlineData("Godzilla_Pro_web.pdf", false)]
-    public void IsGroupLevelDoc(string filename, bool expected)
+    [InlineData("Godzilla-Pinball-Feature-Matrix-3kjhasdf.pdf", null, true)]
+    [InlineData("Godzilla-Rulesheet.pdf", null, true)]
+    [InlineData("Godzilla_Pro_web.pdf", null, false)]                       // no marker, null link_text is harmless
+    [InlineData("Godzilla_random.pdf", "Godzilla Rulesheet", true)]         // marker only in link_text
+    [InlineData("Godzilla_random.pdf", "Godzilla Rulesheet (all editions)", true)]
+    [InlineData("Godzilla_Pro_web.pdf", "Godzilla Pro Manual", false)]      // no group marker in either place
+    public void IsGroupLevelDoc(string filename, string? linkText, bool expected)
     {
-        Assert.Equal(expected, EditionResolver.IsGroupLevelDoc(filename));
+        Assert.Equal(expected, EditionResolver.IsGroupLevelDoc(filename, linkText));
     }
 
     // ── Resolve candidate set → edition-correct base ─────────────────────
 
-    private static Machine Base(string id, string title) => new()
+    private static Machine Base(string id, params string[] editionTokens) => new()
     {
         Id = id, PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball",
-        Title = title, GroupId = "GweeP", Year = 2021,
+        Title = "Godzilla", GroupId = "GweeP", Year = 2021,
+        EditionTokens = [.. editionTokens],
     };
 
-    private static readonly Machine Pro = Base("GweeP-MW95j", "Godzilla (Pro)");
-    private static readonly Machine PremLe = Base("GweeP-Ml9pZ", "Godzilla (Premium/LE)");
+    private static readonly Machine Pro = Base("GweeP-MW95j", "pro");
+    private static readonly Machine PremLe = Base("GweeP-Ml9pZ", "premium", "le", "70th");
 
     [Fact]
     public void Resolve_ProToken_PicksProBase()
@@ -100,6 +104,22 @@ public sealed class EditionResolverTests
 
         Assert.True(result.IsUnresolved);
         Assert.Empty(result.Machines);
+    }
+
+    [Fact]
+    public void Resolve_LePreCombined_MapsToPremiumLeBaseOnly()
+    {
+        var r = EditionResolver.Resolve("Godzilla_LE_Pre_web.pdf", page1Text: null, [Pro, PremLe]);
+        Assert.Single(r.Machines);
+        Assert.Equal("GweeP-Ml9pZ", r.Machines[0].Id);   // _le_ token ∈ PremLe tokens only
+    }
+
+    [Fact]
+    public void Resolve_Rulesheet_FansOutToAll()
+    {
+        var r = EditionResolver.Resolve("Godzilla-Rulesheet.pdf", page1Text: null, [Pro, PremLe]);
+        Assert.True(r.IsGroupFanOut);
+        Assert.Equal(2, r.Machines.Count);
     }
 
     [Fact]
