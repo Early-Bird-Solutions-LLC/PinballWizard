@@ -2,7 +2,11 @@ using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Application.Linking;
 
-/// <summary>Which editions of a franchise a document applies to.</summary>
+/// <summary>
+/// Which editions of a franchise a document applies to. <c>EditionSubset</c> has
+/// no production emitter yet — reserved for the planned subset-resolution tier
+/// (true cross-base subsets via link_text, Task 6+).
+/// </summary>
 public enum EditionScope { SingleEdition, EditionSubset, FranchiseWide }
 
 /// <summary>
@@ -102,10 +106,31 @@ public static class EditionResolver
 public sealed record EditionResolution(
     IReadOnlyList<Machine> Machines, bool IsGroupFanOut, bool IsUnresolved)
 {
+    /// <summary>
+    /// The structural edition scope of this resolution: a group-level fan-out is
+    /// FranchiseWide (applies to every base), a resolution to a strict subset of
+    /// the family (more than one base, but not a fan-out) is EditionSubset, and a
+    /// resolution to exactly one base is SingleEdition. An Unresolved resolution
+    /// reports FranchiseWide as the safe default — the caller does not persist a
+    /// scope for unresolved documents (they stay NotInCatalog).
+    /// </summary>
+    public EditionScope Scope => (IsGroupFanOut, IsUnresolved, Machines.Count) switch
+    {
+        (true, _, _) => EditionScope.FranchiseWide,   // group-level fan-out
+        (_, true, _) => EditionScope.FranchiseWide,   // unresolved → safe default
+        (_, _, > 1)  => EditionScope.EditionSubset,
+        (_, _, 1)    => EditionScope.SingleEdition,
+        _            => EditionScope.FranchiseWide,    // empty/defensive
+    };
+
     /// <summary>The document resolved to one specific edition's base machine.</summary>
     public static EditionResolution ForSingleEdition(Machine m) => new([m], IsGroupFanOut: false, IsUnresolved: false);
 
-    /// <summary>The document applies to a known subset of bases (more than one, but not the whole family).</summary>
+    /// <summary>
+    /// The document applies to a known subset of bases (more than one, but not the whole family).
+    /// NOTE: no production caller yet — reserved for the planned subset-resolution tier (true
+    /// cross-base subsets via link_text, Task 6+). Subset resolution is not live today.
+    /// </summary>
     public static EditionResolution ForSubset(IReadOnlyList<Machine> bases) => new(bases, IsGroupFanOut: false, IsUnresolved: false);
 
     /// <summary>A group-level document fans out to every base in the family.</summary>

@@ -1,3 +1,4 @@
+using PinballWizard.Application.Linking;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Application.Persistence;
@@ -26,11 +27,16 @@ public interface IScrapedDocumentRepository
     // `RawDocumentRecord` after the linker has resolved the machine.
     // The document `Id` is "{raw.DocumentId}_{machineId}" so one raw
     // record can fan-out to multiple machine partitions without collision.
+    // `editionScope` records whether the document applies to a single edition,
+    // a subset of editions, or the whole franchise — the resolved structural
+    // scope from the linker's edition resolver. It is persisted alongside the
+    // free-text `edition` label and carried downstream into the chunk pipeline.
     Task UpsertFromRawAsync(
         RawDocumentRecord raw,
         string machineId,
         string machineTitle,
         string manufacturer,
         string? edition,
+        EditionScope editionScope,
         CancellationToken cancellationToken);
 }

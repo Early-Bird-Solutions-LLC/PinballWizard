@@ -131,4 +131,38 @@ public sealed class EditionResolverTests
         Assert.Single(result.Machines);
         Assert.Equal("GweeP-MW95j", result.Machines[0].Id);
     }
+
+    // ── EditionResolution.Scope (resolution outcome → structural scope) ───
+
+    [Fact]
+    public void Scope_SingleEdition_WhenResolvedToOneBase()
+    {
+        var result = EditionResolver.Resolve("Godzilla_Pro_web.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.Equal(EditionScope.SingleEdition, result.Scope);
+    }
+
+    [Fact]
+    public void Scope_FranchiseWide_WhenGroupLevelFanOut()
+    {
+        var result = EditionResolver.Resolve("Godzilla-Rulesheet.pdf", page1Text: null, [Pro, PremLe]);
+
+        Assert.Equal(EditionScope.FranchiseWide, result.Scope);
+    }
+
+    [Fact]
+    public void Scope_EditionSubset_WhenResolvedToAStrictSubset()
+    {
+        var result = EditionResolution.ForSubset([Pro, PremLe]);
+
+        Assert.Equal(EditionScope.EditionSubset, result.Scope);
+    }
+
+    [Fact]
+    public void Scope_SingleEdition_WhenSingleCandidate()
+    {
+        var result = EditionResolver.Resolve("anything.pdf", page1Text: null, [Pro]);
+
+        Assert.Equal(EditionScope.SingleEdition, result.Scope);
+    }
 }

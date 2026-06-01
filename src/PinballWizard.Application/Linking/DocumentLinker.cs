@@ -568,14 +568,16 @@ public sealed class DocumentLinker : IDocumentLinker
                 _logger.LogDebug("Tier2 filename_edition_group: {DocumentId} → {Count} group bases for '{Filename}'.",
                     raw.DocumentId, resolution.Machines.Count, filename);
                 return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition_group",
-                    resolution.Machines.Select(m => m.Id).ToList(), FailureReason: null);
+                    resolution.Machines.Select(m => m.Id).ToList(), FailureReason: null)
+                    { EditionScope = resolution.Scope };
             }
             if (!resolution.IsUnresolved)
             {
                 _logger.LogDebug("Tier2 filename_edition: {DocumentId} → {MachineId} for '{Filename}'.",
                     raw.DocumentId, resolution.Machines[0].Id, filename);
                 return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition",
-                    [resolution.Machines[0].Id], FailureReason: null);
+                    [resolution.Machines[0].Id], FailureReason: null)
+                    { EditionScope = resolution.Scope };
             }
             // Unresolved within the family → fall through to the page tiers,
             // which can read page-1 text for an authoritative edition signal.
@@ -667,6 +669,10 @@ public sealed class DocumentLinker : IDocumentLinker
             return null;
         }
 
+        // Default scope for non-edition page matches: a doc linked to a single
+        // (or non-family multi-) machine applies to that whole machine.
+        var editionScope = EditionScope.FranchiseWide;
+
         // When page text matches multiple machines (a title collision — page 1
         // of a Stern Godzilla manual matches both Sega and Stern Godzilla),
         // scope the fan-out to the document's source manufacturer so we don't
@@ -689,6 +695,7 @@ public sealed class DocumentLinker : IDocumentLinker
                         "DocumentLinker: {Tier} group-level doc → {Count} edition bases for {DocId}.",
                         strategyName, resolution.Machines.Count, raw.DocumentId);
                     matchedMachines = resolution.Machines.ToList();
+                    editionScope = resolution.Scope;
                 }
                 else if (!resolution.IsUnresolved)
                 {
@@ -696,6 +703,7 @@ public sealed class DocumentLinker : IDocumentLinker
                         "DocumentLinker: {Tier} resolved edition → {MachineId} for {DocId}.",
                         strategyName, resolution.Machines[0].Id, raw.DocumentId);
                     matchedMachines = [resolution.Machines[0]];
+                    editionScope = resolution.Scope;
                 }
                 // Unresolved within the family → keep the multi-machine fan-out
                 // (legacy behavior) rather than guess.
@@ -721,7 +729,8 @@ public sealed class DocumentLinker : IDocumentLinker
             raw.DocumentId,
             LinkStatus.Linked,
             strategyName,
-            matchedMachines.Select(m => m.Id).ToList());
+            matchedMachines.Select(m => m.Id).ToList())
+            { EditionScope = editionScope };
     }
 
     // --- Fan-out helpers ---
@@ -779,6 +788,7 @@ public sealed class DocumentLinker : IDocumentLinker
                         machine.Title,
                         machine.ManufacturerDisplayName,
                         edition,
+                        result.EditionScope,
                         cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

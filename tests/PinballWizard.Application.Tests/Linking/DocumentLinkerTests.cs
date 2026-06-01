@@ -169,7 +169,7 @@ public class DocumentLinkerTests
         // No scraped_documents write for PlatformGeneric.
         await docWriter.DidNotReceive().UpsertFromRawAsync(
             Arg.Any<RawDocumentRecord>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EditionScope>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -312,7 +312,7 @@ public class DocumentLinkerTests
         // No scraped_documents record should have been written.
         await docWriter.DidNotReceive().UpsertFromRawAsync(
             Arg.Any<RawDocumentRecord>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EditionScope>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -431,9 +431,9 @@ public class DocumentLinkerTests
         // Edition family: two Stern Godzilla bases, same slug "godzilla", same
         // group "GweeP", same year 2021. The Pro manual must land on the Pro base.
         var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
-        pro.GroupId = "GweeP"; pro.Year = 2021;
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
         var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
-        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
 
         var raw = MakeRaw(
             fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
@@ -457,9 +457,9 @@ public class DocumentLinkerTests
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
 
         var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
-        pro.GroupId = "GweeP"; pro.Year = 2021;
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
         var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
-        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
 
         var raw = MakeRaw(
             fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_LE_Pre_web.pdf",
@@ -472,6 +472,70 @@ public class DocumentLinkerTests
 
         Assert.Equal(LinkStatus.Linked, result.FinalStatus);
         Assert.Equal(["GweeP-Ml9pZ"], result.LinkedMachineIds);
+    }
+
+    // -------------------------------------------------------------------------
+    // Edition scope emission onto scraped_documents
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_GodzillaProDoc_LinksToProOnly_ScopeSingleEdition()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+        await docWriter.Received(1).UpsertFromRawAsync(
+            raw, "GweeP-MW95j", Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), EditionScope.SingleEdition, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_GodzillaRulesheet_FansOutToFamily_ScopeFranchiseWide()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla-Rulesheet.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Contains("GweeP-MW95j", result.LinkedMachineIds);
+        Assert.Contains("GweeP-Ml9pZ", result.LinkedMachineIds);
+        await docWriter.Received(1).UpsertFromRawAsync(
+            raw, "GweeP-MW95j", Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), EditionScope.FranchiseWide, Arg.Any<CancellationToken>());
+        await docWriter.Received(1).UpsertFromRawAsync(
+            raw, "GweeP-Ml9pZ", Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), EditionScope.FranchiseWide, Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -500,6 +564,7 @@ public class DocumentLinkerTests
             machine.Title,
             machine.ManufacturerDisplayName,
             Arg.Any<string?>(),
+            Arg.Any<EditionScope>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -537,7 +602,7 @@ public class DocumentLinkerTests
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await docWriter.DidNotReceive().UpsertFromRawAsync(
             Arg.Any<RawDocumentRecord>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EditionScope>(), Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -602,9 +667,9 @@ public class DocumentLinkerTests
         // Edition family (group GweeP, year 2021). A rulesheet (group-level doc)
         // whose page text matches the "godzilla" slug → fans out to BOTH bases.
         var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
-        pro.GroupId = "GweeP"; pro.Year = 2021;
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
         var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
-        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
 
         var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(tmpDir);
