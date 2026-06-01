@@ -263,6 +263,29 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(0, second.MatchedByTitle);
     }
 
+    // ── Decoration-stripped title match ──────────────────────────────────
+
+    [Fact]
+    public async Task DecoratedScrapedTitle_MatchesUndecoratedCatalogTitle()
+    {
+        // CGC scrapes "Cactus Canyon Remake"; OPDB catalog title is "Cactus Canyon".
+        var existing = MakeMachine("OPDB-CC", "cgc", "Cactus Canyon");
+        StubPartition("cgc", existing);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_cactus-canyon",
+            Title = "Cactus Canyon Remake",
+            Slug = "cactus-canyon",
+            GamePageUrl = "https://chicago-gaming.com/coinop/cactus-canyon/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByTitle);
+        Assert.Equal("cactus-canyon", existing.ManufacturerSlugs["cgc"]);
+    }
+
     // ── NormalizeTitle pure function ─────────────────────────────────────
 
     [Theory]

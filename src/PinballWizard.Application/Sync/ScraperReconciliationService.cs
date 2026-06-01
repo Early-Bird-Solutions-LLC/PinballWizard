@@ -198,12 +198,24 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         LimitedQuantity = info.LimitedQuantity,
     };
 
+    // Edition/format decoration tokens that manufacturer pages append but
+    // OPDB titles omit — stripped from the END of the normalized title so a
+    // scraped "Cactus Canyon Remake" matches the catalog "Cactus Canyon".
+    // Trailing-only by design: a leading/internal occurrence is part of the
+    // real title (none of these words legitimately start a pinball title).
+    private static readonly string[] DecorationWords =
+    {
+        "remake", "pinball", "gamekit", "deposit", "limitededition",
+        "merlinedition", "vaultedition", "standardedition", "edition",
+    };
+
     /// <summary>
-    /// Lowercase + strip non-alphanumeric. "Stranger Things" /
-    /// "stranger things" / "Stranger Things (Pro)" all collapse to
-    /// "strangerthings" / "strangerthings" / "strangerthingspro" —
-    /// strict enough that punctuation drift doesn't break matching but
-    /// loose enough that legitimately different titles never collide.
+    /// Lowercase + strip non-alphanumeric, then remove a trailing edition/
+    /// format decoration token. "Stranger Things" / "stranger things" /
+    /// "Stranger Things (Pro)" collapse to "strangerthings" / "strangerthings"
+    /// / "strangerthingspro"; "Cactus Canyon Remake" → "cactuscanyon". Strict
+    /// enough that punctuation drift doesn't break matching, loose enough that
+    /// legitimately different titles never collide.
     /// </summary>
     public static string NormalizeTitle(string? title)
     {
@@ -213,7 +225,17 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         {
             if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
         }
-        return sb.ToString();
+        var normalized = sb.ToString();
+        foreach (var decoration in DecorationWords)
+        {
+            if (normalized.Length > decoration.Length
+                && normalized.EndsWith(decoration, StringComparison.Ordinal))
+            {
+                normalized = normalized[..^decoration.Length];
+                break;
+            }
+        }
+        return normalized;
     }
 
     private enum MatchOutcome { None, Slug, Title, Ambiguous }
