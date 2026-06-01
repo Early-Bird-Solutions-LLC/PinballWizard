@@ -147,6 +147,61 @@ public sealed class SearchCorpusHitJsonContractTests
         Assert.False(root.TryGetProperty("last_scraped_utc", out _), "LastScrapedUtc (snake_case) should be JsonIgnore'd");
     }
 
+    // ── Task 7 (AB#259): Edition + EditionScope are model-VISIBLE ─────────────
+    // Inverse of the Score / LastScrapedUtc contract above: these two fields
+    // MUST be emitted in the function-result JSON because the model reads each
+    // chunk's edition_scope to decide R1 (answer once, all editions) / R2
+    // (answer per edition) / R3 (honest substitution). A future refactor that
+    // accidentally [JsonIgnore]'d them would silently blind the model to
+    // edition scope — this test catches that regression.
+
+    [Fact]
+    public void Edition_and_EditionScope_are_present_in_serialized_output()
+    {
+        var hit = new SearchCorpusHit(
+            MachineId: "GRBE-MJL05",
+            MachineTitle: "Godzilla",
+            DocumentId: "doc_godzilla_manual",
+            DocumentUrl: "https://sternpinball.com/godzilla_manual.pdf",
+            DocumentType: "manual",
+            PageStart: 12,
+            PageEnd: 14,
+            SectionHeading: "Coil Replacement",
+            Content: "Replace the coil…",
+            Edition: "Premium",
+            EditionScope: "single-edition");
+
+        var json = JsonSerializer.Serialize(hit);
+        var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("Edition", out var edition), "Edition must be model-visible");
+        Assert.Equal("Premium", edition.GetString());
+        Assert.True(root.TryGetProperty("EditionScope", out var scope), "EditionScope must be model-visible");
+        Assert.Equal("single-edition", scope.GetString());
+    }
+
+    [Fact]
+    public void Edition_and_EditionScope_null_are_readable_as_CSharp_properties()
+    {
+        // Pre-Task-6 chunks / unresolved documents carry null. The properties
+        // must still exist and be readable (the Wizard prompt treats a missing
+        // scope as "assume franchise-wide unless evidence differs").
+        var hit = new SearchCorpusHit(
+            MachineId: "GRBE-MJL05",
+            MachineTitle: "Godzilla",
+            DocumentId: "doc_x",
+            DocumentUrl: "https://example/doc.pdf",
+            DocumentType: "manual",
+            PageStart: 1,
+            PageEnd: 1,
+            SectionHeading: "Intro",
+            Content: "…");
+
+        Assert.Null(hit.Edition);
+        Assert.Null(hit.EditionScope);
+    }
+
     // ── PR-C3: LastScrapedUtc [JsonIgnore] contract ──────────────────────────
 
     [Fact]

@@ -245,6 +245,13 @@ public sealed class AiSearchRagRetriever : IRagRetriever
                 // (PR-C3). Never used in ranking or filtering here; the
                 // frontend CitationCard reads it from the citation DTO.
                 AiSearchIndexFields.LastScrapedUtc,
+                // Projected so each chunk self-declares its edition + scope
+                // (Task 6/7, AB#259). The Wizard inspects edition_scope to
+                // decide R1/R2/R3 and edition to attribute per-edition
+                // answers. Retrievable String fields (no IsHidden set in
+                // AiSearchIndexSchema) so AI Search returns them.
+                AiSearchIndexFields.Edition,
+                AiSearchIndexFields.EditionScope,
             },
         };
 
@@ -335,5 +342,11 @@ public sealed class AiSearchRagRetriever : IRagRetriever
             // last_scraped_utc field (PR-C3). Null for chunks indexed
             // before PR-C3; propagated to Citation.LastScrapedUtc via
             // SearchCorpusHit → ToolTraceCitationExtractor.
-            LastScrapedUtc: doc.LastScrapedUtc);
+            LastScrapedUtc: doc.LastScrapedUtc,
+            // Edition + edition_scope projected from the AI Search index
+            // (Task 6/7, AB#259). Threaded through SearchCorpusHit so the
+            // Wizard sees each chunk's scope for R1/R2/R3 reasoning. Null
+            // for chunks indexed before Task 6 or unresolved documents.
+            Edition: doc.Edition,
+            EditionScope: doc.EditionScope);
 }
