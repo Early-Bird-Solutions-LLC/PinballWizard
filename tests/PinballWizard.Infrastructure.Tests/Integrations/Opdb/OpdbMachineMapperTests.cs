@@ -201,6 +201,67 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal("Indiana Jones (The Pinball Adventure)", machine!.Title);
     }
 
+    // --- AB#259: EditionLabel + EditionTokens derivation ---
+
+    [Fact]
+    public void Map_EditionQualifiedName_DerivesEditionLabelAndTokens_KeepsTitleClean()
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            Name = "Godzilla (Pro)",
+            CommonName = null,
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball" },
+            ManufactureDate = "2021-09-14",
+        };
+
+        var m = OpdbMachineMapper.Map(dto, NowFixed, groupTitle: "Godzilla");
+
+        Assert.NotNull(m);
+        Assert.Equal("Godzilla", m!.Title);              // Title stays the franchise (ADR-0029)
+        Assert.Equal("Pro", m.EditionLabel);
+        Assert.Equal(["pro"], m.EditionTokens);
+    }
+
+    [Fact]
+    public void Map_NoParenthetical_EditionLabelNull()
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GJ2o0-MrRye",
+            IsMachine = true,
+            Name = "Toy Story 4",
+            CommonName = "Toy Story 4",
+            Manufacturer = new OpdbManufacturerDto { Name = "Jersey Jack Pinball" },
+            ManufactureDate = "2023-01-01",
+        };
+
+        var m = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(m);
+        Assert.Null(m!.EditionLabel);
+        Assert.Empty(m.EditionTokens);
+    }
+
+    [Theory]
+    [InlineData("Premium/LE", new[] { "premium", "le" })]
+    [InlineData("70th Anniversary", new[] { "70th" })]
+    [InlineData("Pro", new[] { "pro" })]
+    public void DeriveEditionTokens_NormalizesAndDropsNoiseWords(string label, string[] expected)
+    {
+        Assert.Equal(expected, OpdbMachineMapper.DeriveEditionTokens(label));
+    }
+
+    [Fact]
+    public void ExtractEditionLabel_NoParenthetical_FallsBackToFeatures()
+    {
+        // Secondary signal: when Name has no parenthetical, the OPDB
+        // "features" list ("Pro edition") supplies the EditionLabel.
+        var label = OpdbMachineMapper.ExtractEditionLabel("Godzilla", ["Pro edition"]);
+        Assert.Equal("Pro", label);
+    }
+
     [Theory]
     [InlineData("GweeP-MW95j", "GweeP")]
     [InlineData("GRBN-MQR4P", "GRBN")]

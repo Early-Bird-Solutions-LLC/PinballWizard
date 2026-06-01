@@ -78,6 +78,11 @@ public sealed class OpdbMachineDto
     [JsonPropertyName("keywords")]
     public List<string> Keywords { get; init; } = [];
 
+    /// <summary>OPDB edition "features" (e.g. ["Pro edition"]). Secondary edition
+    /// signal — used only as the EditionLabel fallback when Name has no parenthetical.</summary>
+    [JsonPropertyName("features")]
+    public List<string> Features { get; init; } = [];
+
     /// <summary>Last update timestamp.</summary>
     [JsonPropertyName("updated_at")]
     public DateTimeOffset? UpdatedAt { get; init; }
