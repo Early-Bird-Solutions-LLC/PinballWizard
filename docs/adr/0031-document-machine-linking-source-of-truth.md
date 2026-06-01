@@ -41,20 +41,36 @@ Full reassessment: `thoughts/shared/plans/2026-06-01_AB-259_data-pipeline-reasse
 1. `Machine.ManufacturerSlugs` in Cosmos remains the **single steady-state source of
    truth** for the document→machine slug association. The consumer (`DocumentLinker`)
    is unchanged.
-2. The **producer is upgraded**: add an authoritative OPDB id and **edition hint** to
-   `GameRecord`, captured at scrape time. The reconciler resolves **id-first**, falling
-   back to decoration-stripped normalized-title matching only when no id is present, and
-   **logs every ambiguous case with both candidate OPDB ids** (no silent drops).
+2. The **producer is upgraded — but NO `GameRecord` schema change is needed**
+   (this supersedes the original "add OPDB id + edition hint to `GameRecord`" sketch).
+   The catalog already carries everything required: `Machine.GroupId` (OPDB group
+   segment), `Machine.Year`, and the edition-qualified `Title` (`"Godzilla (Pro)"`).
+   The reconciler now: (a) matches on the **franchise title** — `NormalizeFranchiseTitle`
+   strips a trailing `(edition)` parenthetical so a scraped bare `"Godzilla"` matches every
+   edition base; (b) when the franchise title matches **multiple** base machines that form
+   an **edition family**, writes the slug to **all** of them. **The edition-family test is
+   the key correction (verified against the full OPDB export 2026-06-01): same manufacturer
+   + same OPDB group segment + same release `Year`.** The OPDB group segment *alone* is NOT
+   an edition key — it clusters unrelated games (group `G4xlK` = Free Fall / Sky Dive /
+   Sky Jump; 178 of 257 same-segment+same-manufacturer groups have mixed franchises). The
+   **`Year` guard** separates true editions (Godzilla Pro + Premium/LE, both 2021) from
+   reissues/remakes (Big Ben 1954 vs 1975, which stay distinct → `Ambiguous`). Every
+   non-family multi-match is logged with all candidate ids + group + year (no silent drops).
 3. **Linking is edition-aware.** Stern publishes distinct documents per edition (verified:
-   `Godzilla_Pro_web.pdf` → `GweeP-MW95j`, `Godzilla_LE_Pre_web.pdf` → `GweeP-Ml9pZ`,
-   `Godzilla_70th_web.pdf` → `GweeP-Ml9pZ-AOvNL`, plus group-level feature-matrix/rulesheet
+   `Godzilla_Pro_web.pdf` → `GweeP-MW95j` (page 2 reads "GODZILLA PRO MANUAL");
+   `Godzilla_LE_Pre_web.pdf` → `GweeP-Ml9pZ`; plus group-level feature-matrix/rulesheet
    docs). The old slug-only model collapsed all editions under one slug `godzilla` — the
-   mechanism of the mislabel. The edition resolver uses the document's filename edition
-   token cross-checked against OPDB's `features` array (`['Pro edition']`,
-   `['Limited edition','Premium edition']`); edition-agnostic docs (feature matrix,
-   rulesheet) link to the group base. Editions are preserved end-to-end so the Wizard can
-   navigate them and ask clarifying questions when a query is edition-unspecified
-   (ADR-0029).
+   mechanism of the mislabel. The `EditionResolver` resolves a same-family candidate set to
+   the edition-correct base using the document's **filename edition token** plus
+   **authoritative page-1 text** (a PDF that self-identifies as "PRO MANUAL" overrides a
+   misleading filename); edition-agnostic docs (feature matrix, rulesheet) **fan out to
+   every base in the family**; a candidate set with no edition signal is left `NotInCatalog`
+   for admin review rather than guessed. To read page-1 text the new `--download-documents`
+   step revives the linker's previously-dead page-text tiers (defect D13). Editions are
+   preserved end-to-end so the Wizard can navigate them and ask clarifying questions when a
+   query is edition-unspecified (ADR-0029). Note: Premium/LE/70th are OPDB *aliases* under
+   the `GweeP-Ml9pZ` base (modeled as `MachineEdition`), not separate base machines — so
+   "Godzilla" resolves to exactly two bases (Pro + Premium/LE).
 4. `games.json` is **not** resurrected as a permanent source; it may serve only as a
    one-time migration comparison baseline.
 5. Cross-store provenance invariants become **executable assertions** at write/build time:
