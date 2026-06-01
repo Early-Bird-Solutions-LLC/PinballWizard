@@ -255,6 +255,16 @@ public static class OpdbMachineMapper
             existing.Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList();
         }
 
+        // INTENTIONAL overwrite (NOT field-guarded like Designers/Themes above):
+        // a re-sync must converge EditionLabel/EditionTokens to the fresh
+        // label-derived set, discarding any stale tokens from a prior run.
+        // Pass-2 (OpdbSyncService) then re-folds alias tokens on top of this
+        // reset — the reset is precisely what makes the full sync idempotent.
+        // Do NOT add an `if`/non-blank guard here: that would let stale tokens
+        // accumulate and break the reset/idempotency contract.
+        existing.EditionLabel = ExtractEditionLabel(dto.Name, dto.Features);
+        existing.EditionTokens = DeriveEditionTokens(existing.EditionLabel);
+
         existing.LastSeenAt = now;
     }
 

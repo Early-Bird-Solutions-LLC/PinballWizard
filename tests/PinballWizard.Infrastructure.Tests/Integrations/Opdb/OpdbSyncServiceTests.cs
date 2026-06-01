@@ -577,6 +577,80 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _repository.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncAsync_FoldsAliasEditionNamesIntoBaseEditionTokens()
+    {
+        // AB#259: the Premium/LE base machine (GweeP-Ml9pZ) owns three
+        // OPDB aliases (Premium, LE, 70th Anniversary). Pass 2 already
+        // folds those into Editions; this test pins that the alias edition
+        // NAMES are also folded into the base's EditionTokens so the linker
+        // can map a per-edition document (e.g. a "_70th_" manual) to this
+        // base. The base seeds with its label-derived tokens
+        // ["premium","le"]; after sync the set must be a superset of
+        // {"premium","le","70th"}.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GweeP-Ml9pZ-Apremium", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium)"),
+            AliasJson("GweeP-Ml9pZ-Ale", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (LE)"),
+            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
+
+        var existing = new Machine
+        {
+            Id = "GweeP-Ml9pZ",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla",
+            EditionLabel = "Premium/LE",
+            EditionTokens = ["premium", "le"],
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(3, result.AliasesAppended);
+        // "70th Anniversary" → "70th" (DeriveEditionTokens drops "anniversary").
+        Assert.Contains("premium", existing.EditionTokens);
+        Assert.Contains("le", existing.EditionTokens);
+        Assert.Contains("70th", existing.EditionTokens);
+    }
+
+    [Fact]
+    public async Task SyncAsync_FoldAliasTokens_IsIdempotentAcrossReRuns()
+    {
+        // The daily sync re-runs; folding alias names into EditionTokens
+        // must not grow the list unboundedly. Running the same alias-set
+        // twice against the same base must yield the same token set (no
+        // duplicates). The base already carries the previously-folded
+        // tokens (premium, le, 70th) from a prior run.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            AliasJson("GweeP-Ml9pZ-Apremium", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium)"),
+            AliasJson("GweeP-Ml9pZ-Ale", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (LE)"),
+            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
+
+        var existing = new Machine
+        {
+            Id = "GweeP-Ml9pZ",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla",
+            EditionLabel = "Premium/LE",
+            EditionTokens = ["premium", "le", "70th"], // already folded on a prior run
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Exactly one of each token — no growth, no duplicates.
+        Assert.Equal(
+            "70th,le,premium",
+            string.Join(",", existing.EditionTokens.OrderBy(t => t, StringComparer.Ordinal)));
+    }
+
     // ── ADR-0025 § 4 dual-write ──────────────────────────────────────────
     // PR 5 of the Cosmos for User Delight track adds a dual-write of the
     // machine_title_lookups materialized view alongside every base-machine

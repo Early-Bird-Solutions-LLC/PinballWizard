@@ -277,6 +277,17 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             && string.Equals(e.Name, edition.Name, StringComparison.OrdinalIgnoreCase)));
                     baseMachine.Editions.Add(edition);
 
+                    // Fold the alias edition's name into the base's EditionTokens
+                    // so the linker can match a per-edition document (e.g. _70th_)
+                    // to this base. Additive + de-duped (case-insensitive).
+                    foreach (var token in OpdbMachineMapper.DeriveEditionTokens(edition.Name))
+                    {
+                        if (!baseMachine.EditionTokens.Contains(token, StringComparer.OrdinalIgnoreCase))
+                        {
+                            baseMachine.EditionTokens.Add(token);
+                        }
+                    }
+
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(baseMachine, cancellationToken).ConfigureAwait(false);
