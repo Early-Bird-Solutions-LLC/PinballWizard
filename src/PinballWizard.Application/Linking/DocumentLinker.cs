@@ -458,6 +458,21 @@ public sealed class DocumentLinker : IDocumentLinker
         return preferred.Count == 1 ? preferred[0] : null;
     }
 
+    // An edition family: multiple base machines sharing one non-null OPDB group
+    // segment AND one non-null release year (e.g. Godzilla Pro + Premium/LE,
+    // both "GweeP"/2021). Matches the reconciler's edition-family definition —
+    // the group segment alone is not an edition key; the year guard separates
+    // genuine reissues/remakes. A slug collision that is NOT an edition family
+    // (different makers/years) is left to the manufacturer-preference path.
+    private static bool IsEditionFamily(List<Machine> candidates)
+    {
+        if (candidates.Count < 2) return false;
+        var segments = candidates.Select(m => m.GroupId).Distinct().ToList();
+        var years = candidates.Select(m => m.Year).Distinct().ToList();
+        return segments.Count == 1 && segments[0] is not null
+            && years.Count == 1 && years[0] is not null;
+    }
+
     private LinkingResult? TryTier1XrefSlug(RawDocumentRecord raw)
     {
         // Collect all distinct machine IDs resolved from xref slugs.
@@ -539,6 +554,32 @@ public sealed class DocumentLinker : IDocumentLinker
             {
                 bestMatches.Add(machine);
             }
+        }
+
+        // Same-franchise edition family (multiple bases sharing one group
+        // segment + year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
+        // GweeP-Ml9pZ) → resolve by edition from the filename token. Page text
+        // isn't available at Tier 2; the page tiers add page-1 authority later.
+        if (bestMatches.Count > 1 && IsEditionFamily(bestMatches))
+        {
+            var resolution = EditionResolver.Resolve(filename, page1Text: null, bestMatches);
+            if (resolution.IsGroupFanOut)
+            {
+                _logger.LogDebug("Tier2 filename_edition_group: {DocumentId} → {Count} group bases for '{Filename}'.",
+                    raw.DocumentId, resolution.Machines.Count, filename);
+                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition_group",
+                    resolution.Machines.Select(m => m.Id).ToList(), FailureReason: null);
+            }
+            if (!resolution.IsUnresolved)
+            {
+                _logger.LogDebug("Tier2 filename_edition: {DocumentId} → {MachineId} for '{Filename}'.",
+                    raw.DocumentId, resolution.Machines[0].Id, filename);
+                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition",
+                    [resolution.Machines[0].Id], FailureReason: null);
+            }
+            // Unresolved within the family → fall through to the page tiers,
+            // which can read page-1 text for an authoritative edition signal.
+            return null;
         }
 
         // Single longest match → use it. Multiple distinct machines tied at the
@@ -634,13 +675,41 @@ public sealed class DocumentLinker : IDocumentLinker
         // fan-out (no regression for genuinely multi-machine documents).
         if (matchedMachines.Count > 1)
         {
-            var preferred = PreferByManufacturer(matchedMachines, LinkingUtilities.InferManufacturerKey(raw.Source));
-            if (preferred is not null)
+            // Same-franchise edition family → resolve by edition, with the page-1
+            // text as the authoritative signal (overrides a misleading filename).
+            // Group-level docs (rulesheet, feature matrix) fan out to all bases.
+            if (IsEditionFamily(matchedMachines))
             {
-                _logger.LogDebug(
-                    "DocumentLinker: {Tier} disambiguated {Count} matches to {MachineId} by source manufacturer for {DocId}.",
-                    strategyName, matchedMachines.Count, preferred.Id, raw.DocumentId);
-                matchedMachines = [preferred];
+                var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
+                var resolution = EditionResolver.Resolve(
+                    filename, extracted.Pages[pageIndex].Text, matchedMachines);
+                if (resolution.IsGroupFanOut)
+                {
+                    _logger.LogDebug(
+                        "DocumentLinker: {Tier} group-level doc → {Count} edition bases for {DocId}.",
+                        strategyName, resolution.Machines.Count, raw.DocumentId);
+                    matchedMachines = resolution.Machines.ToList();
+                }
+                else if (!resolution.IsUnresolved)
+                {
+                    _logger.LogDebug(
+                        "DocumentLinker: {Tier} resolved edition → {MachineId} for {DocId}.",
+                        strategyName, resolution.Machines[0].Id, raw.DocumentId);
+                    matchedMachines = [resolution.Machines[0]];
+                }
+                // Unresolved within the family → keep the multi-machine fan-out
+                // (legacy behavior) rather than guess.
+            }
+            else
+            {
+                var preferred = PreferByManufacturer(matchedMachines, LinkingUtilities.InferManufacturerKey(raw.Source));
+                if (preferred is not null)
+                {
+                    _logger.LogDebug(
+                        "DocumentLinker: {Tier} disambiguated {Count} matches to {MachineId} by source manufacturer for {DocId}.",
+                        strategyName, matchedMachines.Count, preferred.Id, raw.DocumentId);
+                    matchedMachines = [preferred];
+                }
             }
         }
 

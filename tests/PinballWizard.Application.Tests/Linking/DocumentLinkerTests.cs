@@ -417,6 +417,64 @@ public class DocumentLinkerTests
     }
 
     // -------------------------------------------------------------------------
+    // Tier 2 — Edition-aware resolution (same-franchise edition family)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier2_GodzillaProDoc_LinksToProBase()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // Edition family: two Stern Godzilla bases, same slug "godzilla", same
+        // group "GweeP", same year 2021. The Pro manual must land on the Pro base.
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021;
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2_GodzillaLeDoc_LinksToPremiumLeBase()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021;
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_LE_Pre_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GweeP-Ml9pZ"], result.LinkedMachineIds);
+    }
+
+    // -------------------------------------------------------------------------
     // FanOut: scraped_documents write
     // -------------------------------------------------------------------------
 
@@ -525,6 +583,57 @@ public class DocumentLinkerTests
             Assert.Equal("page_1", result.ResolutionStrategy);
             Assert.Single(result.LinkedMachineIds);
             Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page1_GroupRulesheet_FansOutToAllEditionBases()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+
+        // Edition family (group GweeP, year 2021). A rulesheet (group-level doc)
+        // whose page text matches the "godzilla" slug → fans out to BOTH bases.
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021;
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        var relativePath = "docs/Godzilla-Rulesheet.pdf";
+        var absolutePath = Path.Combine(tmpDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
+        await File.WriteAllBytesAsync(absolutePath, []);
+
+        try
+        {
+            var raw = MakeRaw(
+                fileUrl: "https://sternpinball.com/wp-content/uploads/2022/06/Godzilla-Rulesheet.pdf",
+                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "Godzilla-Rulesheet.pdf" },
+                sourceType: SourceType.ManualsPage);
+
+            var page1 = new ExtractedPage(PageNumber: 1, Text: "Godzilla rulesheet — applies to all editions.");
+            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+                .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+                machines: [pro, premLe], textExtractor: extractor, downloadsRoot: tmpDir);
+
+            await linker.InitializeAsync(CancellationToken.None);
+            var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+            Assert.Equal(2, result.LinkedMachineIds.Count);
+            Assert.Contains("GweeP-MW95j", result.LinkedMachineIds);
+            Assert.Contains("GweeP-Ml9pZ", result.LinkedMachineIds);
         }
         finally
         {
