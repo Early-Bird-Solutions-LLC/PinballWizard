@@ -819,6 +819,88 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _repository.Received(1).UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncAsync_WritesEditionQualifiedTitleLookupRows()
+    {
+        // AB#259 (Task 3): both Godzilla bases store Title="Godzilla", so a
+        // bare "godzilla" lookup can't disambiguate Pro from Premium/LE. The
+        // sync must ALSO write edition-qualified lookup rows keyed off each
+        // base's EditionTokens, so getMachineByTitle("Godzilla Premium")
+        // resolves to GweeP-Ml9pZ.
+        //
+        // Production-faithful fixtures: EditionTokens is label-derived in
+        // pass-1 (Task 1) AND alias-folded in pass-2 (Task 2). The Pro base
+        // name "Godzilla (Pro)" → ["pro"]. The Premium/LE base name
+        // "Godzilla (Premium/LE)" → ["premium","le"] from the label, with
+        // "70th" arriving ONLY via the "70th Anniversary" alias folded in
+        // pass-2. This pins that the edition-qualified rows are written AFTER
+        // pass-2 (so the alias-derived "70th" row exists) — a pass-1-time
+        // write would silently drop it.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla"),
+            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
+
+        // Pass-1 inserts the two bases; pass-2 re-reads the Premium/LE base to
+        // fold its "70th Anniversary" alias. Mirror the alias-fold tests'
+        // dynamic stub: return the last-upserted instance for GweeP-Ml9pZ so
+        // pass-2 sees (and mutates) the folded-token object, and null for the
+        // Pro base (no alias).
+        Machine? lastPremLe = null;
+        _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+        _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>())
+            .Returns(_ => lastPremLe);
+        _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var m = call.Arg<Machine>();
+                if (m.Id == "GweeP-Ml9pZ") lastPremLe = m;
+                return m;
+            });
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        // Capture every lookup row the sync upserts, keyed by normalized title.
+        var upsertedLookups = new ConcurrentBag<MachineTitleLookup>();
+        await _titleLookups.UpsertAsync(Arg.Do<MachineTitleLookup>(upsertedLookups.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Sanity: the alias was folded in pass-2 (so "70th" is in the token set).
+        Assert.Equal(1, result.AliasesAppended);
+
+        // Helper: assert at least one upserted row for the normalized title
+        // carries the expected base id. (The stubbed GetByTitleAsync returns
+        // null on every call, so the production read-modify-write that would
+        // collapse same-title writes onto one shared row can't fire here —
+        // each base produces its own row instance. We therefore assert the
+        // expected base id is present in some row for the key, not that there
+        // is exactly one row. Production behavior — a single shared row per
+        // ADR-0025 §4 — is covered by SyncAsync_NewMachine_DualWritesTitleLookup.)
+        static void AssertRowMapsTo(ConcurrentBag<MachineTitleLookup> rows, string normalizedTitle, string expectedOpdbId)
+        {
+            var matching = rows.Where(l => l.Id == normalizedTitle).ToList();
+            Assert.True(matching.Count > 0, $"no lookup row written for normalized title '{normalizedTitle}'");
+            Assert.Contains(matching, l => l.OpdbIds.Contains(expectedOpdbId));
+            // The edition-qualified key must NEVER be the bare franchise key —
+            // they must coexist as distinct rows.
+            Assert.NotEqual("godzilla", normalizedTitle);
+        }
+
+        // The bare franchise rows still exist and collectively cover both bases.
+        var bareRows = upsertedLookups.Where(l => l.Id == "godzilla").ToList();
+        Assert.Contains(bareRows, l => l.OpdbIds.Contains("GweeP-MW95j"));
+        Assert.Contains(bareRows, l => l.OpdbIds.Contains("GweeP-Ml9pZ"));
+
+        // Edition-qualified rows resolve to the correct base.
+        AssertRowMapsTo(upsertedLookups, "godzilla pro", "GweeP-MW95j");
+        AssertRowMapsTo(upsertedLookups, "godzilla premium", "GweeP-Ml9pZ");
+        AssertRowMapsTo(upsertedLookups, "godzilla le", "GweeP-Ml9pZ");
+        AssertRowMapsTo(upsertedLookups, "godzilla 70th", "GweeP-Ml9pZ");
+    }
+
     // --- ADR-0029 S4: per-segment group-title resolution (D1) ---
     // The model: every is_machine base record stays a DISTINCT Machine
     // (no fold, no canonical pick). When common_name is empty (modern
