@@ -38,13 +38,25 @@ Full reassessment: `thoughts/shared/plans/2026-06-01_AB-259_data-pipeline-reasse
 
 ## Decision
 
+> **Correction (2026-06-01, see [ADR-0032](0032-document-edition-scope-model.md)):**
+> decision #3 below assumed `Machine.Title` is edition-qualified (`"Godzilla (Pro)"`).
+> Live point-reads disproved this — `OpdbMachineMapper.Map` collapses both Stern Godzilla
+> bases to `Title="Godzilla"` (the franchise title wins per ADR-0029). The edition
+> discriminator is **not** the Title; it is `Machine.EditionTokens` (added in ADR-0032).
+> `EditionResolver` matches the document's edition token against `EditionTokens`, not Title.
+> The franchise+segment+year edition-family logic in decision #2 is correct and unchanged;
+> only the "Title carries the edition" assumption in decision #3 is superseded.
+
 1. `Machine.ManufacturerSlugs` in Cosmos remains the **single steady-state source of
    truth** for the document→machine slug association. The consumer (`DocumentLinker`)
    is unchanged.
+
 2. The **producer is upgraded — but NO `GameRecord` schema change is needed**
    (this supersedes the original "add OPDB id + edition hint to `GameRecord`" sketch).
    The catalog already carries everything required: `Machine.GroupId` (OPDB group
-   segment), `Machine.Year`, and the edition-qualified `Title` (`"Godzilla (Pro)"`).
+   segment), `Machine.Year`, and (per ADR-0032) `Machine.EditionTokens` as the edition
+   discriminator. (The `Title` is the clean franchise name `"Godzilla"`, NOT
+   edition-qualified — see the correction note above.)
    The reconciler now: (a) matches on the **franchise title** — `NormalizeFranchiseTitle`
    strips a trailing `(edition)` parenthetical so a scraped bare `"Godzilla"` matches every
    edition base; (b) when the franchise title matches **multiple** base machines that form
