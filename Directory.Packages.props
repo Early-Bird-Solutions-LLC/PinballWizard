@@ -28,7 +28,7 @@
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.3.3" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.3.3" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.3.0" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.4.0" />
     <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
@@ -47,7 +47,7 @@
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
