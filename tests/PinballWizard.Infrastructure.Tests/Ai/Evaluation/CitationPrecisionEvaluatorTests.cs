@@ -98,4 +98,77 @@ public sealed class CitationPrecisionEvaluatorTests
         Assert.Throws<ArgumentNullException>(() =>
             _evaluator.Compute(OneCorrect, null!));
     }
+
+    // ── Any-of acceptable-citation-sets (AB#259 edition-aware) ──────────
+
+    private static readonly string[] ProBase = ["GweeP-MW95j"];
+    private static readonly string[] PremLeBase = ["GweeP-Ml9pZ"];
+    private static readonly string[] BothBases = ["GweeP-MW95j", "GweeP-Ml9pZ"];
+
+    [Fact]
+    public void ComputeAnyOf_PredictionMatchesOneAcceptableSet_ScoresAgainstThatSet()
+    {
+        // R1: either base alone is acceptable. Predicting the Pro base
+        // exactly should score 1.0 against the [[Pro],[Prem/LE]] any-of.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [ProBase, PremLeBase];
+
+        var score = _evaluator.ComputeAnyOf(ProBase, acceptable);
+
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_PicksBestScoringAcceptableSet()
+    {
+        // Prediction is the Prem/LE base. Against [[Pro],[Prem/LE]] the
+        // best interpretation is the Prem/LE set → precision 1.0, not the
+        // 0.0 it would score against the Pro set.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [ProBase, PremLeBase];
+
+        var score = _evaluator.ComputeAnyOf(PremLeBase, acceptable);
+
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_SubsetSet_FullPrecisionWhenAllPredictedInSet()
+    {
+        // edition-subset row: the acceptable set is BOTH bases together.
+        // Predicting both → precision 1.0.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [BothBases];
+
+        var score = _evaluator.ComputeAnyOf(BothBases, acceptable);
+
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_NoAcceptableSetMatches_ScoresBestEffort()
+    {
+        // Predicting a wrong id against [[Pro],[Prem/LE]] → 0.0 in every
+        // set; best-of is still 0.0.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [ProBase, PremLeBase];
+
+        var score = _evaluator.ComputeAnyOf(OneIncorrect, acceptable);
+
+        Assert.Equal(0.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_EmptyAcceptableList_FallsBackToEmptyExpected()
+    {
+        // No acceptable sets supplied: treat as "no citation expected".
+        // Empty prediction → 1.0 (refusal honored); non-empty → 0.0.
+        IReadOnlyList<IReadOnlyList<string>> none = [];
+
+        Assert.Equal(1.0, _evaluator.ComputeAnyOf(Empty, none));
+        Assert.Equal(0.0, _evaluator.ComputeAnyOf(OneCorrect, none));
+    }
+
+    [Fact]
+    public void ComputeAnyOf_NullAcceptableList_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            _evaluator.ComputeAnyOf(OneCorrect, null!));
+    }
 }

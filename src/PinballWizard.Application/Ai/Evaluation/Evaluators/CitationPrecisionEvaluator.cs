@@ -54,4 +54,40 @@ public sealed class CitationPrecisionEvaluator
 
         return (double)hits / predictedSet.Count;
     }
+
+    // Edition-aware any-of scoring (AB#259, edition-scope-model-design §6).
+    // EvalQuestion.AcceptableCitationSets encodes a list of acceptable
+    // expected sets — e.g. R1's "either base alone is fine" is
+    // [[GweeP-MW95j], [GweeP-Ml9pZ]]. A prediction is scored against the
+    // MOST FAVORABLE acceptable set (the curator declared each set as
+    // independently acceptable ground truth, so the agent should be
+    // credited for matching any one of them). Returns the max precision
+    // across the supplied sets.
+    //
+    // Empty acceptableSets is treated as "no citation expected" (the
+    // refusal-flow semantic), matching Compute's empty-expected branch.
+    public double ComputeAnyOf(
+        IReadOnlyCollection<string> predicted,
+        IReadOnlyList<IReadOnlyList<string>> acceptableSets)
+    {
+        ArgumentNullException.ThrowIfNull(predicted);
+        ArgumentNullException.ThrowIfNull(acceptableSets);
+
+        if (acceptableSets.Count == 0)
+        {
+            return Compute(predicted, []);
+        }
+
+        var best = 0.0;
+        foreach (var set in acceptableSets)
+        {
+            var score = Compute(predicted, set ?? []);
+            if (score > best)
+            {
+                best = score;
+            }
+        }
+
+        return best;
+    }
 }

@@ -259,6 +259,8 @@ public sealed class EvaluationHarnessTests
                 new CitationCoverageEvaluator(),
                 new SubagentAccuracyEvaluator(),
                 new RefusalCorrectnessEvaluator(),
+                new AnsweredAllEditionsEvaluator(),
+                new HonestSubstitutionEvaluator(),
                 evalOptions,
                 NullLogger<EvaluationHarness>.Instance);
         }

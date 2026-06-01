@@ -4,12 +4,25 @@
 # AiRouter.ExtractCitationsFromText extracts these from the
 # https://opdb.org/machines/<id> URL pattern in the agent's text.
 #
+# Edition-aware fields (AB#259, edition-scope-model-design §6):
+#   acceptable_citation_sets : any-of list of acceptable citation sets;
+#                              a prediction matching ANY set scores correct.
+#   franchise_wide_ok        : true => a franchise-wide doc cited for any
+#                              edition is acceptable (limitation: Citation
+#                              carries no edition_scope yet, so this is the
+#                              row-level intent, not a per-citation check).
+#   expected_outcome         : grounded | answered_all_editions (R2) |
+#                              honest_substitution (R3). Default grounded.
+#   required_editions        : R2 => each label must appear attributed;
+#                              R3 => [0] is the named edition the disclosure
+#                              must reference.
+#
 # 30 questions: 27 graded + 3 acceptable-refusal.
 # All graded questions target the 7 Phase 4 curated-subset machines so
 # retrieval can actually fire against the indexed corpus.
 #
 # Distribution (graded):
-#   Godzilla Premium (Stern)        — 2 Rules + 2 Valuation + 2 Repair
+#   Godzilla (Stern, edition-aware)  — 2 Rules + 2 Valuation + 2 Repair (AB#259: R1/R2/R3)
 #   Foo Fighters LE (Stern)         — 2 Rules + 2 Valuation + 2 Repair
 #   Toy Story 4 (JJP)               — 1 Rules + 1 Valuation + 1 Repair
 #   Galactic Tank Force (AP)        — 1 Rules + 1 Valuation + 1 Repair
@@ -18,6 +31,7 @@
 #   Queen LE (Pinball Brothers)     — 1 Rules + 1 Valuation + 1 Repair
 #
 # OPDB IDs used:
+#   GweeP-MW95j  Stern | Godzilla (Pro)         — AB#259 edition-aware base
 #   GweeP-Ml9pZ  Stern | Godzilla (Premium/LE)
 #   GpeoL-MkPz1  Stern | Foo Fighters (Premium/LE)
 #   GJ2o0-MrRye  Jersey Jack Pinball | Toy Story 4
@@ -27,8 +41,8 @@
 #   GELkO-Ml9zZ  Pinball Brothers | Queen
 
 # ── Rules ─────────────────────────────────────────────────────────
-{"id":"ev-rules-0001","question":"What modes are available in the Stern Godzilla Premium pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Godzilla Premium 2021; rules question exercises manual chunk retrieval"}
-{"id":"ev-rules-0002","question":"How does multiball work in Stern's Godzilla pinball?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Second Godzilla rules question; exercises depth of manual indexing"}
+{"id":"ev-rules-0001","question":"What is the theme of the Stern Godzilla pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): title/theme-level, identical across editions. No clarify, no friction; either base id ok, franchise-wide source ok. GweeP-MW95j=Pro, GweeP-Ml9pZ=Premium/LE."}
+{"id":"ev-rules-0002","question":"How does multiball work in Stern's Godzilla pinball?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"answered_all_editions","required_editions":["Pro","Premium/LE"],"acceptable_refusal":false,"notes":"R2 (AB#259): multiball rules differ by edition. ONE response attributing each edition (no clarify round-trip), a source cited per edition. Collapsing to one base FAILS answered_all_editions."}
 {"id":"ev-rules-0003","question":"What is the main objective in the Foo Fighters LE pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters LE 2023; rules question for the second Stern machine"}
 {"id":"ev-rules-0004","question":"How do you start the main wizard mode in Foo Fighters pinball?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters wizard-mode question; exercises deep manual retrieval"}
 {"id":"ev-rules-0005","question":"What is the theme of the Jersey Jack Toy Story 4 pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Toy Story 4 JJP 2019; manufacturer + theme lookup against OPDB record"}
@@ -38,8 +52,8 @@
 {"id":"ev-rules-0009","question":"What is the theme of the Queen LE pinball machine by Pinball Brothers?","expected_sub_agent":"Rules","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Pinball Brothers Queen LE; theme + manufacturer fact"}
 
 # ── Valuation ─────────────────────────────────────────────────────
-{"id":"ev-valuation-0001","question":"What editions are available for the Stern Godzilla pinball machine?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Godzilla Pro / Premium / LE editions documented on OPDB"}
-{"id":"ev-valuation-0002","question":"What does the Stern Godzilla Premium retail for?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Edition-specific MSRP question for the premium tier"}
+{"id":"ev-valuation-0001","question":"What editions are available for the Stern Godzilla pinball machine?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): editions-overview is franchise-level; either base or both ok. The edition list itself doesn't vary by which base answers it."}
+{"id":"ev-valuation-0002","question":"What does the Stern Godzilla Premium retail for?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-Ml9pZ"]],"franchise_wide_ok":false,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"Edition-named-exact (AB#259): 'Premium' names a specific base -> exactly GweeP-Ml9pZ (Premium/LE). MSRP is edition-specific; citing Pro (GweeP-MW95j) or a franchise-wide doc is a FAIL, hence franchise_wide_ok=false."}
 {"id":"ev-valuation-0003","question":"What editions of the Foo Fighters pinball machine exist?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters Pro / Premium / LE editions on OPDB"}
 {"id":"ev-valuation-0004","question":"How much does the Foo Fighters LE pinball machine cost?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"LE-tier MSRP; exercises edition-aware pricing retrieval"}
 {"id":"ev-valuation-0005","question":"Is the Jersey Jack Toy Story 4 pinball still available new?","expected_sub_agent":"Valuation","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Availability question grounded in OPDB editions record"}
@@ -50,8 +64,8 @@
 {"id":"ev-valuation-0010","question":"What editions of the Pinball Brothers Queen pinball are available?","expected_sub_agent":"Valuation","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Standard / CE / LE editions on OPDB"}
 
 # ── Repair ─────────────────────────────────────────────────────────
-{"id":"ev-repair-0001","question":"My Stern Godzilla pinball flippers feel weak — what should I check?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Flipper-coil diagnostic; exercises manual chunk retrieval for Godzilla"}
-{"id":"ev-repair-0002","question":"Are there service bulletins for the Stern Godzilla pinball?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_refusal":false,"notes":"Bulletin question; exercises service-bulletin chunk retrieval for Godzilla"}
+{"id":"ev-repair-0001","question":"My Stern Godzilla LE flippers feel weak — what should I check?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"honest_substitution","required_editions":["LE"],"acceptable_refusal":false,"notes":"R3 (AB#259): user names LE. If no LE-specific flipper data exists, the Wizard must DISCLOSE the gap and cite the Pro/franchise substitute. Silent Pro answer or blanket refusal both FAIL. required_editions[0]='LE' is the named edition the disclosure must reference."}
+{"id":"ev-repair-0002","question":"Are there service bulletins for the Stern Godzilla pinball?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): bulletin-availability is franchise-level; bulletins aren't edition-split here, so either base or both ok and a franchise-wide source is acceptable."}
 {"id":"ev-repair-0003","question":"What troubleshooting documents exist for the Foo Fighters pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Document-availability question; exercises manual + bulletin retrieval for Foo Fighters"}
 {"id":"ev-repair-0004","question":"Are there service bulletins for Stern's Foo Fighters pinball?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Bulletin-specific question for Foo Fighters; second Stern bulletin retrieval test"}
 {"id":"ev-repair-0005","question":"Where can I find the manual for the Jersey Jack Toy Story 4 pinball?","expected_sub_agent":"Repair","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Manual-location question; OPDB grounding + manual chunk retrieval"}
