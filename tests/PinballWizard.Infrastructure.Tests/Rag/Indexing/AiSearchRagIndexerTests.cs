@@ -26,7 +26,9 @@ public sealed class AiSearchRagIndexerTests
         Manufacturer: "Stern Pinball",
         DocumentId: "doc_godzilla_manual",
         DocumentUrl: "https://sternpinball.com/wp-content/uploads/godzilla_manual.pdf",
-        DocumentType: DocumentType.Manual);
+        DocumentType: DocumentType.Manual,
+        Edition: "Premium",
+        EditionScope: "single-edition");
 
     private static Chunk MakeChunk(int index, int pageStart = 1, int pageEnd = 1, string text = "the quick brown fox") =>
         new(
@@ -179,6 +181,38 @@ public sealed class AiSearchRagIndexerTests
         var expectedId = AiSearchRagIndexer.ComputeChunkId(
             SampleRequest.MachineId, SampleRequest.DocumentId, 42, 43, 7);
         Assert.Equal(expectedId, doc.ChunkId);
+    }
+
+    [Fact]
+    public void MapToDocument_ThreadsEditionAndEditionScope()
+    {
+        // Task 6 (AB#259): every chunk self-declares its free-text edition
+        // label and structural edition scope so a future retriever query
+        // can filter by them and the Wizard can decide R1/R2/R3
+        // (answer-all vs honest-substitution). Verify both threads from
+        // ChunkRequest → IndexedChunkDocument unchanged.
+        var chunk = MakeChunk(0);
+
+        var doc = AiSearchRagIndexer.MapToDocument(SampleRequest, chunk);
+
+        Assert.Equal("Premium", doc.Edition);
+        Assert.Equal("single-edition", doc.EditionScope);
+    }
+
+    [Fact]
+    public void MapToDocument_NullEditionFields_RemainNull()
+    {
+        // Legacy / unresolved documents may carry no edition metadata.
+        // The mapping must propagate null rather than substituting an
+        // empty string — null is filterable-absent in AI Search, an
+        // empty string would be a distinct (wrong) facet value.
+        var request = SampleRequest with { Edition = null, EditionScope = null };
+        var chunk = MakeChunk(0);
+
+        var doc = AiSearchRagIndexer.MapToDocument(request, chunk);
+
+        Assert.Null(doc.Edition);
+        Assert.Null(doc.EditionScope);
     }
 
     [Fact]

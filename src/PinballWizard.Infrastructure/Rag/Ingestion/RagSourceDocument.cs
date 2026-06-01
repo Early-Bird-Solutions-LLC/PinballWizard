@@ -60,6 +60,14 @@ public sealed class RagSourceDocument
     [JsonPropertyName("edition")]
     public string? Edition { get; init; }
 
+    // Structural edition scope persisted by the scraper write path as the
+    // hyphenated wire form (single-edition / edition-subset / franchise-wide).
+    // Projected here and threaded to the AI Search index as `edition_scope`
+    // (Task 6, AB#259). Nullable because legacy documents written before the
+    // linker populated this field carry no value.
+    [JsonPropertyName("edition_scope")]
+    public string? EditionScope { get; init; }
+
     [JsonPropertyName("_etag")]
     public string? Etag { get; init; }
 

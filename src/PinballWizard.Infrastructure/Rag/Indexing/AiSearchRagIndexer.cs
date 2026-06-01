@@ -298,6 +298,13 @@ public sealed class AiSearchRagIndexer : IRagIndexer
             // (zero-migration-cost: existing chunks update on next
             // Change Feed re-ingestion; no backfill required).
             LastScrapedUtc = request.LastScrapedUtc,
+            // edition + edition_scope threaded from the scraped_documents
+            // provenance record (Task 6, AB#259) so each chunk self-declares
+            // its edition + scope for retriever filtering / Wizard R1/R2/R3.
+            // Null for legacy / unresolved documents (acceptable per
+            // ADR-0025 § 6 zero-migration-cost).
+            Edition = request.Edition,
+            EditionScope = request.EditionScope,
         };
     }
 

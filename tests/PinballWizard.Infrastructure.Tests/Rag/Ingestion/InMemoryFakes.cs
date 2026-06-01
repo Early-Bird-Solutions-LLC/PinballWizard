@@ -28,11 +28,13 @@ internal sealed class InMemoryRagIndexer : IRagIndexer
         RagIndexerOptions options,
         CancellationToken cancellationToken)
     {
-        Calls.Add(new UpsertCall(request.DocumentId, request.MachineId, chunks.Count));
+        Calls.Add(new UpsertCall(
+            request.DocumentId, request.MachineId, chunks.Count, request.Edition, request.EditionScope));
         return Task.FromResult(ResultFactory(request, chunks));
     }
 
-    internal sealed record UpsertCall(string DocumentId, string MachineId, int ChunkCount);
+    internal sealed record UpsertCall(
+        string DocumentId, string MachineId, int ChunkCount, string? Edition, string? EditionScope);
 }
 
 internal sealed class InMemoryIndexState : IIndexState
