@@ -55,18 +55,35 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
     /// A <see cref="PolitePage"/> wrapping the navigated page; dispose
     /// to close the page AND release the politeness lease.
     /// </returns>
-    protected async Task<PolitePage> NewPolitePageAsync(string url, CancellationToken cancellationToken)
+    protected async Task<PolitePage> NewPolitePageAsync(
+        string url,
+        CancellationToken cancellationToken,
+        WaitUntilState waitUntil = WaitUntilState.DOMContentLoaded)
     {
         ArgumentException.ThrowIfNullOrEmpty(url);
         var uri = new Uri(url);
-        return await NewPolitePageAsync(uri, cancellationToken).ConfigureAwait(false);
+        return await NewPolitePageAsync(uri, cancellationToken, waitUntil).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Acquires a politeness lease for <paramref name="url"/>, then
-    /// opens and navigates a new page on the shared browser context.
+    /// Acquires a politeness lease for <paramref name="url"/>, then opens and
+    /// navigates a new page on the shared browser context.
     /// </summary>
-    protected async Task<PolitePage> NewPolitePageAsync(Uri url, CancellationToken cancellationToken)
+    /// <param name="waitUntil">
+    /// Navigation completion condition. Defaults to
+    /// <see cref="WaitUntilState.DOMContentLoaded"/> — the robust choice for the
+    /// Stern scrapers, which each perform their own post-navigation render wait
+    /// (an explicit Vue settle delay + selector queries). The previous
+    /// <see cref="WaitUntilState.NetworkIdle"/> default timed out on heavy Vue
+    /// game pages (e.g. <c>/game/godzilla/</c>) that hold persistent connections
+    /// and therefore NEVER reach network-idle — the page content is fully usable
+    /// long before that. Callers that genuinely need a quiescent network can pass
+    /// <see cref="WaitUntilState.NetworkIdle"/> explicitly.
+    /// </param>
+    protected async Task<PolitePage> NewPolitePageAsync(
+        Uri url,
+        CancellationToken cancellationToken,
+        WaitUntilState waitUntil = WaitUntilState.DOMContentLoaded)
     {
         ArgumentNullException.ThrowIfNull(url);
 
@@ -79,7 +96,7 @@ public abstract class PolitePlaywrightScraperBase : PoliteScraperBase, IAsyncDis
             {
                 await page.GotoAsync(url.ToString(), new PageGotoOptions
                 {
-                    WaitUntil = WaitUntilState.NetworkIdle,
+                    WaitUntil = waitUntil,
                     Timeout = 30_000,
                 }).ConfigureAwait(false);
 
