@@ -29,9 +29,14 @@ public static class EditionResolver
         ("_sle_", "sle"), ("_ve_", "ve"), ("_vault_", "vault"), ("_brk_", "brk"),
     };
 
+    // Hyphen/no-space forms catch slugified filenames; the spaced forms catch
+    // real anchor text ("Godzilla Feature Matrix", "Godzilla Rule Sheet"), which
+    // is the only group signal for ~35 game-page matrices/rulesheets (design §87).
+    // Spaced markers require the full two-word phrase, so they stay conservative.
     private static readonly string[] GroupLevelMarkers =
     {
-        "feature-matrix", "featurematrix", "rulesheet", "rule-sheet",
+        "feature-matrix", "featurematrix", "feature matrix",
+        "rulesheet", "rule-sheet", "rule sheet",
     };
 
     /// <summary>
@@ -68,14 +73,16 @@ public static class EditionResolver
     /// family. Page-1 text (when present) is authoritative and overrides the
     /// filename token; group-level docs fan out to all bases; a candidate set
     /// with no edition signal at all is left unresolved (the caller keeps the
-    /// document NotInCatalog for admin review rather than guess).
+    /// document NotInCatalog for admin review rather than guess). The optional
+    /// discovery link text lets a group-level doc whose marker lives only in the
+    /// anchor ("Godzilla Feature Matrix") still fan out franchise-wide.
     /// </summary>
     public static EditionResolution Resolve(
-        string filename, string? page1Text, IReadOnlyList<Machine> candidates)
+        string filename, string? page1Text, IReadOnlyList<Machine> candidates, string? linkText = null)
     {
         if (candidates.Count == 0) return EditionResolution.Unresolved();
         if (candidates.Count == 1) return EditionResolution.ForSingleEdition(candidates[0]);
-        if (IsGroupLevelDoc(filename)) return EditionResolution.FanOut(candidates);
+        if (IsGroupLevelDoc(filename, linkText)) return EditionResolution.FanOut(candidates);
 
         // Page-1 text is authoritative; fall back to the filename token.
         var token = ExtractEditionFromPageText(page1Text) ?? ExtractEditionToken(filename);

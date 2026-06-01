@@ -562,7 +562,8 @@ public sealed class DocumentLinker : IDocumentLinker
         // isn't available at Tier 2; the page tiers add page-1 authority later.
         if (bestMatches.Count > 1 && IsEditionFamily(bestMatches))
         {
-            var resolution = EditionResolver.Resolve(filename, page1Text: null, bestMatches);
+            var resolution = EditionResolver.Resolve(
+                filename, page1Text: null, bestMatches, raw.Source.LinkText);
             if (resolution.IsGroupFanOut)
             {
                 _logger.LogDebug("Tier2 filename_edition_group: {DocumentId} → {Count} group bases for '{Filename}'.",
@@ -688,7 +689,7 @@ public sealed class DocumentLinker : IDocumentLinker
             {
                 var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
                 var resolution = EditionResolver.Resolve(
-                    filename, extracted.Pages[pageIndex].Text, matchedMachines);
+                    filename, extracted.Pages[pageIndex].Text, matchedMachines, raw.Source.LinkText);
                 if (resolution.IsGroupFanOut)
                 {
                     _logger.LogDebug(

@@ -132,6 +132,41 @@ public sealed class EditionResolverTests
         Assert.Equal("GweeP-MW95j", result.Machines[0].Id);
     }
 
+    // ── Group marker carried only by link_text (design §87) ──────────────
+    // ~35 game-page matrices/rulesheets carry no edition token in the
+    // filename/URL — they are identifiable only by their anchor text.
+
+    [Fact]
+    public void Resolve_GroupMarkerInLinkTextOnly_FansOutToAll()
+    {
+        // Filename has NO marker/token; the group signal is only in the anchor text.
+        var r = EditionResolver.Resolve(
+            "godzilla_doc_3kjh.pdf", page1Text: null, [Pro, PremLe], linkText: "Godzilla Rulesheet");
+
+        Assert.True(r.IsGroupFanOut);
+        Assert.Equal(2, r.Machines.Count);
+    }
+
+    [Theory]
+    [InlineData("Godzilla Feature Matrix")]   // spaced form — real anchor text
+    [InlineData("Godzilla Rule Sheet")]       // spaced form — real anchor text
+    public void Resolve_SpacedGroupMarkerInLinkText_FansOutToAll(string linkText)
+    {
+        var r = EditionResolver.Resolve(
+            "godzilla_doc_3kjh.pdf", page1Text: null, [Pro, PremLe], linkText: linkText);
+
+        Assert.True(r.IsGroupFanOut);
+        Assert.Equal(2, r.Machines.Count);
+    }
+
+    [Theory]
+    [InlineData("godzilla_doc.pdf", "Godzilla Feature Matrix", true)]   // spaced anchor text
+    [InlineData("godzilla_doc.pdf", "Godzilla Rule Sheet", true)]       // spaced anchor text
+    public void IsGroupLevelDoc_SpacedMarkerInLinkText(string filename, string linkText, bool expected)
+    {
+        Assert.Equal(expected, EditionResolver.IsGroupLevelDoc(filename, linkText));
+    }
+
     // ── EditionResolution.Scope (resolution outcome → structural scope) ───
 
     [Fact]
