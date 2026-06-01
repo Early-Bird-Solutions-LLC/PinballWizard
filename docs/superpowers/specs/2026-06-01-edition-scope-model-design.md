@@ -164,10 +164,12 @@ Example rewritten rows:
 
 ---
 
-## 8. Open decisions for Jim
+## 8. Decisions — RESOLVED (Jim, 2026-06-01)
 
-1. **Franchise-wide = fan-out (recommended) vs. franchise-link primitive?** Fan-out: zero retriever change, edition-query-gets-franchise-docs free, modest duplication. The primitive is purer but adds an index field + filter + merge.
-2. **R1 default base when no edition named + answer is franchise-level — which base id is the citation?** Either Godzilla base is factually correct. Recommend **Pro (`GweeP-MW95j`)** as representative (most-common). Eval rows accept either.
-3. **Confirm the prior `GweeP-Ml9pZ`-for-everything eval was accidental collapse to rip out** (vs. a deliberate canonical choice).
-4. **Service bulletins (85 docs, unlinked)** — in scope or follow-up? Recommend **follow-up**; this pass handles manuals/flyers/matrices/rulesheets.
-5. **`edition-subset` transparency** — should the Wizard volunteer "this manual covers both Premium and LE" (via the `edition` field value)? Recommend yes.
+1. **Franchise-wide = fan-out.** ✅ Fan-out + per-chunk `edition_scope` tag; no franchise-link primitive.
+2. **R1 default base → NO DEFAULT, always answer all.** ✅ Even when either base is factually correct, the Wizard names all editions rather than silently picking one. R1 and R2 converge toward "always edition-transparent" — no canonical/default base is ever silently chosen. Eval rows accept any base AND reward the all-editions-attributed answer.
+3. **Prior `GweeP-Ml9pZ`-for-everything eval** ✅ confirmed accidental collapse — rip it out, rework edition-aware (§6).
+4. **Service bulletins (85 docs, unlinked)** ✅ FOLLOW-UP ticket. This pass handles manuals/flyers/matrices/rulesheets.
+5. **`edition-subset` transparency** ✅ yes — surface "covers Premium and LE" via the `edition` field value.
+
+**Implication of #2 for R1:** the spec's §5 R1 rule is refined — answer franchise-level questions *attributed to all editions* (e.g. "This applies to both Pro and Premium/LE: …"), citing a franchise-wide source where one exists, rather than choosing a representative base. The eval's R1 rows (`ev-rules-0010`) accept either base id but the answer text should make the all-editions applicability explicit.
