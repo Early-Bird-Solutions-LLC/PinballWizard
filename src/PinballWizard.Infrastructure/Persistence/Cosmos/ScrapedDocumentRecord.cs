@@ -70,6 +70,10 @@ internal sealed class ScrapedDocumentRecord : IEntity
         PinballWizard.Application.Linking.EditionScope.SingleEdition => "single-edition",
         PinballWizard.Application.Linking.EditionScope.EditionSubset => "edition-subset",
         PinballWizard.Application.Linking.EditionScope.FranchiseWide => "franchise-wide",
-        _ => "franchise-wide",
+        // No catch-all default: a new EditionScope value must get an explicit wire
+        // mapping here. Defaulting an unmapped scope to "franchise-wide" would
+        // silently persist the most over-broad (and most dangerous) label — the
+        // exact over-citation failure AB#259 exists to prevent — and pass every test.
+        _ => throw new ArgumentOutOfRangeException(nameof(scope), scope, "Unmapped EditionScope has no wire form."),
     };
 }
