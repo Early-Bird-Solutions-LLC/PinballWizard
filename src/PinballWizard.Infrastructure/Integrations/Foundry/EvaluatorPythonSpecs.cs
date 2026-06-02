@@ -101,12 +101,20 @@ def evaluate(answer_text, predicted, required_editions, **_):
     // R3 (AB#259): disclose the named edition's gap + cite a substitute.
     // The named-edition check is WHOLE WORD (\b…\b — mirrors
     // EditionLabelMatcher; naked substring would match "LE" inside
-    // "available", letting the disclosure phrase defeat the guard).
+    // "available", letting the disclosure phrase defeat the guard) AND splits
+    // a slash-separated label ("Premium/LE") into sub-tokens first, matching
+    // if ANY sub-token is named — identical to EditionLabelMatcher.AnswerNamesEdition,
+    // which both R2 and R3 use. (Without the split, a named_edition of
+    // "Premium/LE" would require the literal substring "Premium/LE".)
     // Mirrors HonestSubstitutionEvaluator. NOTE: C# throws on a blank
     // named_edition (the harness guards it upstream); the Foundry runtime
     // has no upstream guard, so this returns 0.0 — behaviorally equivalent.
     public const string HonestSubstitutionPython = """
 import re
+
+def _names_edition(text, edition):
+    tokens = [t.strip() for t in (edition or "").split("/") if t.strip()]
+    return any(re.search(r"\b" + re.escape(t) + r"\b", text, re.IGNORECASE) for t in tokens)
 
 def evaluate(answer_text, predicted, named_edition, **_):
     cites = list(predicted or [])
@@ -116,7 +124,7 @@ def evaluate(answer_text, predicted, named_edition, **_):
     if not edition:
         return {"score": 0.0}
     text = answer_text or ""
-    if not re.search(r"\b" + re.escape(edition) + r"\b", text, re.IGNORECASE):
+    if not _names_edition(text, edition):
         return {"score": 0.0}
     phrases = ["don't have", "dont have", "do not have", "isn't available",
                "isnt available", "is not available", "aren't available",
