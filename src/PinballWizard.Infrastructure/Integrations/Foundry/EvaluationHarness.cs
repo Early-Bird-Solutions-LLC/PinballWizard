@@ -56,6 +56,12 @@ public sealed class EvaluationHarness : IEvaluationHarness
         WriteIndented = true,
     };
 
+    // Edition-aware expected_outcome discriminators (AB#259,
+    // edition-scope-model-design §6). Kept in sync with EvalQuestion's
+    // ExpectedOutcome default ("grounded").
+    private const string OutcomeAnsweredAllEditions = "answered_all_editions";
+    private const string OutcomeHonestSubstitution = "honest_substitution";
+
     private readonly IAiRouter _router;
     private readonly IAgentPromptProvider _promptProvider;
     private readonly CitationPrecisionEvaluator _precisionEvaluator;
@@ -63,6 +69,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
     private readonly CitationCoverageEvaluator _coverageEvaluator;
     private readonly SubagentAccuracyEvaluator _subagentEvaluator;
     private readonly RefusalCorrectnessEvaluator _refusalEvaluator;
+    private readonly AnsweredAllEditionsEvaluator _answeredAllEditionsEvaluator;
+    private readonly HonestSubstitutionEvaluator _honestSubstitutionEvaluator;
     private readonly EvalHarnessOptions _evalOptions;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EvaluationHarness> _logger;
@@ -75,6 +83,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         CitationCoverageEvaluator coverageEvaluator,
         SubagentAccuracyEvaluator subagentEvaluator,
         RefusalCorrectnessEvaluator refusalEvaluator,
+        AnsweredAllEditionsEvaluator answeredAllEditionsEvaluator,
+        HonestSubstitutionEvaluator honestSubstitutionEvaluator,
         IOptions<EvalHarnessOptions> evalOptions,
         ILogger<EvaluationHarness> logger,
         TimeProvider? timeProvider = null)
@@ -86,6 +96,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         ArgumentNullException.ThrowIfNull(coverageEvaluator);
         ArgumentNullException.ThrowIfNull(subagentEvaluator);
         ArgumentNullException.ThrowIfNull(refusalEvaluator);
+        ArgumentNullException.ThrowIfNull(answeredAllEditionsEvaluator);
+        ArgumentNullException.ThrowIfNull(honestSubstitutionEvaluator);
         ArgumentNullException.ThrowIfNull(evalOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -96,6 +108,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         _coverageEvaluator = coverageEvaluator;
         _subagentEvaluator = subagentEvaluator;
         _refusalEvaluator = refusalEvaluator;
+        _answeredAllEditionsEvaluator = answeredAllEditionsEvaluator;
+        _honestSubstitutionEvaluator = honestSubstitutionEvaluator;
         _evalOptions = evalOptions.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -247,12 +261,54 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var predictedRefusal = answer?.IsRefusal ?? false;
         var answerText = answer?.Text ?? string.Empty;
 
+        // Edition-aware citation scoring (AB#259): when the row supplies
+        // acceptable_citation_sets, score against the most-favorable set
+        // (any-of). Otherwise fall back to the single expected_citation_set
+        // (back-compat with pre-edition rows).
+        double citationPrecision;
+        double citationRecall;
+        if (question.AcceptableCitationSets is { Count: > 0 } acceptableSets)
+        {
+            citationPrecision = _precisionEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
+            citationRecall = _recallEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
+        }
+        else
+        {
+            citationPrecision = _precisionEvaluator.Compute(predictedCitations, question.ExpectedCitationSet);
+            citationRecall = _recallEvaluator.Compute(predictedCitations, question.ExpectedCitationSet);
+        }
+
+        // R2 / R3 outcome evaluators only apply to rows that declare the
+        // matching expected_outcome; null elsewhere (the metric is
+        // undefined and excluded from that row's aggregate denominator).
+        double? answeredAllEditions = null;
+        double? honestSubstitution = null;
+        if (string.Equals(question.ExpectedOutcome, OutcomeAnsweredAllEditions, StringComparison.OrdinalIgnoreCase))
+        {
+            answeredAllEditions = _answeredAllEditionsEvaluator.Compute(
+                answerText, predictedCitations, question.RequiredEditions ?? []);
+        }
+        else if (string.Equals(question.ExpectedOutcome, OutcomeHonestSubstitution, StringComparison.OrdinalIgnoreCase))
+        {
+            // R3 needs the named edition. Prefer the first required edition
+            // if the curator supplied one; otherwise the row is misconfigured
+            // and scores 0 (the named-edition gap can't be checked).
+            var namedEdition = question.RequiredEditions is { Count: > 0 } reqs
+                ? reqs[0]
+                : null;
+            honestSubstitution = string.IsNullOrWhiteSpace(namedEdition)
+                ? 0.0
+                : _honestSubstitutionEvaluator.Compute(answerText, predictedCitations, namedEdition);
+        }
+
         var scores = new EvalScores(
-            CitationPrecision: _precisionEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
-            CitationRecall: _recallEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
+            CitationPrecision: citationPrecision,
+            CitationRecall: citationRecall,
             CitationCoverage: _coverageEvaluator.Compute(answerText, predictedCitations),
             SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent),
-            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal));
+            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal),
+            AnsweredAllEditions: answeredAllEditions,
+            HonestSubstitution: honestSubstitution);
 
         return new EvalQuestionResult(
             Id: question.Id,
@@ -320,6 +376,14 @@ public sealed class EvaluationHarness : IEvaluationHarness
         double refusalSum = 0;
         var errorCount = 0;
 
+        // R2 / R3 means are computed only over rows that exercise the
+        // outcome (the score is null elsewhere) so the signal isn't
+        // diluted by the mostly-grounded eval set.
+        double answeredAllEditionsSum = 0;
+        var answeredAllEditionsCount = 0;
+        double honestSubstitutionSum = 0;
+        var honestSubstitutionCount = 0;
+
         foreach (var r in results)
         {
             precisionSum += r.Scores.CitationPrecision;
@@ -327,6 +391,16 @@ public sealed class EvaluationHarness : IEvaluationHarness
             coverageSum += r.Scores.CitationCoverage;
             subagentSum += r.Scores.SubagentAccuracy;
             refusalSum += r.Scores.RefusalCorrectness;
+            if (r.Scores.AnsweredAllEditions is { } aae)
+            {
+                answeredAllEditionsSum += aae;
+                answeredAllEditionsCount++;
+            }
+            if (r.Scores.HonestSubstitution is { } hs)
+            {
+                honestSubstitutionSum += hs;
+                honestSubstitutionCount++;
+            }
             if (!string.IsNullOrEmpty(r.Error))
             {
                 errorCount++;
@@ -341,7 +415,15 @@ public sealed class EvaluationHarness : IEvaluationHarness
             CitationRecallMean: recallSum / n,
             CitationCoverageMean: coverageSum / n,
             SubagentAccuracyMean: subagentSum / n,
-            RefusalCorrectnessMean: refusalSum / n);
+            RefusalCorrectnessMean: refusalSum / n,
+            AnsweredAllEditionsMean: answeredAllEditionsCount > 0
+                ? answeredAllEditionsSum / answeredAllEditionsCount
+                : null,
+            AnsweredAllEditionsCount: answeredAllEditionsCount,
+            HonestSubstitutionMean: honestSubstitutionCount > 0
+                ? honestSubstitutionSum / honestSubstitutionCount
+                : null,
+            HonestSubstitutionCount: honestSubstitutionCount);
     }
 
     private string BuildResultsPath(DateTimeOffset startedAt)

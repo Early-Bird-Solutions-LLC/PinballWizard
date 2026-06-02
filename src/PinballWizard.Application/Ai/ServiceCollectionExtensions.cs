@@ -73,6 +73,13 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<SubagentAccuracyEvaluator>();
         services.TryAddSingleton<RefusalCorrectnessEvaluator>();
 
+        // Edition-aware evaluators (AB#259, edition-scope-model-design §6).
+        // R2 (answer differs by edition → one attributed response) and R3
+        // (named edition absent → honest substitution). Same pure-singleton
+        // shape as the four above.
+        services.TryAddSingleton<AnsweredAllEditionsEvaluator>();
+        services.TryAddSingleton<HonestSubstitutionEvaluator>();
+
         return services;
     }
 }

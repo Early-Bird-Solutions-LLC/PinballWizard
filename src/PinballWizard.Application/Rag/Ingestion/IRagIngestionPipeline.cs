@@ -60,7 +60,14 @@ public sealed record ScrapedDocumentChange(
     // Nullable because legacy Cosmos documents written before PR-C3 may not
     // carry this field; the indexer and retriever propagate null gracefully.
     DateTimeOffset? LastScrapedUtc = null,
-    string? Edition = null);
+    // Free-text edition label and structural edition scope from the
+    // scraped_documents provenance record (Task 6, AB#259). Threaded to
+    // the AI Search index as `edition` / `edition_scope` so each chunk
+    // self-declares its scope. EditionScope is the hyphenated wire form
+    // (single-edition / edition-subset / franchise-wide) the scraper
+    // persisted. Both nullable — legacy / unresolved documents carry none.
+    string? Edition = null,
+    string? EditionScope = null);
 
 // Possible outcomes of one pipeline invocation. Surfaced via telemetry
 // (`pinwiz.rag.changefeed_short_circuit_total{reason}` and

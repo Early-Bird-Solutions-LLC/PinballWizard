@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
 
@@ -48,6 +49,9 @@ internal sealed class CosmosScrapedDocumentRepository
             LastDownloadedAt = record.Timeline?.LastDownloadedAt is { } lda
                 ? new DateTimeOffset(lda, TimeSpan.Zero)
                 : null,
+            // The catalog-seeder path has no per-document edition resolution;
+            // a seeded document applies to its whole machine → franchise-wide.
+            EditionScope = ScrapedDocumentRecord.ToWire(EditionScope.FranchiseWide),
         };
 
         await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
@@ -59,6 +63,7 @@ internal sealed class CosmosScrapedDocumentRepository
         string machineTitle,
         string manufacturer,
         string? edition,
+        EditionScope editionScope,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(raw);
@@ -83,6 +88,7 @@ internal sealed class CosmosScrapedDocumentRepository
                 ? new DateTimeOffset(lda, TimeSpan.Zero)
                 : null,
             Edition = edition,
+            EditionScope = ScrapedDocumentRecord.ToWire(editionScope),
         };
 
         await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);

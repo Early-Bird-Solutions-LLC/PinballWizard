@@ -42,6 +42,27 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_ThreadsEditionAndEditionScopeIntoChunkRequest()
+    {
+        // Task 6 (AB#259): the read-side projection (RagSourceDocument) must
+        // carry edition + edition_scope all the way through the bridge and
+        // pipeline into the ChunkRequest the indexer receives — that is what
+        // lets each indexed chunk self-declare its edition scope.
+        var ctx = new TestContext();
+        ctx.SeedExtractionAndChunking();
+
+        var change = NewChange(
+            documentId: "doc_x", contentHash: "hash-x",
+            edition: "Pro", editionScope: "single-edition");
+
+        await ctx.Handler.HandleAsync(change, CancellationToken.None);
+
+        var call = Assert.Single(ctx.Indexer.Calls);
+        Assert.Equal("Pro", call.Edition);
+        Assert.Equal("single-edition", call.EditionScope);
+    }
+
+    [Fact]
     public async Task HandleAsync_HashUnchanged_FetchesBytesButPipelineStillShortCircuits()
     {
         // The pipeline takes the stream as a parameter, so the handler
@@ -96,7 +117,9 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
     private static RagSourceDocument NewChange(
         string documentId = "doc_default",
         string machineId = TestMachineId,
-        string contentHash = "hash-default") => new()
+        string contentHash = "hash-default",
+        string? edition = null,
+        string? editionScope = null) => new()
     {
         Id = documentId,
         DocumentId = documentId,
@@ -106,6 +129,8 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
         Manufacturer = "Stern Pinball",
         DocumentType = "Manual",
         ContentHash = contentHash,
+        Edition = edition,
+        EditionScope = editionScope,
     };
 
     private sealed class TestContext

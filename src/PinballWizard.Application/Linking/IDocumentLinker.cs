@@ -10,6 +10,13 @@ public sealed record LinkingResult
     public IReadOnlyList<string> LinkedMachineIds { get; init; }
     public string? FailureReason { get; init; }
 
+    // Structural edition scope stamped onto each fanned scraped_documents row.
+    // Only the edition-resolving tiers set this from the EditionResolver; every
+    // other link path (override, single xref, single-slug filename/page match)
+    // defaults to FranchiseWide — a document linked to a single non-family
+    // machine applies to that whole machine.
+    public EditionScope EditionScope { get; init; } = EditionScope.FranchiseWide;
+
     public LinkingResult(
         string DocumentId,
         LinkStatus FinalStatus,

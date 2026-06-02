@@ -19,6 +19,22 @@ public static class EvalQuestionParser
         AllowTrailingCommas = false,
     };
 
+    // Valid expected_outcome values (AB#259). A curator typo here would
+    // otherwise fall through the harness's outcome dispatch, silently
+    // dropping the R2/R3 score (null → excluded from the aggregate
+    // denominator) with no error — exactly the failure this set guards.
+    private const string OutcomeGrounded = "grounded";
+    private const string OutcomeAnsweredAllEditions = "answered_all_editions";
+    private const string OutcomeHonestSubstitution = "honest_substitution";
+
+    private static readonly HashSet<string> ValidExpectedOutcomes =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            OutcomeGrounded,
+            OutcomeAnsweredAllEditions,
+            OutcomeHonestSubstitution,
+        };
+
     public static IReadOnlyList<EvalQuestion> ParseFile(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -97,6 +113,34 @@ public static class EvalQuestionParser
             {
                 throw new InvalidDataException(
                     $"{sourceLabel} line {lineNumber}: duplicate id '{question.Id}'.");
+            }
+
+            // Edition-aware invariants (AB#259). expected_outcome defaults
+            // to "grounded" in the record, so an absent field is fine; a
+            // PRESENT-but-typo'd value must fail loudly rather than silently
+            // skipping the R2/R3 evaluator.
+            if (!ValidExpectedOutcomes.Contains(question.ExpectedOutcome))
+            {
+                throw new InvalidDataException(
+                    $"{sourceLabel} line {lineNumber} ('{question.Id}') has invalid expected_outcome " +
+                    $"'{question.ExpectedOutcome}'. Valid values: {OutcomeGrounded}, {OutcomeAnsweredAllEditions}, {OutcomeHonestSubstitution}.");
+            }
+
+            if (string.Equals(question.ExpectedOutcome, OutcomeAnsweredAllEditions, StringComparison.OrdinalIgnoreCase)
+                && (question.RequiredEditions is null || question.RequiredEditions.Count == 0))
+            {
+                throw new InvalidDataException(
+                    $"{sourceLabel} line {lineNumber} ('{question.Id}') has expected_outcome '{OutcomeAnsweredAllEditions}' " +
+                    "but no required_editions; the R2 evaluator has nothing to attribute.");
+            }
+
+            if (string.Equals(question.ExpectedOutcome, OutcomeHonestSubstitution, StringComparison.OrdinalIgnoreCase)
+                && (question.RequiredEditions is null || question.RequiredEditions.Count == 0
+                    || string.IsNullOrWhiteSpace(question.RequiredEditions[0])))
+            {
+                throw new InvalidDataException(
+                    $"{sourceLabel} line {lineNumber} ('{question.Id}') has expected_outcome '{OutcomeHonestSubstitution}' " +
+                    "but no required_editions[0] naming the absent edition the disclosure must reference.");
             }
 
             // ExpectedCitationSet is required at the schema level, but

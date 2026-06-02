@@ -22,6 +22,15 @@ public interface IRawDocumentRepository
         IReadOnlyCollection<LinkStatus> statuses,
         CancellationToken cancellationToken);
 
+    // Stream every raw record (all statuses) — used by the document downloader,
+    // which must consider documents regardless of their linking state.
+    IAsyncEnumerable<RawDocumentRecord> StreamAllAsync(CancellationToken cancellationToken);
+
+    // Persist downloaded-file metadata on an existing record. Provenance-
+    // preserving: only the File field is replaced; Source / linker metadata
+    // are untouched. Throws if the document does not exist.
+    Task UpdateFileAsync(string documentId, DownloadedFileInfo file, CancellationToken cancellationToken);
+
     // Set link_status and linker metadata on an existing record.
     Task UpdateLinkStatusAsync(
         string documentId,

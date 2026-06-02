@@ -158,6 +158,17 @@ public sealed class OpdbSyncService : IOpdbSyncService
             IReadOnlyDictionary<string, string?> groupTitleCacheReadOnly = groupTitleCache;
             var titleLookupQueue = new ConcurrentBag<(string MachineId, string PartitionKey, string? PriorTitle, string NewTitle, DateTimeOffset Now)>();
 
+            // Edition-qualified title-lookup rows (AB#259, ADR-0032) are written in a
+            // dedicated phase AFTER pass-2, not here in pass-1's drain. Reason: a base's
+            // full EditionTokens set is only complete once pass-2 has folded its alias
+            // edition names (e.g. GweeP-Ml9pZ's "70th" arrives from the "70th Anniversary"
+            // alias, not the "Godzilla (Premium/LE)" label). Writing in pass-1's phase (c)
+            // would silently drop alias-derived tokens. We accumulate every base machine
+            // that flows through an upsert path (keyed by partitionKey/id, last-write-wins
+            // so the post-pass-2 reference with the complete token set wins) and write
+            // their qualified rows in phase (d). The bare-title rows stay in phase (c).
+            var editionTokenBases = new ConcurrentDictionary<string, Machine>(StringComparer.Ordinal);
+
             await Parallel.ForEachAsync(
                 baseMachines,
                 new ParallelOptions { MaxDegreeOfParallelism = _cosmosWriteConcurrency, CancellationToken = cancellationToken },
@@ -174,6 +185,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             await _machines.UpsertAsync(mapped, ct).ConfigureAwait(false);
                         }
                         titleLookupQueue.Add((mapped.Id, mapped.PartitionKey, null, mapped.Title, now));
+                        editionTokenBases[$"{mapped.PartitionKey}/{mapped.Id}"] = mapped;
                         Interlocked.Increment(ref inserted);
                     }
                     else
@@ -188,6 +200,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             await _machines.UpsertAsync(existing, ct).ConfigureAwait(false);
                         }
                         titleLookupQueue.Add((existing.Id, existing.PartitionKey, priorTitle, existing.Title, now));
+                        editionTokenBases[$"{existing.PartitionKey}/{existing.Id}"] = existing;
                         Interlocked.Increment(ref updated);
                     }
                 });
@@ -277,10 +290,27 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             && string.Equals(e.Name, edition.Name, StringComparison.OrdinalIgnoreCase)));
                     baseMachine.Editions.Add(edition);
 
+                    // Fold the alias edition's name into the base's EditionTokens
+                    // so the linker can match a per-edition document (e.g. _70th_)
+                    // to this base. Additive + de-duped (case-insensitive).
+                    foreach (var token in OpdbMachineMapper.DeriveEditionTokens(edition.Name))
+                    {
+                        if (!baseMachine.EditionTokens.Contains(token, StringComparer.OrdinalIgnoreCase))
+                        {
+                            baseMachine.EditionTokens.Add(token);
+                        }
+                    }
+
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(baseMachine, cancellationToken).ConfigureAwait(false);
                     }
+
+                    // Record the post-fold base so phase (d) writes its edition-qualified
+                    // title-lookup rows with the COMPLETE token set (label-derived +
+                    // alias-folded, e.g. "70th"). Overwrites the pass-1 reference for the
+                    // same id — the pass-2 object carries the folded tokens.
+                    editionTokenBases[$"{baseMachine.PartitionKey}/{baseMachine.Id}"] = baseMachine;
                     aliasesAppended++;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -303,6 +333,44 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     _logger.LogInformation(
                         "OPDB sync alias progress: processed {Processed}/{Total} aliases ({Appended} appended, {Orphaned} orphaned, {Skipped} skipped).",
                         aliasIndex, aliasBuffer.Count, aliasesAppended, aliasesOrphaned, skipped);
+                }
+            }
+
+            // ── Phase (d) — edition-qualified title-lookup rows ─────────────
+            // Runs AFTER pass-2 so each base's EditionTokens is complete
+            // (label-derived + alias-folded). Writes one lookup row per token
+            // keyed NormalizeTitle("{Title} {token}") so a future
+            // getMachineByTitle("Godzilla Premium") resolves to the correct
+            // base (AB#259, ADR-0032). priorTitle is null — these rows are
+            // purely additive and never participate in rename cleanup; the
+            // bare-title entry (phase c) owns rename handling. Sequential for
+            // the same lost-update-race protection as phase (c). Guarded by
+            // !isDryRun so a projection run touches no lookup state.
+            if (!isDryRun)
+            {
+                var editionLookupNow = _timeProvider.GetUtcNow();
+                foreach (var baseMachine in editionTokenBases.Values)
+                {
+                    if (string.IsNullOrWhiteSpace(baseMachine.Title))
+                    {
+                        continue;
+                    }
+
+                    foreach (var token in baseMachine.EditionTokens)
+                    {
+                        if (string.IsNullOrWhiteSpace(token))
+                        {
+                            continue;
+                        }
+
+                        await UpdateTitleLookupAsync(
+                            baseMachine.Id,
+                            baseMachine.PartitionKey,
+                            priorTitle: null,
+                            newTitle: $"{baseMachine.Title} {token}",
+                            editionLookupNow,
+                            cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
         }

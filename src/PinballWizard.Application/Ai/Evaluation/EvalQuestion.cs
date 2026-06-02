@@ -17,10 +17,47 @@ namespace PinballWizard.Application.Ai.Evaluation;
 //     "acceptable_refusal": false,
 //     "notes": "Optional curator note explaining the choice"
 //   }
+//
+// Edition-aware extension (AB#259, edition-scope-model-design §6). The
+// single-canonical-id model above REWARDED collapsing every Godzilla
+// edition to one id — the exact failure the edition-aware linker fixes.
+// The new fields let a curator encode the R1/R2/R3 ground truth:
+//
+//   - AcceptableCitationSets: an ANY-OF list of acceptable citation
+//     sets. A predicted set that matches (per the citation evaluator's
+//     set semantics) ANY listed set scores correct. Models R1's "either
+//     base is fine" and edition-subset's "these two bases together".
+//     When present it supersedes ExpectedCitationSet for any-of matching;
+//     ExpectedCitationSet is retained for back-compat (old rows) and as
+//     the recall denominator when AcceptableCitationSets is absent.
+//   - FranchiseWideOk: when true, a franchise-wide document cited for any
+//     edition is acceptable (a rulesheet/feature-matrix answers the same
+//     for all editions). LIMITATION (see CitationPrecision/RecallEvaluator):
+//     today Citation carries no edition_scope, so the evaluator cannot
+//     verify a cited chunk IS franchise-wide; the flag is plumbed as the
+//     row-level intent and consumed where reachable. The per-citation
+//     scope check unlocks when Citation gains edition_scope (design §4).
+//   - ExpectedOutcome: the curator's intended answer SHAPE —
+//       "grounded"               (default; cite the right base[s])
+//       "answered_all_editions"  (R2; one response attributing each edition)
+//       "honest_substitution"    (R3; disclose the named edition is absent,
+//                                 then cite the substitute)
+//   - RequiredEditions: for ExpectedOutcome="answered_all_editions", the
+//     edition labels (e.g. ["Pro","Premium/LE"]) that must each appear
+//     attributed in the answer text.
 public sealed record EvalQuestion(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("question")] string Question,
     [property: JsonPropertyName("expected_sub_agent")] string ExpectedSubAgent,
     [property: JsonPropertyName("expected_citation_set")] IReadOnlyList<string> ExpectedCitationSet,
     [property: JsonPropertyName("acceptable_refusal")] bool AcceptableRefusal,
-    [property: JsonPropertyName("notes")] string? Notes = null);
+    [property: JsonPropertyName("notes")] string? Notes = null,
+    [property: JsonPropertyName("acceptable_citation_sets")] IReadOnlyList<IReadOnlyList<string>>? AcceptableCitationSets = null,
+    // NOTE: FranchiseWideOk is intentionally unconsumed by the runtime
+    // scorer until Citation gains edition_scope (design §4). It is the
+    // row-level curator intent and is pinned by a parser round-trip test
+    // (EvalQuestionParserTests.Parse_EditionAwareFields_RoundTrip) so it
+    // is not mistaken for dead code and removed.
+    [property: JsonPropertyName("franchise_wide_ok")] bool FranchiseWideOk = false,
+    [property: JsonPropertyName("expected_outcome")] string ExpectedOutcome = "grounded",
+    [property: JsonPropertyName("required_editions")] IReadOnlyList<string>? RequiredEditions = null);

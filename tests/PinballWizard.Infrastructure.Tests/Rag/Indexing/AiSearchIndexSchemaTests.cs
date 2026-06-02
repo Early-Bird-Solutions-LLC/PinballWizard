@@ -66,6 +66,30 @@ public sealed class AiSearchIndexSchemaTests
         Assert.Contains("content_embedding", fieldNames);
         // PR-C3: freshness field added to ADR-0021 schema table.
         Assert.Contains("last_scraped_utc", fieldNames);
+        // Task 6 (AB#259): edition + edition_scope threaded per chunk.
+        Assert.Contains("edition", fieldNames);
+        Assert.Contains("edition_scope", fieldNames);
+    }
+
+    [Fact]
+    public void Build_EditionAndEditionScopeAreFilterableFacetableStrings()
+    {
+        // Task 6 (AB#259): edition (free-text label e.g. "Pro") and
+        // edition_scope (single-edition / edition-subset / franchise-wide)
+        // are String fields, filterable + facetable so a future retriever
+        // query can filter chunks by edition scope. Mirrors the machine_id
+        // field's filter/facet flags.
+        var index = Build();
+
+        var edition = index.Fields.Single(f => f.Name == "edition");
+        Assert.Equal(SearchFieldDataType.String, edition.Type);
+        Assert.True(edition.IsFilterable);
+        Assert.True(edition.IsFacetable);
+
+        var editionScope = index.Fields.Single(f => f.Name == "edition_scope");
+        Assert.Equal(SearchFieldDataType.String, editionScope.Type);
+        Assert.True(editionScope.IsFilterable);
+        Assert.True(editionScope.IsFacetable);
     }
 
     [Fact]

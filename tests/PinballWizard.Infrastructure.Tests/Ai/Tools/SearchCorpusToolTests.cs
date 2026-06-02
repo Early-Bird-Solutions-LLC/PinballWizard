@@ -44,7 +44,9 @@ public sealed class SearchCorpusToolTests
             SectionHeading: "Foo Mode",
             Content: "Foo Mode rules text…",
             Score: 0.85,
-            LastScrapedUtc: SampleLastScraped);
+            LastScrapedUtc: SampleLastScraped,
+            Edition: "Premium",
+            EditionScope: "single-edition");
 
     [Fact]
     public async Task SearchCorpusAsync_WhitespaceQuery_ReturnsEmptyWithoutCallingRetriever()
@@ -210,6 +212,10 @@ public sealed class SearchCorpusToolTests
         Assert.Equal(chunk.Score, hit.Score);
         // PR-C3: LastScrapedUtc is threaded through [JsonIgnore] — visible to C# code.
         Assert.Equal(chunk.LastScrapedUtc, hit.LastScrapedUtc);
+        // Task 7 (AB#259): Edition + EditionScope are model-VISIBLE — they
+        // flow through to the hit so the model can decide R1/R2/R3.
+        Assert.Equal(chunk.Edition, hit.Edition);
+        Assert.Equal(chunk.EditionScope, hit.EditionScope);
     }
 
     [Fact]
