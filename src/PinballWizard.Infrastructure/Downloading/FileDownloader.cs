@@ -5,39 +5,61 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
+using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Downloading;
 
 /// <summary>
 /// Downloads files from manufacturer sites with conditional request support
 /// (ETag/Last-Modified), SHA-256 hashing, and streaming to disk.
+/// <para>
+/// Polite-by-construction: every download routes through the shared
+/// <see cref="IPolitenessGate"/> (robots.txt respect, per-origin throttle,
+/// 429 backoff) exactly as <see cref="Scraping.Polite.PoliteScraperBase.SendPolitelyAsync"/>
+/// does — this is the file-download analog of that base, since a download is
+/// just as much an outbound request to a source site as a page scrape.
+/// </para>
 /// Transient-failure retry, jitter, backoff, and concurrency limiting are
 /// owned by the resilience pipeline registered on this type's HttpClient in
 /// the CLI's DI configuration (Microsoft.Extensions.Http.Resilience). This
 /// class is the Infrastructure implementation of <see cref="IFileDownloader"/>;
-/// the pipeline is the transport layer.
+/// the pipeline is the transport layer, the gate is the politeness layer.
 /// </summary>
 public sealed class FileDownloader : IFileDownloader
 {
     private readonly HttpClient _httpClient;
+    private readonly IPolitenessGate _politeness;
     private readonly ScraperSettings _settings;
     private readonly ILogger<FileDownloader> _logger;
 
     public FileDownloader(
         HttpClient httpClient,
+        IPolitenessGate politeness,
         IOptions<ScraperSettings> settings,
         ILogger<FileDownloader> logger)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(politeness);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(logger);
         _httpClient = httpClient;
+        _politeness = politeness;
         _settings = settings.Value;
         _logger = logger;
     }
 
     /// <summary>
     /// Downloads a file if it has changed since the last download (using ETag/Last-Modified).
-    /// Retry of transient failures is performed by the resilience pipeline — by the time
-    /// SendAsync returns here, retries (if any) are already exhausted.
+    /// Routes through the <see cref="IPolitenessGate"/> (robots.txt, per-origin throttle,
+    /// 429 backoff). Retry of transient failures is performed by the resilience pipeline —
+    /// by the time SendAsync returns here, retries (if any) are already exhausted.
     /// </summary>
+    /// <remarks>
+    /// A <see cref="PolitenessException"/> (robots.txt disallow, or a 429 streak that
+    /// exceeds the configured maximum) propagates to the caller rather than being
+    /// converted to a <see cref="DownloadStatus.Failed"/> result — it is a deliberate
+    /// "stop asking this origin" signal the caller's loop must honor, not a per-file miss.
+    /// </remarks>
     public async Task<DownloadResult> DownloadAsync(
         string fileUrl,
         string localPath,
@@ -45,6 +67,13 @@ public sealed class FileDownloader : IFileDownloader
         CancellationToken cancellationToken = default)
     {
         var absolutePath = Path.Combine(_settings.DownloadsPath, localPath);
+        var uri = new Uri(fileUrl);
+
+        // Hold the politeness lease across the whole send: AcquireForRequestAsync
+        // applies the per-origin delay + robots check before the request, and
+        // disposing the lease stamps "last request time" so the next download to
+        // this origin is paced. Mirrors PoliteScraperBase.SendPolitelyAsync.
+        await using var lease = await _politeness.AcquireForRequestAsync(uri, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -59,7 +88,12 @@ public sealed class FileDownloader : IFileDownloader
             }
 
             using var response = await _httpClient.SendAsync(request,
-                HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+            // Feed the response status into the gate's 429-streak tracker (and honor
+            // any Retry-After) before we act on the status ourselves.
+            await _politeness.ReportResponseAsync(
+                uri, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken).ConfigureAwait(false);
 
             if (response.StatusCode == HttpStatusCode.NotModified)
             {

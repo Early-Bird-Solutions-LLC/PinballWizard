@@ -33,7 +33,7 @@ public sealed class DocumentDownloadServiceTests
                 Sha256 = "abc",
             });
 
-        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance, downloadsRoot: "/tmp/dl");
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
         var summary = await svc.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, summary.Downloaded);
@@ -44,13 +44,43 @@ public sealed class DocumentDownloadServiceTests
     }
 
     [Fact]
+    public async Task PassesRelativePath_NotAbsolute_ToDownloader()
+    {
+        // The IFileDownloader owns the downloads-root and combines it; the service
+        // must hand it a path RELATIVE to that root so the persisted LocalPath stays
+        // portable across environments (not a machine-absolute path baked into Cosmos).
+        var raw = MakeRaw("doc_a", "https://sternpinball.com/x/Godzilla_Pro_web.pdf", file: null);
+        StubStream(raw);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "manualspage/Godzilla_Pro_web.pdf",
+                Filename = "Godzilla_Pro_web.pdf",
+            });
+
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
+        await svc.RunAsync(CancellationToken.None);
+
+        // {sourceType}/{filename} via Path.Combine (dir separator is platform-specific),
+        // and crucially NOT rooted/absolute — Path.IsPathRooted must be false.
+        var expectedRelPath = Path.Combine("manualspage", "Godzilla_Pro_web.pdf");
+        await _downloader.Received(1).DownloadAsync(
+            raw.Source.FileUrl!,
+            Arg.Is<string>(p => p == expectedRelPath && !Path.IsPathRooted(p)),
+            Arg.Any<HttpMetadata?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Skips_AlreadyDownloaded()
     {
         var raw = MakeRaw("doc_b", "https://sternpinball.com/x/y.pdf",
             file: new DownloadedFileInfo { LocalPath = "manualspage/y.pdf", Filename = "y.pdf" });
         StubStream(raw);
 
-        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance, downloadsRoot: "/tmp/dl");
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
         var summary = await svc.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, summary.Skipped);
@@ -73,7 +103,7 @@ public sealed class DocumentDownloadServiceTests
                 ErrorMessage = "404",
             });
 
-        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance, downloadsRoot: "/tmp/dl");
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
         var summary = await svc.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, summary.Failed);

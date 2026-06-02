@@ -7,8 +7,9 @@ namespace PinballWizard.Application.Downloading;
 /// <summary>
 /// Downloads every not-yet-downloaded document in <c>scraped_documents_raw</c>
 /// so the linker's page-text tiers can read page-1 content for edition
-/// resolution. Polite (the injected <see cref="IFileDownloader"/> routes
-/// through the politeness gate and owns the read timeout), idempotent (skips
+/// resolution. Polite (the injected <see cref="IFileDownloader"/> routes every
+/// download through the shared politeness gate — robots.txt, per-origin
+/// throttle, 429 backoff — and owns the read timeout), idempotent (skips
 /// documents that already have a local file), and provenance-preserving (only
 /// the <c>File</c> field is written back).
 /// </summary>
@@ -17,22 +18,18 @@ public sealed class DocumentDownloadService
     private readonly IRawDocumentRepository _repo;
     private readonly IFileDownloader _downloader;
     private readonly ILogger<DocumentDownloadService> _logger;
-    private readonly string _downloadsRoot;
 
     public DocumentDownloadService(
         IRawDocumentRepository repo,
         IFileDownloader downloader,
-        ILogger<DocumentDownloadService> logger,
-        string downloadsRoot)
+        ILogger<DocumentDownloadService> logger)
     {
         ArgumentNullException.ThrowIfNull(repo);
         ArgumentNullException.ThrowIfNull(downloader);
         ArgumentNullException.ThrowIfNull(logger);
-        ArgumentException.ThrowIfNullOrEmpty(downloadsRoot);
         _repo = repo;
         _downloader = downloader;
         _logger = logger;
-        _downloadsRoot = downloadsRoot;
     }
 
     public async Task<DownloadSummary> RunAsync(CancellationToken cancellationToken)
@@ -48,9 +45,12 @@ public sealed class DocumentDownloadService
             var fileUrl = raw.Source.FileUrl;
             if (string.IsNullOrEmpty(fileUrl)) { skipped++; continue; }
 
+            // Pass the path RELATIVE to the downloads root — IFileDownloader owns the
+            // root and combines it (so the persisted LocalPath stays portable across
+            // environments, e.g. dev box vs ACA, rather than baking in an absolute path).
             var relPath = BuildLocalPath(raw, fileUrl);
             var result = await _downloader
-                .DownloadAsync(fileUrl, Path.Combine(_downloadsRoot, relPath), raw.Http, cancellationToken)
+                .DownloadAsync(fileUrl, relPath, raw.Http, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Status is DownloadStatus.Downloaded or DownloadStatus.NotModified)

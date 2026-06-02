@@ -7,6 +7,7 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using Xunit;
@@ -42,9 +43,10 @@ public sealed class FileDownloaderTests : IDisposable
         }
     }
 
-    private (FileDownloader downloader, StubHandler handler, ScraperSettings settings) CreateDownloader(
+    private (FileDownloader downloader, StubHandler handler, ScraperSettings settings, RecordingGate gate) CreateDownloader(
         Action<HttpRequestMessage, HttpResponseMessage>? configureResponse = null,
-        long maxFileSize = 500 * 1024 * 1024)
+        long maxFileSize = 500 * 1024 * 1024,
+        IPolitenessGate? gate = null)
     {
         var handler = new StubHandler(configureResponse);
         var httpClient = new HttpClient(handler);
@@ -53,17 +55,19 @@ public sealed class FileDownloaderTests : IDisposable
             DataPath = _tempDir,
             MaxFileSizeBytes = maxFileSize
         };
+        var recordingGate = gate as RecordingGate ?? new RecordingGate();
         var downloader = new FileDownloader(
             httpClient,
+            gate ?? recordingGate,
             Options.Create(settings),
             NullLogger<FileDownloader>.Instance);
-        return (downloader, handler, settings);
+        return (downloader, handler, settings, recordingGate);
     }
 
     [Fact]
     public async Task DownloadAsync_304NotModified_ReturnsNotModifiedAndDoesNotWriteToDisk()
     {
-        var (downloader, _, settings) = CreateDownloader((_, response) =>
+        var (downloader, _, settings, _) = CreateDownloader((_, response) =>
         {
             response.StatusCode = HttpStatusCode.NotModified;
         });
@@ -84,7 +88,7 @@ public sealed class FileDownloaderTests : IDisposable
         const string body = "hello pinball";
         var bodyBytes = Encoding.UTF8.GetBytes(body);
 
-        var (downloader, _, settings) = CreateDownloader((_, response) =>
+        var (downloader, _, settings, _) = CreateDownloader((_, response) =>
         {
             response.StatusCode = HttpStatusCode.OK;
             response.Content = new ByteArrayContent(bodyBytes);
@@ -122,7 +126,7 @@ public sealed class FileDownloaderTests : IDisposable
     public async Task DownloadAsync_WithPreviousMetadata_SendsConditionalHeaders()
     {
         HttpRequestMessage? captured = null;
-        var (downloader, _, _) = CreateDownloader((req, response) =>
+        var (downloader, _, _, _) = CreateDownloader((req, response) =>
         {
             captured = req;
             response.StatusCode = HttpStatusCode.NotModified;
@@ -149,7 +153,7 @@ public sealed class FileDownloaderTests : IDisposable
     public async Task DownloadAsync_NoPreviousMetadata_NoConditionalHeaders()
     {
         HttpRequestMessage? captured = null;
-        var (downloader, _, _) = CreateDownloader((req, response) =>
+        var (downloader, _, _, _) = CreateDownloader((req, response) =>
         {
             captured = req;
             response.StatusCode = HttpStatusCode.OK;
@@ -171,7 +175,7 @@ public sealed class FileDownloaderTests : IDisposable
     public async Task DownloadAsync_ContentLengthExceedsMax_ReturnsTooLargeAndDoesNotWrite()
     {
         // Cap below the declared content-length so the size guard trips
-        var (downloader, _, settings) = CreateDownloader((_, response) =>
+        var (downloader, _, settings, _) = CreateDownloader((_, response) =>
         {
             response.StatusCode = HttpStatusCode.OK;
             response.Content = new ByteArrayContent(new byte[10]);
@@ -195,6 +199,7 @@ public sealed class FileDownloaderTests : IDisposable
         var settings = new ScraperSettings { DataPath = _tempDir };
         var downloader = new FileDownloader(
             httpClient,
+            new RecordingGate(),
             Options.Create(settings),
             NullLogger<FileDownloader>.Instance);
 
@@ -208,9 +213,52 @@ public sealed class FileDownloaderTests : IDisposable
     }
 
     [Fact]
+    public async Task DownloadAsync_AcquiresPolitenessLease_AndReportsResponseStatus()
+    {
+        // Every download must route through the gate (robots/throttle/429) — the
+        // LOCKED polite-by-construction invariant. Assert acquire + report happen.
+        var (downloader, _, _, gate) = CreateDownloader((_, response) =>
+        {
+            response.StatusCode = HttpStatusCode.OK;
+            response.Content = new ByteArrayContent([0x01, 0x02, 0x03]);
+            response.Content.Headers.ContentLength = 3;
+        });
+
+        var result = await downloader.DownloadAsync(
+            "https://sternpinball.com/foo.pdf",
+            "manuals/foo.pdf");
+
+        Assert.Equal(DownloadStatus.Downloaded, result.Status);
+        Assert.Equal(new Uri("https://sternpinball.com/foo.pdf"), Assert.Single(gate.Acquired));
+        var (reportedUrl, reportedStatus) = Assert.Single(gate.Reported);
+        Assert.Equal(new Uri("https://sternpinball.com/foo.pdf"), reportedUrl);
+        Assert.Equal(HttpStatusCode.OK, reportedStatus);
+        Assert.True(gate.LeaseDisposed, "the politeness lease must be disposed so the next request to the origin is paced");
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RobotsDisallow_PropagatesPolitenessException_DoesNotSwallow()
+    {
+        // A robots.txt disallow (PolitenessException) is a deliberate "stop asking"
+        // signal — it must propagate to the caller's loop, NOT be flattened into a
+        // Failed result that the caller would treat as a routine per-file miss.
+        var throwingGate = new ThrowingGate(
+            new PolitenessException(PolitenessViolation.RobotsTxtDisallow, "disallowed",
+                new Uri("https://sternpinball.com/foo.pdf")));
+        var (downloader, _, _, _) = CreateDownloader((_, response) =>
+        {
+            response.StatusCode = HttpStatusCode.OK;
+        }, gate: throwingGate);
+
+        await Assert.ThrowsAsync<PolitenessException>(() => downloader.DownloadAsync(
+            "https://sternpinball.com/foo.pdf",
+            "manuals/foo.pdf"));
+    }
+
+    [Fact]
     public async Task DownloadAsync_NonSuccessStatus_ReturnsFailed()
     {
-        var (downloader, _, _) = CreateDownloader((_, response) =>
+        var (downloader, _, _, _) = CreateDownloader((_, response) =>
         {
             response.StatusCode = HttpStatusCode.NotFound;
             response.Content = new StringContent("not found");
@@ -270,6 +318,52 @@ public sealed class FileDownloaderTests : IDisposable
         {
             throw _exception;
         }
+    }
+
+    /// <summary>
+    /// In-memory <see cref="IPolitenessGate"/> that records every acquire/report so
+    /// tests can assert the downloader routes through the gate and disposes its lease.
+    /// </summary>
+    private sealed class RecordingGate : IPolitenessGate
+    {
+        public List<Uri> Acquired { get; } = [];
+        public List<(Uri Url, HttpStatusCode Status)> Reported { get; } = [];
+        public bool LeaseDisposed { get; private set; }
+
+        public Task<IAsyncDisposable> AcquireForRequestAsync(Uri url, CancellationToken cancellationToken)
+        {
+            Acquired.Add(url);
+            return Task.FromResult<IAsyncDisposable>(new Lease(this));
+        }
+
+        public Task ReportResponseAsync(Uri url, HttpStatusCode statusCode, TimeSpan? retryAfter, CancellationToken cancellationToken)
+        {
+            Reported.Add((url, statusCode));
+            return Task.CompletedTask;
+        }
+
+        private sealed class Lease(RecordingGate gate) : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync()
+            {
+                gate.LeaseDisposed = true;
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    /// <summary>
+    /// <see cref="IPolitenessGate"/> that throws on acquire — models a robots.txt
+    /// disallow or a 429-streak abort, to verify the downloader lets the
+    /// <see cref="PolitenessException"/> propagate rather than swallowing it.
+    /// </summary>
+    private sealed class ThrowingGate(PolitenessException exception) : IPolitenessGate
+    {
+        public Task<IAsyncDisposable> AcquireForRequestAsync(Uri url, CancellationToken cancellationToken)
+            => throw exception;
+
+        public Task ReportResponseAsync(Uri url, HttpStatusCode statusCode, TimeSpan? retryAfter, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     // SequencedHandler / CountingStatusHandler removed along with their retry tests

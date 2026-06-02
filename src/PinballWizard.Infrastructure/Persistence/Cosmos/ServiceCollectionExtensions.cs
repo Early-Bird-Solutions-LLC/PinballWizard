@@ -234,17 +234,14 @@ public static class ServiceCollectionExtensions
 
         // Document downloader (--download-documents) — fetches not-yet-downloaded
         // raw documents so the linker's page-text tiers can read page-1 content.
-        // Reuses the registered IFileDownloader (polite, resilient) + the same
-        // DownloadsPath the linker reads from.
+        // Reuses the registered IFileDownloader (polite, resilient); the downloader
+        // owns the DownloadsPath root and combines the relative path the service builds.
         services.AddSingleton<DocumentDownloadService>(sp =>
         {
             var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
             var downloader = sp.GetRequiredService<IFileDownloader>();
             var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
-            var settings = sp.GetService<IOptions<ScraperSettings>>();
-            var downloadsRoot = settings?.Value.DownloadsPath
-                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
-            return new DocumentDownloadService(rawRepo, downloader, logger, downloadsRoot);
+            return new DocumentDownloadService(rawRepo, downloader, logger);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection
