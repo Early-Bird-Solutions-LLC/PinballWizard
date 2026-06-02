@@ -36,6 +36,13 @@ public sealed class DocumentDownloadService
     {
         int downloaded = 0, skipped = 0, failed = 0;
 
+        // Origins the politeness gate has told us to stop asking (robots disallow or
+        // 429 streak). Once an origin is poisoned we skip its remaining documents but
+        // keep downloading from every OTHER origin — a politeness abort on one source
+        // must not abandon downloads for healthy sources. Mirrors how ScraperOrchestrator
+        // isolates a source-level abort without failing the whole run.
+        var poisonedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         await foreach (var raw in _repo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -44,6 +51,9 @@ public sealed class DocumentDownloadService
 
             var fileUrl = raw.Source.FileUrl;
             if (string.IsNullOrEmpty(fileUrl)) { skipped++; continue; }
+
+            var host = TryGetHost(fileUrl);
+            if (host is not null && poisonedHosts.Contains(host)) { skipped++; continue; }
 
             // Pass the path RELATIVE to the downloads root — IFileDownloader owns the
             // root and combines it (so the persisted LocalPath stays portable across
@@ -64,6 +74,15 @@ public sealed class DocumentDownloadService
                 }, cancellationToken).ConfigureAwait(false);
                 downloaded++;
             }
+            else if (result.Status is DownloadStatus.PolitenessAbort)
+            {
+                // Stop asking this origin; its remaining docs will be skipped above.
+                if (host is not null) { poisonedHosts.Add(host); }
+                _logger.LogWarning(
+                    "DocumentDownload: politeness abort for {Host} ({DocId}): {Err} — skipping remaining docs on this origin",
+                    host ?? "<unknown>", raw.DocumentId, result.ErrorMessage);
+                skipped++;
+            }
             else
             {
                 _logger.LogWarning("DocumentDownload: {DocId} failed ({Status}): {Err}",
@@ -73,10 +92,13 @@ public sealed class DocumentDownloadService
         }
 
         _logger.LogInformation(
-            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed}",
-            downloaded, skipped, failed);
+            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} poisonedOrigins={Poisoned}",
+            downloaded, skipped, failed, poisonedHosts.Count);
         return new DownloadSummary(downloaded, skipped, failed);
     }
+
+    private static string? TryGetHost(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
 
     // Lay downloads out as {sourceType}/{filename} under the downloads root so
     // each manufacturer's docs stay grouped and filenames don't collide globally.

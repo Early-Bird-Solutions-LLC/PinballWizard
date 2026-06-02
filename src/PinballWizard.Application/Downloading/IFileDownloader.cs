@@ -30,7 +30,15 @@ public enum DownloadStatus
     Downloaded,
     NotModified,
     TooLarge,
-    Failed
+    Failed,
+
+    /// <summary>
+    /// The download was refused by the politeness gate (robots.txt disallow, or a
+    /// 429 streak that exceeded the configured maximum) — a deliberate "stop asking
+    /// this origin" signal, distinct from a per-file <see cref="Failed"/>. The caller
+    /// should stop downloading from this origin but may continue with other origins.
+    /// </summary>
+    PolitenessAbort
 }
 
 public sealed class DownloadResult

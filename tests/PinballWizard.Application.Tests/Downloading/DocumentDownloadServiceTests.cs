@@ -110,6 +110,52 @@ public sealed class DocumentDownloadServiceTests
         await _repo.DidNotReceive().UpdateFileAsync(Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task PolitenessAbort_PoisonsOrigin_SkipsItsRemainingDocs_ButContinuesOtherOrigins()
+    {
+        // A politeness abort on one origin must NOT abandon healthy origins: the
+        // poisoned origin's remaining docs are skipped, other origins still download,
+        // and a summary is still returned (never an exception out of RunAsync).
+        var poisoned1 = MakeRaw("doc_p1", "https://sternpinball.com/a/first.pdf", file: null);
+        var poisoned2 = MakeRaw("doc_p2", "https://sternpinball.com/a/second.pdf", file: null);
+        var healthy = MakeRaw("doc_h", "https://jerseyjackpinball.com/b/ok.pdf", file: null);
+        StubStream(poisoned1, poisoned2, healthy);
+
+        _downloader.DownloadAsync(
+                "https://sternpinball.com/a/first.pdf", Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.PolitenessAbort,
+                FileUrl = "https://sternpinball.com/a/first.pdf",
+                LocalPath = "manualspage/first.pdf",
+                ErrorMessage = "robots disallow",
+            });
+        _downloader.DownloadAsync(
+                "https://jerseyjackpinball.com/b/ok.pdf", Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = "https://jerseyjackpinball.com/b/ok.pdf",
+                LocalPath = "manualspage/ok.pdf",
+                Filename = "ok.pdf",
+            });
+
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
+        var summary = await svc.RunAsync(CancellationToken.None);
+
+        // first.pdf aborted (skipped), second.pdf skipped without a download attempt
+        // (origin poisoned), ok.pdf downloaded from the healthy origin.
+        Assert.Equal(1, summary.Downloaded);
+        Assert.Equal(2, summary.Skipped);
+        Assert.Equal(0, summary.Failed);
+
+        // The poisoned origin's SECOND doc is never attempted...
+        await _downloader.DidNotReceive().DownloadAsync(
+            "https://sternpinball.com/a/second.pdf", Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        // ...but the healthy origin's doc is downloaded and stamped.
+        await _repo.Received(1).UpdateFileAsync("doc_h", Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private void StubStream(params RawDocumentRecord[] docs) =>

@@ -237,11 +237,13 @@ public sealed class FileDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadAsync_RobotsDisallow_PropagatesPolitenessException_DoesNotSwallow()
+    public async Task DownloadAsync_RobotsDisallow_ReturnsPolitenessAbort_NotFailed()
     {
-        // A robots.txt disallow (PolitenessException) is a deliberate "stop asking"
-        // signal — it must propagate to the caller's loop, NOT be flattened into a
-        // Failed result that the caller would treat as a routine per-file miss.
+        // A robots.txt disallow (PolitenessException) is a deliberate "stop asking
+        // this origin" signal. It is translated to a PolitenessAbort result — distinct
+        // from a per-file Failed — so the caller can skip the rest of the origin and
+        // continue with others. The Infrastructure-only PolitenessException must NOT
+        // leak across the layer boundary to the Application caller.
         var throwingGate = new ThrowingGate(
             new PolitenessException(PolitenessViolation.RobotsTxtDisallow, "disallowed",
                 new Uri("https://sternpinball.com/foo.pdf")));
@@ -250,9 +252,12 @@ public sealed class FileDownloaderTests : IDisposable
             response.StatusCode = HttpStatusCode.OK;
         }, gate: throwingGate);
 
-        await Assert.ThrowsAsync<PolitenessException>(() => downloader.DownloadAsync(
+        var result = await downloader.DownloadAsync(
             "https://sternpinball.com/foo.pdf",
-            "manuals/foo.pdf"));
+            "manuals/foo.pdf");
+
+        Assert.Equal(DownloadStatus.PolitenessAbort, result.Status);
+        Assert.Equal("https://sternpinball.com/foo.pdf", result.FileUrl);
     }
 
     [Fact]

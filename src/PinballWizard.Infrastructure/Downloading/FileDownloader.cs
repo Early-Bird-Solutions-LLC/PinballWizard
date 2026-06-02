@@ -56,9 +56,12 @@ public sealed class FileDownloader : IFileDownloader
     /// </summary>
     /// <remarks>
     /// A <see cref="PolitenessException"/> (robots.txt disallow, or a 429 streak that
-    /// exceeds the configured maximum) propagates to the caller rather than being
-    /// converted to a <see cref="DownloadStatus.Failed"/> result — it is a deliberate
-    /// "stop asking this origin" signal the caller's loop must honor, not a per-file miss.
+    /// exceeds the configured maximum) is translated to a <see cref="DownloadStatus.PolitenessAbort"/>
+    /// result — a deliberate "stop asking this origin" signal, distinct from a per-file
+    /// <see cref="DownloadStatus.Failed"/>. The Infrastructure-only <see cref="PolitenessException"/>
+    /// is deliberately NOT allowed to escape into the Application caller (Clean
+    /// Architecture); the caller reasons over the abstract <see cref="DownloadStatus"/>
+    /// it already owns and skips the rest of that origin.
     /// </remarks>
     public async Task<DownloadResult> DownloadAsync(
         string fileUrl,
@@ -69,14 +72,15 @@ public sealed class FileDownloader : IFileDownloader
         var absolutePath = Path.Combine(_settings.DownloadsPath, localPath);
         var uri = new Uri(fileUrl);
 
-        // Hold the politeness lease across the whole send: AcquireForRequestAsync
-        // applies the per-origin delay + robots check before the request, and
-        // disposing the lease stamps "last request time" so the next download to
-        // this origin is paced. Mirrors PoliteScraperBase.SendPolitelyAsync.
-        await using var lease = await _politeness.AcquireForRequestAsync(uri, cancellationToken).ConfigureAwait(false);
-
         try
         {
+            // Hold the politeness lease across the whole send: AcquireForRequestAsync
+            // applies the per-origin delay + robots check before the request (throws
+            // PolitenessException on a robots disallow), and disposing the lease stamps
+            // "last request time" so the next download to this origin is paced.
+            // Mirrors PoliteScraperBase.SendPolitelyAsync.
+            await using var lease = await _politeness.AcquireForRequestAsync(uri, cancellationToken).ConfigureAwait(false);
+
             using var request = new HttpRequestMessage(HttpMethod.Get, fileUrl);
 
             if (previousMetadata is not null)
@@ -187,6 +191,21 @@ public sealed class FileDownloader : IFileDownloader
         {
             // Caller cancelled — propagate without converting to a Failed result.
             throw;
+        }
+        catch (PolitenessException ex)
+        {
+            // Robots disallow or 429-streak abort for this origin. Translate to a
+            // PolitenessAbort result (not Failed) so the Application caller can skip
+            // the rest of THIS origin and continue with others — without the
+            // Infrastructure-only PolitenessException leaking across the layer boundary.
+            _logger.LogWarning(ex, "Politeness gate refused download for {Url} ({Violation})", fileUrl, ex.Violation);
+            return new DownloadResult
+            {
+                Status = DownloadStatus.PolitenessAbort,
+                FileUrl = fileUrl,
+                LocalPath = localPath,
+                ErrorMessage = ex.Message
+            };
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException)
         {
