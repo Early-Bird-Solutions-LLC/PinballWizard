@@ -139,6 +139,11 @@ public sealed class DownloadPathMigrationService
                 {
                     await _store.MoveAsync(currentOnDisk, correctOnDisk, cancellationToken).ConfigureAwait(false);
                 }
+                // Change ONLY local_path; carry every other field forward verbatim.
+                // Copying each field (rather than `new { LocalPath = ... }`) preserves
+                // provenance — notably PageCount, which the linker's page tiers + the
+                // chunker depend on. Listing all fields here keeps this exhaustive; a
+                // field added to DownloadedFileInfo must be added here too.
                 await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
                 {
                     LocalPath = relative,
@@ -146,6 +151,7 @@ public sealed class DownloadPathMigrationService
                     SizeBytes = file.SizeBytes,
                     Sha256 = file.Sha256,
                     MimeType = file.MimeType,
+                    PageCount = file.PageCount,
                 }, cancellationToken).ConfigureAwait(false);
             }
             migrated++;

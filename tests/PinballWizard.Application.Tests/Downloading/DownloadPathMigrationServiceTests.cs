@@ -205,6 +205,32 @@ public sealed class DownloadPathMigrationServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_PreservesAllFileFields_NotJustLocalPath()
+    {
+        // Provenance: migrating must change ONLY local_path. Every other field on
+        // the file node (PageCount, MimeType, SizeBytes, Sha256, Filename) must
+        // survive — dropping PageCount would silently erode provenance.
+        var raw = MakeRaw("doc_pc", localPath: "data/downloads/manualspage/x.pdf", sha: "abc123");
+        raw.File!.PageCount = 42;
+        raw.File.MimeType = "application/pdf";
+        raw.File.SizeBytes = 7791177;
+        StubStream(raw);
+        _store.GetSha256Async(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("abc123");
+
+        await NewService().RunAsync(dryRun: false, CancellationToken.None);
+
+        await _repo.Received(1).UpdateFileAsync("doc_pc",
+            Arg.Is<DownloadedFileInfo>(f =>
+                f.LocalPath == "manualspage/x.pdf"   // changed
+                && f.PageCount == 42                  // preserved
+                && f.MimeType == "application/pdf"    // preserved
+                && f.SizeBytes == 7791177             // preserved
+                && f.Sha256 == "abc123"               // preserved
+                && f.Filename == "x.pdf"),            // preserved
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RunAsync_RootedPath_NoRecordedSha_MigratesButCountsUnverified()
     {
         // A row with a rooted path but NO recorded sha256 can't be byte-verified.
