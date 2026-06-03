@@ -552,6 +552,42 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    public async Task LinkAsync_ReResolvesToSameMachine_PrunesNothing()
+    {
+        // The dominant production path: a re-link that resolves to the SAME machine
+        // it already linked to must delete NOTHING (the prune is a no-op). Guards
+        // against a future filter-predicate regression deleting live rows.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        // Prior state already matches the resolved set: Pro only.
+        var priorFanOut = new List<string> { "GweeP-MW95j" };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+        // No prune — the existing set already equals the resolved set.
+        await docWriter.DidNotReceive().DeleteFanOutRowAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task LinkAsync_GodzillaRulesheet_FansOutToFamily_ScopeFranchiseWide()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
