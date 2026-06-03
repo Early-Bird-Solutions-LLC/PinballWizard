@@ -39,4 +39,14 @@ public interface IScrapedDocumentRepository
         string? edition,
         EditionScope editionScope,
         CancellationToken cancellationToken);
+
+    // Streams the machine_ids of every existing fan-out row for a document
+    // (id = "{documentId}_{machineId}"). Used by the linker to detect — and
+    // prune — rows for machines a re-link no longer resolves to, so --relink-all
+    // is idempotent and never leaves orphaned fan-out rows.
+    IAsyncEnumerable<string> StreamByDocumentIdAsync(string documentId, CancellationToken cancellationToken);
+
+    // Point-deletes the single fan-out row "{documentId}_{machineId}" in the
+    // machineId partition. No-op (not an error) if the row is already absent.
+    Task DeleteFanOutRowAsync(string documentId, string machineId, CancellationToken cancellationToken);
 }

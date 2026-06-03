@@ -93,4 +93,37 @@ internal sealed class CosmosScrapedDocumentRepository
 
         await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
     }
+
+    public async IAsyncEnumerable<string> StreamByDocumentIdAsync(
+        string documentId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        // Cross-partition by design: fan-out rows for one document_id live in
+        // different machine_id partitions. This is an admin/re-link path (not a
+        // user-facing query) and returns only the handful of rows for one doc, so
+        // the cross-partition cost is negligible.
+        const string query = "SELECT * FROM c WHERE c.document_id = @docId";
+        var parameters = new Dictionary<string, object> { ["docId"] = documentId };
+
+        await foreach (var row in StreamAsync(query, parameters, partitionKey: null, cancellationToken).ConfigureAwait(false))
+        {
+            // PartitionKey maps to machine_id (see ScrapedDocumentRecord).
+            if (!string.IsNullOrWhiteSpace(row.PartitionKey))
+            {
+                yield return row.PartitionKey;
+            }
+        }
+    }
+
+    // IScrapedDocumentRepository.DeleteFanOutRowAsync — deletes the fan-out row
+    // "{documentId}_{machineId}" in the machineId partition. Idempotent (the base
+    // DeleteAsync treats a missing row as success).
+    public Task DeleteFanOutRowAsync(string documentId, string machineId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+        return DeleteAsync($"{documentId}_{machineId}", machineId, cancellationToken);
+    }
 }

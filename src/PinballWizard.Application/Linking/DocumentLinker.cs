@@ -802,6 +802,44 @@ public sealed class DocumentLinker : IDocumentLinker
             }
         }
 
+        // Prune stale fan-out: delete any existing scraped_documents row for this
+        // document whose machine is no longer in the resolved set. Without this,
+        // re-linking a doc to FEWER machines (e.g. the edition fix narrowing a Pro
+        // manual from {Pro, Premium/LE} down to {Pro}) leaves the old row orphaned,
+        // which then pollutes the index rebuild. Only prune on a successful link
+        // (Failed/Pending leave existing rows alone); only delete machines NOT in
+        // the new set; best-effort (a prune failure must not abort the batch).
+        if (missingMachineIds.Count == 0
+            && result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked)
+        {
+            var resolved = new HashSet<string>(result.LinkedMachineIds, StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var existing = new List<string>();
+                await foreach (var machineId in _docWriter
+                    .StreamByDocumentIdAsync(raw.DocumentId, cancellationToken).ConfigureAwait(false))
+                {
+                    existing.Add(machineId);
+                }
+
+                foreach (var staleMachineId in existing.Where(m => !resolved.Contains(m)))
+                {
+                    await _docWriter.DeleteFanOutRowAsync(raw.DocumentId, staleMachineId, cancellationToken).ConfigureAwait(false);
+                    _logger.LogInformation(
+                        "FanOut: pruned stale scraped_documents row {DocumentId}_{MachineId} (no longer in resolved set).",
+                        raw.DocumentId, staleMachineId);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Best-effort: a failed prune leaves a stale row (visible as a
+                // re-runnable cleanup), but must not fail the link itself.
+                _logger.LogWarning(ex,
+                    "FanOut: stale-fan-out prune failed for {DocumentId}; stale rows (if any) remain for next re-link.",
+                    raw.DocumentId);
+            }
+        }
+
         // Determine overrideId if this was an override match.
         string? overrideId = result.ResolutionStrategy == "override"
             ? LinkOverrideRecord.BuildSourcePattern(raw.Source.DiscoveryUrl, raw.DocumentType)
