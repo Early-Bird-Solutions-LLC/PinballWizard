@@ -139,6 +139,89 @@ public sealed class DownloadPathMigrationServiceTests
         Assert.Equal(0, summary.Migrated);
     }
 
+    [Fact]
+    public async Task RunAsync_InterruptedPriorRun_FileAlreadyMoved_RetriesRewrite_NotMissing()
+    {
+        // Crash-recovery: a prior run moved the file (Move OK) but its UpdateFileAsync
+        // failed, so Cosmos still holds the rooted path. On re-run the OLD doubled
+        // location is absent — but the file sits correctly at the destination with a
+        // matching SHA. This must be recognized as "move already done, rewrite the row",
+        // NOT reported as missing (which would leave Cosmos permanently stale).
+        var raw = MakeRaw("doc_g", localPath: "data/downloads/manualspage/x.pdf", sha: "abc123");
+        StubStream(raw);
+        // Old doubled location: absent. Correct single location: present, SHA matches.
+        _store.GetSha256Async("data/downloads/data/downloads/manualspage/x.pdf", Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        _store.GetSha256Async("data/downloads/manualspage/x.pdf", Arg.Any<CancellationToken>())
+            .Returns("abc123");
+
+        var summary = await NewService().RunAsync(dryRun: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Migrated);
+        Assert.Equal(0, summary.Missing);
+        // No move needed (already there); the row IS rewritten to relative.
+        await _store.DidNotReceive().MoveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpdateFileAsync("doc_g",
+            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/x.pdf"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunAsync_BackslashStoredPath_MigratesEndToEnd()
+    {
+        // Legacy Windows-written rows store backslash paths. The full RunAsync path
+        // (not just NormalizeToRelative) must handle them.
+        var raw = MakeRaw("doc_h", localPath: "data\\downloads\\manualspage\\x.pdf", sha: "abc123");
+        StubStream(raw);
+        _store.GetSha256Async("data/downloads/data/downloads/manualspage/x.pdf", Arg.Any<CancellationToken>())
+            .Returns("abc123");
+
+        var summary = await NewService().RunAsync(dryRun: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Migrated);
+        await _repo.Received(1).UpdateFileAsync("doc_h",
+            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/x.pdf"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunAsync_BadRow_DoesNotAbort_GoodRowStillMigrates()
+    {
+        // Blast radius: a SHA-mismatch row must not stop a later good row from migrating.
+        var bad = MakeRaw("doc_bad", localPath: "data/downloads/manualspage/bad.pdf", sha: "expected");
+        var good = MakeRaw("doc_good", localPath: "data/downloads/manualspage/good.pdf", sha: "goodsha");
+        StubStream(bad, good);
+        _store.GetSha256Async("data/downloads/data/downloads/manualspage/bad.pdf", Arg.Any<CancellationToken>())
+            .Returns("WRONG");
+        _store.GetSha256Async("data/downloads/data/downloads/manualspage/good.pdf", Arg.Any<CancellationToken>())
+            .Returns("goodsha");
+
+        var summary = await NewService().RunAsync(dryRun: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.ShaMismatch);
+        Assert.Equal(1, summary.Migrated);
+        await _repo.Received(1).UpdateFileAsync("doc_good", Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+        await _repo.DidNotReceive().UpdateFileAsync("doc_bad", Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunAsync_RootedPath_NoRecordedSha_MigratesButCountsUnverified()
+    {
+        // A row with a rooted path but NO recorded sha256 can't be byte-verified.
+        // It still migrates (the file exists), but is counted separately so the
+        // operator sees it wasn't SHA-proven — honest visibility, no silent blessing.
+        var raw = MakeRaw("doc_i", localPath: "data/downloads/manualspage/x.pdf", sha: null);
+        StubStream(raw);
+        _store.GetSha256Async("data/downloads/data/downloads/manualspage/x.pdf", Arg.Any<CancellationToken>())
+            .Returns("whatever"); // file exists; we just can't compare to a recorded hash
+
+        var summary = await NewService().RunAsync(dryRun: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Migrated);
+        Assert.Equal(1, summary.MigratedUnverified);
+        await _repo.Received(1).UpdateFileAsync("doc_i", Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private readonly IRawDocumentRepository _repo = Substitute.For<IRawDocumentRepository>();

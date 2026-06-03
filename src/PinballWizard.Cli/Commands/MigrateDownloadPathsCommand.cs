@@ -25,7 +25,7 @@ internal static class MigrateDownloadPathsCommand
 
         Console.WriteLine();
         Console.WriteLine($"--migrate-download-paths {(dryRun ? "(dry-run) " : "")}complete: " +
-            $"migrated={summary.Migrated} skipped={summary.Skipped} " +
+            $"migrated={summary.Migrated} (unverified={summary.MigratedUnverified}) skipped={summary.Skipped} " +
             $"shaMismatch={summary.ShaMismatch} missing={summary.Missing}");
 
         // A SHA mismatch or a missing file is an integrity problem the operator

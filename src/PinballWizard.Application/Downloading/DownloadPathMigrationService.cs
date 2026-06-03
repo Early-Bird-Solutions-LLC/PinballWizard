@@ -72,7 +72,7 @@ public sealed class DownloadPathMigrationService
 
     public async Task<MigrationSummary> RunAsync(bool dryRun, CancellationToken cancellationToken)
     {
-        int migrated = 0, skipped = 0, shaMismatch = 0, missing = 0;
+        int migrated = 0, migratedUnverified = 0, skipped = 0, shaMismatch = 0, missing = 0;
 
         await foreach (var raw in _repo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -97,27 +97,48 @@ public sealed class DownloadPathMigrationService
             var correctOnDisk = CombineForward(_downloadsRoot, relative);
 
             // Byte-safety: prove the on-disk bytes are the recorded content before
-            // we move them and rewrite the row. A missing file or a SHA mismatch is
-            // reported and left untouched — never silently migrate wrong bytes.
+            // we move them and rewrite the row. Never silently migrate wrong bytes.
             var actualSha = await _store.GetSha256Async(currentOnDisk, cancellationToken).ConfigureAwait(false);
+            var alreadyMoved = false;
             if (actualSha is null)
             {
-                missing++;
-                _logger.LogWarning("PathMigration: {DocId} file missing at {Path} — not migrated.", raw.DocumentId, currentOnDisk);
-                continue;
+                // The old (doubled) location is empty. Either the file was never
+                // downloaded, OR a prior interrupted run already moved it and only
+                // the Cosmos rewrite failed. Distinguish by probing the destination:
+                // if the file is already correctly placed, this is a recoverable
+                // half-done migration — retry just the rewrite. (move-then-rewrite
+                // ordering makes this the expected crash residue.)
+                var destSha = await _store.GetSha256Async(correctOnDisk, cancellationToken).ConfigureAwait(false);
+                if (destSha is null)
+                {
+                    missing++;
+                    _logger.LogWarning("PathMigration: {DocId} file missing at {Path} (and not at destination) — not migrated.", raw.DocumentId, currentOnDisk);
+                    continue;
+                }
+                alreadyMoved = true;
+                actualSha = destSha;
             }
+
             if (!string.IsNullOrEmpty(file.Sha256) && !string.Equals(actualSha, file.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 shaMismatch++;
                 _logger.LogWarning(
-                    "PathMigration: {DocId} SHA mismatch at {Path} (recorded={Recorded}, actual={Actual}) — not migrated.",
-                    raw.DocumentId, currentOnDisk, file.Sha256, actualSha);
+                    "PathMigration: {DocId} SHA mismatch (recorded={Recorded}, actual={Actual}) — not migrated.",
+                    raw.DocumentId, file.Sha256, actualSha);
                 continue;
             }
 
+            // A row with no recorded hash can't be byte-verified; it still migrates
+            // (the file exists) but is counted separately so the operator sees it
+            // was not SHA-proven — honest visibility, never a silent unverified blessing.
+            var unverified = string.IsNullOrEmpty(file.Sha256);
+
             if (!dryRun)
             {
-                await _store.MoveAsync(currentOnDisk, correctOnDisk, cancellationToken).ConfigureAwait(false);
+                if (!alreadyMoved)
+                {
+                    await _store.MoveAsync(currentOnDisk, correctOnDisk, cancellationToken).ConfigureAwait(false);
+                }
                 await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
                 {
                     LocalPath = relative,
@@ -128,14 +149,19 @@ public sealed class DownloadPathMigrationService
                 }, cancellationToken).ConfigureAwait(false);
             }
             migrated++;
+            if (unverified) { migratedUnverified++; }
         }
 
         _logger.LogInformation(
-            "PathMigration {Mode} complete: migrated={Migrated} skipped={Skipped} shaMismatch={Mismatch} missing={Missing}",
-            dryRun ? "(dry-run)" : "(apply)", migrated, skipped, shaMismatch, missing);
-        return new MigrationSummary(migrated, skipped, shaMismatch, missing);
+            "PathMigration {Mode} complete: migrated={Migrated} (unverified={Unverified}) skipped={Skipped} shaMismatch={Mismatch} missing={Missing}",
+            dryRun ? "(dry-run)" : "(apply)", migrated, migratedUnverified, skipped, shaMismatch, missing);
+        return new MigrationSummary(migrated, skipped, shaMismatch, missing, migratedUnverified);
     }
 }
 
-/// <summary>Result counts from a <see cref="DownloadPathMigrationService"/> run.</summary>
-public sealed record MigrationSummary(int Migrated, int Skipped, int ShaMismatch, int Missing);
+/// <summary>
+/// Result counts from a <see cref="DownloadPathMigrationService"/> run.
+/// <paramref name="MigratedUnverified"/> is the subset of <paramref name="Migrated"/>
+/// that had no recorded SHA-256 to verify against (migrated on file-existence alone).
+/// </summary>
+public sealed record MigrationSummary(int Migrated, int Skipped, int ShaMismatch, int Missing, int MigratedUnverified = 0);
