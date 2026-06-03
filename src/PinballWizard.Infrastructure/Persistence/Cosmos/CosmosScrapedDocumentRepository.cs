@@ -93,4 +93,57 @@ internal sealed class CosmosScrapedDocumentRepository
 
         await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
     }
+
+    public async IAsyncEnumerable<string> StreamByDocumentIdAsync(
+        string documentId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        // Cross-partition by design: fan-out rows for one document_id live in
+        // different machine_id partitions. This is an admin/re-link path (not a
+        // user-facing query) and returns only the handful of rows for one doc.
+        // Projects VALUE c.machine_id (not SELECT *) so we hydrate only the
+        // partition key, not the whole document — cheaper RU + payload when this
+        // runs once per doc across a full --relink-all.
+        var queryDefinition = new QueryDefinition(
+            "SELECT VALUE c.machine_id FROM c WHERE c.document_id = @docId")
+            .WithParameter("@docId", documentId);
+
+        using var iterator = Container.GetItemQueryIterator<string>(queryDefinition);
+        while (iterator.HasMoreResults)
+        {
+            var page = await ExecuteWithMetricsAsync(
+                "query",
+                async ct =>
+                {
+                    var p = await iterator.ReadNextAsync(ct).ConfigureAwait(false);
+                    return (p, p.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            foreach (var machineId in page)
+            {
+                if (!string.IsNullOrWhiteSpace(machineId))
+                {
+                    yield return machineId;
+                }
+            }
+        }
+    }
+
+    // IScrapedDocumentRepository.DeleteFanOutRowAsync — deletes the fan-out row
+    // "{documentId}_{machineId}" in the machineId partition. Idempotent (the base
+    // DeleteAsync treats a missing row as success).
+    // NOTE: targets ONLY linker fan-out rows (UpsertFromRawAsync, id =
+    // "{documentId}_{machineId}"). It will NOT match a catalog-seeder row
+    // (UpsertAsync, id = "{documentId}" with no machine suffix) — by design, since
+    // the linker only ever prunes its own fan-out. If the seeder write path is ever
+    // revived, unify its id scheme so stale seeder rows are prunable too.
+    public Task DeleteFanOutRowAsync(string documentId, string machineId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+        return DeleteAsync($"{documentId}_{machineId}", machineId, cancellationToken);
+    }
 }

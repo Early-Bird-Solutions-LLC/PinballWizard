@@ -507,6 +507,87 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    public async Task LinkAsync_ReResolvesToFewerMachines_PrunesStaleFanOutRows()
+    {
+        // Re-link idempotency: a doc that previously fanned out to BOTH bases
+        // (the old over-linking) now resolves to Pro ONLY. The linker must DELETE
+        // the stale scraped_documents row for the machine it no longer links to —
+        // otherwise --relink-all leaves orphaned fan-out rows that pollute the
+        // index rebuild. (Root-cause fix for the AB#259 migration stale-row defect.)
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        // Prior state: this document already has fan-out rows under BOTH bases
+        // (the over-linked rows from before the edition fix).
+        var priorFanOut = new List<string> { "GweeP-MW95j", "GweeP-Ml9pZ" };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Resolves to Pro only...
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+        // ...writes the Pro row...
+        await docWriter.Received(1).UpsertFromRawAsync(
+            raw, "GweeP-MW95j", Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string?>(), EditionScope.SingleEdition, Arg.Any<CancellationToken>());
+        // ...and DELETES the now-stale Premium/LE row (no longer in the resolved set).
+        await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, "GweeP-Ml9pZ", Arg.Any<CancellationToken>());
+        // ...but must NOT delete the row it still links to.
+        await docWriter.DidNotReceive().DeleteFanOutRowAsync(raw.DocumentId, "GweeP-MW95j", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_ReResolvesToSameMachine_PrunesNothing()
+    {
+        // The dominant production path: a re-link that resolves to the SAME machine
+        // it already linked to must delete NOTHING (the prune is a no-op). Guards
+        // against a future filter-predicate regression deleting live rows.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        // Prior state already matches the resolved set: Pro only.
+        var priorFanOut = new List<string> { "GweeP-MW95j" };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+        // No prune — the existing set already equals the resolved set.
+        await docWriter.DidNotReceive().DeleteFanOutRowAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task LinkAsync_GodzillaRulesheet_FansOutToFamily_ScopeFranchiseWide()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
