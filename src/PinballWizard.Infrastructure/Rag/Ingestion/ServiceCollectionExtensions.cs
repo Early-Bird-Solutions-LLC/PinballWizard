@@ -200,15 +200,27 @@ public static class ServiceCollectionExtensions
     // HTTP source keeps its typed-client (resilience + logging).
     private static void AddLocalFirstBytesSource(IServiceCollection services)
     {
+        // Inner HTTP source keeps its typed-client (resilience + handler rotation
+        // via IHttpClientFactory). Registered transient — the decorator must NOT
+        // capture a single instance for process life (that would pin one HttpClient
+        // handler and defeat factory rotation/DNS-refresh). The decorator resolves
+        // a fresh inner per fallback via the captured IServiceProvider.
         services.AddHttpClient<HttpDocumentBytesSource>();
         services.AddSingleton<IDocumentBytesSource>(sp =>
         {
-            var inner = sp.GetRequiredService<HttpDocumentBytesSource>();
             var settings = sp.GetService<IOptions<ScraperSettings>>();
-            var downloadsRoot = settings?.Value.DownloadsPath
-                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
+            var configuredRoot = settings?.Value.DownloadsPath;
+            // Resolve to an absolute path: DownloadsPath is relative ("data/downloads")
+            // and would otherwise bind to CWD inconsistently. Anchor to the process
+            // working directory explicitly so the resolved root is unambiguous + logged.
+            var downloadsRoot = Path.GetFullPath(
+                string.IsNullOrWhiteSpace(configuredRoot)
+                    ? Path.Combine(AppContext.BaseDirectory, "downloads")
+                    : configuredRoot);
             var logger = sp.GetRequiredService<ILogger<LocalFirstDocumentBytesSource>>();
-            return new LocalFirstDocumentBytesSource(inner, downloadsRoot, logger);
+            // Fresh inner per fallback — preserves typed-client handler rotation.
+            return new LocalFirstDocumentBytesSource(
+                () => sp.GetRequiredService<HttpDocumentBytesSource>(), downloadsRoot, logger);
         });
     }
 }

@@ -25,22 +25,26 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // whose bytes haven't been downloaded yet is fetched over HTTP exactly as before.
 public sealed class LocalFirstDocumentBytesSource : IDocumentBytesSource
 {
-    private readonly IDocumentBytesSource _inner;
+    private readonly Func<IDocumentBytesSource> _innerFactory;
     private readonly string _downloadsRoot;
     private readonly ILogger<LocalFirstDocumentBytesSource> _logger;
 
     private readonly Lock _indexLock = new();
     private Dictionary<string, string>? _filenameToPath;
 
+    // Takes a FACTORY for the inner source (not a captured instance) so a fresh
+    // typed-client-backed HttpDocumentBytesSource is resolved per HTTP fallback —
+    // preserving IHttpClientFactory handler rotation rather than pinning one client
+    // for the life of this singleton decorator.
     public LocalFirstDocumentBytesSource(
-        IDocumentBytesSource inner,
+        Func<IDocumentBytesSource> innerFactory,
         string downloadsRoot,
         ILogger<LocalFirstDocumentBytesSource> logger)
     {
-        ArgumentNullException.ThrowIfNull(inner);
+        ArgumentNullException.ThrowIfNull(innerFactory);
         ArgumentException.ThrowIfNullOrEmpty(downloadsRoot);
         ArgumentNullException.ThrowIfNull(logger);
-        _inner = inner;
+        _innerFactory = innerFactory;
         _downloadsRoot = downloadsRoot;
         _logger = logger;
     }
@@ -66,7 +70,7 @@ public sealed class LocalFirstDocumentBytesSource : IDocumentBytesSource
         }
 
         _logger.LogDebug("RAG document bytes: no local file for {Url}; delegating to HTTP source.", documentUrl);
-        return await _inner.OpenAsync(documentUrl, cancellationToken).ConfigureAwait(false);
+        return await _innerFactory().OpenAsync(documentUrl, cancellationToken).ConfigureAwait(false);
     }
 
     private string? TryResolveLocal(string documentUrl)
@@ -75,14 +79,23 @@ public sealed class LocalFirstDocumentBytesSource : IDocumentBytesSource
         {
             return null;
         }
-        var filename = Path.GetFileName(uri.AbsolutePath);
-        if (string.IsNullOrEmpty(filename))
-        {
-            return null;
-        }
-
         var index = GetOrBuildIndex();
-        return index.TryGetValue(filename, out var path) && File.Exists(path) ? path : null;
+
+        // The on-disk name may be the percent-encoded form (the active downloader's
+        // AbsolutePath projection) OR the decoded form. Try both so a file with an
+        // escaped char (e.g. %C2%A9) resolves regardless of which projection wrote it.
+        var encoded = Path.GetFileName(uri.AbsolutePath);
+        var decoded = Uri.UnescapeDataString(encoded);
+        foreach (var candidate in new[] { encoded, decoded })
+        {
+            if (!string.IsNullOrEmpty(candidate)
+                && index.TryGetValue(candidate, out var path)
+                && File.Exists(path))
+            {
+                return path;
+            }
+        }
+        return null;
     }
 
     private Dictionary<string, string> GetOrBuildIndex()
@@ -107,6 +120,17 @@ public sealed class LocalFirstDocumentBytesSource : IDocumentBytesSource
                         _logger.LogWarning(
                             "LocalFirstDocumentBytesSource: duplicate filename '{Name}' under downloads root; keeping {Kept}, ignoring {Ignored}.",
                             name, map[name], path);
+                    }
+
+                    // Also index the DECODED form, so a file stored under its encoded
+                    // name (e.g. "%C2%A9") and one stored decoded ("©") both resolve.
+                    // The lookup tries encoded + UnescapeDataString(encoded), so
+                    // indexing the unescaped form covers the decoded-on-disk case.
+                    // TryAdd → never clobbers a real (raw) name.
+                    var unescaped = Uri.UnescapeDataString(name);
+                    if (!string.Equals(unescaped, name, StringComparison.Ordinal))
+                    {
+                        map.TryAdd(unescaped, path);
                     }
                 }
             }
