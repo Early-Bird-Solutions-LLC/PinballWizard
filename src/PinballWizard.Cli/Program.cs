@@ -133,6 +133,11 @@ var downloadDocumentsOption = new Option<bool>("--download-documents")
     Description = "Download every not-yet-downloaded document in scraped_documents_raw to the local downloads root so the linker's page-text tiers (Tier 3/4) can read page-1 content for edition resolution. Polite (throttled, robots-honored) and idempotent (documents with a local file are skipped). Run before --link-documents / --relink-all when page-1 content is needed. Requires Cosmos to be configured."
 };
 
+var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
+{
+    Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -151,6 +156,7 @@ rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
+rootCommand.Options.Add(migrateDownloadPathsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -171,6 +177,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
+    var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -401,6 +408,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (downloadDocuments)
     {
         await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --migrate-download-paths (one-shot byte-safe correction of legacy
+    // already-rooted file.local_path values; --dry-run reports without changing).
+    // Gated on DownloadPathMigrationService (Cosmos).
+    if (migrateDownloadPaths)
+    {
+        await MigrateDownloadPathsCommand.RunAsync(host.Services, dryRun, cancellationToken);
         return;
     }
 
