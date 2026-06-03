@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
@@ -77,7 +78,7 @@ public static class ServiceCollectionExtensions
         // Typed HttpClient gives the bytes source automatic resilience
         // (via the ServiceDefaults standard handler) + per-message
         // logging via the host's HttpClient factory.
-        services.AddHttpClient<IDocumentBytesSource, HttpDocumentBytesSource>();
+        AddLocalFirstBytesSource(services);
 
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
@@ -168,7 +169,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
         // HttpClient for IDocumentBytesSource — same as the worker host.
-        services.AddHttpClient<IDocumentBytesSource, HttpDocumentBytesSource>();
+        AddLocalFirstBytesSource(services);
 
         services.AddSingleton<IRagBackfillService>(sp =>
         {
@@ -190,5 +191,24 @@ public static class ServiceCollectionExtensions
         var client = sp.GetRequiredService<CosmosClient>();
         var options = sp.GetRequiredService<IOptions<CosmosOptions>>().Value;
         return client.GetContainer(options.DatabaseName, containerName);
+    }
+
+    // Registers IDocumentBytesSource as a LocalFirstDocumentBytesSource decorator
+    // over the HTTP source: serves bytes from the local downloads tree when present
+    // (avoids re-fetching byte-verified PDFs from source sites during a full
+    // backfill), falls back to HTTP for not-yet-downloaded documents. The inner
+    // HTTP source keeps its typed-client (resilience + logging).
+    private static void AddLocalFirstBytesSource(IServiceCollection services)
+    {
+        services.AddHttpClient<HttpDocumentBytesSource>();
+        services.AddSingleton<IDocumentBytesSource>(sp =>
+        {
+            var inner = sp.GetRequiredService<HttpDocumentBytesSource>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath
+                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
+            var logger = sp.GetRequiredService<ILogger<LocalFirstDocumentBytesSource>>();
+            return new LocalFirstDocumentBytesSource(inner, downloadsRoot, logger);
+        });
     }
 }
