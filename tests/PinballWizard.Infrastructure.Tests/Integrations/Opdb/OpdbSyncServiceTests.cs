@@ -901,6 +901,56 @@ public sealed class OpdbSyncServiceTests : IDisposable
         AssertRowMapsTo(upsertedLookups, "godzilla 70th", "GweeP-Ml9pZ");
     }
 
+    [Fact]
+    public async Task SyncAsync_ReSync_ExistingBases_WritesEditionQualifiedTitleLookupRows()
+    {
+        // REPRODUCTION (AB#259 Track B live failure): the FIRST live re-sync
+        // updated 2154 existing bases (0 inserted) and populated EditionTokens
+        // correctly, but wrote ZERO edition-qualified lookup rows. The original
+        // phase-(d) test (SyncAsync_WritesEditionQualifiedTitleLookupRows) only
+        // exercised the INSERTED path (GetByOpdbIdAsync -> null). This pins the
+        // UPDATED (re-sync) path: both bases already exist, so phase-b takes the
+        // `updated` branch and pass-2 re-reads the base. The edition-qualified
+        // rows MUST still be written.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: ""),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: ""),
+            AliasJson("GweeP-Ml9pZ-A70th", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (70th Anniversary)")));
+        _handler.SetResponseFor("/api/machines/GweeP", GroupJson("GweeP", "Godzilla"));
+
+        // BOTH bases ALREADY EXIST — the re-sync (updated) path the live run took.
+        var pro = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla", GroupId = "GweeP", Year = 2021, FirstSeenAt = NowFixed, LastSeenAt = NowFixed,
+        };
+        Machine? lastPremLe = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla", GroupId = "GweeP", Year = 2021, FirstSeenAt = NowFixed, LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(pro);
+        _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(_ => lastPremLe);
+        _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
+            .Returns(call => { var m = call.Arg<Machine>(); if (m.Id == "GweeP-Ml9pZ") lastPremLe = m; return m; });
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var upsertedLookups = new ConcurrentBag<MachineTitleLookup>();
+        await _titleLookups.UpsertAsync(Arg.Do<MachineTitleLookup>(upsertedLookups.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        bool RowMapsTo(string normalizedTitle, string expectedOpdbId) =>
+            upsertedLookups.Any(l => l.Id == normalizedTitle && l.OpdbIds.Contains(expectedOpdbId));
+
+        Assert.True(RowMapsTo("godzilla pro", "GweeP-MW95j"), "re-sync path did not write 'godzilla pro' qualified lookup row");
+        Assert.True(RowMapsTo("godzilla premium", "GweeP-Ml9pZ"), "re-sync path did not write 'godzilla premium' qualified lookup row");
+        Assert.True(RowMapsTo("godzilla le", "GweeP-Ml9pZ"), "re-sync path did not write 'godzilla le' qualified lookup row");
+        Assert.True(RowMapsTo("godzilla 70th", "GweeP-Ml9pZ"), "re-sync path did not write 'godzilla 70th' qualified lookup row");
+    }
+
     // --- ADR-0029 S4: per-segment group-title resolution (D1) ---
     // The model: every is_machine base record stays a DISTINCT Machine
     // (no fold, no canonical pick). When common_name is empty (modern
