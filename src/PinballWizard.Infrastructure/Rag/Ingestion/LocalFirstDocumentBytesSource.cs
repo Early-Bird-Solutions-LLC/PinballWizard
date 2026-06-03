@@ -75,7 +75,13 @@ public sealed class LocalFirstDocumentBytesSource : IDocumentBytesSource
 
     private string? TryResolveLocal(string documentUrl)
     {
-        if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var uri))
+        // Mirror HttpDocumentBytesSource's https-only contract: never serve a local
+        // file for a non-https URL, so a poisoned change-feed payload (e.g.
+        // http://169.254.169.254/...) can't bypass the inner source's SSRF guard via
+        // a basename collision. A non-https URL falls through to the inner source,
+        // which rejects it.
+        if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }

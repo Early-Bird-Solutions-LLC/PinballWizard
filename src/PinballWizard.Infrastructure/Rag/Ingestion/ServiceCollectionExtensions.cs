@@ -208,15 +208,16 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<HttpDocumentBytesSource>();
         services.AddSingleton<IDocumentBytesSource>(sp =>
         {
-            var settings = sp.GetService<IOptions<ScraperSettings>>();
-            var configuredRoot = settings?.Value.DownloadsPath;
-            // Resolve to an absolute path: DownloadsPath is relative ("data/downloads")
-            // and would otherwise bind to CWD inconsistently. Anchor to the process
-            // working directory explicitly so the resolved root is unambiguous + logged.
-            var downloadsRoot = Path.GetFullPath(
-                string.IsNullOrWhiteSpace(configuredRoot)
-                    ? Path.Combine(AppContext.BaseDirectory, "downloads")
-                    : configuredRoot);
+            // ScraperSettings.DownloadsPath is the single source of truth for where the
+            // downloader writes. It must be configured — a missing registration is a
+            // misconfiguration, not something to paper over with a guessed root that
+            // wouldn't match the downloader anyway.
+            var settings = sp.GetRequiredService<IOptions<ScraperSettings>>().Value;
+            // Resolve to an absolute path against the current working directory:
+            // DownloadsPath is relative ("data/downloads"); Path.GetFullPath anchors it
+            // to CWD (where the CLI runs from the repo/data root) so the resolved root
+            // is unambiguous, and LocalFirstDocumentBytesSource logs the count it indexed.
+            var downloadsRoot = Path.GetFullPath(settings.DownloadsPath);
             var logger = sp.GetRequiredService<ILogger<LocalFirstDocumentBytesSource>>();
             // Fresh inner per fallback — preserves typed-client handler rotation.
             return new LocalFirstDocumentBytesSource(

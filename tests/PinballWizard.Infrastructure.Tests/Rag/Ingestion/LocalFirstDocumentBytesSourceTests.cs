@@ -140,6 +140,27 @@ public sealed class LocalFirstDocumentBytesSourceTests : IDisposable
         Assert.Equal(1, inner.Calls);   // no local resolution possible → fall back
     }
 
+    [Fact]
+    public async Task OpenAsync_NonHttpsUrl_DoesNotResolveLocally_DelegatesToInner()
+    {
+        // SSRF defense-in-depth: even if a poisoned non-https URL's basename matches
+        // a local file, the local path must NOT serve it — mirror the inner source's
+        // https-only contract so the guard can't be bypassed via a name collision.
+        var dir = Path.Combine(_root, "manualspage");
+        Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(Path.Combine(dir, "Godzilla_Pro_web.pdf"), "local");
+
+        var inner = new RecordingInner();
+        var sut = new LocalFirstDocumentBytesSource(() => inner, _root, NullLogger<LocalFirstDocumentBytesSource>.Instance);
+
+        // http:// (and a metadata-endpoint host) with a colliding basename → must NOT
+        // be served from disk; delegates to the inner source (which enforces https).
+        await using var stream = await sut.OpenAsync(
+            "http://169.254.169.254/latest/Godzilla_Pro_web.pdf", CancellationToken.None);
+
+        Assert.Equal(1, inner.Calls);   // did NOT serve the local file
+    }
+
     private sealed class RecordingInner : IDocumentBytesSource
     {
         public int Calls { get; private set; }
