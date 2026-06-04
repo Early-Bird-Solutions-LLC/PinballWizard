@@ -510,7 +510,18 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
   name: foundryEmbeddingDeploymentName
   sku: {
     name: 'Standard'
-    capacity: 50
+    // 250 = 250k TPM. Raised from 50 (AB#259): a full RAG index rebuild
+    // (--run-rag-backfill over the whole corpus) bursts embedding calls far above
+    // steady-state and saturated the 50k-TPM cap, throwing 429 RateLimitReached
+    // that the resilience pipeline absorbed as 60s waits (~hours per rebuild).
+    // 250 clears the burst while staying under East US 2's granted Standard
+    // ceiling of 350 for text-embedding-3-large (verified via az cognitiveservices
+    // usage list), leaving ~100k TPM headroom for the retriever's steady-state
+    // query-embedding calls. No cost change — Standard is pay-per-token; capacity
+    // is only a rate ceiling, not a reservation. (gpt-4o stays at 50: it is
+    // already at its 50/50 regional ceiling and would need a quota-increase
+    // request to raise — out of scope here.)
+    capacity: 250
   }
   properties: {
     model: {
