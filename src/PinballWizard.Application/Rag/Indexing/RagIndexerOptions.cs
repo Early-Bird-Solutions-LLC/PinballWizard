@@ -17,4 +17,14 @@ public sealed record RagIndexerOptions
     public int BatchSize { get; init; } = 1000;
     public int IndexUploadConcurrency { get; init; } = 4;
     public int EmbeddingMaxConcurrency { get; init; } = 8;
+
+    // Max texts per embedding API call. DISTINCT from BatchSize (the AI Search
+    // upload batch, capped at the SDK's 1000-doc maximum): a single upload range
+    // is sub-batched into embedding calls of this size. Kept small (16) because a
+    // large embedding call (e.g. all ~140 chunks of a manual in one request)
+    // exceeded the embedding client's ~100s network timeout during a full RAG
+    // backfill (AB#259), failing those documents. 16 texts/call embeds in a few
+    // seconds — well under the timeout — and the EmbeddingMaxConcurrency gate
+    // still parallelizes calls across the available TPM headroom.
+    public int EmbeddingBatchSize { get; init; } = 16;
 }

@@ -124,23 +124,39 @@ public sealed class AiSearchRagIndexer : IRagIndexer
 
                 // Embed step (TPM-gated) — release the embed slot before
                 // taking the upload slot so the two semaphores can pipeline.
-                IReadOnlyList<ReadOnlyMemory<float>> vectors;
+                // The upload range (up to BatchSize=1000) is sub-batched into
+                // EmbeddingBatchSize-sized embedding calls: a single huge call
+                // (e.g. 140 manual chunks) exceeded the embedding client's ~100s
+                // network timeout (AB#259). Sub-batches embed in seconds and are
+                // concatenated back in order so the per-range contract holds.
+                var vectors = new ReadOnlyMemory<float>[count];
                 await embedGate.WaitAsync(workToken).ConfigureAwait(false);
                 try
                 {
-                    vectors = await _embedder
-                        .EmbedBatchAsync(batchTexts, workToken)
-                        .ConfigureAwait(false);
+                    foreach (var (subStart, subCount) in BatchIndices(count, options.EmbeddingBatchSize))
+                    {
+                        var subTexts = new string[subCount];
+                        Array.Copy(batchTexts, subStart, subTexts, 0, subCount);
+
+                        var subVectors = await _embedder
+                            .EmbedBatchAsync(subTexts, workToken)
+                            .ConfigureAwait(false);
+
+                        if (subVectors.Count != subCount)
+                        {
+                            throw new InvalidOperationException(
+                                $"Embedder returned {subVectors.Count} vectors for {subCount} chunks; embedder contract violated.");
+                        }
+
+                        for (int i = 0; i < subCount; i++)
+                        {
+                            vectors[subStart + i] = subVectors[i];
+                        }
+                    }
                 }
                 finally
                 {
                     embedGate.Release();
-                }
-
-                if (vectors.Count != count)
-                {
-                    throw new InvalidOperationException(
-                        $"Embedder returned {vectors.Count} vectors for {count} chunks; embedder contract violated.");
                 }
 
                 for (int i = 0; i < count; i++)

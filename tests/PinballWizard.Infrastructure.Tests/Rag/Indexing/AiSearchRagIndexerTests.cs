@@ -154,6 +154,56 @@ public sealed class AiSearchRagIndexerTests
     }
 
     [Fact]
+    public void RagIndexerOptions_EmbeddingBatchSize_DefaultsTo16()
+    {
+        // Embedding calls must be sub-batched far below the AI Search upload
+        // BatchSize (1000): one ~140-text embedding call exceeded the embedding
+        // client's ~100s network timeout (AB#259 backfill). 16 keeps each call
+        // small + fast + well under timeout.
+        Assert.Equal(16, new RagIndexerOptions().EmbeddingBatchSize);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_SubBatchesEmbeddingCalls_ByEmbeddingBatchSize_NotUploadBatchSize()
+    {
+        // A 40-chunk doc with EmbeddingBatchSize=16 must call EmbedBatchAsync
+        // THREE times (16 + 16 + 8), each with <= 16 texts — NOT one 40-text call.
+        // (Upload BatchSize stays large; the two limits are decoupled.) The
+        // placeholder SearchClient makes the upload throw, but the embedding calls
+        // happen first, so we assert the captured embed-call sizes.
+        var embedCallSizes = new ConcurrentBag<int>();
+        var embedder = Substitute.For<IChunkEmbedder>();
+        embedder.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var texts = call.Arg<IReadOnlyList<string>>();
+                embedCallSizes.Add(texts.Count);
+                // Return one vector per input text so the per-call contract holds.
+                var vectors = texts.Select(_ => new ReadOnlyMemory<float>([1f, 2f, 3f])).ToList();
+                return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(vectors);
+            });
+
+        var sut = NewIndexer(embedder);
+        var chunks = Enumerable.Range(0, 40).Select(i => MakeChunk(i)).ToList();
+        var options = new RagIndexerOptions { EmbeddingBatchSize = 16 };
+
+        // Upload will fail against the placeholder SearchClient — that's fine;
+        // the embedding sub-batching we're testing runs before the upload.
+        try
+        {
+            await sut.UpsertAsync(SampleRequest, chunks, options, CancellationToken.None);
+        }
+        catch (Exception) { /* placeholder upload failure expected */ }
+
+        // Every embed call carried <= 16 texts, none carried 40.
+        Assert.NotEmpty(embedCallSizes);
+        Assert.All(embedCallSizes, n => Assert.True(n <= 16, $"embed call had {n} texts; must be <= 16"));
+        Assert.DoesNotContain(40, embedCallSizes);
+        // 40 chunks / 16 = 3 sub-batches (16 + 16 + 8) for the single upload range.
+        Assert.Equal(40, embedCallSizes.Sum());
+    }
+
+    [Fact]
     public void MapToDocument_PopulatesEverySchemaField()
     {
         var chunk = new Chunk(
