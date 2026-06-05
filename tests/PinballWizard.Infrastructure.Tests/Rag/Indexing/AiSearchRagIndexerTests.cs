@@ -154,13 +154,19 @@ public sealed class AiSearchRagIndexerTests
     }
 
     [Fact]
-    public void RagIndexerOptions_EmbeddingBatchSize_DefaultsTo16()
+    public void RagIndexerOptions_Defaults_AreCorrect()
     {
-        // Embedding calls must be sub-batched far below the AI Search upload
-        // BatchSize (1000): one ~140-text embedding call exceeded the embedding
-        // client's ~100s network timeout (AB#259 backfill). 16 keeps each call
-        // small + fast + well under timeout.
-        Assert.Equal(16, new RagIndexerOptions().EmbeddingBatchSize);
+        // BatchSize=100: splits large documents into multiple concurrent upload
+        // batches so EmbeddingMaxConcurrency is actually utilized. BatchSize=1000
+        // produced a single batch per document, serializing all embedding calls
+        // and making large manuals take ~10 minutes (AB#259).
+        // EmbeddingBatchSize=32: keeps each embedding API call well under the
+        // ~100s network timeout while reducing round-trips vs. the previous 16.
+        var opts = new RagIndexerOptions();
+        Assert.Equal(100, opts.BatchSize);
+        Assert.Equal(32, opts.EmbeddingBatchSize);
+        Assert.Equal(8, opts.EmbeddingMaxConcurrency);
+        Assert.Equal(4, opts.IndexUploadConcurrency);
     }
 
     [Fact]
