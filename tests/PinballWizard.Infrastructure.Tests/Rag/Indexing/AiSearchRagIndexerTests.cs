@@ -253,6 +253,23 @@ public sealed class AiSearchRagIndexerTests
     }
 
     [Fact]
+    public async Task UpsertAsync_EmbeddingBatchSizeAboveAzureLimit_Throws()
+    {
+        // An oversized EmbeddingBatchSize would re-introduce the exact >100s-timeout
+        // bug this whole change fixes (one huge embedding call). Cap at Azure OpenAI's
+        // documented 2048 max-inputs-per-embedding-call so the fix is self-enforcing.
+        var embedder = Substitute.For<IChunkEmbedder>();
+        var sut = NewIndexer(embedder);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            sut.UpsertAsync(
+                SampleRequest, [MakeChunk(0)],
+                new RagIndexerOptions { EmbeddingBatchSize = 2049 },
+                CancellationToken.None));
+        await embedder.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void MapToDocument_PopulatesEverySchemaField()
     {
         var chunk = new Chunk(

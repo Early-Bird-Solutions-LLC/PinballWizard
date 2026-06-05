@@ -363,14 +363,16 @@ public sealed class AiSearchRagIndexer : IRagIndexer
                 options.EmbeddingMaxConcurrency,
                 "EmbeddingMaxConcurrency must be positive.");
         }
-        if (options.EmbeddingBatchSize <= 0)
+        // (0, 2048]: a non-positive value makes BatchIndices yield no sub-batches →
+        // zero-length embeddings silently uploaded (corrupt index); an oversized value
+        // re-introduces the >100s-timeout bug this sub-batching exists to prevent.
+        // 2048 = Azure OpenAI's documented max inputs per embedding call.
+        if (options.EmbeddingBatchSize is <= 0 or > 2048)
         {
-            // A non-positive value makes BatchIndices yield no sub-batches, which
-            // would silently upload zero-length embeddings (corrupt index). Fail loud.
             throw new ArgumentOutOfRangeException(
                 nameof(options),
                 options.EmbeddingBatchSize,
-                "EmbeddingBatchSize must be positive.");
+                "EmbeddingBatchSize must be in (0, 2048]; Azure OpenAI caps inputs per embedding call at 2048, and an oversized batch re-introduces the embedding-call timeout this sub-batching prevents.");
         }
     }
 }
