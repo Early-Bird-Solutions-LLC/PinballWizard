@@ -363,5 +363,14 @@ public sealed class AiSearchRagIndexer : IRagIndexer
                 options.EmbeddingMaxConcurrency,
                 "EmbeddingMaxConcurrency must be positive.");
         }
+        if (options.EmbeddingBatchSize <= 0)
+        {
+            // A non-positive value makes BatchIndices yield no sub-batches, which
+            // would silently upload zero-length embeddings (corrupt index). Fail loud.
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.EmbeddingBatchSize,
+                "EmbeddingBatchSize must be positive.");
+        }
     }
 }
