@@ -1,30 +1,29 @@
 namespace PinballWizard.Application.Rag.Indexing;
 
-// Per-call options for `IRagIndexer.UpsertAsync`. Defaults match the
-// AI Search Basic SKU's published limits: 1000 documents per upsert
-// batch is the SDK maximum; `IndexUploadConcurrency` of 4 stays well
-// inside Basic's 1-search-unit query+index throughput envelope.
+// Per-call options for `IRagIndexer.UpsertAsync`. Defaults are tuned
+// for the AB#259 250k-TPM Standard deployment of `text-embedding-3-large`
+// on AI Search Basic (1 search unit).
 //
-// `EmbeddingMaxConcurrency` caps the parallelism with which the
-// indexer fans embedding requests out to `IQueryEmbedder`. Azure
-// OpenAI's TPM (tokens-per-minute) is the dominant bottleneck for
-// embedding workloads; the default of 8 is empirically safe against
-// the standard `text-embedding-3-large` deployment's per-second TPM
-// budget. Set to 1 to serialize for cold-start runs against
-// throttled environments.
+// Batching interaction (important): `BatchSize` controls how many chunks
+// become one AI Search upload unit AND one concurrent embed worker. With
+// BatchSize=100 and EmbeddingMaxConcurrency=8, a 1000-chunk document fans
+// into 10 batches with up to 8 embedding in parallel — real concurrency.
+// The old BatchSize=1000 default created a single batch per document so
+// EmbeddingMaxConcurrency was wasted; 63 sub-batches of 16 ran serially,
+// making large manuals take ~10 minutes each (AB#259).
+//
+// `EmbeddingMaxConcurrency` caps concurrent embedding workers. 8 is
+// empirically safe at 250k TPM; lower to 4 if 429s appear in logs.
 public sealed record RagIndexerOptions
 {
-    public int BatchSize { get; init; } = 1000;
+    public int BatchSize { get; init; } = 100;
     public int IndexUploadConcurrency { get; init; } = 4;
     public int EmbeddingMaxConcurrency { get; init; } = 8;
 
     // Max texts per embedding API call. DISTINCT from BatchSize (the AI Search
-    // upload batch, capped at the SDK's 1000-doc maximum): a single upload range
-    // is sub-batched into embedding calls of this size. Kept small (16) because a
-    // large embedding call (e.g. all ~140 chunks of a manual in one request)
-    // exceeded the embedding client's ~100s network timeout during a full RAG
-    // backfill (AB#259), failing those documents. 16 texts/call embeds in a few
-    // seconds — well under the timeout — and the EmbeddingMaxConcurrency gate
-    // still parallelizes calls across the available TPM headroom.
-    public int EmbeddingBatchSize { get; init; } = 16;
+    // upload batch): a single upload range is sub-batched into embedding calls
+    // of this size. 32 keeps each call well under the ~100s network timeout
+    // while reducing round-trips vs. the previous 16 (AB#259). Azure OpenAI
+    // caps inputs per call at 2048; stay well below that for timeout safety.
+    public int EmbeddingBatchSize { get; init; } = 32;
 }
