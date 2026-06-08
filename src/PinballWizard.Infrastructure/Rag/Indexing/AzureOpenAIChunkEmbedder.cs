@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using OpenAI.Embeddings;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Observability;
 
 namespace PinballWizard.Infrastructure.Rag.Indexing;
 
@@ -72,9 +73,15 @@ public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
             vectors[i] = collection[i].ToFloats();
         }
 
+        var inputTokens = collection.Usage.InputTokenCount;
+        PinballWizardTelemetry.RagEmbeddingTokensTotal.Add(
+            inputTokens,
+            new KeyValuePair<string, object?>("call_site", "backfill"));
+
         _logger.LogDebug(
-            "Chunk batch embedded: count={Count}, vector dim={Dimension}.",
+            "Chunk batch embedded: count={Count} tokens={Tokens} vector_dim={Dimension}.",
             vectors.Length,
+            inputTokens,
             vectors.Length > 0 ? vectors[0].Length : 0);
 
         return vectors;

@@ -54,4 +54,22 @@ internal sealed class RetrievedChunkDocument
     // is conditionally rendered.
     [JsonPropertyName(AiSearchIndexFields.LastScrapedUtc)]
     public DateTimeOffset? LastScrapedUtc { get; set; }
+
+    // edition — free-text edition label ("Pro" / "Premium" / "LE")
+    // carried from the scraper provenance record (Task 6, AB#259).
+    // Projected back so the Wizard can attribute per-edition answers
+    // (R2). Nullable: chunks indexed before Task 6 carry null, and
+    // unresolved documents may have no edition. The index field is
+    // retrievable (String fields are retrievable unless IsHidden, which
+    // AiSearchIndexSchema does not set), so AI Search returns it.
+    [JsonPropertyName(AiSearchIndexFields.Edition)]
+    public string? Edition { get; set; }
+
+    // edition_scope — structural scope within the franchise
+    // (single-edition / edition-subset / franchise-wide). The
+    // machine-readable signal the Wizard inspects to decide R1 (answer
+    // once, all editions) vs R2 (answer per edition) vs R3 (honest
+    // substitution). Nullable for the same legacy/unresolved reasons.
+    [JsonPropertyName(AiSearchIndexFields.EditionScope)]
+    public string? EditionScope { get; set; }
 }

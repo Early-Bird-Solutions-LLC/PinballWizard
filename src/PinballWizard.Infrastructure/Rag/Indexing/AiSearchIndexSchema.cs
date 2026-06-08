@@ -159,6 +159,26 @@ internal static class AiSearchIndexSchema
                 IsFilterable = true,
                 IsSortable = true,
             },
+
+            // edition / edition_scope — Task 6 (AB#259). edition is the
+            // free-text label ("Pro" / "Premium" / "LE"); edition_scope is
+            // the structural enum (single-edition / edition-subset /
+            // franchise-wide). Both filter + facet (mirroring machine_id) so
+            // a future retriever query can scope by edition and the Wizard
+            // can decide R1/R2/R3. Not searchable (discrete categorical
+            // values, not free text). Zero-migration-cost per ADR-0025 § 6:
+            // existing chunks carry null until the next Change Feed
+            // re-ingestion run.
+            new(Retrieval.AiSearchIndexFields.Edition, SearchFieldDataType.String)
+            {
+                IsFilterable = true,
+                IsFacetable = true,
+            },
+            new(Retrieval.AiSearchIndexFields.EditionScope, SearchFieldDataType.String)
+            {
+                IsFilterable = true,
+                IsFacetable = true,
+            },
         };
 
         var index = new SearchIndex(indexName, fields)

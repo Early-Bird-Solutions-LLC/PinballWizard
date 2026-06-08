@@ -63,4 +63,18 @@ internal sealed class IndexedChunkDocument
     // populate it going forward (zero-migration-cost per ADR-0025 § 6).
     [JsonPropertyName(AiSearchIndexFields.LastScrapedUtc)]
     public DateTimeOffset? LastScrapedUtc { get; set; }
+
+    // edition — free-text edition label ("Pro" / "Premium" / "LE") from the
+    // scraped_documents provenance record. Nullable: legacy chunks indexed
+    // before Task 6 (AB#259) carry null; unresolved documents may have no
+    // edition. See AiSearchIndexFields.Edition.
+    [JsonPropertyName(AiSearchIndexFields.Edition)]
+    public string? Edition { get; set; }
+
+    // edition_scope — structural scope within the franchise
+    // (single-edition / edition-subset / franchise-wide). The signal the
+    // Wizard uses to decide answer-all vs honest-substitution (R1/R2/R3).
+    // Nullable for the same legacy/unresolved reasons as Edition above.
+    [JsonPropertyName(AiSearchIndexFields.EditionScope)]
+    public string? EditionScope { get; set; }
 }

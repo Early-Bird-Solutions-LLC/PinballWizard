@@ -43,6 +43,7 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         var considered = 0;
         var matchedBySlug = 0;
         var matchedByTitle = 0;
+        var matchedByGroup = 0;
         var unmatched = 0;
         var ambiguous = 0;
         var failedMapping = 0;
@@ -70,9 +71,9 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             var partition = await GetOrLoadPartitionAsync(manufacturer, partitionCache, cancellationToken)
                 .ConfigureAwait(false);
 
-            var (match, matchedVia) = FindMatch(partition, manufacturer, game);
+            var (matches, matchedVia) = FindMatch(partition, manufacturer, game);
 
-            if (match is null)
+            if (matches.Count == 0)
             {
                 if (matchedVia == MatchOutcome.Ambiguous)
                 {
@@ -88,24 +89,33 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
                 continue;
             }
 
-            ApplyScraperFields(match, game, manufacturer, now);
+            // Apply to every matched base machine. For Slug/Title this is one
+            // machine; for Group it is the whole edition family.
+            foreach (var match in matches)
+            {
+                ApplyScraperFields(match, game, manufacturer, now);
+                await _repository.UpsertAsync(match, cancellationToken).ConfigureAwait(false);
+                upserts++;
+            }
 
-            await _repository.UpsertAsync(match, cancellationToken).ConfigureAwait(false);
-            upserts++;
-
-            if (matchedVia == MatchOutcome.Slug) matchedBySlug++;
-            else matchedByTitle++;
+            switch (matchedVia)
+            {
+                case MatchOutcome.Slug: matchedBySlug++; break;
+                case MatchOutcome.Title: matchedByTitle++; break;
+                case MatchOutcome.Group: matchedByGroup++; break;
+            }
         }
 
         _logger.LogInformation(
-            "Reconciler complete: considered={Considered} slug-matched={Slug} title-matched={Title} unmatched={Unmatched} ambiguous={Ambiguous} failed={Failed} upserts={Upserts}",
-            considered, matchedBySlug, matchedByTitle, unmatched, ambiguous, failedMapping, upserts);
+            "Reconciler complete: considered={Considered} slug-matched={Slug} title-matched={Title} group-matched={Group} unmatched={Unmatched} ambiguous={Ambiguous} failed={Failed} upserts={Upserts}",
+            considered, matchedBySlug, matchedByTitle, matchedByGroup, unmatched, ambiguous, failedMapping, upserts);
 
         return new ScraperReconciliationResult
         {
             Considered = considered,
             MatchedBySlug = matchedBySlug,
             MatchedByTitle = matchedByTitle,
+            MatchedByGroup = matchedByGroup,
             Unmatched = unmatched,
             AmbiguousTitle = ambiguous,
             FailedMapping = failedMapping,
@@ -130,48 +140,64 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         return list;
     }
 
-    private (Machine? Machine, MatchOutcome Via) FindMatch(
+    // Returns the matched machine(s) and how they were matched:
+    //   single via slug fast path        → ([m], Slug)
+    //   single via title-normalize       → ([m], Title)
+    //   multiple sharing one GroupId      → (all, Group)   — an edition family
+    //   multiple across different groups  → ([],  Ambiguous) — genuinely unrelated
+    private (List<Machine> Machines, MatchOutcome Via) FindMatch(
         List<Machine> partition, string manufacturer, GameRecord game)
     {
-        // Pass 1: slug fast path.
+        // Pass 1: slug fast path (single machine).
         foreach (var machine in partition)
         {
             if (machine.ManufacturerSlugs.TryGetValue(manufacturer, out var existingSlug)
                 && string.Equals(existingSlug, game.Slug, StringComparison.OrdinalIgnoreCase))
             {
-                return (machine, MatchOutcome.Slug);
+                return ([machine], MatchOutcome.Slug);
             }
         }
 
-        // Pass 2: title-normalize fallback. Bootstraps the slug map on the
-        // first run, after which Pass 1 always wins.
-        var normalizedScraped = NormalizeTitle(game.Title);
-        if (normalizedScraped.Length == 0) return (null, MatchOutcome.None);
+        // Pass 2: franchise-title match. The scraped game title is the bare
+        // franchise ("Godzilla"); OPDB base titles are edition-qualified
+        // ("Godzilla (Pro)", "Godzilla (Premium/LE)"). Compare on the FRANCHISE
+        // title — the normalized title with any trailing "(…)" edition
+        // parenthetical removed — so the scraped game matches every edition base.
+        // Bootstraps the slug map on the first run; Pass 1 wins thereafter.
+        var scrapedFranchise = NormalizeFranchiseTitle(game.Title);
+        if (scrapedFranchise.Length == 0) return ([], MatchOutcome.None);
 
-        Machine? candidate = null;
-        var matchCount = 0;
-        foreach (var machine in partition)
+        var matches = partition
+            .Where(m => NormalizeFranchiseTitle(m.Title) == scrapedFranchise)
+            .ToList();
+
+        if (matches.Count == 0) return ([], MatchOutcome.None);
+        if (matches.Count == 1) return (matches, MatchOutcome.Title);
+
+        // Multiple franchise-title matches. This is an EDITION FAMILY — not a
+        // true ambiguity — only when the matches share manufacturer (always true
+        // here: one partition) AND one OPDB group segment AND one release year.
+        // That conjunction is the reliable edition signal: Godzilla Pro
+        // (GweeP-MW95j) + Premium/LE (GweeP-Ml9pZ), both group "GweeP", both
+        // 2021. The OPDB group segment ALONE is NOT an edition key (it clusters
+        // unrelated games); the year guard separates genuine reissues/remakes
+        // (e.g. Big Ben 1954 vs 1975) which must stay distinct → ambiguous.
+        var segments = matches.Select(m => m.GroupId).Distinct().ToList();
+        var years = matches.Select(m => m.Year).Distinct().ToList();
+        var isEditionFamily =
+            segments.Count == 1 && segments[0] is not null
+            && years.Count == 1 && years[0] is not null;
+
+        if (isEditionFamily)
         {
-            if (NormalizeTitle(machine.Title) == normalizedScraped)
-            {
-                candidate = machine;
-                matchCount++;
-                if (matchCount > 1) break;
-            }
+            return (matches, MatchOutcome.Group);
         }
 
-        if (matchCount == 1) return (candidate, MatchOutcome.Title);
-        if (matchCount > 1)
-        {
-            var ambiguousIds = partition
-                .Where(m => NormalizeTitle(m.Title) == normalizedScraped)
-                .Select(m => m.Id);
-            _logger.LogWarning(
-                "Reconciler: scraped {GameId} ('{Title}') matches multiple Machines on normalized title; manual triage required. Candidates: {Candidates}",
-                game.GameId, game.Title, string.Join(", ", ambiguousIds));
-            return (null, MatchOutcome.Ambiguous);
-        }
-        return (null, MatchOutcome.None);
+        _logger.LogWarning(
+            "Reconciler: scraped {GameId} ('{Title}') matches multiple Machines that are NOT a single edition family (segments/years differ); manual triage required. Candidates: {Candidates}",
+            game.GameId, game.Title,
+            string.Join(", ", matches.Select(m => $"{m.Id}(group={m.GroupId ?? "null"},year={m.Year?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null"})")));
+        return ([], MatchOutcome.Ambiguous);
     }
 
     private static void ApplyScraperFields(
@@ -198,12 +224,24 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         LimitedQuantity = info.LimitedQuantity,
     };
 
+    // Edition/format decoration tokens that manufacturer pages append but
+    // OPDB titles omit — stripped from the END of the normalized title so a
+    // scraped "Cactus Canyon Remake" matches the catalog "Cactus Canyon".
+    // Trailing-only by design: a leading/internal occurrence is part of the
+    // real title (none of these words legitimately start a pinball title).
+    private static readonly string[] DecorationWords =
+    {
+        "remake", "pinball", "gamekit", "deposit", "limitededition",
+        "merlinedition", "vaultedition", "standardedition", "edition",
+    };
+
     /// <summary>
-    /// Lowercase + strip non-alphanumeric. "Stranger Things" /
-    /// "stranger things" / "Stranger Things (Pro)" all collapse to
-    /// "strangerthings" / "strangerthings" / "strangerthingspro" —
-    /// strict enough that punctuation drift doesn't break matching but
-    /// loose enough that legitimately different titles never collide.
+    /// Lowercase + strip non-alphanumeric, then remove a trailing edition/
+    /// format decoration token. "Stranger Things" / "stranger things" /
+    /// "Stranger Things (Pro)" collapse to "strangerthings" / "strangerthings"
+    /// / "strangerthingspro"; "Cactus Canyon Remake" → "cactuscanyon". Strict
+    /// enough that punctuation drift doesn't break matching, loose enough that
+    /// legitimately different titles never collide.
     /// </summary>
     public static string NormalizeTitle(string? title)
     {
@@ -213,8 +251,38 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         {
             if (char.IsLetterOrDigit(c)) sb.Append(char.ToLowerInvariant(c));
         }
-        return sb.ToString();
+        var normalized = sb.ToString();
+        foreach (var decoration in DecorationWords)
+        {
+            if (normalized.Length > decoration.Length
+                && normalized.EndsWith(decoration, StringComparison.Ordinal))
+            {
+                normalized = normalized[..^decoration.Length];
+                break;
+            }
+        }
+        return normalized;
     }
 
-    private enum MatchOutcome { None, Slug, Title, Ambiguous }
+    /// <summary>
+    /// Franchise title for cross-record matching: the title with any trailing
+    /// "(…)" edition parenthetical removed, then <see cref="NormalizeTitle"/>
+    /// applied. "Godzilla (Pro)" and "Godzilla (Premium/LE)" both reduce to
+    /// "godzilla", so a scraped bare-franchise game ("Godzilla") matches every
+    /// edition base. A title with no parenthetical is normalized unchanged.
+    /// </summary>
+    public static string NormalizeFranchiseTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return string.Empty;
+        var trimmed = title.TrimEnd();
+        // Strip a single trailing parenthetical group (the edition marker).
+        var open = trimmed.LastIndexOf('(');
+        if (open > 0 && trimmed.EndsWith(')'))
+        {
+            trimmed = trimmed[..open];
+        }
+        return NormalizeTitle(trimmed);
+    }
+
+    private enum MatchOutcome { None, Slug, Title, Group, Ambiguous }
 }

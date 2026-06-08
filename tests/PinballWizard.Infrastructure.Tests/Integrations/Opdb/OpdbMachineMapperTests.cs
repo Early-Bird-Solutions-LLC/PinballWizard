@@ -201,6 +201,67 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal("Indiana Jones (The Pinball Adventure)", machine!.Title);
     }
 
+    // --- AB#259: EditionLabel + EditionTokens derivation ---
+
+    [Fact]
+    public void Map_EditionQualifiedName_DerivesEditionLabelAndTokens_KeepsTitleClean()
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-MW95j",
+            IsMachine = true,
+            Name = "Godzilla (Pro)",
+            CommonName = null,
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball" },
+            ManufactureDate = "2021-09-14",
+        };
+
+        var m = OpdbMachineMapper.Map(dto, NowFixed, groupTitle: "Godzilla");
+
+        Assert.NotNull(m);
+        Assert.Equal("Godzilla", m!.Title);              // Title stays the franchise (ADR-0029)
+        Assert.Equal("Pro", m.EditionLabel);
+        Assert.Equal(["pro"], m.EditionTokens);
+    }
+
+    [Fact]
+    public void Map_NoParenthetical_EditionLabelNull()
+    {
+        var dto = new OpdbMachineDto
+        {
+            OpdbId = "GJ2o0-MrRye",
+            IsMachine = true,
+            Name = "Toy Story 4",
+            CommonName = "Toy Story 4",
+            Manufacturer = new OpdbManufacturerDto { Name = "Jersey Jack Pinball" },
+            ManufactureDate = "2023-01-01",
+        };
+
+        var m = OpdbMachineMapper.Map(dto, NowFixed);
+
+        Assert.NotNull(m);
+        Assert.Null(m!.EditionLabel);
+        Assert.Empty(m.EditionTokens);
+    }
+
+    [Theory]
+    [InlineData("Premium/LE", new[] { "premium", "le" })]
+    [InlineData("70th Anniversary", new[] { "70th" })]
+    [InlineData("Pro", new[] { "pro" })]
+    public void DeriveEditionTokens_NormalizesAndDropsNoiseWords(string label, string[] expected)
+    {
+        Assert.Equal(expected, OpdbMachineMapper.DeriveEditionTokens(label));
+    }
+
+    [Fact]
+    public void ExtractEditionLabel_NoParenthetical_FallsBackToFeatures()
+    {
+        // Secondary signal: when Name has no parenthetical, the OPDB
+        // "features" list ("Pro edition") supplies the EditionLabel.
+        var label = OpdbMachineMapper.ExtractEditionLabel("Godzilla", ["Pro edition"]);
+        Assert.Equal("Pro", label);
+    }
+
     [Theory]
     [InlineData("GweeP-MW95j", "GweeP")]
     [InlineData("GRBN-MQR4P", "GRBN")]
@@ -403,6 +464,81 @@ public sealed class OpdbMachineMapperTests
         Assert.Single(existing.ManufacturerSlugs);
         Assert.Equal("stranger-things", existing.ManufacturerSlugs["stern"]);
         Assert.Single(existing.Editions);
+    }
+
+    [Fact]
+    public void MergeOpdbFieldsInto_ResetsEditionTokensToLabelDerivedSet()
+    {
+        // AB#259 re-sync convergence: MergeOpdbFieldsInto is the live
+        // migration path (existing rows). It intentionally OVERWRITES
+        // EditionLabel/EditionTokens (unlike the field-guarded
+        // Designers/Themes merges) so stale tokens from a prior run are
+        // discarded and the row converges to the label-derived base set.
+        // Pass-2 then re-folds alias tokens on top — so the reset is what
+        // makes the full sync idempotent. This unit test pins the reset
+        // directly (the pass-2-only sync tests don't exercise it).
+        var existing = new Machine
+        {
+            Id = "GweeP-Ml9pZ",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla",
+            EditionLabel = "old",
+            EditionTokens = ["premium", "le", "stale-token"],
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+
+        var fresh = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-Ml9pZ",
+            IsMachine = true,
+            CommonName = "Godzilla",
+            Name = "Godzilla (Premium/LE)",
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
+        };
+
+        OpdbMachineMapper.MergeOpdbFieldsInto(existing, fresh, NowFixed);
+
+        // Stale token gone; tokens are exactly the label-derived set.
+        Assert.Equal("Premium/LE", existing.EditionLabel);
+        Assert.Equal(
+            "le,premium",
+            string.Join(",", existing.EditionTokens.OrderBy(t => t, StringComparer.Ordinal)));
+    }
+
+    [Fact]
+    public void MergeOpdbFieldsInto_NoEditionLabel_ClearsTokensAndLabel()
+    {
+        // Convergence edge case: when the fresh dto yields no edition label
+        // (blank Name, empty Features), the reset must empty EditionTokens
+        // and null EditionLabel — not preserve the prior run's values.
+        var existing = new Machine
+        {
+            Id = "GweeP-Ml9pZ",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla",
+            EditionLabel = "old",
+            EditionTokens = ["premium", "le", "stale-token"],
+            FirstSeenAt = NowFixed,
+            LastSeenAt = NowFixed,
+        };
+
+        var fresh = new OpdbMachineDto
+        {
+            OpdbId = "GweeP-Ml9pZ",
+            IsMachine = true,
+            CommonName = "Godzilla",
+            Name = "   ", // blank → no parenthetical label
+            Features = [], // and no features to fall back on
+            Manufacturer = new OpdbManufacturerDto { Name = "Stern Pinball, Inc." },
+        };
+
+        OpdbMachineMapper.MergeOpdbFieldsInto(existing, fresh, NowFixed);
+
+        Assert.Null(existing.EditionLabel);
+        Assert.Empty(existing.EditionTokens);
     }
 
     private static OpdbMachineDto MachineDto(string opdbId, string? manufactureDate = null) => new()

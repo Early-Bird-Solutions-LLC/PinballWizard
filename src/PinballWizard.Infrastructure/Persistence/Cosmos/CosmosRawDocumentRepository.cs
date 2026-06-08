@@ -115,6 +115,49 @@ internal sealed class CosmosRawDocumentRepository
         }
     }
 
+    // IRawDocumentRepository.StreamAllAsync
+    public async IAsyncEnumerable<RawDocumentRecord> StreamAllAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var cosmos in StreamAsync("SELECT * FROM c", parameters: null, partitionKey: null, cancellationToken).ConfigureAwait(false))
+        {
+            yield return MapToDomain(cosmos);
+        }
+    }
+
+    // IRawDocumentRepository.UpdateFileAsync
+    public async Task UpdateFileAsync(
+        string documentId,
+        DownloadedFileInfo file,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentNullException.ThrowIfNull(file);
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"UpdateFileAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        existing.File = new RawFileInfo
+        {
+            LocalPath = file.LocalPath,
+            Filename = file.Filename,
+            SizeBytes = file.SizeBytes,
+            Sha256 = file.Sha256,
+            MimeType = file.MimeType,
+            PageCount = file.PageCount,
+        };
+        existing.Timeline ??= new RawTimelineInfo { FirstDiscoveredAt = DateTime.UtcNow };
+        existing.Timeline.LastDownloadedAt = DateTime.UtcNow;
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
     // IRawDocumentRepository.UpdateLinkStatusAsync
     public async Task UpdateLinkStatusAsync(
         string documentId,

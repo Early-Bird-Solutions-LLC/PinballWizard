@@ -37,6 +37,7 @@ public static class OpdbMachineMapper
 
         var manufacturerName = dto.Manufacturer.Name;
         var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(dto.Manufacturer.ShortName, manufacturerName)!);
+        var editionLabel = ExtractEditionLabel(dto.Name, dto.Features);
 
         return new Machine
         {
@@ -55,6 +56,8 @@ public static class OpdbMachineMapper
             Designers = dto.Designers.Where(d => !string.IsNullOrWhiteSpace(d.Name)).Select(d => d.Name!).ToList(),
             Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList(),
             Editions = [],
+            EditionLabel = editionLabel,
+            EditionTokens = DeriveEditionTokens(editionLabel),
             ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             OpdbSourceUrl = $"https://opdb.org/machines/{dto.OpdbId}",
             FirstSeenAt = now,
@@ -74,6 +77,54 @@ public static class OpdbMachineMapper
         ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
         var firstHyphen = opdbId.IndexOf('-', StringComparison.Ordinal);
         return firstHyphen <= 0 ? null : opdbId[..firstHyphen];
+    }
+
+    /// <summary>
+    /// The parenthetical of an edition-qualified OPDB name: "Godzilla (Pro)" → "Pro",
+    /// "Godzilla (Premium/LE)" → "Premium/LE". Falls back to the joined features when
+    /// the name has no parenthetical. Null when neither yields an edition label.
+    /// </summary>
+    public static string? ExtractEditionLabel(string? name, IReadOnlyList<string>? features)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var open = name.LastIndexOf('(');
+            var close = name.LastIndexOf(')');
+            if (open >= 0 && close > open)
+            {
+                var inner = name[(open + 1)..close].Trim();
+                if (inner.Length > 0) return inner;
+            }
+        }
+        if (features is { Count: > 0 })
+        {
+            var labels = features
+                .Select(f => f.Replace(" edition", "", StringComparison.OrdinalIgnoreCase).Trim())
+                .Where(f => f.Length > 0);
+            var joined = string.Join("/", labels);
+            if (joined.Length > 0) return joined;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Normalized lowercase tokens from an edition label: "Premium/LE" →
+    /// ["premium","le"], "Pro" → ["pro"], "70th Anniversary" → ["70th"]. Splits on
+    /// '/' and whitespace, drops noise words. Alias-fold (OpdbSyncService pass 2)
+    /// appends more tokens later.
+    /// </summary>
+    public static List<string> DeriveEditionTokens(string? editionLabel)
+    {
+        if (string.IsNullOrWhiteSpace(editionLabel)) return [];
+        var tokens = new List<string>();
+        foreach (var part in editionLabel.Split(['/', ' ', ','], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = part.Trim().ToLowerInvariant();
+            if (t is "anniversary" or "edition" or "and") continue;
+            if (t.Length == 0 || tokens.Contains(t)) continue;
+            tokens.Add(t);
+        }
+        return tokens;
     }
 
     /// <summary>
@@ -203,6 +254,16 @@ public static class OpdbMachineMapper
         {
             existing.Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList();
         }
+
+        // INTENTIONAL overwrite (NOT field-guarded like Designers/Themes above):
+        // a re-sync must converge EditionLabel/EditionTokens to the fresh
+        // label-derived set, discarding any stale tokens from a prior run.
+        // Pass-2 (OpdbSyncService) then re-folds alias tokens on top of this
+        // reset — the reset is precisely what makes the full sync idempotent.
+        // Do NOT add an `if`/non-blank guard here: that would let stale tokens
+        // accumulate and break the reset/idempotency contract.
+        existing.EditionLabel = ExtractEditionLabel(dto.Name, dto.Features);
+        existing.EditionTokens = DeriveEditionTokens(existing.EditionLabel);
 
         existing.LastSeenAt = now;
     }

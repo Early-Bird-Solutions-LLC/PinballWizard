@@ -141,6 +141,10 @@ public sealed class AiSearchRagRetrieverTests
         // PR-C3: last_scraped_utc must be projected so the retriever
         // can thread it through to Citation.LastScrapedUtc.
         Assert.Contains("last_scraped_utc", options.Select);
+        // Task 6/7 (AB#259): edition + edition_scope must be projected so
+        // the Wizard sees each chunk's scope and decides R1/R2/R3.
+        Assert.Contains("edition", options.Select);
+        Assert.Contains("edition_scope", options.Select);
         Assert.DoesNotContain("content_embedding", options.Select);
     }
 
@@ -180,6 +184,8 @@ public sealed class AiSearchRagRetrieverTests
             SectionHeading = "Foo Mode Rules",
             Content = "Foo Mode awards the Wizard combo bonus when …",
             LastScrapedUtc = expectedLastScraped,
+            Edition = "Premium",
+            EditionScope = "single-edition",
         };
 
         var chunk = AiSearchRagRetriever.MapToChunk(doc, score: 0.91);
@@ -198,6 +204,9 @@ public sealed class AiSearchRagRetrieverTests
         Assert.Equal(0.91, chunk.Score);
         // PR-C3: LastScrapedUtc must round-trip from RetrievedChunkDocument.
         Assert.Equal(expectedLastScraped, chunk.LastScrapedUtc);
+        // Task 6/7 (AB#259): edition + edition_scope must round-trip.
+        Assert.Equal("Premium", chunk.Edition);
+        Assert.Equal("single-edition", chunk.EditionScope);
     }
 
     [Fact]

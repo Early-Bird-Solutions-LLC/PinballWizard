@@ -62,7 +62,8 @@ public sealed class ScrapedDocumentChangeFeedHandler
             // PR-C3 scraper writes that didn't capture the field) — the
             // indexer propagates null gracefully.
             LastScrapedUtc: change.LastDownloadedAt,
-            Edition: change.Edition);
+            Edition: change.Edition,
+            EditionScope: change.EditionScope);
 
         await using var pdfStream = await _bytesSource
             .OpenAsync(change.DocumentUrl, cancellationToken).ConfigureAwait(false);

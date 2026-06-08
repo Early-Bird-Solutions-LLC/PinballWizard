@@ -66,6 +66,24 @@ public sealed class Machine : IEntity
     [JsonPropertyName("editions")]
     public List<MachineEdition> Editions { get; set; } = [];
 
+    /// <summary>
+    /// Edition-qualified OPDB label for this base when it shares a franchise
+    /// (GroupId) with sibling bases — e.g. "Pro", "Premium/LE". Derived from the
+    /// parenthetical of OPDB's edition-qualified name. Null for singleton machines.
+    /// NOT the Title — Title stays the clean franchise name per ADR-0029 D1.
+    /// </summary>
+    [JsonPropertyName("editionLabel")]
+    public string? EditionLabel { get; set; }
+
+    /// <summary>
+    /// Normalized edition tokens this base answers to — e.g. ["pro"] for the Pro
+    /// base, ["premium","le","70th"] for the Premium/LE base (folded from its
+    /// alias editions). The reliable per-base discriminator the linker matches a
+    /// document's edition token against (NOT Title). Empty for singletons.
+    /// </summary>
+    [JsonPropertyName("editionTokens")]
+    public List<string> EditionTokens { get; set; } = [];
+
     /// <summary>Manufacturer-specific identifiers — e.g., {"stern": "stranger-things", "jjp": "..."}.</summary>
     [JsonPropertyName("manufacturerSlugs")]
     public Dictionary<string, string> ManufacturerSlugs { get; set; } = new(StringComparer.OrdinalIgnoreCase);

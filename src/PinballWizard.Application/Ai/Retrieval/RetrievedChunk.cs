@@ -33,4 +33,12 @@ public sealed record RetrievedChunk(
     // Timeline.LastDownloadedAt from the AI Search index's last_scraped_utc
     // field (Wave 2 PR-C3). Null for chunks indexed before PR-C3 or when
     // the source document's scraper did not populate LastDownloadedAt.
-    DateTimeOffset? LastScrapedUtc = null);
+    DateTimeOffset? LastScrapedUtc = null,
+    // Edition label ("Pro" / "Premium" / "LE") and structural scope
+    // (single-edition / edition-subset / franchise-wide) from the
+    // index's edition / edition_scope fields (Task 6, AB#259). The
+    // Wizard reads EditionScope to decide R1/R2/R3 edition reasoning
+    // and Edition to attribute per-edition answers. Both null for
+    // chunks indexed before Task 6 or for unresolved documents.
+    string? Edition = null,
+    string? EditionScope = null);

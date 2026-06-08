@@ -295,6 +295,8 @@ public sealed class MachineGroundingToolTests
             Title = "Godzilla Premium/LE",
             Year = 2021,
             GroupId = "GweeP",
+            EditionLabel = "Premium/LE",
+            EditionTokens = ["premium", "le", "70th"],
             Editions = [new MachineEdition { Name = "Premium", Msrp = "$9,999" }],
             FirstSeenAt = DateTimeOffset.UtcNow,
             LastSeenAt = DateTimeOffset.UtcNow,
@@ -324,6 +326,10 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
         Assert.Equal("Godzilla Premium/LE", result.Siblings[0].Title);
         Assert.Equal("Premium", result.Siblings[0].Editions[0].Name);
+        // Task 7 (AB#259): EditionLabel + EditionTokens surfaced so the
+        // Wizard can name the edition and match a user-named edition.
+        Assert.Equal("Premium/LE", result.Siblings[0].EditionLabel);
+        Assert.Equal(["premium", "le", "70th"], result.Siblings[0].EditionTokens);
     }
 
     [Fact]

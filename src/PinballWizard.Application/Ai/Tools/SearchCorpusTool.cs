@@ -204,7 +204,13 @@ public sealed class SearchCorpusTool
                     PageStart: chunk.PageStart,
                     PageEnd: chunk.PageEnd,
                     SectionHeading: chunk.SectionHeading,
-                    Content: chunk.Content)
+                    Content: chunk.Content,
+                    // Model-visible (Task 7, AB#259): the model reads each
+                    // chunk's edition_scope to decide R1/R2/R3 and edition to
+                    // attribute per-edition answers. Threaded from the
+                    // retrieved chunk's index fields.
+                    Edition: chunk.Edition,
+                    EditionScope: chunk.EditionScope)
                 {
                     // Score is threaded through [JsonIgnore] so the model
                     // does not see it; the citation extractor reads it to

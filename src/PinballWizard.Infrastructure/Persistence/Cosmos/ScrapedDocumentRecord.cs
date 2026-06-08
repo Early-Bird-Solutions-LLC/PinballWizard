@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using PinballWizard.Application.Linking;
 using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -53,4 +54,26 @@ internal sealed class ScrapedDocumentRecord : IEntity
 
     [JsonPropertyName("edition")]
     public string? Edition { get; init; }
+
+    // Structural edition scope of the document within its franchise: whether it
+    // applies to a single edition, a subset of editions, or the whole franchise.
+    // Distinct from the free-text `edition` label (e.g. "Pro") — this is the
+    // machine-readable enum the chunk pipeline (Task 6) carries into AI Search.
+    // Persisted as the hyphenated wire form (single-edition / edition-subset /
+    // franchise-wide), NOT the raw enum name, so the read-side projection and any
+    // downstream query filters get a stable, conventional value.
+    [JsonPropertyName("edition_scope")]
+    public required string EditionScope { get; init; }
+
+    internal static string ToWire(EditionScope scope) => scope switch
+    {
+        PinballWizard.Application.Linking.EditionScope.SingleEdition => "single-edition",
+        PinballWizard.Application.Linking.EditionScope.EditionSubset => "edition-subset",
+        PinballWizard.Application.Linking.EditionScope.FranchiseWide => "franchise-wide",
+        // No catch-all default: a new EditionScope value must get an explicit wire
+        // mapping here. Defaulting an unmapped scope to "franchise-wide" would
+        // silently persist the most over-broad (and most dangerous) label — the
+        // exact over-citation failure AB#259 exists to prevent — and pass every test.
+        _ => throw new ArgumentOutOfRangeException(nameof(scope), scope, "Unmapped EditionScope has no wire form."),
+    };
 }
