@@ -26,12 +26,21 @@ public sealed record EvalQuestionResult(
     [property: JsonPropertyName("duration_ms")] double DurationMs,
     [property: JsonPropertyName("error")] string? Error = null);
 
+// Edition-aware additions (AB#259): AnsweredAllEditions (R2) and
+// HonestSubstitution (R3) are null on rows whose expected_outcome is not
+// the matching outcome — the metric is undefined there, so it is omitted
+// from that row's JSON and excluded from the aggregate denominator rather
+// than scored 1.0 (which would dilute the R2/R3 signal across the mostly-
+// grounded eval set). Aggregate means for these two are computed only over
+// applicable rows; null when no row exercises that outcome.
 public sealed record EvalScores(
     [property: JsonPropertyName("citation_precision")] double CitationPrecision,
     [property: JsonPropertyName("citation_recall")] double CitationRecall,
     [property: JsonPropertyName("citation_coverage")] double CitationCoverage,
     [property: JsonPropertyName("subagent_accuracy")] double SubagentAccuracy,
-    [property: JsonPropertyName("refusal_correctness")] double RefusalCorrectness);
+    [property: JsonPropertyName("refusal_correctness")] double RefusalCorrectness,
+    [property: JsonPropertyName("answered_all_editions")] double? AnsweredAllEditions = null,
+    [property: JsonPropertyName("honest_substitution")] double? HonestSubstitution = null);
 
 public sealed record EvalAggregate(
     [property: JsonPropertyName("question_count")] int QuestionCount,
@@ -40,7 +49,11 @@ public sealed record EvalAggregate(
     [property: JsonPropertyName("citation_recall_mean")] double CitationRecallMean,
     [property: JsonPropertyName("citation_coverage_mean")] double CitationCoverageMean,
     [property: JsonPropertyName("subagent_accuracy_mean")] double SubagentAccuracyMean,
-    [property: JsonPropertyName("refusal_correctness_mean")] double RefusalCorrectnessMean);
+    [property: JsonPropertyName("refusal_correctness_mean")] double RefusalCorrectnessMean,
+    [property: JsonPropertyName("answered_all_editions_mean")] double? AnsweredAllEditionsMean = null,
+    [property: JsonPropertyName("answered_all_editions_count")] int AnsweredAllEditionsCount = 0,
+    [property: JsonPropertyName("honest_substitution_mean")] double? HonestSubstitutionMean = null,
+    [property: JsonPropertyName("honest_substitution_count")] int HonestSubstitutionCount = 0);
 
 public sealed record EvalRunResult(
     [property: JsonPropertyName("evaluation_id")] string EvaluationId,

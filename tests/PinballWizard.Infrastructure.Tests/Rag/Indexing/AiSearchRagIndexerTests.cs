@@ -26,7 +26,9 @@ public sealed class AiSearchRagIndexerTests
         Manufacturer: "Stern Pinball",
         DocumentId: "doc_godzilla_manual",
         DocumentUrl: "https://sternpinball.com/wp-content/uploads/godzilla_manual.pdf",
-        DocumentType: DocumentType.Manual);
+        DocumentType: DocumentType.Manual,
+        Edition: "Premium",
+        EditionScope: "single-edition");
 
     private static Chunk MakeChunk(int index, int pageStart = 1, int pageEnd = 1, string text = "the quick brown fox") =>
         new(
@@ -152,6 +154,128 @@ public sealed class AiSearchRagIndexerTests
     }
 
     [Fact]
+    public void RagIndexerOptions_Defaults_AreCorrect()
+    {
+        // BatchSize=100: splits large documents into multiple concurrent upload
+        // batches so EmbeddingMaxConcurrency is actually utilized. BatchSize=1000
+        // produced a single batch per document, serializing all embedding calls
+        // and making large manuals take ~10 minutes (AB#259).
+        // EmbeddingBatchSize=32: keeps each embedding API call well under the
+        // ~100s network timeout while reducing round-trips vs. the previous 16.
+        var opts = new RagIndexerOptions();
+        Assert.Equal(100, opts.BatchSize);
+        Assert.Equal(32, opts.EmbeddingBatchSize);
+        Assert.Equal(8, opts.EmbeddingMaxConcurrency);
+        Assert.Equal(4, opts.IndexUploadConcurrency);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_SubBatchesEmbeddingCalls_ByEmbeddingBatchSize_NotUploadBatchSize()
+    {
+        // A 40-chunk doc with EmbeddingBatchSize=16 must call EmbedBatchAsync
+        // THREE times (16 + 16 + 8), each with <= 16 texts — NOT one 40-text call.
+        // (Upload BatchSize stays large; the two limits are decoupled.) The
+        // placeholder SearchClient makes the upload throw, but the embedding calls
+        // happen first, so we assert the captured embed-call sizes.
+        var embedCallSizes = new ConcurrentBag<int>();
+        var embedder = Substitute.For<IChunkEmbedder>();
+        embedder.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var texts = call.Arg<IReadOnlyList<string>>();
+                embedCallSizes.Add(texts.Count);
+                // Return one vector per input text so the per-call contract holds.
+                var vectors = texts.Select(_ => new ReadOnlyMemory<float>([1f, 2f, 3f])).ToList();
+                return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(vectors);
+            });
+
+        var sut = NewIndexer(embedder);
+        var chunks = Enumerable.Range(0, 40).Select(i => MakeChunk(i)).ToList();
+        var options = new RagIndexerOptions { EmbeddingBatchSize = 16 };
+
+        // Upload will fail against the placeholder SearchClient — that's fine;
+        // the embedding sub-batching we're testing runs before the upload.
+        try
+        {
+            await sut.UpsertAsync(SampleRequest, chunks, options, CancellationToken.None);
+        }
+        catch (Exception) { /* placeholder upload failure expected */ }
+
+        // Every embed call carried <= 16 texts, none carried 40.
+        Assert.NotEmpty(embedCallSizes);
+        Assert.All(embedCallSizes, n => Assert.True(n <= 16, $"embed call had {n} texts; must be <= 16"));
+        Assert.DoesNotContain(40, embedCallSizes);
+        // 40 chunks / 16 = 3 sub-batches (16 + 16 + 8) for the single upload range.
+        Assert.Equal(40, embedCallSizes.Sum());
+    }
+
+    [Theory]
+    [InlineData(8, 16)]    // count < EmbeddingBatchSize → one short sub-batch
+    [InlineData(16, 16)]   // count == EmbeddingBatchSize → exactly one full sub-batch (no remainder)
+    [InlineData(17, 16)]   // one full + 1 remainder
+    [InlineData(100, 16)]  // many sub-batches
+    [InlineData(40, 64)]   // EmbeddingBatchSize > count → single sub-batch of `count`
+    public async Task UpsertAsync_SubBatchBoundaries_CoverEveryChunkExactlyOnce(int count, int embeddingBatchSize)
+    {
+        var embedCallSizes = new ConcurrentBag<int>();
+        var embedder = Substitute.For<IChunkEmbedder>();
+        embedder.EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var texts = call.Arg<IReadOnlyList<string>>();
+                embedCallSizes.Add(texts.Count);
+                return Task.FromResult<IReadOnlyList<ReadOnlyMemory<float>>>(
+                    texts.Select(_ => new ReadOnlyMemory<float>([1f, 2f, 3f])).ToList());
+            });
+
+        var sut = NewIndexer(embedder);
+        var chunks = Enumerable.Range(0, count).Select(i => MakeChunk(i)).ToList();
+        var options = new RagIndexerOptions { EmbeddingBatchSize = embeddingBatchSize };
+
+        try { await sut.UpsertAsync(SampleRequest, chunks, options, CancellationToken.None); }
+        catch (Exception) { /* placeholder upload failure expected */ }
+
+        Assert.All(embedCallSizes, n => Assert.True(n <= embeddingBatchSize));
+        Assert.Equal(count, embedCallSizes.Sum());            // every chunk embedded exactly once
+        var expectedCalls = (count + embeddingBatchSize - 1) / embeddingBatchSize;
+        Assert.Equal(expectedCalls, embedCallSizes.Count);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_NonPositiveEmbeddingBatchSize_Throws_NotSilentEmptyEmbeddings()
+    {
+        // A zero/negative EmbeddingBatchSize would make BatchIndices return no
+        // sub-batches → zero-length embeddings silently uploaded (corrupt index).
+        // Must throw at validation instead.
+        var embedder = Substitute.For<IChunkEmbedder>();
+        var sut = NewIndexer(embedder);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            sut.UpsertAsync(
+                SampleRequest, [MakeChunk(0)],
+                new RagIndexerOptions { EmbeddingBatchSize = 0 },
+                CancellationToken.None));
+        await embedder.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UpsertAsync_EmbeddingBatchSizeAboveAzureLimit_Throws()
+    {
+        // An oversized EmbeddingBatchSize would re-introduce the exact >100s-timeout
+        // bug this whole change fixes (one huge embedding call). Cap at Azure OpenAI's
+        // documented 2048 max-inputs-per-embedding-call so the fix is self-enforcing.
+        var embedder = Substitute.For<IChunkEmbedder>();
+        var sut = NewIndexer(embedder);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            sut.UpsertAsync(
+                SampleRequest, [MakeChunk(0)],
+                new RagIndexerOptions { EmbeddingBatchSize = 2049 },
+                CancellationToken.None));
+        await embedder.DidNotReceive().EmbedBatchAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void MapToDocument_PopulatesEverySchemaField()
     {
         var chunk = new Chunk(
@@ -179,6 +303,38 @@ public sealed class AiSearchRagIndexerTests
         var expectedId = AiSearchRagIndexer.ComputeChunkId(
             SampleRequest.MachineId, SampleRequest.DocumentId, 42, 43, 7);
         Assert.Equal(expectedId, doc.ChunkId);
+    }
+
+    [Fact]
+    public void MapToDocument_ThreadsEditionAndEditionScope()
+    {
+        // Task 6 (AB#259): every chunk self-declares its free-text edition
+        // label and structural edition scope so a future retriever query
+        // can filter by them and the Wizard can decide R1/R2/R3
+        // (answer-all vs honest-substitution). Verify both threads from
+        // ChunkRequest → IndexedChunkDocument unchanged.
+        var chunk = MakeChunk(0);
+
+        var doc = AiSearchRagIndexer.MapToDocument(SampleRequest, chunk);
+
+        Assert.Equal("Premium", doc.Edition);
+        Assert.Equal("single-edition", doc.EditionScope);
+    }
+
+    [Fact]
+    public void MapToDocument_NullEditionFields_RemainNull()
+    {
+        // Legacy / unresolved documents may carry no edition metadata.
+        // The mapping must propagate null rather than substituting an
+        // empty string — null is filterable-absent in AI Search, an
+        // empty string would be a distinct (wrong) facet value.
+        var request = SampleRequest with { Edition = null, EditionScope = null };
+        var chunk = MakeChunk(0);
+
+        var doc = AiSearchRagIndexer.MapToDocument(request, chunk);
+
+        Assert.Null(doc.Edition);
+        Assert.Null(doc.EditionScope);
     }
 
     [Fact]

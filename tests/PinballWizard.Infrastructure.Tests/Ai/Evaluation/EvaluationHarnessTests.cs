@@ -187,6 +187,115 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public async Task RunAsync_AnsweredAllEditionsRow_DispatchesR2Evaluator_AndAggregates()
+    {
+        using var fixture = new HarnessFixture();
+        // R2: edition-unspecified, answer differs — must name BOTH editions and
+        // carry one citation per required edition. expected_outcome routes to the
+        // AnsweredAllEditions evaluator; the mean must aggregate only this row.
+        fixture.WriteGroundTruth(
+            """{"id":"ev-r2","question":"How does multiball work in Stern Godzilla?","expected_sub_agent":"Rules","expected_citation_set":[],"acceptable_refusal":false,"expected_outcome":"answered_all_editions","required_editions":["Pro","Premium/LE"]}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "For the Pro edition, multiball works like X; for the Premium/LE edition, it works like Y.",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Pro Manual", "https://opdb.org/machines/GweeP-MW95j", MachineId: "GweeP-MW95j"),
+                    new("Godzilla Premium/LE Manual", "https://opdb.org/machines/GweeP-Ml9pZ", MachineId: "GweeP-Ml9pZ"),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.9,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // R2 dispatched and passed; R3 untouched (null mean / zero count).
+        Assert.Equal(1, result.Aggregate.AnsweredAllEditionsCount);
+        Assert.Equal(1.0, result.Aggregate.AnsweredAllEditionsMean);
+        Assert.Equal(0, result.Aggregate.HonestSubstitutionCount);
+        Assert.Null(result.Aggregate.HonestSubstitutionMean);
+        Assert.Equal(1.0, result.Questions[0].Scores.AnsweredAllEditions);
+        Assert.Null(result.Questions[0].Scores.HonestSubstitution);
+    }
+
+    [Fact]
+    public async Task RunAsync_HonestSubstitutionRow_DispatchesR3Evaluator_UsesFirstRequiredEdition()
+    {
+        using var fixture = new HarnessFixture();
+        // R3: user named LE, only Pro data — answer must disclose the LE gap and
+        // cite the Pro substitute. expected_outcome routes to HonestSubstitution;
+        // the harness uses required_editions[0] ("LE") as the named edition.
+        fixture.WriteGroundTruth(
+            """{"id":"ev-r3","question":"How do the Godzilla LE flippers behave?","expected_sub_agent":"Rules","expected_citation_set":[],"acceptable_refusal":false,"expected_outcome":"honest_substitution","required_editions":["LE"]}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "I don't have LE-specific details for that, but here's what the Pro manual says about the flippers.",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Pro Manual", "https://opdb.org/machines/GweeP-MW95j", MachineId: "GweeP-MW95j"),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.8,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // R3 dispatched and passed (names "LE" as a whole word + discloses the gap
+        // + cites a substitute); R2 untouched.
+        Assert.Equal(1, result.Aggregate.HonestSubstitutionCount);
+        Assert.Equal(1.0, result.Aggregate.HonestSubstitutionMean);
+        Assert.Equal(0, result.Aggregate.AnsweredAllEditionsCount);
+        Assert.Null(result.Aggregate.AnsweredAllEditionsMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_AcceptableCitationSets_TakesAnyOfPath_RewardsEitherEditionBase()
+    {
+        using var fixture = new HarnessFixture();
+        // R1/any-of: when acceptable_citation_sets is present, the harness scores
+        // against the most-favorable set. Citing ONLY the Premium/LE base must score
+        // 1.0 precision against [[Pro],[Premium/LE]] — the single-expected path would
+        // have penalized it.
+        fixture.WriteGroundTruth(
+            """{"id":"ev-anyof","question":"What is Stern Godzilla's playfield size?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false,"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]]}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "The playfield is standard size (cited: Godzilla Premium/LE Manual).",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Premium/LE Manual", "https://opdb.org/machines/GweeP-Ml9pZ", MachineId: "GweeP-Ml9pZ"),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.9,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // Any-of path: citing the OTHER acceptable base still scores 1.0. Without the
+        // any-of branch this would be 0.0 (predicted GweeP-Ml9pZ ∉ expected [GweeP-MW95j]).
+        Assert.Equal(1.0, result.Aggregate.CitationPrecisionMean);
+        Assert.Equal(1.0, result.Aggregate.CitationRecallMean);
+    }
+
+    [Fact]
     public async Task RunAsync_WritesValidJson_RoundTrippable()
     {
         using var fixture = new HarnessFixture();
@@ -259,6 +368,8 @@ public sealed class EvaluationHarnessTests
                 new CitationCoverageEvaluator(),
                 new SubagentAccuracyEvaluator(),
                 new RefusalCorrectnessEvaluator(),
+                new AnsweredAllEditionsEvaluator(),
+                new HonestSubstitutionEvaluator(),
                 evalOptions,
                 NullLogger<EvaluationHarness>.Instance);
         }

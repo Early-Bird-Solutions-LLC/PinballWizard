@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
@@ -77,7 +78,7 @@ public static class ServiceCollectionExtensions
         // Typed HttpClient gives the bytes source automatic resilience
         // (via the ServiceDefaults standard handler) + per-message
         // logging via the host's HttpClient factory.
-        services.AddHttpClient<IDocumentBytesSource, HttpDocumentBytesSource>();
+        AddLocalFirstBytesSource(services);
 
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
@@ -168,7 +169,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
         // HttpClient for IDocumentBytesSource — same as the worker host.
-        services.AddHttpClient<IDocumentBytesSource, HttpDocumentBytesSource>();
+        AddLocalFirstBytesSource(services);
 
         services.AddSingleton<IRagBackfillService>(sp =>
         {
@@ -190,5 +191,37 @@ public static class ServiceCollectionExtensions
         var client = sp.GetRequiredService<CosmosClient>();
         var options = sp.GetRequiredService<IOptions<CosmosOptions>>().Value;
         return client.GetContainer(options.DatabaseName, containerName);
+    }
+
+    // Registers IDocumentBytesSource as a LocalFirstDocumentBytesSource decorator
+    // over the HTTP source: serves bytes from the local downloads tree when present
+    // (avoids re-fetching byte-verified PDFs from source sites during a full
+    // backfill), falls back to HTTP for not-yet-downloaded documents. The inner
+    // HTTP source keeps its typed-client (resilience + logging).
+    private static void AddLocalFirstBytesSource(IServiceCollection services)
+    {
+        // Inner HTTP source keeps its typed-client (resilience + handler rotation
+        // via IHttpClientFactory). Registered transient — the decorator must NOT
+        // capture a single instance for process life (that would pin one HttpClient
+        // handler and defeat factory rotation/DNS-refresh). The decorator resolves
+        // a fresh inner per fallback via the captured IServiceProvider.
+        services.AddHttpClient<HttpDocumentBytesSource>();
+        services.AddSingleton<IDocumentBytesSource>(sp =>
+        {
+            // ScraperSettings.DownloadsPath is the single source of truth for where the
+            // downloader writes. It must be configured — a missing registration is a
+            // misconfiguration, not something to paper over with a guessed root that
+            // wouldn't match the downloader anyway.
+            var settings = sp.GetRequiredService<IOptions<ScraperSettings>>().Value;
+            // Resolve to an absolute path against the current working directory:
+            // DownloadsPath is relative ("data/downloads"); Path.GetFullPath anchors it
+            // to CWD (where the CLI runs from the repo/data root) so the resolved root
+            // is unambiguous, and LocalFirstDocumentBytesSource logs the count it indexed.
+            var downloadsRoot = Path.GetFullPath(settings.DownloadsPath);
+            var logger = sp.GetRequiredService<ILogger<LocalFirstDocumentBytesSource>>();
+            // Fresh inner per fallback — preserves typed-client handler rotation.
+            return new LocalFirstDocumentBytesSource(
+                () => sp.GetRequiredService<HttpDocumentBytesSource>(), downloadsRoot, logger);
+        });
     }
 }

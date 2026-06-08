@@ -263,6 +263,115 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(0, second.MatchedByTitle);
     }
 
+    // ── Group-aware multi-match (edition families) ───────────────────────
+
+    [Fact]
+    public async Task SameGroupTitleCollision_WritesSlugToAllBasesInGroup()
+    {
+        // Two Stern Godzilla base machines — an edition family: same manufacturer,
+        // same OPDB group segment "GweeP", same release year 2021, franchise title
+        // "Godzilla". Pro (GweeP-MW95j) + Premium/LE (GweeP-Ml9pZ). One scraped
+        // bare-franchise "Godzilla" page → slug written to BOTH, NOT dropped.
+        var pro = MakeMachine("GweeP-MW95j", "stern", "Godzilla (Pro)");
+        pro.GroupId = "GweeP"; pro.Year = 2021;
+        var premLe = MakeMachine("GweeP-Ml9pZ", "stern", "Godzilla (Premium/LE)");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021;
+        StubPartition("stern", pro, premLe);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_godzilla",
+            Title = "Godzilla",
+            Slug = "godzilla",
+            GamePageUrl = "https://sternpinball.com/game/godzilla/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByGroup);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.Equal(2, result.Upserts);
+        Assert.Equal("godzilla", pro.ManufacturerSlugs["stern"]);
+        Assert.Equal("godzilla", premLe.ManufacturerSlugs["stern"]);
+    }
+
+    [Fact]
+    public async Task SameFranchiseDifferentYear_StaysAmbiguous_NotMergedAsEdition()
+    {
+        // Same franchise title + same manufacturer partition but DIFFERENT
+        // release years — a reissue/remake, NOT an edition family (the Big Ben
+        // 1954-vs-1975 pattern). Must NOT smear one slug across both → ambiguous.
+        // (Uses the Stern partition so the GameId prefix maps to a real key.)
+        var older = MakeMachine("G5QBX-MQd1L", "stern", "Big Ben");
+        older.GroupId = "G5QBX"; older.Year = 1954;
+        var newer = MakeMachine("GRBo3-MLv0z", "stern", "Big Ben");
+        newer.GroupId = "GRBo3"; newer.Year = 1975;
+        StubPartition("stern", older, newer);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_big-ben",
+            Title = "Big Ben",
+            Slug = "big-ben",
+            GamePageUrl = "https://sternpinball.com/game/big-ben/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.AmbiguousTitle);
+        Assert.Equal(0, result.MatchedByGroup);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(older.ManufacturerSlugs);
+        Assert.Empty(newer.ManufacturerSlugs);
+    }
+
+    [Fact]
+    public async Task SameYearDifferentGroupSegment_StaysAmbiguous()
+    {
+        // Same franchise + same year but DIFFERENT OPDB group segments → not a
+        // single edition family (the segment must also agree) → ambiguous.
+        var a = MakeMachine("AAAA-1", "stern", "Mystery");
+        a.GroupId = "AAAA"; a.Year = 2020;
+        var b = MakeMachine("BBBB-1", "stern", "Mystery");
+        b.GroupId = "BBBB"; b.Year = 2020;
+        StubPartition("stern", a, b);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_mystery", Title = "Mystery", Slug = "mystery",
+            GamePageUrl = "https://sternpinball.com/game/mystery/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.AmbiguousTitle);
+        Assert.Equal(0, result.MatchedByGroup);
+        Assert.Equal(0, result.Upserts);
+    }
+
+    // ── Decoration-stripped title match ──────────────────────────────────
+
+    [Fact]
+    public async Task DecoratedScrapedTitle_MatchesUndecoratedCatalogTitle()
+    {
+        // CGC scrapes "Cactus Canyon Remake"; OPDB catalog title is "Cactus Canyon".
+        var existing = MakeMachine("OPDB-CC", "cgc", "Cactus Canyon");
+        StubPartition("cgc", existing);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_cactus-canyon",
+            Title = "Cactus Canyon Remake",
+            Slug = "cactus-canyon",
+            GamePageUrl = "https://chicago-gaming.com/coinop/cactus-canyon/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByTitle);
+        Assert.Equal("cactus-canyon", existing.ManufacturerSlugs["cgc"]);
+    }
+
     // ── NormalizeTitle pure function ─────────────────────────────────────
 
     [Theory]
@@ -276,6 +385,20 @@ public sealed class ScraperReconciliationServiceTests
     public void NormalizeTitle_StripsNonAlphanumericAndLowercases(string? input, string expected)
     {
         Assert.Equal(expected, ScraperReconciliationService.NormalizeTitle(input));
+    }
+
+    // ── NormalizeFranchiseTitle pure function ────────────────────────────
+
+    [Theory]
+    [InlineData("Godzilla (Pro)", "godzilla")]
+    [InlineData("Godzilla (Premium/LE)", "godzilla")]
+    [InlineData("Godzilla", "godzilla")]
+    [InlineData("The Rolling Stones (LE)", "therollingstones")]
+    [InlineData("Stranger Things", "strangerthings")]
+    [InlineData(null, "")]
+    public void NormalizeFranchiseTitle_StripsTrailingEditionParenthetical(string? input, string expected)
+    {
+        Assert.Equal(expected, ScraperReconciliationService.NormalizeFranchiseTitle(input));
     }
 
     // ── Constructor null-checks ──────────────────────────────────────────

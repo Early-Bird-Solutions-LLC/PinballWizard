@@ -120,7 +120,12 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
             DocumentType: change.DocumentType,
             // LastScrapedUtc threaded from the Change Feed payload (PR-C3)
             // so the indexer can populate last_scraped_utc on each chunk.
-            LastScrapedUtc: change.LastScrapedUtc);
+            LastScrapedUtc: change.LastScrapedUtc,
+            // Edition + EditionScope threaded from the Change Feed payload
+            // (Task 6, AB#259) so each chunk self-declares its edition +
+            // scope into the index (edition / edition_scope fields).
+            Edition: change.Edition,
+            EditionScope: change.EditionScope);
 
         var chunks = _chunker.Chunk(extracted, chunkRequest, cancellationToken);
         if (chunks.Count == 0)

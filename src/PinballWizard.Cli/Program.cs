@@ -128,6 +128,16 @@ var relinkAllOption = new Option<bool>("--relink-all")
     Description = "Re-run the linker over ALL previously-linked documents: first resets every Linked / NotInCatalog record in scraped_documents_raw back to Pending (preserving ManuallyLinked admin overrides and PlatformGeneric), then runs the standard --link-documents pass. Use after the linker logic changes (e.g. the manufacturer-disambiguation fix) so existing mislabeled links are re-resolved. Implies --link-documents. Requires Cosmos to be configured."
 };
 
+var downloadDocumentsOption = new Option<bool>("--download-documents")
+{
+    Description = "Download every not-yet-downloaded document in scraped_documents_raw to the local downloads root so the linker's page-text tiers (Tier 3/4) can read page-1 content for edition resolution. Polite (throttled, robots-honored) and idempotent (documents with a local file are skipped). Run before --link-documents / --relink-all when page-1 content is needed. Requires Cosmos to be configured."
+};
+
+var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
+{
+    Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -145,6 +155,8 @@ rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
+rootCommand.Options.Add(downloadDocumentsOption);
+rootCommand.Options.Add(migrateDownloadPathsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -164,6 +176,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
+    var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
+    var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -388,6 +402,24 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // scraped_documents_raw via the 5-tier algorithm and fans resolved documents
     // into scraped_documents). --relink-all first resets prior Linked/NotInCatalog
     // records to Pending so they re-resolve. Gated on IDocumentLinker (Cosmos).
+    // Handle --download-documents (fetch not-yet-downloaded raw documents so the
+    // linker's page-text tiers can read page-1 content). Runs before linking.
+    // Gated on DocumentDownloadService (Cosmos).
+    if (downloadDocuments)
+    {
+        await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --migrate-download-paths (one-shot byte-safe correction of legacy
+    // already-rooted file.local_path values; --dry-run reports without changing).
+    // Gated on DownloadPathMigrationService (Cosmos).
+    if (migrateDownloadPaths)
+    {
+        await MigrateDownloadPathsCommand.RunAsync(host.Services, dryRun, cancellationToken);
+        return;
+    }
+
     if (linkDocuments || relinkAll)
     {
         await LinkDocumentsCommand.RunAsync(host.Services, cancellationToken, relinkAll);

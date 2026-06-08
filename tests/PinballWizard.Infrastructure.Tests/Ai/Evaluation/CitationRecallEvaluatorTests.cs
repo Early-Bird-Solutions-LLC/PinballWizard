@@ -100,4 +100,63 @@ public sealed class CitationRecallEvaluatorTests
         Assert.Throws<ArgumentNullException>(() =>
             _evaluator.Compute(OneCorrect, null!));
     }
+
+    // ── Any-of acceptable-citation-sets (AB#259 edition-aware) ──────────
+
+    private static readonly string[] ProBase = ["GweeP-MW95j"];
+    private static readonly string[] PremLeBase = ["GweeP-Ml9pZ"];
+    private static readonly string[] BothBases = ["GweeP-MW95j", "GweeP-Ml9pZ"];
+
+    [Fact]
+    public void ComputeAnyOf_PredictionMatchesOneAcceptableSet_FullRecall()
+    {
+        // R1: either base alone. Predicting Pro recalls the [Pro] set fully.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [ProBase, PremLeBase];
+
+        var score = _evaluator.ComputeAnyOf(ProBase, acceptable);
+
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_PicksBestScoringAcceptableSet()
+    {
+        // Predicting Prem/LE recalls the [Prem/LE] set fully; best-of
+        // beats the 0.0 it scores against [Pro].
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [ProBase, PremLeBase];
+
+        var score = _evaluator.ComputeAnyOf(PremLeBase, acceptable);
+
+        Assert.Equal(1.0, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_SubsetSet_PartialRecallWhenOneOfTwoCited()
+    {
+        // edition-subset row needs BOTH bases. Citing only one → recall 0.5
+        // against that single acceptable set.
+        IReadOnlyList<IReadOnlyList<string>> acceptable = [BothBases];
+
+        var score = _evaluator.ComputeAnyOf(ProBase, acceptable);
+
+        Assert.Equal(0.5, score);
+    }
+
+    [Fact]
+    public void ComputeAnyOf_EmptyAcceptableList_TreatedAsNoExpected_Returns1()
+    {
+        // No acceptable sets → recall undefined → 1.0 (refusal-honored),
+        // matching the single-set Compute contract for empty expected.
+        IReadOnlyList<IReadOnlyList<string>> none = [];
+
+        Assert.Equal(1.0, _evaluator.ComputeAnyOf(Empty, none));
+        Assert.Equal(1.0, _evaluator.ComputeAnyOf(OneCorrect, none));
+    }
+
+    [Fact]
+    public void ComputeAnyOf_NullAcceptableList_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            _evaluator.ComputeAnyOf(OneCorrect, null!));
+    }
 }

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Downloading;
+using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
@@ -229,6 +231,34 @@ public static class ServiceCollectionExtensions
             var downloadsRoot = settings?.Value.DownloadsPath;
             var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
             return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot, concurrency);
+        });
+
+        // Document downloader (--download-documents) — fetches not-yet-downloaded
+        // raw documents so the linker's page-text tiers can read page-1 content.
+        // Reuses the registered IFileDownloader (polite, resilient); the downloader
+        // owns the DownloadsPath root and combines the relative path the service builds.
+        services.AddSingleton<DocumentDownloadService>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var downloader = sp.GetRequiredService<IFileDownloader>();
+            var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
+            return new DocumentDownloadService(rawRepo, downloader, logger);
+        });
+
+        // Download-path migration (--migrate-download-paths) — one-shot byte-safe
+        // correction of legacy already-rooted file.local_path values. Uses the
+        // filesystem store (SHA-256 + move) and the same DownloadsPath root the
+        // linker reads from, so the on-disk paths it computes match the linker's.
+        services.AddSingleton<IDownloadFileStore, FileSystemDownloadFileStore>();
+        services.AddSingleton<DownloadPathMigrationService>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var store = sp.GetRequiredService<IDownloadFileStore>();
+            var logger = sp.GetRequiredService<ILogger<DownloadPathMigrationService>>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath
+                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
+            return new DownloadPathMigrationService(rawRepo, store, logger, downloadsRoot);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection

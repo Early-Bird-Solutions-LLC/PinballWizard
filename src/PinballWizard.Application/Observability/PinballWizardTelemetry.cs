@@ -221,6 +221,19 @@ public static class PinballWizardTelemetry
     // a future Phase 2 batch — they need a periodic sampler rather than
     // hot-path emission, so the wiring shape is different.
 
+    // Tokens sent to the embedding API across all `IChunkEmbedder.EmbedBatchAsync`
+    // calls. Sourced from the SDK's `EmbeddingTokenUsage.InputTokenCount` so it
+    // reflects actual billed tokens, not an estimate. Tagged with `call_site`
+    // (`backfill` | `changefeed` | `query`) so dashboards split indexing cost
+    // from query-time cost. Drives the TPM-ceiling decision: if peak observed
+    // tokens/minute during a full rebuild approaches the 250k ceiling, raise the
+    // deployment capacity (free — Standard is pay-per-token). A sustained rate
+    // near the ceiling means 429s are likely; headroom of ~30% is the target.
+    public static readonly Counter<long> RagEmbeddingTokensTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.embedding_tokens_total",
+        unit: "{token}",
+        description: "Input tokens sent to the embedding API per EmbedBatchAsync call. Sourced from SDK Usage.InputTokenCount (actual billed tokens). Tagged with call_site (backfill | changefeed | query). Use to measure peak tokens/minute during rebuilds vs. the deployed TPM ceiling, and to compute per-rebuild embedding cost at $0.13/1M tokens.");
+
     public static readonly Histogram<double> RagIndexingDurationMs = Meter.CreateHistogram<double>(
         "pinwiz.rag.indexing_duration_ms",
         unit: "ms",

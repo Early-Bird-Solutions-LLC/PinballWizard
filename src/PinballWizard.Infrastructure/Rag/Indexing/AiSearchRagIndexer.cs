@@ -124,23 +124,39 @@ public sealed class AiSearchRagIndexer : IRagIndexer
 
                 // Embed step (TPM-gated) — release the embed slot before
                 // taking the upload slot so the two semaphores can pipeline.
-                IReadOnlyList<ReadOnlyMemory<float>> vectors;
+                // The upload range (up to BatchSize=1000) is sub-batched into
+                // EmbeddingBatchSize-sized embedding calls: a single huge call
+                // (e.g. 140 manual chunks) exceeded the embedding client's ~100s
+                // network timeout (AB#259). Sub-batches embed in seconds and are
+                // concatenated back in order so the per-range contract holds.
+                var vectors = new ReadOnlyMemory<float>[count];
                 await embedGate.WaitAsync(workToken).ConfigureAwait(false);
                 try
                 {
-                    vectors = await _embedder
-                        .EmbedBatchAsync(batchTexts, workToken)
-                        .ConfigureAwait(false);
+                    foreach (var (subStart, subCount) in BatchIndices(count, options.EmbeddingBatchSize))
+                    {
+                        var subTexts = new string[subCount];
+                        Array.Copy(batchTexts, subStart, subTexts, 0, subCount);
+
+                        var subVectors = await _embedder
+                            .EmbedBatchAsync(subTexts, workToken)
+                            .ConfigureAwait(false);
+
+                        if (subVectors.Count != subCount)
+                        {
+                            throw new InvalidOperationException(
+                                $"Embedder returned {subVectors.Count} vectors for {subCount} chunks; embedder contract violated.");
+                        }
+
+                        for (int i = 0; i < subCount; i++)
+                        {
+                            vectors[subStart + i] = subVectors[i];
+                        }
+                    }
                 }
                 finally
                 {
                     embedGate.Release();
-                }
-
-                if (vectors.Count != count)
-                {
-                    throw new InvalidOperationException(
-                        $"Embedder returned {vectors.Count} vectors for {count} chunks; embedder contract violated.");
                 }
 
                 for (int i = 0; i < count; i++)
@@ -298,6 +314,13 @@ public sealed class AiSearchRagIndexer : IRagIndexer
             // (zero-migration-cost: existing chunks update on next
             // Change Feed re-ingestion; no backfill required).
             LastScrapedUtc = request.LastScrapedUtc,
+            // edition + edition_scope threaded from the scraped_documents
+            // provenance record (Task 6, AB#259) so each chunk self-declares
+            // its edition + scope for retriever filtering / Wizard R1/R2/R3.
+            // Null for legacy / unresolved documents (acceptable per
+            // ADR-0025 § 6 zero-migration-cost).
+            Edition = request.Edition,
+            EditionScope = request.EditionScope,
         };
     }
 
@@ -339,6 +362,17 @@ public sealed class AiSearchRagIndexer : IRagIndexer
                 nameof(options),
                 options.EmbeddingMaxConcurrency,
                 "EmbeddingMaxConcurrency must be positive.");
+        }
+        // (0, 2048]: a non-positive value makes BatchIndices yield no sub-batches →
+        // zero-length embeddings silently uploaded (corrupt index); an oversized value
+        // re-introduces the >100s-timeout bug this sub-batching exists to prevent.
+        // 2048 = Azure OpenAI's documented max inputs per embedding call.
+        if (options.EmbeddingBatchSize is <= 0 or > 2048)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.EmbeddingBatchSize,
+                "EmbeddingBatchSize must be in (0, 2048]; Azure OpenAI caps inputs per embedding call at 2048, and an oversized batch re-introduces the embedding-call timeout this sub-batching prevents.");
         }
     }
 }

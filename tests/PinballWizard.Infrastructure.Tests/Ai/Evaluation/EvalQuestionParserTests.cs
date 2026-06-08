@@ -145,6 +145,85 @@ public sealed class EvalQuestionParserTests
         Assert.Throws<FileNotFoundException>(() => EvalQuestionParser.ParseFile(bogusPath));
     }
 
+    // ── Edition-aware invariants (AB#259) ───────────────────────────────
+
+    [Fact]
+    public void Parse_InvalidExpectedOutcome_Throws()
+    {
+        // A curator typo in expected_outcome must fail loudly, not silently
+        // skip the R2/R3 evaluator.
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Rules","expected_citation_set":["X"],"acceptable_refusal":false,"expected_outcome":"answered_all_edition"}""",
+        };
+
+        var ex = Assert.Throws<InvalidDataException>(() => EvalQuestionParser.Parse(lines, "test"));
+        Assert.Contains("invalid expected_outcome", ex.Message);
+        Assert.Contains("answered_all_edition", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_DefaultExpectedOutcome_IsGrounded_AndAccepted()
+    {
+        // Absent expected_outcome defaults to "grounded" and passes.
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Rules","expected_citation_set":["X"],"acceptable_refusal":false}""",
+        };
+
+        var result = EvalQuestionParser.Parse(lines, "test");
+
+        Assert.Equal("grounded", result[0].ExpectedOutcome);
+    }
+
+    [Fact]
+    public void Parse_AnsweredAllEditions_WithoutRequiredEditions_Throws()
+    {
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Rules","expected_citation_set":["X"],"acceptable_refusal":false,"expected_outcome":"answered_all_editions"}""",
+        };
+
+        var ex = Assert.Throws<InvalidDataException>(() => EvalQuestionParser.Parse(lines, "test"));
+        Assert.Contains("required_editions", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_HonestSubstitution_WithoutRequiredEditions_Throws()
+    {
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Repair","expected_citation_set":["X"],"acceptable_refusal":false,"expected_outcome":"honest_substitution"}""",
+        };
+
+        var ex = Assert.Throws<InvalidDataException>(() => EvalQuestionParser.Parse(lines, "test"));
+        Assert.Contains("required_editions[0]", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_EditionAwareFields_RoundTrip()
+    {
+        // franchise_wide_ok is parsed but currently consumed by nothing at
+        // runtime (it's the row-level intent until Citation carries
+        // edition_scope — see CitationPrecisionEvaluator). This test pins
+        // its round-trip so a future reader doesn't delete it as dead code,
+        // and proves acceptable_citation_sets / required_editions parse.
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Rules","expected_citation_set":["X"],"acceptable_refusal":false,"acceptable_citation_sets":[["A"],["B","C"]],"franchise_wide_ok":true,"expected_outcome":"answered_all_editions","required_editions":["Pro","Premium/LE"]}""",
+        };
+
+        var result = EvalQuestionParser.Parse(lines, "test");
+
+        var q = result[0];
+        Assert.True(q.FranchiseWideOk);
+        Assert.Equal("answered_all_editions", q.ExpectedOutcome);
+        Assert.NotNull(q.AcceptableCitationSets);
+        Assert.Equal(2, q.AcceptableCitationSets!.Count);
+        Assert.Equal(["B", "C"], q.AcceptableCitationSets[1]);
+        Assert.Equal(["Pro", "Premium/LE"], q.RequiredEditions);
+    }
+
     [Fact]
     public void ParseFile_ValidFile_RoundTrip()
     {

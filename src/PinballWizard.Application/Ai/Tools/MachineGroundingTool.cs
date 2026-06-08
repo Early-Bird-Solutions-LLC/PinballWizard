@@ -309,7 +309,12 @@ public sealed class MachineGroundingTool
                     OpdbId: sibling.Id,
                     Title: sibling.Title,
                     Year: sibling.Year,
-                    Editions: ProjectEditions(sibling.Editions)));
+                    Editions: ProjectEditions(sibling.Editions),
+                    // EditionLabel + EditionTokens (Task 7, AB#259) let the
+                    // Wizard name a sibling's edition and match a user-named
+                    // edition to the right base for R2/R3 reasoning.
+                    EditionLabel: sibling.EditionLabel,
+                    EditionTokens: sibling.EditionTokens.AsReadOnly()));
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

@@ -33,11 +33,24 @@ public sealed record MachineEditionGroundingDto(
 
 // A sibling base-machine record within the same OPDB group — a distinct
 // Pro / Premium / LE / Collector edition of the same franchise title.
-// Carries only the fields the agent needs to enumerate editions for a
-// clarifying question: OpdbId (citation anchor), Title (display name),
-// Year, and Editions (per-sibling MSRP / availability data).
+// Carries the fields the agent needs to enumerate and NAME editions for
+// R1/R2/R3 edition reasoning (Task 7, AB#259): OpdbId (citation anchor),
+// Title (display name), Year, Editions (per-sibling MSRP / availability),
+// plus EditionLabel + EditionTokens.
+//
+// EditionLabel is the edition-qualified OPDB label for this base when it
+// shares a franchise — e.g. "Pro", "Premium/LE" — so the Wizard can name
+// the edition in a per-edition answer ("For the Pro edition …") rather
+// than guessing from the Title (which stays the clean franchise name per
+// ADR-0029 D1). EditionTokens are the normalized tokens this base answers
+// to (e.g. ["premium","le","70th"]) — the discriminator the Wizard uses
+// to match a user-named edition to the right sibling, and the same token
+// the linker stamps on each chunk's `edition` field. Null EditionLabel /
+// empty EditionTokens for singleton machines with no group siblings.
 public sealed record MachineSiblingGroundingDto(
     string OpdbId,
     string Title,
     int? Year,
-    IReadOnlyList<MachineEditionGroundingDto> Editions);
+    IReadOnlyList<MachineEditionGroundingDto> Editions,
+    string? EditionLabel,
+    IReadOnlyList<string> EditionTokens);
