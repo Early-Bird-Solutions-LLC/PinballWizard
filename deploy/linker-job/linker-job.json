@@ -1,0 +1,137 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "13619541337962991326"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for the job. Must match the ACA environment region."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "metadata": {
+        "description": "Common tags applied to the job resource."
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "metadata": {
+        "description": "Full container image reference including registry and tag. Use an explicit SHA tag, never :latest, for deployed images."
+      }
+    },
+    "cosmosEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB account HTTPS endpoint. Maps to Cosmos__AccountEndpoint in the container."
+      }
+    },
+    "cosmosResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Cosmos DB ARM resource ID. Maps to Cosmos__AccountResourceId in the container, which is required by ArmCosmosProvisioner for schema-CRUD operations."
+      }
+    },
+    "managedIdentityId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the user-assigned managed identity used for ACR image pull. The same UAMI is shared across all ACA apps/jobs in the environment."
+      }
+    },
+    "containerAppsEnvironmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Container Apps Environment that hosts this job."
+      }
+    },
+    "cronExpression": {
+      "type": "string",
+      "defaultValue": "0 2 * * *",
+      "metadata": {
+        "description": "Cron schedule expression for the linker job (UTC). Default is 2 am daily."
+      }
+    }
+  },
+  "variables": {
+    "uniqueSuffix": "[substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)]",
+    "jobName": "[format('pinwiz-job-linker-{0}', variables('uniqueSuffix'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('jobName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "SystemAssigned, UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', parameters('managedIdentityId'))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[parameters('containerAppsEnvironmentId')]",
+        "configuration": {
+          "triggerType": "Schedule",
+          "replicaTimeout": 3600,
+          "replicaRetryLimit": 0,
+          "scheduleTriggerConfig": {
+            "cronExpression": "[parameters('cronExpression')]",
+            "parallelism": 1,
+            "replicaCompletionCount": 1
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "linker",
+              "image": "[parameters('containerImage')]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "command": [
+                "dotnet",
+                "PinballWizard.Cli.dll",
+                "--link-documents"
+              ],
+              "env": [
+                {
+                  "name": "Cosmos__AccountEndpoint",
+                  "value": "[parameters('cosmosEndpoint')]"
+                },
+                {
+                  "name": "Cosmos__AccountResourceId",
+                  "value": "[parameters('cosmosResourceId')]"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "linkerJobName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource name of the linker ACA Job."
+      },
+      "value": "[variables('jobName')]"
+    },
+    "linkerJobPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Principal ID of the system-assigned managed identity on the linker job. Use this to create the Cosmos DB sqlRoleAssignment granting data-plane access."
+      },
+      "value": "[reference(resourceId('Microsoft.App/jobs', variables('jobName')), '2023-05-01', 'full').identity.principalId]"
+    }
+  }
+}

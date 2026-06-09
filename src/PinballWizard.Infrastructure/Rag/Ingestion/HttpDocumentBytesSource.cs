@@ -39,6 +39,10 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // instance metadata endpoint. (The metadata endpoint also requires
 // a `Metadata: true` header the standard HttpClient doesn't send,
 // so this guard is a redundant second layer.)
+// `http://` URLs are silently upgraded to `https://` before this
+// check to accommodate legacy Cosmos records captured before the
+// scraper enforced https; the guard therefore rejects all non-http
+// and non-https schemes (ftp://, file://, etc.).
 public sealed class HttpDocumentBytesSource : IDocumentBytesSource
 {
     private readonly HttpClient _httpClient;
@@ -60,11 +64,23 @@ public sealed class HttpDocumentBytesSource : IDocumentBytesSource
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentUrl);
 
+        // Some legacy Cosmos records captured http:// URLs before the scraper enforced
+        // https. Silently upgrade http→https: manufacturer CDNs serve over TLS and the
+        // SSRF guard below still fires for every other non-https scheme (ftp://, file://,
+        // gopher://, etc.), so the security invariant is preserved.
+        if (documentUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("RAG document fetch: upgrading http:// to https:// for '{Url}' — legacy Cosmos record.", documentUrl);
+            documentUrl = string.Concat("https://", documentUrl.AsSpan(7));
+        }
+
         if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var parsed)
             || !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException(
-                $"documentUrl must be an absolute https:// URL; got '{documentUrl}'. Phase 1 scrapers only emit https sources; non-https here indicates source-data corruption or a poisoned change-feed payload.",
+                $"documentUrl must be an absolute https:// URL after http→https upgrade; got '{documentUrl}'. " +
+                "A non-http/non-https scheme (ftp://, file://, etc.) here indicates source-data corruption or a poisoned change-feed payload " +
+                "(http:// is silently upgraded before this check).",
                 nameof(documentUrl));
         }
 

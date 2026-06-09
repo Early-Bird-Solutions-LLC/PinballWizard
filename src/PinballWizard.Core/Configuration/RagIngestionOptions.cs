@@ -55,4 +55,13 @@ public sealed class RagIngestionOptions
     // looping on a structurally-poison document.
     [Range(1, 10)]
     public int MaxFailuresPerDocument { get; init; } = 3;
+
+    // Number of documents the backfill service processes concurrently.
+    // Purely internal Azure calls — no politeness throttle applies here.
+    // Each document already fans out internally (EmbeddingMaxConcurrency
+    // + IndexUploadConcurrency); this multiplies that fan-out across
+    // documents. 4 is empirically safe at 350k TPM with the embedder's
+    // per-batch retry-with-backoff absorbing any momentary 429 bursts.
+    [Range(1, 32)]
+    public int BackfillConcurrency { get; init; } = 4;
 }

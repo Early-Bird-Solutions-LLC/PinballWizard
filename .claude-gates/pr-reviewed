@@ -1,10 +1,10 @@
 {
   "gate": "pr-reviewed",
-  "head_sha": "901d4dac01430a2f1e5fc8afef3d413366592268",
-  "created_at": "2026-05-29T11:29:46.679019+00:00",
+  "head_sha": "10d1acc25aaa7df1dd9aa2ae68989bc9185b18c5",
+  "created_at": "2026-06-09T12:57:37.346785+00:00",
   "base": "origin/main",
   "result": "passed",
-  "files_changed": 2,
-  "lines_added": 0,
-  "lines_removed": 1086
+  "files_changed": 29,
+  "lines_added": 2095,
+  "lines_removed": 69
 }

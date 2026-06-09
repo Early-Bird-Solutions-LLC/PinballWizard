@@ -160,12 +160,13 @@ public sealed class AiSearchRagIndexerTests
         // batches so EmbeddingMaxConcurrency is actually utilized. BatchSize=1000
         // produced a single batch per document, serializing all embedding calls
         // and making large manuals take ~10 minutes (AB#259).
-        // EmbeddingBatchSize=32: keeps each embedding API call well under the
-        // ~100s network timeout while reducing round-trips vs. the previous 16.
+        // EmbeddingBatchSize=64: reduces round-trips vs. 32 while staying well
+        // under the ~100s network timeout. EmbeddingMaxConcurrency=12 raised from
+        // 8 for better throughput at 350k TPM.
         var opts = new RagIndexerOptions();
         Assert.Equal(100, opts.BatchSize);
-        Assert.Equal(32, opts.EmbeddingBatchSize);
-        Assert.Equal(8, opts.EmbeddingMaxConcurrency);
+        Assert.Equal(64, opts.EmbeddingBatchSize);
+        Assert.Equal(12, opts.EmbeddingMaxConcurrency);
         Assert.Equal(4, opts.IndexUploadConcurrency);
     }
 
