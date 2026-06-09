@@ -123,6 +123,29 @@ dotnet run --project src/PinballWizard.Cli -- --status
 
 ---
 
+## Local Eval Configuration
+
+Running `--eval` against the deployed stack requires three endpoints that are **not** in `appsettings.json` (they are deployment-specific and must not be committed). Set them as env vars before invoking the CLI:
+
+```pwsh
+# Required for --eval (and --ask, --run-rag-backfill, --ensure-ai-search)
+$env:Cosmos__AccountEndpoint   = "https://pinwiz-cosmos-dev-buutj.documents.azure.com:443/"
+$env:AiFoundry__ProjectEndpoint = "https://pinwiz-foundry-dev-buutj.services.ai.azure.com/api/projects/pinwiz-wizard"
+$env:AiSearch__Endpoint        = "https://pinwiz-search-dev-buutj.search.windows.net"
+
+dotnet run --project src/PinballWizard.Cli -- --eval
+```
+
+**Auth:** all three endpoints use `DefaultAzureCredential` (AAD). Run `az login` first if you haven't recently. No API keys or connection strings are used.
+
+**Ground truth file:** `EvalHarnessOptions.GroundTruthPath` defaults to `data/eval/wizard.v2.jsonl` (the active ground truth as of H5b). Override via `Evaluation:GroundTruthPath` in `appsettings.Development.json` or an env var if you need to target a different file.
+
+**Results:** each run writes `data/eval/results/wizard.{yyyyMMddTHHmmssZ}.json`. Commit result files so the metric trajectory is visible in `git log`.
+
+**Secrets alternative:** the three endpoints are also stored under user secrets ID `pinwiz-rag-indexer` (`$env:APPDATA\Microsoft\UserSecrets\pinwiz-rag-indexer\secrets.json`). To wire them permanently to the CLI project add `<UserSecretsId>pinwiz-rag-indexer</UserSecretsId>` to `PinballWizard.Cli.csproj` (not currently set — env vars are the documented path).
+
+---
+
 ## Cost Cap
 
 **Hard cap: $400/mo.** Azure anomaly alert fires at $300/mo. See [`cost-tracking.md`](cost-tracking.md) for monthly actuals by service.
