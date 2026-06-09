@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
@@ -10,9 +12,12 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 //
 //   1. Maps `RagSourceDocument` → `ScrapedDocumentChange` (trims
 //      Cosmos system fields the Application layer doesn't need).
-//   2. Pulls PDF bytes via `IDocumentBytesSource` (default impl
+//   2. Short-circuits on document type BEFORE fetching bytes — avoids
+//      downloading non-indexable binary blobs (firmware, software
+//      releases) that would have been filtered by the pipeline anyway.
+//   3. Pulls PDF bytes via `IDocumentBytesSource` (default impl
 //      `HttpDocumentBytesSource`).
-//   3. Invokes the pipeline. Outcome is logged but NOT thrown —
+//   4. Invokes the pipeline. Outcome is logged but NOT thrown —
 //      `Indexed`, `Skipped_*`, and `DeadLettered` are all valid
 //      pipeline returns; only unexpected exceptions bubble up to
 //      the hosted service for dead-lettering.
@@ -27,18 +32,22 @@ public sealed class ScrapedDocumentChangeFeedHandler
 {
     private readonly IRagIngestionPipeline _pipeline;
     private readonly IDocumentBytesSource _bytesSource;
+    private readonly HashSet<DocumentType> _acceptedTypes;
     private readonly ILogger<ScrapedDocumentChangeFeedHandler> _logger;
 
     public ScrapedDocumentChangeFeedHandler(
         IRagIngestionPipeline pipeline,
         IDocumentBytesSource bytesSource,
+        IOptions<RagIngestionOptions> options,
         ILogger<ScrapedDocumentChangeFeedHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         ArgumentNullException.ThrowIfNull(bytesSource);
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
         _pipeline = pipeline;
         _bytesSource = bytesSource;
+        _acceptedTypes = [.. options.Value.AcceptedDocumentTypes];
         _logger = logger;
     }
 
@@ -47,6 +56,19 @@ public sealed class ScrapedDocumentChangeFeedHandler
         ArgumentNullException.ThrowIfNull(change);
 
         var documentType = ParseDocumentType(change.DocumentType);
+
+        // Short-circuit before fetching bytes — non-accepted types (e.g.
+        // firmware blobs, software releases) must not trigger an HTTP
+        // download. The pipeline would reject them anyway, but fetching
+        // first risks an indefinite stall on large binary responses with
+        // no per-stream read timeout (AB#259 backfill hang root cause).
+        if (!_acceptedTypes.Contains(documentType))
+        {
+            _logger.LogDebug(
+                "RAG change-feed handler: skipping document={DocumentId} type={DocumentType} (not in accepted set — no download).",
+                change.DocumentId, documentType);
+            return IngestionOutcome.Skipped_DocumentTypeFiltered;
+        }
 
         var pipelineChange = new ScrapedDocumentChange(
             DocumentId: change.DocumentId,
