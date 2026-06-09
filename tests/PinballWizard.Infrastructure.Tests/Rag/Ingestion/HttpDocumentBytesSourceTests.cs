@@ -7,9 +7,10 @@ using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Rag.Ingestion;
 
-// Behavior tests for HttpDocumentBytesSource. Pins the SSRF
-// hardening guard (https-only) and the response-buffering contract
-// (returns a seekable stream PdfPig can use).
+// Behavior tests for HttpDocumentBytesSource. Pins the SSRF hardening
+// guard (non-http/non-https schemes throw), the http→https legacy-record
+// upgrade, and the response-buffering contract (returns a seekable stream
+// PdfPig can use).
 public sealed class HttpDocumentBytesSourceTests
 {
     [Fact]
@@ -29,18 +30,37 @@ public sealed class HttpDocumentBytesSourceTests
         Assert.Equal(bytes, buffer);
     }
 
+    [Fact]
+    public async Task OpenAsync_HttpUrl_IsUpgradedToHttpsAndFetchSucceeds()
+    {
+        // Legacy Cosmos records captured http:// before the scraper enforced
+        // https. The source must silently upgrade and fetch — NOT throw.
+        // Verify the rewritten https:// URL reaches the HTTP client.
+        var bytes = "legacy-pdf-bytes"u8.ToArray();
+        var handler = new CapturingHttpHandler(bytes);
+        var source = new HttpDocumentBytesSource(
+            new HttpClient(handler),
+            NullLogger<HttpDocumentBytesSource>.Instance);
+
+        await using var stream = await source.OpenAsync(
+            "http://s4.american-pinball.com/img/support/manual.pdf", CancellationToken.None);
+
+        Assert.True(stream.CanSeek);
+        Assert.Equal(
+            "https://s4.american-pinball.com/img/support/manual.pdf",
+            handler.LastRequestUri?.ToString());
+    }
+
     [Theory]
-    [InlineData("http://example.com/doc.pdf")]
     [InlineData("ftp://example.com/doc.pdf")]
     [InlineData("file:///etc/passwd")]
     [InlineData("not-a-url")]
     [InlineData("//relative.example/doc.pdf")]
-    public async Task OpenAsync_NonHttpsUrl_ThrowsArgumentException(string documentUrl)
+    public async Task OpenAsync_NonHttpAndNonHttpsUrl_ThrowsArgumentException(string documentUrl)
     {
-        // SSRF hardening: only https:// is acceptable. The Phase 1
-        // scrapers exclusively emit https; anything else here means
-        // source-data corruption or a poisoned change-feed payload
-        // and the worker should refuse rather than silently fetch.
+        // SSRF hardening: http:// is upgraded to https:// upstream; all other
+        // non-https schemes (ftp://, file://, etc.) indicate source-data
+        // corruption or a poisoned change-feed payload and are rejected.
         var source = NewSource("ignored"u8.ToArray());
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
@@ -78,6 +98,31 @@ public sealed class HttpDocumentBytesSourceTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(_payload),
+            };
+            return Task.FromResult(response);
+        }
+    }
+
+    // Variant that records the outgoing request URI so tests can assert
+    // the http→https upgrade actually rewrote the URL before the fetch.
+    private sealed class CapturingHttpHandler : HttpMessageHandler
+    {
+        private readonly byte[] _payload;
+        public Uri? LastRequestUri { get; private set; }
+
+        public CapturingHttpHandler(byte[] payload) => _payload = payload;
+
+        [System.Diagnostics.CodeAnalysis.SuppressMessage(
+            "CodeQuality",
+            "cs/local-not-disposed",
+            Justification = "HttpResponseMessage ownership transfers to HttpClient caller via SendAsync return; caller disposes.")]
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestUri = request.RequestUri;
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(_payload),

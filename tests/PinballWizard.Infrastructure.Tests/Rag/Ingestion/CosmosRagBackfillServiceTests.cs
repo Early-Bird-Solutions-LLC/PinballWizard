@@ -101,7 +101,10 @@ public sealed class CosmosRagBackfillServiceTests
     {
         // A cancellation token fired by the host while the batch is
         // in-flight must propagate so the CLI process exits cleanly.
-        var ctx = new TestContext();
+        // BackfillConcurrency=1 makes this deterministic: doc_a runs,
+        // fires cancel, then doc_b's gate.WaitAsync throws
+        // OperationCanceledException before the handler can be invoked.
+        var ctx = new TestContext(backfillConcurrency: 1);
         using var cts = new CancellationTokenSource();
         ctx.Handler.OnInvoke = _ => cts.Cancel();
         ctx.Iterator.SetPages([
@@ -111,7 +114,8 @@ public sealed class CosmosRagBackfillServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             ctx.Service.RunAsync(cts.Token));
 
-        // doc_a handler ran (triggering cancel); doc_b must not.
+        // With concurrency=1, only doc_a's handler can have run — doc_b
+        // is still waiting on the semaphore when the token is cancelled.
         Assert.Single(ctx.Handler.Invocations);
     }
 
@@ -261,11 +265,12 @@ public sealed class CosmosRagBackfillServiceTests
         public FakeFeedIterator Iterator { get; } = new();
         public CosmosRagBackfillService Service { get; }
 
-        public TestContext()
+        public TestContext(int backfillConcurrency = 4)
         {
             var options = Options.Create(new RagIngestionOptions
             {
                 AcceptedDocumentTypes = [Core.Models.DocumentType.Manual, Core.Models.DocumentType.ServiceBulletin],
+                BackfillConcurrency = backfillConcurrency,
             });
 
             var sourceContainer = Substitute.For<Container>();

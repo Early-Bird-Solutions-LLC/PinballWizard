@@ -93,9 +93,14 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning(
-                    "RAG backfill: change-feed page returned {StatusCode}; stopping.",
-                    response.StatusCode);
+                // LogError (not Warning): a non-2xx response means the run is
+                // incomplete — the completion log's processed/indexed counts will
+                // appear to succeed but the corpus was only partially walked.
+                // Operator must re-run; Warning severity would be too easy to miss.
+                _logger.LogError(
+                    "RAG backfill: change-feed page returned {StatusCode} after processing {Processed} documents. " +
+                    "Backfill is incomplete — re-run required.",
+                    response.StatusCode, processed);
                 break;
             }
 
@@ -111,7 +116,18 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
             }
             catch (System.Text.Json.JsonException ex)
             {
-                _logger.LogWarning(ex, "RAG backfill: failed to deserialize change-feed page; skipping.");
+                // LogError (not Warning): documents on this page are silently
+                // dropped — the backfill result will under-count. A schema
+                // mismatch in RagSourceDocument would affect every page that
+                // contains such a document, making this a potentially systemic
+                // data loss. Increment failed by 1 as a sentinel so the result
+                // reflects that something was lost (exact page count unknown here).
+                Interlocked.Increment(ref failed);
+                _logger.LogError(
+                    ex,
+                    "RAG backfill: failed to deserialize change-feed page after {Processed} documents processed. " +
+                    "Documents on this page are NOT counted — possible schema mismatch in RagSourceDocument.",
+                    processed);
                 continue;
             }
 

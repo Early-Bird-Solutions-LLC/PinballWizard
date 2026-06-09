@@ -25,22 +25,30 @@ namespace PinballWizard.Infrastructure.Rag.Indexing;
 // here.
 public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
 {
-    private readonly EmbeddingClient _client;
+    private readonly IEmbeddingCallable _callable;
     private readonly ILogger<AzureOpenAIChunkEmbedder> _logger;
 
     public AzureOpenAIChunkEmbedder(
         EmbeddingClient client,
         ILogger<AzureOpenAIChunkEmbedder> logger)
+        : this(new EmbeddingClientAdapter(client), logger) { }
+
+    // Internal constructor for unit tests — accepts a fake IEmbeddingCallable
+    // so the retry loop can be exercised without a real Azure endpoint.
+    internal AzureOpenAIChunkEmbedder(
+        IEmbeddingCallable callable,
+        ILogger<AzureOpenAIChunkEmbedder> logger)
     {
-        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(callable);
         ArgumentNullException.ThrowIfNull(logger);
-        _client = client;
+        _callable = callable;
         _logger = logger;
     }
 
-    // Max retries for transient 429 RateLimitReached responses. Azure always
-    // returns a Retry-After header; we honour it and retry the same batch
-    // in-place so 429s never surface as document failures to the caller.
+    // Max retries for transient 429 RateLimitReached responses (3 retries =
+    // 4 total attempts; loop runs while attempt < MaxEmbedRetries). Azure
+    // always returns a Retry-After header; we honour it and retry the same
+    // batch in-place so transient 429s never surface as document failures.
     private const int MaxEmbedRetries = 3;
 
     public async Task<IReadOnlyList<ReadOnlyMemory<float>>> EmbedBatchAsync(
@@ -68,25 +76,17 @@ public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
             }
         }
 
-        // Retry loop: Azure OpenAI returns 429 with a Retry-After header when
-        // the embedding burst exceeds our provisioned TPM. Honour the header
-        // and retry in-place so 429s never surface as document failures.
+        // Retry loop: the adapter converts 429 responses to EmbeddingRateLimitException
+        // carrying the Retry-After delay. Retry in-place so 429s never surface as
+        // document failures.
         for (int attempt = 0; ; attempt++)
         {
             try
             {
-                var response = await _client
-                    .GenerateEmbeddingsAsync(texts, cancellationToken: cancellationToken)
+                var (vectors, inputTokens) = await _callable
+                    .GenerateAsync(texts, cancellationToken)
                     .ConfigureAwait(false);
 
-                var collection = response.Value;
-                var vectors = new ReadOnlyMemory<float>[collection.Count];
-                for (int i = 0; i < collection.Count; i++)
-                {
-                    vectors[i] = collection[i].ToFloats();
-                }
-
-                var inputTokens = collection.Usage.InputTokenCount;
                 PinballWizardTelemetry.RagEmbeddingTokensTotal.Add(
                     inputTokens,
                     new KeyValuePair<string, object?>("call_site", "backfill"));
@@ -99,20 +99,36 @@ public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
 
                 return vectors;
             }
-            catch (ClientResultException ex) when (ex.Status == 429 && attempt < MaxEmbedRetries)
+            catch (EmbeddingRateLimitException ex) when (attempt < MaxEmbedRetries)
             {
-                var retryAfter = TimeSpan.FromSeconds(2);
-                if (ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out var ra) == true
-                    && int.TryParse(ra, out var seconds))
-                {
-                    retryAfter = TimeSpan.FromSeconds(seconds);
-                }
-
-                _logger.LogDebug(
+                // LogWarning (not Debug) — a 429 is a visible rate-limit event;
+                // production log levels default to Information and above, so Debug
+                // would be invisible to operators monitoring backfill health.
+                _logger.LogWarning(
                     "Embedding 429 on attempt {Attempt}/{Max}; waiting {Delay}s before retry.",
-                    attempt + 1, MaxEmbedRetries, retryAfter.TotalSeconds);
+                    attempt + 1, MaxEmbedRetries, ex.RetryAfter.TotalSeconds);
 
-                await Task.Delay(retryAfter, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(ex.RetryAfter, cancellationToken).ConfigureAwait(false);
+            }
+            catch (EmbeddingRateLimitException ex)
+            {
+                // Retry budget exhausted — log before re-throwing so the caller's
+                // generic catch has context about the failure cause.
+                _logger.LogError(
+                    ex,
+                    "Embedding 429 rate-limit: exhausted {MaxRetries} retries for batch of {Count} texts. Raising to caller.",
+                    MaxEmbedRetries, texts.Count);
+                throw;
+            }
+            catch (ClientResultException ex)
+            {
+                // Non-429 API failure (401, 403, 503, etc.) propagated directly
+                // by the adapter. Log with context before re-throwing.
+                _logger.LogError(
+                    ex,
+                    "Embedding API call failed with status={Status} for batch of {Count} texts.",
+                    ex.Status, texts.Count);
+                throw;
             }
         }
     }

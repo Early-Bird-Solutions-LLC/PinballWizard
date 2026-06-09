@@ -39,6 +39,10 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // instance metadata endpoint. (The metadata endpoint also requires
 // a `Metadata: true` header the standard HttpClient doesn't send,
 // so this guard is a redundant second layer.)
+// `http://` URLs are silently upgraded to `https://` before this
+// check to accommodate legacy Cosmos records captured before the
+// scraper enforced https; the guard therefore rejects all non-http
+// and non-https schemes (ftp://, file://, etc.).
 public sealed class HttpDocumentBytesSource : IDocumentBytesSource
 {
     private readonly HttpClient _httpClient;
@@ -74,7 +78,9 @@ public sealed class HttpDocumentBytesSource : IDocumentBytesSource
             || !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException(
-                $"documentUrl must be an absolute https:// URL; got '{documentUrl}'. Phase 1 scrapers only emit https sources; non-https here indicates source-data corruption or a poisoned change-feed payload.",
+                $"documentUrl must be an absolute https:// URL after http→https upgrade; got '{documentUrl}'. " +
+                "A non-http/non-https scheme (ftp://, file://, etc.) here indicates source-data corruption or a poisoned change-feed payload " +
+                "(http:// is silently upgraded before this check).",
                 nameof(documentUrl));
         }
 
