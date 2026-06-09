@@ -103,6 +103,32 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_NonAcceptedDocumentType_SkipsDownloadAndReturnTypeFiltered()
+    {
+        // Root cause of AB#259 backfill hang: Spooky software release blobs
+        // (.beetlejuice firmware) were downloaded before the type filter fired.
+        // The handler must short-circuit BEFORE fetching bytes for non-accepted types.
+        var ctx = new TestContext();
+
+        var change = new RagSourceDocument
+        {
+            Id = "doc_fw",
+            DocumentId = "doc_fw",
+            DocumentUrl = "https://example/doc_fw.bin",
+            MachineId = TestMachineId,
+            MachineTitle = "Beetlejuice",
+            Manufacturer = "Spooky Pinball",
+            DocumentType = "SoftwareRelease",
+            ContentHash = "hash-fw",
+        };
+        var outcome = await ctx.Handler.HandleAsync(change, CancellationToken.None);
+
+        Assert.Equal(IngestionOutcome.Skipped_DocumentTypeFiltered, outcome);
+        Assert.Empty(ctx.BytesSource.Calls); // no download attempted
+        Assert.Empty(ctx.Indexer.Calls);     // indexer not reached
+    }
+
+    [Fact]
     public async Task HandleAsync_NullChange_Throws()
     {
         var ctx = new TestContext();
@@ -163,6 +189,7 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
             Handler = new ScrapedDocumentChangeFeedHandler(
                 pipeline,
                 BytesSource,
+                ingestionOptions,
                 NullLogger<ScrapedDocumentChangeFeedHandler>.Instance);
         }
 
