@@ -1,3 +1,4 @@
+using System.ClientModel;
 using Microsoft.Extensions.Logging;
 using OpenAI.Embeddings;
 using PinballWizard.Application.Ai.Retrieval;
@@ -37,6 +38,11 @@ public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
         _logger = logger;
     }
 
+    // Max retries for transient 429 RateLimitReached responses. Azure always
+    // returns a Retry-After header; we honour it and retry the same batch
+    // in-place so 429s never surface as document failures to the caller.
+    private const int MaxEmbedRetries = 3;
+
     public async Task<IReadOnlyList<ReadOnlyMemory<float>>> EmbedBatchAsync(
         IReadOnlyList<string> texts,
         CancellationToken cancellationToken)
@@ -62,28 +68,52 @@ public sealed class AzureOpenAIChunkEmbedder : IChunkEmbedder
             }
         }
 
-        var response = await _client
-            .GenerateEmbeddingsAsync(texts, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        var collection = response.Value;
-        var vectors = new ReadOnlyMemory<float>[collection.Count];
-        for (int i = 0; i < collection.Count; i++)
+        // Retry loop: Azure OpenAI returns 429 with a Retry-After header when
+        // the embedding burst exceeds our provisioned TPM. Honour the header
+        // and retry in-place so 429s never surface as document failures.
+        for (int attempt = 0; ; attempt++)
         {
-            vectors[i] = collection[i].ToFloats();
+            try
+            {
+                var response = await _client
+                    .GenerateEmbeddingsAsync(texts, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                var collection = response.Value;
+                var vectors = new ReadOnlyMemory<float>[collection.Count];
+                for (int i = 0; i < collection.Count; i++)
+                {
+                    vectors[i] = collection[i].ToFloats();
+                }
+
+                var inputTokens = collection.Usage.InputTokenCount;
+                PinballWizardTelemetry.RagEmbeddingTokensTotal.Add(
+                    inputTokens,
+                    new KeyValuePair<string, object?>("call_site", "backfill"));
+
+                _logger.LogDebug(
+                    "Chunk batch embedded: count={Count} tokens={Tokens} vector_dim={Dimension}.",
+                    vectors.Length,
+                    inputTokens,
+                    vectors.Length > 0 ? vectors[0].Length : 0);
+
+                return vectors;
+            }
+            catch (ClientResultException ex) when (ex.Status == 429 && attempt < MaxEmbedRetries)
+            {
+                var retryAfter = TimeSpan.FromSeconds(2);
+                if (ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out var ra) == true
+                    && int.TryParse(ra, out var seconds))
+                {
+                    retryAfter = TimeSpan.FromSeconds(seconds);
+                }
+
+                _logger.LogDebug(
+                    "Embedding 429 on attempt {Attempt}/{Max}; waiting {Delay}s before retry.",
+                    attempt + 1, MaxEmbedRetries, retryAfter.TotalSeconds);
+
+                await Task.Delay(retryAfter, cancellationToken).ConfigureAwait(false);
+            }
         }
-
-        var inputTokens = collection.Usage.InputTokenCount;
-        PinballWizardTelemetry.RagEmbeddingTokensTotal.Add(
-            inputTokens,
-            new KeyValuePair<string, object?>("call_site", "backfill"));
-
-        _logger.LogDebug(
-            "Chunk batch embedded: count={Count} tokens={Tokens} vector_dim={Dimension}.",
-            vectors.Length,
-            inputTokens,
-            vectors.Length > 0 ? vectors[0].Length : 0);
-
-        return vectors;
     }
 }

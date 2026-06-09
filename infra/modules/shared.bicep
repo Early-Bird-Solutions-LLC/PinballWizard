@@ -459,19 +459,20 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
 // Rules agents (~80–85% of routed calls); gpt-4.1 is the escalation tier for
 // the Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
 // 3072 dimensions is the locked embedding choice from
-// project_phase2_architecture_decisions.md. Both chat tiers use Standard SKU
-// (GlobalStandard quota is zero on the personal Earlybird subscription).
+// project_phase2_architecture_decisions.md. All models use GlobalStandard SKU
+// — Standard is pinned to East US 2 and hits regional ceilings; GlobalStandard
+// routes across Azure's global infrastructure (verified: gpt-4o 0/2000k,
+// gpt-4.1 0/3000k, text-embedding-3-large 0/2000k on this subscription).
+// No cost change — all SKUs are pay-per-token; capacity is only a rate ceiling.
 //
-// IMPORTANT: deployment capacity is in 1k-tokens-per-minute units and
-// counts against per-region quota. Defaults below are conservative; bump
-// via the bicepparam files if rate-limit is hit during eval-set runs.
+// IMPORTANT: deployment capacity is in 1k-tokens-per-minute units.
 
 resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatDeploymentName
   sku: {
-    name: 'Standard'
-    capacity: 50
+    name: 'GlobalStandard'
+    capacity: 500
   }
   properties: {
     model: {
@@ -487,8 +488,8 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
   parent: foundry
   name: foundryChatHeavyDeploymentName
   sku: {
-    name: 'Standard'
-    capacity: 20
+    name: 'GlobalStandard'
+    capacity: 500
   }
   properties: {
     model: {
@@ -509,15 +510,14 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
   parent: foundry
   name: foundryEmbeddingDeploymentName
   sku: {
-    name: 'Standard'
-    // 350 = 350k TPM. Raised from 250 (AB#259 live migration): 429s observed
-    // during --run-rag-backfill at 250k, hitting the ADR-0033 trigger criterion
-    // ("any 429s observed → raise to 350k"). 350 is the East US 2 granted
-    // Standard ceiling for text-embedding-3-large (verified via az cognitiveservices
-    // usage list) — no further headroom available without a quota-increase request.
-    // No cost change — Standard is pay-per-token; capacity is only a rate ceiling,
-    // not a reservation. (gpt-4o stays at 50: already at regional ceiling.)
-    capacity: 350
+    // GlobalStandard routes across Azure's global infrastructure rather than
+    // pinning to East US 2. Regional Standard ceiling for text-embedding-3-large
+    // is 350k TPM (verified: currentValue=350, limit=350 via az cognitiveservices
+    // usage list). GlobalStandard limit is 2,000k TPM with 0 currently consumed.
+    // No cost change — both SKUs are pay-per-token; capacity is only a rate ceiling.
+    // Switch motivated by AB#259: 429s during backfill even at 350k Standard ceiling.
+    name: 'GlobalStandard'
+    capacity: 2000
   }
   properties: {
     model: {

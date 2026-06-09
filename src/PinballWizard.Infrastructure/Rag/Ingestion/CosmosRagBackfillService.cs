@@ -25,10 +25,13 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 // on matching `IIndexState` content-hash, so re-runs skip already-indexed
 // documents without re-embedding.
 //
-// Concurrency: documents are processed sequentially. The embedding and
-// AI Search upsert calls inside the pipeline already batch internally;
-// adding outer parallelism here would compete with the retries/resilience
-// the underlying HTTP clients apply and would complicate the progress log.
+// Concurrency: `BackfillConcurrency` documents are processed in parallel
+// (default 4). All downstream calls are internal Azure services — no
+// politeness throttle applies. Each document already fans out internally
+// (EmbeddingMaxConcurrency + IndexUploadConcurrency); this multiplies
+// that fan-out. A `SemaphoreSlim` gate caps the outer parallelism so the
+// change-feed page loop stays streaming rather than materialising the
+// entire corpus into memory.
 public sealed class CosmosRagBackfillService : IRagBackfillService
 {
     private readonly Container _sourceContainer;
@@ -57,6 +60,7 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
     {
         var sw = Stopwatch.StartNew();
         int processed = 0, indexed = 0, skipped = 0, failed = 0;
+        using var gate = new SemaphoreSlim(_options.BackfillConcurrency);
 
         _logger.LogInformation(
             "RAG backfill starting: source={SourceContainer} database={Database} acceptedTypes={AcceptedTypes}.",
@@ -114,28 +118,35 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
             if (page?.Documents is null || page.Documents.Count == 0)
                 continue;
 
-            foreach (var doc in page.Documents)
+            var docTasks = page.Documents.Select(async doc =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                processed++;
-
-                // Surface per-document progress every 10 docs so the
-                // operator can see the backfill is moving (PDFs take
-                // several seconds each).
-                if (processed % 10 == 0)
-                {
-                    _logger.LogInformation(
-                        "RAG backfill progress: processed={Processed} indexed={Indexed} skipped={Skipped} failed={Failed}.",
-                        processed, indexed, skipped, failed);
-                }
-
+                await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
                     var outcome = await _handler.HandleAsync(doc, cancellationToken).ConfigureAwait(false);
+                    int localProcessed, localIndexed, localSkipped, localFailed;
                     if (outcome == IngestionOutcome.Indexed)
-                        indexed++;
+                    {
+                        localProcessed = Interlocked.Increment(ref processed);
+                        localIndexed = Interlocked.Increment(ref indexed);
+                        localSkipped = Volatile.Read(ref skipped);
+                        localFailed = Volatile.Read(ref failed);
+                    }
                     else
-                        skipped++;
+                    {
+                        localProcessed = Interlocked.Increment(ref processed);
+                        localSkipped = Interlocked.Increment(ref skipped);
+                        localIndexed = Volatile.Read(ref indexed);
+                        localFailed = Volatile.Read(ref failed);
+                    }
+
+                    if (localProcessed % 10 == 0)
+                    {
+                        _logger.LogInformation(
+                            "RAG backfill progress: processed={Processed} indexed={Indexed} skipped={Skipped} failed={Failed}.",
+                            localProcessed, localIndexed, localSkipped, localFailed);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -143,13 +154,20 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
                 }
                 catch (Exception ex)
                 {
-                    failed++;
+                    Interlocked.Increment(ref processed);
+                    Interlocked.Increment(ref failed);
                     _logger.LogWarning(
                         ex,
                         "RAG backfill: handler failed for document={DocumentId}; continuing.",
                         doc.DocumentId);
                 }
-            }
+                finally
+                {
+                    gate.Release();
+                }
+            });
+
+            await Task.WhenAll(docTasks).ConfigureAwait(false);
         }
 
         sw.Stop();

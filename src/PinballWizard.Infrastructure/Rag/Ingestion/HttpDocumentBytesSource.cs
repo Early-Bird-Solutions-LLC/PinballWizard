@@ -60,6 +60,16 @@ public sealed class HttpDocumentBytesSource : IDocumentBytesSource
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentUrl);
 
+        // Some legacy Cosmos records captured http:// URLs before the scraper enforced
+        // https. Silently upgrade http→https: manufacturer CDNs serve over TLS and the
+        // SSRF guard below still fires for every other non-https scheme (ftp://, file://,
+        // gopher://, etc.), so the security invariant is preserved.
+        if (documentUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("RAG document fetch: upgrading http:// to https:// for '{Url}' — legacy Cosmos record.", documentUrl);
+            documentUrl = string.Concat("https://", documentUrl.AsSpan(7));
+        }
+
         if (!Uri.TryCreate(documentUrl, UriKind.Absolute, out var parsed)
             || !string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {

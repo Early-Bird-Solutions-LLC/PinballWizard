@@ -1,0 +1,89 @@
+# PinballWizard Phase 4.5 evaluation ground-truth (v2, realigned 2026-06-09).
+# See data/eval/README.md for the format and curation conventions.
+# Citation IDs are raw OPDB ids (e.g. "GweeP-Ml9pZ"), not prefixed —
+# AiRouter.ExtractCitationsFromText extracts these from the
+# https://opdb.org/machines/<id> URL pattern in the agent's text.
+#
+# Edition-aware fields (AB#259, edition-scope-model-design §6):
+#   acceptable_citation_sets : any-of list of acceptable citation sets;
+#                              a prediction matching ANY set scores correct.
+#   franchise_wide_ok        : true => a franchise-wide doc cited for any
+#                              edition is acceptable (limitation: Citation
+#                              carries no edition_scope yet, so this is the
+#                              row-level intent, not a per-citation check).
+#   expected_outcome         : grounded | answered_all_editions (R2) |
+#                              honest_substitution (R3). Default grounded.
+#   required_editions        : R2 => each label must appear attributed;
+#                              R3 => [0] is the named edition the disclosure
+#                              must reference.
+#
+# v2 changes vs v1 (2026-06-09):
+#   - Foo Fighters: added GpeoL-MyNPq to acceptable_citation_sets for all
+#     Foo Fighters questions; post-migration index has two FF IDs (191
+#     chunks each). Either ID is an acceptable ground-truth citation.
+#   - JJP Toy Story 4: changed acceptable_refusal to true for ev-rules-0005,
+#     ev-valuation-0005, ev-repair-0005. The index has only 1 chunk for
+#     GJ2o0-MrRye (OPDB metadata card only — no manual/document content
+#     indexed), making grounded answers impossible with current corpus.
+#     Treat refusal as correct until content is indexed.
+#   - Header comment: added GpeoL-MyNPq to OPDB ID table.
+#
+# 30 questions: 24 graded + 6 acceptable-refusal (was 27+3; JJP moved).
+# All graded questions target the 6 remaining Phase 4 curated-subset
+# machines with adequate indexed content.
+#
+# Distribution (graded):
+#   Godzilla (Stern, edition-aware)  — 2 Rules + 2 Valuation + 2 Repair (AB#259: R1/R2/R3)
+#   Foo Fighters LE (Stern)         — 2 Rules + 2 Valuation + 2 Repair
+#   Toy Story 4 (JJP)               — 0 graded (1-chunk index gap → acceptable_refusal)
+#   Galactic Tank Force (AP)        — 1 Rules + 1 Valuation + 1 Repair
+#   Halloween (Spooky)              — 1 Rules + 1 Valuation + 1 Repair
+#   Attack from Mars Remake (CGC)   — 1 Rules + 1 Valuation + 1 Repair
+#   Queen LE (Pinball Brothers)     — 1 Rules + 1 Valuation + 1 Repair
+#
+# OPDB IDs used:
+#   GweeP-MW95j  Stern | Godzilla (Pro)         — AB#259 edition-aware base
+#   GweeP-Ml9pZ  Stern | Godzilla (Premium/LE)
+#   GpeoL-MkPz1  Stern | Foo Fighters (Premium/LE) — post-migration ID 1
+#   GpeoL-MyNPq  Stern | Foo Fighters (Premium/LE) — post-migration ID 2 (191 chunks)
+#   GJ2o0-MrRye  Jersey Jack Pinball | Toy Story 4 — 1 chunk only; refusal acceptable
+#   Gj6PZ-Mb5z6  American Pinball | Galactic Tank Force
+#   Gj66Z-Mp4BN  Spooky Pinball | Halloween
+#   G4do5-MkPnV  Chicago Gaming | Attack From Mars (Remake)
+#   GELkO-Ml9zZ  Pinball Brothers | Queen
+
+# ── Rules ─────────────────────────────────────────────────────────
+{"id":"ev-rules-0001","question":"What is the theme of the Stern Godzilla pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): title/theme-level, identical across editions. No clarify, no friction; either base id ok, franchise-wide source ok. GweeP-MW95j=Pro, GweeP-Ml9pZ=Premium/LE."}
+{"id":"ev-rules-0002","question":"How does multiball work in Stern's Godzilla pinball?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"answered_all_editions","required_editions":["Pro","Premium/LE"],"acceptable_refusal":false,"notes":"R2 (AB#259): multiball rules differ by edition. ONE response attributing each edition (no clarify round-trip), a source cited per edition. Collapsing to one base FAILS answered_all_editions."}
+{"id":"ev-rules-0003","question":"What is the main objective in the Foo Fighters LE pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"Foo Fighters LE 2023; rules question for the second Stern machine. Post-migration index has two FF IDs (GpeoL-MkPz1, GpeoL-MyNPq), 191 chunks each — either is acceptable."}
+{"id":"ev-rules-0004","question":"How do you start the main wizard mode in Foo Fighters pinball?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"Foo Fighters wizard-mode question; exercises deep manual retrieval. Either post-migration FF ID acceptable."}
+{"id":"ev-rules-0005","question":"What is the theme of the Jersey Jack Toy Story 4 pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":true,"notes":"v2: changed to acceptable_refusal=true. Index has only 1 chunk for GJ2o0-MrRye (OPDB metadata card, no document content). Grounded answer is impossible until Toy Story 4 docs are indexed. Remove acceptable_refusal when content gap is resolved."}
+{"id":"ev-rules-0006","question":"What is the Galactic Tank Force pinball machine about?","expected_sub_agent":"Rules","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"American Pinball Galactic Tank Force; theme + rules overview"}
+{"id":"ev-rules-0007","question":"What is the theme of the Spooky Pinball Halloween machine?","expected_sub_agent":"Rules","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"Spooky Halloween 2021; theme lookup against OPDB record"}
+{"id":"ev-rules-0008","question":"What is the Attack from Mars Remake pinball machine and who makes it?","expected_sub_agent":"Rules","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Chicago Gaming Attack from Mars Remake; manufacturer + theme fact"}
+{"id":"ev-rules-0009","question":"What is the theme of the Queen LE pinball machine by Pinball Brothers?","expected_sub_agent":"Rules","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Pinball Brothers Queen LE; theme + manufacturer fact"}
+
+# ── Valuation ─────────────────────────────────────────────────────
+{"id":"ev-valuation-0001","question":"What editions are available for the Stern Godzilla pinball machine?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): editions-overview is franchise-level; either base or both ok. The edition list itself doesn't vary by which base answers it."}
+{"id":"ev-valuation-0002","question":"What does the Stern Godzilla Premium retail for?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-Ml9pZ"]],"franchise_wide_ok":false,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"Edition-named-exact (AB#259): 'Premium' names a specific base -> exactly GweeP-Ml9pZ (Premium/LE). MSRP is edition-specific; citing Pro (GweeP-MW95j) or a franchise-wide doc is a FAIL, hence franchise_wide_ok=false."}
+{"id":"ev-valuation-0003","question":"What editions of the Foo Fighters pinball machine exist?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"Foo Fighters Pro / Premium / LE editions on OPDB. Either post-migration FF ID acceptable."}
+{"id":"ev-valuation-0004","question":"How much does the Foo Fighters LE pinball machine cost?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"LE-tier MSRP; exercises edition-aware pricing retrieval. Either post-migration FF ID acceptable."}
+{"id":"ev-valuation-0005","question":"Is the Jersey Jack Toy Story 4 pinball still available new?","expected_sub_agent":"Valuation","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":true,"notes":"v2: changed to acceptable_refusal=true. Index has only 1 chunk for GJ2o0-MrRye (OPDB metadata card, no document content). Availability question requires more than metadata. Remove acceptable_refusal when content gap is resolved."}
+{"id":"ev-valuation-0006","question":"What editions of the Galactic Tank Force pinball are there?","expected_sub_agent":"Valuation","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"Classic / Deluxe / LE / Signature editions on OPDB"}
+{"id":"ev-valuation-0007","question":"How much does it cost to ship a pinball machine across the country?","expected_sub_agent":"Valuation","expected_citation_set":[],"acceptable_refusal":true,"notes":"Shipping logistics is out of scope — refusal expected; tests refusal-correctness on Valuation path"}
+{"id":"ev-valuation-0008","question":"What editions of the Spooky Halloween pinball machine are available?","expected_sub_agent":"Valuation","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"SE / CE / Blood Sucker editions on OPDB"}
+{"id":"ev-valuation-0009","question":"What editions of the Attack from Mars Remake exist?","expected_sub_agent":"Valuation","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Remake / Remake LE / Remake Special editions on OPDB"}
+{"id":"ev-valuation-0010","question":"What editions of the Pinball Brothers Queen pinball are available?","expected_sub_agent":"Valuation","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Standard / CE / LE editions on OPDB"}
+
+# ── Repair ─────────────────────────────────────────────────────────
+{"id":"ev-repair-0001","question":"My Stern Godzilla LE flippers feel weak — what should I check?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"honest_substitution","required_editions":["LE"],"acceptable_refusal":false,"notes":"R3 (AB#259): user names LE. If no LE-specific flipper data exists, the Wizard must DISCLOSE the gap and cite the Pro/franchise substitute. Silent Pro answer or blanket refusal both FAIL. required_editions[0]='LE' is the named edition the disclosure must reference."}
+{"id":"ev-repair-0002","question":"Are there service bulletins for the Stern Godzilla pinball?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): bulletin-availability is franchise-level; bulletins aren't edition-split here, so either base or both ok and a franchise-wide source is acceptable."}
+{"id":"ev-repair-0003","question":"What troubleshooting documents exist for the Foo Fighters pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"Document-availability question; exercises manual + bulletin retrieval for Foo Fighters. Either post-migration FF ID acceptable."}
+{"id":"ev-repair-0004","question":"Are there service bulletins for Stern's Foo Fighters pinball?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_citation_sets":[["GpeoL-MkPz1"],["GpeoL-MyNPq"]],"acceptable_refusal":false,"notes":"Bulletin-specific question for Foo Fighters; second Stern bulletin retrieval test. Either post-migration FF ID acceptable."}
+{"id":"ev-repair-0005","question":"Where can I find the manual for the Jersey Jack Toy Story 4 pinball?","expected_sub_agent":"Repair","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":true,"notes":"v2: changed to acceptable_refusal=true. Index has only 1 chunk for GJ2o0-MrRye (OPDB metadata card, no document content). Manual-location question cannot be grounded without indexed manual. Remove acceptable_refusal when content gap is resolved."}
+{"id":"ev-repair-0006","question":"My Galactic Tank Force pinball won't boot — where do I begin troubleshooting?","expected_sub_agent":"Repair","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"Boot-failure diagnostic; exercises manual chunk retrieval for AP machine"}
+{"id":"ev-repair-0007","question":"What service documents exist for the Spooky Halloween pinball?","expected_sub_agent":"Repair","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"Document-availability question; outline-poor PDF tests ADI fallback path"}
+{"id":"ev-repair-0008","question":"How do I fix a stuck ball on the Attack from Mars Remake pinball?","expected_sub_agent":"Repair","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Stuck-ball diagnostic; exercises manual chunk retrieval for CGC machine"}
+{"id":"ev-repair-0009","question":"Are there known issues with the Pinball Brothers Queen LE pinball?","expected_sub_agent":"Repair","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Known-issues question; exercises manual chunk retrieval for Queen LE"}
+{"id":"ev-repair-0010","question":"Can you fix my car's transmission?","expected_sub_agent":"Repair","expected_citation_set":[],"acceptable_refusal":true,"notes":"Out-of-domain repair question — refusal expected; tests refusal-correctness on Repair path"}
+{"id":"ev-oos-0001","question":"What's the weather like in Tokyo today?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"notes":"Pure out-of-scope; Wizard should refuse without sub-agent dispatch"}
