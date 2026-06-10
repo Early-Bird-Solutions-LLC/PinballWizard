@@ -173,6 +173,26 @@ These have been considered and rejected. Rationale recorded so future PRs don't 
 - **`MeteredCosmosRepository<T>` decorator over `IRepository<T>`** (the original draft). Rejected during PR 4 implementation: `IRepository<T>` is intentionally Cosmos-agnostic and does not surface `ResponseMessage.RequestCharge`, so a decorator over the interface could capture wall-clock duration but not the RU charge — defeating the user-delight § 7.1 RU-cost-dominance trigger. A decorator that wrapped `Container` directly (sibling to `CosmosRepository<T>`, not over the interface) would solve the surfacing problem but require either a parallel implementation of every repository operation (drift risk) or a refactor of `CosmosRepository<T>` into a thin shell over virtual helpers (large change for a layering-hygiene win). The protected-`ExecuteWithMetricsAsync`-helper pattern adopted instead keeps emission at the SDK boundary, lets concrete repositories opt in to emission for specialized methods, and matches the boundary-instrumentation pattern of `MachineGroundingTool` without the interface-coupling problem.
 - **Defer all Cosmos optimization until production telemetry justifies it.** Rejected because the §7.1 revisit triggers can't fire without `pinwiz.cosmos.*` instruments, and waiting for production telemetry to motivate the very instruments that would expose production telemetry is circular. The mechanical wins (selective indexing, EnableContentResponseOnWrite, ApplicationName) ship now to lock the posture before Phase 1 → Cosmos sync introduces new write paths.
 
+## Follow-up 2026-06-10 — prefix-strip retry on title-lookup miss
+
+The § 4 point-read path gained a read-time retry in
+`MachineGroundingTool.GetMachineByTitleAsync`: when the initial
+point-read misses (or hits a row with empty `opdbIds`), the tool
+strips the leading token from the normalized title and retries, up to
+two strips, requiring the remainder to keep ≥ 2 tokens, stopping on
+the first hit. Entry scoring still uses the original title's tokens.
+
+Why: the sync writes rows for bare titles ("godzilla premium") and
+manufacturer-prefixed titles ("stern godzilla") but not the
+combinatorial "{manufacturer} {title} {edition}" shape — which is
+exactly the input the tool's own `[Description]` instructs the agent
+to send. "stern godzilla premium" was a guaranteed 404 (observed
+live: eval ev-valuation-0002 cited the Pro instead of the Premium).
+Write-side coverage was rejected as O(manufacturers × editions) row
+amplification; the retry costs at most two extra ~5 ms point-reads,
+only on misses. Latency budget impact is negligible against the
+§ 4 numbers.
+
 ## References
 
 - [`architecture-v2.md`](../architecture-v2.md) § 7.1 — the user-delight revisit triggers this ADR makes measurable
