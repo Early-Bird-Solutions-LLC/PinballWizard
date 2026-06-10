@@ -1,5 +1,5 @@
 @page "/"
-@rendermode InteractiveAuto
+@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 
 @* PinballWizard public landing page — PR-D-landing.
@@ -118,9 +118,9 @@
         // Pre-render (SSR) must return fast so the browser receives HTML before
         // Lighthouse's FCP timeout. The API call below can take 30-48 s in
         // environments where pinwiz-api isn't configured (Polly retries DNS
-        // failures with exponential backoff). With @rendermode InteractiveAuto
+        // failures with exponential backoff). With @rendermode InteractiveServer
         // the component runs twice: once during SSR pre-render (IsInteractive=false)
-        // and again when the interactive circuit/WASM starts (IsInteractive=true).
+        // and again when the interactive circuit starts (IsInteractive=true).
         // Populate fallback eagerly on both paths so the first render always has
         // content; replace with live data only after the interactive circuit is up.
         _seedQuestions = FallbackSeedQuestions;
