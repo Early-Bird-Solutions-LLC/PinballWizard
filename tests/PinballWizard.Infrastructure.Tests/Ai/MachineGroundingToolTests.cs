@@ -876,6 +876,256 @@ public sealed class MachineGroundingToolTests
         machines.Received(1).QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    // ── Prefix-strip retry (AB#259 ev-valuation-0002 fix) ────────────────
+    // The LLM sends "{mfr} {title} {edition}" shapes (e.g. "Stern Godzilla
+    // Premium") because the [Description] instructs it to. No lookup row
+    // covers this combined shape, but "godzilla premium" (edition row) and
+    // "stern godzilla" (mfr-title row) do exist. The retry must find
+    // "godzilla premium" after one prefix-strip, then score against the
+    // ORIGINAL tokens ("stern", "godzilla", "premium") to pick the right entry.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_ManufacturerEditionShape_ResolvesViaPrefixStripRetry()
+    {
+        // Live Cosmos row coverage (verified 2026-06-10):
+        //   "godzilla"         → [G5po2-MeP6B/sega, GweeP-MW95j/stern, GweeP-Ml9pZ/stern]
+        //   "stern godzilla"   → [GweeP-MW95j/stern, GweeP-Ml9pZ/stern]
+        //   "godzilla premium" → [GweeP-Ml9pZ/stern]   ← edition row exists
+        //   "stern godzilla premium" → NOT FOUND         ← first point-read misses
+        //
+        // After stripping "stern" the retry key is "godzilla premium" which
+        // hits the edition row. Scoring with original tokens ["stern", "godzilla",
+        // "premium"] resolves to GweeP-Ml9pZ (the Premium/LE machine).
+
+        // Row for "stern godzilla premium" → missing (returns null on first call).
+        // Row for "godzilla premium" → single entry for Premium/LE.
+        var editionLookup = new MachineTitleLookup
+        {
+            Id = "godzilla premium",
+            PartitionKey = "godzilla premium",
+        };
+        editionLookup.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        // First call ("stern godzilla premium") misses.
+        lookups.GetByTitleAsync("stern godzilla premium", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        // Retry call ("godzilla premium") hits.
+        lookups.GetByTitleAsync("godzilla premium", Arg.Any<CancellationToken>())
+            .Returns(editionLookup);
+
+        var premiumMachine = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla Premium/LE",
+            Year = 2021, GroupId = "GweeP",
+            Editions = [new MachineEdition { Name = "Premium", Msrp = "$9,999" }],
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>())
+            .Returns(premiumMachine);
+        // No siblings needed for this assertion.
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla Premium", CancellationToken.None);
+
+        // Must resolve to the Premium/LE machine, NOT the Pro.
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
+        Assert.Equal("Stern Pinball", result.Manufacturer);
+        // Cross-partition fallback must never fire — retry found the row.
+        repo.DidNotReceiveWithAnyArgs().QueryByTitleAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_RetryHitOnCollisionRow_ScoresWithOriginalTitleTokens()
+    {
+        // Pins the design claim that entry scoring after a retry hit uses
+        // tokens from the ORIGINAL title, not the stripped retry key. The
+        // retried "godzilla premium" row here is a two-entry collision where
+        // only the stripped "stern" token breaks the tie: scoring with the
+        // retry key's tokens would tie at 0 and fall back to insertion order
+        // (sega first — the wrong machine).
+        var collisionRow = new MachineTitleLookup
+        {
+            Id = "godzilla premium",
+            PartitionKey = "godzilla premium",
+        };
+        collisionRow.UpsertEntry("G5po2-MePXX", "sega", ["sega"]);
+        collisionRow.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("stern godzilla premium", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        lookups.GetByTitleAsync("godzilla premium", Arg.Any<CancellationToken>())
+            .Returns(collisionRow);
+
+        var premiumMachine = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla Premium/LE",
+            Year = 2021, GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>())
+            .Returns(premiumMachine);
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla Premium", CancellationToken.None);
+
+        // "stern" from the original title must outscore the sega entry; if
+        // scoring used the retry key's tokens this would resolve insertion-
+        // order-first to G5po2-MePXX.
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_FirstReadReturnsEmptyOpdbIdsRow_StillRetries()
+    {
+        // A non-null lookup row with an empty OpdbIds list (partial write /
+        // data corruption) is a miss for retry purposes — the prefix-strip
+        // retry must still fire rather than fall straight to the
+        // cross-partition fallback.
+        var emptyRow = new MachineTitleLookup
+        {
+            Id = "stern godzilla premium",
+            PartitionKey = "stern godzilla premium",
+        };
+
+        var editionLookup = new MachineTitleLookup
+        {
+            Id = "godzilla premium",
+            PartitionKey = "godzilla premium",
+        };
+        editionLookup.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("stern godzilla premium", Arg.Any<CancellationToken>())
+            .Returns(emptyRow);
+        lookups.GetByTitleAsync("godzilla premium", Arg.Any<CancellationToken>())
+            .Returns(editionLookup);
+
+        var premiumMachine = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla Premium/LE",
+            Year = 2021, GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>())
+            .Returns(premiumMachine);
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla Premium", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
+        repo.DidNotReceiveWithAnyArgs().QueryByTitleAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_RetryRemainderWouldBeSingleToken_DoesNotRetry()
+    {
+        // "godzilla premium" has 2 tokens. Stripping 1 leaves "premium" (1 token).
+        // The ≥ 2 remainder rule must prevent this retry from firing.
+        // Assert via a counting fake: GetByTitleAsync must be called exactly once
+        // (for the original "godzilla premium" key) and never for "premium".
+
+        var lookupCallKeys = new List<string>();
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                lookupCallKeys.Add(ci.ArgAt<string>(0));
+                return Task.FromResult<MachineTitleLookup?>(null);
+            });
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("godzilla premium", CancellationToken.None);
+
+        // No match is fine — we're asserting the retry boundary, not the result.
+        Assert.Null(result);
+        // "premium" must never be tried; exactly 1 lookup call for the original key.
+        Assert.DoesNotContain("premium", lookupCallKeys);
+        Assert.Single(lookupCallKeys);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_DirectHit_NeverRetries()
+    {
+        // When the first point-read succeeds, no retry must fire.
+        // Assert via counting: GetByTitleAsync is called exactly once.
+        var lookupCallCount = 0;
+        var directLookup = new MachineTitleLookup
+        {
+            Id = "foo fighters",
+            PartitionKey = "foo fighters",
+        };
+        directLookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                lookupCallCount++;
+                return Task.FromResult<MachineTitleLookup?>(directLookup);
+            });
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
+            .Returns(NewMachine("GRBN-MQR4P", "Foo Fighters", 2023));
+        repo.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-MQR4P", result!.OpdbId);
+        // Exactly one lookup call — no retry.
+        Assert.Equal(1, lookupCallCount);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_RetryAlsoMisses_FallsBackToCrossPartitionQuery()
+    {
+        // Both the original key and the retry key miss. The existing cross-partition
+        // fallback must still fire and resolve the answer — unchanged behaviour.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var fallbackMachine = NewMachine("GRBN-FALLBACK", "Godzilla Premium", 2021);
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(fallbackMachine));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Stern Godzilla Premium", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-FALLBACK", result!.OpdbId);
+        // Cross-partition fallback must fire.
+        repo.Received(1).QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static Machine NewMachine(string id, string title, int year) => new()
     {
         Id = id,

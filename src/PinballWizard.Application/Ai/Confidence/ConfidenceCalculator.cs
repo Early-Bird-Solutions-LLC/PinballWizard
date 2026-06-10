@@ -80,6 +80,18 @@ public sealed class ConfidenceCalculator : IConfidenceCalculator
         return RefusalCategory.InsufficientGrounding;
     }
 
+    // One tool-trace citation "covers" up to this many paragraphs.
+    // Citations are answer-level artifacts extracted from tool traces —
+    // they carry no paragraph attribution — so demanding one per
+    // paragraph penalized exactly the well-grounded single-source answers
+    // formatted for readability (observed live: ev-valuation-0001 c=0.17,
+    // ev-repair-0001 c=0.20, both with perfect retrieval, both refused).
+    // 4 is calibrated against the 2026-06-10 eval: a 6-paragraph
+    // single-citation answer scores 0.5 (composite ≈ 0.75, answers) while
+    // a 13+-paragraph single-citation sprawl still refuses. See
+    // ADR-0017 follow-up entry 2026-06-10. Single tuning knob.
+    private const double ParagraphsPerExpectedCitation = 4.0;
+
     private static double ComputeCitationCoverage(string answerText, IReadOnlyList<Citation> citations)
     {
         if (citations.Count == 0)
@@ -107,8 +119,11 @@ public sealed class ConfidenceCalculator : IConfidenceCalculator
             paragraphs = 1;
         }
 
-        // 1 citation per paragraph is "full coverage"; fewer is fractional.
-        var coverage = (double)citations.Count / paragraphs;
+        // Saturating expectation: ceil(paragraphs / 4) citations is "full
+        // coverage"; fewer is fractional. Zero-citation answers never reach
+        // here, so the floor in ConfidenceSignals.Composite still kills them.
+        var expected = Math.Ceiling(paragraphs / ParagraphsPerExpectedCitation);
+        var coverage = citations.Count / expected;
         return coverage > 1.0 ? 1.0 : coverage;
     }
 }

@@ -695,18 +695,35 @@ public sealed class OpdbSyncService : IOpdbSyncService
         string? resolved = null;
         try
         {
-            var group = await _client.GetMachineGroupAsync(segment, cancellationToken).ConfigureAwait(false);
-            resolved = string.IsNullOrWhiteSpace(group?.Name) ? null : group!.Name;
+            // GetMachineGroupTitleAsync consults the persistent on-disk cache
+            // first — a cache hit avoids the polite HTTP GET entirely (10 s/call).
+            // On a cold cache the result is stored to disk after each new entry,
+            // so subsequent sync runs skip the ~1,200-request / ~3.5-h re-fetch.
+            resolved = await _client.GetMachineGroupTitleAsync(segment, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (HttpRequestException ex)
+        {
+            // Warning (not debug): a 5xx / rate-limit / network failure is
+            // actionable — a systematic OPDB outage during a cold-cache sync
+            // would otherwise silently degrade every group's title with no
+            // operator-visible signal. (404s never reach here — the client
+            // returns null for those.)
+            _logger.LogWarning(
+                ex,
+                "OPDB sync: group-title HTTP request failed for segment {Segment} (status {Status}); records in this group keep their edition-suffixed title until the next sync.",
+                segment,
+                ex.StatusCode);
+            resolved = null;
+        }
         catch (Exception ex)
         {
             // Best-effort: log at debug (not warning) — a missing group
             // title is an expected, non-actionable degradation for
-            // singletons and OPDB hiccups, not an operational fault.
+            // singletons, not an operational fault.
             _logger.LogDebug(
                 ex,
                 "OPDB sync: group-title lookup failed for segment {Segment}; records in this group keep their edition-suffixed title until the next sync.",

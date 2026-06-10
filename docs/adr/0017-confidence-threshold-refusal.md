@@ -178,6 +178,41 @@ Analytics + (post-deployPhase2) App Insights.
 - **One refusal category instead of four.** Rejected: production
   debugging needs the cause, not just the fact of refusal.
 
+## Follow-up 2026-06-10 — `citation_coverage` saturating expectation
+
+The Phase 3 approximation of `citation_coverage` ("fraction of factual
+claims with at least one citation") was `min(1, citations /
+paragraphs)`. Citations are extracted from tool traces — answer-level
+artifacts with no paragraph attribution — so the formula demanded a
+per-paragraph resolution the data does not carry. Observed effect
+(eval `wizard.20260610T094029Z.json`): two well-grounded answers
+refused on coverage alone — ev-valuation-0001 (`r=1.00 m=0.85
+c=0.17`, composite 0.521) and ev-repair-0001 (`r=1.00 m=0.85 c=0.20`,
+composite 0.554). Both count against this ADR's own
+`over_eager_refusal_rate ≤ 0.20` calibration target.
+
+**Refined formula:** `min(1, citations / ceil(paragraphs / 4))` — one
+citation covers up to four paragraphs
+(`ParagraphsPerExpectedCitation = 4`, the single tuning knob in
+`ConfidenceCalculator`). A 6-paragraph single-citation answer now
+scores 0.5 (composite ≈ 0.75, answers). The single-citation refusal
+boundary sits at exactly 13 paragraphs: 12 paragraphs → coverage
+0.333 → composite 0.657 (passes); 13 paragraphs → coverage 0.25 →
+composite 0.597 (refuses) — the thin-grounding safety gradient is
+preserved. Zero-citation answers are unchanged (0.0 → epsilon
+floor → refusal); the "plausible answer with zero citations must not
+pass" invariant is untouched.
+
+Alternatives rejected at this revision: binary presence (collapses
+the safety gradient entirely) and entity-level coverage (distinct
+cited machines ÷ machines named in text — most faithful to the
+original definition but requires machine-name detection in prose;
+revisit alongside claim-level extraction, Phase 6+).
+
+Design spec:
+[`docs/superpowers/specs/2026-06-10-citation-coverage-saturation-design.md`](../superpowers/specs/2026-06-10-citation-coverage-saturation-design.md).
+Verification eval results recorded in the implementing PR.
+
 ## References
 
 - [ADR-0014](0014-microsoft-foundry-orchestration.md) — the Foundry

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -171,6 +172,55 @@ public sealed class CosmosRagBackfillServiceTests
         Assert.Equal(2, result.Failed);
     }
 
+    [Fact]
+    public async Task RunAsync_FeedDrainedWith304_CompletesSuccessfully_NoErrorLogged()
+    {
+        // The Cosmos change-feed pull-model stream iterator signals "fully
+        // drained" by returning HTTP 304 NotModified. HasMoreResults stays
+        // true for the lifetime of the iterator (it is a live stream), so
+        // the 304 is the only way the SDK can indicate a caught-up feed.
+        // The service must treat this as normal completion — not an error —
+        // so operators don't receive false-alarm "re-run required" alerts.
+        var logger = new CapturingLogger<CosmosRagBackfillService>();
+        var ctx = new TestContext(logger: logger);
+        ctx.Iterator.SetPages(
+            [[NewDoc(DocA)]],
+            drain304OnNextPage: true);
+
+        var result = await ctx.Service.RunAsync(CancellationToken.None);
+
+        // doc_a was processed from the first page before the 304 arrived.
+        Assert.Equal(1, result.Processed);
+        Assert.Equal(0, result.Failed);
+
+        // 304 must not emit any Error-level log entry, and the drain must be
+        // surfaced at Information level — operators rely on this signal.
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains(logger.Entries, e =>
+            e.Level == LogLevel.Information && e.Message.Contains("change feed drained"));
+    }
+
+    [Fact]
+    public async Task RunAsync_GenuineServerError500_LogsError()
+    {
+        // A non-2xx status that is NOT 304 signals a real service error and
+        // must still log at Error level so operators know the backfill is
+        // incomplete and a re-run is required.
+        var logger = new CapturingLogger<CosmosRagBackfillService>();
+        var ctx = new TestContext(logger: logger);
+        ctx.Iterator.SetPages(
+            [[NewDoc(DocA)]],
+            failOnNextPage: true);
+
+        var result = await ctx.Service.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.Processed);
+        // The error message is the operator-actionable surface — pin the
+        // "re-run required" directive, not just the level.
+        Assert.Contains(logger.Entries, e =>
+            e.Level == LogLevel.Error && e.Message.Contains("re-run required"));
+    }
+
     // ────────────────────────────────────────────────────────────────
     // Helpers
     // ────────────────────────────────────────────────────────────────
@@ -226,23 +276,29 @@ public sealed class CosmosRagBackfillServiceTests
 
     // Fake FeedIterator that drains a pre-configured list of pages.
     // Each page is either a success ResponseMessage or an error.
-    // `failOnNextPage` causes the iterator to return a non-2xx response
+    // `failOnNextPage` causes the iterator to return a non-2xx (500) response
     // after the supplied pages have been consumed.
+    // `drain304OnNextPage` causes the iterator to return 304 NotModified after
+    // the supplied pages have been consumed, with HasMoreResults staying true
+    // until the 304 is consumed — matching the real Cosmos SDK's drain signal.
     private sealed class FakeFeedIterator : FeedIterator
     {
         private readonly Queue<ResponseMessage> _pages = new();
         private bool _failOnNextPage;
+        private bool _drain304OnNextPage;
 
         public override bool HasMoreResults =>
-            _pages.Count > 0 || _failOnNextPage;
+            _pages.Count > 0 || _failOnNextPage || _drain304OnNextPage;
 
         public void SetPages(
             IReadOnlyList<IReadOnlyList<RagSourceDocument>> pages,
-            bool failOnNextPage = false)
+            bool failOnNextPage = false,
+            bool drain304OnNextPage = false)
         {
             foreach (var p in pages)
                 _pages.Enqueue(MakePage(p));
             _failOnNextPage = failOnNextPage;
+            _drain304OnNextPage = drain304OnNextPage;
         }
 
         public override Task<ResponseMessage> ReadNextAsync(CancellationToken cancellationToken = default)
@@ -255,7 +311,16 @@ public sealed class CosmosRagBackfillServiceTests
                 _failOnNextPage = false;
                 return Task.FromResult(MakeError());
             }
-            return Task.FromResult(MakeNotModified());
+            if (_drain304OnNextPage)
+            {
+                _drain304OnNextPage = false;
+                return Task.FromResult(MakeNotModified());
+            }
+            // The production loop is gated on HasMoreResults; reaching here means
+            // it read past its own guard (e.g. a removed 304 break). Fail loudly
+            // rather than return a ghost 304 that would mask the regression.
+            throw new InvalidOperationException(
+                "FakeFeedIterator: ReadNextAsync called when HasMoreResults is false — test logic error.");
         }
     }
 
@@ -265,7 +330,9 @@ public sealed class CosmosRagBackfillServiceTests
         public FakeFeedIterator Iterator { get; } = new();
         public CosmosRagBackfillService Service { get; }
 
-        public TestContext(int backfillConcurrency = 4)
+        public TestContext(
+            int backfillConcurrency = 4,
+            ILogger<CosmosRagBackfillService>? logger = null)
         {
             var options = Options.Create(new RagIngestionOptions
             {
@@ -285,7 +352,34 @@ public sealed class CosmosRagBackfillServiceTests
                 sourceContainer,
                 Handler,
                 options,
-                NullLogger<CosmosRagBackfillService>.Instance);
+                logger ?? NullLogger<CosmosRagBackfillService>.Instance);
         }
     }
+
+    // Minimal capturing logger for asserting log level and message content.
+    // ConcurrentBag because the service logs from Task.WhenAll fan-out when
+    // BackfillConcurrency > 1 — same parallel-tolerant pattern as the
+    // MeterListener tests.
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly System.Collections.Concurrent.ConcurrentBag<LogEntry> _entries = [];
+
+        public IReadOnlyCollection<LogEntry> Entries => _entries;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _entries.Add(new LogEntry(logLevel, formatter(state, exception)));
+        }
+    }
+
+    internal sealed record LogEntry(LogLevel Level, string Message);
 }

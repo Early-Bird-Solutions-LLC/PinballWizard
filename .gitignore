@@ -103,3 +103,8 @@ crash.*.log
 # Agent worktree scratch — transient git worktrees created for isolated
 # parallel agent runs. Never committed.
 .worktrees/
+
+# Session tooling output (humanlayer thoughts repo lives elsewhere; the
+# local symlinked directory and Playwright MCP scratch are never source)
+thoughts/
+.playwright-mcp/

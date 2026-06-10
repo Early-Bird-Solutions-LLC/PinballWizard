@@ -52,7 +52,8 @@ public sealed class OpdbSyncServiceTests : IDisposable
         {
             BaseUrl = "https://opdb.org/api/",
             ApiToken = "test-token",
-            ExportCachePath = "", // Cache disabled — tests pin sync semantics, not cache.
+            ExportCachePath = "",      // Cache disabled — tests pin sync semantics, not cache.
+            GroupTitleCachePath = "",  // Group-title disk cache disabled for same reason.
         });
 
         _client = new OpdbClient(_httpClient, gate, politenessOptions, opdbOptions, NullLogger<OpdbClient>.Instance);

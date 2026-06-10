@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-10 — OPDB group-title lookups get a persistent on-disk cache (positive + negative)
+
+**Decision:** `OpdbClient.GetMachineGroupTitleAsync` consults an on-disk cache (`OpdbOptions.GroupTitleCachePath`, default `data/cache/opdb-group-titles.json`; `GroupTitleCacheTtlSeconds`, default 14 days, whole-file mtime TTL) before issuing the polite `GET /api/machines/{groupSegment}`. Confirmed 404 / non-group results are cached as explicit nulls (negative entries). Transient HTTP failures are never cached — exceptions propagate before the cache write. The shared `WriteCacheFile` helper also fixes the export-cache persist failure (OneDrive marks synced files read-only; `MOVEFILE_REPLACE_EXISTING` fails with `ERROR_ACCESS_DENIED` — now clear-ReadOnly → Delete → Move).
+
+**Alternatives considered:** Per-entry TTLs (over-engineering — franchise names are effectively immutable; whole-file mtime matches the export-cache precedent). End-of-run persistence (rejected: a crash mid-run loses every fetched title; per-entry persistence is cheap because new entries are rare in steady state). Lowering the 10s OPDB politeness delay (rejected outright — the delay is the documented 2026-05-04 decision; the correct lever is fewer requests, not faster ones).
+
+**Rationale:** The in-memory per-run cache meant every fresh sync re-fetched all group segments: ~1,200 requests at 10s each ≈ 3.5h observed live 2026-06-10 before the run was abandoned (~12h projected). Steady-state syncs now make near-zero group-title requests — strictly more polite to OPDB.
+
+**Revisit when:** The weekly ACA sync job lands (incremental sync — diffing export `updated_at` vs Cosmos `lastSyncedUtc` — is the remaining optimization), or OPDB starts emitting cache-validation headers on `/api/machines/{id}`.
+
+**Related:** PR #332, ADR-0029 (follow-up 2026-06-10), decision-log 2026-05-04 (export cache + politeness override).
+
 ## 2026-05-26 — Phase 4.5 H5 eval baseline; ADR-0024 Cohere Rerank gate triggered
 
 **Decision:** H5 eval run on the Phase 4.5 full corpus (30 questions, 7 curated machines) returned `citation_precision=0.478`, triggering the ADR-0024 cross-encoder gate (`< 0.50`). Proceeding with a W4 fix-up PR to wire `CohereRerankReranker` (Cohere Rerank-v3 via Foundry connection). Full H5 metrics: `citation_recall=0.500`, `citation_coverage=0.533`, `subagent_accuracy=0.167`, `refusal_correctness=0.933`. Results file: `data/eval/results/wizard.20260526T143313Z.json`.
