@@ -153,6 +153,7 @@ that edition's record. The corrected IDs are pinned in the plan
 ## Consequences
 
 **Positive:**
+
 - No semantically arbitrary canonical pick; the AC/DC-Vault problem is
   structurally impossible under "base = distinct machine".
 - Matches the data: handles the ~54/46 same-year/cross-year split
@@ -165,6 +166,7 @@ that edition's record. The corrected IDs are pinned in the plan
   fold pass, no canonical selection, no document-id migration.
 
 **Negative / costs:**
+
 - The Wizard/agent prompts must encode the title-level vs
   version-dependent distinction and the clarify-then-route behavior —
   prompt + tool-contract work, and behavior-asserting eval coverage for
@@ -178,6 +180,7 @@ that edition's record. The corrected IDs are pinned in the plan
   over-clarifies. Mitigated by eval cases on both sides.
 
 **Neutral:**
+
 - Singleton titles (80.2%) are entirely unaffected — no group, no
   sibling enumeration, no clarifying question.
 
@@ -201,6 +204,35 @@ that edition's record. The corrected IDs are pinned in the plan
   the user picked the ask-a-targeted-question path. Retained as the
   behavior for the *title-level* "optionally note" case (a passing
   mention, not a default-answer-then-correct).
+
+## Follow-up 2026-06-10 — cross-group title collisions surfaced in MachineGroundingDto
+
+ADR-0029 §3 specifies that the agent should ask one targeted clarifying
+question for version-dependent questions when a title is ambiguous.
+§ Negative/costs noted that `getMachineByTitle` must return sibling base
+records so the agent can enumerate editions — but that only covered
+*same-group* siblings (`GetSiblingsByGroupIdAsync`).
+
+Live symptom observed 2026-06-10: bare "what year was godzilla pinball
+released" → Wizard answered Sega 1998, no mention of Stern 2021.
+Root cause: Sega Godzilla (group G5po2) and Stern Godzilla (group GweeP)
+are **different OPDB groups**. After resolving to Sega, the Siblings path
+could only see G5po2 members; GweeP was invisible.
+
+Fix: the `machine_title_lookups` point-read row for "godzilla" holds 3
+entries [Sega G5po2-MeP6B, Stern GweeP-MW95j, Stern GweeP-Ml9pZ]. When
+the tool resolves via the lookup-row path, entries NOT chosen and whose
+fetched machine carries a **different GroupId** than the primary are
+projected into a new `TitleCollisions` field on `MachineGroundingDto`
+(reuses `MachineSiblingGroundingDto` — same fields). Same-group entries
+remain Siblings-only (no duplication). The cross-partition fallback path
+yields an empty `TitleCollisions` list (no row to inspect).
+
+The `getMachineByTitle` tool `[Description]` is extended to tell the
+model that a non-empty `TitleCollisions` with a version-dependent question
+and no stated manufacturer should trigger one targeted clarifying question
+naming options (manufacturer + year). Agent prompt files are unchanged —
+the tool description is the correct surface for this contract.
 
 ## Follow-up 2026-06-10 — group-title lookups gain a persistent disk cache
 

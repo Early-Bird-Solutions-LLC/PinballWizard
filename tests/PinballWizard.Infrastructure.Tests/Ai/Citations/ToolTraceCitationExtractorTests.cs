@@ -82,7 +82,8 @@ public sealed class ToolTraceCitationExtractorTests
             OpdbSourceUrl: null,
             Editions: [],
             GroupId: null,
-            Siblings: []);
+            Siblings: [],
+            TitleCollisions: []);
         var response = BuildAgentResponseWithToolResult(
             functionName: "getMachineByTitle",
             result: dto);
@@ -650,7 +651,8 @@ public sealed class ToolTraceCitationExtractorTests
             OpdbSourceUrl: $"https://opdb.org/machines/{opdbId}",
             Editions: [],
             GroupId: null,
-            Siblings: []);
+            Siblings: [],
+            TitleCollisions: []);
     }
 
     // ── JsonElement arm (live Foundry path) ──────────────────────────────
@@ -707,7 +709,7 @@ public sealed class ToolTraceCitationExtractorTests
             OpdbId: "GRBE-MJL05", Title: "Godzilla (Premium)",
             Manufacturer: "Stern", Year: 2021,
             Themes: [], Designers: [], OpdbSourceUrl: null,
-            Editions: [], GroupId: null, Siblings: []);
+            Editions: [], GroupId: null, Siblings: [], TitleCollisions: []);
         var element = JsonSerializer.SerializeToElement(dto);
         var response = BuildAgentResponseWithToolResult("getMachineByTitle", element);
 

@@ -137,7 +137,7 @@ public sealed class MachineGroundingTool
         return score;
     }
 
-    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. Returns null if no machine matches the title.")]
+    [Description("Look up a pinball machine by its title (case-insensitive). Returns the manufacturer, year, themes, designers, editions, OPDB source URL, and — when the machine belongs to a multi-edition group — sibling base-machine records sharing the same OPDB group so the agent can ask a targeted clarifying question for version-dependent topics. The response may also include TitleCollisions: machines from OTHER manufacturers (different OPDB groups) that share the same franchise title (e.g. Sega Godzilla 1998 alongside Stern Godzilla 2021). For questions whose answer depends on which machine is meant — year, price, rules, repair — if TitleCollisions is non-empty and the user did not specify a manufacturer, ask one targeted clarifying question naming the options (manufacturer + year) before answering. Returns null if no machine matches the title.")]
     public async Task<MachineGroundingDto?> GetMachineByTitleAsync(
         [Description("The pinball-machine title to look up, case-insensitive. Include the manufacturer name if the user stated it (for example: 'Stern Godzilla', 'Foo Fighters', 'Attack from Mars Remake'). The manufacturer qualifier resolves ambiguity when multiple machines share the same franchise title (e.g. Sega vs Stern Godzilla). On an initial lookup, omit edition suffixes like Pro/Premium/LE — those are surfaced via the returned Siblings list. When re-calling to resolve a specific edition named by the user, include the edition qualifier (e.g. 'Godzilla Premium', 'Attack from Mars Remake').")] string title,
         CancellationToken cancellationToken)
@@ -206,6 +206,12 @@ public sealed class MachineGroundingTool
 
             Machine? match = null;
             var lookupHit = lookup is not null && lookup.OpdbIds.Count > 0;
+            // Track which lookup row resolved the match so TitleCollisions can
+            // read the other entries in that row after the primary is resolved.
+            // Only the lookup-row path populates TitleCollisions; the cross-
+            // partition fallback path cannot — it has no row to inspect.
+            MachineTitleLookup? resolvedLookup = null;
+            int resolvedLookupBestIdx = 0;
 
             // Guard: OpdbIds, Manufacturers, and (when present) MatchTokens must all
             // be the same length (maintained by UpsertEntry / RemoveEntry). A mismatch
@@ -261,6 +267,11 @@ public sealed class MachineGroundingTool
                 var opdbId = lookup.OpdbIds[bestIdx];
                 var manufacturer = lookup.Manufacturers[bestIdx];
                 match = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
+                if (match is not null)
+                {
+                    resolvedLookup = lookup;
+                    resolvedLookupBestIdx = bestIdx;
+                }
 
                 if (match is null)
                 {
@@ -314,6 +325,15 @@ public sealed class MachineGroundingTool
             // Best-effort: a failure here must NOT abort the primary answer.
             var siblings = await ResolveSiblingsAsync(match, cancellationToken).ConfigureAwait(false);
 
+            // Cross-group collision resolution (ADR-0029 follow-up 2026-06-10):
+            // when the lookup row has multiple entries beyond the resolved match,
+            // those are machines from DIFFERENT OPDB groups sharing the same
+            // franchise title. Surface them so the agent can ask one targeted
+            // clarifying question (manufacturer + year) for version-dependent
+            // questions. Only populated via the lookup-row path.
+            var titleCollisions = await ResolveTitleCollisionsAsync(
+                match, resolvedLookup, resolvedLookupBestIdx, siblings, cancellationToken).ConfigureAwait(false);
+
             return new MachineGroundingDto(
                 OpdbId: match.Id,
                 Title: match.Title,
@@ -324,7 +344,8 @@ public sealed class MachineGroundingTool
                 OpdbSourceUrl: match.OpdbSourceUrl,
                 Editions: editions,
                 GroupId: match.GroupId,
-                Siblings: siblings);
+                Siblings: siblings,
+                TitleCollisions: titleCollisions);
         }
         finally
         {
@@ -379,6 +400,87 @@ public sealed class MachineGroundingTool
         }
 
         return siblings;
+    }
+
+    // Fetches cross-group machines that share the same franchise title as
+    // the resolved primary — the other entries in the lookup row that were
+    // NOT scored as the best match and belong to a DIFFERENT OPDB group.
+    //
+    // Exclusion rules (both must hold for an entry to be skipped):
+    //   • The entry IS the resolved match (same opdbId / same bestIdx).
+    //   • The entry's machine shares the primary's GroupId — it is already
+    //     reachable via Siblings (same-group); adding it to TitleCollisions
+    //     would duplicate information the agent already has.
+    //
+    // Failures fetching a collision machine are silently skipped (logged
+    // at Debug) so a stale/missing machine row does not poison the list or
+    // abort the primary result. TitleCollisions is best-effort.
+    private async Task<IReadOnlyList<MachineSiblingGroundingDto>> ResolveTitleCollisionsAsync(
+        Machine primary,
+        MachineTitleLookup? resolvedLookup,
+        int bestIdx,
+        IReadOnlyList<MachineSiblingGroundingDto> siblings,
+        CancellationToken cancellationToken)
+    {
+        // No lookup row means we came in via the cross-partition fallback.
+        // TitleCollisions is not available without a row.
+        if (resolvedLookup is null || resolvedLookup.OpdbIds.Count <= 1)
+            return [];
+
+        // Build a fast exclusion set: GroupIds already covered by Siblings.
+        // Any collision whose fetched machine shares one of these GroupIds
+        // is already visible to the agent via Siblings.
+        var siblingGroupIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in siblings)
+        {
+            // Siblings share the primary's GroupId by construction (same OPDB group).
+            // Capture the primary GroupId once; all siblings implicitly share it.
+        }
+        if (!string.IsNullOrEmpty(primary.GroupId))
+            siblingGroupIds.Add(primary.GroupId);
+
+        var collisions = new List<MachineSiblingGroundingDto>();
+        for (var i = 0; i < resolvedLookup.OpdbIds.Count; i++)
+        {
+            if (i == bestIdx)
+                continue; // this is the resolved match itself
+
+            var opdbId = resolvedLookup.OpdbIds[i];
+            var manufacturer = resolvedLookup.Manufacturers[i];
+
+            try
+            {
+                var candidate = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
+                if (candidate is null)
+                {
+                    _logger.LogDebug(
+                        "MachineGroundingTool: TitleCollisions candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping.",
+                        opdbId, manufacturer);
+                    continue;
+                }
+
+                // Skip if the candidate is in the same OPDB group as the primary
+                // (already visible via Siblings — no need to duplicate).
+                if (!string.IsNullOrEmpty(candidate.GroupId) && siblingGroupIds.Contains(candidate.GroupId))
+                    continue;
+
+                collisions.Add(new MachineSiblingGroundingDto(
+                    OpdbId: candidate.Id,
+                    Title: candidate.Title,
+                    Year: candidate.Year,
+                    Editions: ProjectEditions(candidate.Editions),
+                    EditionLabel: candidate.EditionLabel,
+                    EditionTokens: candidate.EditionTokens.AsReadOnly()));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex,
+                    "MachineGroundingTool: TitleCollisions fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
+                    opdbId, manufacturer);
+            }
+        }
+
+        return collisions;
     }
 
     private static List<MachineEditionGroundingDto> ProjectEditions(
