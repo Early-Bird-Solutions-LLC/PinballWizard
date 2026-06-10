@@ -5,11 +5,27 @@
 # `--locked-mode` so a tampered or drifted lockfile fails the analysis run.
 name: CodeQL
 
+# paths-ignore: docs/eval-results changes can't alter C# analysis
+# results. Path-skipped required checks report as "skipped", which
+# satisfies branch protection (documented GitHub carve-out). The weekly
+# schedule below still scans everything regardless of paths.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
   schedule:
     # Mondays 06:00 UTC — same cadence as Dependabot so the two land together.
     - cron: '0 6 * * 1'

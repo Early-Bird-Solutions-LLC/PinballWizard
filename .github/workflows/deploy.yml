@@ -66,10 +66,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: Build images + deploy to ACA
+  build-deploy:
+    # Web and Api images build + deploy in parallel matrix legs — they
+    # share no build outputs (independent Dockerfiles over the same
+    # context), so serializing them only added wall-clock. Per-image GHA
+    # cache scopes keep the two legs from thrashing each other's layer
+    # cache (the default shared scope would race under mode=max).
+    name: Build + deploy ${{ matrix.image }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pinwiz-web
+            dockerfile: src/PinballWizard.Web/Dockerfile
+            app_name_var: WIZARD_APP_NAME
+          - image: pinwiz-api
+            dockerfile: src/PinballWizard.Api/Dockerfile
+            app_name_var: API_APP_NAME
 
     env:
       DOTNET_NOLOGO: 'true'
@@ -95,50 +111,49 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # ── Build + push Web image ────────────────────────────────────────────
-      - name: Build and push pinwiz-web
+      # ── Build + push image ────────────────────────────────────────────────
+      - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: src/PinballWizard.Web/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:${{ github.sha }}
-            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-      # ── Build + push Api image ────────────────────────────────────────────
-      - name: Build and push pinwiz-api
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: src/PinballWizard.Api/Dockerfile
-          push: true
-          tags: |
-            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:${{ github.sha }}
-            ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # ── Deploy Wizard web app ─────────────────────────────────────────────
+      # ── Deploy to ACA ─────────────────────────────────────────────────────
       # Always use the explicit :{sha} tag — never :latest (locked invariant).
-      - name: Update Wizard ACA image
+      - name: Update ACA image
         run: |
           az containerapp update \
-            --name ${{ vars.WIZARD_APP_NAME }} \
+            --name ${{ vars[matrix.app_name_var] }} \
             --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
-            --image ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-web:${{ github.sha }}
+            --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
-      # ── Deploy Api app ────────────────────────────────────────────────────
-      - name: Update Api ACA image
-        run: |
-          az containerapp update \
-            --name ${{ vars.API_APP_NAME }} \
-            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
-            --image ${{ vars.ACR_LOGIN_SERVER }}/pinwiz-api:${{ github.sha }}
+  smoke:
+    # Runs after BOTH matrix legs deployed — the wizard app depends on the
+    # Api app for answers, so probing before both are updated would pass
+    # against a mixed-version pair.
+    name: Smoke test /alive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: build-deploy
 
-      # ── Smoke test ────────────────────────────────────────────────────────
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       # Wait for the new revision to be healthy, then probe /alive.
       # ACA revision rollover takes ~30–60 s; 120 s timeout is generous.
       - name: Smoke test /alive
