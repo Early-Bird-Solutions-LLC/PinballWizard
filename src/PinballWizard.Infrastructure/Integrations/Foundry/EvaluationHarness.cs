@@ -261,13 +261,29 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var predictedRefusal = answer?.IsRefusal ?? false;
         var answerText = answer?.Text ?? string.Empty;
 
+        // Metric-hygiene (AB#259, 2026-06-10): an acceptable_refusal-only
+        // gap row that refuses carries NO citation signal — its
+        // expected_citation_set describes the answer the agent MAY give,
+        // not one it MUST give. Grading the absent answer's citations as
+        // zeros misrepresented the metric (the strike-one artifact).
+        // refusal_required rows keep the empty-set conventions (precision
+        // guards against fabricated citations inside a refusal).
+        var acceptablyRefusedGapRow = predictedRefusal
+            && question.AcceptableRefusal
+            && !question.RefusalRequired;
+
         // Edition-aware citation scoring (AB#259): when the row supplies
         // acceptable_citation_sets, score against the most-favorable set
         // (any-of). Otherwise fall back to the single expected_citation_set
         // (back-compat with pre-edition rows).
-        double citationPrecision;
-        double citationRecall;
-        if (question.AcceptableCitationSets is { Count: > 0 } acceptableSets)
+        double? citationPrecision;
+        double? citationRecall;
+        if (acceptablyRefusedGapRow)
+        {
+            citationPrecision = null;
+            citationRecall = null;
+        }
+        else if (question.AcceptableCitationSets is { Count: > 0 } acceptableSets)
         {
             citationPrecision = _precisionEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
             citationRecall = _recallEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
@@ -304,9 +320,15 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var scores = new EvalScores(
             CitationPrecision: citationPrecision,
             CitationRecall: citationRecall,
-            CitationCoverage: _coverageEvaluator.Compute(answerText, predictedCitations),
+            // Coverage measures citations-per-paragraph of an ANSWER; a
+            // refusal is not an answer, so the metric is undefined on any
+            // refused row (the refusal itself is graded by
+            // refusal_correctness, and missing citations by recall).
+            CitationCoverage: predictedRefusal
+                ? null
+                : _coverageEvaluator.Compute(answerText, predictedCitations),
             SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent, question.AcceptableSubAgents),
-            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal),
+            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal, question.RefusalRequired),
             AnsweredAllEditions: answeredAllEditions,
             HonestSubstitution: honestSubstitution);
 
@@ -362,23 +384,30 @@ public sealed class EvaluationHarness : IEvaluationHarness
             return new EvalAggregate(
                 QuestionCount: 0,
                 ErrorCount: 0,
-                CitationPrecisionMean: 0.0,
-                CitationRecallMean: 0.0,
-                CitationCoverageMean: 0.0,
+                CitationPrecisionMean: null,
+                CitationRecallMean: null,
+                CitationCoverageMean: null,
                 SubagentAccuracyMean: 0.0,
-                RefusalCorrectnessMean: 0.0);
+                RefusalCorrectnessMean: null);
         }
 
+        // Nullable metrics aggregate only over rows where the metric is
+        // defined (non-null score) so the signal isn't diluted by rows
+        // it doesn't apply to — R2/R3 outcome rows, refused rows
+        // (coverage), and acceptable_refusal gap rows (refusal,
+        // precision/recall on refusal). The *_count fields make each
+        // mean's denominator visible in the results file.
         double precisionSum = 0;
+        var precisionCount = 0;
         double recallSum = 0;
+        var recallCount = 0;
         double coverageSum = 0;
+        var coverageCount = 0;
         double subagentSum = 0;
         double refusalSum = 0;
+        var refusalCount = 0;
         var errorCount = 0;
 
-        // R2 / R3 means are computed only over rows that exercise the
-        // outcome (the score is null elsewhere) so the signal isn't
-        // diluted by the mostly-grounded eval set.
         double answeredAllEditionsSum = 0;
         var answeredAllEditionsCount = 0;
         double honestSubstitutionSum = 0;
@@ -386,11 +415,27 @@ public sealed class EvaluationHarness : IEvaluationHarness
 
         foreach (var r in results)
         {
-            precisionSum += r.Scores.CitationPrecision;
-            recallSum += r.Scores.CitationRecall;
-            coverageSum += r.Scores.CitationCoverage;
+            if (r.Scores.CitationPrecision is { } precision)
+            {
+                precisionSum += precision;
+                precisionCount++;
+            }
+            if (r.Scores.CitationRecall is { } recall)
+            {
+                recallSum += recall;
+                recallCount++;
+            }
+            if (r.Scores.CitationCoverage is { } coverage)
+            {
+                coverageSum += coverage;
+                coverageCount++;
+            }
             subagentSum += r.Scores.SubagentAccuracy;
-            refusalSum += r.Scores.RefusalCorrectness;
+            if (r.Scores.RefusalCorrectness is { } refusal)
+            {
+                refusalSum += refusal;
+                refusalCount++;
+            }
             if (r.Scores.AnsweredAllEditions is { } aae)
             {
                 answeredAllEditionsSum += aae;
@@ -411,11 +456,15 @@ public sealed class EvaluationHarness : IEvaluationHarness
         return new EvalAggregate(
             QuestionCount: n,
             ErrorCount: errorCount,
-            CitationPrecisionMean: precisionSum / n,
-            CitationRecallMean: recallSum / n,
-            CitationCoverageMean: coverageSum / n,
+            CitationPrecisionMean: precisionCount > 0 ? precisionSum / precisionCount : null,
+            CitationRecallMean: recallCount > 0 ? recallSum / recallCount : null,
+            CitationCoverageMean: coverageCount > 0 ? coverageSum / coverageCount : null,
             SubagentAccuracyMean: subagentSum / n,
-            RefusalCorrectnessMean: refusalSum / n,
+            RefusalCorrectnessMean: refusalCount > 0 ? refusalSum / refusalCount : null,
+            CitationPrecisionCount: precisionCount,
+            CitationRecallCount: recallCount,
+            CitationCoverageCount: coverageCount,
+            RefusalCorrectnessCount: refusalCount,
             AnsweredAllEditionsMean: answeredAllEditionsCount > 0
                 ? answeredAllEditionsSum / answeredAllEditionsCount
                 : null,

@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
 using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
@@ -558,15 +559,20 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         var runResult = await harness.RunAsync(cancellationToken);
+        // Nullable means are "n/a" when no row exercised the metric
+        // (metric-hygiene fix: gap/refusal rows carry null scores and
+        // are excluded from the denominator).
+        static string FormatMean(double? mean) =>
+            mean is { } value ? value.ToString("F3", CultureInfo.InvariantCulture) : "n/a";
         Console.WriteLine();
         Console.WriteLine($"Evaluation harness completed: {runResult.Aggregate.QuestionCount} questions " +
                           $"({runResult.Aggregate.ErrorCount} errors), " +
                           $"results at {runResult.ResultsPath}");
-        Console.WriteLine($"  citation_precision={runResult.Aggregate.CitationPrecisionMean:F3} " +
-                          $"citation_recall={runResult.Aggregate.CitationRecallMean:F3} " +
-                          $"citation_coverage={runResult.Aggregate.CitationCoverageMean:F3} " +
+        Console.WriteLine($"  citation_precision={FormatMean(runResult.Aggregate.CitationPrecisionMean)} " +
+                          $"citation_recall={FormatMean(runResult.Aggregate.CitationRecallMean)} " +
+                          $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
                           $"subagent_accuracy={runResult.Aggregate.SubagentAccuracyMean:F3} " +
-                          $"refusal_correctness={runResult.Aggregate.RefusalCorrectnessMean:F3}");
+                          $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
         return;
     }
 

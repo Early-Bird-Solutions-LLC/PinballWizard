@@ -4,22 +4,26 @@ using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Ai.Evaluation;
 
-// Sanity-check on the committed data/eval/wizard.v1.jsonl: it must
-// parse cleanly, every row's expected_sub_agent must be a valid
-// AgentName, and ids must be unique. Catches a curator-introduced
-// regression (e.g., copy-paste duplicate id, typo'd sub-agent) at
-// build time rather than the next time the harness runs.
+// Sanity-check on the committed ground-truth files (wizard.v1.jsonl is
+// the historical set; wizard.v2.jsonl is the active one per
+// EvalHarnessOptions.GroundTruthPath): they must parse cleanly, every
+// row's expected_sub_agent must be a valid AgentName, and ids must be
+// unique. Catches a curator-introduced regression (e.g., copy-paste
+// duplicate id, typo'd sub-agent, refusal-flag contradiction) at build
+// time rather than the next time the harness runs.
 public sealed class EvalGroundTruthFileTests
 {
     private static readonly HashSet<string> ValidSubAgents =
         new(AgentName.All, StringComparer.OrdinalIgnoreCase);
 
-    [Fact]
-    public void GroundTruthFile_ParsesCleanly_AndAllSubAgentsValid()
+    [Theory]
+    [InlineData("wizard.v1.jsonl")]
+    [InlineData("wizard.v2.jsonl")]
+    public void GroundTruthFile_ParsesCleanly_AndAllSubAgentsValid(string fileName)
     {
         // The test runs from the test project's bin output directory;
-        // walk up to the repo root to find data/eval/wizard.v1.jsonl.
-        var path = LocateGroundTruthFile();
+        // walk up to the repo root to find the data/eval files.
+        var path = LocateGroundTruthFile(fileName);
         Assert.True(File.Exists(path), $"expected ground-truth file at {path}");
 
         var questions = EvalQuestionParser.ParseFile(path);
@@ -33,11 +37,14 @@ public sealed class EvalGroundTruthFileTests
             Assert.True(ValidSubAgents.Contains(q.ExpectedSubAgent),
                 $"row '{q.Id}' has expected_sub_agent='{q.ExpectedSubAgent}' which is not a known AgentName");
 
-            // acceptable_refusal=true rows should have an empty
-            // citation set, otherwise the curator-intent isn't
-            // legible. (precision/recall on a refusal-flow row
-            // with non-empty expected citations is ill-defined.)
-            if (q.AcceptableRefusal)
+            // refusal_required rows are out-of-scope by definition and
+            // must not carry answer-path citations. (The parser enforces
+            // this too; asserting here keeps the curator intent legible
+            // even if the parser invariant is ever relaxed.)
+            // acceptable_refusal-only gap rows MAY carry a non-empty
+            // expected_citation_set — it is the answer-path ground truth,
+            // graded only when the agent answers.
+            if (q.RefusalRequired)
             {
                 Assert.Empty(q.ExpectedCitationSet);
             }
@@ -45,34 +52,36 @@ public sealed class EvalGroundTruthFileTests
     }
 
     [Fact]
-    public void GroundTruthFile_HasOutOfScopeRows_ForRefusalSymmetry()
+    public void ActiveGroundTruthFile_HasRefusalSignal_InBothDirections()
     {
         // Refusal-correctness has signal in both directions only when
-        // the eval set contains at least one acceptable_refusal=true
-        // row AND at least one acceptable_refusal=false row. Without
+        // the active eval set contains at least one refusal_required=true
+        // row AND at least one must-answer row (neither flag). Without
         // both, the metric collapses to a constant.
-        var path = LocateGroundTruthFile();
+        // (acceptable_refusal-only gap rows carry no refusal signal by
+        // design — they don't count toward either direction.)
+        var path = LocateGroundTruthFile("wizard.v2.jsonl");
         var questions = EvalQuestionParser.ParseFile(path);
 
-        Assert.Contains(questions, q => q.AcceptableRefusal);
-        Assert.Contains(questions, q => !q.AcceptableRefusal);
+        Assert.Contains(questions, q => q.RefusalRequired);
+        Assert.Contains(questions, q => !q.AcceptableRefusal && !q.RefusalRequired);
     }
 
-    private static string LocateGroundTruthFile()
+    private static string LocateGroundTruthFile(string fileName)
     {
         // Search upward from the test binary's directory until we find
-        // data/eval/wizard.v1.jsonl. Mirrors the strategy in other
-        // tests that read repo-root data files.
+        // the data/eval directory. Mirrors the strategy in other tests
+        // that read repo-root data files.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "data", "eval", "wizard.v1.jsonl");
+            var candidate = Path.Combine(dir.FullName, "data", "eval", fileName);
             if (File.Exists(candidate))
             {
                 return candidate;
             }
             dir = dir.Parent;
         }
-        throw new FileNotFoundException("Could not locate data/eval/wizard.v1.jsonl walking up from the test binary directory.");
+        throw new FileNotFoundException($"Could not locate data/eval/{fileName} walking up from the test binary directory.");
     }
 }

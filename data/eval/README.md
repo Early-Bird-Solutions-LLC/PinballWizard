@@ -28,9 +28,20 @@ Per-question shape:
 | `id` | yes | Unique within the file. Convention: `ev-{subagent}-{nnnn}`. |
 | `question` | yes | The user prompt verbatim. |
 | `expected_sub_agent` | yes | One of `Wizard`, `Valuation`, `Rules`, `Repair`. Out-of-scope rows route to `Wizard`. |
-| `expected_citation_set` | yes | Array of raw OPDB ids (no `mch_` prefix) the answer should cite. Empty list when `acceptable_refusal=true`. |
-| `acceptable_refusal` | yes | `true` when "I don't know" is the correct response (out-of-scope, missing grounding). |
+| `expected_citation_set` | yes | Array of raw OPDB ids (no `mch_` prefix) the answer should cite. Empty list when `refusal_required=true` (parser-enforced); on `acceptable_refusal`-only gap rows it holds the answer-path ground truth, graded only when the agent answers. |
+| `acceptable_refusal` | yes | `true` when a refusal is a correct response. Without `refusal_required`, EITHER refusing or answering correctly scores correct — the row carries no refusal signal (null score, excluded from the aggregate). |
+| `refusal_required` | no | `true` when the agent MUST refuse (genuinely out-of-scope). Answering scores `refusal_correctness=0`. Implies `acceptable_refusal=true` (parser rejects the contradiction). Default `false`. |
 | `notes` | no | Curator-only context. |
+
+Refusal expectations are three-state (metric-hygiene fix, 2026-06-10):
+`refusal_required=true` → must refuse; `acceptable_refusal=true` alone →
+either behavior is fine (content-gap rows — the prior two-state evaluator
+scored these as required-refusal, so a correctly-cited answer scored 0);
+both `false` → must answer. On a gap row that refuses, citation
+precision/recall are also null (there is no answer to grade), and
+`citation_coverage` is null on any refused row (coverage measures
+citations-per-paragraph of an answer). Each aggregate mean travels with a
+`*_count` field carrying its denominator.
 
 The harness extracts predicted citation ids from the agent's
 `WizardAnswer.Citations[].MachineId` — the same OPDB id the AiRouter

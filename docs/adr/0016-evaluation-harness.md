@@ -245,6 +245,35 @@ single explicit eval invocation; Phase 6 promotes it to scheduled.
   set-overlap calculation, not a judgment call. Code-based is
   cheaper (no LLM-as-judge call) and exact (no scoring drift).
 
+## Follow-up 2026-06-10 — three-state refusal semantics + null-signal scoring
+
+The original `refusal_correctness` evaluator was a two-state agreement
+score that treated `acceptable_refusal=true` as *required*-refusal. When
+the JJP Toy Story 4 content-gap rows (curated `acceptable_refusal=true`
+because the index held only the OPDB metadata-card chunk) started being
+answered *correctly* — exact expected citation, precision/recall/coverage
+all 1.0 — the metric scored each correct answer 0. That artifact was
+dismissed in two consecutive committed eval runs, tripping the
+guardrails.md metric-hygiene rule; this follow-up is the mandated fix.
+
+Refusal expectations are now three-state on the ground-truth row:
+`refusal_required=true` → the agent MUST refuse (answering scores 0);
+`acceptable_refusal=true` alone → either refusing or answering correctly
+is fine — the row carries no refusal signal (null score, excluded from
+the aggregate denominator, mirroring the R2/R3 nullable pattern); both
+false → the agent MUST answer. The parser enforces that `refusal_required`
+implies `acceptable_refusal` and an empty `expected_citation_set`.
+
+Null-signal scoring extends to the citation metrics where they are
+undefined: a gap row that refuses contributes no citation
+precision/recall (there is no answer whose citations could be graded),
+and `citation_coverage` is null on any refused row (coverage measures
+citations-per-paragraph of an *answer*). Every aggregate mean now
+travels with a `*_count` field carrying its denominator so a results-file
+diff makes the basis visible. The committed results files before this
+date used the two-state semantics; compare refusal/coverage trajectories
+across the boundary with that in mind.
+
 ## References
 
 - [Azure AI Projects 2.0 Evaluations docs](https://learn.microsoft.com/en-us/dotnet/api/overview/azure/ai.projects-readme?view=azure-dotnet)

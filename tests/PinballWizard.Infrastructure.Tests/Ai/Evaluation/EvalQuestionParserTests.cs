@@ -224,6 +224,51 @@ public sealed class EvalQuestionParserTests
         Assert.Equal(["Pro", "Premium/LE"], q.RequiredEditions);
     }
 
+    // ── Three-state refusal invariants (AB#259 metric-hygiene fix) ──────
+
+    [Fact]
+    public void Parse_RefusalRequired_RoundTrip_AndDefaultsFalse()
+    {
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"What's the weather?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"refusal_required":true}""",
+            """{"id":"ev-002","question":"Manual location?","expected_sub_agent":"Repair","expected_citation_set":["X"],"acceptable_refusal":true}""",
+        };
+
+        var result = EvalQuestionParser.Parse(lines, "test");
+
+        Assert.True(result[0].RefusalRequired);
+        Assert.False(result[1].RefusalRequired);
+    }
+
+    [Fact]
+    public void Parse_RefusalRequired_WithoutAcceptableRefusal_Throws()
+    {
+        // refusal_required=true with acceptable_refusal=false is always a
+        // curator typo — a required refusal is trivially acceptable.
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":false,"refusal_required":true}""",
+        };
+
+        var ex = Assert.Throws<InvalidDataException>(() => EvalQuestionParser.Parse(lines, "test"));
+        Assert.Contains("refusal_required=true but acceptable_refusal=false", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_RefusalRequired_WithCitations_Throws()
+    {
+        // A required-refusal row is out-of-scope by definition; carrying
+        // answer-path citations contradicts that.
+        var lines = new[]
+        {
+            """{"id":"ev-001","question":"q","expected_sub_agent":"Wizard","expected_citation_set":["X"],"acceptable_refusal":true,"refusal_required":true}""",
+        };
+
+        var ex = Assert.Throws<InvalidDataException>(() => EvalQuestionParser.Parse(lines, "test"));
+        Assert.Contains("non-empty expected_citation_set", ex.Message);
+    }
+
     // ── acceptable_sub_agents round-trip (AB#259) ───────────────────────
 
     [Fact]
