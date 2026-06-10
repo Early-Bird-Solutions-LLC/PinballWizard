@@ -37,6 +37,10 @@ public sealed class WizardAnswerStreamTests
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.Services.AddSingleton(client ?? Substitute.For<IWizardStreamingClient>());
         ctx.Services.AddLogging();
+        // Last: accessing Renderer locks the service provider. The component
+        // gates its auto-submit on RendererInfo.IsInteractive (prerender
+        // must not stream); tests render interactive-server like production.
+        ctx.Renderer.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Server", isInteractive: true));
         return ctx;
     }
 

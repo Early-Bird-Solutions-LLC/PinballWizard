@@ -45,12 +45,28 @@
     [Parameter]
     public string? Slug { get; set; }
 
-    // Resolved question text. Null for /wizard (Idle state); populated for
-    // /wizard/q/{slug} after we look up or use the slug directly.
+    // Question text from /wizard?q={text} — the navigation shape the landing
+    // page actually produces (Index.razor OnQuestionSubmitted escapes the
+    // full question into the query string for both seed-card clicks and
+    // hero-input submits). Only the slug ROUTE was handled before, so every
+    // landing hand-off arrived at the bare Idle page with an empty input
+    // (observed live 2026-06-10). Takes priority over Slug: it carries the
+    // exact question text, no lookup needed.
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Q { get; set; }
+
+    // Resolved question text. Null for /wizard (Idle state); populated from
+    // ?q= directly or from /wizard/q/{slug} after lookup.
     private string? _resolvedQuestion;
 
     protected override async Task OnParametersSetAsync()
     {
+        if (!string.IsNullOrWhiteSpace(Q))
+        {
+            _resolvedQuestion = Q;
+            return;
+        }
+
         if (string.IsNullOrEmpty(Slug))
         {
             _resolvedQuestion = null;
@@ -80,13 +96,22 @@
                     return match.Question;
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException
-                                       or TaskCanceledException or TimeoutException)
+        catch (Exception ex)
         {
-            // Landing endpoint unavailable — fall back to slug as question text.
-            // Debug-level so ops can diagnose "slug became question" without noise on expected 503s.
+            // Landing endpoint unavailable — fall back to slug as question
+            // text. This catch is deliberately broad: the method's contract
+            // is "always return a question string". The original closed list
+            // (HttpRequestException / InvalidOperationException /
+            // TaskCanceledException / TimeoutException) missed Polly's
+            // BrokenCircuitException — when the landing endpoint was down
+            // long enough to open the standard resilience circuit breaker,
+            // every seed-card click threw through the component lifecycle
+            // and TERMINATED the user's entire Blazor circuit (observed
+            // live 2026-06-10: one card click made the whole page inert).
+            // Debug-level so ops can diagnose "slug became question"
+            // without noise on expected outages.
             Logger.LogDebug(ex,
-                "Landing endpoint unavailable for slug {Slug}; using slug-as-question fallback.",
+                "Landing lookup failed for slug {Slug}; using slug-as-question fallback.",
                 SanitizeForLog(slug));
         }
 

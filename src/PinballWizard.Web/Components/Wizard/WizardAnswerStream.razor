@@ -191,8 +191,20 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // If a Question was pre-filled (e.g., via /wizard/q/{slug} route)
-        // and we are still Idle, auto-submit.
+        // If a Question was pre-filled (via /wizard?q= or the
+        // /wizard/q/{slug} route) and we are still Idle, auto-submit —
+        // but ONLY once interactive. This lifecycle also runs during
+        // static SSR prerender; auto-submitting there awaits the entire
+        // streamed answer INSIDE the prerender pass, so the HTTP response
+        // for /wizard/q/{slug} blocked for the full LLM round-trip
+        // (10-60s of blank page, observed live 2026-06-10). Prerender
+        // renders the Idle shell instantly; the interactive circuit
+        // re-runs this lifecycle and submits for real.
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(Question) &&
             _state == AnswerState.Idle &&
             string.IsNullOrWhiteSpace(_question))

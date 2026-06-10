@@ -55,27 +55,41 @@ public sealed class WizardE2ETests : IAsyncLifetime
         await page.GotoAsync($"{_stack.WebBaseUrl}/", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
         var card = page.Locator("[data-testid^='seed-card-']").First;
-        await card.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
+        await card.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
 
-        // The circuit may lag the prerender; retry the click until the
-        // URL changes (an inert prerendered card swallows clicks).
+        // The circuit may lag the prerender, and the grid re-renders as it
+        // transitions skeleton → fallback → live manifest, detaching the
+        // node mid-click. Retry both the click (detach race throws) and
+        // the navigation wait (an inert prerendered card swallows clicks).
         var navigated = false;
         for (var attempt = 0; attempt < 20 && !navigated; attempt++)
         {
-            await card.ClickAsync();
             try
             {
+                await card.ClickAsync(new() { Timeout = 5_000 });
                 await page.WaitForURLAsync(url => url.Contains("/wizard"), new() { Timeout = 3_000 });
                 navigated = true;
             }
-            catch (TimeoutException)
+            catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
             {
-                // Circuit not live yet — give it a beat and re-click.
+                // Circuit not live yet or the card re-rendered mid-click —
+                // give it a beat and retry against the re-resolved locator.
                 await page.WaitForTimeoutAsync(2_000);
             }
         }
 
         Assert.True(navigated, "Seed-question card click never navigated to /wizard — circuit not interactive.");
+
+        // Navigation alone is not the contract — the hand-off must carry
+        // the question into the wizard and AUTO-SUBMIT it. The original
+        // version of this test stopped at the URL check and missed the
+        // /wizard?q= query parameter being silently dropped (the page only
+        // read the /wizard/q/{slug} route): users landed on a bare idle
+        // page. The submitted-question header proves the full hand-off.
+        var submittedQuestion = page.Locator("[data-testid='submitted-question']");
+        await submittedQuestion.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 30_000 });
+        var text = await submittedQuestion.InnerTextAsync();
+        Assert.False(string.IsNullOrWhiteSpace(text), "Submitted-question header rendered empty after seed-card hand-off.");
     }
 
     [E2EFact]

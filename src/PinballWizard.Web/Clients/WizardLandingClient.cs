@@ -89,11 +89,20 @@ public sealed class WizardLandingClient : IWizardLandingClient
                 .GetAsync("/api/wizard/landing", cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Deliberately broad: this client's whole contract is "try,
+            // fall back to the compiled-in payload on ANY failure".
+            // Catching only HttpRequestException let Polly's
+            // BrokenCircuitException (standard resilience handler — breaker
+            // opens after sustained landing-endpoint failures) escape into
+            // component lifecycles and TERMINATE the caller's Blazor
+            // circuit: one landing render or seed-card click made the
+            // whole page inert (observed live 2026-06-10).
             _logger.LogWarning(
                 ex,
-                "Api unreachable at GET /api/wizard/landing. Using compiled-in fallback.");
+                "GET /api/wizard/landing failed ({ExceptionType}). Using compiled-in fallback.",
+                ex.GetType().Name);
             return null;
         }
     }
