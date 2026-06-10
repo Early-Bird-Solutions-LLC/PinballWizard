@@ -336,6 +336,142 @@ public sealed class AiRouterStreamingTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // T9 — Per-token text updates coalesced: WizardAnswer.Text has no
+    //      injected separators between model tokens (regression for AB#259)
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AnswerStreamingAsync_PerTokenTextUpdates_FinalAnswerTextHasNoInjectedSeparators()
+    {
+        // Arrange: five single-token updates that should form a single
+        // coherent sentence with no injected whitespace or newlines.
+        //
+        // Root cause (AB#259): before the fix, each token became its own
+        // ChatMessage. AgentResponse(IList<ChatMessage>) joins message text
+        // with a newline separator between each non-empty piece, so
+        // "The ", "Sega ", "God", "zilla ", "machine" became
+        // "The \r\nSega \r\nGod\r\nzilla \r\nmachine" — and the browser
+        // collapsed the newlines to spaces: "The  Sega  God zilla  machine".
+        // This test must FAIL against the unfixed code.
+        //
+        // Add a tool-result update so the NoCitation guardrail passes.
+        var updates = new[]
+        {
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate("The "),
+            MakeTextUpdate("Sega "),
+            MakeTextUpdate("God"),
+            MakeTextUpdate("zilla "),
+            MakeTextUpdate("machine"),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "What is the Godzilla machine?");
+
+        // Assert: Final.Answer.Text must be exactly the concatenation of the
+        // five token strings — no newlines or other separators injected between
+        // them. The tool-result update contributes no text to AgentResponse.Text
+        // (only Assistant-role messages do).
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal,
+            $"Expected a successful answer but got a refusal: {final.Answer.Text}");
+        Assert.Equal("The Sega Godzilla machine", final.Answer.Text);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T10 — Text → tool-call → text sequence: message ordering preserved,
+    //       each text run coalesced cleanly without inter-token separators
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AnswerStreamingAsync_TextToolCallTextSequence_OrderingPreservedAndNoTokenSeparators()
+    {
+        // Arrange: two text tokens, then a tool-result, then two more text
+        // tokens. The final answer must contain both text runs as clean
+        // concatenations, and the reconstructed messages list must reflect
+        // the interleaved ordering (text block, tool call, text block).
+        var updates = new[]
+        {
+            MakeTextUpdate("Part A "),
+            MakeTextUpdate("continued."),
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate(" Part B "),
+            MakeTextUpdate("also continued."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "Tell me two things?");
+
+        // Assert: the final answer carries both text runs without injected
+        // separators between tokens within each run.
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal,
+            $"Expected a successful answer but got a refusal: {final.Answer.Text}");
+
+        // Each text run should appear as a clean concatenation in the answer.
+        // "Part A continued." must appear verbatim (no newlines between tokens).
+        Assert.Contains("Part A continued.", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains(" Part B also continued.", final.Answer.Text, StringComparison.Ordinal);
+
+        // TextDelta chunks are still emitted per update (5 non-empty text updates
+        // plus 1 tool result — 5 TextDeltas expected, tool result has no text).
+        var textDeltas = chunks.OfType<AnswerChunk.TextDelta>().ToList();
+        Assert.Equal(4, textDeltas.Count); // "Part A ", "continued.", " Part B ", "also continued."
+        Assert.Equal("Part A ", textDeltas[0].Text);
+        Assert.Equal("continued.", textDeltas[1].Text);
+        Assert.Equal(" Part B ", textDeltas[2].Text);
+        Assert.Equal("also continued.", textDeltas[3].Text);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T11 — Per-update TextDelta granularity is unchanged: one TextDelta
+    //       per non-empty text update regardless of coalescing
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AnswerStreamingAsync_TextCoalescing_DoesNotAffectTextDeltaGranularity()
+    {
+        // Arrange: three per-token text updates (simulating the model emitting
+        // individual tokens). The browser animation depends on receiving one
+        // TextDelta per token — this must not change as a side-effect of the
+        // message-coalescing fix.
+        var updates = new[]
+        {
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate("Stern"),
+            MakeTextUpdate(" made"),
+            MakeTextUpdate(" it."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "Who made it?");
+
+        // Assert: exactly 3 TextDelta chunks — one per non-empty text update.
+        // Coalescing must not merge these into a single TextDelta; the live
+        // streaming contract is per-update.
+        var textDeltas = chunks.OfType<AnswerChunk.TextDelta>().ToList();
+        Assert.Equal(3, textDeltas.Count);
+        Assert.Equal("Stern", textDeltas[0].Text);
+        Assert.Equal(" made", textDeltas[1].Text);
+        Assert.Equal(" it.", textDeltas[2].Text);
+
+        // The Final answer text, however, must be the clean concatenation
+        // with no injected separators.
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal);
+        Assert.Equal("Stern made it.", final.Answer.Text);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────
 
