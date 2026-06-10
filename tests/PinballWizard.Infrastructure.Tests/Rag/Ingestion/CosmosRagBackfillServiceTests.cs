@@ -193,8 +193,11 @@ public sealed class CosmosRagBackfillServiceTests
         Assert.Equal(1, result.Processed);
         Assert.Equal(0, result.Failed);
 
-        // 304 must not emit any Error-level log entry.
+        // 304 must not emit any Error-level log entry, and the drain must be
+        // surfaced at Information level — operators rely on this signal.
         Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains(logger.Entries, e =>
+            e.Level == LogLevel.Information && e.Message.Contains("change feed drained"));
     }
 
     [Fact]
@@ -212,7 +215,10 @@ public sealed class CosmosRagBackfillServiceTests
         var result = await ctx.Service.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, result.Processed);
-        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error);
+        // The error message is the operator-actionable surface — pin the
+        // "re-run required" directive, not just the level.
+        Assert.Contains(logger.Entries, e =>
+            e.Level == LogLevel.Error && e.Message.Contains("re-run required"));
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -310,7 +316,11 @@ public sealed class CosmosRagBackfillServiceTests
                 _drain304OnNextPage = false;
                 return Task.FromResult(MakeNotModified());
             }
-            return Task.FromResult(MakeNotModified());
+            // The production loop is gated on HasMoreResults; reaching here means
+            // it read past its own guard (e.g. a removed 304 break). Fail loudly
+            // rather than return a ghost 304 that would mask the regression.
+            throw new InvalidOperationException(
+                "FakeFeedIterator: ReadNextAsync called when HasMoreResults is false — test logic error.");
         }
     }
 
@@ -347,13 +357,14 @@ public sealed class CosmosRagBackfillServiceTests
     }
 
     // Minimal capturing logger for asserting log level and message content.
-    // Thread-safe: xUnit may run test classes in parallel but each test
-    // constructs its own instance.
+    // ConcurrentBag because the service logs from Task.WhenAll fan-out when
+    // BackfillConcurrency > 1 — same parallel-tolerant pattern as the
+    // MeterListener tests.
     private sealed class CapturingLogger<T> : ILogger<T>
     {
-        private readonly List<LogEntry> _entries = [];
+        private readonly System.Collections.Concurrent.ConcurrentBag<LogEntry> _entries = [];
 
-        public IReadOnlyList<LogEntry> Entries => _entries;
+        public IReadOnlyCollection<LogEntry> Entries => _entries;
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 

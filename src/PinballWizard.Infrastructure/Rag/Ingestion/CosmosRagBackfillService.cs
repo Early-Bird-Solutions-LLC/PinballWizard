@@ -100,7 +100,7 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
             if (response.StatusCode == HttpStatusCode.NotModified)
             {
                 _logger.LogInformation(
-                    "RAG backfill: change feed drained after processing {Processed} documents — backfill complete.",
+                    "RAG backfill: change feed drained after processing {Processed} documents.",
                     processed);
                 break;
             }
