@@ -58,6 +58,17 @@
     -->
     <PackageReference Include="Microsoft.Identity.Web" />
     <PackageReference Include="Microsoft.Identity.Web.UI" />
+
+    <!--
+      Data Protection key-ring persistence for multi-replica ACA hosting
+      (ADR-0026 follow-up 2026-06-10): keys live in blob storage, wrapped
+      with a Key Vault key, so antiforgery tokens and circuit handshakes
+      survive replica fan-out and restarts. Blazor Server on Container
+      Apps requires this alongside ingress session affinity.
+    -->
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" />
+    <PackageReference Include="Azure.Identity" />
   </ItemGroup>
 
   <ItemGroup>

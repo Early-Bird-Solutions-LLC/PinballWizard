@@ -18,7 +18,9 @@
 // ADR-0009    — Entra External ID auth (configured in a follow-up PR)
 // ADR-0008    — MudBlazor strict for all chrome
 
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.FileProviders.Physical;
 using Microsoft.Identity.Web;
@@ -47,6 +49,33 @@ builder.Services.AddRazorComponents()
 
 // ── MudBlazor (ADR-0008 — sole chrome library) ────────────────────────────
 builder.Services.AddMudServices();
+
+// ── Data Protection key ring (multi-replica ACA hosting) ──────────────────
+// Blazor Server circuits + antiforgery tokens are encrypted with the Data
+// Protection key ring. On Container Apps with >1 replica (or across
+// restarts/deploys), the default ephemeral per-process key ring means a
+// token minted by one replica cannot be decrypted by another — every
+// circuit handshake fails and the app degrades to a dead prerender
+// (observed live 2026-06-10: AntiforgeryValidationException / "key was
+// not found in the key ring"). Persist the ring to blob storage and wrap
+// it with a Key Vault key per the documented ACA setup
+// (learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+// § Azure Container Apps). Works alongside ingress session affinity —
+// affinity routes a live circuit to its owning replica; the shared ring
+// keeps tokens valid across replicas and restarts.
+//
+// Gated on both URIs so local dev (no config) keeps the ephemeral ring.
+// DefaultAzureCredential resolves the UAMI in ACA via AZURE_CLIENT_ID and
+// the developer's az login locally.
+var dpKeyRingBlobUri = builder.Configuration["DataProtection:KeyRingBlobUri"];
+var dpKeyVaultKeyUri = builder.Configuration["DataProtection:KeyVaultKeyUri"];
+if (!string.IsNullOrWhiteSpace(dpKeyRingBlobUri) && !string.IsNullOrWhiteSpace(dpKeyVaultKeyUri))
+{
+    var dpCredential = new DefaultAzureCredential();
+    builder.Services.AddDataProtection()
+        .PersistKeysToAzureBlobStorage(new Uri(dpKeyRingBlobUri), dpCredential)
+        .ProtectKeysWithAzureKeyVault(new Uri(dpKeyVaultKeyUri), dpCredential);
+}
 
 // ── Entra External ID auth scaffolding (ADR-0009) ─────────────────────────
 // Auth is gated on a real TenantId being present. When TenantId is empty or
