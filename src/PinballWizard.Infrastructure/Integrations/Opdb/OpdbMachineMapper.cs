@@ -59,10 +59,29 @@ public static class OpdbMachineMapper
             EditionLabel = editionLabel,
             EditionTokens = DeriveEditionTokens(editionLabel),
             ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            OpdbSourceUrl = $"https://opdb.org/machines/{dto.OpdbId}",
+            // opdb.org's machine pages use internal numeric ids that the API
+            // does not expose; /machines/{opdb_id} 404s (observed live
+            // 2026-06-10). /search?q={opdb_id} resolves directly to the
+            // machine page and is the only durable deep link the export
+            // data can produce. Provenance is sacred — the citation link
+            // must actually land.
+            OpdbSourceUrl = OpdbWebUrl(dto.OpdbId),
             FirstSeenAt = now,
             LastSeenAt = now,
         };
+    }
+
+    /// <summary>
+    /// The canonical opdb.org web link for an OPDB ID. opdb.org's machine
+    /// pages use internal numeric ids the API does not expose, so
+    /// <c>/machines/{opdb_id}</c> returns 404 (observed live 2026-06-10);
+    /// <c>/search?q={opdb_id}</c> resolves directly to the machine page
+    /// and is the only durable deep link the export data can produce.
+    /// </summary>
+    public static string OpdbWebUrl(string opdbId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
+        return $"https://opdb.org/search?q={Uri.EscapeDataString(opdbId)}";
     }
 
     /// <summary>
@@ -220,7 +239,7 @@ public static class OpdbMachineMapper
             OpdbAliasId = alias.OpdbId,
             OpdbSourceUrl = string.IsNullOrWhiteSpace(alias.OpdbId)
                 ? null
-                : $"https://opdb.org/machines/{alias.OpdbId}",
+                : OpdbWebUrl(alias.OpdbId),
         };
     }
 

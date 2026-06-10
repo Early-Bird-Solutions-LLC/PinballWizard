@@ -63,7 +63,10 @@ public sealed class OpdbMachineMapperTests
         Assert.Equal(2019, machine.Year);
         Assert.Equal(["Brian Eddy"], machine.Designers);
         Assert.Equal(["TV", "Horror", "1980s"], machine.Themes);
-        Assert.Equal("https://opdb.org/machines/GRBN-MQR4P", machine.OpdbSourceUrl);
+        // opdb.org has no /machines/{opdb_id} route (their pages use internal
+        // numeric ids the API does not expose) — /search?q={opdb_id} is the
+        // only durable deep link. Verified live 2026-06-10.
+        Assert.Equal("https://opdb.org/search?q=GRBN-MQR4P", machine.OpdbSourceUrl);
         Assert.Equal(NowFixed, machine.FirstSeenAt);
         Assert.Equal(NowFixed, machine.LastSeenAt);
     }
@@ -637,7 +640,7 @@ public sealed class OpdbMachineMapperTests
 
         Assert.NotNull(edition);
         Assert.Equal("GRBN-MQR4P-A97X1", edition!.OpdbAliasId);
-        Assert.Equal("https://opdb.org/machines/GRBN-MQR4P-A97X1", edition.OpdbSourceUrl);
+        Assert.Equal("https://opdb.org/search?q=GRBN-MQR4P-A97X1", edition.OpdbSourceUrl);
     }
 
     [Fact]
