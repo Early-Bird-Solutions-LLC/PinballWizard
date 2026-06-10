@@ -29,17 +29,21 @@ When in doubt, ask: *would a sceptical prospective customer read this code, doc,
 
 ```text
 src/
-├── PinballWizard.Core            ← Domain entities, ISourceScraper, IngestionSource, no deps
-├── PinballWizard.Application     ← Orchestration, services, ScraperOrchestrator, no infra refs
-├── PinballWizard.Infrastructure  ← Scraping, Persistence, Integrations (Cosmos, OPDB, etc.)
-├── PinballWizard.Cli             ← entry point; conditional Aspire + Cosmos + OPDB wiring
-├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
-└── PinballWizard.ServiceDefaults ← Aspire shared OTel + health + service discovery + resilience
-tests/
-└── PinballWizard.Scraper.Tests   ← single test project, 687 tests, all manufacturers + Cosmos + OPDB + AI orchestration
+├── PinballWizard.Core               ← Domain entities, ISourceScraper, IngestionSource, no deps
+├── PinballWizard.Application        ← Orchestration, services, AI tools + confidence, no infra refs
+├── PinballWizard.Infrastructure     ← Scraping, Persistence, RAG, Integrations (Cosmos, OPDB, AI Search, Foundry)
+├── PinballWizard.Cli                ← scraper/sync/eval entry point; conditional Aspire + Cosmos + OPDB wiring
+├── PinballWizard.Api                ← Wizard HTTP API
+├── PinballWizard.Web                ← Blazor front end (+ PinballWizard.Web.Client)
+├── PinballWizard.RagIngestionWorker ← Change-Feed-driven RAG ingestion (ACA)
+├── PinballWizard.AppHost            ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
+└── PinballWizard.ServiceDefaults    ← Aspire shared OTel + health + service discovery + resilience
+tests/                               ← seven per-layer test projects (ADR-0030): Core, Application,
+                                       Infrastructure (largest — scrapers, Cosmos, OPDB, RAG, AI),
+                                       Cli, Api, Web, ServiceDefaults
 ```
 
-ADRs live in [`docs/adr/`](docs/adr/) (0001–0013). The slnx is `PinballWizard.slnx`.
+ADRs live in [`docs/adr/`](docs/adr/) — index in [`docs/adr/README.md`](docs/adr/README.md); don't hardcode the numeric range here, it drifts. The slnx is `PinballWizard.slnx`.
 
 ### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
 
@@ -105,7 +109,7 @@ Key invariants to keep top-of-mind:
 
 ## Documentation map
 
-ADRs: [`docs/adr/`](docs/adr/) (0001–0028). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`).
+ADRs: [`docs/adr/`](docs/adr/) (index in its README). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`).
 
 ## Phase 2 Preview (NOT building yet)
 
