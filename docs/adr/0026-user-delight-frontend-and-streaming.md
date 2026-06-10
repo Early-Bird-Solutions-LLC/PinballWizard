@@ -324,6 +324,38 @@ stickySessions, blob container, KV key, two role assignments) and wired
 in the Web app's `Program.cs`, gated on the `DataProtection:*` config so
 local dev keeps the ephemeral ring. Scale stays 1–3 replicas.
 
+## Follow-up 2026-06-10 (2) — auto render mode retired; interactive surfaces pinned to InteractiveServer
+
+§ 1's auto-render-mode decision (Server circuit first, WASM after the
+runtime downloads) was structurally broken in a way first-visit testing
+could not see: the interactive pages/components (`Index`, `Wizard`,
+`Settings`, `WizardAnswerStream`) are defined in the **server** project,
+but auto mode requires WASM-eligible components to live in the **client**
+assembly. A first visit worked (Server circuit); any return visit with
+the WASM runtime cached activated the WASM path, which failed with
+`Root component type 'PinballWizard.Web.Components.Pages.Index' could
+not be found in the assembly 'PinballWizard.Web'` — leaving a dead
+prerender (no answers, seed questions inert). Observed live 2026-06-10.
+
+The WASM half could not have worked even with the components relocated:
+the ask flow runs through `IWizardStreamingClient`, a server-side typed
+`HttpClient` bound to the **internal-ingress** Api app — unreachable
+from a browser-hosted runtime.
+
+Decision: all interactive surfaces pin to `InteractiveServer` (the mode
+`About`/`Status` already used). Blazor Server circuits are the
+interactivity contract — matched by the hosting provisioning from
+follow-up (1) (session affinity + shared Data Protection key ring). The
+WASM plumbing (`AddInteractiveWebAssemblyComponents`, the Web.Client
+project) stays in place but no component requests it, so the runtime is
+never fetched.
+
+Path back to auto mode, if first-visit latency ever warrants it: move
+the interactive components to `PinballWizard.Web.Client`, expose a
+public (Cloudflare-fronted) ask/stream surface on the Web host that
+proxies to the internal Api, and register a client-side
+`IWizardStreamingClient` against it. Tracked as future work, not Phase 5.
+
 ## References
 
 - [`architecture-v2.md`](../architecture-v2.md) § 7.1 — the user-delight revisit triggers (200ms p95, RU cost dominance) this ADR's `pinwiz.ai.first_token_ms` instrument makes measurable for the streaming path
