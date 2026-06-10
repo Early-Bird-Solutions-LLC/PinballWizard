@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -90,6 +91,19 @@ public sealed class CosmosRagBackfillService : IRagBackfillService
                 "RAG backfill: page read status={StatusCode} contentLength={ContentLength}.",
                 response.StatusCode,
                 response.Content?.Length ?? -1);
+
+            // HTTP 304 is the normal "feed fully drained" signal from the Cosmos
+            // change-feed pull-model stream iterator. HasMoreResults stays true
+            // for the lifetime of the iterator (it is a live stream), so 304 is
+            // the only way the SDK signals "you've read everything". Treat it as
+            // successful completion, not an error.
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                _logger.LogInformation(
+                    "RAG backfill: change feed drained after processing {Processed} documents.",
+                    processed);
+                break;
+            }
 
             if (!response.IsSuccessStatusCode)
             {
