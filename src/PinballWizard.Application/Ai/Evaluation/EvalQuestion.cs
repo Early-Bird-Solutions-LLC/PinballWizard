@@ -61,6 +61,26 @@ public sealed record EvalQuestion(
     [property: JsonPropertyName("franchise_wide_ok")] bool FranchiseWideOk = false,
     [property: JsonPropertyName("expected_outcome")] string ExpectedOutcome = "grounded",
     [property: JsonPropertyName("required_editions")] IReadOnlyList<string>? RequiredEditions = null,
+    // RefusalRequired (AB#259 metric-hygiene fix, 2026-06-10): refusal
+    // expectations are three-state, split across two flags —
+    //
+    //   refusal_required=true                      → the agent MUST refuse
+    //     (genuinely out-of-scope: weather, car repair, shipping quotes).
+    //     Answering scores refusal_correctness=0. expected_citation_set
+    //     must be empty (the parser enforces it).
+    //   acceptable_refusal=true (and not required) → EITHER behavior is
+    //     correct (content-gap rows: the corpus may not ground an answer,
+    //     but a correct grounded answer is equally fine). The row carries
+    //     NO refusal signal — refusal_correctness is null and excluded
+    //     from the aggregate. expected_citation_set holds the answer-path
+    //     ground truth, graded only when the agent answers.
+    //   both false                                 → the agent MUST answer;
+    //     refusing scores refusal_correctness=0.
+    //
+    // refusal_required=true implies acceptable_refusal=true (the parser
+    // rejects the contradiction) so pre-three-state readers of the .jsonl
+    // still see refusal rows flagged.
+    [property: JsonPropertyName("refusal_required")] bool RefusalRequired = false,
     // AcceptableSubAgents (AB#259): an optional list of predicted sub-agent
     // names that score as correct in addition to expected_sub_agent. When
     // absent the evaluator uses exact-match against expected_sub_agent —

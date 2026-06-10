@@ -143,10 +143,30 @@ public static class EvalQuestionParser
                     "but no required_editions[0] naming the absent edition the disclosure must reference.");
             }
 
+            // Three-state refusal invariants (AB#259 metric-hygiene fix).
+            // refusal_required=true implies acceptable_refusal=true — a row
+            // that REQUIRES refusal trivially ACCEPTS it; the contradiction
+            // is always a curator typo. And a required-refusal row is
+            // out-of-scope by definition, so it cannot carry answer-path
+            // ground-truth citations.
+            if (question.RefusalRequired && !question.AcceptableRefusal)
+            {
+                throw new InvalidDataException(
+                    $"{sourceLabel} line {lineNumber} ('{question.Id}') has refusal_required=true but acceptable_refusal=false. " +
+                    "A required refusal is always acceptable — set acceptable_refusal=true.");
+            }
+
+            if (question.RefusalRequired && question.ExpectedCitationSet is { Count: > 0 })
+            {
+                throw new InvalidDataException(
+                    $"{sourceLabel} line {lineNumber} ('{question.Id}') has refusal_required=true with a non-empty expected_citation_set. " +
+                    "Required-refusal rows are out-of-scope and must not carry answer-path citations.");
+            }
+
             // ExpectedCitationSet is required at the schema level, but
             // tolerate null deserialization (older curator lines that
             // leave it implicit) by substituting an empty list — that
-            // matches the acceptable_refusal=true semantic.
+            // matches the refusal-flow semantic.
             var citations = question.ExpectedCitationSet ?? [];
             results.Add(question with { ExpectedCitationSet = citations });
         }

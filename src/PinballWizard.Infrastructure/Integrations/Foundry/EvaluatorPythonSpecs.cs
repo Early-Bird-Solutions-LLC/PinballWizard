@@ -56,9 +56,18 @@ def evaluate(predicted_sub_agent, expected_sub_agent, **_):
     return {"score": 1.0 if a == b else 0.0}
 """;
 
+    // Three-state per the AB#259 metric-hygiene fix (2026-06-10):
+    // refusal_required rows must refuse; acceptable_refusal-only rows
+    // accept either behavior (score None → excluded from the aggregate,
+    // mirroring the C# null); all other rows must answer. Mirrors
+    // RefusalCorrectnessEvaluator.
     public const string RefusalCorrectnessPython = """
-def evaluate(predicted_refusal, acceptable_refusal, **_):
-    return {"score": 1.0 if bool(predicted_refusal) == bool(acceptable_refusal) else 0.0}
+def evaluate(predicted_refusal, acceptable_refusal, refusal_required=False, **_):
+    if bool(refusal_required):
+        return {"score": 1.0 if bool(predicted_refusal) else 0.0}
+    if bool(acceptable_refusal):
+        return {"score": None}
+    return {"score": 0.0 if bool(predicted_refusal) else 1.0}
 """;
 
     public const string CitationCoveragePython = """

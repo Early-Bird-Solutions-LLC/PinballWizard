@@ -86,15 +86,17 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
-    public async Task RunAsync_OutOfScopeQuestion_RefusedCorrectly_AllScoresPerfect()
+    public async Task RunAsync_RequiredRefusalQuestion_RefusedCorrectly_AllScoresPerfect()
     {
         using var fixture = new HarnessFixture();
         fixture.WriteGroundTruth(
-            """{"id":"ev-oos-001","question":"What's the weather like in Tokyo?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true}""");
+            """{"id":"ev-oos-001","question":"What's the weather like in Tokyo?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"refusal_required":true}""");
 
         // Out-of-scope question: agent refuses (IsRefusal=true,
         // empty citations). Refusal-correctness=1, precision=1
-        // (both empty), recall=1 (no expected to recall).
+        // (both empty), recall=1 (no expected to recall). Coverage is
+        // null — a refusal is not an answer, so the metric is undefined
+        // and the row drops out of the coverage denominator.
         fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new WizardAnswer(
                 Text: "I don't know — that's outside the pinball domain.",
@@ -114,14 +116,18 @@ public sealed class EvaluationHarnessTests
         Assert.Equal(1.0, result.Aggregate.CitationRecallMean);
         Assert.Equal(1.0, result.Aggregate.SubagentAccuracyMean);
         Assert.Equal(1.0, result.Aggregate.RefusalCorrectnessMean);
+        Assert.Equal(1, result.Aggregate.RefusalCorrectnessCount);
+        Assert.Null(result.Questions[0].Scores.CitationCoverage);
+        Assert.Null(result.Aggregate.CitationCoverageMean);
+        Assert.Equal(0, result.Aggregate.CitationCoverageCount);
     }
 
     [Fact]
-    public async Task RunAsync_OverEagerAnswerOnRefusableQuestion_ScoresZeroOnRefusal()
+    public async Task RunAsync_OverEagerAnswerOnRequiredRefusalQuestion_ScoresZeroOnRefusal()
     {
         using var fixture = new HarnessFixture();
         fixture.WriteGroundTruth(
-            """{"id":"ev-oos-001","question":"What's the weather like?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true}""");
+            """{"id":"ev-oos-001","question":"What's the weather like?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"refusal_required":true}""");
 
         // Out-of-scope question, agent fabricated an answer instead
         // of refusing. Refusal-correctness = 0; precision = 0
@@ -146,6 +152,85 @@ public sealed class EvaluationHarnessTests
 
         Assert.Equal(0.0, result.Aggregate.RefusalCorrectnessMean);
         Assert.Equal(0.0, result.Aggregate.CitationPrecisionMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_AcceptableRefusalGapRow_Refused_CarriesNoSignal()
+    {
+        using var fixture = new HarnessFixture();
+        // Content-gap row (JJP Toy Story 4 shape): refusal is acceptable
+        // but NOT required, and expected_citation_set holds the
+        // answer-path ground truth. A refusal must contribute neither
+        // refusal nor citation signal — the two-state evaluator scored
+        // citations 0 here, dragging the means for a correct behavior.
+        fixture.WriteGroundTruth(
+            """{"id":"ev-gap-001","question":"Where can I find the Toy Story 4 manual?","expected_sub_agent":"Repair","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":true,"acceptable_sub_agents":["Wizard"]}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "I don't have enough grounded content to answer that.",
+                Citations: [],
+                SubAgentUsed: "Wizard",
+                Confidence: 0.2,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.InsufficientGrounding,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        var scores = result.Questions[0].Scores;
+        Assert.Null(scores.RefusalCorrectness);
+        Assert.Null(scores.CitationPrecision);
+        Assert.Null(scores.CitationRecall);
+        Assert.Null(scores.CitationCoverage);
+        Assert.Equal(1.0, scores.SubagentAccuracy);
+        Assert.Null(result.Aggregate.RefusalCorrectnessMean);
+        Assert.Equal(0, result.Aggregate.RefusalCorrectnessCount);
+        Assert.Null(result.Aggregate.CitationPrecisionMean);
+        Assert.Equal(0, result.Aggregate.CitationPrecisionCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_AcceptableRefusalGapRow_AnsweredWithCorrectCitation_GradesCitationsNotRefusal()
+    {
+        using var fixture = new HarnessFixture();
+        // The strike-one artifact: a gap row answered with the EXACT
+        // expected citation must score full citation marks and carry no
+        // refusal penalty (the two-state evaluator scored
+        // refusal_correctness=0 for this correct behavior).
+        fixture.WriteGroundTruth(
+            """{"id":"ev-gap-001","question":"Is the JJP Toy Story 4 still available new?","expected_sub_agent":"Valuation","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":true,"acceptable_sub_agents":["Wizard"]}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "Per the OPDB record, it shipped in 2022 (https://opdb.org/machines/GJ2o0-MrRye).",
+                Citations: new List<Citation>
+                {
+                    new("OPDB record GJ2o0-MrRye", "https://opdb.org/machines/GJ2o0-MrRye", MachineId: "GJ2o0-MrRye"),
+                },
+                SubAgentUsed: "Wizard",
+                Confidence: 0.85,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        var scores = result.Questions[0].Scores;
+        Assert.Equal(1.0, scores.CitationPrecision);
+        Assert.Equal(1.0, scores.CitationRecall);
+        Assert.Equal(1.0, scores.SubagentAccuracy);
+        Assert.Null(scores.RefusalCorrectness);
+        Assert.Equal(1.0, result.Aggregate.CitationPrecisionMean);
+        Assert.Equal(1, result.Aggregate.CitationPrecisionCount);
+        Assert.Null(result.Aggregate.RefusalCorrectnessMean);
+        Assert.Equal(0, result.Aggregate.RefusalCorrectnessCount);
     }
 
     [Fact]
