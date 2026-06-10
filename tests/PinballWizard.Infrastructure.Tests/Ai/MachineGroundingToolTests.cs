@@ -252,15 +252,19 @@ public sealed class MachineGroundingToolTests
         var repo = Substitute.For<IMachineRepository>();
         repo.GetByOpdbIdAsync("GRBN-G1995", "sega", Arg.Any<CancellationToken>())
             .Returns(NewMachine("GRBN-G1995", "Godzilla", 1995));
+        repo.GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>())
+            .Returns(NewMachine("GRBN-G2021", "Godzilla", 2021));
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("GRBN-G1995", result!.OpdbId);
-        // Only the first entry's GetByOpdbIdAsync should fire — no
-        // second-entry follow-up unless the first one was missing.
-        await repo.DidNotReceive().GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing cross-group entry is now
+        // deliberately fetched and surfaced via TitleCollisions so the agent
+        // can disambiguate ("Sega 1995 or Stern 2021?").
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GRBN-G2021", result.TitleCollisions[0].OpdbId);
     }
 
     // ── ADR-0029 S5: sibling-returning behavior ───────────────────────
@@ -488,6 +492,13 @@ public sealed class MachineGroundingToolTests
                 ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
                 FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
             });
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>())
+            .Returns(new Machine
+            {
+                Id = "G5po2-MeP6B", PartitionKey = "sega", GroupId = "G5po2",
+                ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+                FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            });
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
@@ -495,8 +506,11 @@ public sealed class MachineGroundingToolTests
         Assert.NotNull(result);
         Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
         Assert.Equal("Stern Pinball", result.Manufacturer);
-        // Sega's GetByOpdbIdAsync must never be called.
-        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing Sega entry is fetched for
+        // TitleCollisions (cross-group disambiguation) — but it must never be
+        // the RESULT. The qualifier still wins the resolution.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("G5po2-MeP6B", result.TitleCollisions[0].OpdbId);
     }
 
     [Fact]
@@ -569,9 +583,18 @@ public sealed class MachineGroundingToolTests
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
 
+        var segaGodzilla = new Machine
+        {
+            Id = "G5po2-MeP6B", PartitionKey = "sega", GroupId = "G5po2",
+            ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
         var repo = Substitute.For<IMachineRepository>();
         repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
             .Returns(sternPro);
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>())
+            .Returns(segaGodzilla);
         repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(sternPro, sternPremiumLe));
 
@@ -582,8 +605,12 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GweeP-MW95j", result!.OpdbId);
         Assert.Equal("Stern Pinball", result.Manufacturer);
         Assert.Equal(2021, result.Year);
-        // Sega must never be fetched.
-        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: Sega IS fetched — but only to be
+        // surfaced in TitleCollisions (different OPDB group, same title).
+        // The RESULT must still never be Sega.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("G5po2-MeP6B", result.TitleCollisions[0].OpdbId);
+        Assert.Equal(1998, result.TitleCollisions[0].Year);
         // Siblings (Premium/LE) are surfaced for the clarifying question path.
         Assert.Single(result.Siblings);
         Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
@@ -807,7 +834,10 @@ public sealed class MachineGroundingToolTests
 
         Assert.NotNull(result);
         Assert.Equal("GRbPY-MePOP", result!.OpdbId);
-        await machines.DidNotReceive().GetByOpdbIdAsync("GR7ZX-MQ23b", "stern", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing Stern entry is surfaced
+        // via TitleCollisions for cross-group disambiguation.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GR7ZX-MQ23b", result.TitleCollisions[0].OpdbId);
     }
 
     [Fact]
@@ -1124,6 +1154,254 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GRBN-FALLBACK", result!.OpdbId);
         // Cross-partition fallback must fire.
         repo.Received(1).QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── Cross-group title collision tests (ADR-0029 follow-up 2026-06-10) ─
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_ThreeEntryCollisionRow_ResolvesSega_TitleCollisionsContainsBothSternMachines()
+    {
+        // Real "godzilla" row: [Sega G5po2-MeP6B, Stern GweeP-MW95j, Stern GweeP-Ml9pZ].
+        // Bare "godzilla" scores 0 for all entries → Sega (index 0) wins.
+        // TitleCollisions must contain both Stern machines (different group GweeP vs G5po2).
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("godzilla"),
+        };
+        lookup.UpsertEntry("G5po2-MeP6B", "sega",  ["sega"]);
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
+        lookup.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);
+
+        var segaMachine = new Machine
+        {
+            Id = "G5po2-MeP6B", PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+            GroupId = "G5po2",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sternPro = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sternPremiumLe = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
+            GroupId = "GweeP",
+            EditionLabel = "Premium/LE",
+            EditionTokens = ["premium", "le"],
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega",  Arg.Any<CancellationToken>()).Returns(segaMachine);
+        repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(sternPro);
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(sternPremiumLe);
+        // Sega has GroupId G5po2 — no siblings in the same group.
+        repo.GetSiblingsByGroupIdAsync("G5po2", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(segaMachine));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("G5po2-MeP6B", result!.OpdbId); // Sega wins insertion-order tie
+        Assert.Equal("Sega", result.Manufacturer);
+
+        // Both Stern machines must appear in TitleCollisions (different group GweeP).
+        Assert.Equal(2, result.TitleCollisions.Count);
+        var collisionIds = result.TitleCollisions.Select(c => c.OpdbId).ToHashSet();
+        Assert.Contains("GweeP-MW95j", collisionIds);
+        Assert.Contains("GweeP-Ml9pZ", collisionIds);
+
+        // Manufacturer and year must be visible on each collision entry so the
+        // agent can name them in a clarifying question.
+        var pro = result.TitleCollisions.Single(c => c.OpdbId == "GweeP-MW95j");
+        Assert.Equal(2021, pro.Year);
+        var premLe = result.TitleCollisions.Single(c => c.OpdbId == "GweeP-Ml9pZ");
+        Assert.Equal("Premium/LE", premLe.EditionLabel);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_SameGroupEntries_AreNotDuplicatedIntoTitleCollisions()
+    {
+        // Build a collision row where two entries share the primary's GroupId
+        // (same-group siblings). They must appear in Siblings only, not in
+        // TitleCollisions — TitleCollisions is for CROSS-group machines.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("godzilla"),
+        };
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);  // index 0 — primary
+        lookup.UpsertEntry("GweeP-Ml9pZ", "stern", ["stern"]);  // index 1 — same group
+
+        var primary = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sameGroupMachine = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla Premium/LE", Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(primary);
+        repo.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(sameGroupMachine);
+        // GetSiblingsByGroupIdAsync returns both machines in the same group.
+        repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(primary, sameGroupMachine));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GweeP-MW95j", result!.OpdbId);
+
+        // Same-group machine appears in Siblings — NOT in TitleCollisions.
+        Assert.Single(result.Siblings);
+        Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
+        Assert.Empty(result.TitleCollisions);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_CollisionFetchReturnsNull_SkippedMainResultUnaffected()
+    {
+        // If GetByOpdbIdAsync returns null for a collision entry (stale row),
+        // that entry is silently skipped. The primary result and any other
+        // successfully fetched collisions must be returned normally.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("godzilla"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("godzilla"),
+        };
+        lookup.UpsertEntry("G5po2-MeP6B", "sega",  ["sega"]);   // index 0 — primary
+        lookup.UpsertEntry("GweeP-STALE", "stern", ["stern"]);   // index 1 — stale (null fetch)
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);   // index 2 — present
+
+        var segaMachine = new Machine
+        {
+            Id = "G5po2-MeP6B", PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+            GroupId = "G5po2",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sternPro = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
+            GroupId = "GweeP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega",  Arg.Any<CancellationToken>()).Returns(segaMachine);
+        repo.GetByOpdbIdAsync("GweeP-STALE", "stern", Arg.Any<CancellationToken>()).Returns((Machine?)null);
+        repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(sternPro);
+        repo.GetSiblingsByGroupIdAsync("G5po2", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(segaMachine));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("godzilla", CancellationToken.None);
+
+        // Primary result unaffected.
+        Assert.NotNull(result);
+        Assert.Equal("G5po2-MeP6B", result!.OpdbId);
+
+        // Stale entry skipped; the good Stern entry still present.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GweeP-MW95j", result.TitleCollisions[0].OpdbId);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_CrossPartitionFallback_TitleCollisionsEmpty()
+    {
+        // When the lookup row is missing entirely and the tool resolves via
+        // the cross-partition fallback query, TitleCollisions must be empty —
+        // the fallback has no row to inspect for other entries.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var fallbackMachine = new Machine
+        {
+            Id = "G5po2-MeP6B", PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+            GroupId = "G5po2",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("godzilla", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(fallbackMachine));
+        repo.GetSiblingsByGroupIdAsync("G5po2", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(fallbackMachine));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("G5po2-MeP6B", result!.OpdbId);
+        Assert.Empty(result.TitleCollisions);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_SingleEntryRow_TitleCollisionsEmptyNoExtraPointReads()
+    {
+        // A single-entry lookup row has nothing to collide with.
+        // TitleCollisions must be empty and GetByOpdbIdAsync must be called
+        // exactly once (for the primary) — no extra reads for non-existent
+        // collision entries.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("foo fighters"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("foo fighters"),
+        };
+        lookup.UpsertEntry("GRBN-MQR4P", "stern", ["stern"]);
+
+        var getByOpdbIdCallCount = 0;
+        var machine = NewMachine("GRBN-MQR4P", "Foo Fighters", 2023);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<MachineTitleLookup?>(lookup));
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                getByOpdbIdCallCount++;
+                return Task.FromResult<Machine?>(machine);
+            });
+        repo.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Empty(result!.TitleCollisions);
+        // Exactly one GetByOpdbIdAsync call — for the primary only.
+        Assert.Equal(1, getByOpdbIdCallCount);
     }
 
     private static Machine NewMachine(string id, string title, int year) => new()

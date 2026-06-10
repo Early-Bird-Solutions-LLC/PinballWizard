@@ -529,7 +529,8 @@ public sealed class AiRouterStreamingTests
             OpdbSourceUrl: $"https://opdb.org/machines/{opdbId}",
             Editions: [],
             GroupId: null,
-            Siblings: []);
+            Siblings: [],
+            TitleCollisions: []);
         var content = new FunctionResultContent($"call_getMachineByTitle", dto);
         return new AgentResponseUpdate(ChatRole.Tool, new List<AIContent> { content });
     }

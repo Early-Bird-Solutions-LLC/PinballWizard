@@ -13,6 +13,15 @@ namespace PinballWizard.Application.Ai.Tools;
 // Siblings includes only same-group base machines and is empty (not
 // null) when the machine has no group id or is the sole member of its
 // group. The primary resolved machine is NOT repeated in Siblings.
+//
+// TitleCollisions surfaces machines from DIFFERENT OPDB groups that
+// share the same franchise title (e.g. Sega Godzilla 1998 vs Stern
+// Godzilla 2021 — different GroupIds, same lookup-row). Unlike Siblings
+// (same-group, same manufacturer tier), TitleCollisions is cross-group
+// and cross-manufacturer. Populated only via the lookup-row path; the
+// cross-partition fallback path always yields an empty list. The
+// matched machine itself and any machine already present in Siblings
+// are excluded. Empty (not null) when there are no cross-group collisions.
 public sealed record MachineGroundingDto(
     string OpdbId,
     string Title,
@@ -23,7 +32,8 @@ public sealed record MachineGroundingDto(
     string? OpdbSourceUrl,
     IReadOnlyList<MachineEditionGroundingDto> Editions,
     string? GroupId,
-    IReadOnlyList<MachineSiblingGroundingDto> Siblings);
+    IReadOnlyList<MachineSiblingGroundingDto> Siblings,
+    IReadOnlyList<MachineSiblingGroundingDto> TitleCollisions);
 
 public sealed record MachineEditionGroundingDto(
     string Name,
