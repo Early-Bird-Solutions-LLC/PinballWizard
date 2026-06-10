@@ -705,11 +705,25 @@ public sealed class OpdbSyncService : IOpdbSyncService
         {
             throw;
         }
+        catch (HttpRequestException ex)
+        {
+            // Warning (not debug): a 5xx / rate-limit / network failure is
+            // actionable — a systematic OPDB outage during a cold-cache sync
+            // would otherwise silently degrade every group's title with no
+            // operator-visible signal. (404s never reach here — the client
+            // returns null for those.)
+            _logger.LogWarning(
+                ex,
+                "OPDB sync: group-title HTTP request failed for segment {Segment} (status {Status}); records in this group keep their edition-suffixed title until the next sync.",
+                segment,
+                ex.StatusCode);
+            resolved = null;
+        }
         catch (Exception ex)
         {
             // Best-effort: log at debug (not warning) — a missing group
             // title is an expected, non-actionable degradation for
-            // singletons and OPDB hiccups, not an operational fault.
+            // singletons, not an operational fault.
             _logger.LogDebug(
                 ex,
                 "OPDB sync: group-title lookup failed for segment {Segment}; records in this group keep their edition-suffixed title until the next sync.",

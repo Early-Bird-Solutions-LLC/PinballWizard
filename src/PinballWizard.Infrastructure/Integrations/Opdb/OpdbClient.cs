@@ -33,6 +33,7 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
     private readonly SemaphoreSlim _groupCacheLock = new(1, 1);
     private Dictionary<string, string?>? _groupTitleCache;
     private bool _groupCacheLoadWarned;
+    private bool _disposed;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -266,10 +267,10 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
         await _groupCacheLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureGroupCacheLoadedAsync().ConfigureAwait(false);
-            // Another caller may have populated this entry while we held the
-            // network call outside the lock. Last-writer-wins is fine for
-            // stable franchise names.
+            // _groupTitleCache is non-null here — the first lock section
+            // initialized it. Another caller may have written this entry
+            // while we held the network call outside the lock;
+            // last-writer-wins is fine for stable franchise names.
             _groupTitleCache![groupSegment] = resolved;
             PersistGroupCacheBestEffort();
         }
@@ -418,8 +419,13 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
             // Cache persist is best-effort. A write failure (path unwritable,
             // disk full, etc.) is logged but not fatal — the caller still has
             // the in-memory copy. Best-effort cleanup of the temp file in case
-            // the failure was at the Move step.
-            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch (IOException) { /* best-effort cleanup; ignore */ }
+            // the failure was at the Move step. Catch Exception, not just
+            // IOException: File.Delete throws UnauthorizedAccessException in
+            // exactly the read-only/ACL environments this method exists to
+            // survive, and the export-cache caller has no outer guard. An
+            // orphaned .tmp after an abnormal kill is harmless — it is
+            // overwritten by the next persist.
+            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch (Exception) { /* best-effort cleanup; ignore */ }
             Logger.LogWarning(
                 ex,
                 "OPDB: failed to persist cache to {Path}; the in-memory response is unaffected.",
@@ -438,6 +444,11 @@ public sealed class OpdbClient : PoliteScraperBase, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
         _groupCacheLock.Dispose();
     }
 }
