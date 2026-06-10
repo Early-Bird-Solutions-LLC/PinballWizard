@@ -4,11 +4,28 @@ name: CI
 # targeting main. Uses locked-mode NuGet restore to enforce that
 # packages.lock.json is the source of truth.
 
+# paths-ignore: docs-only / eval-results-only changes don't alter build
+# or test outcomes. GitHub reports path-skipped required checks as
+# "skipped", which satisfies branch protection (documented carve-out:
+# "Handling skipped but required checks") — docs PRs merge without
+# burning a full build+test+Playwright lane.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
 
 permissions:
   contents: read
@@ -32,8 +49,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -120,10 +135,15 @@ jobs:
           recreate: true
           path: code-coverage-results.md
 
-  accessibility:
-    name: Accessibility (axe-core via Playwright)
+  ui-tests:
+    # Accessibility (axe-core) + responsive snapshots in ONE job: both
+    # need the identical setup (restore → Release build → chromium), so
+    # running them as separate jobs duplicated a full restore+build+
+    # browser-install lane per PR. They run as sequential steps here,
+    # still in parallel with build-and-test. Neither check is required
+    # by branch protection, so the job rename is safe.
+    name: UI tests (axe-core + responsive snapshots, Playwright)
     runs-on: ubuntu-latest
-    # Runs in parallel with build-and-test; does NOT need coverage output.
     needs: []
 
     env:
@@ -148,6 +168,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Cache Playwright browsers
+        # Keyed on Directory.Packages.props — invalidates whenever any
+        # package version changes, which over-invalidates slightly but
+        # never serves a stale browser for a bumped Microsoft.Playwright.
+        # On a hit, the install step below skips the ~80 MB download and
+        # only re-installs OS deps.
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Restore
         # Web.Tests opts out of locked-mode restore (Razor SDK RID assets).
         run: dotnet restore PinballWizard.slnx
@@ -158,6 +191,8 @@ jobs:
       - name: Install Playwright browsers
         # playwright.ps1 is emitted by the Microsoft.Playwright package into
         # the test project's output directory. pwsh is available on ubuntu-latest.
+        # With the browser cache hit above this skips the download and only
+        # installs OS dependencies.
         run: |
           pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
             install --with-deps chromium
@@ -172,63 +207,13 @@ jobs:
             --results-directory ./a11y-results \
             tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
 
-      - name: Upload accessibility test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: a11y-results
-          path: a11y-results/**/*.trx
-          if-no-files-found: warn
-          retention-days: 14
-
-  snapshots:
-    name: Responsive snapshots (Playwright, mobile/tablet/desktop)
-    runs-on: ubuntu-latest
-    # Runs in parallel with build-and-test and accessibility; does NOT depend
-    # on either. Screenshots are uploaded as an artifact for manual review —
-    # no pixel-diff comparison occurs here.
-    needs: []
-
-    env:
-      DOTNET_NOLOGO: 'true'
-      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
-      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Restore
-        # Web.Tests opts out of locked-mode restore (Razor SDK RID assets).
-        run: dotnet restore PinballWizard.slnx
-
-      - name: Build (Release, warnings as errors)
-        run: dotnet build --no-restore --configuration Release PinballWizard.slnx /warnaserror
-
-      - name: Install Playwright browsers
-        # playwright.ps1 is emitted by the Microsoft.Playwright package into
-        # the test project's output directory. pwsh is available on ubuntu-latest.
-        run: |
-          pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
-            install --with-deps chromium
-
       - name: Responsive snapshot tests
         # Screenshots are written to ./screenshots/ relative to the working
         # directory. The test asserts no critical WCAG 2.1 violations at each
-        # breakpoint; the screenshots themselves are uploaded for manual review.
+        # breakpoint; the screenshots themselves are uploaded for manual review —
+        # no pixel-diff comparison occurs here. if: always() so a11y failures
+        # don't mask layout breakage (and vice versa) — both suites always report.
+        if: always()
         run: |
           dotnet test \
             --no-build \
@@ -237,6 +222,15 @@ jobs:
             --logger "trx;LogFileName=snapshot-results.trx" \
             --results-directory ./snapshot-results \
             tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Upload accessibility test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: a11y-results
+          path: a11y-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload snapshot screenshots
         # Always upload — even on test failure the screenshots are useful
