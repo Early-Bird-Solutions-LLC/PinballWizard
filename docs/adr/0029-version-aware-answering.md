@@ -202,6 +202,19 @@ that edition's record. The corrected IDs are pinned in the plan
   behavior for the *title-level* "optionally note" case (a passing
   mention, not a default-answer-then-correct).
 
+## Follow-up 2026-06-10 — group-title lookups gain a persistent disk cache
+
+§ 2's `is_machine_group` resolution (`GET /api/machines/{groupSegment}`,
+one polite 10-second-throttled request per distinct segment) was
+cached in-memory per sync run only — every fresh run re-fetched all
+segments (~1,200 requests, ~3.5 h observed live 2026-06-10).
+`OpdbClient` now persists segment → title results (including
+confirmed-404 negatives) to `data/cache/opdb-group-titles.json`
+(`OpdbOptions.GroupTitleCachePath` / `GroupTitleCacheTtlSeconds`,
+14-day whole-file TTL). D1 semantics are unchanged; steady-state sync
+runs make near-zero group-title requests. Politeness behavior is
+untouched — fewer requests, same per-request throttle.
+
 ## Related
 
 - [docs/plans/opdb-group-tier-modeling.md](../plans/opdb-group-tier-modeling.md)

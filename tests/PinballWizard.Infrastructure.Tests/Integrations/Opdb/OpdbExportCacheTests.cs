@@ -35,7 +35,12 @@ public sealed class OpdbExportCacheTests : IDisposable
 
     public void Dispose()
     {
-        if (File.Exists(_cachePath)) File.Delete(_cachePath);
+        if (File.Exists(_cachePath))
+        {
+            // Clear read-only before delete; some tests set it to simulate OneDrive.
+            File.SetAttributes(_cachePath, FileAttributes.Normal);
+            File.Delete(_cachePath);
+        }
     }
 
     [Fact]
@@ -182,6 +187,49 @@ public sealed class OpdbExportCacheTests : IDisposable
 
         Assert.True(File.Exists(_cachePath), "final cache file must exist");
         Assert.False(File.Exists(_cachePath + ".tmp"), "temp file must be cleaned up after successful Move");
+    }
+
+    [Fact]
+    public async Task StreamAllMachinesAsync_PreExistingCacheFile_OverwriteSucceeds()
+    {
+        // Regression: File.Move(src, dst, overwrite: true) throws
+        // UnauthorizedAccessException on Windows when the destination
+        // file exists and carries a read-only attribute or is held by a
+        // sync process (e.g. OneDrive). The fix separates "delete old"
+        // from "place new" so File.Move never uses MOVEFILE_REPLACE_EXISTING.
+        // Arrange: pre-seed a stale cache file (with a read-only attribute
+        // to simulate the OneDrive case) then trigger a refetch.
+        File.WriteAllText(_cachePath, JsonArray(MachineJson("OLD-1")));
+        // Set read-only to simulate the Windows MOVEFILE_REPLACE_EXISTING failure.
+        File.SetAttributes(_cachePath, FileAttributes.ReadOnly);
+        // Backdate so the cache is stale and a refetch is triggered.
+        File.SetLastWriteTimeUtc(_cachePath, DateTime.UtcNow.AddHours(-2));
+
+        var (client, handler) = CreateClient(ttlSeconds: 3600);
+        handler.SetResponseFor("/api/export", JsonArray(MachineJson("FRESH-1")));
+
+        try
+        {
+            var collected = new List<OpdbMachineDto>();
+            await foreach (var m in client.StreamAllMachinesAsync(CancellationToken.None))
+            {
+                collected.Add(m);
+            }
+
+            Assert.Equal(["FRESH-1"], collected.Select(m => m.OpdbId));
+            // The cache was successfully overwritten (no longer read-only and holds new content).
+            Assert.True(File.Exists(_cachePath), "cache file should exist after overwrite");
+            var written = File.ReadAllText(_cachePath);
+            Assert.Contains("FRESH-1", written);
+        }
+        finally
+        {
+            // Ensure cleanup can run even if the assertion fails.
+            if (File.Exists(_cachePath))
+            {
+                File.SetAttributes(_cachePath, FileAttributes.Normal);
+            }
+        }
     }
 
     [Fact]
