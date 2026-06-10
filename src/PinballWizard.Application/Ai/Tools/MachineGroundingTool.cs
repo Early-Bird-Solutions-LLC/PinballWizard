@@ -176,6 +176,10 @@ public sealed class MachineGroundingTool
             // key is only the lookup address, not the scoring input.
             if (lookup is null || lookup.OpdbIds.Count == 0)
             {
+                // A non-null row with empty OpdbIds is a miss for retry purposes —
+                // null it so the loop condition fires for it too.
+                lookup = null;
+
                 var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
                     .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
