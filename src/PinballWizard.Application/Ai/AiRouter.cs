@@ -439,8 +439,11 @@ public sealed class AiRouter : IAiRouter
     // in a safe context.
     //
     // Returns:
-    //   messages     — One ChatMessage per AgentResponseUpdate, preserving
-    //                  FunctionResultContent for the citation extractor.
+    //   messages     — ChatMessages reconstructed from the stream, with
+    //                  contiguous text-only updates coalesced into a single
+    //                  ChatMessage per run (see text-coalescing note below).
+    //                  FunctionResultContent entries are preserved verbatim
+    //                  so the citation extractor can iterate them.
     //   streamChunks — AnswerChunk events in arrival order: TextDelta (per
     //                  non-empty text update), ToolCallStarted (per first
     //                  FunctionCallContent sighting), ToolCallCompleted (per
@@ -449,6 +452,32 @@ public sealed class AiRouter : IAiRouter
     //                  these after AggregateStreamAsync returns.
     //   refusal      — Non-null only when a 429 was caught; caller emits
     //                  Refusal + Final and skips the guardrail pipeline.
+    //
+    // WHY text coalescing matters (bug AB#259):
+    //   AgentResponse.Text (Microsoft.Agents.AI 1.4.0) concatenates the text
+    //   content of its ChatMessages with a newline separator between each
+    //   non-empty piece. When the stream produces one ChatMessage per model
+    //   token (e.g. "God", "zilla", " pin", "ball"), the reconstructed
+    //   AgentResponse.Text becomes "God\nzilla\n pin\nball" — and the browser
+    //   collapses those newlines to spaces, producing "God zilla pin ball".
+    //   The non-streaming AnswerAsync path is unaffected (whole messages from
+    //   the live response), which is why the eval harness never caught this.
+    //
+    //   Fix: maintain a pending-text StringBuilder. While updates carry only
+    //   TextContent (text-only updates), append to the builder without emitting
+    //   a ChatMessage yet. Flush the accumulated text as ONE ChatMessage when:
+    //     • a non-text update arrives (flush first, then handle the non-text
+    //       update as before), or
+    //     • the role changes between consecutive text-only updates, or
+    //     • the loop ends.
+    //   Result: each assistant text run (however many model tokens it spans)
+    //   becomes a single ChatMessage, and AgentResponse.Text has at most one
+    //   separator between the text run and any subsequent non-text content.
+    //
+    //   TextDelta chunk emission is UNCHANGED — the live token-by-token stream
+    //   to the browser still fires per update; only the reconstructed message
+    //   granularity changes. Tool-call dedup, citation extraction, and the 429
+    //   catch are all unaffected.
     //
     // Wave 2 PR-S3 adds ToolCall/Citation chunk emission and interleaves them
     // with TextDelta chunks in streamChunks. The deduplication set (seenCallIds)
@@ -477,26 +506,55 @@ public sealed class AiRouter : IAiRouter
         var seenCallIds = new HashSet<string>(StringComparer.Ordinal);
         var completedCallIds = new HashSet<string>(StringComparer.Ordinal);
 
+        // Pending-text accumulator. Contiguous text-only updates are appended
+        // here and flushed as a single ChatMessage when a non-text update
+        // arrives, when the role changes, or at end-of-stream. This prevents
+        // AgentResponse.Text from inserting a newline between every model
+        // token (see "WHY text coalescing matters" above).
+        var pendingText = new StringBuilder();
+        ChatRole pendingRole = ChatRole.Assistant;
+
+        void FlushPendingText()
+        {
+            if (pendingText.Length > 0)
+            {
+                messages.Add(new ChatMessage(pendingRole, pendingText.ToString()));
+                pendingText.Clear();
+            }
+        }
+
         try
         {
             await foreach (var update in wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
                 .ConfigureAwait(false))
             {
-                // Build a ChatMessage from this update so the reconstructed
-                // AgentResponse carries all FunctionResultContent entries.
-                // When Contents is already populated (Microsoft.Agents.AI 1.4.0
-                // sets Contents = [TextContent(text)] when constructed via
-                // AgentResponseUpdate(role, text)), do NOT add a second
-                // TextContent — that would double the text in AgentResponse.Text.
-                // The supplemental TextContent path handles SDK variants that
-                // populate Text without populating Contents.
-                var contentItems = new List<AIContent>();
-                if (update.Contents is { Count: > 0 })
+                // Determine whether this update is text-only or carries non-text
+                // content. Text arrives via two SDK paths:
+                //   (a) update.Contents = [TextContent(text)] — 1.4.0 default
+                //   (b) update.Text populated, Contents empty — older SDK variants
+                // A "text-only" update has either path (a) with every item being
+                // TextContent, or path (b) with non-empty Text.
+                // Non-text updates (FunctionCallContent, FunctionResultContent, or
+                // a mix of text and non-text AIContent) bypass the accumulator and
+                // are handled verbatim to preserve tool-call dedup and citation
+                // extraction exactly as before.
+
+                var updateRole = update.Role ?? ChatRole.Assistant;
+
+                // Check whether Contents, if present, contains any non-text items.
+                bool hasNonTextContent = update.Contents is { Count: > 0 }
+                    && update.Contents.Any(c => c is not TextContent);
+
+                if (hasNonTextContent)
                 {
-                    contentItems.AddRange(update.Contents);
+                    // Mixed or pure non-text update. Flush any pending text first
+                    // so ordering in the messages list is preserved.
+                    FlushPendingText();
+
+                    var contentItems = new List<AIContent>(update.Contents!);
 
                     // Inspect each content item for ToolCall/Result signals.
-                    foreach (var content in update.Contents)
+                    foreach (var content in update.Contents!)
                     {
                         if (content is FunctionCallContent call)
                         {
@@ -568,23 +626,57 @@ public sealed class AiRouter : IAiRouter
                             }
                         }
                     }
-                }
-                else if (!string.IsNullOrEmpty(update.Text))
-                {
-                    contentItems.Add(new TextContent(update.Text));
-                }
 
-                if (contentItems.Count > 0)
+                    messages.Add(new ChatMessage(updateRole, contentItems));
+                }
+                else
                 {
-                    var role = update.Role ?? ChatRole.Assistant;
-                    messages.Add(new ChatMessage(role, contentItems));
+                    // Text-only update (path a or b). Accumulate into the pending
+                    // builder rather than creating a new ChatMessage immediately.
+                    // Flush first if the role has changed (rare, but theoretically
+                    // possible if the SDK emits a non-Assistant text update).
+                    if (pendingText.Length > 0 && updateRole != pendingRole)
+                        FlushPendingText();
+
+                    pendingRole = updateRole;
+
+                    // Determine the text fragment from whichever SDK path populated it.
+                    // Path (a): Contents = [TextContent(text)] — use the TextContent value.
+                    // Path (b): Contents empty, update.Text populated — use update.Text.
+                    string? fragment = null;
+                    if (update.Contents is { Count: > 0 })
+                    {
+                        // All items are TextContent (hasNonTextContent == false).
+                        // Concatenate them in case multiple TextContent items appear
+                        // in a single update (defensive; SDK normally emits one).
+                        var sb = new StringBuilder();
+                        foreach (var c in update.Contents)
+                        {
+                            if (c is TextContent tc && !string.IsNullOrEmpty(tc.Text))
+                                sb.Append(tc.Text);
+                        }
+                        fragment = sb.Length > 0 ? sb.ToString() : null;
+                    }
+                    else if (!string.IsNullOrEmpty(update.Text))
+                    {
+                        fragment = update.Text;
+                    }
+
+                    if (fragment is not null)
+                        pendingText.Append(fragment);
                 }
 
                 // Collect non-empty text fragments as TextDelta chunks,
                 // interleaved with ToolCall/Citation chunks in arrival order.
+                // This emission is per-update (unchanged) — the live browser
+                // animation depends on per-token granularity here.
                 if (!string.IsNullOrEmpty(update.Text))
                     streamChunks.Add(new AnswerChunk.TextDelta(update.Text));
             }
+
+            // Flush any text that accumulated after the last non-text update
+            // (or the entire text run when there were no non-text updates at all).
+            FlushPendingText();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -745,7 +837,15 @@ public sealed class AiRouter : IAiRouter
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var responseText = response?.Text ?? string.Empty;
+        // The Web renderer is plain-text by design (no MarkupString — XSS
+        // surface stays zero, ADR-0026), so inline markdown links the model
+        // emits ("[Source: OPDB](https://…)") would display as raw syntax.
+        // Strip them to their labels: provenance display belongs to the
+        // Sources cards, which are built from tool-trace citations extracted
+        // off the AgentResponse object below — this transform cannot lose a
+        // citation. Decision: Jim, 2026-06-10 (option a — strip inline,
+        // rely on Sources cards).
+        var responseText = StripInlineMarkdownLinks(response?.Text ?? string.Empty);
 
         // W2-1: which sub-agent (if any) the Wizard dispatched to.
         // Read once from the trace and reused at every downstream
@@ -956,6 +1056,22 @@ public sealed class AiRouter : IAiRouter
             FoundryThreadId: null,
             RefusalDetail: null,
             Degradation: _degradationContext.Snapshot());
+    }
+
+    // Markdown links in answer prose render as raw "[label](url)" syntax in
+    // the plain-text TokenRenderer. Reduce each to its label; URLs stay
+    // available via the Sources cards (tool-trace citations). `internal` so
+    // tests can pin the transform without a full AiRouter.
+    private static readonly System.Text.RegularExpressions.Regex MarkdownLinkRegex =
+        new(@"\[([^\]]*)\]\(\s*[^)\s]*\s*\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    internal static string StripInlineMarkdownLinks(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("](", StringComparison.Ordinal))
+        {
+            return text;
+        }
+        return MarkdownLinkRegex.Replace(text, "$1");
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin

@@ -365,7 +365,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     MachineTitle: machine.Title,
                     Manufacturer: machine.ManufacturerDisplayName,
                     DocumentId: $"meta_{machine.Id}",
-                    DocumentUrl: machine.OpdbSourceUrl ?? $"https://opdb.org/machines/{machine.Id}",
+                    DocumentUrl: machine.OpdbSourceUrl ?? OpdbMachineMapper.OpdbWebUrl(machine.Id),
                     DocumentType: DocumentType.MetadataCard);
 
                 try
