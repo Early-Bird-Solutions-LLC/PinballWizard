@@ -765,6 +765,100 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Empty(Extractor.Extract(response));
     }
 
+    // ── camelCase JsonElement arm (2026-06-10 outage regression) ─────────
+    // AIFunctionFactory serializes function results with CAMELCASE property
+    // names ("opdbId", "hits") — verified live against gpt-4o. The tests
+    // above serialize with default (PascalCase) options, which is why they
+    // stayed green while the deployed site extracted zero citations and
+    // refused 100% of questions: the property probes were case-sensitive,
+    // every result fell through to the URL regex, and the /search?q= data
+    // migration removed the last URLs that regex could match. These tests
+    // pin the LIVE shape.
+
+    private static readonly JsonSerializerOptions LiveCamelCaseJson =
+        new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Extract_MachineGroundingDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        // The live-shape repro of the 2026-06-10 outage: camelCase DTO with
+        // a post-migration /search?q= source URL must still produce the
+        // structured MachineRecord citation.
+        var dto = SampleGroundingDto(opdbId: "GweeP-MW95j", title: "Godzilla (Pro)") with
+        {
+            OpdbSourceUrl = "https://opdb.org/search?q=GweeP-MW95j",
+        };
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("GetMachineByTitle", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("https://opdb.org/search?q=GweeP-MW95j", citation.SourceUrl);
+        Assert.Equal("GweeP-MW95j", citation.MachineId);
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_SearchCorpusResult_AsCamelCaseJsonElement_ProducesCitations()
+    {
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual_a.pdf",
+                      machineId: "GweeP-MW95j", section: "Multiball Rules",
+                      pageStart: 31, pageEnd: 33),
+        ]);
+        var element = JsonSerializer.SerializeToElement(corpus, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("SearchCorpus", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("https://example/manual_a.pdf", citation.SourceUrl);
+        Assert.Equal("GweeP-MW95j", citation.MachineId);
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+        Assert.Equal(31, citation.PageStart);
+        Assert.Equal("Multiball Rules", citation.SectionHeading);
+    }
+
+    // ── /search?q= URL regex arm (2026-06-10 migration) ──────────────────
+
+    [Fact]
+    public void Extract_SubAgentTextWithSearchQueryUrl_MinesCitation()
+    {
+        // Post-migration OPDB deep links use /search?q={id}; sub-agent prose
+        // echoing them must still mine a MachineRecord citation.
+        const string subAgentText = "Per the record at https://opdb.org/search?q=GweeP-MW95j, it released in 2021.";
+        var response = BuildAgentResponseWithToolResult("Rules", subAgentText);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("https://opdb.org/search?q=GweeP-MW95j", citation.SourceUrl);
+        Assert.Equal("GweeP-MW95j", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_SearchQueryUrlWithAliasId_NormalizesToBaseMachineId()
+    {
+        // Alias-id stripping (third dash segment) applies to the /search?q=
+        // form exactly as it does to the legacy /machines/ form.
+        const string subAgentText = "See https://opdb.org/search?q=Gj66Z-Mp4BN-A9Y6n for the edition record.";
+        var response = BuildAgentResponseWithToolResult("Valuation", subAgentText);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_MixedLegacyAndSearchQueryUrls_BothMined()
+    {
+        // Old tool traces / cached answers may still carry /machines/ URLs;
+        // both schemes extract side by side.
+        const string subAgentText =
+            "Compare https://opdb.org/machines/GRBE-MJL05 with https://opdb.org/search?q=GweeP-MW95j.";
+        var response = BuildAgentResponseWithToolResult("Rules", subAgentText);
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c => c.MachineId == "GRBE-MJL05");
+        Assert.Contains(citations, c => c.MachineId == "GweeP-MW95j");
+    }
+
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)
     {
         // FunctionResultContent's CallId is conventionally the tool-call's
