@@ -1,6 +1,6 @@
 @page "/wizard"
 @page "/wizard/q/{Slug}"
-@rendermode InteractiveAuto
+@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 
 @* Wave 2 PR-D-stream. Replaces WizardStreamingPlaceholder (Wave 1 F2 bridge)
@@ -23,7 +23,8 @@
 
    WizardAnswerStream handles the pre-fill + auto-submit when Question is set.
 
-   ADR-0026 § 1 — /wizard anonymous, auto-render mode (InteractiveAuto).
+   ADR-0026 § 1 + follow-up 2026-06-10 — /wizard anonymous, server render mode
+   (InteractiveServer; auto mode retired — see the ADR follow-up).
    ADR-0026 § 6 — WizardAnswerStream is one of the four locked delight surfaces.
    ADR-0008     — MudBlazor strict; only MudContainer used here as chrome. *@
 

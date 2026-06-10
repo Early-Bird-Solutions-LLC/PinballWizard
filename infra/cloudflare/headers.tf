@@ -55,7 +55,12 @@ resource "cloudflare_ruleset" "security_response_headers" {
               "base-uri 'self'",
               "form-action 'self'",
               "upgrade-insecure-requests",
-              "report-uri https://${var.domain}/_csp-reports",
+              # report-uri intentionally absent: the app never implemented a
+              # /_csp-reports receiver, so every violation report 400'd —
+              # pure console noise on each page load (observed 2026-06-10).
+              # Violations remain visible in DevTools > Issues. If reporting
+              # is wanted for the staged enforcement rollout (§7.2), add a
+              # receiving endpoint first, then restore this directive.
             ])
           }
           # Strip identifying server headers if the origin returns them.
