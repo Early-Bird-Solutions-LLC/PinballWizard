@@ -30,7 +30,7 @@ public sealed class FeaturedMachineSeedLoader : IFeaturedMachineSeedLoader
     private readonly ILogger<FeaturedMachineSeedLoader> _logger;
 
     public FeaturedMachineSeedLoader(ILogger<FeaturedMachineSeedLoader> logger)
-        : this(DefaultRelativePath, logger)
+        : this(SeedData.SeedPathResolver.Resolve(DefaultRelativePath), logger)
     {
     }
 

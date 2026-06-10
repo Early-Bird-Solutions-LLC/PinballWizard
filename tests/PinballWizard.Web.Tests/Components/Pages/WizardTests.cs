@@ -59,6 +59,12 @@ public sealed class WizardTests : AsyncBunitContext
         // here confirms it is in place for BrandHeader nav links. Note: this
         // call locks the provider so it must come after all AddSingleton calls.
         _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        // WizardAnswerStream gates its auto-submit on
+        // RendererInfo.IsInteractive (prerender must not stream); tests
+        // render interactive-server like production. Provider is already
+        // locked above, so this is safe here.
+        UseInteractiveServerRendererInfo();
     }
 
     [Fact]
