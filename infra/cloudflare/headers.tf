@@ -54,7 +54,10 @@ resource "cloudflare_ruleset" "security_response_headers" {
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
-              "upgrade-insecure-requests",
+              # upgrade-insecure-requests intentionally absent: the browser
+              # ignores it in a Report-Only policy and logs a console warning
+              # on every load. Reintroduce it when the policy is promoted to
+              # an enforced Content-Security-Policy header (§7.2 rollout).
               # report-uri intentionally absent: the app never implemented a
               # /_csp-reports receiver, so every violation report 400'd —
               # pure console noise on each page load (observed 2026-06-10).
