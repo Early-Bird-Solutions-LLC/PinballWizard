@@ -30,6 +30,34 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-10 — INCIDENT: Blazor circuits dead at >1 replica — missing documented ACA hosting config (session affinity + shared Data Protection)
+
+**Incident:** Reported by operator ~17:40Z ("no answers and the suggested questions don't show as links"). The deployed wizard app rendered as a static prerender: question input visible but the Ask button never enabled, nothing interactive. Container logs showed `AntiforgeryValidationException: The key {…} was not found in the key ring` at the exact report time, plus the startup warning `EphemeralXmlRepository` (Data Protection keys held in-memory per process). The app was at 2 replicas (scale 1–3) with no ingress session affinity: page HTML served by replica A carried tokens encrypted with A's ephemeral key ring; the circuit handshake load-balanced to replica B, which couldn't decrypt them — every circuit died. The site had worked earlier in the day only because it happened to be at 1 replica.
+
+**Root cause:** ADR-0026's Blazor Web App decision was deployed without Microsoft's documented Container Apps hosting requirements — BOTH ingress session affinity ("you must enable sticky sessions", learn.microsoft.com/azure/container-apps/dotnet-overview § Configure Blazor Server) AND a shared Data Protection key ring (blob-persisted, Key Vault–wrapped; learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server § Azure Container Apps). Azure SignalR Service does not remove the affinity need for Blazor (`ServerStickyMode.Required`).
+
+**Resolution:** PR #344 — `stickySessions.affinity: 'sticky'` on the wizard ingress; `dataprotection` blob container; `pinwiz-dataprotection` RSA-2048 KV key (wrap/unwrap only); UAMI role assignments (Blob Data Contributor scoped to the container; KV Crypto Service Encryption User); `AZURE_CLIENT_ID` + `DataProtection__*` env vars; gated `AddDataProtection()` wiring in Web `Program.cs` (local dev keeps the ephemeral ring). Deployed via the `pinwiz-shared-dev` Deployment Stack 18:29Z. App-code health was proven locally end-to-end before the infra fix (circuit, ask flow, disambiguation, citations) — isolating the defect to hosting config. Time to recovery: ~50 min from report to stack deploy.
+
+**Alerting gap (follow-up):** No alert fired — the 5xx alert is blind to a site that serves 200s with a dead circuit (and to the citation outage below, which served well-formed refusals). Follow-up: an end-to-end canary (scripted ask through the SSE endpoint asserting a cited answer) per runbook 01 § Post-incident item 2.
+
+**Revisit when:** scaling posture changes (e.g., Azure SignalR Service if concurrent-circuit count outgrows single-replica affinity), or ACA ships affinity-aware autoscaling guidance.
+
+**Related:** PR #344, ADR-0026 follow-up 2026-06-10, runbook 01-incident-response.
+
+## 2026-06-10 — INCIDENT: 100% answer refusals — citation extractor never matched live camelCase JSON; URL migration removed its accidental fallback
+
+**Incident:** From ~13:30Z–16:00Z every question on the deployed site returned the canned out-of-scope refusal. Committed eval evidence: citation_precision 0.967 at 13:29Z (`wizard.20260610T132948Z.json`) → 0.111 with 30/30 refusals (`wizard.20260610T150629Z.json`).
+
+**Root cause (two compounding defects):** (1) `ToolTraceCitationExtractor`'s JsonElement arms probed PascalCase property names (`"Hits"`, `"OpdbId"`) but `AIFunctionFactory` serializes tool results camelCase — the structured arms never fired in production; unit tests stayed green because fixtures were serialized PascalCase (fixture-shape drift). (2) All citations therefore rode the regex fallback matching only `opdb.org/machines/{id}` URLs embedded in raw tool-result JSON; the same-day opdbSourceUrl migration to `/search?q={id}` (PR #339 + `tools/migrate-opdb-source-urls.csx`) removed every matchable URL → zero citations → every answer fell below the 0.65 confidence threshold → blanket refusals.
+
+**Resolution:** PR #341 — case-insensitive property probing + deserialization (`JsonSerializerDefaults.Web`); URL regex accepts both schemes; binding `JsonException` degrades to the regex fallback instead of propagating; `RegexLegacyCitationExtractor` comparator widened identically; 6 live-shape regression tests (5 fail on unfixed code). Recovery proven by eval: precision 0.111 → 0.933 (`wizard.20260610T153932Z.json`), then 0.967 on the follow-up run. Time to recovery: ~2.5 h (detection lagged ~80 min because the last eval predated the data migration).
+
+**Lessons:** (1) Serialization-boundary test fixtures must use the exact runtime serializer, not test-side defaults. (2) A live-data migration is a deploy-equivalent event — run the eval immediately after it, not only after code merges. (3) A confidence gate without citation-extraction observability turns an extraction bug into a silent total outage (see alerting-gap follow-up above).
+
+**Revisit when:** Citation extraction moves to a structured tool-result contract (e.g., typed results once the SDK preserves types), making the regex fallback deletable.
+
+**Related:** PR #341, ADR-0022 follow-up 2026-06-10, ADR-0016 follow-up 2026-06-10 (three-state refusal metric, PR #342), PR #339.
+
 ## 2026-06-10 — OPDB group-title lookups get a persistent on-disk cache (positive + negative)
 
 **Decision:** `OpdbClient.GetMachineGroupTitleAsync` consults an on-disk cache (`OpdbOptions.GroupTitleCachePath`, default `data/cache/opdb-group-titles.json`; `GroupTitleCacheTtlSeconds`, default 14 days, whole-file mtime TTL) before issuing the polite `GET /api/machines/{groupSegment}`. Confirmed 404 / non-group results are cached as explicit nulls (negative entries). Transient HTTP failures are never cached — exceptions propagate before the cache write. The shared `WriteCacheFile` helper also fixes the export-cache persist failure (OneDrive marks synced files read-only; `MOVEFILE_REPLACE_EXISTING` fails with `ERROR_ACCESS_DENIED` — now clear-ReadOnly → Delete → Move).
