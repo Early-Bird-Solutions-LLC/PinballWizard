@@ -46,8 +46,61 @@ namespace PinballWizard.Application.Ai.Citations;
 // the typed-check arms handle); the JSON arms cover the real Foundry path.
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
-    [GeneratedRegex(@"https://opdb\.org/machines/(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // Matches both OPDB URL schemes: the legacy /machines/{id} form and
+    // the /search?q={id} deep-link form that replaced it (PR #339 — the
+    // /machines/ pages 404 because opdb.org uses internal numeric ids).
+    // Stored data was migrated to /search?q= on 2026-06-10; the regex
+    // accepts both so pre-migration text in old tool traces still
+    // extracts.
+    [GeneratedRegex(@"https://opdb\.org/(?:machines/|search\?q=)(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex OpdbMachineUrlRegex();
+
+    // AIFunctionFactory serializes function results with camelCase
+    // property names ("opdbId", "hits") — verified live 2026-06-10
+    // against gpt-4o via the Responses path. Property probing and
+    // deserialization must be case-insensitive or the structured arms
+    // silently never fire and every citation falls through to the URL
+    // regex over raw JSON (the failure mode that took the deployed site
+    // to a 100% refusal rate when the URL migration removed the
+    // /machines/ URLs the regex depended on).
+    private static readonly JsonSerializerOptions CaseInsensitiveJson =
+        new(JsonSerializerDefaults.Web);
+
+    // Deserialization can throw JsonException on an inner type mismatch
+    // even after the outer shape probe passed (e.g. a numeric page field
+    // arriving as a string). This extractor runs outside the router's
+    // try/catch, so binding failures degrade to the regex fallback
+    // instead of aborting the whole answer.
+    private static T? TryDeserialize<T>(JsonElement element) where T : class
+    {
+        try
+        {
+            return element.Deserialize<T>(CaseInsensitiveJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(
+        JsonElement element,
+        string pascalCaseName,
+        out JsonElement value)
+    {
+        if (element.TryGetProperty(pascalCaseName, out value))
+        {
+            return true;
+        }
+
+        // camelCase variant (first char lowered) — the runtime shape.
+        var camel = string.Create(pascalCaseName.Length, pascalCaseName, static (span, name) =>
+        {
+            name.CopyTo(span);
+            span[0] = char.ToLowerInvariant(span[0]);
+        });
+        return element.TryGetProperty(camel, out value);
+    }
 
     public string SourceTag => "tool_trace";
 
@@ -143,27 +196,29 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            // SearchCorpusResult shape: { "Hits": [ ... ] }
-            if (element.TryGetProperty("Hits", out var hitsElement)
+            // SearchCorpusResult shape: { "hits": [ ... ] } at runtime
+            // (camelCase); "Hits" accepted for typed-test parity.
+            if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
                 && hitsElement.ValueKind == JsonValueKind.Array)
             {
-                var deserialized = element.Deserialize<SearchCorpusResult>(JsonSerializerOptions.Default);
-                if (deserialized is not null)
+                if (TryDeserialize<SearchCorpusResult>(element) is { } corpusResult)
                 {
-                    AddCitationsFromCorpusHits(deserialized.Hits, seenUrls, citations);
+                    AddCitationsFromCorpusHits(corpusResult.Hits, seenUrls, citations);
+                    return;
                 }
-                return;
+                // Shape probe matched but the payload didn't bind — fall
+                // through to the URL regex below rather than dropping the
+                // result silently (this extractor runs outside the
+                // router's try/catch, so throwing would abort the answer).
             }
-
-            // MachineGroundingDto shape: { "OpdbId": "...", "OpdbSourceUrl": "...", ... }
-            if (element.TryGetProperty("OpdbId", out _))
+            else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
-                var deserialized = element.Deserialize<MachineGroundingDto>(JsonSerializerOptions.Default);
-                if (deserialized is not null)
+                // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
+                if (TryDeserialize<MachineGroundingDto>(element) is { } dto)
                 {
-                    AddCitationFromGroundingDto(deserialized, seenUrls, citations);
+                    AddCitationFromGroundingDto(dto, seenUrls, citations);
+                    return;
                 }
-                return;
             }
         }
 

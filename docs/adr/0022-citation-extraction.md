@@ -146,6 +146,31 @@ impact of the swap directly.
   primitive.** Rejected — no roadmap signal; Phase 4 needs
   citation extraction to ship.
 
+## Follow-up 2026-06-10 — case-insensitive binding + both OPDB URL schemes
+
+The JsonElement dispatch arms probed PascalCase property names
+("Hits", "OpdbId"), but AIFunctionFactory serializes function results
+camelCase ("hits", "opdbId") — verified live against gpt-4o. The
+structured arms therefore never fired on the real Foundry path; every
+citation rode the regex fallback over raw tool-result JSON, which
+matched only `https://opdb.org/machines/{id}`. When the opdbSourceUrl
+migration (PR #339 + tools/migrate-opdb-source-urls.csx) replaced
+those URLs with `/search?q={id}` deep links, extraction collapsed to
+zero citations and the deployed site refused 100% of questions for
+~2.5 hours (eval citation_precision 0.967 → 0.111, 30/30 refusals).
+
+Changes: property probing and deserialization are case-insensitive
+(JsonSerializerDefaults.Web; PascalCase still accepted so typed unit
+fixtures keep working); the URL regex accepts both `/machines/{id}`
+and `/search?q={id}`; structured-binding JsonException degrades to the
+regex fallback instead of propagating (the extractor runs outside the
+router's try/catch). RegexLegacyCitationExtractor received the same
+regex widening so the `source=regex_legacy` cutover telemetry
+comparison stays meaningful. Live-shape regression tests (camelCase
+fixtures) now pin the runtime JSON casing — the original JsonElement
+tests serialized fixtures PascalCase, which is why they stayed green
+through the outage.
+
 ## References
 
 - [ADR-0014](0014-microsoft-foundry-orchestration.md) — Microsoft

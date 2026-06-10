@@ -18,7 +18,12 @@ namespace PinballWizard.Application.Ai.Citations;
 // this class + the cutover flag get deleted in a follow-up PR.
 public sealed partial class RegexLegacyCitationExtractor : ICitationExtractor
 {
-    [GeneratedRegex(@"https://opdb\.org/machines/(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // Accepts both OPDB URL schemes (legacy /machines/{id} and the
+    // /search?q={id} deep link that replaced it on 2026-06-10) — same
+    // pattern as ToolTraceCitationExtractor. Without the widening, this
+    // comparator counts zero on every post-migration trace and the
+    // cutover telemetry comparison it exists for becomes meaningless.
+    [GeneratedRegex(@"https://opdb\.org/(?:machines/|search\?q=)(?<id>[A-Z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex OpdbMachineUrlRegex();
 
     public string SourceTag => "regex_legacy";
