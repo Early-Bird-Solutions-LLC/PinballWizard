@@ -66,6 +66,23 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     private static readonly JsonSerializerOptions CaseInsensitiveJson =
         new(JsonSerializerDefaults.Web);
 
+    // Deserialization can throw JsonException on an inner type mismatch
+    // even after the outer shape probe passed (e.g. a numeric page field
+    // arriving as a string). This extractor runs outside the router's
+    // try/catch, so binding failures degrade to the regex fallback
+    // instead of aborting the whole answer.
+    private static T? TryDeserialize<T>(JsonElement element) where T : class
+    {
+        try
+        {
+            return element.Deserialize<T>(CaseInsensitiveJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static bool TryGetPropertyIgnoreCase(
         JsonElement element,
         string pascalCaseName,
@@ -184,23 +201,24 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
                 && hitsElement.ValueKind == JsonValueKind.Array)
             {
-                var deserialized = element.Deserialize<SearchCorpusResult>(CaseInsensitiveJson);
-                if (deserialized is not null)
+                if (TryDeserialize<SearchCorpusResult>(element) is { } corpusResult)
                 {
-                    AddCitationsFromCorpusHits(deserialized.Hits, seenUrls, citations);
+                    AddCitationsFromCorpusHits(corpusResult.Hits, seenUrls, citations);
+                    return;
                 }
-                return;
+                // Shape probe matched but the payload didn't bind — fall
+                // through to the URL regex below rather than dropping the
+                // result silently (this extractor runs outside the
+                // router's try/catch, so throwing would abort the answer).
             }
-
-            // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
-            if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
+            else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
-                var deserialized = element.Deserialize<MachineGroundingDto>(CaseInsensitiveJson);
-                if (deserialized is not null)
+                // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
+                if (TryDeserialize<MachineGroundingDto>(element) is { } dto)
                 {
-                    AddCitationFromGroundingDto(deserialized, seenUrls, citations);
+                    AddCitationFromGroundingDto(dto, seenUrls, citations);
+                    return;
                 }
-                return;
             }
         }
 

@@ -844,6 +844,24 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_CorpusShapeWithMalformedHit_DoesNotThrow_FallsThroughToRegex()
+    {
+        // The shape probe ("hits" array) can pass while inner binding
+        // fails (numeric page field arriving as a string). The extractor
+        // runs outside the router's try/catch, so it must degrade to the
+        // URL regex over the raw JSON rather than throw and abort the
+        // whole answer.
+        using var malformed = JsonDocument.Parse(
+            """{"hits":[{"machineId":"GweeP-MW95j","documentUrl":"https://opdb.org/search?q=GweeP-MW95j","pageStart":"twelve"}]}""");
+        var response = BuildAgentResponseWithToolResult("SearchCorpus", malformed.RootElement.Clone());
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("GweeP-MW95j", citation.MachineId);
+    }
+
+    [Fact]
     public void Extract_MixedLegacyAndSearchQueryUrls_BothMined()
     {
         // Old tool traces / cached answers may still carry /machines/ URLs;
