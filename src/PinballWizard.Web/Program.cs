@@ -71,9 +71,10 @@ var dpKeyRingBlobUri = builder.Configuration["DataProtection:KeyRingBlobUri"];
 var dpKeyVaultKeyUri = builder.Configuration["DataProtection:KeyVaultKeyUri"];
 if (!string.IsNullOrWhiteSpace(dpKeyRingBlobUri) && !string.IsNullOrWhiteSpace(dpKeyVaultKeyUri))
 {
+    var dpCredential = new DefaultAzureCredential();
     builder.Services.AddDataProtection()
-        .PersistKeysToAzureBlobStorage(new Uri(dpKeyRingBlobUri), new DefaultAzureCredential())
-        .ProtectKeysWithAzureKeyVault(new Uri(dpKeyVaultKeyUri), new DefaultAzureCredential());
+        .PersistKeysToAzureBlobStorage(new Uri(dpKeyRingBlobUri), dpCredential)
+        .ProtectKeysWithAzureKeyVault(new Uri(dpKeyVaultKeyUri), dpCredential);
 }
 
 // ── Entra External ID auth scaffolding (ADR-0009) ─────────────────────────

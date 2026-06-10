@@ -333,12 +333,12 @@ resource acaIdentityFoundryAiUser 'Microsoft.Authorization/roleAssignments@2022-
 }
 
 // Storage: Blob Data Contributor (ba92f5b4-...) so the wizard app can
-// read/write the Data Protection key ring blob in the 'dataprotection'
-// container. Storage-account scope matches the existing single-account
-// posture; the account holds only pinwiz workload containers.
+// read/write the Data Protection key ring blob. Scoped to the
+// 'dataprotection' container only — least privilege; the app has no
+// business in the scraper artifact containers.
 resource acaIdentityStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
-  scope: storage
-  name: guid(storage.id, '${namePrefix}-aca-id-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: dataProtectionContainer
+  name: guid(storage.id, 'dataprotection', '${namePrefix}-aca-id-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
     principalId: acaIdentity.?properties.principalId ?? ''
