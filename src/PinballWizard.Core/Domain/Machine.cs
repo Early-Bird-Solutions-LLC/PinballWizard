@@ -151,10 +151,11 @@ public sealed class MachineEdition
 
     /// <summary>
     /// OPDB record URL for this edition (e.g.,
-    /// <c>https://opdb.org/machines/GRBN-MQR4P-A97X1</c>). Populated
-    /// alongside <see cref="OpdbAliasId"/>. The base machine's
-    /// <c>OpdbSourceUrl</c> on <see cref="Machine"/> covers the parent
-    /// record; this field covers the alias.
+    /// <c>https://opdb.org/search?q=GRBN-MQR4P-A97X1</c> — opdb.org has
+    /// no /machines/{opdb_id} route; search-by-id is the durable deep
+    /// link). Populated alongside <see cref="OpdbAliasId"/>. The base
+    /// machine's <c>OpdbSourceUrl</c> on <see cref="Machine"/> covers
+    /// the parent record; this field covers the alias.
     /// </summary>
     [JsonPropertyName("opdbSourceUrl")]
     public string? OpdbSourceUrl { get; set; }
