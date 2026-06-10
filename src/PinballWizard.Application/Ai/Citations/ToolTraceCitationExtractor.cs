@@ -288,12 +288,31 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 continue;
             }
 
+            // OPDB alias IDs have three dash-separated segments (e.g.
+            // "Gj66Z-Mp4BN-A9Y6n"). Citations should point to base
+            // machines, not edition aliases, so strip the third segment.
+            // Base IDs always have two segments ("Gj66Z-Mp4BN").
+            var rawId = match.Groups["id"].Value;
+            var machineId = ToBaseMachineId(rawId);
+
             citations.Add(new Citation(
-                Title: $"OPDB record {match.Groups["id"].Value}",
+                Title: $"OPDB record {machineId}",
                 SourceUrl: url,
-                MachineId: match.Groups["id"].Value,
+                MachineId: machineId,
                 DocumentChunkId: null,
                 SourceType: CitationSourceType.MachineRecord));
         }
+    }
+
+    // Strips the alias (third) segment from OPDB IDs, keeping only the
+    // base two-segment form. "Gj66Z-Mp4BN-A9Y6n" → "Gj66Z-Mp4BN".
+    // IDs with two segments or fewer pass through unchanged.
+    // Mirrors OpdbMachineMapper.GetBaseMachineOpdbId — same two-segment invariant.
+    private static string ToBaseMachineId(string opdbId)
+    {
+        var first = opdbId.IndexOf('-');
+        if (first < 0) return opdbId;
+        var second = opdbId.IndexOf('-', first + 1);
+        return second < 0 ? opdbId : opdbId[..second];
     }
 }

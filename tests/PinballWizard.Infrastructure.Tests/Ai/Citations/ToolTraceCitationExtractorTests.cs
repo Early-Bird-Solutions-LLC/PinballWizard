@@ -133,6 +133,76 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_SubAgentTextContainsAliasId_NormalizesToBaseMachineId()
+    {
+        // OPDB alias IDs have a third dash-separated segment (e.g.
+        // "Gj66Z-Mp4BN-A9Y6n"). Sub-agent prose may embed the full alias
+        // URL. The extractor must strip the alias suffix so citations point
+        // to the base machine, not an edition alias that won't be in the
+        // expected set during eval.
+        const string subAgentText = """
+            Halloween rules sourced from https://opdb.org/machines/Gj66Z-Mp4BN-A9Y6n
+            """;
+        var response = BuildAgentResponseWithToolResult(
+            functionName: "Rules",
+            result: subAgentText);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_SubAgentTextContainsBaseId_PassesThroughUnchanged()
+    {
+        // Base IDs (two dash-separated segments) must not be mutated.
+        const string subAgentText = "Source: https://opdb.org/machines/Gj66Z-Mp4BN";
+        var response = BuildAgentResponseWithToolResult(
+            functionName: "Rules",
+            result: subAgentText);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_SubAgentTextContainsFourSegmentId_StripsToTwoSegments()
+    {
+        // Four-segment IDs (e.g. from an unexpected OPDB alias extension)
+        // must truncate at the second dash, keeping the two-segment base.
+        // Ensures ToBaseMachineId is not sensitive to additional segments
+        // beyond the three-segment alias form.
+        const string subAgentText = "Source: https://opdb.org/machines/Gj66Z-Mp4BN-A9Y6n-Extra";
+        var response = BuildAgentResponseWithToolResult(
+            functionName: "Rules",
+            result: subAgentText);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+    }
+
+    [Fact]
+    public void Extract_SubAgentTextContainsSingleSegmentId_PassesThroughUnchanged()
+    {
+        // Single-segment IDs (no dash) must pass through unchanged rather
+        // than returning empty string. Guards the first IndexOf('-') < 0 branch.
+        const string subAgentText = "Source: https://opdb.org/machines/GRBE5";
+        var response = BuildAgentResponseWithToolResult(
+            functionName: "Rules",
+            result: subAgentText);
+
+        var citations = Extractor.Extract(response);
+
+        var citation = Assert.Single(citations);
+        Assert.Equal("GRBE5", citation.MachineId);
+    }
+
+    [Fact]
     public void Extract_GetMachineByTitleAndSubAgentResults_UnionsCitations()
     {
         // Realistic shape: the Wizard calls getMachineByTitle to ground

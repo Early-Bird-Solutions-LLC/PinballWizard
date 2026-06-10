@@ -1106,6 +1106,113 @@ public sealed class OpdbSyncServiceTests : IDisposable
         Assert.Equal("GRBN", m.GroupId);
     }
 
+    [Fact]
+    public async Task SyncAsync_WritesManufacturerQualifiedTitleLookupRows()
+    {
+        // Phase (e): "stern godzilla" lookup row must exist after a sync so that
+        // getMachineByTitle("Stern Godzilla") resolves via the fast point-read
+        // path instead of falling through to the cross-partition fallback.
+        // Both Godzilla bases (Pro + Premium/LE) must map to "stern godzilla";
+        // multi-token manufacturers (e.g. jjp → ["jjp","jersey","jack"]) produce
+        // one row per token.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var upsertedLookups = new ConcurrentBag<MachineTitleLookup>();
+        await _titleLookups.UpsertAsync(Arg.Do<MachineTitleLookup>(upsertedLookups.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Both Stern bases must appear in the "stern godzilla" row.
+        var sternRows = upsertedLookups.Where(l => l.Id == "stern godzilla").ToList();
+        Assert.True(sternRows.Count > 0, "no lookup row written for 'stern godzilla'");
+        Assert.Contains(sternRows, l => l.OpdbIds.Contains("GweeP-MW95j"));
+        Assert.Contains(sternRows, l => l.OpdbIds.Contains("GweeP-Ml9pZ"));
+
+        // Bare "godzilla" row must still coexist.
+        var bareRows = upsertedLookups.Where(l => l.Id == "godzilla").ToList();
+        Assert.True(bareRows.Count > 0, "bare 'godzilla' row was not written");
+    }
+
+    [Fact]
+    public async Task SyncAsync_ReSync_ExistingBases_WritesManufacturerQualifiedTitleLookupRows()
+    {
+        // Resync path (existing bases): the manufacturer-qualified rows must be
+        // written even when both machines already existed (GetByOpdbIdAsync
+        // returns an existing machine rather than null), because phase (e) uses
+        // editionTokenBases which is populated regardless of insert-vs-update.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GweeP-MW95j", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Pro)", commonName: "Godzilla"),
+            MachineJson("GweeP-Ml9pZ", manufacturer: "Stern Pinball, Inc.", name: "Godzilla (Premium/LE)", commonName: "Godzilla")));
+
+        var existingPro = new Machine
+        {
+            Id = "GweeP-MW95j", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla", EditionLabel = "Pro", EditionTokens = ["pro"],
+            FirstSeenAt = NowFixed, LastSeenAt = NowFixed,
+        };
+        var existingPremLe = new Machine
+        {
+            Id = "GweeP-Ml9pZ", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Godzilla", EditionLabel = "Premium/LE", EditionTokens = ["premium", "le"],
+            FirstSeenAt = NowFixed, LastSeenAt = NowFixed,
+        };
+        _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(existingPro);
+        _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(existingPremLe);
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var upsertedLookups = new ConcurrentBag<MachineTitleLookup>();
+        await _titleLookups.UpsertAsync(Arg.Do<MachineTitleLookup>(upsertedLookups.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        var sternRows = upsertedLookups.Where(l => l.Id == "stern godzilla").ToList();
+        Assert.True(sternRows.Count > 0, "no 'stern godzilla' row written on resync path");
+        Assert.Contains(sternRows, l => l.OpdbIds.Contains("GweeP-MW95j"));
+        Assert.Contains(sternRows, l => l.OpdbIds.Contains("GweeP-Ml9pZ"));
+    }
+
+    [Fact]
+    public async Task SyncAsync_MultiTokenManufacturer_WritesOneRowPerToken()
+    {
+        // JJP's GetMatchTokens returns ["jjp", "jersey", "jack"] — three tokens.
+        // Phase (e) must write one lookup row per token, not one row for the
+        // manufacturer as a whole. Verifies that the per-token loop in phase (e)
+        // fires correctly for multi-token manufacturers.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("XYZ12-AB34C", manufacturer: "Jersey Jack Pinball", name: "Toy Story 4 (Standard Edition)", commonName: "Toy Story 4")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var upsertedLookups = new ConcurrentBag<MachineTitleLookup>();
+        await _titleLookups.UpsertAsync(Arg.Do<MachineTitleLookup>(upsertedLookups.Add), Arg.Any<CancellationToken>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // All three JJP token rows must be written.
+        foreach (var key in new[] { "jjp toy story 4", "jersey toy story 4", "jack toy story 4" })
+        {
+            var rows = upsertedLookups.Where(l => l.Id == key).ToList();
+            Assert.True(rows.Count > 0, $"no lookup row written for '{key}'");
+            Assert.Contains(rows, l => l.OpdbIds.Contains("XYZ12-AB34C"));
+        }
+    }
+
     private static string GroupJson(string segment, string name) =>
         JsonSerializer.Serialize(new
         {
