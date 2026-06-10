@@ -41,6 +41,9 @@ negative) it carries.
 | [0028](0028-cloudflare-iac-via-opentofu.md) | Cloudflare IaC via OpenTofu | Accepted |
 | [0029](0029-version-aware-answering.md) | Version-aware answering for multi-edition machines | Accepted |
 | [0030](0030-test-project-naming.md) | Test project naming and structure conventions | Accepted |
+| [0031](0031-document-machine-linking-source-of-truth.md) | Document→Machine linking source of truth | Proposed |
+| [0032](0032-document-edition-scope-model.md) | Document edition-scope model (edition-aware citations) | Proposed |
+| [0033](0033-rag-indexer-batching-and-tpm-capacity.md) | RAG indexer batching parameters and TPM capacity | Accepted |
 
 ## Conventions
 

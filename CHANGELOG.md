@@ -1,11 +1,11 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html).
-Pre-1.0 versions may include breaking changes in any release; the
-catalog schema is not yet considered stable.
+> **Retired 2026-06-10.** This file is no longer maintained. Change history
+> lives in three better-kept artifacts: pull-request descriptions
+> (`gh pr list --state merged`), [`docs/decision-log.md`](docs/decision-log.md),
+> and the committed eval-result trajectory under `data/eval/results/`
+> (visible via `git log --oneline -- data/eval/results/`).
+> Entries below this line are preserved as history through 2026-05-04.
 
 ## [Unreleased]
 
