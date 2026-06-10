@@ -36,3 +36,16 @@
 .suggested-rephrase-text {
     font-style: italic;
 }
+
+/* Clickable variant — same italic / body-2 rhythm as the static text,
+ * left-aligned so it reads as prose rather than a centred action. */
+::deep .suggested-rephrase-button {
+    font-style: italic;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    letter-spacing: normal;
+    justify-content: flex-start;
+    text-transform: none;
+    padding-left: 0;
+    min-width: 0;
+}
