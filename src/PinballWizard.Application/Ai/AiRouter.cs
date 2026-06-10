@@ -837,7 +837,15 @@ public sealed class AiRouter : IAiRouter
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var responseText = response?.Text ?? string.Empty;
+        // The Web renderer is plain-text by design (no MarkupString — XSS
+        // surface stays zero, ADR-0026), so inline markdown links the model
+        // emits ("[Source: OPDB](https://…)") would display as raw syntax.
+        // Strip them to their labels: provenance display belongs to the
+        // Sources cards, which are built from tool-trace citations extracted
+        // off the AgentResponse object below — this transform cannot lose a
+        // citation. Decision: Jim, 2026-06-10 (option a — strip inline,
+        // rely on Sources cards).
+        var responseText = StripInlineMarkdownLinks(response?.Text ?? string.Empty);
 
         // W2-1: which sub-agent (if any) the Wizard dispatched to.
         // Read once from the trace and reused at every downstream
@@ -1048,6 +1056,22 @@ public sealed class AiRouter : IAiRouter
             FoundryThreadId: null,
             RefusalDetail: null,
             Degradation: _degradationContext.Snapshot());
+    }
+
+    // Markdown links in answer prose render as raw "[label](url)" syntax in
+    // the plain-text TokenRenderer. Reduce each to its label; URLs stay
+    // available via the Sources cards (tool-trace citations). `internal` so
+    // tests can pin the transform without a full AiRouter.
+    private static readonly System.Text.RegularExpressions.Regex MarkdownLinkRegex =
+        new(@"\[([^\]]*)\]\(\s*[^)\s]*\s*\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    internal static string StripInlineMarkdownLinks(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("](", StringComparison.Ordinal))
+        {
+            return text;
+        }
+        return MarkdownLinkRegex.Replace(text, "$1");
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin
