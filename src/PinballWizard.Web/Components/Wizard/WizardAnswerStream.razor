@@ -125,7 +125,8 @@
     {
         <RefusalPanel Category="_refusalCategory.Value"
                       Detail="_refusalDetail"
-                      RetryAfterSeconds="_retryAfterSeconds" />
+                      RetryAfterSeconds="_retryAfterSeconds"
+                      QuestionSelected="OnSuggestedRephraseSelectedAsync" />
     }
 
     @* ── Error state ─────────────────────────────────────────────────────── *@
@@ -474,6 +475,24 @@
         _refusalCategory = null;
         _refusalDetail = null;
         _retryAfterSeconds = null;
+    }
+
+    // ── Suggested rephrase click (from RefusalPanel) ──────────────────────
+
+    // Invoked when the user clicks the SuggestedRephrase button in RefusalPanel.
+    // Resets to Idle, fills the question, and submits — same path as typing and
+    // pressing Ask.  Disabled-while-streaming is implicit: RefusalPanel only
+    // renders in the Refusal state, so this handler can only fire when the
+    // component is already in Refusal (not Streaming/Thinking), and SubmitAsync
+    // guards against non-Idle state internally.
+    private async Task OnSuggestedRephraseSelectedAsync(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question))
+            return;
+
+        ResetToIdle();
+        _question = question;
+        await SubmitAsync().ConfigureAwait(false);
     }
 
     public void Dispose()
