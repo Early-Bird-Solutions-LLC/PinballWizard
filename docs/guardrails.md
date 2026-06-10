@@ -258,6 +258,8 @@ Drift is detected by re-asking the same questions on a schedule. The cadences:
 
 The monthly cadence is the most easily-skipped and the most valuable. Block calendar time for it; treat the recurring slot as load-bearing, not optional.
 
+An eval metric dismissed as a "measurement artifact" in two consecutive committed eval runs must, in the next PR touching the harness, either get its measurement fixed or be removed — a metric the team has learned to ignore is anti-observability.
+
 ## When this document is wrong
 
 If a guardrail in this document obstructs delivery of the seven main goals — *not* obstructs convenience, but actually obstructs the goals — the document is wrong, not the goals. In that case:

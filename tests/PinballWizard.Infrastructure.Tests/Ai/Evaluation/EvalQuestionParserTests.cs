@@ -224,6 +224,35 @@ public sealed class EvalQuestionParserTests
         Assert.Equal(["Pro", "Premium/LE"], q.RequiredEditions);
     }
 
+    // ── acceptable_sub_agents round-trip (AB#259) ───────────────────────
+
+    [Fact]
+    public void Parse_AcceptableSubAgents_RoundTrip()
+    {
+        // Verifies that acceptable_sub_agents deserialises correctly and
+        // that rows without the field default to null (absent = exact-match
+        // only; default behavior is preserved).
+        var lines = new[]
+        {
+            // Row with acceptable_sub_agents
+            """{"id":"ev-001","question":"What is the theme?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false,"acceptable_sub_agents":["Wizard"]}""",
+            // Row without acceptable_sub_agents (default null)
+            """{"id":"ev-002","question":"How does multiball work?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false}""",
+        };
+
+        var result = EvalQuestionParser.Parse(lines, "test");
+
+        Assert.Equal(2, result.Count);
+
+        var withAnnotation = result[0];
+        Assert.NotNull(withAnnotation.AcceptableSubAgents);
+        Assert.Single(withAnnotation.AcceptableSubAgents!);
+        Assert.Equal("Wizard", withAnnotation.AcceptableSubAgents![0]);
+
+        var withoutAnnotation = result[1];
+        Assert.Null(withoutAnnotation.AcceptableSubAgents);
+    }
+
     [Fact]
     public void ParseFile_ValidFile_RoundTrip()
     {
