@@ -332,7 +332,7 @@ public sealed class MachineGroundingTool
             // clarifying question (manufacturer + year) for version-dependent
             // questions. Only populated via the lookup-row path.
             var titleCollisions = await ResolveTitleCollisionsAsync(
-                match, resolvedLookup, resolvedLookupBestIdx, siblings, cancellationToken).ConfigureAwait(false);
+                match, resolvedLookup, resolvedLookupBestIdx, cancellationToken).ConfigureAwait(false);
 
             return new MachineGroundingDto(
                 OpdbId: match.Id,
@@ -419,7 +419,6 @@ public sealed class MachineGroundingTool
         Machine primary,
         MachineTitleLookup? resolvedLookup,
         int bestIdx,
-        IReadOnlyList<MachineSiblingGroundingDto> siblings,
         CancellationToken cancellationToken)
     {
         // No lookup row means we came in via the cross-partition fallback.
@@ -427,15 +426,10 @@ public sealed class MachineGroundingTool
         if (resolvedLookup is null || resolvedLookup.OpdbIds.Count <= 1)
             return [];
 
-        // Build a fast exclusion set: GroupIds already covered by Siblings.
-        // Any collision whose fetched machine shares one of these GroupIds
-        // is already visible to the agent via Siblings.
+        // Exclusion set: the primary's GroupId. Siblings share it by
+        // construction (same OPDB group), so any collision candidate in
+        // this group is already visible to the agent via Siblings.
         var siblingGroupIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var s in siblings)
-        {
-            // Siblings share the primary's GroupId by construction (same OPDB group).
-            // Capture the primary GroupId once; all siblings implicitly share it.
-        }
         if (!string.IsNullOrEmpty(primary.GroupId))
             siblingGroupIds.Add(primary.GroupId);
 

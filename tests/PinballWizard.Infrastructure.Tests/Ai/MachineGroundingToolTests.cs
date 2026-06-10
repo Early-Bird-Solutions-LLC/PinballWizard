@@ -252,15 +252,19 @@ public sealed class MachineGroundingToolTests
         var repo = Substitute.For<IMachineRepository>();
         repo.GetByOpdbIdAsync("GRBN-G1995", "sega", Arg.Any<CancellationToken>())
             .Returns(NewMachine("GRBN-G1995", "Godzilla", 1995));
+        repo.GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>())
+            .Returns(NewMachine("GRBN-G2021", "Godzilla", 2021));
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("GRBN-G1995", result!.OpdbId);
-        // Only the first entry's GetByOpdbIdAsync should fire — no
-        // second-entry follow-up unless the first one was missing.
-        await repo.DidNotReceive().GetByOpdbIdAsync("GRBN-G2021", "stern", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing cross-group entry is now
+        // deliberately fetched and surfaced via TitleCollisions so the agent
+        // can disambiguate ("Sega 1995 or Stern 2021?").
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GRBN-G2021", result.TitleCollisions[0].OpdbId);
     }
 
     // ── ADR-0029 S5: sibling-returning behavior ───────────────────────
@@ -488,6 +492,13 @@ public sealed class MachineGroundingToolTests
                 ManufacturerDisplayName = "Stern Pinball", Title = "Godzilla", Year = 2021,
                 FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
             });
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>())
+            .Returns(new Machine
+            {
+                Id = "G5po2-MeP6B", PartitionKey = "sega", GroupId = "G5po2",
+                ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+                FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            });
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
         var result = await tool.GetMachineByTitleAsync("Stern Godzilla", CancellationToken.None);
@@ -495,8 +506,11 @@ public sealed class MachineGroundingToolTests
         Assert.NotNull(result);
         Assert.Equal("GweeP-Ml9pZ", result!.OpdbId);
         Assert.Equal("Stern Pinball", result.Manufacturer);
-        // Sega's GetByOpdbIdAsync must never be called.
-        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing Sega entry is fetched for
+        // TitleCollisions (cross-group disambiguation) — but it must never be
+        // the RESULT. The qualifier still wins the resolution.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("G5po2-MeP6B", result.TitleCollisions[0].OpdbId);
     }
 
     [Fact]
@@ -569,9 +583,18 @@ public sealed class MachineGroundingToolTests
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Stern Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
 
+        var segaGodzilla = new Machine
+        {
+            Id = "G5po2-MeP6B", PartitionKey = "sega", GroupId = "G5po2",
+            ManufacturerDisplayName = "Sega", Title = "Godzilla", Year = 1998,
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
         var repo = Substitute.For<IMachineRepository>();
         repo.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>())
             .Returns(sternPro);
+        repo.GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>())
+            .Returns(segaGodzilla);
         repo.GetSiblingsByGroupIdAsync("GweeP", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(sternPro, sternPremiumLe));
 
@@ -582,8 +605,12 @@ public sealed class MachineGroundingToolTests
         Assert.Equal("GweeP-MW95j", result!.OpdbId);
         Assert.Equal("Stern Pinball", result.Manufacturer);
         Assert.Equal(2021, result.Year);
-        // Sega must never be fetched.
-        await repo.DidNotReceive().GetByOpdbIdAsync("G5po2-MeP6B", "sega", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: Sega IS fetched — but only to be
+        // surfaced in TitleCollisions (different OPDB group, same title).
+        // The RESULT must still never be Sega.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("G5po2-MeP6B", result.TitleCollisions[0].OpdbId);
+        Assert.Equal(1998, result.TitleCollisions[0].Year);
         // Siblings (Premium/LE) are surfaced for the clarifying question path.
         Assert.Single(result.Siblings);
         Assert.Equal("GweeP-Ml9pZ", result.Siblings[0].OpdbId);
@@ -807,7 +834,10 @@ public sealed class MachineGroundingToolTests
 
         Assert.NotNull(result);
         Assert.Equal("GRbPY-MePOP", result!.OpdbId);
-        await machines.DidNotReceive().GetByOpdbIdAsync("GR7ZX-MQ23b", "stern", Arg.Any<CancellationToken>());
+        // ADR-0029 follow-up 2026-06-10: the losing Stern entry is surfaced
+        // via TitleCollisions for cross-group disambiguation.
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GR7ZX-MQ23b", result.TitleCollisions[0].OpdbId);
     }
 
     [Fact]
