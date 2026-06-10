@@ -207,6 +207,22 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = if (deployPha
   }
 }
 
+// Key-encryption key for the wizard app's Data Protection key ring
+// (keys live in the 'dataprotection' blob container, wrapped with this
+// key — see dataProtectionContainer below for the why).
+resource dataProtectionKek 'Microsoft.KeyVault/vaults/keys@2024-04-01-preview' = if (deployPhase2) {
+  parent: keyVault
+  name: 'pinwiz-dataprotection'
+  properties: {
+    kty: 'RSA'
+    keySize: 2048
+    keyOps: [
+      'wrapKey'
+      'unwrapKey'
+    ]
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Container Registry (Basic)
 // -----------------------------------------------------------------------------
@@ -311,6 +327,33 @@ resource acaIdentityFoundryAiUser 'Microsoft.Authorization/roleAssignments@2022-
   name: guid(foundry.id, '${namePrefix}-aca-id-${environment}', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Storage: Blob Data Contributor (ba92f5b4-...) so the wizard app can
+// read/write the Data Protection key ring blob in the 'dataprotection'
+// container. Storage-account scope matches the existing single-account
+// posture; the account holds only pinwiz workload containers.
+resource acaIdentityStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: storage
+  name: guid(storage.id, '${namePrefix}-aca-id-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Key Vault: Crypto Service Encryption User (e147488a-...) so the wizard
+// app can wrap/unwrap the Data Protection key ring with the
+// pinwiz-dataprotection key (dataProtectionKek).
+resource acaIdentityKvCryptoUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: keyVault
+  name: guid(keyVault.id, '${namePrefix}-aca-id-${environment}', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
     principalId: acaIdentity.?properties.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
@@ -631,6 +674,22 @@ resource pinwizProcessedContainer 'Microsoft.Storage/storageAccounts/blobService
 resource pinwizPhotosContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
   parent: blobService
   name: 'pinwiz-photos'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// ASP.NET Core Data Protection key ring for the wizard Blazor app.
+// Blazor Server on Container Apps requires the key ring persisted to a
+// location every replica can read (keys encrypted at rest with a Key
+// Vault key) — otherwise antiforgery tokens and circuit handshakes
+// minted by one replica fail to decrypt on another, killing all
+// interactivity (observed live 2026-06-10 at 2 replicas). Per the
+// documented setup: learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+// § Azure Container Apps.
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
+  parent: blobService
+  name: 'dataprotection'
   properties: {
     publicAccess: 'None'
   }
@@ -1655,6 +1714,16 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
         targetPort: 8080
         transport: 'http'
         allowInsecure: false
+        // Blazor Server circuits are stateful per replica: every request
+        // for a session MUST land on the replica that owns the circuit.
+        // Microsoft's documented ACA setup for Blazor ("you must enable
+        // sticky sessions" — learn.microsoft.com/azure/container-apps/dotnet-overview
+        // § Configure Blazor Server) requires session affinity; without it,
+        // scaling past 1 replica killed all interactivity on 2026-06-10.
+        // Requires activeRevisionsMode 'Single' (already the case above).
+        stickySessions: {
+          affinity: 'sticky'
+        }
         customDomains: empty(wizardCustomDomain) ? [] : (wizardCustomDomainCertReady ? [
           {
             name: wizardCustomDomain
@@ -1703,6 +1772,26 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               // The value matches the Aspire registration name "pinwiz-api" in AppHost.
               name: 'services__pinwiz-api__http__0'
               value: 'http://${apiContainerAppName}'
+            }
+            {
+              // Pins DefaultAzureCredential to the shared UAMI (same pattern
+              // as the Api app) so the Data Protection wiring below can reach
+              // blob storage + Key Vault.
+              name: 'AZURE_CLIENT_ID'
+              value: acaIdentity.?properties.clientId ?? ''
+            }
+            {
+              // Data Protection key ring blob (see dataProtectionContainer).
+              // Presence of both DataProtection__* values activates the
+              // PersistKeysToAzureBlobStorage + ProtectKeysWithAzureKeyVault
+              // wiring in the Web app's Program.cs; absent (local dev) the
+              // app keeps the default ephemeral key ring.
+              name: 'DataProtection__KeyRingBlobUri'
+              value: 'https://${storageAccountName}.blob.${az.environment().suffixes.storage}/dataprotection/keyring.xml'
+            }
+            {
+              name: 'DataProtection__KeyVaultKeyUri'
+              value: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/keys/pinwiz-dataprotection'
             }
           ]
         }

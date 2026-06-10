@@ -292,6 +292,38 @@ Mirrors [ADR-0025](0025-cosmos-for-user-delight.md)'s pattern exactly:
 
 Plus contract tests (`AnswerChunkContractTests`, `RefusalDetailContractTests`, `CitationContractTests`, `RefusalPanelPluralityTests`) for mechanical drift detection — same posture as the Cosmos track's `IndexingPolicyContractTests` / `CosmosOptionsTests`.
 
+## Follow-up 2026-06-10 — multi-replica hosting: session affinity + shared Data Protection key ring
+
+Scaling the wizard Container App past one replica killed all
+interactivity: the page prerendered, but every Blazor circuit handshake
+failed (`AntiforgeryValidationException: the key … was not found in the
+key ring`) because antiforgery/circuit tokens minted by one replica
+could not be decrypted by another — each replica held its own ephemeral
+Data Protection key ring, and ingress had no session affinity. The site
+served a dead prerender: no answers, nothing clickable.
+
+This ADR's Blazor Web App decision implicitly assumed the documented
+ACA hosting setup, which was never provisioned. Microsoft's guidance
+(learn.microsoft.com/azure/container-apps/dotnet-overview § Configure
+Blazor Server; learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+§ Azure Container Apps) requires BOTH:
+
+1. **Ingress session affinity** (`stickySessions.affinity: 'sticky'`,
+   single-revision mode) — circuits are stateful per replica; every
+   request for a session must land on the circuit's owner. Even Azure
+   SignalR Service does not remove this for Blazor (it needs
+   `ServerStickyMode.Required` for the same reason).
+2. **Shared Data Protection key ring** — persisted to the
+   `dataprotection` blob container and wrapped with the
+   `pinwiz-dataprotection` Key Vault key, via the shared UAMI
+   (`AZURE_CLIENT_ID`). Keeps antiforgery/circuit tokens valid across
+   replicas, restarts, and deploys.
+
+Both are now provisioned in `infra/modules/shared.bicep` (ingress
+stickySessions, blob container, KV key, two role assignments) and wired
+in the Web app's `Program.cs`, gated on the `DataProtection:*` config so
+local dev keeps the ephemeral ring. Scale stays 1–3 replicas.
+
 ## References
 
 - [`architecture-v2.md`](../architecture-v2.md) § 7.1 — the user-delight revisit triggers (200ms p95, RU cost dominance) this ADR's `pinwiz.ai.first_token_ms` instrument makes measurable for the streaming path
