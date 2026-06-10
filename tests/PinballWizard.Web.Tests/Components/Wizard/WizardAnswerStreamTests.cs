@@ -446,6 +446,102 @@ public sealed class WizardAnswerStreamTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // SuggestedRephrase_click_submits_rephrase_as_new_question
+    //
+    // When the Wizard is in the Refusal state and the user clicks the
+    // SuggestedRephrase button inside RefusalPanel, WizardAnswerStream must
+    // reset to Idle, set the rephrase as the new question, and submit — the
+    // same path as typing the question and pressing Ask.  This confirms the
+    // EventCallback wire-up: RefusalPanel.QuestionSelected → OnSuggestedRephraseSelectedAsync.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SuggestedRephrase_click_submits_rephrase_as_new_question()
+    {
+        const string OriginalQuestion = "What is the best basketball player?";
+        const string RephraseText     = "What service bulletins exist for Stern Godzilla?";
+        const string RephraseAnswer   = "Here are the Stern Godzilla service bulletins.";
+
+        // The RefusalDetail carries the SuggestedRephrase that will be shown as
+        // a clickable button. WizardAnswerStream stores _refusalDetail from
+        // ApplyFinal(answer.RefusalDetail), so we populate it on the Final chunk.
+        var refusalDetail = new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: null,
+            SuggestedRephrase: RephraseText);
+
+        var refusalAnswerWithDetail = new WizardAnswer(
+            Text: string.Empty,
+            Citations: [],
+            SubAgentUsed: "wizard",
+            Confidence: 0.0,
+            Escalated: false,
+            IsRefusal: true,
+            RefusalCategory: RefusalCategory.OutOfScope,
+            PromptVersion: "v1.test",
+            FoundryThreadId: null,
+            RefusalDetail: refusalDetail);
+
+        // Second call: a successful answer to the rephrase.
+        var rephraseAnswer = BuildAnswer(text: RephraseAnswer);
+
+        var callCount = 0;
+        var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    // First call — refusal with detail.
+                    return ToAsyncEnumerable([
+                        new AnswerChunk.Refusal(RefusalCategory.OutOfScope, "Out of scope."),
+                        new AnswerChunk.Final(refusalAnswerWithDetail),
+                    ]);
+                }
+                // Second call — successful answer for the rephrase.
+                return ToAsyncEnumerable([
+                    new AnswerChunk.TextDelta(RephraseAnswer),
+                    new AnswerChunk.Final(rephraseAnswer),
+                ]);
+            });
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
+            p.Add(c => c.Question, OriginalQuestion));
+
+        // 1. Wait for the RefusalPanel to appear (first call = Refusal state).
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='refusal-panel']"),
+            timeout: TimeSpan.FromSeconds(5));
+
+        // 2. The SuggestedRephrase button must be visible and keyboard-operable.
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='suggested-rephrase-button']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        // 3. Click the rephrase button — triggers OnSuggestedRephraseSelectedAsync.
+        var btn = cut.Find("[data-testid='suggested-rephrase-button']");
+        await cut.InvokeAsync(() => btn.Click());
+
+        // 4. After re-submission the rephrase answer text must appear.
+        cut.WaitForAssertion(
+            () => Assert.Contains(RephraseAnswer, cut.Markup, StringComparison.OrdinalIgnoreCase),
+            timeout: TimeSpan.FromSeconds(5));
+
+        // 5. RefusalPanel must be gone — now in Streaming/Complete, not Refusal.
+        cut.WaitForAssertion(
+            () => Assert.Empty(cut.FindAll("[data-testid='refusal-panel']")),
+            timeout: TimeSpan.FromSeconds(5));
+
+        // 6. StreamAsync was called twice: original + rephrase.
+        Assert.Equal(2, callCount);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // ToolCallStarted_renders_ToolCallBreadcrumb_ToolCallCompleted_hides_it
     // ──────────────────────────────────────────────────────────────────────
 
