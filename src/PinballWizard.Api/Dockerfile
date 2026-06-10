@@ -40,6 +40,14 @@ USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .
 
+# Runtime seed data: the landing endpoint reads
+# data/seeds/wizard_seed_questions.v1.json and the refusal-recovery path
+# reads community_resources.v1.json / featured_machines.v1.json, all
+# resolved relative to the working directory (/app). Without this COPY
+# the landing endpoint 500s on every call and the Web app silently
+# serves its compiled-in fallback (observed live 2026-06-10).
+COPY --chown=pinwiz:pinwiz data/seeds/ data/seeds/
+
 # Internal ACA ingress: the Web app calls this service over plain HTTP within
 # the ACA environment. ACA handles any TLS termination at the environment boundary.
 ENV ASPNETCORE_URLS=http://+:8080 \
