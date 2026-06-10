@@ -86,6 +86,32 @@ public sealed class ConfidenceCalculatorTests
     }
 
     [Fact]
+    public void Compute_TwelveParagraphsOneCitation_JustPassesThreshold()
+    {
+        // The exact calibration boundary: ceil(12/4) = 3 expected,
+        // 1/3 ≈ 0.333 → composite ≈ 0.657, a hair above 0.65. Pins the
+        // ParagraphsPerExpectedCitation = 4 constant — a silent change to
+        // 3 or 5 shifts this boundary and fails here.
+        var calc = new ConfidenceCalculator();
+        var signals = calc.Compute(Paragraphs(12), [OpdbCitation]);
+
+        Assert.Equal(1.0 / 3.0, signals.CitationCoverage, precision: 6);
+        Assert.True(signals.Composite() >= 0.65);
+    }
+
+    [Fact]
+    public void Compute_ThirteenParagraphsOneCitation_JustRefuses()
+    {
+        // First refusing length: ceil(13/4) = 4 expected, 1/4 = 0.25 →
+        // composite ≈ 0.597 < 0.65.
+        var calc = new ConfidenceCalculator();
+        var signals = calc.Compute(Paragraphs(13), [OpdbCitation]);
+
+        Assert.Equal(0.25, signals.CitationCoverage, precision: 6);
+        Assert.True(signals.Composite() < 0.65);
+    }
+
+    [Fact]
     public void Compute_SixteenParagraphsOneCitation_SprawlStillRefuses()
     {
         // The safety gradient must survive: a sprawling answer with one

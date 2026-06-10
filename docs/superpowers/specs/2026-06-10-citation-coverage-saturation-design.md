@@ -18,7 +18,7 @@ coverage = min(1.0, citations / ceil(paragraphs / 4.0))
 
 - `ParagraphsPerExpectedCitation = 4`, a named private const and the single tuning knob.
 - Zero-citation and empty-answer paths unchanged (0.0 → epsilon floor in `ConfidenceSignals.Composite` → refusal). The "plausible answer with zero citations must not pass" invariant is untouched.
-- Calibration: 6-para/1-cite → 0.50 → confidence ≈ 0.75 (answers); 12-para/1-cite → 0.33 → ≈ 0.65 boundary (refuses). Safety gradient for sprawling thin-cited answers is preserved.
+- Calibration: 6-para/1-cite → 0.50 → confidence ≈ 0.75 (answers); 12-para/1-cite → 0.33 → composite 0.657 (passes by a hair); 13-para/1-cite → 0.25 → composite 0.597 (refuses). The refusal boundary for single-citation answers sits at exactly 13 paragraphs; the safety gradient for sprawling thin-cited answers is preserved.
 
 Alternatives rejected: binary presence (collapses the safety gradient — a long thinly-cited answer scores 0.95); entity-level coverage (most faithful to the ADR definition but needs machine-name detection in prose — more code, brittle, larger eval-risk surface; revisit if claim-level extraction lands in Phase 6+).
 

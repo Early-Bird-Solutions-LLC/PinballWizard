@@ -195,9 +195,11 @@ composite 0.554). Both count against this ADR's own
 citation covers up to four paragraphs
 (`ParagraphsPerExpectedCitation = 4`, the single tuning knob in
 `ConfidenceCalculator`). A 6-paragraph single-citation answer now
-scores 0.5 (composite ≈ 0.75, answers); a 13+-paragraph
-single-citation sprawl still refuses, preserving the thin-grounding
-safety gradient. Zero-citation answers are unchanged (0.0 → epsilon
+scores 0.5 (composite ≈ 0.75, answers). The single-citation refusal
+boundary sits at exactly 13 paragraphs: 12 paragraphs → coverage
+0.333 → composite 0.657 (passes); 13 paragraphs → coverage 0.25 →
+composite 0.597 (refuses) — the thin-grounding safety gradient is
+preserved. Zero-citation answers are unchanged (0.0 → epsilon
 floor → refusal); the "plausible answer with zero citations must not
 pass" invariant is untouched.
 
