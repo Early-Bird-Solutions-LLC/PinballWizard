@@ -373,6 +373,66 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     }
                 }
             }
+
+            // Phase (e): manufacturer-qualified title-lookup rows.
+            // Writes "{mfrToken} {Title}" rows (e.g. "stern godzilla",
+            // "jjp toy story 4", "jersey toy story 4") so getMachineByTitle
+            // resolves manufacturer-prefixed user queries directly via the
+            // fast point-read path instead of falling through to the slow
+            // cross-partition fallback query. GetMatchTokens returns one token
+            // per natural prefix ("jjp", "jersey", "jack"), producing one row
+            // per token — together covering "JJP Toy Story 4", "Jersey Toy
+            // Story 4", "Spooky Halloween", etc.
+            // priorTitle is null — these rows are purely additive and never
+            // participate in rename cleanup (same rationale as phase d).
+            // Sequential for the same lost-update-race protection as phases (c) and (d).
+            if (!isDryRun)
+            {
+                _logger.LogInformation(
+                    "OPDB sync phase (e): writing manufacturer-qualified lookup rows for {BaseMachineCount} base machines.",
+                    editionTokenBases.Count);
+                var mfrLookupNow = _timeProvider.GetUtcNow();
+                foreach (var baseMachine in editionTokenBases.Values)
+                {
+                    if (string.IsNullOrWhiteSpace(baseMachine.Title))
+                    {
+                        continue;
+                    }
+
+                    var mfrTokens = OpdbMachineMapper.GetMatchTokens(baseMachine.PartitionKey);
+                    foreach (var mfrToken in mfrTokens)
+                    {
+                        if (string.IsNullOrWhiteSpace(mfrToken))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            await UpdateTitleLookupAsync(
+                                baseMachine.Id,
+                                baseMachine.PartitionKey,
+                                priorTitle: null,
+                                newTitle: $"{mfrToken} {baseMachine.Title}",
+                                mfrLookupNow,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                ex,
+                                "OPDB sync phase (e): failed to write lookup row '{MfrToken} {Title}' " +
+                                "for machine {MachineId}; row absent until next sync " +
+                                "(cross-partition fallback still resolves queries).",
+                                mfrToken, baseMachine.Title, baseMachine.Id);
+                        }
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
