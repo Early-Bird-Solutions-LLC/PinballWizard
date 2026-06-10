@@ -155,6 +155,51 @@ public sealed class MachineGroundingTool
             // is point-read by (id, partitionKey). Two ~5ms reads vs the
             // pre-PR-5 ~50-150ms cross-partition query.
             var lookup = await _titleLookups.GetByTitleAsync(title, cancellationToken).ConfigureAwait(false);
+
+            // Prefix-strip retry: the agent's [Description] instructs the LLM to
+            // include both the manufacturer AND edition qualifier when re-calling for
+            // a specific edition (e.g. "Stern Godzilla Premium"). However, the sync
+            // service writes rows keyed on bare titles ("godzilla premium") and on
+            // common manufacturer-prefixed titles ("stern godzilla", "godzilla") —
+            // it does NOT write "{mfr} {title} {edition}" rows because the
+            // combinatorial write amplification would be large (N mfr × M editions).
+            // So "stern godzilla premium" is a 404 on the first point-read.
+            //
+            // Recovery: strip the leading whitespace-delimited token and retry, up to
+            // 2 times, stopping on the first hit. The remainder must have ≥ 2 tokens
+            // after stripping so we avoid degenerate single-word collisions
+            // (e.g. "godzilla premium" → "premium" must NOT be tried).
+            // Each retry is one ~5ms point-read, at most 2, only on misses.
+            //
+            // Scoring after a retry hit uses tokens from the ORIGINAL full title so
+            // "stern" still scores manufacturer matchTokens correctly — the stripped
+            // key is only the lookup address, not the scoring input.
+            if (lookup is null || lookup.OpdbIds.Count == 0)
+            {
+                var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                for (var strip = 1; strip <= 2 && lookup is null; strip++)
+                {
+                    var remaining = normalizedTokens.Length - strip;
+                    if (remaining < 2)
+                        break;
+
+                    var retryKey = string.Join(" ", normalizedTokens, strip, remaining);
+                    lookup = await _titleLookups.GetByTitleAsync(retryKey, cancellationToken).ConfigureAwait(false);
+                    if (lookup is not null && lookup.OpdbIds.Count > 0)
+                    {
+                        _logger.LogDebug(
+                            "MachineGroundingTool: prefix-strip retry hit on '{RetryKey}' (original: '{OriginalTitle}', strips={Strip}).",
+                            retryKey, title, strip);
+                    }
+                    else
+                    {
+                        lookup = null; // treat empty OpdbIds as a miss so the loop continues
+                    }
+                }
+            }
+
             Machine? match = null;
             var lookupHit = lookup is not null && lookup.OpdbIds.Count > 0;
 
