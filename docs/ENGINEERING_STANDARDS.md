@@ -491,7 +491,7 @@ The following files exist at the repository root, with non-trivial content:
 | `LICENSE` | MIT. |
 | `CONTRIBUTING.md` | How to set up a dev environment, run tests, submit PRs, the commit convention. |
 | `SECURITY.md` | How to report a vulnerability. Even a hobby project should have this — it signals professionalism. |
-| `CHANGELOG.md` | Auto-generated, human-edited. Follows [Keep a Changelog](https://keepachangelog.com). |
+| `CHANGELOG.md` | Retired 2026-06-10. Preserved as history; see PR descriptions (`gh pr list --state merged`) and [`docs/decision-log.md`](decision-log.md) for change history. |
 | `.gitignore` | Standard .NET template plus `data/`, `*.local.json`, `.vscode/settings.json`. |
 | `.gitattributes` | Line endings: `* text=auto eol=lf`. Lockfiles marked `linguist-generated`. |
 | `.editorconfig` | Formatting rules. The single source of truth. |
@@ -554,7 +554,7 @@ A feature is *done* when:
 - [ ] Logging is in place for the success path and the failure paths.
 - [ ] Configuration is bound through `IOptions<T>` with validation.
 - [ ] The README, architecture doc, or relevant ADR is updated if the change affects them.
-- [ ] A CHANGELOG entry exists (auto-generated from the commit message is fine).
+- [ ] If the change warrants a decision record, [`docs/decision-log.md`](decision-log.md) is updated (CHANGELOG.md is retired; PR descriptions and the decision log are the maintained artifacts).
 - [ ] CI passes, including coverage delta and vulnerability scan.
 - [ ] The author has manually tested the happy path against the live site (or a fixture if live testing isn't appropriate).
 
