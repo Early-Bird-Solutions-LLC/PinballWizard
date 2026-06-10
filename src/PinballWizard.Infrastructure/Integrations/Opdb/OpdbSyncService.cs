@@ -695,8 +695,11 @@ public sealed class OpdbSyncService : IOpdbSyncService
         string? resolved = null;
         try
         {
-            var group = await _client.GetMachineGroupAsync(segment, cancellationToken).ConfigureAwait(false);
-            resolved = string.IsNullOrWhiteSpace(group?.Name) ? null : group!.Name;
+            // GetMachineGroupTitleAsync consults the persistent on-disk cache
+            // first — a cache hit avoids the polite HTTP GET entirely (10 s/call).
+            // On a cold cache the result is stored to disk after each new entry,
+            // so subsequent sync runs skip the ~1,200-request / ~3.5-h re-fetch.
+            resolved = await _client.GetMachineGroupTitleAsync(segment, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
