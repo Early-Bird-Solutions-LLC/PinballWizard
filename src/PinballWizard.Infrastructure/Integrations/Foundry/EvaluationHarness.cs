@@ -305,7 +305,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
             CitationPrecision: citationPrecision,
             CitationRecall: citationRecall,
             CitationCoverage: _coverageEvaluator.Compute(answerText, predictedCitations),
-            SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent),
+            SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent, question.AcceptableSubAgents),
             RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal),
             AnsweredAllEditions: answeredAllEditions,
             HonestSubstitution: honestSubstitution);

@@ -60,4 +60,20 @@ public sealed record EvalQuestion(
     // is not mistaken for dead code and removed.
     [property: JsonPropertyName("franchise_wide_ok")] bool FranchiseWideOk = false,
     [property: JsonPropertyName("expected_outcome")] string ExpectedOutcome = "grounded",
-    [property: JsonPropertyName("required_editions")] IReadOnlyList<string>? RequiredEditions = null);
+    [property: JsonPropertyName("required_editions")] IReadOnlyList<string>? RequiredEditions = null,
+    // AcceptableSubAgents (AB#259): an optional list of predicted sub-agent
+    // names that score as correct in addition to expected_sub_agent. When
+    // absent the evaluator uses exact-match against expected_sub_agent —
+    // the pre-AB#259 default behavior is fully preserved.
+    //
+    // Canonical use case: questions whose answer is plainly available from
+    // OPDB machine data (theme, manufacturer, editions, MSRP-from-record).
+    // The Wizard can answer these directly via getMachineByTitle without
+    // dispatching a sub-agent; that is a CORRECT, EFFICIENT path. Annotate
+    // those rows with acceptable_sub_agents=["Wizard"] so the evaluator
+    // does not score an efficient direct answer as a routing failure.
+    //
+    // Do NOT annotate questions that require corpus retrieval (rules details,
+    // repair procedures, service bulletins) — a direct Wizard answer there
+    // IS a routing miss and must stay scored as such.
+    [property: JsonPropertyName("acceptable_sub_agents")] IReadOnlyList<string>? AcceptableSubAgents = null);
