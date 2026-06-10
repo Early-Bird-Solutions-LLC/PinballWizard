@@ -87,16 +87,23 @@ Each run produces `data/eval/results/wizard.{yyyyMMddTHHmmssZ}.json`
 containing the run metadata + per-question scores + an aggregate
 block. Shape: `EvalRunResult` in
 `src/PinballWizard.Application/Ai/Evaluation/EvalResult.cs`. The
-`aggregate` object holds the four headline metrics:
+`aggregate` object holds the headline metrics; nullable means travel
+with a `*_count` field carrying the denominator (rows where the
+metric was defined — see the three-state refusal semantics above):
 
 ```json
 "aggregate": {
   "question_count": 30,
   "error_count": 0,
-  "citation_precision_mean": 0.86,
-  "citation_recall_mean": 0.74,
-  "subagent_accuracy_mean": 0.93,
-  "refusal_correctness_mean": 1.00
+  "citation_precision_mean": 0.97,
+  "citation_recall_mean": 0.97,
+  "citation_coverage_mean": 0.66,
+  "subagent_accuracy_mean": 0.77,
+  "refusal_correctness_mean": 1.00,
+  "citation_precision_count": 30,
+  "citation_recall_count": 30,
+  "citation_coverage_count": 27,
+  "refusal_correctness_count": 27
 }
 ```
 

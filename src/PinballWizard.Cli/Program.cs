@@ -571,7 +571,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine($"  citation_precision={FormatMean(runResult.Aggregate.CitationPrecisionMean)} " +
                           $"citation_recall={FormatMean(runResult.Aggregate.CitationRecallMean)} " +
                           $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
-                          $"subagent_accuracy={runResult.Aggregate.SubagentAccuracyMean:F3} " +
+                          $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
                           $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
         return;
     }
