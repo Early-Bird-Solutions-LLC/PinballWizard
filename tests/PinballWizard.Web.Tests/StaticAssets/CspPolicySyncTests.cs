@@ -8,42 +8,32 @@ namespace PinballWizard.Web.Tests.StaticAssets;
 // Pins the agreement between the app's inline scripts and the CSP injected
 // at the Cloudflare edge (infra/cloudflare/headers.tf, issue #356).
 //
-// The edge policy allows the app's two inline scripts by SHA-256 hash and
-// the version-pinned Mermaid CDN bundle by exact URL + SRI. None of those
-// values are visible to the compiler — editing an inline script (even
-// whitespace), bumping the Mermaid version, or dropping the integrity
-// attribute silently breaks the agreement, and the failure mode is
-// report-only violations today / a broken page once the policy is promoted
-// to enforced. These tests recompute the hashes from the .razor sources the
-// same way the browser does (exact bytes between <script> and </script>,
-// LF line endings per .gitattributes `eol=lf`) and assert headers.tf
-// carries them.
+// The edge policy allows the app's single inline script (the App.razor
+// theme/motion FOUC bootstrap) by SHA-256 hash. That value is not visible
+// to the compiler — editing the inline script (even whitespace) silently
+// breaks the agreement, and the failure mode is report-only violations
+// today / a broken page once the policy is promoted to enforced. These
+// tests recompute the hash from the .razor source the same way the browser
+// does (exact bytes between <script> and </script>, LF line endings per
+// .gitattributes `eol=lf`) and assert headers.tf carries it.
+//
+// The About-page architecture diagram is a pre-rendered static SVG (no
+// Mermaid CDN script, no inline initialize()) — PreRenderedDiagramTests
+// (same folder) pins that surface; this class pins the CSP <-> source
+// contract.
 //
 // Sibling posture: SelfHostedFontsTests (same folder) pins the no-CDN-fonts
-// decision; this class pins the CSP <-> source contract.
+// decision.
 public sealed class CspPolicySyncTests
 {
     private static readonly Regex InlineScriptRegex = new(
         @"<script(?![^>]*\ssrc=)[^>]*>(?<body>[\s\S]*?)</script>",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static readonly Regex MermaidScriptTagRegex = new(
-        @"<script\s[^>]*src=""(?<url>https://cdn\.jsdelivr\.net/npm/mermaid@[^""]+)""[^>]*>",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     [Fact]
     public void AppRazor_InlineBootstrapScript_HashIsAllowedByEdgePolicy()
     {
         var hashes = InlineScriptHashes(WebFile("Components", "App.razor"));
-
-        var single = Assert.Single(hashes);
-        Assert.Contains($"'{single}'", HeadersTf(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AboutRazor_InlineMermaidInitScript_HashIsAllowedByEdgePolicy()
-    {
-        var hashes = InlineScriptHashes(WebFile("Components", "Pages", "About.razor"));
 
         var single = Assert.Single(hashes);
         Assert.Contains($"'{single}'", HeadersTf(), StringComparison.Ordinal);
@@ -60,7 +50,6 @@ public sealed class CspPolicySyncTests
         var allowed = new[]
         {
             WebFile("Components", "App.razor"),
-            WebFile("Components", "Pages", "About.razor"),
         };
 
         var offenders = Directory
@@ -77,35 +66,6 @@ public sealed class CspPolicySyncTests
     }
 
     [Fact]
-    public void MermaidCdnScript_IsVersionPinned_WithSriIntegrity_AndAllowedByEdgePolicy()
-    {
-        var aboutRazor = File.ReadAllText(WebFile("Components", "Pages", "About.razor"));
-
-        var tag = MermaidScriptTagRegex.Match(aboutRazor);
-        Assert.True(tag.Success, "About.razor must load Mermaid via a version-pinned jsDelivr URL (mermaid@<version>).");
-
-        // SRI + anonymous CORS make a tampered CDN response fail closed
-        // instead of executing (the CSP URL allowance alone doesn't verify
-        // content). crossorigin is required for integrity checks on
-        // cross-origin scripts — without it browsers fail open.
-        //
-        // The full hash literal is asserted (not just the sha384- prefix):
-        // the bundle isn't local, so the test can't recompute it, and a
-        // wrong value would pass a prefix check while silently killing the
-        // diagram in the browser. When bumping the Mermaid pin, recompute
-        // with:  curl -s <pinned-url> | openssl dgst -sha384 -binary | base64
-        // and update About.razor, headers.tf, and this literal together.
-        Assert.Contains(
-            "integrity=\"sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF\"",
-            tag.Value,
-            StringComparison.Ordinal);
-        Assert.Contains("crossorigin=\"anonymous\"", tag.Value, StringComparison.Ordinal);
-
-        // The exact pinned URL must be a script-src source in the edge policy.
-        Assert.Contains(tag.Groups["url"].Value, HeadersTf(), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void EdgePolicy_ScriptSrc_StaysStrict()
     {
         // The XSS-load-bearing directive: hashes and the pinned CDN URL only.
@@ -117,6 +77,13 @@ public sealed class CspPolicySyncTests
         Assert.DoesNotContain("'unsafe-inline'", scriptSrc, StringComparison.Ordinal);
         Assert.DoesNotContain("'unsafe-eval'", scriptSrc, StringComparison.Ordinal);
         Assert.DoesNotContain("'unsafe-hashes'", scriptSrc, StringComparison.Ordinal);
+
+        // Since the Mermaid CDN allowance was removed (pre-rendered SVG,
+        // 2026-06-11 decision-log entry), no third-party script host belongs
+        // in script-src at all. Reintroducing one is a deliberate decision,
+        // not a drive-by — it reopens the supply-chain surface SRI existed
+        // to mitigate.
+        Assert.DoesNotContain("https://", scriptSrc, StringComparison.Ordinal);
     }
 
     [Fact]

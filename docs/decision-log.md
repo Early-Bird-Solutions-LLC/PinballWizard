@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-11 — Pre-rendered SVG replaces client-side Mermaid on the About page
+
+**Decision:** The `/about` architecture diagram is a pre-rendered SVG committed at `src/PinballWizard.Web/wwwroot/img/about-architecture.svg`, served statically via `MudImage`. The diagram source of truth is [docs/diagrams/about-architecture.mmd](diagrams/about-architecture.mmd) (regeneration command in its header); `PreRenderedDiagramTests` pins SVG ↔ source agreement via a SHA-256 of the `.mmd` embedded as a comment on the SVG's second line, so editing the source without re-rendering fails CI with the expected hash printed. Consequences: About.razor drops `@rendermode InteractiveServer` (it only existed for Mermaid) and its `HeadContent` script block; the edge CSP's `script-src` shrinks to `'self'` + the single App.razor bootstrap hash — no third-party script host remains anywhere in the policy, and `CspPolicySyncTests` now asserts that stays true. Scope: app-served diagrams only (About was the only one); fenced mermaid blocks in `docs/` stay native — GitHub renders them, and they have no CSP or privacy surface.
+
+**Alternatives considered:** (a) Status quo (CDN + version pin + SRI, PR #357) — integrity was closed, but every /about load still leaked visitor IPs to jsDelivr, inconsistent with the repo's self-hosted-fonts precedent (`SelfHostedFontsTests`, citing the Google Fonts GDPR ruling), and shipped a 3.3 MB script for a diagram that changes a few times a year. (b) Self-hosting `mermaid.min.js` — attempted and blocked: the minified bundle false-positives the sanitization scan's PEM private-key rule (loose three-marker match, trivially true across megabyte-long minified lines); admitting it requires narrowing that rule to the canonical dashed PEM form, a security-gate change parked for deliberate review in #356. (c) CSP nonces instead of hashes/URLs — structurally impossible here: the header is a static Cloudflare Transform Rule that cannot mint per-request values (becomes viable only if CSP emission moves to the origin or a Worker). (d) Build-step rendering (regenerate the SVG in CI) — deferred as over-engineering for one diagram; the hash test makes drift loud, which is the part automation would buy.
+
+**Rationale:** Strictly better on every axis the CSP work was optimizing: the only third-party script dependency disappears (supply-chain + privacy), the page sheds its interactive render mode (static content renders at first paint, no circuit), and the diagram becomes exactly as version-controlled as the code (the SVG diff shows in review). The .mmd keeps the diagram editable — this is not a screenshot committed to the repo.
+
+**Revisit when:** an app-served diagram needs interactivity (pan/zoom/click-through), or the count of pre-rendered diagrams grows past ~3 (then add the CI render step from (d) instead of hand-running mermaid-cli).
+
+**Related:** issue #356 (CSP rollout + self-host deferral), PR #357 (the pin+SRI predecessor this supersedes), decision-log 2026-06-11 CSP posture entry, `PreRenderedDiagramTests`, `CspPolicySyncTests`.
+
 ## 2026-06-11 — INCIDENT: asks died while answers computed — scale-from-zero, SSE-vs-resilience retry storms, a success-fabricating placeholder, and a citation render race
 
 **Incident:** Through the morning of 2026-06-11 (first failed wake 11:52Z) the deployed site intermittently returned no answer at all, then — after the transport fixes — repeat asks rendered answers with no citations. Three independent transport/render defects cascaded, and a fourth (the placeholder fallback) hid them from users and operators alike.

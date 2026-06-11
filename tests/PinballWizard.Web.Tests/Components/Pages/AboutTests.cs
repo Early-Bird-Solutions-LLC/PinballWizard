@@ -11,14 +11,15 @@ namespace PinballWizard.Web.Tests.Components.Pages;
 // bUnit smoke test.
 //
 // About.razor is a static page (no API call) that renders the engineering
-// story: what the app is, the Mermaid architecture diagram, tech stack, and
+// story: what the app is, the pre-rendered architecture SVG, tech stack, and
 // a GitHub link. Tests assert:
 //   1. The page renders without exception.
 //   2. The primary structural landmarks (heading, intro, diagram, tech list) exist.
 //   3. The GitHub link points to the correct repo URL.
 //
-// Mermaid is injected via HeadContent which bUnit does not execute (no browser);
-// the diagram div is still rendered in the DOM and tested structurally.
+// The diagram is a static SVG served from wwwroot (no client-side render
+// step) — PreRenderedDiagramTests pins the SVG <-> .mmd source contract;
+// this class asserts the page actually embeds it.
 public sealed class AboutTests : AsyncBunitContext
 {
     public AboutTests()
@@ -68,18 +69,20 @@ public sealed class AboutTests : AsyncBunitContext
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 4. Diagram container is present (Mermaid renders client-side)
+    // 4. Diagram renders as the pre-rendered SVG with alt text
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void About_DiagramContainer_IsPresent()
+    public void About_Diagram_RendersThePreRenderedSvg()
     {
         var cut = Render<About>();
 
-        // The diagram wrapper div is always rendered. Mermaid processes the
-        // inner .mermaid div client-side (browser only); bUnit confirms the
-        // structural container exists.
         cut.Find("[data-testid='about-diagram']");
+
+        var img = cut.Find("[data-testid='about-diagram-svg']");
+        Assert.Contains("about-architecture.svg", img.GetAttribute("src"), StringComparison.OrdinalIgnoreCase);
+        Assert.False(string.IsNullOrWhiteSpace(img.GetAttribute("alt")),
+            "The diagram image must carry alt text (WCAG 2.1 AA).");
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -135,15 +138,18 @@ public sealed class AboutTests : AsyncBunitContext
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 7. Manufacturer list is present
-    //    Behavioral: "What we cover" section renders coverage data.
+    // 7. Manufacturer list renders actual coverage data
+    //    Behavioral: "What we cover" section names the covered sources,
+    //    not just an empty container.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void About_ManufacturerList_IsPresent()
+    public void About_ManufacturerList_NamesCoveredSources()
     {
         var cut = Render<About>();
 
-        cut.Find("[data-testid='about-manufacturer-list']");
+        var text = cut.Find("[data-testid='about-manufacturer-list']").TextContent;
+        Assert.Contains("Stern Pinball", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("OPDB", text, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -1,0 +1,27 @@
+%% Architecture diagram for the /about page — SOURCE OF TRUTH.
+
+%% The page serves a pre-rendered SVG (src/PinballWizard.Web/wwwroot/img/
+%% about-architecture.svg), not a client-side Mermaid render — see the
+%% 2026-06-11 decision-log entry "Pre-rendered SVG replaces client-side
+%% Mermaid". PreRenderedDiagramTests pins SVG <-> source agreement via the
+%% SHA-256 of this file embedded as a comment in the SVG.
+
+%% Regenerate after editing (from repo root; needs node + a chromium):
+%%   npx -y @mermaid-js/mermaid-cli -i docs/diagrams/about-architecture.mmd \
+%%     -o src/PinballWizard.Web/wwwroot/img/about-architecture.svg \
+%%     -t neutral -b transparent
+%% then refresh the sha256 comment on the SVG's second line:
+%%   <!-- source: docs/diagrams/about-architecture.mmd sha256:<HASH> -->
+%% where <HASH> = lowercase hex SHA-256 of this file's bytes (LF endings).
+%% The failing test prints the expected value.
+graph TD
+    Browser["Public Web\n(Blazor Web App)"]
+    SSE["API Layer\n(ASP.NET Core SSE)"]
+    App["Application\n(IAiRouter · Azure AI Foundry)"]
+    Infra["Infrastructure\n(10 Scrapers · Cosmos DB · AI Search)"]
+    Azure["Azure Services\n(Cosmos DB Serverless · AI Search Basic\nAzure OpenAI · Container Apps)"]
+
+    Browser -->|"HTTPS / text/event-stream"| SSE
+    SSE --> App
+    App --> Infra
+    Infra --> Azure
