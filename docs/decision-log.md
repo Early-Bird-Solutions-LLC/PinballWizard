@@ -30,6 +30,29 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-11 — INCIDENT: asks died while answers computed — scale-from-zero, SSE-vs-resilience retry storms, a success-fabricating placeholder, and a citation render race
+
+**Incident:** Through the morning of 2026-06-11 (first failed wake 11:52Z) the deployed site intermittently returned no answer at all, then — after the transport fixes — repeat asks rendered answers with no citations. Three independent transport/render defects cascaded, and a fourth (the placeholder fallback) hid them from users and operators alike.
+
+**Root cause (four compounding defects):**
+
+1. **Scale-from-zero cannot serve a 3-minute boot.** The Api Container App ran `minReplicas: 0`; ContainerAppSystemLogs show ~2.5–3 min from KEDA wake to listening. Every wake cycle burned out against client timeouts (observed 11:52Z / 12:23Z / 12:53Z) — the app repeatedly scaled up, missed the window, and scaled back to zero. Boot-time root cause is tracked separately (#361).
+2. **The SSE endpoint never flushed headers before the agent's first chunk.** Time-to-first-byte equaled model first-token latency, so HTTP attempt timeouts measured "the whole answer" instead of "the connection opened."
+3. **Two stacked standard-resilience pipelines retried a non-idempotent LLM run.** ServiceDefaults' `ConfigureHttpClientDefaults` pipeline (50s attempt / 120s total) stacks ON TOP of the per-client pipeline (10s attempt / 30s total). Defect 2 made the 10s attempt timeout fire mid-answer; retries re-ran the agent (cost + load feedback storm), and the user-visible "00:02:00" failure was the outer 120s total giving up.
+4. **Transport failures rode the Wave-1 demo placeholder into production.** `WizardStreamingClient` converted send failures into the hardcoded "Hello world!" demo stream — uncited, confidence 1.0 — rendered as if the Wizard had answered. Users saw garbage, operators saw green, and the day's canary failures read as flakes.
+
+Once transport was healthy, a fifth defect surfaced: **cache-hit answers raced `MudHidden`'s per-instance async JS breakpoint resolution.** A cache hit emits 1 TextDelta + Final in ~1s; `CitationStrip`'s MudHidden wrappers hadn't resolved their breakpoints yet, so citations were present on the wire (proven by raw SSE capture) but absent from the DOM. Measured live: 0 links at +2s, 2 links at +12s. Single-ask canaries never caught it — a single ask is always a cache miss.
+
+**Resolution:** PR #360 — `minReplicas: 1` (stack-deployed 13:27Z). PR #363 — (a) `StartAsync` + an SSE comment preamble flushes headers at accept, restoring attempt-timeout semantics to "headers only"; (b) `RemoveAllResilienceHandlers()` on the streaming client + a retry-disabled pipeline (15s attempt / 30s total) + `HttpClient.Timeout = Infinite`; (c) transport failures now propagate — the demo placeholder is confined to an explicit 503 path. PR #365 — `CitationStrip` breakpoints via CSS media query (960px) instead of MudHidden; a repeat-ask E2E (`AskFlow_RepeatedQuestion_CachedAnswerStillRendersCitations`) pins the cache-hit chunk shape. Verified post-deploy: repeat-ask canary green against the live site (2026-06-11).
+
+**Rule adopted (2026-06-11): fallbacks must not hide failures.** Defect 4 is the canonical violation: a fallback that fabricates success destroys the signal that something is broken, and the underlying defect compounds. Any degraded path must (a) be visibly degraded to the user, (b) never present synthetic/placeholder content as real output, (c) log + meter the underlying failure. Codified as invariant #17 in `.claude/INVARIANTS.md` and a 🔴 check in `/local-review` (error-handling category). A same-day audit of every fallback path found 2 violations (#366 — landing page renders static fallback as live data, which masked #351 for days; #367 — the demo stream itself), 6 review items (#368), and 9 compliant paths (`SearchCorpusTool`'s degradation pattern is the model citizen).
+
+**Lessons:** (1) SSE + standard HTTP resilience is a category error unless headers flush early and retries are off — and retrying a non-idempotent LLM call storms. (2) `ConfigureHttpClientDefaults` resilience stacks on top of per-client handlers; opting out requires `RemoveAllResilienceHandlers`, not different per-client settings. (3) Anything that must be visible at first paint after a fast render needs CSS media queries, not MudHidden (async JS breakpoint per instance). (4) The cache-hit chunk shape (1 TextDelta + Final, ~1s) is a distinct test surface that single-ask canaries never exercise. (5) A masking fallback converts every downstream defect into "flaky" noise — see the rule above.
+
+**Revisit when:** #361 lands a sub-minute boot (revisit `minReplicas`), the resilience packages stabilize `RemoveAllResilienceHandlers` (drop the EXTEXP0001 pragma), or audit remediation (#366–#368) completes.
+
+**Related:** PR #360, PR #363, PR #365; issues #361, #364 (closed by #365), #366, #367, #368; invariant #17 (`.claude/INVARIANTS.md`); ADR-0026 (streaming contract).
+
 ## 2026-06-11 — Docs-only PRs vs. required checks: fully path-filtered workflows report nothing; no-op companions added
 
 **Decision:** Required branch-protection checks whose workflows are path-filtered get a no-op companion workflow with the **same `name:` key and same job name**, triggered on the **inverse path set**, succeeding immediately ([ci-docs-noop.yml](../.github/workflows/ci-docs-noop.yml), [codeql-docs-noop.yml](../.github/workflows/codeql-docs-noop.yml)). The four path lists (two `paths-ignore`, two inverse `paths`) are kept in lockstep — the rule is pinned in comments in all four files.

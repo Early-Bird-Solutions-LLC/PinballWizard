@@ -97,6 +97,12 @@ problems. If you find none of consequence, say so explicitly.
    `catch (Exception) { }` with no log)? Any case where a single bad
    record / page / row would abort the whole run when it shouldn't?
    Any `OperationCanceledException` paths swallowed?
+   Any fallback path that masks the underlying failure — rendering
+   placeholder / synthetic / stale content as if it were live output,
+   or converting a transport failure into fabricated success — is a
+   🔴 (invariant #17: degrade visibly, never fabricate, log + meter
+   the failure). Ask: if the primary path silently died, would anyone
+   know?
 
 4. **Sibling drift**: If this PR copies a sibling pattern (manufacturer
    scrapers, repository implementations, ADRs), diff against the
