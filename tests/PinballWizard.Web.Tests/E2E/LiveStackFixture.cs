@@ -6,18 +6,24 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.E2E;
 
-// Launches the REAL Api + Web apps as separate processes (the same
-// topology ACA runs: Web → service-discovery → Api → live Azure) and
-// tears them down after the E2E collection completes. This is the
-// codified form of the manual verification used during the 2026-06-10
-// incidents — every defect that day lived in a seam no in-process test
-// could see (wire-format casing, circuit handshakes, render-mode
-// activation), which is exactly the gap this fixture closes.
+// Provides the base URL the E2E browser tests drive, in one of two modes:
 //
-// Requires the live-stack env vars (see E2EFactAttribute) and an
-// authenticated Azure credential (az login) — it talks to the real
-// Cosmos / AI Search / Foundry dev stack and each ask costs a real
-// model call. Local-only by design: CI excludes Category=E2E.
+// 1. Deployed-target mode (E2E__BaseUrl set): points at an already-running
+//    deployment — the post-deploy canary in deploy.yml targets the wizard
+//    app's ACA FQDN (no Cloudflare in that path). Nothing is spawned.
+//
+// 2. Local spawn mode (live-stack env vars set): launches the REAL Api +
+//    Web apps as separate processes (the same topology ACA runs: Web →
+//    service-discovery → Api → live Azure) and tears them down after the
+//    collection completes. This is the codified form of the manual
+//    verification used during the 2026-06-10 incidents — every defect
+//    that day lived in a seam no in-process test could see (wire-format
+//    casing, circuit handshakes, render-mode activation, prerender
+//    streaming), which is exactly the gap this fixture closes. Requires
+//    an authenticated Azure credential (az login).
+//
+// Each ask costs a real model call. PR CI excludes Category=E2E; the
+// suite runs locally (tools/e2e/Run-E2E.ps1) and post-deploy (deploy.yml).
 public sealed class LiveStackFixture : IAsyncLifetime
 {
     private Process? _api;
@@ -33,6 +39,20 @@ public sealed class LiveStackFixture : IAsyncLifetime
         {
             // Tests are skipped via E2EFactAttribute; don't pay the
             // process-spawn cost for a fully-skipped collection.
+            return;
+        }
+
+        if (E2EFactAttribute.DeployedBaseUrl is { } deployedBaseUrl)
+        {
+            // Deployed-target mode: drive the running deployment directly.
+            WebBaseUrl = deployedBaseUrl.TrimEnd('/');
+            using var probe = new HttpClient();
+            var alive = await probe.GetAsync($"{WebBaseUrl}/alive");
+            if (alive.StatusCode != HttpStatusCode.OK)
+            {
+                throw new InvalidOperationException(
+                    $"Deployed target {WebBaseUrl}/alive returned {(int)alive.StatusCode} — refusing to run E2E against an unhealthy deployment.");
+            }
             return;
         }
 
