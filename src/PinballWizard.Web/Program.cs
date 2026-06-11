@@ -29,6 +29,7 @@ using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.ServiceDefaults;
+using Polly;
 using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
@@ -145,23 +146,69 @@ builder.Services
         // renders so the prospect doesn't wait for a broken dependency.
         client.Timeout = TimeSpan.FromSeconds(5);
     })
+    // Stacked standard pipelines (this + the ServiceDefaults one) are fine
+    // HERE, unlike the streaming client below: /api/wizard/landing is an
+    // idempotent, cheap GET — retries are safe and the 5s HttpClient.Timeout
+    // above is the effective bound. The asymmetry is deliberate.
     .AddStandardResilienceHandler();
 
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
 // Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")
 // so Aspire injects the correct host in local dev and ACA injects the
-// internal FQDN in Azure. AddStandardResilienceHandler adds standard
-// retry + circuit-breaker from Microsoft.Extensions.Http.Resilience.
+// internal FQDN in Azure.
+//
+// Resilience is deliberately NOT the stock pipeline (2026-06-11 incident):
+// ask:stream is a long-lived SSE response to a NON-IDEMPOTENT request —
+// every send triggers a full multi-agent LLM run on the Api. The stacked
+// defaults (ServiceDefaults' 50s-attempt/120s-total pipeline plus a bare
+// per-client standard handler at 10s/30s) retried that request on attempt
+// timeout, re-running whole agent runs in a feedback storm while the user
+// saw "Wizard is thinking" forever. The client sends with
+// ResponseHeadersRead and the Api flushes an SSE preamble at accept, so a
+// pipeline attempt now completes at headers (~network RTT) — timeouts below
+// bound CONNECTION+HEADERS only, never model latency.
+//
+// EXTEXP0001 suppressed for this statement: RemoveAllResilienceHandlers is
+// marked experimental, but it is the supported opt-out from
+// ConfigureHttpClientDefaults pipelines — the alternative (two stacked
+// retrying pipelines around a non-idempotent LLM call) is precisely the
+// 2026-06-11 incident. The compiler reports the diagnostic at the statement
+// head, so the pragma wraps the full fluent chain.
+#pragma warning disable EXTEXP0001
 builder.Services
     .AddHttpClient<IWizardStreamingClient, WizardStreamingClient>(client =>
     {
         client.BaseAddress = new Uri("https+http://pinwiz-api");
-        // SSE streams can run for seconds; the default 100s timeout is fine
-        // for Wave 1 one-shot answers. Wave 2 PR-S2 (RunStreamingAsync) may
-        // need an infinite timeout — document at that point.
+        // The stream outlives any fixed request timeout (agent answers run
+        // 10s–2min+); HttpClient.Timeout would also cancel mid-stream body
+        // reads. The component owns the user-facing budget via its
+        // CancellationToken; the server always terminates with final+end.
+        client.Timeout = Timeout.InfiniteTimeSpan;
     })
-    .AddStandardResilienceHandler();
+    // Drop the ServiceDefaults pipeline for this client — its retries are
+    // unsafe here (see above) and its 120s total was the "00:02:00" failure
+    // users saw. Replaced wholesale by the handler below.
+    .RemoveAllResilienceHandlers()
+    .AddStandardResilienceHandler(options =>
+    {
+        // Never retry: a duplicate attempt is a duplicate LLM agent run
+        // (cost + latency + Api saturation). The WizardAnswerStream
+        // component owns the single deliberate fallback re-attempt.
+        options.Retry.ShouldHandle = _ => PredicateResult.False();
+        // Headers arrive at request-accept (Api preamble), so this bounds
+        // routing + TLS + dispatch + preamble — never the model. Measured
+        // basis: warm-path header arrival is sub-second (the deploy smoke's
+        // /alive RTT and the canary's ask both confirm), but during the
+        // 2026-06-11 incident a CPU-saturated Api delayed request dispatch
+        // by multiple seconds; 15s rides out that observed worst case
+        // without re-introducing the wait-on-model failure mode.
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(15);
+        // With ResponseHeadersRead the pipeline completes at headers; the
+        // total only matters when the connection itself wedges pre-headers.
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+    });
+#pragma warning restore EXTEXP0001
 
 // ── Foundry + AI Router (gated — mirrors CLI wiring) ──────────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Web project starts cleanly
