@@ -1,0 +1,35 @@
+# Companion to codeql.yml for docs-only PRs — same mechanism and same
+# lockstep rule as ci-docs-noop.yml (see its header comment for the full
+# rationale and the GitHub docs reference). "Analyze (csharp)" is a
+# REQUIRED check; a fully path-filtered codeql.yml never reports it.
+#
+# Note: until now docs-only PRs were accidentally rescued by the GitHub
+# Code Quality preview's dynamic run, which also emits a check named
+# "Analyze (csharp)" with no path filters. That preview is slated to be
+# disabled (issue #356 / decision log 2026-06-11) — this companion makes
+# docs PRs independent of it. The weekly scheduled scan in codeql.yml
+# still covers the default branch regardless of path filters.
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (csharp)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Satisfy required check for docs-only change
+        run: echo "Docs-only change — no C# surface to analyze."
