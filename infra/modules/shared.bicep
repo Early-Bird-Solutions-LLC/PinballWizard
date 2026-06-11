@@ -1290,7 +1290,19 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
         }
       ]
       scale: {
-        minReplicas: 0  // scale to zero when no inbound requests; Web app calls scale it on demand
+        // minReplicas raised 0 → 1 (2026-06-11 outage): scale-from-zero cannot
+        // serve this app. The Api takes ~2.5–3 min from container start to
+        // first listen (ContainerAppSystemLogs: replica scheduled 12:41:37,
+        // first app log 12:44:30), while the Web app's resilience pipeline
+        // gives each ask attempt 10s (IWizardStreamingClient) / 30s (landing).
+        // Every wake cycle therefore burned the KEDA activation on boot, every
+        // ask timed out (wizard.stream.fallback.failed), and KEDA deactivated
+        // back to 0 — three such cycles 11:52Z–12:53Z. The Web app's own scale
+        // block documents the same cold-start rationale; the Api now matches.
+        // Idle cost of the warm replica is the price of a showcase that
+        // answers on the first click. Revisit only with a measured boot-time
+        // fix (the slow startup itself is tracked as a separate issue).
+        minReplicas: 1
         maxReplicas: 3
       }
     }
