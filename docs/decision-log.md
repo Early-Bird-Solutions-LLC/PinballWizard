@@ -30,6 +30,20 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-11 — CSP promoted to enforced; Bot Management JS Detections disabled (the only edge-injected violator)
+
+**Decision:** The edge CSP ([infra/cloudflare/headers.tf](../infra/cloudflare/headers.tf)) is promoted from `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy`, with `upgrade-insecure-requests` reintroduced (Report-Only policies ignore it). In the same change, Bot Management JavaScript Detections is switched off (`enable_js = false`, [infra/cloudflare/waf.tf](../infra/cloudflare/waf.tf)). `CspPolicySyncTests.EdgePolicy_IsEnforced_NotReportOnly` pins the promotion.
+
+**Why JSD had to go first:** JSD injects an *inline* script into every HTML response on the Cloudflare path. Per Cloudflare's docs, the only strict-CSP accommodation is nonce propagation — Cloudflare parses a nonce from the CSP response header and stamps it onto the injected script — which requires a fresh per-request nonce. Our header is a static Transform Rule that cannot mint one (a fixed nonce is cryptographically meaningless), hash allowances for JSD are not supported (open Cloudflare feature request), and nonce-via-`<meta>` is documented as unsupported. Under enforcement the JSD script would simply be refused. Disabling it is safe here: JSD only feeds `cf.bot_management.js_detection.passed` (no WAF rule keys on it — enforcement against bots does not occur from JSD alone), and behind the Cloudflare Access OTP gate the JS bot-signal is near-zero marginal value.
+
+**Promotion evidence:** the policy was tuned to zero violations 2026-06-11 (decision-log entry "CSP posture", PR #357) and simulated flat-zero across all public routes; the scoped-CSS bundle added by PR #372 is same-origin (`style-src 'self'`); the remaining DevTools noise on pinwiz.ai was exclusively the JSD inline script, removed by this change. The §7.2 week-long soak was shortened deliberately: with no report-uri receiver, soak produces no signal a re-run simulation doesn't.
+
+**Alternatives considered:** (a) Keep Report-Only forever — noise + zero protection, rejected (an evaluator inspecting headers sees a policy that never enforces). (b) Enforce with `'unsafe-inline'` to accommodate JSD — guts the XSS-load-bearing directive, explicitly discouraged by Cloudflare, rejected. (c) Worker-minted per-request nonce — the correct public-launch design if JSD is wanted back; deferred, tracked in #356. (d) Keep JSD and accept the console error under enforcement — silently broken bot signal + permanent DevTools noise, rejected.
+
+**Revisit when:** public launch (JSD value increases without the Access gate — revisit the Worker-nonce option), or Cloudflare ships hash support for JSD injection.
+
+**Related:** issue #356, PR #357 (tuning), PR #372 (scoped-CSS bundle), CLOUDFLARE_PRELAUNCH_CHECKLIST §7.2.
+
 ## 2026-06-11 — Pre-rendered SVG replaces client-side Mermaid on the About page
 
 **Decision:** The `/about` architecture diagram is a pre-rendered SVG committed at `src/PinballWizard.Web/wwwroot/img/about-architecture.svg`, served statically via `MudImage`. The diagram source of truth is [docs/diagrams/about-architecture.mmd](diagrams/about-architecture.mmd) (regeneration command in its header); `PreRenderedDiagramTests` pins SVG ↔ source agreement via a SHA-256 of the `.mmd` embedded as a comment on the SVG's second line, so editing the source without re-rendering fails CI with the expected hash printed. Consequences: About.razor drops `@rendermode InteractiveServer` (it only existed for Mermaid) and its `HeadContent` script block; the edge CSP's `script-src` shrinks to `'self'` + the single App.razor bootstrap hash — no third-party script host remains anywhere in the policy, and `CspPolicySyncTests` now asserts that stays true. Scope: app-served diagrams only (About was the only one); fenced mermaid blocks in `docs/` stay native — GitHub renders them, and they have no CSP or privacy surface.

@@ -88,7 +88,18 @@ resource "cloudflare_ruleset" "zone_waf_managed" {
 resource "cloudflare_bot_management" "this" {
   zone_id = var.zone_id
 
-  enable_js = true
+  # JavaScript Detections OFF while the enforced CSP is hash-strict and the
+  # site sits behind Cloudflare Access (issue #356, decision-log 2026-06-11).
+  # JSD injects an INLINE script into every HTML response; Cloudflare's only
+  # documented strict-CSP accommodation is nonce propagation (it stamps the
+  # nonce parsed from the CSP response header onto the injected script),
+  # which requires a fresh per-request nonce — impossible from our static
+  # Transform Rule header — and hash allowances for JSD are not supported.
+  # Behind the Access OTP gate the JS bot-signal is near-zero marginal value
+  # (no WAF rule keys on js_detection.passed). Revisit at public launch:
+  # options are a Worker-minted per-request nonce or accepting the lost
+  # signal.
+  enable_js = false
 
   # Blocks AI-training crawlers (GPTBot, CCBot, …) only. Verified bots
   # (Googlebot, Bingbot, social link-preview fetchers) are exempt via

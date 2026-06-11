@@ -39,9 +39,16 @@ resource "cloudflare_ruleset" "security_response_headers" {
             operation = "set"
             value     = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
           }
-          # CSP: starts in Report-Only mode. Promote to enforced
-          # Content-Security-Policy header after a week of clean reports.
-          # See CLOUDFLARE_PRELAUNCH_CHECKLIST.md §7.2 for the staged rollout.
+          # CSP: ENFORCED (promoted from Report-Only 2026-06-11 per the §7.2
+          # staged rollout — see CLOUDFLARE_PRELAUNCH_CHECKLIST.md and the
+          # decision-log entry of the same date). Promotion evidence: the
+          # policy simulated flat-zero violations across all public routes
+          # since the 2026-06-11 tuning, and the one edge-injected violator
+          # (Bot Management JS Detections' inline script) was switched off in
+          # waf.tf in the same change — a static Transform Rule cannot mint
+          # the per-request nonce JSD's strict-CSP accommodation requires.
+          # CspPolicySyncTests pins this header name: demoting back to
+          # Report-Only is a deliberate decision, not a drive-by edit.
           #
           # Tuned 2026-06-11 (issue #356) to zero violations against the real
           # app — the original 'self'-everything policy produced ~48 report-only
@@ -71,7 +78,7 @@ resource "cloudflare_ruleset" "security_response_headers" {
           #     same-origin wss:, but that is not uniform across engines and
           #     a blocked circuit means a dead page. Scoped to the host —
           #     never blanket wss:.
-          "Content-Security-Policy-Report-Only" = {
+          "Content-Security-Policy" = {
             operation = "set"
             value = join("; ", [
               "default-src 'self'",
@@ -84,16 +91,16 @@ resource "cloudflare_ruleset" "security_response_headers" {
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
-              # upgrade-insecure-requests intentionally absent: the browser
-              # ignores it in a Report-Only policy and logs a console warning
-              # on every load. Reintroduce it when the policy is promoted to
-              # an enforced Content-Security-Policy header (§7.2 rollout).
+              # Reintroduced at enforcement promotion per the §7.2 rollout
+              # (a Report-Only policy ignores it and warns on every load —
+              # that is why it was absent during the tuning phase).
+              "upgrade-insecure-requests",
               # report-uri intentionally absent: the app never implemented a
               # /_csp-reports receiver, so every violation report 400'd —
               # pure console noise on each page load (observed 2026-06-10).
               # Violations remain visible in DevTools > Issues. If reporting
-              # is wanted for the staged enforcement rollout (§7.2), add a
-              # receiving endpoint first, then restore this directive.
+              # is wanted post-enforcement, add a receiving endpoint first,
+              # then restore this directive.
             ])
           }
           # Strip identifying server headers if the origin returns them.

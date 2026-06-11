@@ -87,6 +87,24 @@ public sealed class CspPolicySyncTests
     }
 
     [Fact]
+    public void EdgePolicy_IsEnforced_NotReportOnly()
+    {
+        // Promoted 2026-06-11 (§7.2 rollout, issue #356) after the policy
+        // simulated flat-zero violations and the JSD inline script — the one
+        // edge-injected violator — was disabled in waf.tf. Demoting back to
+        // Report-Only removes real protection and is a deliberate decision,
+        // not a drive-by edit.
+        var tf = HeadersTf();
+
+        Assert.Contains("\"Content-Security-Policy\"", tf, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content-Security-Policy-Report-Only", tf, StringComparison.Ordinal);
+
+        // Enforced policies upgrade mixed content; Report-Only ones ignore
+        // the directive (why it was absent during the tuning phase).
+        Assert.Contains("upgrade-insecure-requests", tf, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void EdgePolicy_CarriesTheBlazorBaselineDirectives()
     {
         // object-src 'none' is in every Microsoft-recommended Blazor policy;
