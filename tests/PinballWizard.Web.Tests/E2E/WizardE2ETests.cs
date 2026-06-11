@@ -101,6 +101,37 @@ public sealed class WizardE2ETests : IAsyncLifetime
         var page = await NewPageAsync();
         await page.GotoAsync($"{_stack.WebBaseUrl}/wizard", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
+        await AskOnceAndAssertCitedAsync(page);
+    }
+
+    [E2EFact]
+    public async Task AskFlow_RepeatedQuestion_CachedAnswerStillRendersCitations()
+    {
+        // #364: a semantic-cache hit replays the answer as a single
+        // TextDelta + Final within ~1s — a chunk shape the single-ask test
+        // never exercises (its first ask is always a cache miss). The
+        // citation strip's MudHidden breakpoint resolution raced exactly
+        // such fast answers: a "Sources" header rendered with no cards for
+        // several seconds. The strip is CSS-only now; this test pins the
+        // cached path by asking the SAME question twice in one session and
+        // requiring citations both times.
+        var page = await NewPageAsync();
+        await page.GotoAsync($"{_stack.WebBaseUrl}/wizard", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await AskOnceAndAssertCitedAsync(page);
+
+        // Reset to Idle and re-ask — guaranteed cache hit on a healthy
+        // cache (and still a valid cited-answer assertion if eviction or
+        // multi-replica routing makes it a miss).
+        await page.Locator("[data-testid='new-question-button']").ClickAsync();
+        await AskOnceAndAssertCitedAsync(page);
+    }
+
+    // Types the canonical ask-flow question, submits, awaits the terminal
+    // state, and asserts the provenance contract (cited answer or rendered
+    // refusal). Assumes the page is already on /wizard in Idle state.
+    private static async Task AskOnceAndAssertCitedAsync(IPage page)
+    {
         var input = page.Locator("[data-testid='question-input']");
         await input.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
 
