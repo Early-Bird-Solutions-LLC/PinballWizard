@@ -49,16 +49,15 @@ resource "cloudflare_ruleset" "security_response_headers" {
           # audience this showcase serves). Directive rationale:
           #
           #   script-src — the XSS-load-bearing directive; stays strict.
-          #     No 'unsafe-inline' / 'unsafe-eval', ever. The two SHA-256
-          #     hashes allow the app's only inline scripts:
-          #       1. tUlm…  theme/motion FOUC bootstrap (Components/App.razor)
-          #       2. kgZ1…  mermaid.initialize()        (Pages/About.razor)
-          #     The full jsDelivr URL allows the version-pinned Mermaid bundle
-          #     (About page architecture diagram), which also carries an SRI
-          #     integrity attribute so a tampered CDN response fails closed.
-          #     Editing either inline script or bumping the Mermaid pin
-          #     requires updating this policy — CspPolicySyncTests
-          #     (PinballWizard.Web.Tests) pins source ↔ policy agreement.
+          #     No 'unsafe-inline' / 'unsafe-eval', ever. The single SHA-256
+          #     hash allows the app's only inline script: the theme/motion
+          #     FOUC bootstrap in Components/App.razor. Editing that script
+          #     (even whitespace) requires updating this policy —
+          #     CspPolicySyncTests (PinballWizard.Web.Tests) pins source ↔
+          #     policy agreement. The About-page architecture diagram is a
+          #     pre-rendered static SVG (no Mermaid CDN script, no inline
+          #     initialize() — see the 2026-06-11 decision-log entry
+          #     "Pre-rendered SVG replaces client-side Mermaid").
           #   style-src — 'unsafe-inline' is the documented posture for
           #     MudBlazor (44 inline style attributes + 3 style elements on
           #     the landing page alone; dynamic, not hashable). Microsoft's
@@ -76,7 +75,7 @@ resource "cloudflare_ruleset" "security_response_headers" {
             operation = "set"
             value = join("; ", [
               "default-src 'self'",
-              "script-src 'self' 'sha256-tUlm0hcIzvUo+8JL4TQFYJRvk6dkJyUDnz0hU0DxicI=' 'sha256-kgZ10ePtncA3i5/cE4HcaLI+YYi/z4LDy3TmlIQ9kzM=' https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js",
+              "script-src 'self' 'sha256-tUlm0hcIzvUo+8JL4TQFYJRvk6dkJyUDnz0hU0DxicI='",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://sternpinball.com",
               "font-src 'self'",

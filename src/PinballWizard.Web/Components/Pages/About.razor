@@ -7,12 +7,16 @@
  * Content:
  *   - What PinballWizard is (1–2 sentences, from docs/vision.md)
  *   - Architecture summary: Blazor Web App + .NET Aspire + Azure + Clean Architecture + OTel
- *   - Mermaid architecture diagram (client-side, CDN-hosted Mermaid v11)
+ *   - Architecture diagram (pre-rendered SVG; source of truth is
+ *     docs/diagrams/about-architecture.mmd — regeneration instructions live
+ *     in that file's header, and PreRenderedDiagramTests pins SVG <-> source
+ *     agreement via an embedded SHA-256)
  *   - Tech stack bullets
  *   - GitHub repo link
  *
- * Mermaid is rendered by the browser after InteractiveServer wires up.
- * HeadContent injects the mermaid.min.js CDN script and initialize call.
+ * The diagram is static-served, so the page needs no render mode, no
+ * third-party script, and no CSP allowance — see the 2026-06-11
+ * decision-log entry "Pre-rendered SVG replaces client-side Mermaid".
  *
  * Community-resource posture (ADR-0027 § 1): the page explains the app
  * honestly and routes users outward — no engagement-metric framing, no
@@ -23,31 +27,9 @@
  *@
 
 @page "/about"
-@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 
 @using Microsoft.AspNetCore.Authorization
-
-<HeadContent>
-    @* Mermaid CDN — renders the architecture diagram client-side once
-       InteractiveServer mode is active. initialize() is called with
-       startOnLoad:true so it picks up any .mermaid div automatically.
-
-       The version pin + integrity (SRI) + crossorigin trio is load-bearing:
-       the CSP injected at the Cloudflare edge (infra/cloudflare/headers.tf)
-       allows this script by its exact URL, and the SRI hash makes a
-       compromised CDN response fail closed instead of executing. Bumping
-       the version means updating BOTH the integrity hash here AND the
-       script-src source in headers.tf — CspPolicySyncTests pins the pair.
-       The inline initialize() block below is allowed by SHA-256 hash in the
-       same policy; editing it (even whitespace) changes the hash. *@
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js"
-            integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF"
-            crossorigin="anonymous"></script>
-    <script>
-        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-    </script>
-</HeadContent>
 
 <PageTitle>PinballWizard — About</PageTitle>
 
@@ -78,21 +60,12 @@
         metrics end-to-end from the browser to the Azure Monitor workspace.
     </MudText>
 
-    @* ── Mermaid diagram ──────────────────────────────────────────────────── *@
+    @* ── Architecture diagram ─────────────────────────────────────────────── *@
     <div class="about-diagram mb-6" data-testid="about-diagram">
-        <div class="mermaid">
-graph TD
-    Browser["Public Web\n(Blazor Web App)"]
-    SSE["API Layer\n(ASP.NET Core SSE)"]
-    App["Application\n(IAiRouter · Azure AI Foundry)"]
-    Infra["Infrastructure\n(10 Scrapers · Cosmos DB · AI Search)"]
-    Azure["Azure Services\n(Cosmos DB Serverless · AI Search Basic\nAzure OpenAI · Container Apps)"]
-
-    Browser -->|"HTTPS / text/event-stream"| SSE
-    SSE --> App
-    App --> Infra
-    Infra --> Azure
-        </div>
+        <MudImage Src="img/about-architecture.svg"
+                  Alt="Architecture diagram: Public Web (Blazor Web App) connects over HTTPS server-sent events to the API layer, which calls the Application layer (IAiRouter, Azure AI Foundry), which calls Infrastructure (10 scrapers, Cosmos DB, AI Search), backed by Azure services."
+                  Fluid="true"
+                  data-testid="about-diagram-svg" />
     </div>
 
     @* ── Tech stack ───────────────────────────────────────────────────────── *@
