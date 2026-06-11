@@ -42,15 +42,46 @@ resource "cloudflare_ruleset" "security_response_headers" {
           # CSP: starts in Report-Only mode. Promote to enforced
           # Content-Security-Policy header after a week of clean reports.
           # See CLOUDFLARE_PRELAUNCH_CHECKLIST.md §7.2 for the staged rollout.
+          #
+          # Tuned 2026-06-11 (issue #356) to zero violations against the real
+          # app — the original 'self'-everything policy produced ~48 report-only
+          # violations per page load (DevTools Issues noise on the exact
+          # audience this showcase serves). Directive rationale:
+          #
+          #   script-src — the XSS-load-bearing directive; stays strict.
+          #     No 'unsafe-inline' / 'unsafe-eval', ever. The two SHA-256
+          #     hashes allow the app's only inline scripts:
+          #       1. tUlm…  theme/motion FOUC bootstrap (Components/App.razor)
+          #       2. kgZ1…  mermaid.initialize()        (Pages/About.razor)
+          #     The full jsDelivr URL allows the version-pinned Mermaid bundle
+          #     (About page architecture diagram), which also carries an SRI
+          #     integrity attribute so a tampered CDN response fails closed.
+          #     Editing either inline script or bumping the Mermaid pin
+          #     requires updating this policy — CspPolicySyncTests
+          #     (PinballWizard.Web.Tests) pins source ↔ policy agreement.
+          #   style-src — 'unsafe-inline' is the documented posture for
+          #     MudBlazor (44 inline style attributes + 3 style elements on
+          #     the landing page alone; dynamic, not hashable). Microsoft's
+          #     Blazor CSP guidance: "If the app uses inline styles, specify
+          #     unsafe-inline." Inline style injection is a far weaker vector
+          #     than script, and script-src above stays strict.
+          #   object-src 'none' — present in every Microsoft-recommended
+          #     Blazor policy; closes the legacy <object>/<embed> vector.
+          #   connect-src — explicit wss://pinwiz.ai for the Blazor Server
+          #     SignalR circuit. Chromium treats 'self' as covering
+          #     same-origin wss:, but that is not uniform across engines and
+          #     a blocked circuit means a dead page. Scoped to the host —
+          #     never blanket wss:.
           "Content-Security-Policy-Report-Only" = {
             operation = "set"
             value = join("; ", [
               "default-src 'self'",
-              "script-src 'self'",
-              "style-src 'self'",
+              "script-src 'self' 'sha256-tUlm0hcIzvUo+8JL4TQFYJRvk6dkJyUDnz0hU0DxicI=' 'sha256-kgZ10ePtncA3i5/cE4HcaLI+YYi/z4LDy3TmlIQ9kzM=' https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js",
+              "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://sternpinball.com",
               "font-src 'self'",
-              "connect-src 'self'",
+              "connect-src 'self' wss://pinwiz.ai",
+              "object-src 'none'",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
