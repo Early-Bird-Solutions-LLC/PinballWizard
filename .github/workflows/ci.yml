@@ -5,10 +5,11 @@ name: CI
 # packages.lock.json is the source of truth.
 
 # paths-ignore: docs-only / eval-results-only changes don't alter build
-# or test outcomes. GitHub reports path-skipped required checks as
-# "skipped", which satisfies branch protection (documented carve-out:
-# "Handling skipped but required checks") — docs PRs merge without
-# burning a full build+test+Playwright lane.
+# or test outcomes. A fully path-filtered workflow reports NO check at all
+# (GitHub does not synthesize a "skipped" run), which would leave the
+# required "Build, test, coverage" check stuck in "Expected" — the
+# companion ci-docs-noop.yml satisfies it on the inverse path set per
+# GitHub's documented workaround. Keep the two path lists in lockstep.
 on:
   push:
     branches: [main]
