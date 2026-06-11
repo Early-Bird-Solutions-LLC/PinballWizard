@@ -1,0 +1,45 @@
+# Companion to ci.yml for docs-only PRs (GitHub's documented workaround,
+# "Troubleshooting required status checks § Handling skipped but required
+# checks").
+#
+# Why this exists: "Build, test, coverage" is a REQUIRED branch-protection
+# check, and ci.yml is fully path-filtered away on docs-only PRs. When a
+# workflow never triggers, GitHub does NOT synthesize a "skipped" check —
+# the required check sits in "Expected" forever and the PR can never merge
+# (first hit: PR #355, the first docs-only PR after #346 added the filters;
+# the in-repo comments previously claimed a skip carve-out that does not
+# exist for fully filtered workflows).
+#
+# The fix per GitHub's docs: a second workflow with the SAME `name:` and the
+# SAME job name, triggered on the INVERSE path set, that succeeds
+# immediately. Keep the `paths:` list below in lockstep with ci.yml's
+# `paths-ignore:` — drift in either direction re-introduces stuck PRs
+# (list too narrow) or skipped builds (list too wide).
+#
+# Mixed PRs (code + docs) trigger BOTH workflows; the check name is shared
+# and branch protection follows the latest-completed run, which is the real
+# build (minutes) finishing after this no-op (seconds).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build, test, coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Satisfy required check for docs-only change
+        run: echo "Docs-only change — build, test, and coverage are not affected."

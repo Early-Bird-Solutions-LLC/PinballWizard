@@ -6,9 +6,11 @@
 name: CodeQL
 
 # paths-ignore: docs/eval-results changes can't alter C# analysis
-# results. Path-skipped required checks report as "skipped", which
-# satisfies branch protection (documented GitHub carve-out). The weekly
-# schedule below still scans everything regardless of paths.
+# results. A fully path-filtered workflow reports NO check at all, which
+# would leave the required "Analyze (csharp)" check stuck in "Expected" —
+# the companion codeql-docs-noop.yml satisfies it on the inverse path set
+# per GitHub's documented workaround. Keep the two path lists in lockstep.
+# The weekly schedule below still scans everything regardless of paths.
 on:
   push:
     branches: [main]
