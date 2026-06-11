@@ -67,23 +67,28 @@ public sealed class SearchCorpusToolContractTests
     }
 
     [Fact]
-    public void JsonSchema_QueryIsRequired_OthersAcceptNull()
+    public void JsonSchema_QueryIsRequired_OthersAreOptional()
     {
-        // Microsoft.Extensions.AI's schema generator lists every C#
-        // parameter in the `required` array and encodes optionality
-        // by adding "null" to the type union for nullable params. So
-        // the model-facing contract is: every name appears, but
-        // `machineId` / `documentType` / `topK` accept `null` and the
-        // model is taught (via [Description]) to omit when not needed.
-        // The load-bearing assertion is that `query` is required AND
-        // does NOT accept null — empty/whitespace input is enforced
-        // server-side by the tool, not by the schema.
+        // Microsoft.Extensions.AI's schema generator puts a parameter in
+        // the `required` array iff it has no C# default value — nullability
+        // alone does NOT make it optional. Before the `= null` defaults
+        // landed, machineId/documentType/topK were schema-required despite
+        // their "Optional:" descriptions; when the model (correctly) omitted
+        // one, argument binding threw before the tool body ran and the model
+        // saw "Error: Function failed." (the ev-repair-0008 hard error in
+        // eval wizard.20260610T160646Z). This test pins the fixed contract:
+        // `query` is the ONLY required parameter, and the optional three
+        // must stay out of the required array. CancellationToken is
+        // framework-handled and never appears in the schema.
         var fn = CreateAIFunction();
         var schema = fn.JsonSchema;
 
         Assert.True(schema.TryGetProperty("required", out var required));
         var requiredList = required.EnumerateArray().Select(e => e.GetString()).ToList();
         Assert.Contains("query", requiredList);
+        Assert.DoesNotContain("machineId", requiredList);
+        Assert.DoesNotContain("documentType", requiredList);
+        Assert.DoesNotContain("topK", requiredList);
 
         var props = schema.GetProperty("properties");
 
@@ -94,6 +99,34 @@ public sealed class SearchCorpusToolContractTests
         Assert.True(AcceptsNull(props.GetProperty("machineId")));
         Assert.True(AcceptsNull(props.GetProperty("documentType")));
         Assert.True(AcceptsNull(props.GetProperty("topK")));
+    }
+
+    [Fact]
+    public async Task Invoke_OmittingAllOptionalArguments_BindsAndRunsToolBody()
+    {
+        // End-to-end binding proof for the defect class itself: invoke the
+        // AIFunction the way gpt-4o did during the 2026-06-10 eval — only
+        // `query` supplied. Before the parameter defaults, binding threw
+        // ArgumentException ("missing a value for the required parameter
+        // 'machineId'") without ever entering SearchCorpusAsync. With the
+        // defaults, the call must reach the retriever with the tool's own
+        // fallback values.
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever
+            .RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        var tool = new SearchCorpusTool(retriever, new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);
+        var fn = AIFunctionFactory.Create(tool.SearchCorpusAsync);
+
+        await fn.InvokeAsync(new AIFunctionArguments { ["query"] = "flipper not responding" });
+
+        await retriever.Received(1).RetrieveAsync(
+            "flipper not responding",
+            Arg.Is<RetrievalOptions>(o =>
+                o.MachineId == null
+                && o.DocumentType == null
+                && o.TopK == SearchCorpusTool.TopKDefault),
+            Arg.Any<CancellationToken>());
     }
 
     private static bool AcceptsNull(JsonElement parameterSchema)
