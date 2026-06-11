@@ -30,6 +30,40 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-11 — Docs-only PRs vs. required checks: fully path-filtered workflows report nothing; no-op companions added
+
+**Decision:** Required branch-protection checks whose workflows are path-filtered get a no-op companion workflow with the **same `name:` key and same job name**, triggered on the **inverse path set**, succeeding immediately ([ci-docs-noop.yml](../.github/workflows/ci-docs-noop.yml), [codeql-docs-noop.yml](../.github/workflows/codeql-docs-noop.yml)). The four path lists (two `paths-ignore`, two inverse `paths`) are kept in lockstep — the rule is pinned in comments in all four files.
+
+**What forced it:** PR #355, the first docs-only PR after #346 added the path filters, sat `BLOCKED` indefinitely. A workflow that never triggers produces **no check run at all** — GitHub does not synthesize a "skipped" run, so the required check stays in "Expected" forever. The carve-out claimed in the previous ci.yml/codeql.yml comments does not exist for fully filtered workflows (this entry corrects #346's assumption). Compounding accident: the required `Analyze (csharp)` check was being satisfied by the **Code Quality preview's** dynamic run, which emits an identically-named check with no path filters — with that preview slated for disable (entry below, issue #356), docs PRs were about to lose even the accidental rescue.
+
+**Alternatives considered:** (a) Remove the path filters — burns a full build+test lane (~7 min) plus a CodeQL analysis (~3 min) on every docs PR; rejected, the filters exist for good reason. (b) Job-level early-exit guard inside ci.yml (always trigger, detect docs-only, skip steps) — single-workflow cleanliness but still spins a runner per docs PR and complicates the real lane; the companion pattern is GitHub's documented workaround ("Troubleshooting required status checks § Handling skipped but required checks") and keeps the real workflows untouched. (c) Keep relying on the Code Quality preview's name collision — an undocumented accident, rejected.
+
+**Mixed-PR semantics:** a PR touching code + docs triggers both workflows; branch protection follows the latest-completed run with that check name, which is the real build (minutes) finishing after the no-op (seconds). Drift self-polices: ignore-list-grows-first produces a loudly stuck PR; noop-paths-grow-first still runs the real lane.
+
+**Revisit when:** GitHub ships native handling for skipped-but-required checks, or the repo moves to rulesets/merge queue with different check semantics.
+
+**Related:** PR #358 (fix), PR #355 (the stuck PR — its merge 3 minutes after the fix landed is the end-to-end proof), PR #346 (introduced the filters + the wrong assumption), issue #356.
+
+## 2026-06-11 — CSP posture: strict `script-src` via hashes, MudBlazor `style-src` concession, Mermaid pinned + SRI, staged enforcement
+
+**Decision:** The edge-injected CSP ([infra/cloudflare/headers.tf](../infra/cloudflare/headers.tf)) is tuned to **zero violations** against the real app and will be promoted from `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy` (+ `upgrade-insecure-requests`) after a clean soak (CLOUDFLARE_PRELAUNCH_CHECKLIST §7.2, tracked in issue #356). Locked directive posture:
+
+- `script-src 'self'` + two SHA-256 hashes (theme/motion FOUC bootstrap in App.razor; `mermaid.initialize()` in About.razor) + the exact version-pinned Mermaid URL. **Never** `'unsafe-inline'`/`'unsafe-eval'`/`'unsafe-hashes'` — this is the XSS-load-bearing directive.
+- `style-src 'self' 'unsafe-inline'` — the documented posture for MudBlazor (44 dynamic inline style attributes on the landing page alone; not hashable). Microsoft's Blazor CSP guidance endorses it verbatim; inline-style injection is a far weaker vector than script.
+- `object-src 'none'` (per every Microsoft-recommended Blazor policy), `connect-src 'self' wss://pinwiz.ai` (SignalR circuit on engines that don't extend `'self'` to WebSocket schemes; host-scoped, never blanket `wss:`).
+- Mermaid is pinned (`@11.15.0`) with SRI `integrity` + `crossorigin="anonymous"` — previously loaded **unpinned** (silent major-version upgrades in prod) with no tamper protection.
+- `CspPolicySyncTests` (PinballWizard.Web.Tests) pins the cross-file contract: recomputes the inline-script hashes from the .razor sources, asserts headers.tf carries them and the pinned URL + full SRI literal, asserts `script-src` never regains `unsafe-*`, and closes the set of files allowed to carry inline scripts.
+
+**Why:** the original `'self'`-everything Report-Only policy logged ~48 violations per page load into DevTools — permanent Issues-panel noise for the exact audience (technical evaluators, prospective clients) this showcase serves — and could never be promoted because MudBlazor can't satisfy `style-src 'self'`. Measured 48 → 0 via simulation (the edge policy injected onto the deployed app via Playwright route interception, `securitypolicyviolation` capture, all public routes).
+
+**Alternatives considered:** (a) Status quo eternal Report-Only — noise + zero protection, rejected. (b) Enforce as-written — breaks all MudBlazor styling, rejected. (c) Drop the CSP — a security-literate evaluator inspecting headers sees nothing deliberate; rejected, the enforced policy is itself a showcase artifact. (d) **Nonces** — structurally impossible here: the header is a static Cloudflare Transform Rule that cannot mint per-request values; hashes are the static-header equivalent (nonces become viable only if CSP emission ever moves to the origin or a Worker). (e) **Self-hosting Mermaid** for consistency with the self-hosted-fonts privacy precedent (`SelfHostedFontsTests` — third-party CDN loads leak visitor IPs) — attempted and deferred: the 3.3 MB minified bundle false-positives the sanitization scan's PEM private-key-header rule — a loose wildcard that fires when its three marker words appear anywhere in order on a line, trivially true across megabyte-long minified lines (and, fittingly, true of this entry's first draft, which quoted the pattern verbatim and failed its own scan); self-hosting requires first narrowing that rule to the canonical dashed PEM header form, a security-gate change that needs its own deliberate review (parked in #356). SRI + the version pin close the *integrity* risk meanwhile; the residual is the privacy-consistency question on /about only.
+
+**Maintenance contract:** bumping Mermaid = update the URL + `integrity` in About.razor, the URL in headers.tf, and the SRI literal in `CspPolicySyncTests` (the test failure message walks through it). Editing either inline script (even whitespace) changes its hash — the test fails with the recompute instruction.
+
+**Revisit when:** the §7.2 promotion lands (then add `upgrade-insecure-requests` and decide on a `report-to` receiver); the JS surface grows beyond one bootstrap + Mermaid; or CSP emission moves origin-side (reopens nonces and per-environment policies).
+
+**Related:** PR #357 (tuning + contract test), issue #356 (measurement, recommendation, deferred items), PRs #348/#349 (prior CSP noise fixes), the 2026-06-11 Code Quality entry below (the preview's dynamic run also figured in the required-checks incident above).
+
 ## 2026-06-11 — Two CodeQL runs per PR are different validations: `codeql.yml` (required gate) vs. the GitHub Code Quality preview (optional)
 
 **Decision:** [`codeql.yml`](../.github/workflows/codeql.yml) remains the repo's required static-analysis gate; the per-PR "Code Quality: PR #N" run is GitHub's **Code Quality preview** — a separate, settings-driven validation that is *not* load-bearing for branch protection and may be disabled in Settings → Code security → Code quality without losing any required check.
