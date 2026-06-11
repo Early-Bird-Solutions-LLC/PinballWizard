@@ -30,6 +30,31 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-11 — Two CodeQL runs per PR are different validations: `codeql.yml` (required gate) vs. the GitHub Code Quality preview (optional)
+
+**Decision:** [`codeql.yml`](../.github/workflows/codeql.yml) remains the repo's required static-analysis gate; the per-PR "Code Quality: PR #N" run is GitHub's **Code Quality preview** — a separate, settings-driven validation that is *not* load-bearing for branch protection and may be disabled in Settings → Code security → Code quality without losing any required check.
+
+**The two pipelines, confirmed from this repo's runs (PR #354 head SHA) and GitHub docs:**
+
+| Aspect | `codeql.yml` (advanced setup) | Code Quality preview |
+| --- | --- | --- |
+| Trigger | Workflow in-repo; PR/push to main + weekly cron | Dynamic workflow `dynamic/github-code-scanning/codeql` (`event: dynamic`), created by the Settings toggle — no file in the repo, no API |
+| Languages | csharp only | csharp **and** javascript-typescript (auto-detected) |
+| Queries | `security-and-quality` suite | Curated CodeQL *quality* rules (maintainability + reliability) per [GitHub's preview announcement](https://github.blog/changelog/2025-10-28-github-code-quality-in-public-preview/) |
+| Config | Honors [`.github/codeql/codeql-config.yml`](../.github/codeql/codeql-config.yml) (5 documented query-filter suppressions, `obj`/`bin` paths-ignore, locked-mode restore) | Ignores the repo config file; configurable only via the Settings page (language checkboxes, runner type) per [Enabling GitHub Code Quality](https://docs.github.com/en/code-security/how-tos/maintain-quality-code/enable-code-quality) |
+| Results store | Code scanning alerts (Security tab) — verified via `code-scanning/analyses` API: the **only** uploader, category `.github/workflows/codeql.yml:analyze` | Separate quality-findings store: "Security and quality" tab dashboard + `github-code-quality[bot]` PR comments with Copilot Autofix per [CodeQL-powered analysis for Code Quality](https://docs.github.com/en/code-security/reference/code-quality/codeql-detection) |
+| Checks | `Analyze (csharp)` — **required** by branch protection | `Code Quality: PR #N` run (jobs `Analyze (csharp)` + `Analyze (javascript-typescript)`) + a `CodeQL` check from the `github-advanced-security` app — not required |
+
+So the per-PR pair of `Analyze (csharp)` runs is a *partial* duplicate: the C# analysis is genuinely run twice, but under different query sets, different configs, and feeding different result stores.
+
+**Alternatives considered:** (a) Keep both — costs a duplicate C# analysis plus a JS analysis per PR in Actions minutes, and the preview produced **zero** findings across PRs #350–#354 while emitting non-retryable failure noise during the 2026-06-10 GitHub API incident; its only coverage delta is JS/TS analysis of a single 36-line `wwwroot/app.js`. (b) Drop `codeql.yml` and rely on the preview — rejected: loses the required-check gate, the weekly scheduled scan, locked-mode restore, and the curated false-positive suppressions (the preview cannot read the repo config). (c) Add `javascript-typescript` to `codeql.yml`'s matrix to preserve the preview's only coverage delta before disabling — deferred: not worth a per-PR job for one trivial interop file; reconsider if the JS surface grows.
+
+**Rationale:** The preview's quality angle is already substantially covered for C# by the `security-and-quality` suite in the required workflow, and where the preview goes beyond it (quality scores, Autofix-on-quality-findings, org dashboard), it has surfaced nothing on this codebase while it cannot honor our documented suppressions. While the feature is in preview (unbilled, evolving, no API), it is informational-only here.
+
+**Revisit when:** Code Quality reaches GA (billing + config model will change), the JS/TS surface grows beyond trivial Blazor interop, or the feature gains support for repo-level config / suppressions — then re-evaluate enabling it as the quality surface alongside the security-focused required gate.
+
+**Related:** PR #346 (pipeline optimization, where the duplicate run was first flagged), handoff 2026-06-11 (`thoughts/.../AB-259/2026-06-11_02-52-20`).
+
 ## 2026-06-10 — INCIDENT: Blazor circuits dead at >1 replica — missing documented ACA hosting config (session affinity + shared Data Protection)
 
 **Incident:** Reported by operator ~17:40Z ("no answers and the suggested questions don't show as links"). The deployed wizard app rendered as a static prerender: question input visible but the Ask button never enabled, nothing interactive. Container logs showed `AntiforgeryValidationException: The key {…} was not found in the key ring` at the exact report time, plus the startup warning `EphemeralXmlRepository` (Data Protection keys held in-memory per process). The app was at 2 replicas (scale 1–3) with no ingress session affinity: page HTML served by replica A carried tokens encrypted with A's ephemeral key ring; the circuit handshake load-balanced to replica B, which couldn't decrypt them — every circuit died. The site had worked earlier in the day only because it happened to be at 1 replica.
