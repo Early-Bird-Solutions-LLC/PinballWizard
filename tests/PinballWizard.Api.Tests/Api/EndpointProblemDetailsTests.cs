@@ -86,6 +86,22 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     }
 
     [Fact]
+    public async Task WizardAskStream_WhenRouterUnwired_BodyHasNoSsePreamble()
+    {
+        // The ": stream-open" preamble flushes the SSE headers — if it ever
+        // moved BEFORE the guard clauses, the 503/400 paths could no longer
+        // write ProblemDetails (headers already sent) and this clean
+        // problem+json body would carry stream framing. Pin the ordering.
+        using var server = BuildStreamServer(registerRouter: false);
+        using var client = server.CreateClient();
+
+        var response = await PostAskAsync(client, "question");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain(": stream-open", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WizardAskStream_WhenRouterUnwired_HasRetryAfterHeader()
     {
         using var server = BuildStreamServer(registerRouter: false);
@@ -205,6 +221,25 @@ public sealed class EndpointProblemDetailsTests : IDisposable
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Contains("event: end", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WizardAskStream_ResponseBody_BeginsWithSseCommentPreamble()
+    {
+        // The endpoint flushes headers + ": stream-open" BEFORE invoking the
+        // agent pipeline, so time-to-first-byte is independent of model
+        // latency. Without it, callers' header-read timeouts fire while the
+        // answer is still being computed and their retries re-run whole
+        // agent runs (2026-06-11 incident). SSE parsers ignore ":"-prefixed
+        // comment lines by spec, so the preamble is invisible to clients.
+        var router = BuildThrowingRouter(); // any router — the preamble precedes it
+        using var server = BuildStreamServer(router: router);
+        using var client = server.CreateClient();
+
+        var response = await PostAskAsync(client, "question");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.StartsWith(": stream-open\n\n", body, StringComparison.Ordinal);
     }
 
     [Fact]

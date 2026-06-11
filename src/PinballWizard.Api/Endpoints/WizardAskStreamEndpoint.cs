@@ -139,6 +139,20 @@ public static class WizardAskStreamEndpoint
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Append("X-Accel-Buffering", "no");
 
+        // ── Flush headers + SSE preamble BEFORE the agent runs ────────
+        // ASP.NET sends response headers on the first body write/flush.
+        // Without an immediate preamble, time-to-first-byte equals the
+        // model's first-token latency (>10s under tool load), and every
+        // caller-side header-read timeout fires while the answer is still
+        // being computed — the 2026-06-11 incident: the Web app's 10s
+        // attempt timeout killed every ask and its retries re-ran whole
+        // agent runs (a non-idempotent retry storm). This preamble makes
+        // time-to-headers ≈ network RTT, independent of model latency.
+        // SSE parsers ignore ":"-prefixed comment lines by spec.
+        await context.Response.StartAsync(cancellationToken).ConfigureAwait(false);
+        await context.Response.WriteAsync(": stream-open\n\n", cancellationToken).ConfigureAwait(false);
+        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+
         // ── Stream AnswerChunk events ─────────────────────────────────
         // Each chunk maps to an SSE event name (snake_case). The event name
         // mirrors the JSON "$type" discriminator so JS clients can
@@ -201,10 +215,6 @@ public static class WizardAskStreamEndpoint
             // emit Refusal + Final so the client receives a well-formed terminal sequence
             // (ADR-0026 § 4/5 + PR self-audit item 9(c)). OOM/cancellation still propagate
             // via the runtime since OperationCanceledException is caught above this arm.
-            // Mid-stream exception: headers are already flushed, so we cannot
-            // return a ProblemDetails response. Emit a Refusal chunk then a
-            // synthetic Final chunk so the client receives a well-formed
-            // terminal sequence and can render the error gracefully.
             logger.LogError(
                 ex,
                 "Mid-stream exception interrupted the SSE stream. RequestId: {RequestId}",
@@ -242,10 +252,14 @@ public static class WizardAskStreamEndpoint
         // ── Stream terminator ─────────────────────────────────────────
         // The "end" event signals to clients that the connection will close
         // normally. Always emitted — refusal paths send final then end.
+        // CancellationToken.None for the same reason as the catch arm's
+        // writes: after a mid-stream error the caller's token may already be
+        // cancelled, and the terminal sequence must still complete rather
+        // than throw past the catch and drop the "end" event.
         await context.Response.WriteAsync(
             "event: end\ndata: {}\n\n",
-            cancellationToken).ConfigureAwait(false);
-        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
+        await context.Response.Body.FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     // Writes an RFC 9457 application/problem+json response to the HttpContext.

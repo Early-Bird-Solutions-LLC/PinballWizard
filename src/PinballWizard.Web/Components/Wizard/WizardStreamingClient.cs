@@ -18,15 +18,13 @@ namespace PinballWizard.Web.Components.Wizard;
 // env vars so the HttpClient resolves to the Api's Kestrel port. In Azure,
 // the ACA internal FQDN is used instead.
 //
-// Graceful fallback: when the Api returns 503 (Foundry not configured) or
-// when the Api is unreachable, this client yields a hardcoded 3-chunk stream
-// so the dev experience demonstrates the wire format end-to-end without a
-// deployed Foundry endpoint. This fallback is Wave 1 bridging — removed in
-// Wave 2 when Foundry is always configured in the deployed environment.
-//
-// C# does not permit yield inside a catch clause — the TrySendAsync helper
-// returns null on HttpRequestException so the iterator body stays outside
-// the try-catch. See: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/yield
+// Demo stream: ONLY when the Api explicitly answers 503 "Foundry not wired"
+// (local dev without a Foundry endpoint) does this client yield a hardcoded
+// 3-chunk stream demonstrating the wire format. Transport failures
+// PROPAGATE — they used to ride the same demo stream, which let a fake
+// uncited "Hello world!" answer render in production whenever the Api was
+// struggling (2026-06-11 incident). The WizardAnswerStream component owns
+// failure UX (Error state + one deliberate fallback re-attempt).
 //
 // ADR-0026 § 2 — SSE transport
 // ADR-0026 § 4 — AnswerChunk discriminated union
@@ -59,20 +57,14 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
-        // C# prohibits yield inside catch — send the request in a non-iterator
-        // helper that returns null on transport failure, then decide whether to
-        // fall back outside the try-catch.
-        var response = await TrySendAsync(question, cancellationToken).ConfigureAwait(false);
-
-        if (response is null)
-        {
-            // TrySendAsync already logged the error.
-            await foreach (var chunk in FallbackStreamAsync(cancellationToken).ConfigureAwait(false))
-            {
-                yield return chunk;
-            }
-            yield break;
-        }
+        // Transport failures (Api unreachable, connection timeout) PROPAGATE.
+        // They previously rode the demo placeholder stream below, which let a
+        // fake "Hello world!" answer with zero citations render in production
+        // whenever the Api was struggling (2026-06-11 incident). The component
+        // catches stream exceptions, shows the honest Error state, and owns
+        // the one deliberate fallback re-attempt. The placeholder is reserved
+        // for the explicit 503 "Foundry not wired" dev signal below.
+        var response = await SendCoreAsync(question, cancellationToken).ConfigureAwait(false);
 
         // ── 503: Foundry not configured (dev mode, no endpoint set) ───
         // Yield hardcoded hello-world stream so the dev experience proves
@@ -149,9 +141,12 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         response.Dispose();
     }
 
-    // Helper to send the HTTP request and return null on transport failure.
-    // Keeps the iterator body free of try-catch (C# language constraint).
-    private async Task<HttpResponseMessage?> TrySendAsync(
+    // Sends the request and returns at response-headers arrival
+    // (ResponseHeadersRead) — the Api flushes an SSE preamble at accept, so
+    // this completes in ~RTT, not model latency. Transport failures
+    // propagate to the caller (the component renders the Error state) —
+    // see the comment at the top of StreamAsync.
+    private async Task<HttpResponseMessage> SendCoreAsync(
         string question,
         CancellationToken cancellationToken)
     {
@@ -163,17 +158,9 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         };
         request.Headers.Accept.ParseAdd("text/event-stream");
 
-        try
-        {
-            return await _httpClient
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogWarning(ex, "Api unreachable — falling back to hardcoded demo stream.");
-            return null;
-        }
+        return await _httpClient
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private AnswerChunk? DeserializeChunk(string json, string eventName)
@@ -193,11 +180,14 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         }
     }
 
-    // ── Fallback stream (Wave 1 bridging, dev experience only) ───────────
-    // Demonstrates the wire format when the Api's Foundry router is absent.
+    // ── Demo stream (dev experience ONLY — explicit 503 path) ────────────
+    // Demonstrates the wire format when the Api answers 503 "Foundry not
+    // wired" (local dev without a Foundry endpoint). This is the ONLY path
+    // that may yield it: transport failures propagate so production never
+    // renders a fake answer (2026-06-11 incident — the placeholder
+    // masqueraded as a real, uncited answer whenever the Api struggled).
     // The [EnumeratorCancellation] attribute ensures a cancelled token
     // short-circuits iteration without an unobserved task.
-    // Wave 2 removes this when Foundry is always configured in Azure.
     private static async IAsyncEnumerable<AnswerChunk> FallbackStreamAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {

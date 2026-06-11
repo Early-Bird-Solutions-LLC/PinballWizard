@@ -16,10 +16,11 @@ namespace PinballWizard.Web.Tests.Components.Wizard;
 // Uses a fake HttpMessageHandler to simulate the Api's SSE responses
 // without spinning up a real HTTP server. Tests cover:
 //   1. Well-formed 3-event SSE stream → client yields 3 chunks correctly.
-//   2. 503 response (Foundry unwired) → fallback hardcoded stream.
-//   3. Api unreachable (HttpRequestException) → fallback hardcoded stream.
+//   2. 503 response (Foundry unwired) → demo hardcoded stream (dev-only path).
+//   3. Api unreachable (HttpRequestException) → transport failure propagates.
 //   4. Server closes mid-stream → graceful completion (no exception leak).
 //   5. Cancellation during iteration → OperationCanceledException propagates.
+//   6. SSE comment preamble (": stream-open") → ignored by the parser.
 //
 // Per ADR-0026 PR self-audit item 9(d): every new component/client has
 // tests asserting behavior, not structure.
@@ -72,6 +73,28 @@ public sealed class WizardStreamingClientTests
         Assert.Equal(answer.Text, final.Answer.Text);
     }
 
+    [Fact]
+    public async Task StreamAsync_SseCommentPreamble_IsIgnoredByParser()
+    {
+        // The Api flushes ": stream-open\n\n" at request-accept so response
+        // headers leave before the agent produces its first chunk (the
+        // caller's attempt timeout then bounds connection+headers, never
+        // model latency — 2026-06-11 incident). SSE spec: ":"-prefixed
+        // lines are comments; the parser must yield no chunk for them.
+        var answer = BuildAnswer();
+        var sseBody = ": stream-open\n\n" + BuildSseBody(
+            ("text_delta", new AnswerChunk.TextDelta("Hello")),
+            ("final",      new AnswerChunk.Final(answer)));
+
+        var client = BuildClient(HttpStatusCode.OK, sseBody, "text/event-stream");
+
+        var chunks = await CollectAsync(client, "ping");
+
+        Assert.Equal(2, chunks.Count);
+        Assert.IsType<AnswerChunk.TextDelta>(chunks[0]);
+        Assert.IsType<AnswerChunk.Final>(chunks[1]);
+    }
+
     // ──────────────────────────────────────────────────────────────
     // 2. 503 response → fallback hardcoded stream
     // ──────────────────────────────────────────────────────────────
@@ -102,19 +125,21 @@ public sealed class WizardStreamingClientTests
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 3. Api unreachable → fallback stream (no exception to caller)
+    // 3. Api unreachable → transport failure PROPAGATES
+    //    (2026-06-11 incident: this path previously yielded the
+    //    hardcoded demo stream, letting a fake uncited "Hello world!"
+    //    answer render in production whenever the Api struggled. The
+    //    component owns failure UX; the demo stream is reserved for
+    //    the explicit 503 "Foundry not wired" dev signal above.)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task StreamAsync_ApiUnreachable_FallsBackToHardcodedStream()
+    public async Task StreamAsync_ApiUnreachable_PropagatesTransportFailure()
     {
         var client = BuildClientThatThrows(new HttpRequestException("Connection refused."));
 
-        var chunks = await CollectAsync(client, "hello");
-
-        Assert.Equal(3, chunks.Count);
-        Assert.IsType<AnswerChunk.TextDelta>(chunks[0]);
-        Assert.IsType<AnswerChunk.Final>(chunks[2]);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CollectAsync(client, "hello"));
     }
 
     // ──────────────────────────────────────────────────────────────
