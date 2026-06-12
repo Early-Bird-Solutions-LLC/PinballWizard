@@ -102,7 +102,7 @@ if (isAuthConfigured)
     // (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
     //
     // AdminOnly (PR-B0, 2026-06-11 decision): /admin/** pages additionally
-    // require the Wizard.Admin Entra app role via explicit
+    // require the GlobalAdmin Entra app role via explicit
     // [Authorize(Policy = "AdminOnly")] — "any authenticated user" was the
     // right bar for read-mostly grids, not for surfaces that mutate live
     // Wizard behavior (the /admin/settings page this gate precedes).
@@ -114,7 +114,7 @@ if (isAuthConfigured)
         options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build();
-        options.AddPolicy("AdminOnly", policy => policy.RequireRole("Wizard.Admin"));
+        options.AddPolicy("AdminOnly", policy => policy.RequireRole("GlobalAdmin"));
     });
 
     builder.Services.AddControllersWithViews()
