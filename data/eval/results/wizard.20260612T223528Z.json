@@ -1,0 +1,798 @@
+{
+  "evaluation_id": "pinwiz-eval-20260612T223528Z",
+  "started_at": "2026-06-12T22:35:28.1851656+00:00",
+  "completed_at": "2026-06-12T22:40:23.3866677+00:00",
+  "ground_truth_path": "data/eval/wizard.v2.jsonl",
+  "results_path": "data/eval/results\\wizard.20260612T223528Z.json",
+  "prompt_version": "v4.2026.05",
+  "aggregate": {
+    "question_count": 30,
+    "error_count": 0,
+    "citation_precision_mean": 0.9666666666666667,
+    "citation_recall_mean": 0.95,
+    "citation_coverage_mean": 0.5157848324514991,
+    "subagent_accuracy_mean": 0.9,
+    "refusal_correctness_mean": 1,
+    "citation_precision_count": 30,
+    "citation_recall_count": 30,
+    "citation_coverage_count": 27,
+    "refusal_correctness_count": 27,
+    "answered_all_editions_mean": 0,
+    "answered_all_editions_count": 1,
+    "honest_substitution_mean": 0,
+    "honest_substitution_count": 1
+  },
+  "questions": [
+    {
+      "id": "ev-rules-0001",
+      "question": "What is the theme of the Stern Godzilla pinball machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Stern Godzilla pinball machine, released in 2021, is based on the iconic Godzilla franchise. However, a precise description of the theme is not included in the OPDB record. You can find further information on the Stern Godzilla machine here. I can also search the manual for more thematic details if you\u0027re interested!",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 13305.7746,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0002",
+      "question": "How does multiball work in Stern\u0027s Godzilla pinball?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Rules",
+      "expected_citation_set": [
+        "GweeP-MW95j",
+        "GweeP-Ml9pZ"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "Multiball in Stern\u0027s *Godzilla* (2021) pinball offers an exciting gameplay element with several modes to unlock. Here\u2019s an overview:\n\n### Multiball Modes:\n1. **Building Multiball**:\n   - Revolves around the collapsing building mechanism, especially featured in Premium and LE editions.\n   - The Pro edition uses virtual locks for the associated multiball instead of the physical collapse feature.\n\n2. **Bridge Attack Multiball**:\n   - Activated by completing specific bridge-related objectives.\n   - Unique dynamics and shot opportunities during multiball focus on bridge gameplay.\n\n### Features:\n- Multiball modes can involve multiple balls in play, increasing scoring opportunities through jackpots and special objectives.\n- Players can extend multiball modes by hitting certain targets or achieving features during gameplay.\n\nFor detailed instructions on triggering and scoring strategies for multiball modes, refer to Stern\u2019s manual documentation, such as pages 6\u20137 and other related entries for the Pro edition.\n\nLearn more about Stern\u0027s Godzilla here: OPDB record.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 0.5,
+        "citation_coverage": 0.16666666666666666,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": 0,
+        "honest_substitution": null
+      },
+      "duration_ms": 19512.0625,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0003",
+      "question": "What is the main objective in the Foo Fighters LE pinball machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Rules",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "In the Foo Fighters LE pinball machine by Stern (2023), the main objective is to save humanity by defeating alien invaders, all while teaming up with the Foo Fighters\u2019 heroic efforts. Players progress through modes, activate multiballs, complete rule-specific objectives, and achieve high scores with combos and skill shots. This storyline is integrated with dynamic music, delivering fast-flowing and immersive gameplay.\n\nFor more details about modes and rule specifics, refer to the official manual here.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 16020.7688,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0004",
+      "question": "How do you start the main wizard mode in Foo Fighters pinball?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Rules",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I couldn\u0027t find indexed details about how to start the main wizard mode in Stern\u0027s *Foo Fighters* pinball from the sources available. Wizard modes typically require completing specific objectives like finishing several modes or collecting items.\n\nYou can consult the official manual or the game\u0027s rule card for detailed instructions. Let me know if you need help with other gameplay elements!",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 12691.7577,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0005",
+      "question": "What is the theme of the Jersey Jack Toy Story 4 pinball machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "predicted_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "acceptable_refusal": true,
+      "predicted_refusal": false,
+      "answer_text": "The Jersey Jack Toy Story 4 pinball machine is based on the beloved Pixar movie *Toy Story 4*. It features characters like Woody, Buzz, Bo Peep, and the rest of the gang on a road trip to the carnival with Bonnie and Forky. \n\nFor more details, you can explore its entry on the OPDB site.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": null,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3892.8855,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0006",
+      "question": "What is the Galactic Tank Force pinball machine about?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Rules",
+      "expected_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "predicted_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The *Galactic Tank Force* pinball machine was released in 2023 by American Pinball. However, its exact theme or storyline isn\u0027t detailed in the available sources, including the OPDB and the indexed content.\n\nYou might explore materials directly from American Pinball or community reviews for deeper insights into the game\u0027s creative concept or gameplay. For further investigation, you can also check its OPDB page.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 13437.8033,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0007",
+      "question": "What is the theme of the Spooky Pinball Halloween machine?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "predicted_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The theme of the Spooky Pinball \u0022Halloween\u0022 machine (2021) is based on the classic horror franchise \u0022Halloween.\u0022 This pinball machine focuses on the iconic horror series. Further details can be found on its OPDB page.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 8308.5636,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0008",
+      "question": "What is the Attack from Mars Remake pinball machine and who makes it?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "predicted_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The \u0022Attack from Mars Remake\u0022 pinball machine is made by **Chicago Gaming Company** and was released in **2017**. This remake modernizes the original game\u0027s design while retaining the iconic gameplay.\n\nFor more details, you can visit the machine\u0027s listing here on OPDB.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 4190.999,
+      "error": null
+    },
+    {
+      "id": "ev-rules-0009",
+      "question": "What is the theme of the Queen LE pinball machine by Pinball Brothers?",
+      "expected_sub_agent": "Rules",
+      "predicted_sub_agent": "Rules",
+      "expected_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "predicted_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Queen Limited Edition pinball machine, manufactured by Pinball Brothers in 2022, centers around the legendary rock band Queen. Although the exact theme isn\u0027t explicitly listed in OPDB\u0027s metadata, it likely celebrates Queen\u0027s music and iconic performances. For detailed thematic elements, consulting official documentation or promotional materials from Pinball Brothers would be helpful. OPDB source",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 21352.6944,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0001",
+      "question": "What editions are available for the Stern Godzilla pinball machine?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GweeP-MW95j",
+        "GweeP-Ml9pZ"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Stern Godzilla pinball machine, released in 2021, is available in the following editions:\n\n1. **Pro Edition** - MSRP: $6,999\n2. **Premium Edition** - MSRP: $9,699\n3. **Limited Edition (LE)** - Sold Out\n4. **70th Anniversary Premium Edition** - Sold Out\n\nYou can find more details about Stern Godzilla here.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 4280.0624,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0002",
+      "question": "What does the Stern Godzilla Premium retail for?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GweeP-Ml9pZ"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Stern Godzilla Premium has a retail MSRP of $9,699. \n\nMore details can be found at the game\u0027s official OPDB page.",
+      "scores": {
+        "citation_precision": 0,
+        "citation_recall": 0,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3594.6298,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0003",
+      "question": "What editions of the Foo Fighters pinball machine exist?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The \u0022Foo Fighters\u0022 pinball machine by Stern (2023) exists in the following editions:\n\n1. **Pro** \u2014 MSRP $6,999.\n2. **Premium** \u2014 MSRP varies (typically $9,699).\n3. **LE (Limited Edition)** \u2014 This edition has been marked as sold out, featuring exclusive artwork and features.\n\nFor full details, you can explore the OPDB record. Let me know if you need further help!",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3844.5094,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0004",
+      "question": "How much does the Foo Fighters LE pinball machine cost?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Valuation",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The \u0022Foo Fighters LE\u0022 pinball machine is manufactured by Stern in 2023. Its MSRP wasn\u0027t included in the retrieved data, and live resale or dealer activity prices aren\u0027t yet integrated.\n\nYou can check its OPDB record for more details: Foo Fighters LE on OPDB.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.5,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 11474.9799,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0005",
+      "question": "Is the Jersey Jack Toy Story 4 pinball still available new?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Valuation",
+      "expected_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "predicted_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "acceptable_refusal": true,
+      "predicted_refusal": false,
+      "answer_text": "The Jersey Jack *Toy Story 4* pinball machine (released in 2022) might still be found new, depending on distributor inventory. While it may no longer be available directly from Jersey Jack Pinball:\n\n- The Standard Edition (often seen as Limited Edition) had an MSRP of $12,000.\n- The Collector\u2019s Edition (CE) was priced at $15,000 when new.\n\nDealers or distributors may have remaining stock, though secondary markets are also worth considering. For more details, check its OPDB page.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": null,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 9463.1098,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0006",
+      "question": "What editions of the Galactic Tank Force pinball are there?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "predicted_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The \u0022Galactic Tank Force\u0022 pinball machine by American Pinball (2023) has the following editions:\n\n1. **Deluxe Edition**  \n2. **LE (Limited Edition)**  \n3. **Signature Edition**  \n\nFor more details, you can reference its OPDB page.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 4504.2859,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0007",
+      "question": "How much does it cost to ship a pinball machine across the country?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": null,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3055.6681,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0008",
+      "question": "What editions of the Spooky Halloween pinball machine are available?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "predicted_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Spooky Halloween pinball machine, released in 2021, has the following editions available:\n\n1. **CE (Collector\u0027s Edition)**\n2. **Blood Sucker Edition**\n\nYou can learn more about the machine here.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3523.8201,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0009",
+      "question": "What editions of the Attack from Mars Remake exist?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "predicted_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Attack from Mars Remake by Chicago Gaming, released in 2017, comes in the following editions:\n\n1. **Remake LE (Limited Edition)**  \n2. **Remake Special Edition**\n\nThese are grouped under the remake\u0027s OPDB record. You can explore more details here.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 5203.344,
+      "error": null
+    },
+    {
+      "id": "ev-valuation-0010",
+      "question": "What editions of the Pinball Brothers Queen pinball are available?",
+      "expected_sub_agent": "Valuation",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "predicted_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "The Pinball Brothers\u0027 Queen pinball machine, released in 2022, has two editions available:\n\n1. **CE** (Collector\u0027s Edition)\n2. **LE** (Limited Edition)\n\nFor more details, you can check the official record here.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.3333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3776.6982,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0001",
+      "question": "My Stern Godzilla LE flippers feel weak \u2014 what should I check?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Repair",
+      "expected_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "Here\u0027s how to troubleshoot your Stern Godzilla LE flippers feeling weak:\n\n---\n\n### **Initial Safety Step**\n- Always disconnect the machine\u0027s power before performing any maintenance to avoid injury or electrical damage. Source: p. 10\u201311, Godzilla Pro Manual.\n\n---\n\n### **Common Checks for Weak Flippers**\n1. **Excessive Wear \u0026 Tear**\n   - Inspect flipper components (e.g., plunger, crank assembly, bushing, coil stop) for excessive wear. If worn out, perform a full flipper rebuild. Source: p. 43, Godzilla Pro Manual.\n\n2. **Flipper Coil**\n   - Check the flipper coil for signs of burning or discoloration. Replace it if compromised. Source: p. 43\u201344, Godzilla Pro Manual.\n\n3. **End-of-Stroke Switch**\n   - Test the EOS switch. Misalignment, dirt, or failed functionality can weaken power delivery. Adjust or clean as necessary. Source: p. 43\u201344, Godzilla Pro Manual.\n\n4. **Flipper Assembly Mechanics**\n   - Ensure all components of the flipper assembly are functioning smoothly:\n     - Verify secure alignment of the coil stop.\n     - Ensure the plunger and link move freely and aren\u0027t sticking.\n     - Check that the bushing is clean and intact.\n\n5. **Pitch of the Playfield**\n   - Confirm the machine is leveled and set to the correct pitch (6 to 7 degrees). A playfield that\u0027s too steep may make flippers feel weaker due to faster ball movement. Source: p. 7\u20138, Godzilla Pro Manual.\n\n---\n\n### **If Problems Persist**\nIf issues remain after these checks, it may point to a deeper problem, such as issues with the flipper control circuitry or node boards. Consult Stern technical support or an authorized service technician for further diagnosis.\n\nFor detailed guidance, refer to the Godzilla Pro Manual or the OPDB machine listing.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.08333333333333333,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": 0
+      },
+      "duration_ms": 21970.5944,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0002",
+      "question": "Are there service bulletins for the Stern Godzilla pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Repair",
+      "expected_citation_set": [
+        "GweeP-MW95j",
+        "GweeP-Ml9pZ"
+      ],
+      "predicted_citation_set": [
+        "GweeP-MW95j"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I could not find indexed service bulletins specifically for Stern\u0027s Godzilla pinball machine from 2021. For official bulletins or guidance, contact Stern Pinball directly or consult the manufacturer documentation. You can also visit the machine\u2019s OPDB page for general reference: Stern Godzilla on OPDB.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 17124.5921,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0003",
+      "question": "What troubleshooting documents exist for the Foo Fighters pinball machine?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Repair",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "Here are the available troubleshooting documents for the Stern \u0022Foo Fighters\u0022 pinball machine (released in 2023):\n\n### 1. **Foo Fighters Pro Manual**\n- **Pages 5\u20136, 8\u20139, and 23\u201324**:\n  These sections include general setup, diagnostics, and operational troubleshooting information for the Pro edition.\n- **Document URL**: Pro Manual\n\n### 2. **Foo Fighters Premium Manual**\n- **Pages 10\u201311**:\n  Likely covering setup, operations, and troubleshooting details for the Premium edition.\n- **Page 24**:\n  Guides on servicing specific to the Premium edition.\n- **Page 63**:\n  May include advanced troubleshooting or system diagnostics appendices.\n- **Document URL**: Premium Manual\n\nFor detailed troubleshooting and diagnostics, refer to the manuals, and consider reaching out to Stern Pinball\u0027s technical support team directly.\n\n**OPDB Source for this machine**: Foo Fighters (Stern, 2023)",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.2,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 17680.7794,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0004",
+      "question": "Are there service bulletins for Stern\u0027s Foo Fighters pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GpeoL-MkPz1"
+      ],
+      "predicted_citation_set": [
+        "GpeoL-MyNPq"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "There are currently no specific service bulletins indexed for Stern\u0027s Foo Fighters machines. However, the manuals for both the Pro and Premium/LE editions include detailed maintenance and troubleshooting instructions.  \n\nFor example, the manuals cover key details like diagnostics, parts replacement, and regular upkeep. You can access these resources using the following links:\n\n- Foo Fighters Pro Manual: Stern Foo Fighters Pro Manual\n- Foo Fighters Premium/LE Manual: Stern Foo Fighters Premium/LE Manual\n\nIf you\u0027re troubleshooting or maintaining a specific Foo Fighters machine, the manuals should provide extensive guidance. Let me know if you\u0027d like help with a particular issue!",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.25,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 10997.3092,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0005",
+      "question": "Where can I find the manual for the Jersey Jack Toy Story 4 pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "predicted_citation_set": [
+        "GJ2o0-MrRye"
+      ],
+      "acceptable_refusal": true,
+      "predicted_refusal": false,
+      "answer_text": "I couldn\u0027t find the manual for the Jersey Jack Toy Story 4 pinball machine in the indexed corpus. You may want to check the official Jersey Jack Pinball website or contact their customer support, as they often provide access to manuals for their pinball machines. Alternatively, visiting online pinball communities or forums may help.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": null,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 6144.4025,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0006",
+      "question": "My Galactic Tank Force pinball won\u0027t boot \u2014 where do I begin troubleshooting?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Repair",
+      "expected_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "predicted_citation_set": [
+        "Gj6PZ-Mb5z6"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I couldn\u0027t find specific troubleshooting documentation for **Galactic Tank Force** (American Pinball, 2023) in my indexed corpus. For detailed diagnostics, I recommend consulting the manufacturer\u0027s service instructions or reaching out to American Pinball for support. You can also explore details about the machine on its OPDB entry.\n\nBoot issues can stem from various causes \u2014 power supply failure, CPU board problems, or firmware errors. If you\u0027re experienced with such repairs:\n\n1. **Verify Power Supply:** Make sure the machine is receiving power. Check the cord and outlets.\n2. **Inspect Board LEDs:** Look for diagnostic codes on the boards that may indicate hardware or software faults.\n3. **Check Firmware/Connections:** Ensure firmware is up-to-date, and inspect connectors for secure seating.\n\nAlways prioritize safety, and follow procedures outlined in your owner\u0027s manual or by American Pinball.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.25,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 16949.1445,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0007",
+      "question": "What service documents exist for the Spooky Halloween pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "predicted_citation_set": [
+        "Gj66Z-Mp4BN"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I don\u0027t know \u2014 I couldn\u0027t find any indexed service or manual documents for Spooky Halloween pinball. You might want to contact Spooky Pinball directly for service information.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 8101.8975,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0008",
+      "question": "How do I fix a stuck ball on the Attack from Mars Remake pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "predicted_citation_set": [
+        "G4do5-MkPnV"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I don\u0027t have specific service bulletins or manual guidance indexed for fixing a stuck ball on the Attack from Mars Remake pinball machine. However, here are general troubleshooting steps you can try:\n\n1. **Locate the stuck ball**: Identify where the ball is stuck. Common locations include ramps, under playfield mechanisms, or behind drop targets.\n\n2. **Tilt the machine**: If the ball is lightly stuck, gently tilting or nudging the machine might release it. Be cautious to avoid tilting too aggressively, so you don\u0027t damage the machine.\n\n3. **Inspect for obstructions**: Open the playfield and check for debris, loose parts, or mechanisms that might be obstructing the ball.\n\n4. **Manually release the ball**: With the machine turned off, use your hand to safely move or dislodge the ball.\n\n5. **Check for mechanical problems**: If the ball frequently gets stuck in the same spot, inspect nearby components like switches, solenoids, or paths for wear or misalignment.\n\nIf the problem persists, consulting the official documentation or an experienced pinball technician would be a good next step.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 0.14285714285714285,
+        "subagent_accuracy": 0,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 9725.4334,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0009",
+      "question": "Are there known issues with the Pinball Brothers Queen LE pinball?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Repair",
+      "expected_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "predicted_citation_set": [
+        "GELkO-Ml9zZ"
+      ],
+      "acceptable_refusal": false,
+      "predicted_refusal": false,
+      "answer_text": "I searched for any indexed evidence of known issues with the Pinball Brothers Queen Limited Edition (LE) pinball machine but found no documented problems. For detailed service bulletins or repair guidance, consult the manufacturer\u0027s official documentation directly. You can also explore the machine on OPDB.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": 1,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 15967.4367,
+      "error": null
+    },
+    {
+      "id": "ev-repair-0010",
+      "question": "Can you fix my car\u0027s transmission?",
+      "expected_sub_agent": "Repair",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": null,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 1874.8517,
+      "error": null
+    },
+    {
+      "id": "ev-oos-0001",
+      "question": "What\u0027s the weather like in Tokyo today?",
+      "expected_sub_agent": "Wizard",
+      "predicted_sub_agent": "Wizard",
+      "expected_citation_set": [],
+      "predicted_citation_set": [],
+      "acceptable_refusal": true,
+      "predicted_refusal": true,
+      "answer_text": "I don\u0027t know \u2014 that\u0027s outside the pinball domain I\u0027m built for. Try asking about a specific pinball machine.",
+      "scores": {
+        "citation_precision": 1,
+        "citation_recall": 1,
+        "citation_coverage": null,
+        "subagent_accuracy": 1,
+        "refusal_correctness": 1,
+        "answered_all_editions": null,
+        "honest_substitution": null
+      },
+      "duration_ms": 3198.8344,
+      "error": null
+    }
+  ]
+}
