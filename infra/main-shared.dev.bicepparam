@@ -35,6 +35,14 @@ param searchLocation = 'eastus2'
 // Replace the empty string below with your Object ID for one-shot RBAC at deploy time.
 param developerObjectId = ''
 
+// Entra OIDC sign-in for the Wizard web app (PR-B0 infra half).
+// The "PinballWizard Web" app registration's client ID — a public
+// identifier, safe to commit. The matching client SECRET lives only in
+// Key Vault (AzureAd-ClientSecret, 2-year expiry) and reaches the
+// container via the ACA secret keyVaultUrl reference; it is never a
+// parameter. GlobalAdmin app role per ADR-0009; Jim holds the assignment.
+param azureAdClientId = '4b530be1-a1e8-4c53-b595-82d9d75ff28f'
+
 // Phase 2 gate. Flipped true 2026-05-06 in PR 2b of Phase 3 — adds the
 // AI / RAG infrastructure (App Insights, Key Vault, ACR, AI Search,
 // Azure OpenAI, Foundry account + project + model deployments, Storage +
