@@ -46,9 +46,9 @@ public sealed class AdminSettingsTests : AsyncBunitContext
             cut.Find("[data-testid='setting-confidence']");
         });
 
-        // Placeholder tabs exist and explain WHY they are empty — honest
-        // empty states, not dead knobs. (Panels render lazily; assert the
-        // tab headers are present.)
+        // The RAG tab is live (retrieval keys gained call-time consumers);
+        // Prompt Templates remains an honest placeholder until Phase 3.
+        // (Panels render lazily; assert the tab headers are present.)
         Assert.Contains("RAG Retrieval", cut.Markup);
         Assert.Contains("Prompt Templates", cut.Markup);
 

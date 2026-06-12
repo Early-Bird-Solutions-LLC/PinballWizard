@@ -11,10 +11,10 @@
  * everywhere: stored override → IOptions default; "Reset to default"
  * deletes the override row.
  *
- * Tabs are the sanctioned tabs-over-pages spot (plan Phase 2). Two tabs
- * are live; two are deliberate placeholders that say WHY they are empty
- * (RAG retrieval keys arrive with their consumers; prompt templates are
- * Phase 3 with the ADR-0018 amendment) — an honest empty state beats a
+ * Tabs are the sanctioned tabs-over-pages spot (plan Phase 2). Three tabs
+ * are live (RAG retrieval activated with its call-time consumers); Prompt
+ * Templates remains a deliberate placeholder that says WHY it is empty
+ * (Phase 3 with the ADR-0018 amendment) — an honest empty state beats a
  * control that silently does nothing.
  *
  * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly).
@@ -124,11 +124,45 @@
             </MudTabPanel>
 
             <MudTabPanel Text="RAG Retrieval" data-testid="tab-rag">
-                <MudAlert Severity="Severity.Info" data-testid="rag-placeholder">
-                    Retrieval tuning (top-K, minimum score) becomes runtime-mutable when those
-                    keys gain call-time consumers — wiring the controls first would ship knobs
-                    that silently do nothing. Tracked in the admin-settings plan.
-                </MudAlert>
+                <MudStack Spacing="6">
+                    @{ var topK = Row(WellKnownSettings.RetrievalTopK); }
+                    <div data-testid="setting-topk">
+                        <MudText Typo="Typo.subtitle1">Retrieval top-K</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Chunks the searchCorpus tool retrieves per query when the model
+                            doesn't ask for a specific count (a model-supplied K still wins,
+                            clamped). Range 1–20. @DefaultHint(topK)
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudNumericField T="double" @bind-Value="topK.NumericValue"
+                                             Min="1" Max="20" Step="1"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             aria-label="Retrieval top-K"
+                                             data-testid="topk-input" />
+                            @ResetButton(topK)
+                        </MudStack>
+                        @ProvenanceLine(topK)
+                    </div>
+
+                    @{ var minScore = Row(WellKnownSettings.RetrievalMinimumScore); }
+                    <div data-testid="setting-minscore">
+                        <MudText Typo="Typo.subtitle1">Minimum relevance score</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Hits scoring below this are dropped before the model sees them.
+                            Higher = stricter grounding, more refusals; lower = more context,
+                            weaker citations. Range 0.0–1.0. @DefaultHint(minScore)
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudSlider T="double" @bind-Value="minScore.NumericValue"
+                                       Min="0" Max="1" Step="0.01"
+                                       Class="flex-grow-1"
+                                       aria-label="Minimum relevance score" />
+                            <MudText Typo="Typo.h6" data-testid="minscore-value">@minScore.NumericValue.ToString("0.00")</MudText>
+                            @ResetButton(minScore)
+                        </MudStack>
+                        @ProvenanceLine(minScore)
+                    </div>
+                </MudStack>
             </MudTabPanel>
 
             <MudTabPanel Text="Prompt Templates" data-testid="tab-prompts">
