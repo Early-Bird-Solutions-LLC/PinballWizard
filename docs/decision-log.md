@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — /admin/settings ships with two live tabs and two honest placeholders (PR-B2)
+
+**Decision:** The settings page (admin settings plan, Phase 2) edits the PR-B1 key set through `IAdminSettingsRepository`: Guardrails tab (confidence-threshold slider, cost-ceiling field) and Conversation tab (max turns). Per-setting affordances: default hint, override provenance (`updatedBy` + `updatedAtUtc`), reset-to-default behind a confirm (delete = revert), dirty-tracked save that writes only changed rows after `WellKnownSettings.TryValidate`. `updatedBy` resolves from the cascading `AuthenticationState` (newly wired via `AddCascadingAuthenticationState` on the auth-configured path); the no-tenant dev path records an explicit local-dev marker instead of a fake name. A failed settings load renders an error state that says the Wizard itself is unaffected and offers no dead controls.
+
+**The placeholder tabs are deliberate:** RAG Retrieval and Prompt Templates render explanatory empty states rather than disabled knobs. Wiring controls before their keys have call-time consumers would ship settings that silently do nothing — the dead-config class /local-review exists to catch. They activate with their consumers (retrieval keys) and Phase 3 (prompts + ADR-0018 amendment).
+
+**Alternatives considered:** separate pages per area (the repo's pages-not-tabs norm) — rejected here per the plan's explicit carve-out: these are fields, not grids, and four shallow pages would bury two controls each; hiding the placeholder tabs entirely — rejected: the roadmap visibility is showcase-relevant and prevents "where do I tune retrieval?" confusion.
+
+**Revisit when:** retrieval keys gain consumers (tab 3 goes live), Phase 3 lands (tab 4), or the setting count outgrows the four-tab layout.
+
+**Related:** thoughts/shared/plans/AB-259-admin-settings-page.md (Phase 2), PR-B1 entry above, ADR-0008 (MudBlazor strict), ADR-0009 (AdminOnly).
+
 ## 2026-06-12 — Runtime-mutable Wizard settings: Cosmos overrides layered over IOptions (PR-B1)
 
 **Decision:** The `/admin/settings` surface gets its storage + read path (admin settings plan, Phase 1). A new `admin_settings` Cosmos container (partition `/key` = id, point reads only; no TTL — auto-expiry would silently revert operator decisions; default indexing — tens of tiny docs) holds overrides as `{key, value, updated_at_utc, updated_by}`. `IAdminSettingsRepository` (Application) + `CosmosAdminSettingsRepository` (Infrastructure) front it with Conflux's proven 2-minute TTL cache including negative entries, evicted after successful writes. `IRuntimeSettings.GetSnapshotAsync` resolves the layering rule — stored override → `IOptions<AiFoundryOptions>` default — once per ask, and `AiRouter` consumes the snapshot for `ConfidenceThreshold`, `PerCallCostCeilingUsdCents`, and `MaxConversationTurns` (the guardrail + history-trim reads). Changes apply within one cache window, no restart. `WellKnownSettings` is the closed key set with server-side ranges (0.3–0.95 / 1–100¢ / 1–20, the last pinned under the API's 20-turn guard).
