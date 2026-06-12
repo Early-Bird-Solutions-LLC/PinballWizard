@@ -32,6 +32,10 @@ namespace PinballWizard.Api.Endpoints;
 // Wave 2 PR-S2 swaps the router call to RunStreamingAsync.
 public static class WizardAskStreamEndpoint
 {
+    // Hard ceiling on client-supplied history turns (request-shaping guard;
+    // see the WizardAskRequest comment for the layering rationale).
+    private const int MaxHistoryTurns = 20;
+
     // Shared JsonSerializerOptions: camelCase property names + polymorphic
     // AnswerChunk serialization. The polymorphism is driven entirely by
     // [JsonPolymorphic] / [JsonDerivedType] attributes on AnswerChunk, so
@@ -130,6 +134,24 @@ public static class WizardAskStreamEndpoint
             return;
         }
 
+        // Request-shaping guard for client-supplied history. 20 is far above
+        // the router's MaxConversationTurns trim (8) — this rejects only
+        // shapes no legitimate client produces, so raising the router cap
+        // never requires touching this guard. Per-field length is the
+        // router's job (it caps each Question/AnswerText independently).
+        if (request.History is { Count: > MaxHistoryTurns })
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status400BadRequest,
+                "https://pinballwizard.app/errors/invalid-request",
+                "Bad Request",
+                $"'history' must not exceed {MaxHistoryTurns} turns. Start a new conversation instead.",
+                retryAfterSeconds: null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         // ── SSE response headers ──────────────────────────────────────
         // text/event-stream with no buffering. X-Accel-Buffering disables
         // Nginx/Cloudflare proxy buffering so deltas reach the browser
@@ -178,7 +200,7 @@ public static class WizardAskStreamEndpoint
         try
         {
             await foreach (var chunk in router
-                .AnswerStreamingAsync(request.Question, cancellationToken)
+                .AnswerStreamingAsync(request.Question, request.History, cancellationToken)
                 .ConfigureAwait(false))
             {
                 var eventName = chunk switch
@@ -308,4 +330,15 @@ public static class WizardAskStreamEndpoint
 
 // Request body shape for POST /api/wizard/ask:stream.
 // Sealed record: STJ round-trips cleanly via positional ctor.
-internal sealed record WizardAskRequest(string Question);
+//
+// History (multi-turn, 2026-06-11 design): the client's completed prior
+// turns, oldest first, reusing the Application ConversationTurn record —
+// the same layer whose types already ride the SSE wire inside AnswerChunk.
+// Null/absent = single-shot (fully backward compatible). The endpoint
+// rejects more than MaxHistoryTurns entries (a request-shaping guard);
+// the router additionally trims to AiFoundryOptions.MaxConversationTurns
+// and caps each field's length — defense at both layers, each scoped to
+// what that layer can see.
+internal sealed record WizardAskRequest(
+    string Question,
+    IReadOnlyList<ConversationTurn>? History = null);
