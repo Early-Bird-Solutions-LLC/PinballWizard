@@ -1,0 +1,40 @@
+@*
+    MarkdownContent — renders a safe markdown subset as HTML elements.
+
+    Used by TokenRenderer when IsStreaming=false (canonical / final text only).
+    During streaming the plain-text span path in TokenRenderer is unchanged —
+    this component is never called on the hot streaming path.
+
+    Safety contract:
+      • All text content is passed through Blazor's RenderTreeBuilder.AddContent,
+        which HTML-encodes every string. MarkupString is NOT used anywhere in
+        this component or MarkdownTokenizer.
+      • Output elements are a fixed safe subset: p, strong, em, ol, ul, li, br.
+        No links, no script, no style attributes, no inline event handlers.
+      • The CSP enforcement in production is unaffected because no inline markup
+        is injected.
+
+    The component emits a single <div class="markdown-content"> wrapper and
+    lets the MarkdownTokenizer own the block structure (p / ol / ul). MudText
+    is not used as a container here to avoid double-wrapping with an extra
+    block element, which is both invalid HTML (p-in-p) and makes test
+    assertions on block counts unreliable.
+
+    ADR-0026 § 6 — delight surface lock (sub-component of WizardAnswerStream)
+    ADR-0008     — MudBlazor strict for chrome; prose rendered via tokenizer
+                    block elements styled via .markdown-content class
+*@
+
+@if (!string.IsNullOrEmpty(Text))
+{
+    <div class="markdown-content" data-testid="markdown-content">
+        @MarkdownTokenizer.Render(Text)
+    </div>
+}
+
+@code {
+    // The canonical answer text to render. Expected to be the Final.Answer.Text
+    // (post-guardrail, post-citation-strip); never raw streaming delta text.
+    [Parameter, EditorRequired]
+    public string Text { get; set; } = string.Empty;
+}
