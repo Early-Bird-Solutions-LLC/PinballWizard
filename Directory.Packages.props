@@ -25,6 +25,18 @@
     -->
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.203" />
   </ItemGroup>
+  <ItemGroup Label="Security pins — direct references that lift a vulnerable transitive">
+    <!--
+      MessagePack rides in transitively via the Aspire hosting packages at
+      2.5.192, which is vulnerable to GHSA-hv8m-jj95-wg3x (LZ4 decompression
+      AccessViolation on bad input; patched in 2.5.301). NU1903 is
+      warning-as-error here, so the advisory broke every restore the day it
+      published. Direct-referencing the patched version from AppHost lifts
+      the transitive. Remove this pin (and the AppHost PackageReference)
+      when the Aspire packages ship a dependency >= 2.5.301.
+    -->
+    <PackageVersion Include="MessagePack" Version="2.5.301" />
+  </ItemGroup>
   <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.0" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.0" />

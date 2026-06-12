@@ -35,6 +35,10 @@
     <!-- Aspire.Hosting.AppHost is implicit in Aspire.AppHost.Sdk/13.3.0 -->
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
     <PackageReference Include="Aspire.Hosting.Azure.Storage" />
+    <!-- Security pin: lifts the vulnerable MessagePack 2.5.192 transitive
+         (GHSA-hv8m-jj95-wg3x) — see Directory.Packages.props for rationale
+         and the removal condition. -->
+    <PackageReference Include="MessagePack" />
   </ItemGroup>
 
 </Project>
