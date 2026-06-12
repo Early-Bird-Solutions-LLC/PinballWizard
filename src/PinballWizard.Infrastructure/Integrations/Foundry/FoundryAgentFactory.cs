@@ -34,7 +34,7 @@ namespace PinballWizard.Infrastructure.Integrations.Foundry;
 // functional — the LLM picks the matching sub-agent function and
 // Microsoft Agent Framework drives the call with full thread context
 // preservation. Closes the Phase 3 H2 gap (subagent_accuracy=0.033).
-public sealed class FoundryAgentFactory : IFoundryAgentFactory
+public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCacheInvalidator
 {
     private readonly AiFoundryOptions _options;
     private readonly IAgentPromptProvider _promptProvider;
@@ -43,6 +43,16 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
+
+    // The IAgentPromptProvider.PromptVersion the cache was built with.
+    // GetAgent compares against the provider's CURRENT version and rebuilds
+    // on drift. This is the CROSS-PROCESS path for prompt overrides: the
+    // admin UI (Web process) writes to Cosmos and can only Invalidate its
+    // own process; the Api's factory converges via the provider's TTL'd
+    // version refresh (~2 min) — consistent with the settings page's
+    // "live within ~2 minutes" contract. In-process Invalidate remains the
+    // immediate path.
+    private string? _agentsPromptVersion;
 
     public FoundryAgentFactory(
         IOptions<AiFoundryOptions> options,
@@ -70,13 +80,30 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
 
         // Double-checked init: the dictionary, once populated, is
-        // immutable for the process lifetime.
+        // immutable for the process lifetime — UNLESS Invalidate evicts
+        // an entry (in-process) or the prompt provider's version drifts
+        // (cross-process: an admin activated/deactivated an override from
+        // the Web process). The lock guards lazy-init, eviction, and the
+        // drift-triggered re-init alike. The version read is a cached
+        // string on the provider (TTL-refreshed) — cheap per call.
+        var currentVersion = _promptProvider.PromptVersion;
         var agents = _agents;
-        if (agents is null)
+        if (agents is null || !string.Equals(_agentsPromptVersion, currentVersion, StringComparison.Ordinal))
         {
             lock (_initLock)
             {
-                agents = _agents ??= ConstructAgents();
+                if (_agents is null || !string.Equals(_agentsPromptVersion, _promptProvider.PromptVersion, StringComparison.Ordinal))
+                {
+                    if (_agents is not null)
+                    {
+                        _logger.LogInformation(
+                            "FoundryAgentFactory rebuilding agents — prompt version drifted from '{Cached}' to '{Current}' (admin override change).",
+                            _agentsPromptVersion, _promptProvider.PromptVersion);
+                    }
+                    _agents = ConstructAgents();
+                    _agentsPromptVersion = _promptProvider.PromptVersion;
+                }
+                agents = _agents;
             }
         }
 
@@ -85,6 +112,35 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
             : throw new ArgumentException(
                 $"Unknown agent name '{agentName}'. Expected one of: {string.Join(", ", AgentName.All)}.",
                 nameof(agentName));
+    }
+
+    // IFoundryAgentCacheInvalidator — evicts the agent cache for agentName
+    // so the next GetAgent call reconstructs all agents with the current
+    // (changed) prompt from IAgentPromptProvider. We null out the entire
+    // dictionary rather than patching individual entries because the Wizard
+    // agent embeds sub-agents as AIFunction wrappers: rebuilding one sub-
+    // agent requires re-wrapping it in the Wizard, so all-or-nothing is
+    // the correct granularity. The rebuild cost (one ConstructAgents call)
+    // is incurred at most once per admin override activation — negligible
+    // compared to the per-ask Foundry round-trip.
+    public void Invalidate(string agentName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
+
+        // Null the cache inside the lock so a concurrent GetAgent call
+        // either sees the old cache (races the nulling, fine) or triggers
+        // ConstructAgents (correct: the new prompt is live). There is no
+        // window where _agents is a partial/corrupt dictionary.
+        lock (_initLock)
+        {
+            if (_agents is not null && _agents.ContainsKey(agentName))
+            {
+                _agents = null;
+                _logger.LogInformation(
+                    "FoundryAgentFactory cache evicted for agent '{AgentName}' — will rebuild on next GetAgent call.",
+                    agentName);
+            }
+        }
     }
 
     private Dictionary<string, AIAgent> ConstructAgents()

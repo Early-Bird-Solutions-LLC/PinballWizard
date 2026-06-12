@@ -144,6 +144,14 @@ else
     builder.Services.AddControllersWithViews();
 }
 
+// ── Embedded-resource agent prompts (admin prompt-templates tab) ──────────
+// Parameterless; reads the Application assembly's .md resources. The Web
+// host doesn't run AddAiRouter (no Foundry here — asks go through the Api),
+// but /admin/settings' Prompt Templates tab shows the embedded DEFAULT next
+// to Cosmos overrides. Unconditional: the page renders on the local-dev
+// no-auth path too.
+builder.Services.AddSingleton<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>();
+
 // ── Degradation state store (scoped per circuit) ──────────────────────────
 // IClientDegradationStore propagates DegradationContext from WizardAnswer
 // responses to OutageBanner without requiring a global singleton or

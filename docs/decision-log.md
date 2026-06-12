@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — Prompt templates go runtime-overridable; the last settings tab activates (PR-B3)
+
+**Decision:** Per-agent prompt overrides ship per the ADR-0018 follow-up (same date): `admin_prompts` container (partition `/agent_name`, id `{agent}:v{n}`, no TTL), `IAgentPromptOverrideRepository` with versioning + the one-active-per-agent invariant + TTL-cached `GetActiveAsync` (negative entries, evict-on-write), `OverridingAgentPromptProvider` layering active override → embedded default with visible degradation on store failure. **Two load-bearing wires:** (1) `PromptVersion` composes active overrides into the semantic-cache key (`v4.2026.05+Wizard.v2`) so prompt changes invalidate cached answers; (2) `FoundryAgentFactory` rebuilds agents on prompt-version drift — the CROSS-PROCESS convergence path, since the admin UI (Web) can only invalidate its own process's cache; the Api converges within the provider's ~2-min version TTL, matching the settings page's "live within ~2 minutes" contract. The `/admin/settings` Prompt Templates tab: agent picker, editor preloading live content, save-as-new-version (inactive — activation is a deliberate second step behind a confirm), version history with activate, revert-to-default, view-embedded-default panel.
+
+**Coverage note:** the factory's drift-rebuild has no direct unit test — `FoundryAgentFactory` requires a live `AIProjectClient` and the repo deliberately carries no factory harness; the drift input (`PromptVersion` composition) is pinned by `OverridingAgentPromptProviderTests`.
+
+**Alternatives considered:** Web→Api invalidation call (new internal endpoint) — rejected: more surface for a 2-minute convergence win the TTL already provides; per-agent cache eviction — rejected by the backend agent with documented rationale (the Wizard embeds sub-agents; all-or-nothing is the correct granularity); editing prompts only via git — the status quo the amendment deliberately preserves as the source of truth while allowing ops tuning.
+
+**Revisit when:** the SDK stabilizes agent threads (rebuild semantics change), eval data shows override churn degrading quality (then gate activation behind an eval run), or multi-replica Api makes TTL convergence visibly inconsistent.
+
+**Related:** ADR-0018 follow-up 2026-06-12, PR-B1/B2/retrieval entries above, built in parallel by a worktree agent per the 2026-06-12 parallel-tracks dispatch.
+
 ## 2026-06-12 — Retrieval top-K and minimum score go runtime-mutable; the RAG settings tab activates
 
 **Decision:** `rag.retrieval_top_k` (1–20) and `rag.retrieval_minimum_score` (0.0–1.0) join `WellKnownSettings`, resolved through the same stored-override → `IOptions` layering and consumed at call time by `SearchCorpusTool` — one `IRuntimeSettings` snapshot per tool invocation (the tool is a singleton living outside `AiRouter`'s snapshot scope, so it resolves its own; the repository's TTL cache keeps that ~free). A model-supplied top-K still wins, clamped; the runtime value applies when the model omits it. Sub-agents (Repair/Rules/Valuation) inherit automatically — same singleton via DI. With real consumers wired, `/admin/settings`' RAG tab replaces its placeholder with live controls (this PR), keeping the no-dead-config rule intact in both directions.

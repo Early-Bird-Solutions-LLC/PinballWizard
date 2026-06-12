@@ -123,12 +123,44 @@ public sealed class CosmosOptionsTests
         // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
         // Document-linking Pass 1: adds scraped_documents_raw + link_overrides.
         // Admin settings PR-B1: adds admin_settings (runtime-mutable config).
+        // Admin prompts PR-B3: adds admin_prompts (per-agent prompt overrides).
         var options = new CosmosOptions();
-        Assert.Equal(11, options.Containers.Count);
+        Assert.Equal(12, options.Containers.Count);
 
         var settings = Assert.Single(options.Containers, c => c.Name == "admin_settings");
         Assert.Equal("/key", settings.PartitionKeyPath);
         Assert.Null(settings.DefaultTtlSeconds); // auto-expiry would silently revert operator decisions
+
+        var prompts = Assert.Single(options.Containers, c => c.Name == "admin_prompts");
+        Assert.Equal("/agent_name", prompts.PartitionKeyPath);
+        Assert.Null(prompts.DefaultTtlSeconds); // version rows are audit records — must not auto-expire
+        Assert.Null(prompts.IndexingPolicy);    // default indexing — tiny container, no selective policy needed
+    }
+
+    [Fact]
+    public void Defaults_Containers_IncludesAdminPromptsWithCorrectPartitionKey()
+    {
+        // PR-B3 per-agent prompt override store. Partition key /agent_name
+        // keeps all version rows for one agent in the same partition so
+        // GetVersionsAsync is a single-partition scan with no cross-
+        // partition fan-out.
+        var options = new CosmosOptions();
+
+        var prompts = Assert.Single(options.Containers, c => c.Name == "admin_prompts");
+        Assert.Equal("/agent_name", prompts.PartitionKeyPath);
+    }
+
+    [Fact]
+    public void Defaults_AdminPrompts_HasNoTtl()
+    {
+        // Prompt version rows are the audit trail for every override ever
+        // saved. Auto-expiry would silently destroy prior versions the
+        // admin may need to view or re-activate — the same rationale as
+        // admin_settings (operator decisions must not vanish on their own).
+        var options = new CosmosOptions();
+
+        var prompts = Assert.Single(options.Containers, c => c.Name == "admin_prompts");
+        Assert.Null(prompts.DefaultTtlSeconds);
     }
 
     [Fact]

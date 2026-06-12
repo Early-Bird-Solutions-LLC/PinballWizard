@@ -27,6 +27,8 @@
 
 @inject IAdminSettingsRepository SettingsRepo
 @inject IOptions<AiFoundryOptions> FoundryOptions
+@inject IAgentPromptOverrideRepository PromptRepo
+@inject PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider EmbeddedPrompts
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
@@ -166,11 +168,93 @@
             </MudTabPanel>
 
             <MudTabPanel Text="Prompt Templates" data-testid="tab-prompts">
-                <MudAlert Severity="Severity.Info" data-testid="prompts-placeholder">
-                    Per-agent prompt overrides ship with Phase 3 (PR-B3): they need the
-                    agent-cache invalidation hook and an ADR-0018 amendment — prompts are
-                    currently code-resource embedded by locked decision.
-                </MudAlert>
+                <MudStack Spacing="4">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Per-agent prompt overrides (ADR-0018 amendment, 2026-06-12). The embedded
+                        git prompt remains the default and version-zero source of truth; an ACTIVE
+                        override replaces it at runtime. New versions save inactive — activating is
+                        the deliberate second step. The Wizard picks changes up within ~2 minutes
+                        (prompt-version drift rebuilds the agents), and changed prompts invalidate
+                        cached answers automatically.
+                    </MudText>
+
+                    <MudSelect T="string" Label="Agent"
+                               Value="_selectedAgent" ValueChanged="OnAgentSelectedAsync"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               data-testid="prompt-agent-select">
+                        @foreach (var name in PinballWizard.Application.Ai.AgentName.All)
+                        {
+                            <MudSelectItem Value="@name">@name</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    @if (_selectedAgent is not null)
+                    {
+                        <MudText Typo="Typo.subtitle2" data-testid="prompt-status">
+                            @(_activeOverride is null
+                                ? "Using the embedded default."
+                                : $"Override v{_activeOverride.Version} active — {_activeOverride.UpdatedBy}, {_activeOverride.UpdatedAtUtc:yyyy-MM-dd HH:mm} UTC.")
+                        </MudText>
+
+                        <MudTextField T="string" @bind-Value="_promptDraft"
+                                      Variant="Variant.Outlined"
+                                      Lines="16"
+                                      aria-label="Prompt content"
+                                      data-testid="prompt-editor" />
+
+                        <MudStack Row="true" Spacing="2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="SaveNewPromptVersionAsync"
+                                       Disabled="@(string.IsNullOrWhiteSpace(_promptDraft) || _promptBusy)"
+                                       data-testid="prompt-save-button">
+                                Save as new version
+                            </MudButton>
+                            <MudButton Variant="Variant.Text" Color="Color.Secondary"
+                                       OnClick="RevertPromptToDefaultAsync"
+                                       Disabled="@(_activeOverride is null || _promptBusy)"
+                                       data-testid="prompt-revert-button">
+                                Revert to embedded default
+                            </MudButton>
+                        </MudStack>
+
+                        <MudExpansionPanels Elevation="0">
+                            <MudExpansionPanel Text="View embedded default" data-testid="prompt-default-panel">
+                                <pre class="prompt-default-view" data-testid="prompt-default-content">@_embeddedDefault</pre>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+
+                        @if (_promptVersions.Count > 0)
+                        {
+                            <MudText Typo="Typo.subtitle1">Versions</MudText>
+                            <MudStack Spacing="1" data-testid="prompt-version-list">
+                                @foreach (var v in _promptVersions.OrderByDescending(v => v.Version))
+                                {
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2"
+                                              data-testid="@($"prompt-version-{v.Version}")">
+                                        <MudText Typo="Typo.body2" Style="min-width: 3rem">v@(v.Version)</MudText>
+                                        @if (v.IsActive)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                                     data-testid="@($"prompt-active-chip-{v.Version}")">active</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                                       OnClick="@(() => ActivatePromptVersionAsync(v.Version))"
+                                                       Disabled="_promptBusy"
+                                                       data-testid="@($"prompt-activate-{v.Version}")">
+                                                Activate
+                                            </MudButton>
+                                        }
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            @v.UpdatedBy — @v.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC
+                                        </MudText>
+                                    </MudStack>
+                                }
+                            </MudStack>
+                        }
+                    }
+                </MudStack>
             </MudTabPanel>
         </MudTabs>
 
@@ -346,6 +430,139 @@
     };
 
     private string DefaultHint(SettingRow row) => $"Default: {row.DefaultValueString}.";
+
+    // ── Prompt Templates tab state (PR-B3) ───────────────────────────────
+    private string? _selectedAgent;
+    private AgentPromptOverride? _activeOverride;
+    private IReadOnlyList<AgentPromptOverride> _promptVersions = [];
+    private string _promptDraft = string.Empty;
+    private string _embeddedDefault = string.Empty;
+    private bool _promptBusy;
+
+    private async Task OnAgentSelectedAsync(string agent)
+    {
+        _selectedAgent = agent;
+        await LoadPromptStateAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadPromptStateAsync()
+    {
+        if (_selectedAgent is null)
+        {
+            return;
+        }
+
+        _promptBusy = true;
+        try
+        {
+            _embeddedDefault = EmbeddedPrompts.GetPrompt(_selectedAgent);
+            _activeOverride = await PromptRepo.GetActiveAsync(_selectedAgent, CancellationToken.None).ConfigureAwait(true);
+            _promptVersions = await PromptRepo.GetVersionsAsync(_selectedAgent, CancellationToken.None).ConfigureAwait(true);
+            // Editor preloads the live content: active override or default.
+            _promptDraft = _activeOverride?.Content ?? _embeddedDefault;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Prompt state load failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _promptBusy = false;
+        }
+    }
+
+    private async Task SaveNewPromptVersionAsync()
+    {
+        if (_selectedAgent is null || string.IsNullOrWhiteSpace(_promptDraft))
+        {
+            return;
+        }
+
+        _promptBusy = true;
+        try
+        {
+            var updatedBy = await ResolveUpdatedByAsync().ConfigureAwait(true);
+            var saved = await PromptRepo.SaveNewVersionAsync(_selectedAgent, _promptDraft, updatedBy, CancellationToken.None).ConfigureAwait(true);
+            // Deliberate two-step: saving never activates. Fabricating a live
+            // prompt out of a draft save would be the silent-mutation class.
+            Snackbar.Add($"Saved v{saved.Version} (inactive) — activate it from the version list when ready.", Severity.Success);
+            await LoadPromptStateAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _promptBusy = false;
+        }
+    }
+
+    private async Task ActivatePromptVersionAsync(int version)
+    {
+        if (_selectedAgent is null)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBox(
+            $"Activate v{version}?",
+            $"The live {_selectedAgent} agent rebuilds with this prompt within ~2 minutes, and cached answers for the old prompt stop being served.",
+            yesText: "Activate", cancelText: "Cancel").ConfigureAwait(true);
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        _promptBusy = true;
+        try
+        {
+            await PromptRepo.ActivateAsync(_selectedAgent, version, CancellationToken.None).ConfigureAwait(true);
+            Snackbar.Add($"{_selectedAgent} v{version} activated.", Severity.Success);
+            await LoadPromptStateAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Activate failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _promptBusy = false;
+        }
+    }
+
+    private async Task RevertPromptToDefaultAsync()
+    {
+        if (_selectedAgent is null)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Revert to embedded default?",
+            $"Deactivates all {_selectedAgent} overrides; the agent rebuilds with the git-source prompt within ~2 minutes. Stored versions remain and can be re-activated.",
+            yesText: "Revert", cancelText: "Cancel").ConfigureAwait(true);
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        _promptBusy = true;
+        try
+        {
+            await PromptRepo.DeactivateAsync(_selectedAgent, CancellationToken.None).ConfigureAwait(true);
+            Snackbar.Add($"{_selectedAgent} reverted to the embedded default.", Severity.Success);
+            await LoadPromptStateAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Revert failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _promptBusy = false;
+        }
+    }
 
     // One editable setting. NumericValue is the bound editor state; dirty =
     // differs from the effective (stored-or-default) starting value.
