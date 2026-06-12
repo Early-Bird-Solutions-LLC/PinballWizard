@@ -1,5 +1,7 @@
 @page "/admin/document-triage"
 @layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AdminOnly")]
 
 @* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
  *

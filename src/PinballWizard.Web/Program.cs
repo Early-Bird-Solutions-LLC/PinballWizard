@@ -97,16 +97,24 @@ if (isAuthConfigured)
 
     // Blanket authorization policy: every route requires authentication by default.
     // Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
-    // opt out with [AllowAnonymous]. Admin routes (/admin/**) are protected automatically
-    // without needing per-page [Authorize] attributes — new admin pages are secure by
-    // default and cannot be accidentally left open. The API minimal-API endpoints
+    // opt out with [AllowAnonymous]. The API minimal-API endpoints
     // (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
     // (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
+    //
+    // AdminOnly (PR-B0, 2026-06-11 decision): /admin/** pages additionally
+    // require the Wizard.Admin Entra app role via explicit
+    // [Authorize(Policy = "AdminOnly")] — "any authenticated user" was the
+    // right bar for read-mostly grids, not for surfaces that mutate live
+    // Wizard behavior (the /admin/settings page this gate precedes).
+    // Microsoft.Identity.Web maps app-role claims to ClaimTypes.Role, so
+    // RequireRole matches. AuthorizationContractTests pins that every admin
+    // page carries the policy attribute.
     builder.Services.AddAuthorization(options =>
     {
         options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build();
+        options.AddPolicy("AdminOnly", policy => policy.RequireRole("Wizard.Admin"));
     });
 
     builder.Services.AddControllersWithViews()
@@ -116,7 +124,17 @@ else
 {
     // No real Entra tenant — register permissive auth so middleware compiles.
     builder.Services.AddAuthentication();
-    builder.Services.AddAuthorization();
+    builder.Services.AddAuthorization(options =>
+    {
+        // The AdminOnly policy must EXIST on this path too — admin pages
+        // reference it by name and an unregistered policy throws at render.
+        // Permissive here by design: this whole branch IS the documented
+        // local-dev/no-tenant posture (no FallbackPolicy either). The role
+        // requirement applies wherever a real tenant is configured — which
+        // includes the deployed app once AzureAd:TenantId lands (PR-B0
+        // infra half).
+        options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
+    });
     builder.Services.AddControllersWithViews();
 }
 
