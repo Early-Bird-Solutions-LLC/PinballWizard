@@ -1166,20 +1166,43 @@ public sealed class AiRouter : IAiRouter
     // pairs for each prior turn, then the current question as the final
     // user message. Refusal turns are excluded by the CLIENT (it only
     // records successful turns into history) — the router trusts the
-    // shape it is given, bounded by TrimHistory.
-    private static List<ChatMessage> BuildConversationMessages(
+    // shape it is given, bounded by TrimHistory and the per-field cap.
+    //
+    // Per-field cap: history is client-supplied, so each Question /
+    // AnswerText is truncated to MaxConversationTurnContentChars before it
+    // reaches the model. A whole-request size guard (API layer) cannot do
+    // this job — it bounds the body, not a field, so a single turn could
+    // smuggle a near-body-sized adversarial payload past it. Truncation
+    // costs context, never correctness: the guardrail pipeline still runs
+    // in full on the model's output.
+    private List<ChatMessage> BuildConversationMessages(
         string question,
         IReadOnlyList<ConversationTurn> history)
     {
+        var cap = _options.MaxConversationTurnContentChars;
         var messages = new List<ChatMessage>((history.Count * 2) + 1);
         foreach (var turn in history)
         {
-            messages.Add(new ChatMessage(ChatRole.User, turn.Question));
-            messages.Add(new ChatMessage(ChatRole.Assistant, turn.AnswerText));
+            messages.Add(new ChatMessage(ChatRole.User, Truncate(turn.Question, cap)));
+            messages.Add(new ChatMessage(ChatRole.Assistant, Truncate(turn.AnswerText, cap)));
         }
 
         messages.Add(new ChatMessage(ChatRole.User, question));
         return messages;
+    }
+
+    private string Truncate(string value, int cap)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= cap)
+        {
+            return value;
+        }
+
+        _logger.LogDebug(
+            "AiRouter truncated a conversation-turn field from {Length} to {Cap} chars (MaxConversationTurnContentChars).",
+            value.Length,
+            cap);
+        return value[..cap];
     }
 
     // Markdown links in answer prose render as raw "[label](url)" syntax in

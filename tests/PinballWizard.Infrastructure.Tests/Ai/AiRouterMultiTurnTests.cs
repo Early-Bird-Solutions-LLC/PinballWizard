@@ -139,6 +139,27 @@ public sealed class AiRouterMultiTurnTests
         Assert.Equal("current?", messages[4].Text);
     }
 
+    [Fact]
+    public async Task AnswerStreamingAsync_OversizedTurnContent_TruncatesPerFieldBeforeModelCall()
+    {
+        // History is client-supplied: an attacker can put an arbitrarily
+        // large payload in one field and stay under any whole-request
+        // guard. The router must cap each field independently.
+        var updates = new[] { MakeTextUpdate("Bounded answer.") };
+        var (router, _, agent, confidence) = BuildRouter(updates);
+        SetConfidencePass(confidence);
+
+        var oversized = new string('x', 10_000);
+        var turn = new ConversationTurn("short question", oversized, [PriorTurnCitation]);
+
+        await CollectChunksAsync(router, "follow-up?", [turn]);
+
+        var messages = agent.CapturedMessages!;
+        Assert.Equal("short question", messages[0].Text);          // under cap: untouched
+        Assert.Equal(4096, messages[1].Text!.Length);              // default cap applied
+        Assert.Equal("follow-up?", messages[2].Text);              // current question untouched
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Citation inheritance
     // ─────────────────────────────────────────────────────────────────────
