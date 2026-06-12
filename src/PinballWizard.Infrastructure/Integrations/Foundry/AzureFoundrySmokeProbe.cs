@@ -55,7 +55,7 @@ public sealed class AzureFoundrySmokeProbe : IAzureFoundrySmokeProbe
         AIProjectClient client;
         try
         {
-            client = new AIProjectClient(endpoint, new DefaultAzureCredential());
+            client = new AIProjectClient(endpoint, Credentials.SharedAzureCredential.Instance);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

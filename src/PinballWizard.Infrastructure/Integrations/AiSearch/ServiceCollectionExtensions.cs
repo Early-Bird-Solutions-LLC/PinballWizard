@@ -68,7 +68,7 @@ public static class ServiceCollectionExtensions
         // external-connection proxy accepts the request.
         services.AddHttpClient("CohereReranker")
             .AddHttpMessageHandler(() => new AzureCredentialBearerTokenHandler(
-                new DefaultAzureCredential(),
+                Credentials.SharedAzureCredential.Instance,
                 ["https://cognitiveservices.azure.com/.default"]));
 
         services.TryAddSingleton<ICrossEncoderReranker>(sp =>
@@ -114,7 +114,7 @@ public static class ServiceCollectionExtensions
         }
 
         var openAiAccountEndpoint = DeriveAccountEndpoint(foundryOptions.ProjectEndpoint);
-        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, new DefaultAzureCredential());
+        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, Credentials.SharedAzureCredential.Instance);
         var embeddingClient = openAiClient.GetEmbeddingClient(aiSearchOptions.EmbeddingDeploymentName);
 
         return new AzureOpenAIQueryEmbedder(
@@ -128,7 +128,7 @@ public static class ServiceCollectionExtensions
         var searchClient = new SearchClient(
             new Uri(aiSearchOptions.Endpoint),
             aiSearchOptions.IndexName,
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
 
         return new AiSearchRagRetriever(
             searchClient,
@@ -161,7 +161,7 @@ public static class ServiceCollectionExtensions
         }
 
         var openAiAccountEndpoint = DeriveAccountEndpoint(foundryOptions.ProjectEndpoint);
-        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, new DefaultAzureCredential());
+        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, Credentials.SharedAzureCredential.Instance);
         var embeddingClient = openAiClient.GetEmbeddingClient(aiSearchOptions.EmbeddingDeploymentName);
 
         return new AzureOpenAIChunkEmbedder(
@@ -179,7 +179,7 @@ public static class ServiceCollectionExtensions
         var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
         return new SearchIndexClient(
             new Uri(aiSearchOptions.Endpoint),
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
     }
 
     private static AiSearchRagIndexer BuildRagIndexer(IServiceProvider sp)
@@ -188,7 +188,7 @@ public static class ServiceCollectionExtensions
         var searchClient = new SearchClient(
             new Uri(aiSearchOptions.Endpoint),
             aiSearchOptions.IndexName,
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
 
         return new AiSearchRagIndexer(
             searchClient,

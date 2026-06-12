@@ -56,7 +56,7 @@ public sealed class AzureAiSearchSmokeProbe : IAzureAiSearchSmokeProbe
         SearchIndexClient client;
         try
         {
-            client = new SearchIndexClient(endpoint, new DefaultAzureCredential());
+            client = new SearchIndexClient(endpoint, Credentials.SharedAzureCredential.Instance);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

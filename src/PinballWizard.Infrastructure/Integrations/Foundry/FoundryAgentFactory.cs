@@ -157,7 +157,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
                 $"{AiFoundryOptions.ProjectEndpointKey} is not a valid absolute URL: '{_options.ProjectEndpoint}'.");
         }
 
-        var projectClient = new AIProjectClient(endpoint, new DefaultAzureCredential());
+        var projectClient = new AIProjectClient(endpoint, Credentials.SharedAzureCredential.Instance);
         var result = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
         // getMachineByTitle is shared across all four agents. searchCorpus
