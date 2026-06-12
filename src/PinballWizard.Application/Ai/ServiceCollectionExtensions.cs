@@ -23,7 +23,17 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddSingleton<IAgentPromptProvider, EmbeddedResourceAgentPromptProvider>();
+        // EmbeddedResourceAgentPromptProvider is registered concretely so
+        // OverridingAgentPromptProvider can inject it directly (not via the
+        // IAgentPromptProvider abstraction, which would create a circular
+        // dependency). OverridingAgentPromptProvider is the live
+        // IAgentPromptProvider that layers the Cosmos override store on top.
+        // On hosts without Cosmos (standalone CLI, test fixtures),
+        // IAgentPromptOverrideRepository resolves as null and
+        // OverridingAgentPromptProvider degrades to embedded-resource-only
+        // behaviour — identical to pre-PR-B3.
+        services.TryAddSingleton<EmbeddedResourceAgentPromptProvider>();
+        services.TryAddSingleton<IAgentPromptProvider, OverridingAgentPromptProvider>();
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
         // Wave 2 PR-D2: per-call ambient degradation context. Singleton backed
         // by AsyncLocal<T> — same pattern as IHttpContextAccessor. Safe to inject

@@ -221,6 +221,17 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<CosmosAdminSettingsRepository>>());
         });
 
+        // Per-agent prompt override store (admin prompts plan, PR-B3).
+        // Singleton: the repository's TTL cache is process-wide for the
+        // same reason as admin_settings above — OverridingAgentPromptProvider
+        // calls GetActiveAsync on every ask.
+        services.AddSingleton<IAgentPromptOverrideRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "admin_prompts");
+            return new CosmosAgentPromptOverrideRepository(container,
+                sp.GetRequiredService<ILogger<CosmosAgentPromptOverrideRepository>>());
+        });
+
         // Registered HERE (not in the Application Ai extensions) on
         // purpose: IRuntimeSettings requires the repository above, which
         // only exists on Cosmos-wired hosts. Hosts without Cosmos resolve

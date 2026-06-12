@@ -34,7 +34,7 @@ namespace PinballWizard.Infrastructure.Integrations.Foundry;
 // functional — the LLM picks the matching sub-agent function and
 // Microsoft Agent Framework drives the call with full thread context
 // preservation. Closes the Phase 3 H2 gap (subagent_accuracy=0.033).
-public sealed class FoundryAgentFactory : IFoundryAgentFactory
+public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCacheInvalidator
 {
     private readonly AiFoundryOptions _options;
     private readonly IAgentPromptProvider _promptProvider;
@@ -70,7 +70,10 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
 
         // Double-checked init: the dictionary, once populated, is
-        // immutable for the process lifetime.
+        // immutable for the process lifetime — UNLESS Invalidate evicts
+        // an entry (admin prompt override activated/deactivated), in which
+        // case the next GetAgent call triggers a full re-init. The lock
+        // guards both the lazy-init and the eviction + re-init paths.
         var agents = _agents;
         if (agents is null)
         {
@@ -85,6 +88,35 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
             : throw new ArgumentException(
                 $"Unknown agent name '{agentName}'. Expected one of: {string.Join(", ", AgentName.All)}.",
                 nameof(agentName));
+    }
+
+    // IFoundryAgentCacheInvalidator — evicts the agent cache for agentName
+    // so the next GetAgent call reconstructs all agents with the current
+    // (changed) prompt from IAgentPromptProvider. We null out the entire
+    // dictionary rather than patching individual entries because the Wizard
+    // agent embeds sub-agents as AIFunction wrappers: rebuilding one sub-
+    // agent requires re-wrapping it in the Wizard, so all-or-nothing is
+    // the correct granularity. The rebuild cost (one ConstructAgents call)
+    // is incurred at most once per admin override activation — negligible
+    // compared to the per-ask Foundry round-trip.
+    public void Invalidate(string agentName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
+
+        // Null the cache inside the lock so a concurrent GetAgent call
+        // either sees the old cache (races the nulling, fine) or triggers
+        // ConstructAgents (correct: the new prompt is live). There is no
+        // window where _agents is a partial/corrupt dictionary.
+        lock (_initLock)
+        {
+            if (_agents is not null && _agents.ContainsKey(agentName))
+            {
+                _agents = null;
+                _logger.LogInformation(
+                    "FoundryAgentFactory cache evicted for agent '{AgentName}' — will rebuild on next GetAgent call.",
+                    agentName);
+            }
+        }
     }
 
     private Dictionary<string, AIAgent> ConstructAgents()

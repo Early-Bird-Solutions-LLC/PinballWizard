@@ -247,6 +247,31 @@ public sealed class CosmosOptions
             Name = "admin_settings",
             PartitionKeyPath = "/key",
         },
+        // admin_prompts: per-agent prompt override store (PR-B3).
+        // Partition key /agent_name — every read is scoped to one agent
+        // (GetActiveAsync: single point-read; GetVersionsAsync: single-
+        // partition scan). Multiple version rows live in the same
+        // partition (id = "{agent_name}:v{version}"), so the partition
+        // scan for all versions of an agent is a single-partition query
+        // with no cross-partition fan-out.
+        //
+        // No TTL (DefaultTtlSeconds = null): prompt versions are
+        // audit records — an admin needs to be able to view and
+        // re-activate prior versions; auto-expiry would silently
+        // destroy that audit trail.
+        //
+        // Default indexing policy (null): the container holds at most
+        // ~20 rows per agent (4 agents × several versions). The only
+        // non-point-read path is GetVersionsAsync's per-partition scan,
+        // which touches all rows in one partition — default Cosmos
+        // indexing is sufficient and the policy-maintenance overhead
+        // of a selective allowlist would cost more than it saves at
+        // this cardinality.
+        new()
+        {
+            Name = "admin_prompts",
+            PartitionKeyPath = "/agent_name",
+        },
     ];
 
     /// <summary>
