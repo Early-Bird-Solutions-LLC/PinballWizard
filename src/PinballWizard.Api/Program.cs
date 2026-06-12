@@ -92,6 +92,21 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration[AiSearchOptions.EndpointKey
 
 var app = builder.Build();
 
+// ── Boot-duration instrumentation (#361) ──────────────────────────────────
+// The 2026-06-11 incident measured ~2.5-3 min from container start to first
+// listen under KEDA scale-from-zero wake; under minReplicas=1 (#360) boots
+// are ~1s and the pathology no longer reproduces. This single line is the
+// witness either way: process-start → ApplicationStarted elapsed, in every
+// boot's logs. If scale-from-zero ever returns and the number balloons,
+// the breakdown question ("where did the time go?") starts answered.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var elapsed = DateTimeOffset.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+    app.Logger.LogInformation(
+        "api.boot_duration_ms={BootMs:F0} (process start -> ApplicationStarted)",
+        elapsed.TotalMilliseconds);
+});
+
 // ── Exception handler ─────────────────────────────────────────────────────
 // Must be placed BEFORE other middleware so unhandled exceptions from any
 // downstream middleware or endpoint are caught and returned as RFC 9457
