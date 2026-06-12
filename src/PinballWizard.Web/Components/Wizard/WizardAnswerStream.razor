@@ -31,6 +31,7 @@
 
 @rendermode InteractiveServer
 @using PinballWizard.Application.Ai
+@using PinballWizard.Application.Observability
 @inject IWizardStreamingClient StreamingClient
 @inject ILogger<WizardAnswerStream> Logger
 @implements IDisposable
@@ -467,6 +468,12 @@
         IReadOnlyList<ConversationTurn>? history,
         CancellationToken ct)
     {
+        // Invariant #17: meter the fallback attempt so operators can detect
+        // a degraded streaming path even when end-users receive an answer.
+        // Emitted on ATTEMPT, before the recovery call, so a fallback that
+        // itself fails is still counted (the Error log covers the failure).
+        PinballWizardTelemetry.WizardStreamFallbackAttempted.Add(1);
+
         // Re-initialize state for a clean fallback render.
         _textDeltas.Clear();
         _citations.Clear();

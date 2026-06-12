@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
@@ -138,6 +141,41 @@ public sealed class IngestionSourcePolitenessResolverTests
         var effective = await resolver.ResolveAsync(new Uri("https://spookypinball.com/games"), CancellationToken.None);
 
         Assert.Same(Defaults, effective);
+    }
+
+    // ── Invariant #17 audit 2026-06-12: item 6 ──────────────────────────────
+    // IngestionSourcePolitenessResolver: Cosmos failure → fallback to defaults
+    // AND increment pinwiz.scraper.politeness_fallback_active counter.
+
+    [Fact]
+    public async Task ResolveAsync_RepositoryThrows_EmitsPolitenesFallbackActiveCounter()
+    {
+        // Counter must increment exactly once when the resolver falls back to
+        // global defaults due to a Cosmos exception. Uses the project-standard
+        // parallel-tolerant ConcurrentBag pattern (distinct instrument name
+        // means no cross-fixture collision risk even without a tag filter).
+        var bag = new ConcurrentBag<long>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "pinwiz.scraper.politeness_fallback_active")
+            {
+                bag.Add(value);
+            }
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.ScraperPolitenessFallbackActive);
+
+        var resolver = new IngestionSourcePolitenessResolver(
+            new ThrowingRepository(new InvalidOperationException("Cosmos unreachable")),
+            Options.Create(Defaults),
+            NullLogger<IngestionSourcePolitenessResolver>.Instance);
+
+        // Trigger initialization (which will throw and fall back).
+        await resolver.ResolveAsync(new Uri("https://spookypinball.com/games"), CancellationToken.None);
+
+        // Counter must have fired exactly once.
+        Assert.Contains(bag, v => v == 1);
     }
 
     [Fact]

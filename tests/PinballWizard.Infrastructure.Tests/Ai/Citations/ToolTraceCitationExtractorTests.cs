@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Tools;
@@ -877,6 +878,77 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Contains(citations, c => c.MachineId == "GweeP-MW95j");
     }
 
+    // ── Invariant #17 audit 2026-06-12: item 4 ───────────────────────────────
+    // TryDeserialize: malformed JSON that passes the shape probe but fails
+    // binding must (a) log a Warning and (b) fall through to the URL regex
+    // without throwing.
+
+    [Fact]
+    public void Extract_MalformedJsonShapeHit_FallsThroughToRegexWithoutThrowing()
+    {
+        // Build a JSON object where:
+        //   - "hits" is an array (passes the shape probe: hitsElement.ValueKind == Array)
+        //   - but the element inside has "pageStart" as a quoted string instead of an int,
+        //     which causes Deserialize<SearchCorpusResult> to throw a JsonException
+        //     (System.Text.Json strict number handling rejects "bad-value" for int).
+        //
+        // Behavioral assertion: Extract must not throw; instead it falls
+        // through to the OPDB URL regex — which will find the embedded URL
+        // in the toString() of the JsonElement.
+        var malformed = JsonSerializer.SerializeToElement(new
+        {
+            hits = new[]
+            {
+                new
+                {
+                    machineId = "GRBE-MJL05",
+                    machineTitle = "Test",
+                    documentId = "doc1",
+                    documentUrl = "https://opdb.org/search?q=GRBE-MJL05",
+                    documentType = "manual",
+                    pageStart = "not-a-number",  // string instead of int — triggers JsonException
+                    pageEnd = "not-a-number",
+                    sectionHeading = "intro",
+                    content = "Some content.",
+                }
+            },
+        });
+
+        var capturingLogger = new CapturingExtractorLogger();
+        var extractor = new ToolTraceCitationExtractor(capturingLogger);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", malformed);
+
+        // Must not throw — falls through to the URL regex.
+        var citations = extractor.Extract(response);
+
+        // A Warning must have been logged for the deserialization failure
+        // (the 2026-06-10 outage class detection — invariant #17 audit).
+        Assert.True(capturingLogger.WarningCount > 0,
+            "Expected at least one Warning log when JsonException occurs during TryDeserialize.");
+    }
+
+    [Fact]
+    public void Extract_MalformedMachineGroundingDtoJson_FallsThroughToRegexWithoutThrowing()
+    {
+        // Same pattern for MachineGroundingDto: shape probe finds "OpdbId" but
+        // field types are wrong so Deserialize<MachineGroundingDto> throws.
+        var malformed = JsonSerializer.SerializeToElement(new
+        {
+            opdbId = 12345,            // numeric instead of string — triggers JsonException
+            opdbSourceUrl = "https://opdb.org/search?q=GRBE-MJL05",
+        });
+
+        var capturingLogger = new CapturingExtractorLogger();
+        var extractor = new ToolTraceCitationExtractor(capturingLogger);
+        var response = BuildAgentResponseWithToolResult("getMachineByTitle", malformed);
+
+        // Must not throw.
+        var citations = extractor.Extract(response);
+
+        Assert.True(capturingLogger.WarningCount > 0,
+            "Expected at least one Warning log when JsonException occurs during TryDeserialize on a MachineGroundingDto.");
+    }
+
     private static AgentResponse BuildAgentResponseWithToolResult(string functionName, object? result)
     {
         // FunctionResultContent's CallId is conventionally the tool-call's
@@ -889,5 +961,27 @@ public sealed class ToolTraceCitationExtractorTests
     private static AgentResponse BuildAgentResponse(params ChatMessage[] messages)
     {
         return new AgentResponse(messages);
+    }
+
+    // Simple capturing logger for Warning-log assertions.
+    private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
+    {
+        public int WarningCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+            {
+                WarningCount++;
+            }
+        }
     }
 }
