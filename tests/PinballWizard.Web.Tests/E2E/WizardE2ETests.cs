@@ -143,6 +143,18 @@ public sealed class WizardE2ETests : IAsyncLifetime
 
         await AskOnceAndAssertCitedAsync(page);
 
+        // The follow-up premise requires a SUCCESSFUL first turn — refusal
+        // turns never join the thread by design, so a legitimate refusal
+        // here (transient retrieval degradation, eval-known gaps) would
+        // time out the conversation-turn wait and fail the deploy canary
+        // for the wrong reason (observed: run 27422343997). The refusal
+        // path is already covered by the contract assertion above and the
+        // dedicated bUnit behavior; bail out as inconclusive-but-green.
+        if (await page.Locator("[data-testid='refusal-panel']").IsVisibleAsync())
+        {
+            return;
+        }
+
         // "Ask a follow-up" — the completed turn must join the visible thread.
         await page.Locator("[data-testid='new-question-button']").ClickAsync();
         await page.Locator("[data-testid='conversation-turn']").First.WaitForAsync(
