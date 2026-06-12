@@ -98,6 +98,16 @@ public static class PinballWizardTelemetry
         unit: "{question}",
         description: "User-questions that missed the cache and were dispatched to the Wizard agent.");
 
+    public static readonly Counter<long> AiCacheBypassMultiturn = Meter.CreateCounter<long>(
+        "pinwiz.ai.cache.bypass_multiturn",
+        unit: "{question}",
+        description: "Multi-turn asks that bypassed the semantic cache entirely (no read, no write) because the cache key has no history component — a follow-up's meaning depends on its conversation. Watch this against cache.hits/misses to track the cost impact of uncacheable multi-turn traffic (ADR-0015 amendment, 2026-06-11).");
+
+    public static readonly Counter<long> AiCitationsInherited = Meter.CreateCounter<long>(
+        "pinwiz.ai.citations.inherited_total",
+        unit: "{citation}",
+        description: "Citations carried forward from a prior conversation turn because the current turn answered from conversation context without firing a retrieval tool. A high ratio of inherited-to-extracted suggests follow-ups rarely re-ground — expected for clarifying questions, worth investigating if it dominates.");
+
     public static readonly Counter<long> AiCostUsdCents = Meter.CreateCounter<long>(
         "pinwiz.ai.cost_usd_cents",
         unit: "USD-cents",

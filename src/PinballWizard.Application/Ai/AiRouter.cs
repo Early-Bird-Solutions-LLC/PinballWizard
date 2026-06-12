@@ -114,7 +114,13 @@ public sealed class AiRouter : IAiRouter
         _logger = logger;
     }
 
-    public async Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken)
+    public Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken)
+        => AnswerAsync(question, history: null, cancellationToken);
+
+    public async Task<WizardAnswer> AnswerAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
@@ -123,15 +129,31 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
+        var trimmedHistory = TrimHistory(history);
 
-        if (_cache.TryGet(normalized, promptVersion, out var cached))
+        // Multi-turn asks bypass the cache in BOTH directions (no read, no
+        // write below). The cache key is a pure function of the isolated
+        // question text; a follow-up like "what about its repair cost?"
+        // means different things in different conversations, so a cache hit
+        // would replay the wrong conversation's answer, and a write would
+        // poison the key for single-shot askers. Metered so the cost impact
+        // of uncacheable multi-turn traffic stays observable (ADR-0015
+        // amendment, 2026-06-11).
+        if (trimmedHistory is null && _cache.TryGet(normalized, promptVersion, out var cached))
         {
             PinballWizardTelemetry.AiCacheHits.Add(1);
             _logger.LogDebug("AiRouter cache hit for normalized question (PromptVersion={PromptVersion}).", promptVersion);
             return cached;
         }
 
-        PinballWizardTelemetry.AiCacheMisses.Add(1);
+        if (trimmedHistory is null)
+        {
+            PinballWizardTelemetry.AiCacheMisses.Add(1);
+        }
+        else
+        {
+            PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
+        }
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
@@ -140,8 +162,13 @@ public sealed class AiRouter : IAiRouter
         AgentResponse? response;
         try
         {
-            response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            response = trimmedHistory is null
+                ? await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false)
+                : await wizardAgent.RunAsync(
+                        BuildConversationMessages(question, trimmedHistory),
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -196,7 +223,7 @@ public sealed class AiRouter : IAiRouter
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
 
-        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, cancellationToken)
+        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, trimmedHistory, cancellationToken)
             .ConfigureAwait(false);
 
         // Cache successful answers only — refusals are not cached so a
@@ -207,7 +234,8 @@ public sealed class AiRouter : IAiRouter
         // transient call-level guard, not a stable signal about the
         // question's answerability. The cache key (normalized + promptVersion)
         // ensures a PromptVersion bump invalidates all cached answers.
-        if (!answer.IsRefusal)
+        // Multi-turn answers are never cached (see the bypass note above).
+        if (!answer.IsRefusal && trimmedHistory is null)
         {
             _cache.Store(normalized, promptVersion, answer);
         }
@@ -259,8 +287,14 @@ public sealed class AiRouter : IAiRouter
     // [EnumeratorCancellation] propagates CancellationToken through the
     // IAsyncEnumerable machinery so callers can cancel mid-iteration
     // (e.g., user navigates away before Final arrives).
+    public IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        CancellationToken cancellationToken)
+        => AnswerStreamingAsync(question, history: null, cancellationToken);
+
     public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
         string question,
+        IReadOnlyList<ConversationTurn>? history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
@@ -270,6 +304,7 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
+        var trimmedHistory = TrimHistory(history);
 
         // Stopwatch started at entry so first_token_ms covers the full
         // caller-visible latency including cache lookup. Both cache-hit
@@ -282,7 +317,10 @@ public sealed class AiRouter : IAiRouter
         // Streaming a cached answer as multiple deltas would be misleading
         // (the deltas don't map to real model output). One TextDelta is
         // the honest contract for a cache-hit reply.
-        if (_cache.TryGet(normalized, promptVersion, out var cached))
+        // Multi-turn asks bypass the cache in both directions — same
+        // rationale as AnswerAsync (the key has no history component, so a
+        // hit would replay the wrong conversation's answer).
+        if (trimmedHistory is null && _cache.TryGet(normalized, promptVersion, out var cached))
         {
             PinballWizardTelemetry.AiCacheHits.Add(1);
             _logger.LogDebug("AiRouter cache hit for normalized question (PromptVersion={PromptVersion}).", promptVersion);
@@ -317,7 +355,14 @@ public sealed class AiRouter : IAiRouter
             yield break;
         }
 
-        PinballWizardTelemetry.AiCacheMisses.Add(1);
+        if (trimmedHistory is null)
+        {
+            PinballWizardTelemetry.AiCacheMisses.Add(1);
+        }
+        else
+        {
+            PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
+        }
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
@@ -350,7 +395,12 @@ public sealed class AiRouter : IAiRouter
         // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); AggregateStreamAsync
         // handles reconstruction inline.
         var (accumulatedMessages, streamChunks, refusalFromException) =
-            await AggregateStreamAsync(wizardAgent, question, promptVersion, cancellationToken)
+            await AggregateStreamAsync(
+                    wizardAgent,
+                    question,
+                    trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
+                    promptVersion,
+                    cancellationToken)
                 .ConfigureAwait(false);
 
         // Yield the buffered chunks (TextDelta, ToolCallStarted, ToolCallCompleted,
@@ -405,6 +455,7 @@ public sealed class AiRouter : IAiRouter
                 normalized,
                 promptVersion,
                 wizardModel,
+                trimmedHistory,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -425,8 +476,9 @@ public sealed class AiRouter : IAiRouter
 
         yield return new AnswerChunk.Final(answer);
 
-        // Cache write only on successful (non-refusal) answers.
-        if (!answer.IsRefusal)
+        // Cache write only on successful (non-refusal) single-shot answers
+        // (multi-turn answers are context-specific — see the bypass note).
+        if (!answer.IsRefusal && trimmedHistory is null)
         {
             _cache.Store(normalized, promptVersion, answer);
         }
@@ -487,10 +539,15 @@ public sealed class AiRouter : IAiRouter
     //
     // See DL-0003: true per-token delivery (no buffering) requires surfacing
     // the stream below the try/catch boundary — deferred to Wave 3.
+    // conversationMessages: non-null only for multi-turn asks — the full
+    // prior-turn ChatMessage list with the current question appended (built
+    // by BuildConversationMessages). Null selects the single-string overload
+    // so single-shot behavior is byte-for-byte unchanged.
     private async Task<(List<ChatMessage> messages, List<AnswerChunk> streamChunks, WizardAnswer? refusal)>
         AggregateStreamAsync(
             AIAgent wizardAgent,
             string question,
+            IReadOnlyList<ChatMessage>? conversationMessages,
             string promptVersion,
             CancellationToken cancellationToken)
     {
@@ -525,8 +582,11 @@ public sealed class AiRouter : IAiRouter
 
         try
         {
-            await foreach (var update in wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))
+            var updates = conversationMessages is null
+                ? wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
+                : wizardAgent.RunStreamingAsync(conversationMessages, cancellationToken: cancellationToken);
+
+            await foreach (var update in updates.ConfigureAwait(false))
             {
                 // Determine whether this update is text-only or carries non-text
                 // content. Text arrives via two SDK paths:
@@ -821,6 +881,7 @@ public sealed class AiRouter : IAiRouter
         string normalized,
         string promptVersion,
         string wizardModel,
+        IReadOnlyList<ConversationTurn>? history,
         CancellationToken cancellationToken)
     {
         // Wave 2 PR-R2: IRefusalRecoveryService.BuildRecoveryAsync is called on
@@ -943,6 +1004,30 @@ public sealed class AiRouter : IAiRouter
                 new KeyValuePair<string, object?>("source", _regexLegacyExtractor.SourceTag));
         }
 
+        // Multi-turn citation inheritance (2026-06-11 design). A grounded
+        // follow-up that the model answers from conversation context fires
+        // no retrieval tool, so the extractor sees zero citations — and
+        // without intervention the confidence gate (citation-coverage
+        // signal) or the NoCitation gate below would refuse a legitimate
+        // answer. The grounding for such an answer IS the prior turn's
+        // cited material, so we inherit the most recent cited turn's
+        // citations, flagged Inherited=true so the UI can label them.
+        // Placement matters: this must run BEFORE Compute() so inherited
+        // citations feed the citation-coverage signal, not just the binary
+        // gate. Single-shot behavior is untouched (history is null).
+        if (citations.Count == 0 && history is { Count: > 0 })
+        {
+            var donor = history.LastOrDefault(t => t.Citations is { Count: > 0 });
+            if (donor is not null)
+            {
+                citations = donor.Citations!.Select(c => c with { Inherited = true }).ToList();
+                PinballWizardTelemetry.AiCitationsInherited.Add(citations.Count);
+                _logger.LogDebug(
+                    "AiRouter inherited {Count} citations from the prior conversation turn (no retrieval tool fired this turn).",
+                    citations.Count);
+            }
+        }
+
         var signals = _confidenceCalculator.Compute(responseText, citations);
         var confidence = signals.Composite();
 
@@ -1056,6 +1141,68 @@ public sealed class AiRouter : IAiRouter
             FoundryThreadId: null,
             RefusalDetail: null,
             Degradation: _degradationContext.Snapshot());
+    }
+
+    // Caps the prior turns sent to the model at MaxConversationTurns,
+    // dropping the OLDEST first — recency carries the disambiguating
+    // context a follow-up needs ("it" almost always binds to the last
+    // answer, not the first). Returns null for no-history so callers can
+    // branch single-shot behavior on a single null check.
+    private IReadOnlyList<ConversationTurn>? TrimHistory(IReadOnlyList<ConversationTurn>? history)
+    {
+        if (history is null || history.Count == 0)
+        {
+            return null;
+        }
+
+        var max = _options.MaxConversationTurns;
+        return history.Count <= max
+            ? history
+            : history.Skip(history.Count - max).ToList();
+    }
+
+    // Builds the multi-turn message list for the AIAgent Run* overloads
+    // that accept IEnumerable<ChatMessage>: alternating user/assistant
+    // pairs for each prior turn, then the current question as the final
+    // user message. Refusal turns are excluded by the CLIENT (it only
+    // records successful turns into history) — the router trusts the
+    // shape it is given, bounded by TrimHistory and the per-field cap.
+    //
+    // Per-field cap: history is client-supplied, so each Question /
+    // AnswerText is truncated to MaxConversationTurnContentChars before it
+    // reaches the model. A whole-request size guard (API layer) cannot do
+    // this job — it bounds the body, not a field, so a single turn could
+    // smuggle a near-body-sized adversarial payload past it. Truncation
+    // costs context, never correctness: the guardrail pipeline still runs
+    // in full on the model's output.
+    private List<ChatMessage> BuildConversationMessages(
+        string question,
+        IReadOnlyList<ConversationTurn> history)
+    {
+        var cap = _options.MaxConversationTurnContentChars;
+        var messages = new List<ChatMessage>((history.Count * 2) + 1);
+        foreach (var turn in history)
+        {
+            messages.Add(new ChatMessage(ChatRole.User, Truncate(turn.Question, cap)));
+            messages.Add(new ChatMessage(ChatRole.Assistant, Truncate(turn.AnswerText, cap)));
+        }
+
+        messages.Add(new ChatMessage(ChatRole.User, question));
+        return messages;
+    }
+
+    private string Truncate(string value, int cap)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= cap)
+        {
+            return value;
+        }
+
+        _logger.LogDebug(
+            "AiRouter truncated a conversation-turn field from {Length} to {Cap} chars (MaxConversationTurnContentChars).",
+            value.Length,
+            cap);
+        return value[..cap];
     }
 
     // Markdown links in answer prose render as raw "[label](url)" syntax in

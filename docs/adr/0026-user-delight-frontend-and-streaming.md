@@ -372,3 +372,39 @@ proxies to the internal Api, and register a client-side
 - [ADR-0021](0021-ai-search-index-schema.md) — AI Search index schema; this ADR's § 8 adds a `lastScrapedUtc` field per the schema-add convention
 - [ADR-0022](0022-citation-extraction.md), [ADR-0023](0023-citation-required-guardrail.md) — citation extraction + citation-required guardrail this ADR's § 8 surfaces to the UI
 - [ADR-0025](0025-cosmos-for-user-delight.md) — the just-shipped Cosmos for User Delight track that locks the data-access surface this ADR's user-delight surface lives above; the 5-layer enforcement weave + 6-PR phased structure are the patterns this ADR mirrors
+
+## Follow-up 2026-06-11 — multi-turn conversation contract (router layer)
+
+Jim's 2026-06-11 decision: the Wizard becomes a conversation — client-held
+history (the Blazor circuit keeps completed turns in component state and
+sends them with each ask) + a chat-thread UI. This follow-up records the
+router-layer contract; the API request shape and thread UI land in
+follow-on PRs per `thoughts/shared/plans/AB-259-multi-turn-conversation.md`.
+
+- `IAiRouter` gains history overloads: `AnswerAsync(question, history, ct)`
+  / `AnswerStreamingAsync(question, history, ct)` where `history` is an
+  ordered `ConversationTurn(Question, AnswerText, Citations?)` list,
+  oldest first. Null/empty history is contractually identical to the
+  two-argument overloads — multi-turn can never regress single-shot.
+- Prior turns are prepended to the model call as alternating
+  user/assistant `ChatMessage`s (the `AIAgent` Run overloads that accept
+  `IEnumerable<ChatMessage>`), capped at
+  `AiFoundryOptions.MaxConversationTurns` (default 8), oldest dropped
+  first. Foundry server-side threads (`WizardAnswer.FoundryThreadId`)
+  remain unused — the Microsoft.Agents.AI 1.4.0 session surface is
+  unstable (SDK issue #2688); revisit when it stabilizes.
+- **Citation inheritance:** a follow-up the model answers from
+  conversation context fires no retrieval tool. Such a turn inherits the
+  most recent cited turn's citations, flagged `Citation.Inherited = true`
+  so the UI labels them ("from earlier in this conversation"). The
+  citation-required gate itself is unchanged — a conversation with no
+  citations anywhere still refuses `NoCitation`. Inheritance runs before
+  confidence computation so the citation-coverage signal sees the
+  inherited set.
+- Cache: multi-turn asks bypass it entirely (ADR-0015 follow-up
+  2026-06-11).
+- ADR-0027's "no session-history surface" posture is NOT contradicted:
+  that ban covers *persistent* history (localStorage / cookies / saved
+  sessions / re-engagement surfaces). The conversation here lives only in
+  circuit component state and the request that carries it — a page
+  refresh starts fresh. A clarifying note lands in ADR-0027 with the UI PR.
