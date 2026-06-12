@@ -66,6 +66,9 @@ param wizardCustomDomain string = ''
 @description('Two-pass flag for custom domain cert binding. false=Pass 1 (register hostname, Disabled). true=Pass 2 (create cert + SniEnabled binding). See shared.bicep wizardCustomDomainCert comment.')
 param wizardCustomDomainCertReady bool = false
 
+@description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half). Empty default = Entra wiring off. See modules/shared.bicep azureAdClientId for the full contract; the client secret lives only in Key Vault.')
+param azureAdClientId string = ''
+
 @description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -121,6 +124,7 @@ module shared 'modules/shared.bicep' = {
     wizardCustomDomain: wizardCustomDomain
     wizardCustomDomainCertReady: wizardCustomDomainCertReady
     wizardImageTag: wizardImageTag
+    azureAdClientId: azureAdClientId
     apiImageTag: apiImageTag
     linkerCronExpression: linkerCronExpression
   }
