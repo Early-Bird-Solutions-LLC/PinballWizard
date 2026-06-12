@@ -1,0 +1,49 @@
+/* MarkdownContent — scoped styles for the safe-markdown answer renderer.
+ *
+ * Typography is aligned with MudBlazor Typo.body1 so rendered answer text
+ * matches the rest of the Wizard surface visually. Line spacing and spacing
+ * between block elements (paragraphs, lists) follow the MudBlazor baseline.
+ *
+ * No color overrides — all colors flow through the MudBlazor theme palette
+ * via inherited CSS variables.
+ */
+
+.markdown-content {
+    font-size: var(--mud-typography-body1-size, 1rem);
+    font-weight: var(--mud-typography-body1-weight, 400);
+    line-height: var(--mud-typography-body1-lineheight, 1.6);
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Paragraphs: margin-bottom creates breathing room between prose blocks.
+ * Last-child selector removes trailing margin (avoids extra gap at bottom). */
+.markdown-content p {
+    margin-top: 0;
+    margin-bottom: 0.75em;
+}
+
+.markdown-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Lists: match body1 line spacing; left-indent via padding. */
+.markdown-content ol,
+.markdown-content ul {
+    margin-top: 0;
+    margin-bottom: 0.75em;
+    padding-left: 1.5em;
+}
+
+.markdown-content ol:last-child,
+.markdown-content ul:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-content li {
+    margin-bottom: 0.25em;
+}
+
+.markdown-content li:last-child {
+    margin-bottom: 0;
+}
