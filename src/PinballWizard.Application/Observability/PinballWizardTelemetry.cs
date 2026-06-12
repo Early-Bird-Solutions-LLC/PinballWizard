@@ -387,6 +387,27 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single Cosmos SDK call from `CosmosRepository<T>` (or a concrete subclass's specialized method). Same tags as `pinwiz.cosmos.ru_charge`. For streaming queries, one observation per page so a query that paginates through 10 pages emits 10 samples. Drives the §7.1 user-delight 200ms p95 trigger on the `getMachineByTitle` path; PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution.");
 
+    // ── Landing fallback counter (invariant #17 operational signal) ─────────
+    //
+    // Incremented by Index.razor each time the interactive-mode initialization
+    // receives null from IWizardLandingClient (endpoint unreachable, non-2xx,
+    // or transport error). The page continues to serve HTTP 200 with compiled-in
+    // fallback content — outer health checks and uptime monitors will not see this
+    // outage; this counter is the only operational signal that the landing endpoint
+    // is unhealthy even though end-users are still being served a rendered page.
+    //
+    // A sustained non-zero rate signals: landing endpoint is down but web frontend
+    // appears healthy from the outside. Alert on p5m sum > 0 in Prod.
+    //
+    // No tags — the call site is a single code path (index page, interactive circuit);
+    // cardinality stays at 1. If a future A/B variant needs per-variant attribution,
+    // add a `variant` tag at that point rather than pre-optimising for a case that
+    // doesn't exist yet.
+    public static readonly Counter<long> LandingFallbackTotal = Meter.CreateCounter<long>(
+        "pinwiz.web.landing_fallback_total",
+        unit: "{render}",
+        description: "Interactive-mode renders where IWizardLandingClient returned null (endpoint unreachable or non-2xx) and the landing page fell back to the compiled-in static seed questions and featured machines. A sustained non-zero rate is an operational signal that the landing endpoint is unhealthy even though the page continues to serve HTTP 200s (invariant #17).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

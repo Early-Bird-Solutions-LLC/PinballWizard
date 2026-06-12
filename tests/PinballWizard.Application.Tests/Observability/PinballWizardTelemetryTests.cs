@@ -213,6 +213,15 @@ public sealed class PinballWizardTelemetryTests
     }
 
     [Fact]
+    public void LandingFallbackTotalCounter_HasExpectedNameAndUnit()
+    {
+        // Pins the OTel contract for the landing-fallback visibility counter
+        // (issue #366, invariant #17). Dashboard alert relies on this name.
+        Assert.Equal("pinwiz.web.landing_fallback_total", PinballWizardTelemetry.LandingFallbackTotal.Name);
+        Assert.Equal("{render}", PinballWizardTelemetry.LandingFallbackTotal.Unit);
+    }
+
+    [Fact]
     public void RecordChangefeedLeaseLag_UpdatesCachedValueObservedByGauge()
     {
         // The gauge callback reads `Interlocked.Read(ref _changefeedLeaseLag)`;

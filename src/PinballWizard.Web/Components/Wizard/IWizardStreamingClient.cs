@@ -21,10 +21,14 @@ public interface IWizardStreamingClient
     // cancellation token — pass HttpContext.RequestAborted or a component-
     // scoped CancellationTokenSource to short-circuit on navigation-away.
     //
-    // On 503 (Foundry unwired / degraded mode), yields a hardcoded
+    // On 503 in Development (Foundry unwired): yields a hardcoded
     // [TextDelta("Hello"), TextDelta(" world!"), Final(placeholder)]
     // stream so the dev experience demonstrates the wire format without
     // requiring a deployed Foundry endpoint.
+    //
+    // On 503 in non-Development: propagates as HttpRequestException so the
+    // WizardAnswerStream component renders the honest Error state. Never
+    // yields a fake uncited answer in QA or Prod (invariant #17, issue #367).
     IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
         CancellationToken cancellationToken);

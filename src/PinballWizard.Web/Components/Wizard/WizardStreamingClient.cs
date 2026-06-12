@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Hosting;
 using PinballWizard.Application.Ai;
 
 namespace PinballWizard.Web.Components.Wizard;
@@ -19,12 +20,14 @@ namespace PinballWizard.Web.Components.Wizard;
 // the ACA internal FQDN is used instead.
 //
 // Demo stream: ONLY when the Api explicitly answers 503 "Foundry not wired"
-// (local dev without a Foundry endpoint) does this client yield a hardcoded
-// 3-chunk stream demonstrating the wire format. Transport failures
+// AND the app is running in the Development environment does this client
+// yield a hardcoded 3-chunk stream demonstrating the wire format. In all
+// other environments a 503 propagates as HttpRequestException so the
+// component renders the honest Error state. Transport failures always
 // PROPAGATE — they used to ride the same demo stream, which let a fake
 // uncited "Hello world!" answer render in production whenever the Api was
-// struggling (2026-06-11 incident). The WizardAnswerStream component owns
-// failure UX (Error state + one deliberate fallback re-attempt).
+// struggling (2026-06-11 incident, #367). The WizardAnswerStream component
+// owns failure UX (Error state + one deliberate fallback re-attempt).
 //
 // ADR-0026 § 2 — SSE transport
 // ADR-0026 § 4 — AnswerChunk discriminated union
@@ -32,6 +35,7 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<WizardStreamingClient> _logger;
+    private readonly IHostEnvironment _hostEnvironment;
 
     // Shared JsonSerializerOptions: web defaults (camelCase) + polymorphic
     // AnswerChunk deserialization. Static field avoids per-request
@@ -43,12 +47,15 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
 
     public WizardStreamingClient(
         HttpClient httpClient,
-        ILogger<WizardStreamingClient> logger)
+        ILogger<WizardStreamingClient> logger,
+        IHostEnvironment hostEnvironment)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(hostEnvironment);
         _httpClient = httpClient;
         _logger = logger;
+        _hostEnvironment = hostEnvironment;
     }
 
     public IAsyncEnumerable<AnswerChunk> StreamAsync(
@@ -72,13 +79,17 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         // for the explicit 503 "Foundry not wired" dev signal below.
         var response = await SendCoreAsync(question, history, cancellationToken).ConfigureAwait(false);
 
-        // ── 503: Foundry not configured (dev mode, no endpoint set) ───
+        // ── 503: Foundry not configured (Development env only) ───────────
         // Yield hardcoded hello-world stream so the dev experience proves
         // the wire format end-to-end without a Foundry deployment.
-        if ((int)response.StatusCode == 503)
+        // In non-Development environments (QA, Prod) the 503 propagates as
+        // HttpRequestException so the WizardAnswerStream component renders
+        // the honest Error state — never a fake uncited placeholder answer
+        // (invariant #17, issue #367).
+        if ((int)response.StatusCode == 503 && _hostEnvironment.IsDevelopment())
         {
             _logger.LogInformation(
-                "Api returned 503 (Foundry not wired). Streaming hardcoded demo response.");
+                "Api returned 503 (Foundry not wired) in Development. Streaming hardcoded demo response.");
             response.Dispose();
             await foreach (var chunk in FallbackStreamAsync(cancellationToken).ConfigureAwait(false))
             {
