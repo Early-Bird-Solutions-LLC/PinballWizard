@@ -1,5 +1,7 @@
 @page "/admin/machines"
 @layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AdminOnly")]
 
 @* AdminMachines — /admin/machines machine catalog list (PR-Q2 Wave 3 skeleton).
  *

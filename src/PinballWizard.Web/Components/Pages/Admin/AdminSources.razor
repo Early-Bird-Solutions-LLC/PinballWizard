@@ -1,5 +1,7 @@
 @page "/admin/sources"
 @layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AdminOnly")]
 
 @* AdminSources — /admin/sources ingestion sources list (PR-Q2 Wave 3 skeleton).
  *
