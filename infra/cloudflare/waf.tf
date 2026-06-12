@@ -100,21 +100,16 @@ resource "cloudflare_bot_management" "this" {
   # options are a Worker-minted per-request nonce or accepting the lost
   # signal.
   #
-  # ── STEP 1 OF 2 (stale fight_mode clear) ──────────────────────────────
-  # The zone carries a stale legacy Bot Fight Mode flag from its Free-plan
-  # era (visible as stale_zone_configuration.fight_mode=true on GET). The
-  # API enforces the BFM→JSD coupling against that stale flag, rejecting
-  # enable_js=false with 400/10400 "cannot enable Fight_Mode while
-  # EnableJS is disabled" (observed 2026-06-11, run 27378…; per Cloudflare
-  # docs "For Bot Fight Mode customers, JavaScript Detections is
-  # automatically enabled and cannot be disabled"). The two changes cannot
-  # land in one PUT — validation rejects the body before applying — so:
-  #   step 1 (THIS commit): fight_mode=false explicitly, enable_js stays
-  #          true (accepted: clearing BFM while JSD is on);
-  #   step 2 (next commit): flip enable_js=false (accepted: BFM cleared;
-  #          JSD is optional for Super Bot Fight Mode zones).
-  fight_mode = false
-  enable_js  = true
+  # History (2026-06-12): disabling JSD originally failed with 400/10400
+  # "cannot enable Fight_Mode while EnableJS is disabled" — the zone
+  # carried a stale legacy Bot Fight Mode flag from its Free-plan era
+  # (stale_zone_configuration.fight_mode=true). A one-time fight_mode=false
+  # apply cleared it (two-step per the Cloudflare bot_management docs; the
+  # two changes cannot share a PUT). Do NOT re-add `fight_mode` here: once
+  # cleared, the API stops echoing the field and the provider then fails
+  # every apply with "fight_mode: was cty.False, but now null". Verified
+  # cleared by GET (stale_zone_configuration: null) before this commit.
+  enable_js = false
 
   # Blocks AI-training crawlers (GPTBot, CCBot, …) only. Verified bots
   # (Googlebot, Bingbot, social link-preview fetchers) are exempt via
