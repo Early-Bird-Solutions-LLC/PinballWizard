@@ -122,8 +122,13 @@ public sealed class CosmosOptionsTests
         // Cosmos for User Delight PR 5: adds machine_title_lookups.
         // Phase 5 Wave 2 PR-L2: adds featured_machines (landing-page strip).
         // Document-linking Pass 1: adds scraped_documents_raw + link_overrides.
+        // Admin settings PR-B1: adds admin_settings (runtime-mutable config).
         var options = new CosmosOptions();
-        Assert.Equal(10, options.Containers.Count);
+        Assert.Equal(11, options.Containers.Count);
+
+        var settings = Assert.Single(options.Containers, c => c.Name == "admin_settings");
+        Assert.Equal("/key", settings.PartitionKeyPath);
+        Assert.Null(settings.DefaultTtlSeconds); // auto-expiry would silently revert operator decisions
     }
 
     [Fact]

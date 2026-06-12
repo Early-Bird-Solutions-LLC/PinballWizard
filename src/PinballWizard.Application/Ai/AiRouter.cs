@@ -7,6 +7,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
@@ -72,6 +73,7 @@ public sealed class AiRouter : IAiRouter
     private readonly IDegradationContext _degradationContext;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
+    private readonly IRuntimeSettings? _runtimeSettings;
 
     public AiRouter(
         IFoundryAgentFactory agentFactory,
@@ -85,7 +87,8 @@ public sealed class AiRouter : IAiRouter
         IRefusalRecoveryService refusalRecovery,
         IDegradationContext degradationContext,
         IOptions<AiFoundryOptions> options,
-        ILogger<AiRouter> logger)
+        ILogger<AiRouter> logger,
+        IRuntimeSettings? runtimeSettings = null)
     {
         ArgumentNullException.ThrowIfNull(agentFactory);
         ArgumentNullException.ThrowIfNull(cache);
@@ -99,6 +102,11 @@ public sealed class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(degradationContext);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+
+        // Optional by design (PR-B1): hosts without the admin_settings
+        // container (standalone CLI, unit fixtures) run on IOptions
+        // defaults — identical behavior to no stored overrides.
+        _runtimeSettings = runtimeSettings;
 
         _agentFactory = agentFactory;
         _cache = cache;
@@ -129,7 +137,8 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
-        var trimmedHistory = TrimHistory(history);
+        var settings = await ResolveRuntimeSettingsAsync(cancellationToken).ConfigureAwait(false);
+        var trimmedHistory = TrimHistory(history, settings.MaxConversationTurns);
 
         // Multi-turn asks bypass the cache in BOTH directions (no read, no
         // write below). The cache key is a pure function of the isolated
@@ -223,7 +232,7 @@ public sealed class AiRouter : IAiRouter
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
 
-        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, trimmedHistory, cancellationToken)
+        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, trimmedHistory, settings, cancellationToken)
             .ConfigureAwait(false);
 
         // Cache successful answers only — refusals are not cached so a
@@ -304,7 +313,8 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
-        var trimmedHistory = TrimHistory(history);
+        var settings = await ResolveRuntimeSettingsAsync(cancellationToken).ConfigureAwait(false);
+        var trimmedHistory = TrimHistory(history, settings.MaxConversationTurns);
 
         // Stopwatch started at entry so first_token_ms covers the full
         // caller-visible latency including cache lookup. Both cache-hit
@@ -456,6 +466,7 @@ public sealed class AiRouter : IAiRouter
                 promptVersion,
                 wizardModel,
                 trimmedHistory,
+                settings,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -882,6 +893,7 @@ public sealed class AiRouter : IAiRouter
         string promptVersion,
         string wizardModel,
         IReadOnlyList<ConversationTurn>? history,
+        RuntimeSettingsSnapshot settings,
         CancellationToken cancellationToken)
     {
         // Wave 2 PR-R2: IRefusalRecoveryService.BuildRecoveryAsync is called on
@@ -950,7 +962,7 @@ public sealed class AiRouter : IAiRouter
         // RefusalCategory.CostCeilingHit. Phase 5+ multi-turn will
         // also check before continuing the next turn; the ceiling
         // value (PerCallCostCeilingUsdCents) carries forward unchanged.
-        if (costUsdCents > _options.PerCallCostCeilingUsdCents)
+        if (costUsdCents > settings.PerCallCostCeilingUsdCents)
         {
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
@@ -960,7 +972,7 @@ public sealed class AiRouter : IAiRouter
             _logger.LogInformation(
                 "AiRouter refused on cost ceiling: cost={CostUsdCents:F2}c ceiling={Ceiling}c model={Model} subAgent={SubAgent}",
                 costUsdCents,
-                _options.PerCallCostCeilingUsdCents,
+                settings.PerCallCostCeilingUsdCents,
                 wizardModel,
                 subAgentUsed);
 
@@ -1031,7 +1043,7 @@ public sealed class AiRouter : IAiRouter
         var signals = _confidenceCalculator.Compute(responseText, citations);
         var confidence = signals.Composite();
 
-        if (confidence < _options.ConfidenceThreshold)
+        if (confidence < settings.ConfidenceThreshold)
         {
             var category = _confidenceCalculator.CategorizeRefusal(signals);
 
@@ -1043,7 +1055,7 @@ public sealed class AiRouter : IAiRouter
             _logger.LogInformation(
                 "AiRouter refused below-threshold answer: confidence={Confidence:F3} threshold={Threshold:F3} category={Category} subAgent={SubAgent} signals=[r={R:F2} m={M:F2} c={C:F2}]",
                 confidence,
-                _options.ConfidenceThreshold,
+                settings.ConfidenceThreshold,
                 category,
                 subAgentUsed,
                 signals.RetrievalSimilarity,
@@ -1148,14 +1160,25 @@ public sealed class AiRouter : IAiRouter
     // context a follow-up needs ("it" almost always binds to the last
     // answer, not the first). Returns null for no-history so callers can
     // branch single-shot behavior on a single null check.
-    private IReadOnlyList<ConversationTurn>? TrimHistory(IReadOnlyList<ConversationTurn>? history)
+    // Effective settings for THIS ask (PR-B1): stored admin override ->
+    // IOptions default. One snapshot per ask keeps a single answer
+    // internally consistent even if an admin saves mid-stream.
+    private async Task<RuntimeSettingsSnapshot> ResolveRuntimeSettingsAsync(CancellationToken cancellationToken)
+        => _runtimeSettings is null
+            ? new RuntimeSettingsSnapshot(
+                _options.ConfidenceThreshold,
+                _options.PerCallCostCeilingUsdCents,
+                _options.MaxConversationTurns)
+            : await _runtimeSettings.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+
+    private IReadOnlyList<ConversationTurn>? TrimHistory(IReadOnlyList<ConversationTurn>? history, int maxTurns)
     {
         if (history is null || history.Count == 0)
         {
             return null;
         }
 
-        var max = _options.MaxConversationTurns;
+        var max = maxTurns;
         return history.Count <= max
             ? history
             : history.Skip(history.Count - max).ToList();

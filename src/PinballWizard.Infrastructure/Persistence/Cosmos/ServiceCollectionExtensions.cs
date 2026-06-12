@@ -16,6 +16,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Landing;
@@ -209,6 +210,24 @@ public static class ServiceCollectionExtensions
             return new CosmosLinkOverrideRepository(container,
                 sp.GetRequiredService<ILogger<CosmosLinkOverrideRepository>>());
         });
+
+        // Runtime-mutable Wizard settings (admin settings plan, PR-B1).
+        // Singleton on purpose: the repository's TTL cache is the per-ask
+        // read-amortization layer and must be process-wide.
+        services.AddSingleton<IAdminSettingsRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "admin_settings");
+            return new CosmosAdminSettingsRepository(container,
+                sp.GetRequiredService<ILogger<CosmosAdminSettingsRepository>>());
+        });
+
+        // Registered HERE (not in the Application Ai extensions) on
+        // purpose: IRuntimeSettings requires the repository above, which
+        // only exists on Cosmos-wired hosts. Hosts without Cosmos resolve
+        // AiRouter with its optional IRuntimeSettings? param defaulted to
+        // null and run on IOptions defaults — identical behavior to no
+        // stored overrides.
+        services.AddSingleton<IRuntimeSettings, RuntimeSettings>();
 
         // Curated landing-page featured machines per ADR-0026 § Landing surface.
         // Inherits metering from `CosmosRepository<T>` so every SDK call here

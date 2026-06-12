@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — Runtime-mutable Wizard settings: Cosmos overrides layered over IOptions (PR-B1)
+
+**Decision:** The `/admin/settings` surface gets its storage + read path (admin settings plan, Phase 1). A new `admin_settings` Cosmos container (partition `/key` = id, point reads only; no TTL — auto-expiry would silently revert operator decisions; default indexing — tens of tiny docs) holds overrides as `{key, value, updated_at_utc, updated_by}`. `IAdminSettingsRepository` (Application) + `CosmosAdminSettingsRepository` (Infrastructure) front it with Conflux's proven 2-minute TTL cache including negative entries, evicted after successful writes. `IRuntimeSettings.GetSnapshotAsync` resolves the layering rule — stored override → `IOptions<AiFoundryOptions>` default — once per ask, and `AiRouter` consumes the snapshot for `ConfidenceThreshold`, `PerCallCostCeilingUsdCents`, and `MaxConversationTurns` (the guardrail + history-trim reads). Changes apply within one cache window, no restart. `WellKnownSettings` is the closed key set with server-side ranges (0.3–0.95 / 1–100¢ / 1–20, the last pinned under the API's 20-turn guard).
+
+**Deliberately absent keys (no dead config):** `ChatDeploymentName`/`AgentModels` wait for Phase 3's agent-cache invalidation hook; `SemanticCacheMaxEntries` is construction-time (restart-apply — wire when the page can say so honestly); `EmbeddingDeploymentName` is permanently excluded (re-index required). A stored-but-unparsable value (only reachable outside the validated write path) degrades to the default with a warning naming the row; repository failures propagate — an ask fails loudly rather than silently running on defaults while the operator believes an override is live (invariant #17).
+
+**Alternatives considered:** Azure App Configuration — right answer in an APS-fleet context, but a new always-on resource + SDK for three keys inside a $400/mo envelope when Cosmos is already wired and idle-cheap; rejected for now. `IOptionsMonitor` + config reload — only re-reads the providers the host already has (env vars on ACA require a revision bump = restart); doesn't deliver runtime mutation. Per-read Cosmos without cache — three point reads per ask for data that changes monthly; rejected.
+
+**Revisit when:** Phase 3 lands (prompt overrides + agent-cache eviction unlock the model-selection keys), or the key count grows past what a hand-rolled registry maintains comfortably (App Config threshold).
+
+**Related:** thoughts/shared/plans/AB-259-admin-settings-page.md (Phase 1), ADR-0012 (container creation path), ADR-0015 (ceiling semantics unchanged), ADR-0025 (point-read + metering conformance), Conflux AppConfigurationService (pattern source).
+
 ## 2026-06-12 — /admin gated by the GlobalAdmin Entra app role (AdminOnly policy)
 
 **Decision:** Every `/admin/*` page carries `[Authorize(Policy = "AdminOnly")]`, where the policy requires the `GlobalAdmin` Entra app role (the role name ADR-0009 defined for v1 admin RBAC) (`RequireRole` — Microsoft.Identity.Web maps app-role claims to `ClaimTypes.Role`). This supersedes the earlier posture pinned by `AuthorizationContractTests` that per-page `[Authorize]` on admin routes was redundant: the `FallbackPolicy` proves *authentication*, and that was an acceptable bar for read-mostly grids — not for the runtime settings surface that follows (admin-settings plan, Phase 0), which mutates live Wizard behavior. The contract tests now pin the inverse: a new admin page WITHOUT the policy fails at authoring time, and coverage extends to all five admin pages (DocumentTriage and LinkOverrides were previously untested).

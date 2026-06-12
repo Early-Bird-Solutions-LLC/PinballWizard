@@ -232,6 +232,21 @@ public sealed class CosmosOptions
             Name = "link_overrides",
             PartitionKeyPath = "/source_pattern",
         },
+        // admin_settings: runtime-mutable Wizard configuration (admin
+        // settings plan, PR-B1). Partition key /key (= id) — every read is
+        // a point lookup by well-known key; CosmosAdminSettingsRepository
+        // fronts it with a 2-minute TTL cache so steady-state RU is ~zero.
+        // No TTL (DefaultTtlSeconds = null): settings are permanent until
+        // explicitly changed or deleted (delete = revert to the IOptions
+        // default) — auto-expiry would silently revert operator decisions.
+        // Default indexing policy: the container holds tens of tiny docs;
+        // GetAllAsync's cross-partition scan at that scale costs less RU
+        // than the policy churn of maintaining a selective allowlist.
+        new()
+        {
+            Name = "admin_settings",
+            PartitionKeyPath = "/key",
+        },
     ];
 
     /// <summary>
