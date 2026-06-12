@@ -234,6 +234,58 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public async Task RunAsync_RunLevelAbort_WritesPartialResults()
+    {
+        // #362: the 2026-06-11 credential-timeout runs aborted at the
+        // run level and lost the scorecard for every healthy question
+        // already evaluated. The salvage contract: a '.partial' results
+        // file with the completed questions, clearly marked, never
+        // presented as a finished run.
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-001","question":"q1","expected_sub_agent":"Rules","expected_citation_set":["X"],"acceptable_refusal":false}""",
+            """{"id":"ev-002","question":"q2","expected_sub_agent":"Rules","expected_citation_set":["Y"],"acceptable_refusal":false}""");
+
+        using var callerCts = new CancellationTokenSource();
+        var callCount = 0;
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return Task.FromResult(new WizardAnswer(
+                        Text: "ok",
+                        Citations: new List<Citation> { new("t", "u", MachineId: "X") },
+                        SubAgentUsed: "Rules",
+                        Confidence: 0.9,
+                        Escalated: false,
+                        IsRefusal: false,
+                        RefusalCategory: null,
+                        PromptVersion: "v-test",
+                        FoundryThreadId: null));
+                }
+
+                // Question 2: the caller's token gets cancelled mid-flight —
+                // the run-level fatal path (EvaluateOneAsync rethrows
+                // caller-driven cancellation).
+                callerCts.Cancel();
+                throw new OperationCanceledException(callerCts.Token);
+            });
+
+        var harness = fixture.BuildHarness();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => harness.RunAsync(callerCts.Token));
+
+        var partial = Directory.GetFiles(fixture.ResultsDirectory, "*.partial");
+        var path = Assert.Single(partial);
+        var json = await File.ReadAllTextAsync(path);
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.EndsWith("-PARTIAL", doc.RootElement.GetProperty("evaluation_id").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("questions").GetArrayLength());
+    }
+
+    [Fact]
     public async Task RunAsync_RouterThrows_RecordsErrorAndContinues()
     {
         using var fixture = new HarnessFixture();

@@ -167,7 +167,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 PinballWizardTelemetry.EvalQuestionDurationMs.Record(result.DurationMs);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Per-question failures are caught and recorded inside
             // EvaluateOneAsync; anything reaching here is a fatal
@@ -176,7 +176,20 @@ public sealed class EvaluationHarness : IEvaluationHarness
             // and propagate so the caller's exit code reflects the
             // failure. Broad catch is intentional — this is a
             // log-then-rethrow; no exception is swallowed.
+            //
+            // #362: write the PARTIAL results first. The 2026-06-11
+            // credential-timeout runs aborted exactly here and lost the
+            // scorecard for every healthy question already evaluated —
+            // hiding the signal the run existed to produce. Best-effort,
+            // CancellationToken.None on purpose: the run token is what
+            // just expired, and a local file write must not be governed
+            // by it.
             PinballWizardTelemetry.EvalRunsFailed.Add(1);
+            if (perQuestionResults.Count > 0)
+            {
+                await TryWritePartialResultsAsync(startedAt, groundTruthPath, perQuestionResults, ex)
+                    .ConfigureAwait(false);
+            }
             throw;
         }
 
@@ -197,7 +210,10 @@ public sealed class EvaluationHarness : IEvaluationHarness
 
         Directory.CreateDirectory(_evalOptions.ResultsDirectory);
         var json = JsonSerializer.Serialize(runResult, ResultsSerializerOptions);
-        await File.WriteAllTextAsync(resultsPath, json, runCts.Token).ConfigureAwait(false);
+        // CancellationToken.None: by this point every question is scored —
+        // a run-timeout expiring during the local file write must not
+        // discard the completed scorecard (#362).
+        await File.WriteAllTextAsync(resultsPath, json, CancellationToken.None).ConfigureAwait(false);
 
         PinballWizardTelemetry.EvalRuns.Add(1);
         _logger.LogInformation(
@@ -214,6 +230,47 @@ public sealed class EvaluationHarness : IEvaluationHarness
             aggregate.RefusalCorrectnessMean);
 
         return runResult;
+    }
+
+    // Best-effort partial-results write on run-level abort (#362). The file
+    // is the real artifact marked clearly as partial: '.partial' suffix and
+    // the abort reason embedded — never presented as a completed run.
+    private async Task TryWritePartialResultsAsync(
+        DateTimeOffset startedAt,
+        string groundTruthPath,
+        List<EvalQuestionResult> perQuestionResults,
+        Exception abortReason)
+    {
+        try
+        {
+            var resultsPath = BuildResultsPath(startedAt) + ".partial";
+            var runResult = new EvalRunResult(
+                EvaluationId: $"pinwiz-eval-{startedAt:yyyyMMddTHHmmssZ}-PARTIAL",
+                StartedAt: startedAt,
+                CompletedAt: _timeProvider.GetUtcNow(),
+                GroundTruthPath: groundTruthPath,
+                ResultsPath: resultsPath,
+                PromptVersion: _promptProvider.PromptVersion,
+                Aggregate: ComputeAggregate(perQuestionResults),
+                Questions: perQuestionResults);
+
+            Directory.CreateDirectory(_evalOptions.ResultsDirectory);
+            var json = JsonSerializer.Serialize(runResult, ResultsSerializerOptions);
+            await File.WriteAllTextAsync(resultsPath, json, CancellationToken.None).ConfigureAwait(false);
+
+            _logger.LogWarning(
+                "EvaluationHarness run ABORTED ({Reason}) after {Count} question(s) — partial results written to {Path}.",
+                abortReason.GetType().Name,
+                perQuestionResults.Count,
+                resultsPath);
+        }
+        catch (Exception writeEx)
+        {
+            // The abort itself is about to propagate; a failed salvage
+            // write must not mask it. Log and let the original throw.
+            _logger.LogError(writeEx,
+                "EvaluationHarness could not write partial results after run abort.");
+        }
     }
 
     private async Task<EvalQuestionResult> EvaluateOneAsync(

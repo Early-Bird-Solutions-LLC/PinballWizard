@@ -51,7 +51,7 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+        services.TryAddSingleton<TokenCredential>(_ => Credentials.SharedAzureCredential.Instance);
 
         services.TryAddSingleton(sp =>
         {
