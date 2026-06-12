@@ -27,4 +27,24 @@ public interface IAiRouter
     // stay one-shot via AgentResponseExtensions.ToAgentResponseAsync
     // post-stream reconstruction (Wave 2). Both surfaces share guardrails.
     IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(string question, CancellationToken cancellationToken);
+
+    // Multi-turn overloads (2026-06-11 design: client-held conversation
+    // history). `history` is the client-supplied list of completed prior
+    // turns, oldest first; null/empty means single-shot and MUST behave
+    // identically to the two-argument overloads. Default implementations
+    // drop history and delegate to the single-shot members so existing
+    // test doubles keep compiling — the production AiRouter overrides
+    // both with real history handling. Implementations that care about
+    // multi-turn MUST override these.
+    Task<WizardAnswer> AnswerAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
+        => AnswerAsync(question, cancellationToken);
+
+    IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
+        => AnswerStreamingAsync(question, cancellationToken);
 }

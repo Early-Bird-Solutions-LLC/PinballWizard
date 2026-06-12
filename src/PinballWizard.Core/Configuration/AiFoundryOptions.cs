@@ -67,6 +67,14 @@ public sealed class AiFoundryOptions
     [Range(0.0, 1.0)]
     public double ConfidenceThreshold { get; set; } = 0.65;
 
+    // Multi-turn conversations (2026-06-11 design): maximum prior turns
+    // prepended to the model call. Oldest turns are dropped first — recency
+    // carries the disambiguating context a follow-up needs. Bounds prompt
+    // growth (each turn adds its question + full answer text to the prompt)
+    // so the per-call cost ceiling isn't routinely consumed by history.
+    [Range(1, 20)]
+    public int MaxConversationTurns { get; set; } = 8;
+
     // Phase 4 W1-2 cutover flag (ADR-0022). When true, the legacy regex
     // citation extractor runs in parallel with the tool-trace extractor;
     // its citation count is emitted under
