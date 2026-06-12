@@ -55,6 +55,9 @@ param deployAiSearch bool = true
 @description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024 cross-encoder). Default FALSE: a Foundry ApiKey connection is rejected at create unless credentials.key is non-empty (Azure returns "Credentials Property cannot be empty for auth type ApiKey"), and the Cohere key is provisioned out-of-band (see the runbook by the resource). The cross-encoder reranker is disabled by default (Rag:CrossEncoder:Enabled=false), so the connection is inert until that gate work happens — flip this true in the same change that provisions the key and enables the reranker. Has no effect when deployPhase2=false.')
 param deployCohereConnection bool = false
 
+@description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
+param azureAdClientId string = ''
+
 @description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
 param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
@@ -354,6 +357,20 @@ resource acaIdentityKvCryptoUser 'Microsoft.Authorization/roleAssignments@2022-0
   name: guid(keyVault.id, '${namePrefix}-aca-id-${environment}', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Key Vault: Secrets User (4633458b-...) so the wizard app's ACA secret
+// references (the AzureAd OIDC client secret, PR-B0 infra half) resolve.
+// Distinct from the Crypto role above — keys and secrets are separate
+// RBAC planes in Key Vault.
+resource acaIdentityKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: keyVault
+  name: guid(keyVault.id, '${namePrefix}-aca-id-${environment}', '4633458b-17de-408a-b874-0445c86b69e6')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
     principalId: acaIdentity.?properties.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
@@ -1755,6 +1772,18 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
           identity: acaIdentity.?id ?? ''
         }
       ]
+      // The OIDC client secret never appears in Bicep or params — the ACA
+      // secret resolves it from Key Vault at runtime via the UAMI (which
+      // carries Key Vault Secrets User, see acaIdentityKvSecretsUser).
+      // Empty azureAdClientId (the default) omits the secret entirely so
+      // a deploy without the Entra registration keeps working unchanged.
+      secrets: empty(azureAdClientId) ? [] : [
+        {
+          name: 'azuread-client-secret'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/AzureAd-ClientSecret'
+          identity: acaIdentity.?id ?? ''
+        }
+      ]
     }
     template: {
       containers: [
@@ -1765,7 +1794,7 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8080'
@@ -1805,7 +1834,29 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               name: 'DataProtection__KeyVaultKeyUri'
               value: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/keys/pinwiz-dataprotection'
             }
-          ]
+          ], empty(azureAdClientId) ? [] : [
+            {
+              // Entra OIDC sign-in (PR-B0 infra half). Presence of
+              // AzureAd__TenantId activates the auth branch in the Web
+              // app's Program.cs (FallbackPolicy + AdminOnly role policy).
+              // tenant().tenantId is the deploying tenant — the same one
+              // holding the "PinballWizard Web" registration.
+              name: 'AzureAd__Instance'
+              value: az.environment().authentication.loginEndpoint
+            }
+            {
+              name: 'AzureAd__TenantId'
+              value: tenant().tenantId
+            }
+            {
+              name: 'AzureAd__ClientId'
+              value: azureAdClientId
+            }
+            {
+              name: 'AzureAd__ClientSecret'
+              secretRef: 'azuread-client-secret'
+            }
+          ])
         }
       ]
       scale: {
