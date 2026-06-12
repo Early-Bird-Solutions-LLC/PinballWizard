@@ -4,6 +4,7 @@ using Azure;
 using Azure.Identity;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Degradation;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Observability;
 
@@ -64,11 +65,17 @@ public sealed class SearchCorpusTool
     private readonly IRagRetriever _retriever;
     private readonly IDegradationContext _degradationContext;
     private readonly ILogger<SearchCorpusTool> _logger;
+    // Optional by design (PR retrieval-runtime-keys): hosts without the
+    // admin_settings container (standalone CLI, unit fixtures) run on
+    // RetrievalOptions defaults — identical behavior to no stored overrides.
+    // Mirrors the AiRouter optional-IRuntimeSettings convention (PR-B1).
+    private readonly IRuntimeSettings? _runtimeSettings;
 
     public SearchCorpusTool(
         IRagRetriever retriever,
         IDegradationContext degradationContext,
-        ILogger<SearchCorpusTool> logger)
+        ILogger<SearchCorpusTool> logger,
+        IRuntimeSettings? runtimeSettings = null)
     {
         ArgumentNullException.ThrowIfNull(retriever);
         ArgumentNullException.ThrowIfNull(degradationContext);
@@ -76,6 +83,7 @@ public sealed class SearchCorpusTool
         _retriever = retriever;
         _degradationContext = degradationContext;
         _logger = logger;
+        _runtimeSettings = runtimeSettings;
     }
 
     [Description("Search the indexed pinball-machine corpus (manuals, service bulletins, metadata cards) for chunks relevant to a question. Returns up to topK page-anchored chunks with document URLs you must cite. Returns an empty list if nothing matches — when empty, do not fabricate; refuse instead.")]
@@ -107,11 +115,34 @@ public sealed class SearchCorpusTool
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var clampedTopK = ClampTopK(topK);
+            // One snapshot per tool invocation (PR retrieval-runtime-keys).
+            // Mirrors the one-snapshot-per-ask pattern AiRouter uses for
+            // confidence_threshold / cost_ceiling — a single retrieval call
+            // is internally consistent even if an admin saves mid-stream.
+            // When IRuntimeSettings is absent the record-parameter defaults
+            // apply (TopK=10, MinimumScore=0.0 per ADR-0021 § Search defaults).
+            var rtTopK = TopKDefault;
+            var rtMinimumScore = new RetrievalOptions().MinimumScore;
+            if (_runtimeSettings is not null)
+            {
+                var snapshot = await _runtimeSettings
+                    .GetSnapshotAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                rtTopK = snapshot.RetrievalTopK;
+                rtMinimumScore = snapshot.RetrievalMinimumScore;
+            }
+
+            // The model-requested topK (clamped to TopKCeiling) wins when
+            // supplied; the runtime-configured default applies when the model
+            // omits the argument (null / ≤ 0). This preserves the sub-agent
+            // ability to request fewer chunks (e.g. topK=3 for a tight Repair
+            // query) while letting the admin tune the unspecified baseline.
+            var clampedTopK = ClampTopK(topK, rtTopK);
             var options = new RetrievalOptions(
                 TopK: clampedTopK,
                 MachineId: NormalizeOptional(machineId),
-                DocumentType: NormalizeDocumentType(documentType));
+                DocumentType: NormalizeDocumentType(documentType),
+                MinimumScore: rtMinimumScore);
 
             IReadOnlyList<RetrievedChunk> chunks;
             try
@@ -255,11 +286,15 @@ public sealed class SearchCorpusTool
         }
     }
 
-    internal static int ClampTopK(int? requested)
+    // When `requested` is null or ≤ 0 (model omitted the argument), the
+    // effective default is `runtimeDefault` — which is the runtime-mutable
+    // rag.retrieval_top_k value when IRuntimeSettings is wired, or
+    // TopKDefault (8) otherwise. The ceiling is always TopKCeiling (20).
+    internal static int ClampTopK(int? requested, int runtimeDefault = TopKDefault)
     {
         if (requested is null || requested <= 0)
         {
-            return TopKDefault;
+            return Math.Min(runtimeDefault, TopKCeiling);
         }
         return Math.Min(requested.Value, TopKCeiling);
     }

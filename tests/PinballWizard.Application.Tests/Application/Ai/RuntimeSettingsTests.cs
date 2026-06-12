@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Ai.Hosting;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using Xunit;
@@ -12,6 +13,8 @@ namespace PinballWizard.Application.Tests.Application.Ai;
 // absent override falls back to the IOptions default, and a malformed
 // stored value degrades to the default VISIBLY (warning), never silently
 // poisons the ask.
+// PR retrieval-runtime-keys: extends the snapshot with RetrievalTopK and
+// RetrievalMinimumScore; same layering rule applies.
 public sealed class RuntimeSettingsTests
 {
     private static AiFoundryOptions DefaultOptions() => new()
@@ -39,6 +42,11 @@ public sealed class RuntimeSettingsTests
         Assert.Equal(0.65, snapshot.ConfidenceThreshold);
         Assert.Equal(10, snapshot.PerCallCostCeilingUsdCents);
         Assert.Equal(8, snapshot.MaxConversationTurns);
+        // Retrieval defaults match RetrievalOptions record-parameter defaults
+        // (ADR-0021 § Search defaults): TopK=10, MinimumScore=0.0.
+        var retrievalDefaults = new RetrievalOptions();
+        Assert.Equal(retrievalDefaults.TopK, snapshot.RetrievalTopK);
+        Assert.Equal(retrievalDefaults.MinimumScore, snapshot.RetrievalMinimumScore);
     }
 
     [Fact]
@@ -54,6 +62,36 @@ public sealed class RuntimeSettingsTests
 
         Assert.Equal(0.8, snapshot.ConfidenceThreshold);
         Assert.Equal(10, snapshot.PerCallCostCeilingUsdCents); // untouched key stays default
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_RetrievalTopKOverride_WinsOverDefault()
+    {
+        var repo = Substitute.For<IAdminSettingsRepository>();
+        repo.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AdminSettingRecord?>(null));
+        repo.GetAsync(WellKnownSettings.RetrievalTopK, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AdminSettingRecord?>(Record(WellKnownSettings.RetrievalTopK, "5")));
+
+        var snapshot = await Build(repo).GetSnapshotAsync(CancellationToken.None);
+
+        Assert.Equal(5, snapshot.RetrievalTopK);
+        Assert.Equal(new RetrievalOptions().MinimumScore, snapshot.RetrievalMinimumScore); // untouched
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_RetrievalMinimumScoreOverride_WinsOverDefault()
+    {
+        var repo = Substitute.For<IAdminSettingsRepository>();
+        repo.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AdminSettingRecord?>(null));
+        repo.GetAsync(WellKnownSettings.RetrievalMinimumScore, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AdminSettingRecord?>(Record(WellKnownSettings.RetrievalMinimumScore, "0.45")));
+
+        var snapshot = await Build(repo).GetSnapshotAsync(CancellationToken.None);
+
+        Assert.Equal(0.45, snapshot.RetrievalMinimumScore, precision: 6);
+        Assert.Equal(new RetrievalOptions().TopK, snapshot.RetrievalTopK); // untouched
     }
 
     [Fact]
@@ -92,13 +130,24 @@ public sealed class WellKnownSettingsTests
 {
     [Theory]
     [InlineData("ai.confidence_threshold", "0.65", true)]
-    [InlineData("ai.confidence_threshold", "0.2", false)]  // below floor
-    [InlineData("ai.confidence_threshold", "0.99", false)] // above cap
+    [InlineData("ai.confidence_threshold", "0.2", false)]   // below floor
+    [InlineData("ai.confidence_threshold", "0.99", false)]  // above cap
     [InlineData("ai.per_call_cost_ceiling_usd_cents", "25", true)]
     [InlineData("ai.per_call_cost_ceiling_usd_cents", "0", false)]
     [InlineData("ai.max_conversation_turns", "12", true)]
-    [InlineData("ai.max_conversation_turns", "21", false)] // above the API guard
+    [InlineData("ai.max_conversation_turns", "21", false)]  // above the API guard
     [InlineData("ai.max_conversation_turns", "many", false)]
+    // Retrieval keys (PR retrieval-runtime-keys)
+    [InlineData("rag.retrieval_top_k", "10", true)]
+    [InlineData("rag.retrieval_top_k", "1", true)]          // floor
+    [InlineData("rag.retrieval_top_k", "20", true)]         // ceiling
+    [InlineData("rag.retrieval_top_k", "0", false)]         // below floor
+    [InlineData("rag.retrieval_top_k", "21", false)]        // above ceiling (TopKCeiling)
+    [InlineData("rag.retrieval_minimum_score", "0.0", true)]
+    [InlineData("rag.retrieval_minimum_score", "0.5", true)]
+    [InlineData("rag.retrieval_minimum_score", "1.0", true)]
+    [InlineData("rag.retrieval_minimum_score", "-0.1", false)] // below floor
+    [InlineData("rag.retrieval_minimum_score", "1.1", false)]  // above ceiling
     [InlineData("not.a.real.key", "1", false)]
     public void TryValidate_EnforcesRangesAndKeySet(string key, string value, bool expected)
     {
