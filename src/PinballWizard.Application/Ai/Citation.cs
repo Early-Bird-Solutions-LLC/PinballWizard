@@ -24,4 +24,11 @@ public sealed record Citation(
     string? SectionHeading = null,
     CitationSourceType SourceType = CitationSourceType.Unknown,
     DateTimeOffset? LastScrapedUtc = null,
-    double? RelevanceScore = null);
+    double? RelevanceScore = null,
+    // Multi-turn (2026-06-11): true when this citation was carried forward
+    // from a prior conversation turn because the current turn answered from
+    // conversation context without firing a retrieval tool (see the
+    // inheritance block in AiRouter.ApplyPostAgentGuardrailsAsync). The UI
+    // labels inherited citations so provenance display stays honest about
+    // WHEN the grounding happened. Always false on single-shot answers.
+    bool Inherited = false);

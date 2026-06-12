@@ -258,3 +258,28 @@ sets correlated by trace ID.
   in-process LRU + cost-routing $10–20/mo target
 - [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
   — read by the harness alongside `pinwiz.*` domain instruments
+
+## Follow-up 2026-06-11 — multi-turn asks bypass the semantic cache
+
+The multi-turn conversation feature (client-held history, see the
+2026-06-11 design plan `thoughts/shared/plans/AB-259-multi-turn-conversation.md`)
+adds `IAiRouter` overloads that accept a `ConversationTurn` history list.
+The cache key remains SHA-256(normalized question + promptVersion) — it
+deliberately gains **no history component**. Instead, any ask carrying
+non-empty history bypasses the cache in BOTH directions:
+
+- **No read:** a follow-up like "what about its repair cost?" means
+  different things in different conversations; a hit would replay the
+  wrong conversation's answer.
+- **No write:** storing a context-dependent answer under the bare
+  question's key would poison that key for single-shot askers.
+
+Bypasses are metered (`pinwiz.ai.cache.bypass_multiturn`) so the cost
+impact of uncacheable multi-turn traffic stays observable. Alternative
+considered and rejected: hashing the history into the key — technically
+cacheable but hit probability is ~zero (any wording difference in any
+prior turn changes the key), so it buys nothing over a bypass while
+multiplying stored entries. Single-shot caching is unchanged. The
+per-call cost ceiling applies per turn, unchanged (the "Phase 5+
+multi-turn" note in § Decision anticipated exactly this); a
+per-conversation aggregate guard lives client-side as a turn cap.

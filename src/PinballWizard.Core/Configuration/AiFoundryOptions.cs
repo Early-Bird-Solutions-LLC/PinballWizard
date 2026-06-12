@@ -67,6 +67,25 @@ public sealed class AiFoundryOptions
     [Range(0.0, 1.0)]
     public double ConfidenceThreshold { get; set; } = 0.65;
 
+    // Multi-turn conversations (2026-06-11 design): maximum prior turns
+    // prepended to the model call. Oldest turns are dropped first — recency
+    // carries the disambiguating context a follow-up needs. Bounds prompt
+    // growth (each turn adds its question + full answer text to the prompt)
+    // so the per-call cost ceiling isn't routinely consumed by history.
+    [Range(1, 20)]
+    public int MaxConversationTurns { get; set; } = 8;
+
+    // Per-field length cap (chars) applied to each history turn's Question
+    // and AnswerText before they are prepended to the model call. History is
+    // CLIENT-SUPPLIED — without a bound, a crafted turn can smuggle an
+    // arbitrarily large adversarial payload under any request-size guard
+    // (which bounds the whole body, not a field). 4096 chars comfortably
+    // covers every real Wizard answer; truncation degrades context, never
+    // correctness (the turn cap + citation gates still apply). This is the
+    // Application-layer defense; the API layer adds a whole-request guard.
+    [Range(256, 32768)]
+    public int MaxConversationTurnContentChars { get; set; } = 4096;
+
     // Phase 4 W1-2 cutover flag (ADR-0022). When true, the legacy regex
     // citation extractor runs in parallel with the tool-trace extractor;
     // its citation count is emitted under
