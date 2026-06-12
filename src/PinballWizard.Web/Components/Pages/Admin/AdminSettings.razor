@@ -1,0 +1,348 @@
+@page "/admin/settings"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "AdminOnly")]
+
+@* AdminSettings — /admin/settings runtime-mutable Wizard configuration.
+ *
+ * PR-B2 of the admin-settings plan. Edits the WellKnownSettings key set
+ * through IAdminSettingsRepository; the running Wizard picks changes up
+ * within one repository cache window (2 min), no restart. Layering rule
+ * everywhere: stored override → IOptions default; "Reset to default"
+ * deletes the override row.
+ *
+ * Tabs are the sanctioned tabs-over-pages spot (plan Phase 2). Two tabs
+ * are live; two are deliberate placeholders that say WHY they are empty
+ * (RAG retrieval keys arrive with their consumers; prompt templates are
+ * Phase 3 with the ADR-0018 amendment) — an honest empty state beats a
+ * control that silently does nothing.
+ *
+ * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly).
+ *@
+
+@using PinballWizard.Application.Ai.Hosting
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Configuration
+@using Microsoft.Extensions.Options
+
+@inject IAdminSettingsRepository SettingsRepo
+@inject IOptions<AiFoundryOptions> FoundryOptions
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+        <MudText Typo="Typo.h4" Style="flex:1">Wizard Settings</MudText>
+    </MudStack>
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Runtime configuration. Changes apply to live asks within two minutes — no restart.
+        Reset returns a setting to its deployed default.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" data-testid="settings-loading" />
+    }
+    else if (_loadError is not null)
+    {
+        <MudAlert Severity="Severity.Error" data-testid="settings-load-error" Class="mb-4">
+            Settings could not be loaded: @_loadError — the Wizard is still running on its
+            last-known values; this page just can't show or edit them right now.
+        </MudAlert>
+    }
+    else
+    {
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6"
+                 data-testid="settings-tabs">
+
+            <MudTabPanel Text="Guardrails" data-testid="tab-guardrails">
+                <MudStack Spacing="6">
+                    @{ var conf = Row(WellKnownSettings.ConfidenceThreshold); }
+                    <div data-testid="setting-confidence">
+                        <MudText Typo="Typo.subtitle1">Confidence threshold</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            Answers scoring below this composite refuse instead (ADR-0017).
+                            Range 0.3–0.95. @DefaultHint(conf)
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudSlider T="double" @bind-Value="conf.NumericValue"
+                                       Min="0.3" Max="0.95" Step="0.01"
+                                       Class="flex-grow-1"
+                                       aria-label="Confidence threshold" />
+                            <MudText Typo="Typo.h6" data-testid="confidence-value">@conf.NumericValue.ToString("0.00")</MudText>
+                            @ResetButton(conf)
+                        </MudStack>
+                        @ProvenanceLine(conf)
+                    </div>
+
+                    @{ var ceiling = Row(WellKnownSettings.PerCallCostCeilingUsdCents); }
+                    <div data-testid="setting-ceiling">
+                        <MudText Typo="Typo.subtitle1">Per-call cost ceiling (¢)</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            An answer whose model spend exceeds this refuses with CostCeilingHit
+                            (ADR-0015). Range 1–100¢. @DefaultHint(ceiling)
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudNumericField T="double" @bind-Value="ceiling.NumericValue"
+                                             Min="1" Max="100" Step="1"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             aria-label="Per-call cost ceiling in cents"
+                                             data-testid="ceiling-input" />
+                            @ResetButton(ceiling)
+                        </MudStack>
+                        @ProvenanceLine(ceiling)
+                    </div>
+                </MudStack>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Conversation" data-testid="tab-conversation">
+                <MudStack Spacing="6">
+                    @{ var turns = Row(WellKnownSettings.MaxConversationTurns); }
+                    <div data-testid="setting-turns">
+                        <MudText Typo="Typo.subtitle1">Max conversation turns sent to the model</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                            The router keeps the newest N completed turns of a conversation
+                            (oldest trimmed). Range 1–20 — the API rejects longer histories
+                            outright, so values above 20 could never take effect. @DefaultHint(turns)
+                        </MudText>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                            <MudNumericField T="double" @bind-Value="turns.NumericValue"
+                                             Min="1" Max="20" Step="1"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             aria-label="Max conversation turns"
+                                             data-testid="turns-input" />
+                            @ResetButton(turns)
+                        </MudStack>
+                        @ProvenanceLine(turns)
+                    </div>
+                </MudStack>
+            </MudTabPanel>
+
+            <MudTabPanel Text="RAG Retrieval" data-testid="tab-rag">
+                <MudAlert Severity="Severity.Info" data-testid="rag-placeholder">
+                    Retrieval tuning (top-K, minimum score) becomes runtime-mutable when those
+                    keys gain call-time consumers — wiring the controls first would ship knobs
+                    that silently do nothing. Tracked in the admin-settings plan.
+                </MudAlert>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Prompt Templates" data-testid="tab-prompts">
+                <MudAlert Severity="Severity.Info" data-testid="prompts-placeholder">
+                    Per-agent prompt overrides ship with Phase 3 (PR-B3): they need the
+                    agent-cache invalidation hook and an ADR-0018 amendment — prompts are
+                    currently code-resource embedded by locked decision.
+                </MudAlert>
+            </MudTabPanel>
+        </MudTabs>
+
+        <MudStack Row="true" Spacing="2" Class="mt-6" AlignItems="AlignItems.Center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="SaveAsync"
+                       Disabled="@(!HasDirtyRows || _saving)"
+                       data-testid="save-button">
+                @(_saving ? "Saving…" : "Save changes")
+            </MudButton>
+            @if (HasDirtyRows)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="dirty-hint">
+                    @DirtyCount unsaved @(DirtyCount == 1 ? "change" : "changes")
+                </MudText>
+            }
+        </MudStack>
+    }
+</MudContainer>
+
+@code {
+    // Cascades when AddCascadingAuthenticationState is wired (auth-configured
+    // hosts). Null on the documented no-tenant local-dev path — updatedBy
+    // then records the explicit local-dev marker rather than a fake name.
+    [CascadingParameter]
+    private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthState { get; set; }
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new("Admin", href: "/admin"),
+        new("Settings", href: null, disabled: true),
+    ];
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _loadError;
+
+    private readonly Dictionary<string, SettingRow> _rows = new(StringComparer.Ordinal);
+
+    private SettingRow Row(string key) => _rows[key];
+
+    private bool HasDirtyRows => _rows.Values.Any(r => r.IsDirty);
+    private int DirtyCount => _rows.Values.Count(r => r.IsDirty);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _loadError = null;
+
+        try
+        {
+            var stored = (await SettingsRepo.GetAllAsync(CancellationToken.None).ConfigureAwait(true))
+                .ToDictionary(r => r.Key, StringComparer.Ordinal);
+
+            _rows.Clear();
+            foreach (var key in WellKnownSettings.AllKeys)
+            {
+                var defaultValue = WellKnownSettings.DefaultFor(key, FoundryOptions.Value);
+                stored.TryGetValue(key, out var record);
+                _rows[key] = new SettingRow(key, defaultValue, record);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Degrade visibly (invariant #17): name the failure, make clear
+            // the Wizard itself is unaffected, offer nothing interactive.
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var updatedBy = await ResolveUpdatedByAsync().ConfigureAwait(true);
+            var saved = 0;
+
+            foreach (var row in _rows.Values.Where(r => r.IsDirty))
+            {
+                var value = row.EditedValueString;
+                if (!WellKnownSettings.TryValidate(row.Key, value, out var error))
+                {
+                    Snackbar.Add($"{row.Key}: {error}", Severity.Error);
+                    continue;
+                }
+
+                await SettingsRepo.SetAsync(row.Key, value, updatedBy, CancellationToken.None).ConfigureAwait(true);
+                saved++;
+            }
+
+            if (saved > 0)
+            {
+                Snackbar.Add(
+                    $"Saved {saved} setting{(saved == 1 ? "" : "s")} — live within ~2 minutes.",
+                    Severity.Success);
+                await LoadAsync().ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task ResetAsync(SettingRow row)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Reset to default?",
+            $"Removes the stored override for {row.Key}; the Wizard reverts to the deployed default ({row.DefaultValueString}) within ~2 minutes.",
+            yesText: "Reset", cancelText: "Cancel").ConfigureAwait(true);
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await SettingsRepo.DeleteAsync(row.Key, CancellationToken.None).ConfigureAwait(true);
+            Snackbar.Add($"{row.Key} reset to default.", Severity.Success);
+            await LoadAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Reset failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task<string> ResolveUpdatedByAsync()
+    {
+        if (AuthState is null)
+        {
+            return "admin (local-dev, auth not configured)";
+        }
+
+        var state = await AuthState.ConfigureAwait(true);
+        return state.User.Identity?.Name ?? "admin (authenticated, no name claim)";
+    }
+
+    private RenderFragment ResetButton(SettingRow row) => __builder =>
+    {
+        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Secondary"
+                   OnClick="@(() => ResetAsync(row))"
+                   Disabled="@(!row.HasOverride)"
+                   data-testid="@($"reset-{row.Key}")">
+            Reset to default
+        </MudButton>
+    };
+
+    private RenderFragment ProvenanceLine(SettingRow row) => __builder =>
+    {
+        @if (row.HasOverride)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary"
+                     data-testid="@($"provenance-{row.Key}")">
+                Overridden by @row.UpdatedBy on @row.UpdatedAtUtc?.ToString("yyyy-MM-dd HH:mm 'UTC'")
+            </MudText>
+        }
+    };
+
+    private string DefaultHint(SettingRow row) => $"Default: {row.DefaultValueString}.";
+
+    // One editable setting. NumericValue is the bound editor state; dirty =
+    // differs from the effective (stored-or-default) starting value.
+    private sealed class SettingRow
+    {
+        public SettingRow(string key, string defaultValue, AdminSettingRecord? stored)
+        {
+            Key = key;
+            DefaultValueString = defaultValue;
+            HasOverride = stored is not null;
+            UpdatedBy = stored?.UpdatedBy;
+            UpdatedAtUtc = stored?.UpdatedAtUtc;
+
+            var effective = stored?.Value ?? defaultValue;
+            _initial = double.Parse(effective, System.Globalization.CultureInfo.InvariantCulture);
+            NumericValue = _initial;
+        }
+
+        private readonly double _initial;
+
+        public string Key { get; }
+        public string DefaultValueString { get; }
+        public bool HasOverride { get; }
+        public string? UpdatedBy { get; }
+        public DateTimeOffset? UpdatedAtUtc { get; }
+
+        public double NumericValue { get; set; }
+
+        public bool IsDirty => Math.Abs(NumericValue - _initial) > 0.0001;
+
+        public string EditedValueString =>
+            NumericValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+}

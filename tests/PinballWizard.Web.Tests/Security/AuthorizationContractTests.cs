@@ -38,6 +38,7 @@ public sealed class AuthorizationContractTests
     [InlineData(typeof(AdminSources))]
     [InlineData(typeof(AdminDocumentTriage))]
     [InlineData(typeof(AdminLinkOverrides))]
+    [InlineData(typeof(AdminSettings))]
     public void AdminPage_DoesNotHaveAllowAnonymous(Type page)
     {
         Assert.Null(page.GetCustomAttribute<AllowAnonymousAttribute>());
@@ -54,6 +55,7 @@ public sealed class AuthorizationContractTests
     [InlineData(typeof(AdminSources))]
     [InlineData(typeof(AdminDocumentTriage))]
     [InlineData(typeof(AdminLinkOverrides))]
+    [InlineData(typeof(AdminSettings))]
     public void AdminPage_RequiresAdminOnlyPolicy(Type page)
     {
         var authorize = page.GetCustomAttribute<AuthorizeAttribute>();

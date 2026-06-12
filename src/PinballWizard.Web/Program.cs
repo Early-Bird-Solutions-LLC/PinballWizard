@@ -117,6 +117,12 @@ if (isAuthConfigured)
         options.AddPolicy("AdminOnly", policy => policy.RequireRole("GlobalAdmin"));
     });
 
+    // Cascades Task<AuthenticationState> to components — /admin/settings
+    // records the authenticated admin's name as updatedBy (the audit
+    // field PR-B1 added). Auth-configured path only; the no-tenant branch
+    // below leaves it absent and the page records the local-dev marker.
+    builder.Services.AddCascadingAuthenticationState();
+
     builder.Services.AddControllersWithViews()
         .AddMicrosoftIdentityUI();
 }
