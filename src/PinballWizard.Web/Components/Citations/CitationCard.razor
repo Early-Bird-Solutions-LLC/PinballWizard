@@ -86,6 +86,22 @@
 
             <FreshnessBadge LastScrapedUtc="@Citation.LastScrapedUtc" />
 
+            @* Multi-turn provenance honesty (PR-A3): a follow-up answered
+               from conversation context inherits the prior turn's citations
+               (Citation.Inherited, set by the router). Label them so the
+               provenance display is honest about WHEN the grounding
+               happened — this turn cited nothing new. *@
+            @if (Citation.Inherited)
+            {
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Variant="Variant.Text"
+                         Color="Color.Secondary"
+                         data-testid="citation-inherited-chip">
+                    earlier in this conversation
+                </MudChip>
+            }
+
             @if (scoreText is not null)
             {
                 <MudText Typo="Typo.caption"

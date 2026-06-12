@@ -124,7 +124,7 @@ public sealed class WizardAnswerStreamTests
         // we can observe the Submitted / Thinking state before any chunks arrive.
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(_ => NeverYieldsAsync());
 
         await using var ctx = BuildCtx(client);
@@ -171,8 +171,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -229,8 +229,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -275,8 +275,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -317,8 +317,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -378,8 +378,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -415,7 +415,7 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 callCount++;
@@ -494,7 +494,7 @@ public sealed class WizardAnswerStreamTests
         var callCount = 0;
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 callCount++;
@@ -562,8 +562,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -613,8 +613,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ThreadPoolResumingAsync(chunks, ci.ArgAt<CancellationToken>(1)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ThreadPoolResumingAsync(chunks, ci.ArgAt<CancellationToken>(2)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -640,5 +640,127 @@ public sealed class WizardAnswerStreamTests
                 yield return chunk;
             }
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Multi-turn conversation thread (PR-A3)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private static (IWizardStreamingClient client, List<IReadOnlyList<ConversationTurn>?> histories)
+        BuildHistoryCapturingClient(params AnswerChunk[] chunks)
+    {
+        var histories = new List<IReadOnlyList<ConversationTurn>?>();
+        var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(
+                Arg.Any<string>(),
+                Arg.Do<IReadOnlyList<ConversationTurn>?>(histories.Add),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => ToAsyncEnumerable(chunks));
+        return (client, histories);
+    }
+
+    [Fact]
+    public async Task FollowUp_after_complete_adds_turn_to_thread_and_sends_history()
+    {
+        var citation = BuildCitation("Godzilla Manual");
+        var answer = BuildAnswer("Godzilla is a Stern machine.", citations: [citation]);
+        var (client, histories) = BuildHistoryCapturingClient(new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "Tell me about Godzilla"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='new-question-button']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        // "Ask a follow-up" — the completed turn joins the thread and the
+        // input returns.
+        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+        var turn = cut.Find("[data-testid='conversation-turn']");
+        Assert.Contains("Tell me about Godzilla", turn.TextContent);
+        Assert.Contains("Godzilla is a Stern machine.", turn.TextContent);
+        cut.Find("[data-testid='question-input']");
+
+        // Second ask (parameter path — same as the deep-link auto-submit)
+        // must carry the first turn as history.
+        cut.Render(p => p.Add(c => c.Question, "What is it worth?"));
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal(2, histories.Count);
+        }, timeout: TimeSpan.FromSeconds(3));
+
+        Assert.Null(histories[0]); // first ask: single-shot
+        var sent = Assert.Single(histories[1]!);
+        Assert.Equal("Tell me about Godzilla", sent.Question);
+        Assert.Equal("Godzilla is a Stern machine.", sent.AnswerText);
+        Assert.Equal(citation.SourceUrl, Assert.Single(sent.Citations!).SourceUrl);
+    }
+
+    [Fact]
+    public async Task Refusal_turn_does_not_join_thread()
+    {
+        var refusal = BuildAnswer("I don't know.", isRefusal: true, refusalCategory: RefusalCategory.OutOfScope);
+        var (client, histories) = BuildHistoryCapturingClient(
+            new AnswerChunk.Refusal(RefusalCategory.OutOfScope, "I don't know."),
+            new AnswerChunk.Final(refusal));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "off topic?"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='new-question-button']"),
+            timeout: TimeSpan.FromSeconds(3));
+
+        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+        // The refusal never becomes a thread turn — the router's history
+        // contract is successful turns only.
+        Assert.Empty(cut.FindAll("[data-testid='conversation-turn']"));
+
+        cut.Render(p => p.Add(c => c.Question, "second question"));
+        cut.WaitForAssertion(() => Assert.Equal(2, histories.Count), timeout: TimeSpan.FromSeconds(3));
+        Assert.Null(histories[1]); // still single-shot: no thread to send
+    }
+
+    [Fact]
+    public async Task NewConversation_clears_thread()
+    {
+        var answer = BuildAnswer("First answer.", citations: [BuildCitation("Source A")]);
+        var (client, _) = BuildHistoryCapturingClient(new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "first question"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='new-question-button']"),
+            timeout: TimeSpan.FromSeconds(3));
+        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        cut.Find("[data-testid='conversation-thread']");
+
+        await cut.Find("[data-testid='new-conversation-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+        Assert.Empty(cut.FindAll("[data-testid='conversation-thread']"));
+        cut.Find("[data-testid='question-input']");
+    }
+
+    [Fact]
+    public async Task Inherited_citation_renders_provenance_chip()
+    {
+        // The router flags citations carried forward from a prior turn
+        // (Citation.Inherited). The card must label them so provenance is
+        // honest about WHEN the grounding happened.
+        var inherited = BuildCitation("Godzilla Manual") with { Inherited = true };
+        var answer = BuildAnswer("It has a 6-ball multiball.", citations: [inherited]);
+        var (client, _) = BuildHistoryCapturingClient(new AnswerChunk.Final(answer));
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p => p.Add(c => c.Question, "how many balls?"));
+
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='citation-inherited-chip']"),
+            timeout: TimeSpan.FromSeconds(3));
     }
 }

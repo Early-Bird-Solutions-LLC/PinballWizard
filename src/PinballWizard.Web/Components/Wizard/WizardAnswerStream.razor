@@ -37,12 +37,37 @@
 
 <div class="wizard-answer-stream" data-testid="wizard-answer-stream">
 
+    @* ── Conversation thread (completed prior turns, PR-A3) ────────────────
+       Lives in component state only — circuit lifetime, no persistence
+       (ADR-0027: the ban is on PERSISTENT session history; a page refresh
+       starts a fresh conversation). Each turn renders through the same
+       TokenRenderer + CitationStrip surfaces as the live answer. *@
+    @if (_thread.Count > 0)
+    {
+        <MudStack Spacing="4" Class="wizard-thread mb-6" data-testid="conversation-thread">
+            @foreach (var turn in _thread)
+            {
+                <div class="wizard-thread__turn" data-testid="conversation-turn">
+                    <MudText Typo="Typo.h6" Class="wizard-answer-stream__question"
+                             data-testid="turn-question">
+                        @turn.Question
+                    </MudText>
+                    <TokenRenderer SpanTexts="@turn.TextSpans" IsStreaming="false" />
+                    @if (turn.Citations.Count > 0)
+                    {
+                        <CitationStrip Citations="turn.Citations" />
+                    }
+                </div>
+            }
+        </MudStack>
+    }
+
     @* ── Question input (always visible in Idle; hidden after submit) ──── *@
     @if (_state == AnswerState.Idle)
     {
         <MudStack Spacing="3">
             <MudTextField @bind-Value="_question"
-                          Placeholder="Ask anything about pinball machines…"
+                          Placeholder="@(_thread.Count > 0 ? "Ask a follow-up…" : "Ask anything about pinball machines…")"
                           Variant="Variant.Outlined"
                           FullWidth="true"
                           AutoFocus="true"
@@ -50,13 +75,24 @@
                           data-testid="question-input"
                           OnKeyDown="OnKeyDownAsync"
                           Disabled="_state != AnswerState.Idle" />
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       OnClick="SubmitAsync"
-                       Disabled="string.IsNullOrWhiteSpace(_question)"
-                       data-testid="ask-button">
-                Ask the Wizard
-            </MudButton>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="SubmitAsync"
+                           Disabled="string.IsNullOrWhiteSpace(_question)"
+                           data-testid="ask-button">
+                    @(_thread.Count > 0 ? "Ask the follow-up" : "Ask the Wizard")
+                </MudButton>
+                @if (_thread.Count > 0)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               OnClick="StartNewConversation"
+                               data-testid="new-conversation-button">
+                        New conversation
+                    </MudButton>
+                }
+            </MudStack>
         </MudStack>
     }
     else
@@ -72,20 +108,39 @@
                 <MudButton Variant="Variant.Text"
                            Size="Size.Small"
                            Color="Color.Secondary"
-                           OnClick="ResetToIdle"
+                           OnClick="CancelCurrentTurn"
                            data-testid="cancel-button">
                     Cancel
                 </MudButton>
             }
             else
             {
-                <MudButton Variant="Variant.Text"
-                           Size="Size.Small"
-                           Color="Color.Primary"
-                           OnClick="ResetToIdle"
-                           data-testid="new-question-button">
-                    Ask another question
-                </MudButton>
+                <MudStack Row="true" Spacing="2">
+                    @if (_thread.Count < MaxClientTurns)
+                    {
+                        <MudButton Variant="Variant.Text"
+                                   Size="Size.Small"
+                                   Color="Color.Primary"
+                                   OnClick="PrepareFollowUp"
+                                   data-testid="new-question-button">
+                            @(_state == AnswerState.Complete ? "Ask a follow-up" : "Ask another question")
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary"
+                                 data-testid="turn-cap-hint">
+                            This conversation has reached its limit — start a new one to keep going.
+                        </MudText>
+                    }
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Color="Color.Secondary"
+                               OnClick="StartNewConversation"
+                               data-testid="new-conversation-button">
+                        New conversation
+                    </MudButton>
+                </MudStack>
             }
         </MudStack>
     }
@@ -164,6 +219,34 @@
     private string _question = string.Empty;
     private string _submittedQuestion = string.Empty;
 
+    // ── Conversation thread (PR-A3) ──────────────────────────────────────
+    // Completed prior turns, oldest first. Circuit-lifetime component state
+    // only — a refresh starts fresh (ADR-0027 bans PERSISTENT history, not
+    // a live conversation). Refusal/error turns never join the thread: the
+    // router's history contract is successful turns only, and inheriting
+    // citations from a refusal would be inheriting nothing.
+    //
+    // TextSpans exists so each historical turn re-renders through the same
+    // TokenRenderer surface as the live answer (single canonical span).
+    private sealed record CompletedTurn(
+        string Question,
+        string AnswerText,
+        IReadOnlyList<Citation> Citations)
+    {
+        public IReadOnlyList<string> TextSpans { get; } = [AnswerText];
+    }
+
+    private readonly List<CompletedTurn> _thread = [];
+
+    // Mirrors the API request-shaping guard (>20 turns → 400) so the client
+    // can never produce a request the server rejects.
+    private const int MaxClientTurns = 20;
+
+    // The completed (non-refusal) current turn, eligible to join _thread
+    // when the user asks a follow-up. Null while streaming, after refusal,
+    // or once consumed.
+    private CompletedTurn? _pendingTurn;
+
     // Accumulated TextDelta texts. Cleared on Refusal (§ 5 supersedes rule).
     // On Final: replaced with a single entry = Final.Answer.Text.
     private readonly List<string> _textDeltas = [];
@@ -237,6 +320,7 @@
         _refusalCategory = null;
         _refusalDetail = null;
         _retryAfterSeconds = null;
+        _pendingTurn = null;
 
         // Cancel any prior stream token and issue a fresh one.
         _cts.Cancel();
@@ -245,19 +329,30 @@
 
         TransitionTo(AnswerState.Submitted);
 
-        await StreamAnswerAsync(_submittedQuestion, _cts.Token).ConfigureAwait(false);
+        await StreamAnswerAsync(_submittedQuestion, BuildHistory(), _cts.Token).ConfigureAwait(false);
     }
+
+    // Maps the thread to the wire shape. Empty thread → null, which keeps
+    // the request byte-identical to the single-shot contract (and the
+    // router on its cached single-shot path).
+    private IReadOnlyList<ConversationTurn>? BuildHistory()
+        => _thread.Count == 0
+            ? null
+            : _thread.Select(t => new ConversationTurn(t.Question, t.AnswerText, t.Citations)).ToList();
 
     // ── Streaming core ────────────────────────────────────────────────────
 
-    private async Task StreamAnswerAsync(string question, CancellationToken ct)
+    private async Task StreamAnswerAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken ct)
     {
         var gotFirstChunk = false;
 
         try
         {
             await foreach (var chunk in StreamingClient
-                .StreamAsync(question, ct)
+                .StreamAsync(question, history, ct)
                 .ConfigureAwait(false))
             {
                 if (ct.IsCancellationRequested)
@@ -361,12 +456,16 @@
             // Fallback: attempt a whole-response-style call.
             // The streaming client's fallback mode yields TextDelta + Final for
             // any question when the Api is unreachable — this gives us the same
-            // recovery path without a separate IAiRouter injection.
-            await FallbackToWholeResponseAsync(question, ct).ConfigureAwait(false);
+            // recovery path without a separate IAiRouter injection. Carries the
+            // same history so a follow-up retried this way keeps its context.
+            await FallbackToWholeResponseAsync(question, history, ct).ConfigureAwait(false);
         }
     }
 
-    private async Task FallbackToWholeResponseAsync(string question, CancellationToken ct)
+    private async Task FallbackToWholeResponseAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken ct)
     {
         // Re-initialize state for a clean fallback render.
         _textDeltas.Clear();
@@ -377,7 +476,7 @@
         try
         {
             await foreach (var chunk in StreamingClient
-                .StreamAsync(question, ct)
+                .StreamAsync(question, history, ct)
                 .ConfigureAwait(false))
             {
                 if (ct.IsCancellationRequested)
@@ -459,6 +558,18 @@
         _citations.Clear();
         _citations.AddRange(answer.Citations);
 
+        // Eligible to join the thread when the user asks a follow-up.
+        // Captured here (canonical text + citations) rather than read back
+        // from render state at click time. The dev-only demo answer
+        // (explicit 503 path in WizardStreamingClient, PromptVersion
+        // sentinel) never qualifies — fabricated content must not become
+        // conversation history the router would treat as ground truth
+        // (invariant #17 adjacency; local-review 2026-06-12 finding).
+        if (answer.PromptVersion != "wave1-placeholder")
+        {
+            _pendingTurn = new CompletedTurn(_submittedQuestion, answer.Text, answer.Citations);
+        }
+
         _currentToolCallName = null;
         _currentToolCallId = null;
         TransitionTo(AnswerState.Complete);
@@ -471,7 +582,9 @@
         _state = next;
     }
 
-    private void ResetToIdle()
+    // Clears the CURRENT turn only — the thread survives. The shared tail
+    // of all three reset flavors below.
+    private void ResetCurrentTurn()
     {
         _cts.Cancel();
         _cts.Dispose();
@@ -487,6 +600,32 @@
         _refusalCategory = null;
         _refusalDetail = null;
         _retryAfterSeconds = null;
+        _pendingTurn = null;
+    }
+
+    // "Ask a follow-up" after a terminal state: the completed turn (if the
+    // answer succeeded) joins the thread, then the input returns. Refusal
+    // and error turns have no _pendingTurn and are simply dropped — the
+    // router's history contract is successful turns only.
+    private void PrepareFollowUp()
+    {
+        if (_pendingTurn is not null && _thread.Count < MaxClientTurns)
+        {
+            _thread.Add(_pendingTurn);
+        }
+
+        ResetCurrentTurn();
+    }
+
+    // "Cancel" mid-stream: discard the in-flight turn; the thread survives.
+    private void CancelCurrentTurn() => ResetCurrentTurn();
+
+    // "New conversation": the thread goes too. The only operation that
+    // forgets prior turns short of a page refresh.
+    private void StartNewConversation()
+    {
+        _thread.Clear();
+        ResetCurrentTurn();
     }
 
     // ── Suggested rephrase click (from RefusalPanel) ──────────────────────
@@ -502,7 +641,10 @@
         if (string.IsNullOrWhiteSpace(question))
             return;
 
-        ResetToIdle();
+        // Rephrase-after-refusal keeps the thread: the refusal turn itself
+        // never joined it, and the user's earlier successful turns are
+        // exactly the context the rephrase should benefit from.
+        PrepareFollowUp();
         _question = question;
         await SubmitAsync().ConfigureAwait(false);
     }
