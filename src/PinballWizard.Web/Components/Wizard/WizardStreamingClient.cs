@@ -51,8 +51,14 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         _logger = logger;
     }
 
+    public IAsyncEnumerable<AnswerChunk> StreamAsync(
+        string question,
+        CancellationToken cancellationToken)
+        => StreamAsync(question, history: null, cancellationToken);
+
     public async IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
+        IReadOnlyList<ConversationTurn>? history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
@@ -64,7 +70,7 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         // catches stream exceptions, shows the honest Error state, and owns
         // the one deliberate fallback re-attempt. The placeholder is reserved
         // for the explicit 503 "Foundry not wired" dev signal below.
-        var response = await SendCoreAsync(question, cancellationToken).ConfigureAwait(false);
+        var response = await SendCoreAsync(question, history, cancellationToken).ConfigureAwait(false);
 
         // ── 503: Foundry not configured (dev mode, no endpoint set) ───
         // Yield hardcoded hello-world stream so the dev experience proves
@@ -148,12 +154,16 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
     // see the comment at the top of StreamAsync.
     private async Task<HttpResponseMessage> SendCoreAsync(
         string question,
+        IReadOnlyList<ConversationTurn>? history,
         CancellationToken cancellationToken)
     {
+        // Null history serializes away entirely (WhenWritingNull), so the
+        // single-shot wire shape is byte-identical to the pre-multi-turn
+        // contract.
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/wizard/ask:stream")
         {
             Content = JsonContent.Create(
-                new { question },
+                new { question, history },
                 options: SseJsonOptions),
         };
         request.Headers.Accept.ParseAdd("text/event-stream");

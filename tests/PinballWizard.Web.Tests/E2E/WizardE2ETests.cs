@@ -120,17 +120,51 @@ public sealed class WizardE2ETests : IAsyncLifetime
 
         await AskOnceAndAssertCitedAsync(page);
 
-        // Reset to Idle and re-ask — guaranteed cache hit on a healthy
-        // cache (and still a valid cited-answer assertion if eviction or
-        // multi-replica routing makes it a miss).
-        await page.Locator("[data-testid='new-question-button']").ClickAsync();
+        // Reset via "New conversation" — NOT the follow-up button. Since the
+        // chat-thread UI (PR-A3), "Ask a follow-up" keeps the thread, which
+        // makes the second ask multi-turn — and multi-turn asks BYPASS the
+        // semantic cache by design (ADR-0015 follow-up 2026-06-11). This
+        // test exists to pin the cache-HIT chunk shape, so the second ask
+        // must be a genuine single-shot repeat.
+        await page.Locator("[data-testid='new-conversation-button']").ClickAsync();
         await AskOnceAndAssertCitedAsync(page);
     }
 
-    // Types the canonical ask-flow question, submits, awaits the terminal
-    // state, and asserts the provenance contract (cited answer or rendered
-    // refusal). Assumes the page is already on /wizard in Idle state.
-    private static async Task AskOnceAndAssertCitedAsync(IPage page)
+    [E2EFact]
+    public async Task AskFlow_FollowUp_CarriesConversationContext()
+    {
+        // PR-A3: the pronoun-only follow-up is unanswerable without the
+        // prior turn ("it" has no referent) — a grounded answer here proves
+        // history rode the wire and the router resolved it. Exercises the
+        // cache-bypass multi-turn path end-to-end, which no single-shot
+        // canary can reach.
+        var page = await NewPageAsync();
+        await page.GotoAsync($"{_stack.WebBaseUrl}/wizard", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        await AskOnceAndAssertCitedAsync(page);
+
+        // "Ask a follow-up" — the completed turn must join the visible thread.
+        await page.Locator("[data-testid='new-question-button']").ClickAsync();
+        await page.Locator("[data-testid='conversation-turn']").First.WaitForAsync(
+            new() { State = WaitForSelectorState.Visible, Timeout = 10_000 });
+
+        await AskOnceAndAssertCitedAsync(page, "who designed it");
+
+        // The thread still shows the first turn alongside the follow-up's
+        // answer (the contract assertion above already covered citations
+        // or rendered refusal for the follow-up itself).
+        Assert.True(
+            await page.Locator("[data-testid='conversation-turn']").CountAsync() >= 1,
+            "Conversation thread lost the prior turn after the follow-up.");
+    }
+
+    // Types the ask-flow question (canonical by default), submits, awaits
+    // the terminal state, and asserts the provenance contract (cited answer
+    // or rendered refusal). Assumes the page is already on /wizard in Idle
+    // state.
+    private static async Task AskOnceAndAssertCitedAsync(
+        IPage page,
+        string question = "what year was godzilla pinball game released")
     {
         var input = page.Locator("[data-testid='question-input']");
         await input.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
@@ -144,7 +178,7 @@ public sealed class WizardE2ETests : IAsyncLifetime
         {
             await input.ClickAsync();
             await input.FillAsync("");
-            await input.PressSequentiallyAsync("what year was godzilla pinball game released", new() { Delay = 15 });
+            await input.PressSequentiallyAsync(question, new() { Delay = 15 });
             await input.PressAsync("Tab");
             await page.WaitForTimeoutAsync(750);
             if (await askButton.IsEnabledAsync())

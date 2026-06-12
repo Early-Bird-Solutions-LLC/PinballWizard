@@ -28,4 +28,16 @@ public interface IWizardStreamingClient
     IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
         CancellationToken cancellationToken);
+
+    // Multi-turn overload (PR-A3, 2026-06-12): sends the conversation's
+    // completed prior turns alongside the question. Null/empty history is
+    // contractually identical to the two-argument overload. The default
+    // implementation drops history so existing test doubles keep compiling
+    // (same compatibility-shim pattern as IAiRouter); the production
+    // WizardStreamingClient overrides it for real.
+    IAsyncEnumerable<AnswerChunk> StreamAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
+        => StreamAsync(question, cancellationToken);
 }

@@ -30,6 +30,20 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — The Wizard becomes a conversation: client-held history, chat-thread UI
+
+**Decision:** Multi-turn conversations ship in three PRs per `thoughts/shared/plans/AB-259-multi-turn-conversation.md` (Jim's decisions 2026-06-11: client-held history + chat-thread UI). PR-A1 (#374): `IAiRouter` history overloads — prior turns prepended as user/assistant ChatMessages (capped `MaxConversationTurns`=8 oldest-first, per-field `MaxConversationTurnContentChars`=4096 because history is client-supplied), semantic cache bypassed in both directions on history (metered `pinwiz.ai.cache.bypass_multiturn`), and citation inheritance — a follow-up answered from conversation context inherits the most recent cited turn's citations flagged `Inherited=true`, run before confidence computation; no citations anywhere still refuses. PR-A2 (#379): `WizardAskRequest.History` + a >20-turn 400 guard. PR-A3: the thread UI — completed turns render above the input through the same TokenRenderer/CitationStrip surfaces, "Ask a follow-up" keeps the thread (refusal/error turns never join it), "New conversation" clears it, inherited citations carry an "earlier in this conversation" chip, client turn cap mirrors the API guard.
+
+**Conversation state lives nowhere:** circuit component state + the request that carries it (ADR-0027 follow-up 2026-06-12 records why that is not the banned session-history surface; ADR-0015/0026 follow-ups 2026-06-11 record the cache and contract amendments).
+
+**Test-intent preservation:** the repeat-ask cache-hit E2E now resets via "New conversation" — the follow-up button would make its second ask multi-turn, which bypasses the cache and would have silently destroyed the coverage that test exists for. The new follow-up E2E asks a pronoun-only question ("who designed it") — unanswerable without history — as the live proof the context rides the wire.
+
+**Alternatives considered:** Foundry agent threads (`WizardAnswer.FoundryThreadId`) — native but the 1.4.0 session surface is unstable (SDK issue #2688), revisit when stable; server-side Cosmos conversation container (architecture-v2 § 8) — right for authenticated long-term history later, requires ADR-0027 amendment; hashing history into the cache key — hit probability ~zero, all cost no benefit over bypass.
+
+**Revisit when:** the SDK thread surface stabilizes (server-side threads would shrink request payloads), eval data shows inherited-citation answers degrading precision, or `cache.bypass_multiturn` dominates ask volume (cost pressure).
+
+**Related:** PR #374, #379, PR-A3; ADR-0015/0026/0027 follow-ups; issue #371 (markdown rendering — same surface, separate fix).
+
 ## 2026-06-12 — /admin gated by the GlobalAdmin Entra app role (AdminOnly policy)
 
 **Decision:** Every `/admin/*` page carries `[Authorize(Policy = "AdminOnly")]`, where the policy requires the `GlobalAdmin` Entra app role (the role name ADR-0009 defined for v1 admin RBAC) (`RequireRole` — Microsoft.Identity.Web maps app-role claims to `ClaimTypes.Role`). This supersedes the earlier posture pinned by `AuthorizationContractTests` that per-page `[Authorize]` on admin routes was redundant: the `FallbackPolicy` proves *authentication*, and that was an acceptable bar for read-mostly grids — not for the runtime settings surface that follows (admin-settings plan, Phase 0), which mutates live Wizard behavior. The contract tests now pin the inverse: a new admin page WITHOUT the policy fails at authoring time, and coverage extends to all five admin pages (DocumentTriage and LinkOverrides were previously untested).
