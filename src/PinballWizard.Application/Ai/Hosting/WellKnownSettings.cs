@@ -1,3 +1,4 @@
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Application.Ai.Hosting;
@@ -5,9 +6,9 @@ namespace PinballWizard.Application.Ai.Hosting;
 // The closed set of runtime-mutable settings (admin settings plan, PR-B1).
 //
 // Each key maps a Cosmos admin_settings override onto an AiFoundryOptions
-// property. A key exists here ONLY once something reads it at runtime —
-// shipping a key nothing consumes is the dead-config smell /local-review
-// exists to catch. Deliberately NOT here yet:
+// or RetrievalOptions property. A key exists here ONLY once something reads
+// it at runtime — shipping a key nothing consumes is the dead-config smell
+// /local-review exists to catch. Deliberately NOT here yet:
 //   - ChatDeploymentName / AgentModels: FoundryAgentFactory caches built
 //     agents; runtime model changes need the cache-invalidation hook that
 //     ships with prompt templates (plan Phase 3).
@@ -22,6 +23,12 @@ public static class WellKnownSettings
     public const string PerCallCostCeilingUsdCents = "ai.per_call_cost_ceiling_usd_cents";
     public const string MaxConversationTurns = "ai.max_conversation_turns";
 
+    // Retrieval tuning keys (PR retrieval-runtime-keys). Both consumed at
+    // searchCorpus call time so a stored override takes effect on the next
+    // ask without a restart.
+    public const string RetrievalTopK = "rag.retrieval_top_k";
+    public const string RetrievalMinimumScore = "rag.retrieval_minimum_score";
+
     // Validation ranges, enforced server-side at write time (the page
     // mirrors them client-side). Bounds rationale:
     //   confidence: below 0.3 the gate stops gating; above 0.95 nearly
@@ -30,12 +37,22 @@ public static class WellKnownSettings
     //     worst-case per-ask spend at $1 (ADR-0015 cost posture).
     //   turns: 1..20 — the API request guard rejects >20-turn history, so
     //     a router cap above it could never be exercised.
+    //   retrieval_top_k: 1..20 — floor of 1 keeps retrieval meaningful;
+    //     ceiling of 20 matches SearchCorpusTool.TopKCeiling (server-side
+    //     clamp on the model-requested value). AI Search has no semantic
+    //     re-ranking benefit past ~20 candidates (ADR-0021 § Search defaults).
+    //   retrieval_minimum_score: 0.0..1.0 — the semantic re-ranker and
+    //     BM25 both produce scores in this range (ADR-0021 § Scoring).
+    //     0.0 returns every hit; 1.0 would return almost nothing in
+    //     practice. The calibration target from ADR-0023 H3 is ~0.5.
     public static readonly IReadOnlyDictionary<string, (double Min, double Max)> NumericRanges =
         new Dictionary<string, (double, double)>(StringComparer.Ordinal)
         {
             [ConfidenceThreshold] = (0.3, 0.95),
             [PerCallCostCeilingUsdCents] = (1, 100),
             [MaxConversationTurns] = (1, 20),
+            [RetrievalTopK] = (1, 20),
+            [RetrievalMinimumScore] = (0.0, 1.0),
         };
 
     public static IReadOnlyList<string> AllKeys { get; } =
@@ -43,6 +60,8 @@ public static class WellKnownSettings
         ConfidenceThreshold,
         PerCallCostCeilingUsdCents,
         MaxConversationTurns,
+        RetrievalTopK,
+        RetrievalMinimumScore,
     ];
 
     // Server-side write validation: unknown keys and out-of-range values
@@ -73,13 +92,23 @@ public static class WellKnownSettings
         return true;
     }
 
-    // The IOptions default for a key — what the Wizard uses when no
+    // The IOptions/default for a key — what the Wizard uses when no
     // override is stored, and what "reset to default" reverts to.
+    // Keys backed by AiFoundryOptions are resolved from the live options
+    // object; retrieval keys use the RetrievalOptions record defaults,
+    // which are compile-time constants and do not vary per deployment.
     public static string DefaultFor(string key, AiFoundryOptions options) => key switch
     {
         ConfidenceThreshold => options.ConfidenceThreshold.ToString(System.Globalization.CultureInfo.InvariantCulture),
         PerCallCostCeilingUsdCents => options.PerCallCostCeilingUsdCents.ToString(System.Globalization.CultureInfo.InvariantCulture),
         MaxConversationTurns => options.MaxConversationTurns.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        // Retrieval defaults are the RetrievalOptions record parameter
+        // defaults (TopK=10, MinimumScore=0.0 per ADR-0021 § Search defaults).
+        // They are not sourced from AiFoundryOptions — the options parameter
+        // is not used for these keys, but the single-signature convention is
+        // kept so callers iterate AllKeys without branching.
+        RetrievalTopK => new RetrievalOptions().TopK.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        RetrievalMinimumScore => new RetrievalOptions().MinimumScore.ToString(System.Globalization.CultureInfo.InvariantCulture),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "Not a well-known setting."),
     };
 }

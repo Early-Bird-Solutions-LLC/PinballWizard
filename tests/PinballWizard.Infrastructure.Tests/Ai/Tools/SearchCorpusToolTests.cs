@@ -3,6 +3,7 @@ using Azure;
 using Azure.Identity;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Degradation;
+using PinballWizard.Application.Ai.Hosting;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -19,8 +20,14 @@ namespace PinballWizard.Infrastructure.Tests.Ai.Tools;
 // gated `LiveSearchCorpusToolTests` against a deployed AI Search index.
 public sealed class SearchCorpusToolTests
 {
-    private static SearchCorpusTool NewTool(IRagRetriever retriever, IDegradationContext? degradationContext = null) =>
-        new(retriever, degradationContext ?? new AmbientDegradationContext(), NullLogger<SearchCorpusTool>.Instance);
+    private static SearchCorpusTool NewTool(
+        IRagRetriever retriever,
+        IDegradationContext? degradationContext = null,
+        IRuntimeSettings? runtimeSettings = null) =>
+        new(retriever,
+            degradationContext ?? new AmbientDegradationContext(),
+            NullLogger<SearchCorpusTool>.Instance,
+            runtimeSettings);
 
     private static readonly DateTimeOffset SampleLastScraped =
         new(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
@@ -603,5 +610,156 @@ public sealed class SearchCorpusToolTests
         l.EnableMeasurementEvents(PinballWizardTelemetry.AiSearchUnavailable);
         listener = l;
         return samples;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // PR retrieval-runtime-keys: runtime settings consumer tests.
+    //
+    // These tests prove that the runtime-mutable rag.retrieval_top_k and
+    // rag.retrieval_minimum_score values ACTUALLY reach the RetrievalOptions
+    // passed to IRagRetriever.RetrieveAsync — not just that the snapshot is
+    // constructed correctly (that's covered in RuntimeSettingsTests).
+    // ─────────────────────────────────────────────────────────────────────
+
+    private static IRuntimeSettings FakeSettings(int topK, double minimumScore)
+    {
+        // Build a snapshot with the given retrieval values and route it
+        // through an NSubstitute fake so the tool calls GetSnapshotAsync.
+        var snapshot = new RuntimeSettingsSnapshot(
+            ConfidenceThreshold: 0.65,
+            PerCallCostCeilingUsdCents: 10,
+            MaxConversationTurns: 8,
+            RetrievalTopK: topK,
+            RetrievalMinimumScore: minimumScore);
+
+        var rt = Substitute.For<IRuntimeSettings>();
+        rt.GetSnapshotAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(snapshot));
+        return rt;
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_WithRuntimeTopKOverride_PassesOverriddenTopKToRetriever()
+    {
+        // The whole point of rag.retrieval_top_k: an overridden value must
+        // land on RetrievalOptions.TopK when the model does not supply topK
+        // (null). Without this wiring the key would be dead config.
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<RetrievedChunk>>([]));
+
+        var tool = NewTool(retriever, runtimeSettings: FakeSettings(topK: 15, minimumScore: 0.0));
+
+        await tool.SearchCorpusAsync(
+            query: "godzilla flipper",
+            machineId: null,
+            documentType: null,
+            topK: null, // model did not supply — runtime default applies
+            cancellationToken: CancellationToken.None);
+
+        await retriever.Received(1).RetrieveAsync(
+            Arg.Any<string>(),
+            Arg.Is<RetrievalOptions>(o => o.TopK == 15),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_WithRuntimeMinimumScoreOverride_PassesOverriddenScoreToRetriever()
+    {
+        // The whole point of rag.retrieval_minimum_score: an overridden value
+        // must land on RetrievalOptions.MinimumScore. Without this wiring the
+        // post-filter in AiSearchRagRetriever would never see the stored value.
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<RetrievedChunk>>([]));
+
+        var tool = NewTool(retriever, runtimeSettings: FakeSettings(topK: 10, minimumScore: 0.45));
+
+        await tool.SearchCorpusAsync(
+            query: "godzilla flipper",
+            machineId: null,
+            documentType: null,
+            topK: null,
+            cancellationToken: CancellationToken.None);
+
+        await retriever.Received(1).RetrieveAsync(
+            Arg.Any<string>(),
+            Arg.Is<RetrievalOptions>(o => o.MinimumScore == 0.45),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_ModelTopK_WinsOverRuntimeDefault()
+    {
+        // When the model explicitly requests topK=3, the runtime default
+        // is irrelevant — the model's choice wins (clamped to TopKCeiling).
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<RetrievedChunk>>([]));
+
+        var tool = NewTool(retriever, runtimeSettings: FakeSettings(topK: 15, minimumScore: 0.0));
+
+        await tool.SearchCorpusAsync(
+            query: "godzilla flipper",
+            machineId: null,
+            documentType: null,
+            topK: 3, // explicit — must not be replaced by the runtime default
+            cancellationToken: CancellationToken.None);
+
+        await retriever.Received(1).RetrieveAsync(
+            Arg.Any<string>(),
+            Arg.Is<RetrievalOptions>(o => o.TopK == 3),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SearchCorpusAsync_NoRuntimeSettings_UsesTopKDefaultConstant()
+    {
+        // Without IRuntimeSettings the tool falls back to the hardcoded
+        // TopKDefault constant — same behavior as before PR retrieval-runtime-keys.
+        var retriever = Substitute.For<IRagRetriever>();
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<RetrievedChunk>>([]));
+
+        var tool = NewTool(retriever); // no runtimeSettings
+
+        await tool.SearchCorpusAsync(
+            query: "godzilla flipper",
+            machineId: null,
+            documentType: null,
+            topK: null,
+            cancellationToken: CancellationToken.None);
+
+        await retriever.Received(1).RetrieveAsync(
+            Arg.Any<string>(),
+            Arg.Is<RetrievalOptions>(o =>
+                o.TopK == SearchCorpusTool.TopKDefault
+                && o.MinimumScore == new RetrievalOptions().MinimumScore),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(null, SearchCorpusTool.TopKDefault)]     // runtime default used
+    [InlineData(0, SearchCorpusTool.TopKDefault)]         // ≤ 0 → runtime default
+    [InlineData(1, 1)]
+    [InlineData(20, 20)]
+    [InlineData(21, SearchCorpusTool.TopKCeiling)]        // clamped to ceiling
+    public void ClampTopK_WithRuntimeDefault_HonorsBothDefaultAndCeiling(int? requested, int expected)
+    {
+        // Verify ClampTopK's runtimeDefault overload: when requested is
+        // null / ≤ 0 the runtimeDefault applies, but the ceiling still
+        // wins when the default itself exceeds it.
+        Assert.Equal(expected, SearchCorpusTool.ClampTopK(requested, runtimeDefault: SearchCorpusTool.TopKDefault));
+    }
+
+    [Fact]
+    public void ClampTopK_RuntimeDefaultAboveCeiling_IsClamped()
+    {
+        // A runtime-stored value of 25 is rejected by TryValidate (the
+        // write guard enforces the 1–20 range), so this path should not
+        // occur in practice. The ceiling clamp is still present so a
+        // Data Explorer edit cannot produce a TopK that bypasses the
+        // server-side limit.
+        Assert.Equal(SearchCorpusTool.TopKCeiling, SearchCorpusTool.ClampTopK(null, runtimeDefault: 25));
     }
 }

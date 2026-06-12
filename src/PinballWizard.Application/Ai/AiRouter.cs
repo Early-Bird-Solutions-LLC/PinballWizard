@@ -12,6 +12,7 @@ using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
@@ -1164,12 +1165,24 @@ public sealed class AiRouter : IAiRouter
     // IOptions default. One snapshot per ask keeps a single answer
     // internally consistent even if an admin saves mid-stream.
     private async Task<RuntimeSettingsSnapshot> ResolveRuntimeSettingsAsync(CancellationToken cancellationToken)
-        => _runtimeSettings is null
-            ? new RuntimeSettingsSnapshot(
-                _options.ConfidenceThreshold,
-                _options.PerCallCostCeilingUsdCents,
-                _options.MaxConversationTurns)
-            : await _runtimeSettings.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+    {
+        if (_runtimeSettings is not null)
+        {
+            return await _runtimeSettings.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // No IRuntimeSettings (standalone CLI, unit fixtures): build directly
+        // from IOptions. Retrieval defaults come from RetrievalOptions record
+        // defaults so the fallback path stays in sync with the stored-override
+        // path without duplicating magic numbers here.
+        var retrievalDefaults = new RetrievalOptions();
+        return new RuntimeSettingsSnapshot(
+            _options.ConfidenceThreshold,
+            _options.PerCallCostCeilingUsdCents,
+            _options.MaxConversationTurns,
+            retrievalDefaults.TopK,
+            retrievalDefaults.MinimumScore);
+    }
 
     private IReadOnlyList<ConversationTurn>? TrimHistory(IReadOnlyList<ConversationTurn>? history, int maxTurns)
     {

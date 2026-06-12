@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 
@@ -23,7 +24,11 @@ public interface IRuntimeSettings
 public sealed record RuntimeSettingsSnapshot(
     double ConfidenceThreshold,
     int PerCallCostCeilingUsdCents,
-    int MaxConversationTurns);
+    int MaxConversationTurns,
+    // Retrieval tuning (PR retrieval-runtime-keys). Consumed at
+    // searchCorpus call time by SearchCorpusTool.
+    int RetrievalTopK,
+    double RetrievalMinimumScore);
 
 public sealed class RuntimeSettings : IRuntimeSettings
 {
@@ -47,6 +52,7 @@ public sealed class RuntimeSettings : IRuntimeSettings
     public async Task<RuntimeSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
     {
         var defaults = _options.Value;
+        var retrievalDefaults = new RetrievalOptions();
 
         var confidence = await ResolveAsync(
             WellKnownSettings.ConfidenceThreshold,
@@ -63,7 +69,22 @@ public sealed class RuntimeSettings : IRuntimeSettings
             defaults.MaxConversationTurns,
             cancellationToken).ConfigureAwait(false);
 
-        return new RuntimeSettingsSnapshot(confidence, (int)ceiling, (int)turns);
+        var topK = await ResolveAsync(
+            WellKnownSettings.RetrievalTopK,
+            retrievalDefaults.TopK,
+            cancellationToken).ConfigureAwait(false);
+
+        var minimumScore = await ResolveAsync(
+            WellKnownSettings.RetrievalMinimumScore,
+            retrievalDefaults.MinimumScore,
+            cancellationToken).ConfigureAwait(false);
+
+        return new RuntimeSettingsSnapshot(
+            confidence,
+            (int)ceiling,
+            (int)turns,
+            (int)topK,
+            minimumScore);
     }
 
     // Stored override → default. A stored-but-unparsable value falls back

@@ -30,6 +30,16 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — Retrieval top-K and minimum score go runtime-mutable; the RAG settings tab activates
+
+**Decision:** `rag.retrieval_top_k` (1–20) and `rag.retrieval_minimum_score` (0.0–1.0) join `WellKnownSettings`, resolved through the same stored-override → `IOptions` layering and consumed at call time by `SearchCorpusTool` — one `IRuntimeSettings` snapshot per tool invocation (the tool is a singleton living outside `AiRouter`'s snapshot scope, so it resolves its own; the repository's TTL cache keeps that ~free). A model-supplied top-K still wins, clamped; the runtime value applies when the model omits it. Sub-agents (Repair/Rules/Valuation) inherit automatically — same singleton via DI. With real consumers wired, `/admin/settings`' RAG tab replaces its placeholder with live controls (this PR), keeping the no-dead-config rule intact in both directions.
+
+**Alternatives considered:** threading retrieval values from `AiRouter`'s snapshot through the agent-framework tool-call boundary — rejected: the framework drives tool invocation internally and the threading would couple the router to tool internals; per-invocation resolution at the tool is the narrower seam.
+
+**Revisit when:** retrieval tuning needs per-topic profiles (a single global top-K stops fitting), or eval data shows min-score changes shifting citation precision enough to warrant guarded rollout.
+
+**Related:** PR-B1/PR-B2 entries above, SearchCorpusTool (Phase 4 W4-1 design notes), built in parallel by a worktree agent per the 2026-06-12 parallel-tracks dispatch.
+
 ## 2026-06-12 — /admin/settings ships with two live tabs and two honest placeholders (PR-B2)
 
 **Decision:** The settings page (admin settings plan, Phase 2) edits the PR-B1 key set through `IAdminSettingsRepository`: Guardrails tab (confidence-threshold slider, cost-ceiling field) and Conversation tab (max turns). Per-setting affordances: default hint, override provenance (`updatedBy` + `updatedAtUtc`), reset-to-default behind a confirm (delete = revert), dirty-tracked save that writes only changed rows after `WellKnownSettings.TryValidate`. `updatedBy` resolves from the cascading `AuthenticationState` (newly wired via `AddCascadingAuthenticationState` on the auth-configured path); the no-tenant dev path records an explicit local-dev marker instead of a fake name. A failed settings load renders an error state that says the Wizard itself is unaffected and offers no dead controls.
