@@ -44,6 +44,16 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
 
+    // The IAgentPromptProvider.PromptVersion the cache was built with.
+    // GetAgent compares against the provider's CURRENT version and rebuilds
+    // on drift. This is the CROSS-PROCESS path for prompt overrides: the
+    // admin UI (Web process) writes to Cosmos and can only Invalidate its
+    // own process; the Api's factory converges via the provider's TTL'd
+    // version refresh (~2 min) — consistent with the settings page's
+    // "live within ~2 minutes" contract. In-process Invalidate remains the
+    // immediate path.
+    private string? _agentsPromptVersion;
+
     public FoundryAgentFactory(
         IOptions<AiFoundryOptions> options,
         IAgentPromptProvider promptProvider,
@@ -71,15 +81,29 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
 
         // Double-checked init: the dictionary, once populated, is
         // immutable for the process lifetime — UNLESS Invalidate evicts
-        // an entry (admin prompt override activated/deactivated), in which
-        // case the next GetAgent call triggers a full re-init. The lock
-        // guards both the lazy-init and the eviction + re-init paths.
+        // an entry (in-process) or the prompt provider's version drifts
+        // (cross-process: an admin activated/deactivated an override from
+        // the Web process). The lock guards lazy-init, eviction, and the
+        // drift-triggered re-init alike. The version read is a cached
+        // string on the provider (TTL-refreshed) — cheap per call.
+        var currentVersion = _promptProvider.PromptVersion;
         var agents = _agents;
-        if (agents is null)
+        if (agents is null || !string.Equals(_agentsPromptVersion, currentVersion, StringComparison.Ordinal))
         {
             lock (_initLock)
             {
-                agents = _agents ??= ConstructAgents();
+                if (_agents is null || !string.Equals(_agentsPromptVersion, _promptProvider.PromptVersion, StringComparison.Ordinal))
+                {
+                    if (_agents is not null)
+                    {
+                        _logger.LogInformation(
+                            "FoundryAgentFactory rebuilding agents — prompt version drifted from '{Cached}' to '{Current}' (admin override change).",
+                            _agentsPromptVersion, _promptProvider.PromptVersion);
+                    }
+                    _agents = ConstructAgents();
+                    _agentsPromptVersion = _promptProvider.PromptVersion;
+                }
+                agents = _agents;
             }
         }
 
