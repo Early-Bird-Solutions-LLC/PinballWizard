@@ -288,6 +288,83 @@ public sealed class EndpointProblemDetailsTests : IDisposable
         return client.PostAsync("/api/wizard/ask:stream", content);
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // Multi-turn history (PR-A2)
+    // ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Ask_HistoryBeyondTwentyTurns_Returns400Problem()
+    {
+        using var server = BuildStreamServer();
+        using var client = server.CreateClient();
+
+        var history = Enumerable.Range(0, 21)
+            .Select(i => new { question = $"q{i}", answerText = $"a{i}" })
+            .ToArray();
+        var body = JsonSerializer.Serialize(new { question = "follow-up?", history }, JsonOptions);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/api/wizard/ask:stream", content);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var doc = await ParseBodyAsync(response);
+        Assert.Contains("history", doc.RootElement.GetProperty("detail").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Ask_WithHistory_PassesTurnsToRouter()
+    {
+        IReadOnlyList<ConversationTurn>? captured = null;
+        var router = Substitute.For<IAiRouter>();
+        router
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Do<IReadOnlyList<ConversationTurn>?>(h => captured = h),
+                Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<AnswerChunk>());
+
+        using var server = BuildStreamServer(router: router);
+        using var client = server.CreateClient();
+
+        var body = JsonSerializer.Serialize(new
+        {
+            question = "what is it worth?",
+            history = new[] { new { question = "tell me about Godzilla", answerText = "Godzilla is a Stern machine." } },
+        }, JsonOptions);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await client.PostAsync("/api/wizard/ask:stream", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(captured);
+        var turn = Assert.Single(captured!);
+        Assert.Equal("tell me about Godzilla", turn.Question);
+        Assert.Equal("Godzilla is a Stern machine.", turn.AnswerText);
+    }
+
+    [Fact]
+    public async Task Ask_WithoutHistory_PassesNullToRouter()
+    {
+        // Backward compatibility pin: the original {question}-only body must
+        // reach the router as a null history — i.e., the single-shot path.
+        var sawNullHistory = false;
+        var router = Substitute.For<IAiRouter>();
+        router
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Do<IReadOnlyList<ConversationTurn>?>(h => sawNullHistory = h is null),
+                Arg.Any<CancellationToken>())
+            .Returns(AsyncEnumerable.Empty<AnswerChunk>());
+
+        using var server = BuildStreamServer(router: router);
+        using var client = server.CreateClient();
+
+        var response = await PostAskAsync(client, "single shot?");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(sawNullHistory);
+    }
+
     private static async Task<JsonDocument> ParseBodyAsync(HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
@@ -377,11 +454,19 @@ public sealed class EndpointProblemDetailsTests : IDisposable
         return host.GetTestServer();
     }
 
+    // The endpoint invokes the three-argument (history) overload since
+    // PR-A2; NSubstitute proxies intercept default interface members, so
+    // the substitute must stub the overload the endpoint actually calls —
+    // an unconfigured intercepted member returns null and the endpoint's
+    // await-foreach would NRE.
     private static IAiRouter BuildDefaultRouter()
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());
         return router;
     }
@@ -392,7 +477,10 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ThrowAfterFirstChunk());
         return router;
     }

@@ -257,7 +257,7 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(chunks));
         return router;
     }
