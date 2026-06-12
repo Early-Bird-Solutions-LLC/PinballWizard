@@ -63,6 +63,35 @@ public sealed class AuthorizationContractTests
         Assert.Equal("AdminOnly", authorize!.Policy);
     }
 
+    // ── ASSEMBLY SCAN: no admin page can ship without the policy ───────────
+    // Load-bearing since the 2026-06-12 FallbackPolicy removal (the
+    // fallback challenged the anonymous Blazor negotiate and killed every
+    // public circuit; see Program.cs). With no fallback, the per-page
+    // attribute IS the enforcement — and an enumerated [InlineData] list
+    // can't catch a page someone forgets to add to it. This scan closes
+    // that hole: every ROUTABLE component in the Admin pages namespace
+    // must carry [Authorize(Policy = "AdminOnly")], discovered or not.
+    [Fact]
+    public void EveryRoutableAdminComponent_CarriesTheAdminOnlyPolicy()
+    {
+        var adminNamespace = typeof(AdminDashboard).Namespace!;
+        var offenders = typeof(AdminDashboard).Assembly.GetTypes()
+            .Where(t => t.Namespace == adminNamespace)
+            .Where(t => t.GetCustomAttributes<Microsoft.AspNetCore.Components.RouteAttribute>().Any())
+            .Where(t =>
+            {
+                var authorize = t.GetCustomAttribute<AuthorizeAttribute>();
+                return authorize is null || authorize.Policy != "AdminOnly";
+            })
+            .Select(t => t.Name)
+            .ToList();
+
+        Assert.True(
+            offenders.Count == 0,
+            "Routable admin component(s) without [Authorize(Policy = \"AdminOnly\")] — " +
+            "with no FallbackPolicy these would be PUBLIC: " + string.Join(", ", offenders));
+    }
+
     // ── Public pages MUST carry [AllowAnonymous] ──────────────────────────
     // Without [AllowAnonymous], the FallbackPolicy challenges anonymous
     // users on what should be public routes. This is the critical invariant:

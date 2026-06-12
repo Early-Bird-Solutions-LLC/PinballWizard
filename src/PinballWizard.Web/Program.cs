@@ -95,25 +95,23 @@ if (isAuthConfigured)
         .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
         .AddMicrosoftIdentityWebApp(entraSection);
 
-    // Blanket authorization policy: every route requires authentication by default.
-    // Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
-    // opt out with [AllowAnonymous]. The API minimal-API endpoints
-    // (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
-    // (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
-    //
-    // AdminOnly (PR-B0, 2026-06-11 decision): /admin/** pages additionally
-    // require the GlobalAdmin Entra app role via explicit
-    // [Authorize(Policy = "AdminOnly")] — "any authenticated user" was the
-    // right bar for read-mostly grids, not for surfaces that mutate live
-    // Wizard behavior (the /admin/settings page this gate precedes).
-    // Microsoft.Identity.Web maps app-role claims to ClaimTypes.Role, so
-    // RequireRole matches. AuthorizationContractTests pins that every admin
-    // page carries the policy attribute.
+    // NO FallbackPolicy — deliberately, found the hard way (2026-06-12,
+    // first live activation of this auth branch): MapRazorComponents'
+    // endpoint group includes the Blazor Server SignalR endpoints
+    // (/_blazor + negotiate), and a RequireAuthenticatedUser fallback
+    // challenged the anonymous negotiate with an OIDC redirect — every
+    // circuit on the public site died (prerender fine, zero
+    // interactivity; all four E2E canaries red, run 27427228442). A
+    // group-level AllowAnonymous is NOT the fix: IAllowAnonymous metadata
+    // short-circuits authorization for the whole group, silently opening
+    // /admin. The posture is therefore public-by-default with explicitly
+    // locked admin surfaces: every /admin/* page carries
+    // [Authorize(Policy = "AdminOnly")], and AuthorizationContractTests
+    // enforces that by ASSEMBLY SCAN (any routable component in the Admin
+    // namespace missing the policy fails the build), so a new admin page
+    // cannot ship open.
     builder.Services.AddAuthorization(options =>
     {
-        options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-            .RequireAuthenticatedUser()
-            .Build();
         options.AddPolicy("AdminOnly", policy => policy.RequireRole("GlobalAdmin"));
     });
 
