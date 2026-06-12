@@ -119,7 +119,7 @@ public sealed class AdminSettingsTests : AsyncBunitContext
         await cut.InvokeAsync(() => input.Change("25"));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid='dirty-hint']"));
-        await cut.Find("[data-testid='save-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='save-button']").Click());
 
         cut.WaitForAssertion(() =>
         {
@@ -165,8 +165,8 @@ public sealed class AdminSettingsTests : AsyncBunitContext
     // after its header is activated. Shared arrange step for the tab tests.
     private static async Task OpenPromptTabAndSelectAgentAsync(IRenderedComponent<AdminSettings> cut, string agent)
     {
-        var header = cut.FindAll(".mud-tab").First(e => e.TextContent.Contains("Prompt Templates"));
-        await header.ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() =>
+            cut.FindAll(".mud-tab").First(e => e.TextContent.Contains("Prompt Templates")).Click());
 
         cut.WaitForAssertion(() => cut.Find("[data-testid='prompt-agent-select']"));
 
@@ -209,7 +209,7 @@ public sealed class AdminSettingsTests : AsyncBunitContext
         await OpenPromptTabAndSelectAgentAsync(cut, "Repair");
         cut.WaitForAssertion(() => cut.Find("[data-testid='prompt-save-button']"));
 
-        await cut.Find("[data-testid='prompt-save-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='prompt-save-button']").Click());
 
         cut.WaitForAssertion(() =>
         {

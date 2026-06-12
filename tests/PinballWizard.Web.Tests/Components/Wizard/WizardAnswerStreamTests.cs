@@ -528,8 +528,14 @@ public sealed class WizardAnswerStreamTests
             timeout: TimeSpan.FromSeconds(3));
 
         // 3. Click the rephrase button — triggers OnSuggestedRephraseSelectedAsync.
-        var btn = cut.Find("[data-testid='suggested-rephrase-button']");
-        await cut.InvokeAsync(() => btn.Click());
+        // The Find lives INSIDE InvokeAsync deliberately: capturing the
+        // element outside the dispatcher races concurrent re-renders — the
+        // captured handler ID goes stale and bUnit throws
+        // UnknownEventHandlerIdException (CI flake, deploy run 27428120213
+        // lost a recovery cycle to it). Inside InvokeAsync we're on the
+        // renderer's dispatcher, where no render can interleave between
+        // find and click.
+        await cut.InvokeAsync(() => cut.Find("[data-testid='suggested-rephrase-button']").Click());
 
         // 4. After re-submission the rephrase answer text must appear.
         cut.WaitForAssertion(
@@ -676,7 +682,7 @@ public sealed class WizardAnswerStreamTests
 
         // "Ask a follow-up" — the completed turn joins the thread and the
         // input returns.
-        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
 
         var turn = cut.Find("[data-testid='conversation-turn']");
         Assert.Contains("Tell me about Godzilla", turn.TextContent);
@@ -714,7 +720,7 @@ public sealed class WizardAnswerStreamTests
             () => cut.Find("[data-testid='new-question-button']"),
             timeout: TimeSpan.FromSeconds(3));
 
-        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
 
         // The refusal never becomes a thread turn — the router's history
         // contract is successful turns only.
@@ -737,10 +743,10 @@ public sealed class WizardAnswerStreamTests
         cut.WaitForAssertion(
             () => cut.Find("[data-testid='new-question-button']"),
             timeout: TimeSpan.FromSeconds(3));
-        await cut.Find("[data-testid='new-question-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
         cut.Find("[data-testid='conversation-thread']");
 
-        await cut.Find("[data-testid='new-conversation-button']").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='new-conversation-button']").Click());
 
         Assert.Empty(cut.FindAll("[data-testid='conversation-thread']"));
         cut.Find("[data-testid='question-input']");
