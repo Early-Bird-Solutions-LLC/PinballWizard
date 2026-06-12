@@ -22,10 +22,15 @@
  * ADR-0026 § Landing surface, ADR-0008 MudBlazor strict.
  *@
 
+@using PinballWizard.Application.Ai
 @using PinballWizard.Application.Landing
+@using PinballWizard.Application.Observability
 @using PinballWizard.Web.Clients
+@using PinballWizard.Web.Components.Degraded
 @using PinballWizard.Web.Components.Landing
 
+@inject IClientDegradationStore DegradationStore
+@inject ILogger<Index> Logger
 @inject IWizardLandingClient LandingClient
 @inject NavigationManager Nav
 
@@ -139,6 +144,21 @@
             _seedQuestions = landing.SeedQuestions;
             _featuredMachines = landing.FeaturedMachines;
             _status = landing.SystemStatus;
+        }
+        else
+        {
+            // Landing endpoint was unreachable or returned non-2xx in interactive
+            // mode. The compiled-in fallback (set above) continues to render —
+            // the prospect's first impression MUST NOT 500 or show a blank page.
+            // Signal the operational outage via the OutageBanner, the structured
+            // log, and the OTel counter (invariant #17: visible degradation).
+            Logger.LogWarning(
+                "Landing endpoint unavailable in interactive mode. " +
+                "Rendering compiled-in fallback (invariant #17). " +
+                "Counter: pinwiz.web.landing_fallback_total.");
+            PinballWizardTelemetry.LandingFallbackTotal.Add(1);
+            DegradationStore.SetDegradation(
+                new DegradationContext(DegradationMode.LandingUnavailable, Detail: null, RetryAfterSeconds: null));
         }
     }
 

@@ -80,6 +80,8 @@
                 "AI is rate-limited; results may be slower than usual.",
             DegradationMode.PartialResults =>
                 "Partial answer received; some sources did not load.",
+            DegradationMode.LandingUnavailable =>
+                "Showing cached content — live data is temporarily unavailable.",
             _ => "Service is degraded; some features may not be available."
         };
     }
