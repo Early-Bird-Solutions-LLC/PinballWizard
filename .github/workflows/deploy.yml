@@ -86,6 +86,15 @@ jobs:
           - image: pinwiz-api
             dockerfile: src/PinballWizard.Api/Dockerfile
             app_name_var: API_APP_NAME
+          # RAG ingestion worker (Change-Feed → embed → AI Search). No HTTP
+          # surface, so no smoke/e2e probe — it just builds + swaps the image.
+          # Closes the W3-2 gap where the worker shipped a Dockerfile but the
+          # pipeline never built it, leaving the live app on the quickstart
+          # placeholder (the real worker code never ran). Scale floor stays
+          # min=0 in Bicep, so first activation is near-zero runtime risk.
+          - image: pinwiz-rag-indexer
+            dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
+            app_name_var: RAGINDEXER_APP_NAME
 
     env:
       DOTNET_NOLOGO: 'true'

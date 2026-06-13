@@ -64,6 +64,9 @@ param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('Api ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder.')
 param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('RAG ingestion worker ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the worker image is built.')
+param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 @description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false.')
 param linkerCronExpression string = '0 2 * * *'
 
@@ -880,11 +883,13 @@ resource acaEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (dep
 // 7-machine subset is well under $1/mo. ACA Consumption pricing is roughly
 // $0.000024/vCPU-sec + $0.000003/GiB-sec; first-run backfill is <$0.05.
 //
-// Image: placeholder (`mcr.microsoft.com/k8se/quickstart:latest`) so the deploy
-// is smoke-testable end-to-end before the worker code ships. The W3-2 code PR
-// adds the worker image to ACR; an operator runs `az containerapp update
-// --image <acr>/pinwiz-rag-indexer:<sha>` to swap it in. Matches the W1-4
-// Bicep-flip-then-consuming-PR sequencing precedent.
+// Image: `ragIndexerImageTag` param, defaulting to the quickstart
+// placeholder so a bare Bicep deploy stays smoke-testable. The CI/CD
+// deploy workflow builds src/PinballWizard.RagIngestionWorker/Dockerfile
+// as `pinwiz-rag-indexer:<sha>` (third matrix leg) and passes the SHA tag
+// here, same as web + api — so the real worker code runs, not the
+// placeholder. Deploy-SharedResources.ps1 auto-discovers the running
+// image so a manual Bicep redeploy never reverts it to the placeholder.
 //
 // Identity: system-assigned. RBAC for the MI is in the "RAG Indexer Container
 // App MI RBAC" section below — Cosmos data-plane (source + leases), AI Search
@@ -924,7 +929,7 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
       containers: [
         {
           name: 'rag-indexer'
-          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          image: ragIndexerImageTag
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
