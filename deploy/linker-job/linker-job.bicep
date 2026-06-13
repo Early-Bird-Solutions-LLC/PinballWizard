@@ -39,6 +39,9 @@ param managedIdentityId string
 @description('Resource ID of the Container Apps Environment that hosts this job.')
 param containerAppsEnvironmentId string
 
+@description('ACR login server (e.g. pinwizacrdevbuutj.azurecr.io) used to authenticate the image pull via the user-assigned managed identity. Empty when the job runs the public quickstart placeholder (no registry auth needed); set to the real ACR login server when containerImage is an ACR reference.')
+param containerRegistryLoginServer string = ''
+
 @description('Cron schedule expression for the linker job (UTC). Default is 2 am daily.')
 param cronExpression string = '0 2 * * *'
 
@@ -80,6 +83,15 @@ resource linkerJob 'Microsoft.App/jobs@2023-05-01' = {
       triggerType: 'Schedule'
       replicaTimeout: 3600
       replicaRetryLimit: 0
+      // ACR pull via the shared user-assigned managed identity. Omitted when
+      // running the public quickstart placeholder (empty login server). The
+      // UAMI carries AcrPull on the registry (acaIdentityAcrPull in shared.bicep).
+      registries: empty(containerRegistryLoginServer) ? [] : [
+        {
+          server: containerRegistryLoginServer
+          identity: managedIdentityId
+        }
+      ]
       scheduleTriggerConfig: {
         cronExpression: cronExpression
         parallelism: 1
