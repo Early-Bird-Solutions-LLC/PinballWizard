@@ -45,6 +45,9 @@ param namePrefix string = 'pinwiz'
 @description('Object ID of the Entra principal that should receive RBAC roles on shared resources for development. Optional; if empty, no role assignments are created at deploy time. NOTE: ignored when deployPhase2=false — every RBAC assignment grants on a Phase 2 resource, so Phase 1 deploys never use this value.')
 param developerObjectId string = ''
 
+@description('Object (principal) ID of the CI/CD deploy service principal (the "PinballWizard GitHub Actions" OIDC app registration). When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the deploy.yml workflow can swap each app image. Empty (default) skips the grants. This is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret). See modules/shared.bicep cicdDeployPrincipalId.')
+param cicdDeployPrincipalId string = ''
+
 @description('When false (default), provisions ONLY Phase 1 resources (Cosmos serverless + Log Analytics + Cosmos diagnostic settings). Set true when Phase 2 features (RAG, Blazor Web, Admin) start landing — adds App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + 3 blob containers, and the matching diagnostic settings + developer RBAC. Phase 1 monthly spend is ~$30/mo (Cosmos serverless idle + Log Analytics 1GB cap); Phase 2 brings the platform to ~$150/mo even when idle. WARNING: flipping true->false on an existing deploy DELETES the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment if you need to test the Phase 1 baseline against a populated Phase 2 deploy.')
 param deployPhase2 bool = false
 
@@ -125,6 +128,7 @@ module shared 'modules/shared.bicep' = {
     searchLocation: searchLocation
     tags: commonTags
     developerObjectId: developerObjectId
+    cicdDeployPrincipalId: cicdDeployPrincipalId
     deployPhase2: deployPhase2
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
