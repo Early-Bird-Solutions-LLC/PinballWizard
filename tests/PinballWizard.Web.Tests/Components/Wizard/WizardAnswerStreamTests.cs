@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using Bunit;
 using Bunit.TestDoubles;
@@ -6,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using MudBlazor.Services;
 using NSubstitute;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Observability;
 using PinballWizard.Web.Components.Wizard;
 using Xunit;
 
@@ -768,5 +771,65 @@ public sealed class WizardAnswerStreamTests
         cut.WaitForAssertion(
             () => cut.Find("[data-testid='citation-inherited-chip']"),
             timeout: TimeSpan.FromSeconds(3));
+    }
+
+    // ── Invariant #17 audit 2026-06-12: item 1 ──────────────────────────────
+    // WizardAnswerStream: stream error → fallback path → increment
+    // wizard.stream.fallback.attempted counter exactly once.
+
+    [Fact]
+    public async Task StreamFailure_fallback_emits_WizardStreamFallbackAttempted_counter()
+    {
+        // Counter must increment exactly once when FallbackToWholeResponseAsync
+        // is entered due to a stream exception. Uses the project-standard
+        // parallel-tolerant ConcurrentBag pattern (distinct instrument name
+        // means no cross-fixture collision risk even without a tag filter).
+        var bag = new ConcurrentBag<long>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "wizard.stream.fallback.attempted")
+            {
+                bag.Add(value);
+            }
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.WizardStreamFallbackAttempted);
+
+        var fallbackAnswer = BuildAnswer("Fallback answer text");
+        var callCount = 0;
+
+        var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? ThrowingAsync()
+                    : ToAsyncEnumerable([new AnswerChunk.Final(fallbackAnswer)]);
+            });
+
+        await using var ctx = BuildCtx(client);
+        var cut = ctx.Render<WizardAnswerStream>(p =>
+            p.Add(c => c.Question, "Counter test question"));
+
+        // Wait for the fallback answer to confirm fallback completed.
+        cut.WaitForAssertion(
+            () => Assert.Contains("Fallback answer text", cut.Markup, StringComparison.OrdinalIgnoreCase),
+            timeout: TimeSpan.FromSeconds(5));
+
+        // Counter must have fired exactly once.
+        Assert.Contains(bag, v => v == 1);
+
+        static async IAsyncEnumerable<AnswerChunk> ThrowingAsync(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("Simulated stream failure for counter test");
+#pragma warning disable CS0162 // unreachable — satisfies IAsyncEnumerable contract
+            yield break;
+#pragma warning restore CS0162
+        }
     }
 }

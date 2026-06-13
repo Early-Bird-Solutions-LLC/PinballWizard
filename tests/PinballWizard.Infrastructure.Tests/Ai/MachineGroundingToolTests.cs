@@ -1434,4 +1434,162 @@ public sealed class MachineGroundingToolTests
         }
         await Task.CompletedTask;
     }
+
+    // ── Invariant #17 audit 2026-06-12: item 2 ─────────────────────────────
+    // ResolveSiblingsAsync: Cosmos failure → AiToolErrors counter increments
+    // with reason=siblings_unavailable and tool=getMachineByTitle.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_SiblingFetchFails_EmitsAiToolErrorsWithSiblingsUnavailableReason()
+    {
+        // The primary machine resolves correctly; GetSiblingsByGroupIdAsync throws
+        // a Cosmos-style exception. The tool must still return a valid DTO (no
+        // abort) and must increment AiToolErrors{tool=getMachineByTitle,
+        // reason=siblings_unavailable}.
+        var primaryMachine = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Foo Fighters",
+            Year = 2023,
+            GroupId = "GRBN-GRP1",   // non-empty GroupId triggers sibling fetch
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookupRow = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Foo Fighters"),
+            OpdbIds = ["GRBN-MQR4P"],
+            Manufacturers = ["stern"],
+        };
+
+        var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
+        titleLookups
+            .GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(lookupRow);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>())
+            .Returns(primaryMachine);
+        // Sibling fetch throws an unexpected exception (e.g. Cosmos 503).
+        repo.GetSiblingsByGroupIdAsync("GRBN-GRP1", Arg.Any<CancellationToken>())
+            .Returns(ThrowingAsyncEnumerable<Machine>(new InvalidOperationException("Cosmos 503")));
+
+        var bag = new ConcurrentBag<(string Tool, string Reason)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.ai.tool_errors_total") return;
+            string? tool = null, reason = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "tool") tool = t.Value as string;
+                else if (t.Key == "reason") reason = t.Value as string;
+            }
+            bag.Add((tool ?? "", reason ?? ""));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiToolErrors);
+
+        var tool = new MachineGroundingTool(repo, titleLookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        // Primary result must still be returned despite the sibling failure.
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-MQR4P", result!.OpdbId);
+        Assert.Empty(result.Siblings); // degraded to empty sibling list
+
+        // Counter must have fired with the expected tags.
+        Assert.Contains(bag, e => e.Tool == "getMachineByTitle" && e.Reason == "siblings_unavailable");
+    }
+
+    // ── Invariant #17 audit 2026-06-12: item 3 ─────────────────────────────
+    // ResolveTitleCollisionsAsync: collision candidate not found → Warning log.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_CollisionCandidateMissing_LogsWarning()
+    {
+        // Lookup row has two entries for the same title (cross-group collision).
+        // The primary resolves; the collision candidate row returns null (stale
+        // lookup). The tool must log a Warning about the missing candidate.
+        var primaryMachine = new Machine
+        {
+            Id = "GRBN-STERN",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla",
+            Year = 2021,
+            GroupId = "GRBN-GROUP",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var lookupRow = new MachineTitleLookup
+        {
+            Id = "godzilla",
+            PartitionKey = "godzilla",
+            OpdbIds = ["GRBN-STERN", "SEGA-GODZILLA"],
+            Manufacturers = ["stern", "sega"],
+        };
+
+        var titleLookups = Substitute.For<IMachineTitleLookupRepository>();
+        titleLookups
+            .GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(lookupRow);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("GRBN-STERN", "stern", Arg.Any<CancellationToken>())
+            .Returns(primaryMachine);
+        // Collision candidate is missing (stale lookup) — returns null.
+        repo.GetByOpdbIdAsync("SEGA-GODZILLA", "sega", Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        var loggedWarnings = new List<string>();
+        var logger = new CapturingLoggerForGrounding();
+
+        var tool = new MachineGroundingTool(repo, titleLookups, logger);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-STERN", result!.OpdbId);
+        // Warning must have been logged about the missing collision candidate.
+        Assert.True(logger.WarningCount > 0,
+            "Expected at least one Warning log for the missing collision candidate.");
+    }
+
+    // Simple capturing logger for the Grounding collision-warning test.
+    private sealed class CapturingLoggerForGrounding : Microsoft.Extensions.Logging.ILogger<MachineGroundingTool>
+    {
+        public int WarningCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning)
+            {
+                WarningCount++;
+            }
+        }
+    }
+
+    // Creates an IAsyncEnumerable that throws on the first MoveNextAsync call.
+    // Used to simulate Cosmos SDK exceptions from streaming sibling queries.
+    private static async IAsyncEnumerable<T> ThrowingAsyncEnumerable<T>(Exception ex)
+    {
+        await Task.CompletedTask;
+        throw ex;
+#pragma warning disable CS0162 // unreachable — satisfies the compiler's async iterator requirement
+        yield break;
+#pragma warning restore CS0162
+    }
 }

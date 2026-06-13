@@ -392,11 +392,17 @@ public sealed class MachineGroundingTool
             // Sibling fetch is best-effort. A Cosmos failure here must
             // not prevent the agent from grounding the primary machine —
             // it degrades to single-machine mode (no clarifying question
-            // for version-dependent topics). Logged at Warning so the gap
-            // surfaces on dashboards without polluting Error budgets.
+            // for version-dependent topics). Logged at Warning + metered
+            // so the gap surfaces on dashboards without polluting Error
+            // budgets (invariant #17).
             _logger.LogWarning(ex,
                 "MachineGroundingTool: sibling fetch for GroupId '{GroupId}' (primary '{OpdbId}') failed. Returning empty sibling list.",
                 primary.GroupId, primary.Id);
+
+            PinballWizardTelemetry.AiToolErrors.Add(
+                1,
+                new KeyValuePair<string, object?>("tool", ToolTagValue),
+                new KeyValuePair<string, object?>("reason", "siblings_unavailable"));
         }
 
         return siblings;
@@ -447,8 +453,13 @@ public sealed class MachineGroundingTool
                 var candidate = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
                 if (candidate is null)
                 {
-                    _logger.LogDebug(
-                        "MachineGroundingTool: TitleCollisions candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping.",
+                    // Promoted Debug → Warning (invariant #17 audit 2026-06-12):
+                    // a stale lookup row pointing to a missing machine is a
+                    // degraded path — the agent cannot offer this collision
+                    // candidate in its disambiguation question. Will self-heal
+                    // on the next OPDB sync.
+                    _logger.LogWarning(
+                        "MachineGroundingTool: TitleCollisions candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping. Stale lookup will self-correct on the next OPDB sync.",
                         opdbId, manufacturer);
                     continue;
                 }
@@ -468,7 +479,11 @@ public sealed class MachineGroundingTool
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogDebug(ex,
+                // Promoted Debug → Warning (invariant #17 audit 2026-06-12):
+                // a Cosmos failure on a collision candidate is a degraded path —
+                // the agent cannot offer the user a disambiguation choice for
+                // this candidate. Operators should see this on dashboards.
+                _logger.LogWarning(ex,
                     "MachineGroundingTool: TitleCollisions fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
                     opdbId, manufacturer);
             }

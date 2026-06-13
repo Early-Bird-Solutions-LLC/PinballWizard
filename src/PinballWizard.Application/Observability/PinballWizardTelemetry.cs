@@ -387,6 +387,23 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single Cosmos SDK call from `CosmosRepository<T>` (or a concrete subclass's specialized method). Same tags as `pinwiz.cosmos.ru_charge`. For streaming queries, one observation per page so a query that paginates through 10 pages emits 10 samples. Drives the §7.1 user-delight 200ms p95 trigger on the `getMachineByTitle` path; PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution.");
 
+    // ── Wizard stream fallback counter (invariant #17 operational signal) ───
+    //
+    // Incremented by WizardAnswerStream each time the primary streaming path
+    // throws and the component attempts the whole-response fallback. A
+    // non-zero rate signals that the streaming path is failing even though
+    // users may still receive an answer via the fallback. The fallback
+    // counter increments on ATTEMPT, not on success — pair with
+    // wizard.stream.fallback.failed (logged at Error) to see the fraction
+    // that also failed the recovery path.
+    //
+    // No tags: single code path (stream-error catch, one component instance
+    // per circuit). If A/B variants ship later, add a `variant` tag then.
+    public static readonly Counter<long> WizardStreamFallbackAttempted = Meter.CreateCounter<long>(
+        "wizard.stream.fallback.attempted",
+        unit: "{attempt}",
+        description: "WizardAnswerStream attempts to recover from a stream error via the whole-response fallback path. Non-zero rate is an operational signal that streaming is degraded even if end-users receive an answer. Pair with the wizard.stream.fallback.failed Error log to compute fallback success rate (invariant #17).");
+
     // ── Landing fallback counter (invariant #17 operational signal) ─────────
     //
     // Incremented by Index.razor each time the interactive-mode initialization
@@ -407,6 +424,21 @@ public static class PinballWizardTelemetry
         "pinwiz.web.landing_fallback_total",
         unit: "{render}",
         description: "Interactive-mode renders where IWizardLandingClient returned null (endpoint unreachable or non-2xx) and the landing page fell back to the compiled-in static seed questions and featured machines. A sustained non-zero rate is an operational signal that the landing endpoint is unhealthy even though the page continues to serve HTTP 200s (invariant #17).");
+
+    // ── Scraper politeness fallback counter (invariant #17 operational signal)
+    //
+    // Incremented by IngestionSourcePolitenessResolver each time the Cosmos
+    // repository throws during initialization and the resolver falls back to
+    // global defaults for every host. A non-zero rate signals that per-source
+    // politeness overrides are not being applied — all scraping proceeds at
+    // the global default rate, which may be more aggressive than configured
+    // for specific sites.
+    //
+    // No tags: single code path (one resolver instance, one init attempt).
+    public static readonly Counter<long> ScraperPolitenessFallbackActive = Meter.CreateCounter<long>(
+        "pinwiz.scraper.politeness_fallback_active",
+        unit: "{occurrence}",
+        description: "IngestionSourcePolitenessResolver fell back to global politeness defaults because the Cosmos repository threw during initialization. All hosts will be scraped at the global default rate; per-source overrides are not applied (invariant #17).");
 
     // ── Activity (trace) names ───────────────────────────────────────────
 

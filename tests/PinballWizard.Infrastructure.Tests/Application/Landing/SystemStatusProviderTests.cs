@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -336,6 +337,91 @@ public sealed class SystemStatusProviderTests : IDisposable
         await _cosmosProbe.Received(1).ProbeAsync(Arg.Any<CancellationToken>());
     }
 
+    // ── 4c. Broad catch: unexpected exception type escaping each probe ───────
+    // Invariant #17 audit 2026-06-12 (item 5): exceptions outside the typed
+    // catch list must NOT crash GetStatusAsync via Task.WhenAll; they must map
+    // to null and log a Warning. The test verifies all three probes under a
+    // deliberately exotic exception type (InvalidCastException) that is
+    // outside every typed arm.
+
+    [Fact]
+    public async Task GetStatusAsync_FoundryProbeThrowsUnexpectedType_HealthyIsNullOtherProbesIntact()
+    {
+        // InvalidCastException is NOT in the typed catch list. It must still
+        // be caught by the broad fallback arm and map to null/"unknown", with
+        // the other two probes still returning their results.
+        _foundryProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("unexpected"));
+        _aiSearchProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(new AiSearchSmokeProbeResult(true, null, null, null));
+        _cosmosProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var warningLogger = new CapturingWarningLogger();
+        var provider = BuildProviderWithLogger(warningLogger);
+
+        var status = await provider.GetStatusAsync(CancellationToken.None);
+
+        Assert.Null(status.FoundryHealthy);    // broad catch mapped to null
+        Assert.True(status.AiSearchHealthy);   // other probes intact
+        Assert.True(status.CosmosHealthy);
+        Assert.True(warningLogger.WarningCount > 0, "Expected Warning log for unexpected exception type.");
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_AiSearchProbeThrowsUnexpectedType_HealthyIsNullOtherProbesIntact()
+    {
+        _foundryProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(new FoundrySmokeProbeResult(true, null, true, true, null));
+        _aiSearchProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("unexpected"));
+        _cosmosProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var status = await BuildProvider().GetStatusAsync(CancellationToken.None);
+
+        Assert.True(status.FoundryHealthy);
+        Assert.Null(status.AiSearchHealthy);   // broad catch
+        Assert.True(status.CosmosHealthy);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_CosmosProbeThrowsUnexpectedType_HealthyIsNullOtherProbesIntact()
+    {
+        _foundryProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(new FoundrySmokeProbeResult(true, null, true, true, null));
+        _aiSearchProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .Returns(new AiSearchSmokeProbeResult(true, null, null, null));
+        _cosmosProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("unexpected"));
+
+        var status = await BuildProvider().GetStatusAsync(CancellationToken.None);
+
+        Assert.True(status.FoundryHealthy);
+        Assert.True(status.AiSearchHealthy);
+        Assert.Null(status.CosmosHealthy);     // broad catch
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_AllProbesThrowUnexpectedType_GetStatusAsyncReturnsWithAllNulls()
+    {
+        // Critical invariant: Task.WhenAll must NOT propagate — GetStatusAsync
+        // must return a valid status even when all probes throw unexpected exceptions.
+        _foundryProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("foundry unexpected"));
+        _aiSearchProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("search unexpected"));
+        _cosmosProbe.ProbeAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidCastException("cosmos unexpected"));
+
+        // Should not throw — broad catch per probe absorbs all.
+        var status = await BuildProvider().GetStatusAsync(CancellationToken.None);
+
+        Assert.Null(status.FoundryHealthy);
+        Assert.Null(status.AiSearchHealthy);
+        Assert.Null(status.CosmosHealthy);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private void SetupAllProbesSuccess()
@@ -357,5 +443,40 @@ public sealed class SystemStatusProviderTests : IDisposable
             _foundryProbe,
             _aiSearchProbe,
             _cosmosProbe);
+    }
+
+    private SystemStatusProvider BuildProviderWithLogger(
+        ILogger<SystemStatusProvider> logger,
+        TimeSpan? ttl = null)
+    {
+        return new SystemStatusProvider(
+            _cache,
+            Options.Create(new SystemStatusOptions { CacheTtl = ttl ?? TimeSpan.FromMinutes(5) }),
+            logger,
+            _foundryProbe,
+            _aiSearchProbe,
+            _cosmosProbe);
+    }
+
+    // Minimal capturing logger for Warning-log assertions.
+    private sealed class CapturingWarningLogger : ILogger<SystemStatusProvider>
+    {
+        public int WarningCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+            {
+                WarningCount++;
+            }
+        }
     }
 }

@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PinballWizard.Application.Ai.Tools;
 
 namespace PinballWizard.Application.Ai.Citations;
@@ -46,6 +48,17 @@ namespace PinballWizard.Application.Ai.Citations;
 // the typed-check arms handle); the JSON arms cover the real Foundry path.
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
+    private readonly ILogger<ToolTraceCitationExtractor> _logger;
+
+    // DI constructor. ILogger is optional — NullLogger is the safe default
+    // so unit tests that construct the extractor without a DI container
+    // (passing no arguments) continue to work with zero changes.
+    public ToolTraceCitationExtractor(
+        ILogger<ToolTraceCitationExtractor>? logger = null)
+    {
+        _logger = logger ?? NullLogger<ToolTraceCitationExtractor>.Instance;
+    }
+
     // Matches both OPDB URL schemes: the legacy /machines/{id} form and
     // the /search?q={id} deep-link form that replaced it (PR #339 — the
     // /machines/ pages 404 because opdb.org uses internal numeric ids).
@@ -71,14 +84,33 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // arriving as a string). This extractor runs outside the router's
     // try/catch, so binding failures degrade to the regex fallback
     // instead of aborting the whole answer.
-    private static T? TryDeserialize<T>(JsonElement element) where T : class
+    //
+    // Logs a Warning before falling through so operators can detect
+    // JSON-shape drift (the 2026-06-10 citation outage class — invariant
+    // #17 audit 2026-06-12). The functionCallId parameter identifies which
+    // tool invocation triggered the failure so operators can correlate
+    // with the trace via the call ID.
+    private static T? TryDeserialize<T>(
+        JsonElement element,
+        string functionCallId,
+        ILogger logger) where T : class
     {
         try
         {
             return element.Deserialize<T>(CaseInsensitiveJson);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            // Log at Warning before falling through to the regex fallback.
+            // This is the 2026-06-10 outage class: a JSON-shape change in
+            // the tool result silently bypassed citation extraction and
+            // caused 100% refusals. Operators must see this on dashboards
+            // before it reaches production impact.
+            logger.LogWarning(ex,
+                "ToolTraceCitationExtractor: JsonException deserializing {TargetType} from tool result " +
+                "call '{FunctionCallId}' — falling through to OPDB URL regex. JSON-shape drift suspected.",
+                typeof(T).Name,
+                functionCallId);
             return null;
         }
     }
@@ -140,7 +172,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     continue;
                 }
 
-                ExtractFromFunctionResult(functionResult, seenUrls, citations);
+                ExtractFromFunctionResult(functionResult, seenUrls, citations, _logger);
             }
         }
 
@@ -150,13 +182,19 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     private static void ExtractFromFunctionResult(
         FunctionResultContent functionResult,
         HashSet<string> seenUrls,
-        List<Citation> citations)
+        List<Citation> citations,
+        ILogger logger)
     {
         var result = functionResult.Result;
         if (result is null)
         {
             return;
         }
+
+        // FunctionResultContent carries CallId (not a name field). Use the
+        // call ID as the identifier in the Warning log so operators can
+        // correlate the failure with a specific tool invocation in traces.
+        var functionCallId = functionResult.CallId ?? "<no-call-id>";
 
         // Typed object arm (unit tests and any future SDK that preserves type).
         if (result is MachineGroundingDto dto)
@@ -176,7 +214,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // array; MachineGroundingDto has a top-level "OpdbId" string.
         if (result is JsonElement element)
         {
-            ExtractFromJsonElement(element, seenUrls, citations);
+            ExtractFromJsonElement(element, functionCallId, seenUrls, citations, logger);
             return;
         }
 
@@ -191,8 +229,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 
     private static void ExtractFromJsonElement(
         JsonElement element,
+        string functionCallId,
         HashSet<string> seenUrls,
-        List<Citation> citations)
+        List<Citation> citations,
+        ILogger logger)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -201,7 +241,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
                 && hitsElement.ValueKind == JsonValueKind.Array)
             {
-                if (TryDeserialize<SearchCorpusResult>(element) is { } corpusResult)
+                if (TryDeserialize<SearchCorpusResult>(element, functionCallId, logger) is { } corpusResult)
                 {
                     AddCitationsFromCorpusHits(corpusResult.Hits, seenUrls, citations);
                     return;
@@ -214,7 +254,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
                 // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
-                if (TryDeserialize<MachineGroundingDto>(element) is { } dto)
+                if (TryDeserialize<MachineGroundingDto>(element, functionCallId, logger) is { } dto)
                 {
                     AddCitationFromGroundingDto(dto, seenUrls, citations);
                     return;
