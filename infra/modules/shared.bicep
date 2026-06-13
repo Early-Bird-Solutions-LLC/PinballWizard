@@ -67,8 +67,14 @@ param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('RAG ingestion worker ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the worker image is built.')
 param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('CLI ACA Job container image. Powers BOTH the nightly linker job and the weekly OPDB sync job (the CLI is a command-line entrypoint, not an app). Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the CLI image is built; Deploy-SharedResources.ps1 auto-discovers the running job image so a manual redeploy never reverts it.')
+param cliImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 @description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false.')
 param linkerCronExpression string = '0 2 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. OPDB changes slowly so weekly is the steady-state cadence; on-demand syncs run via `az containerapp job start` or the local CLI. Has no effect when deployPhase2=false.')
+param opdbSyncCronExpression string = '0 3 * * 0'
 
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
@@ -1901,10 +1907,15 @@ module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) 
   params: {
     location: location
     tags: tags
-    containerImage: 'mcr.microsoft.com/k8se/quickstart:latest'
+    // The CLI image (pinwiz-cli:<sha>) is the real linker code. Until PR #397
+    // this was hardcoded to the public quickstart placeholder, so --link-documents
+    // never ran in production. Threading cliImageTag here resurrects the job;
+    // the ACR pull is authenticated via the UAMI (containerRegistryLoginServer).
+    containerImage: cliImageTag
     cosmosEndpoint: cosmosAccount.properties.documentEndpoint
     cosmosResourceId: cosmosAccount.id
     managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     containerAppsEnvironmentId: acaEnvironment.id
     cronExpression: linkerCronExpression
   }
@@ -1920,6 +1931,49 @@ resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRo
   properties: {
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
     principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// OPDB sync ACA Job (weekly OPDB catalog sync batch)
+// -----------------------------------------------------------------------------
+// Calls deploy/opdb-sync-job/opdb-sync-job.bicep. Same shape as the linker job
+// (self-contained ACA Job; this module owns the environment + UAMI and grants
+// the system-assigned MI Cosmos access) but adds a Key Vault secret reference
+// for the OPDB API token. The token value is provisioned to Key Vault out of
+// band (az keyvault secret set --name Opdb-ApiToken ...) and never appears in
+// Bicep or params — the UAMI (Key Vault Secrets User) resolves it at run time.
+// Gated on deployPhase2 — the ACA environment + Key Vault are Phase 2 resources.
+
+module opdbSyncJob '../../deploy/opdb-sync-job/opdb-sync-job.bicep' = if (deployPhase2) {
+  name: 'opdb-sync-job-${environment}'
+  params: {
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
+    cosmosResourceId: cosmosAccount.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    containerAppsEnvironmentId: acaEnvironment.id
+    // Key Vault secret URI for the OPDB API token. Same construction as the
+    // Wizard app's AzureAd-ClientSecret reference (line ~1788). The secret is
+    // created manually before the first run (see PR #397 operator steps).
+    opdbApiTokenSecretUri: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Opdb-ApiToken'
+    cronExpression: opdbSyncCronExpression
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the OPDB sync job's system-assigned MI.
+// Identical pattern to linkerJobCosmosDataContrib above — the OPDB sync writes
+// machine records + lookup rows through IMachineRepository (data-plane CRUD).
+resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'opdb-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
     scope: cosmosAccount.id
   }
 }
@@ -1986,6 +2040,9 @@ output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
 
 output linkerJobName string = linkerJob.?outputs.linkerJobName ?? ''
 output linkerJobPrincipalId string = linkerJob.?outputs.linkerJobPrincipalId ?? ''
+
+output opdbSyncJobName string = opdbSyncJob.?outputs.opdbSyncJobName ?? ''
+output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:

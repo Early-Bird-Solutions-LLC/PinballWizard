@@ -45,6 +45,8 @@ on:
       - 'src/PinballWizard.Web/**'
       - 'src/PinballWizard.Web.Client/**'
       - 'src/PinballWizard.Api/**'
+      - 'src/PinballWizard.RagIngestionWorker/**'
+      - 'src/PinballWizard.Cli/**'
       - 'src/PinballWizard.Application/**'
       - 'src/PinballWizard.Infrastructure/**'
       - 'src/PinballWizard.Core/**'
@@ -95,6 +97,17 @@ jobs:
           - image: pinwiz-rag-indexer
             dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
             app_name_var: RAGINDEXER_APP_NAME
+          # CLI image — feeds ACA *Jobs* (nightly linker + weekly OPDB sync),
+          # NOT an ACA *App*. So this leg is build + push only: there is no
+          # `az containerapp update` to run (that command targets apps, not
+          # jobs). Jobs pick up the new :{sha} image on the next Deployment
+          # Stack run via Deploy-SharedResources.ps1 (operator-controlled), which
+          # is the deliberate gate before the resurrected linker / new OPDB cron
+          # mutate live Cosmos data. The empty app_name_var below disables the
+          # update step for this leg.
+          - image: pinwiz-cli
+            dockerfile: src/PinballWizard.Cli/Dockerfile
+            app_name_var: ''
 
     env:
       DOTNET_NOLOGO: 'true'
@@ -135,7 +148,10 @@ jobs:
 
       # ── Deploy to ACA ─────────────────────────────────────────────────────
       # Always use the explicit :{sha} tag — never :latest (locked invariant).
+      # Skipped for job-only images (app_name_var == ''), e.g. pinwiz-cli, which
+      # feed ACA Jobs swapped via the Deployment Stack rather than app revisions.
       - name: Update ACA image
+        if: ${{ matrix.app_name_var != '' }}
         run: |
           az containerapp update \
             --name ${{ vars[matrix.app_name_var] }} \
@@ -270,7 +286,9 @@ jobs:
         run: |
           echo "### Deployed + E2E canary green :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`pinwiz-web\` | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`pinwiz-api\` | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag | Target |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-web\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-api\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-rag-indexer\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | ACA Jobs (next Deployment Stack run) |" >> $GITHUB_STEP_SUMMARY

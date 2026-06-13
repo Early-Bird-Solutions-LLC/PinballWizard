@@ -88,7 +88,13 @@ param(
     [string]$ApiImageTag = '',
 
     [Parameter()]
-    [string]$RagIndexerImageTag = ''
+    [string]$RagIndexerImageTag = '',
+
+    # CLI image tag powering the linker + OPDB sync ACA Jobs. If not supplied,
+    # the script reads the image off the currently-deployed linker job so a
+    # manual Bicep re-deploy does not revert the jobs to the placeholder.
+    [Parameter()]
+    [string]$CliImageTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -258,6 +264,20 @@ else {
     Write-Host "  ragIndexerImageTag: $RagIndexerImageTag (caller-supplied)" -ForegroundColor DarkGray
 }
 
+# The CLI image runs on ACA Jobs (linker + OPDB sync), not an ACA App, so
+# auto-discovery reads from the linker job. The job name carries a uniqueString
+# suffix (pinwiz-job-linker-<5char>), so match by prefix rather than exact name.
+# Both jobs share the same cliImageTag, so the linker job is a sufficient probe.
+if ([string]::IsNullOrEmpty($CliImageTag)) {
+    $discovered = az containerapp job list -g $rg `
+        --query "[?starts_with(name, 'pinwiz-job-linker')].template.containers[0].image | [0]" -o tsv 2>$null
+    $CliImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  cliImageTag:        $CliImageTag (auto-discovered from running linker ACA Job)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  cliImageTag:        $CliImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
 # -----------------------------------------------------------------------------
 # Deployment Stack create / update
 # -----------------------------------------------------------------------------
@@ -284,6 +304,7 @@ if ($WhatIf) {
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
             ragIndexerImageTag="$RagIndexerImageTag" `
+            cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none
     if ($LASTEXITCODE -ne 0) {
@@ -305,6 +326,7 @@ else {
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
             ragIndexerImageTag="$RagIndexerImageTag" `
+            cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
         --yes

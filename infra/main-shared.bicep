@@ -78,8 +78,14 @@ param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 @description('RAG ingestion worker ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow.')
 param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
 
+@description('CLI ACA Job container image tag. Powers both the nightly linker job and the weekly OPDB sync job. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow; Deploy-SharedResources.ps1 auto-discovers the running job image on manual redeploys.')
+param cliImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 @description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak). Has no effect when deployPhase2=false.')
 param linkerCronExpression string = '0 2 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. Has no effect when deployPhase2=false.')
+param opdbSyncCronExpression string = '0 3 * * 0'
 
 // -----------------------------------------------------------------------------
 // Variables
@@ -130,7 +136,9 @@ module shared 'modules/shared.bicep' = {
     azureAdClientId: azureAdClientId
     apiImageTag: apiImageTag
     ragIndexerImageTag: ragIndexerImageTag
+    cliImageTag: cliImageTag
     linkerCronExpression: linkerCronExpression
+    opdbSyncCronExpression: opdbSyncCronExpression
   }
 }
 
@@ -171,6 +179,13 @@ output ragIndexerPrincipalId string = shared.outputs.ragIndexerPrincipalId
 // confirms the Cosmos sqlRoleAssignment propagated.
 output linkerJobName string = shared.outputs.linkerJobName
 output linkerJobPrincipalId string = shared.outputs.linkerJobPrincipalId
+
+// OPDB sync ACA Job (weekly OPDB catalog sync batch).
+// opdbSyncJobPrincipalId is the post-deploy validation handle:
+//   az cosmosdb sql role assignment list --account-name <name> --resource-group <rg>
+// confirms the Cosmos sqlRoleAssignment propagated.
+output opdbSyncJobName string = shared.outputs.opdbSyncJobName
+output opdbSyncJobPrincipalId string = shared.outputs.opdbSyncJobPrincipalId
 
 // Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
 // operators export as $env:AiFoundry__ProjectEndpoint for the
