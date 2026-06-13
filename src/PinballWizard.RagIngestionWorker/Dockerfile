@@ -51,8 +51,12 @@ WORKDIR /app
 # Run as a non-root user. ACA's default seccomp profile + the Container
 # App ingress disabled mean network exposure is minimal, but defense-in-
 # depth costs nothing here.
-RUN groupadd --system --gid 1000 pinwiz \
-    && useradd --system --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin pinwiz
+# Let the system assign the UID/GID — the dotnet/runtime base image
+# already occupies GID 1000, so pinning --gid 1000 fails the build
+# ("GID '1000' already exists"). Matches the working api/web Dockerfiles,
+# which create the system user without explicit id pins.
+RUN groupadd --system pinwiz \
+    && useradd --system --no-create-home --gid pinwiz --shell /usr/sbin/nologin pinwiz
 USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .
