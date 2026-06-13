@@ -85,7 +85,10 @@ param(
     [string]$WizardImageTag = '',
 
     [Parameter()]
-    [string]$ApiImageTag = ''
+    [string]$ApiImageTag = '',
+
+    [Parameter()]
+    [string]$RagIndexerImageTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -245,6 +248,16 @@ else {
     Write-Host "  apiImageTag:    $ApiImageTag (caller-supplied)" -ForegroundColor DarkGray
 }
 
+if ([string]::IsNullOrEmpty($RagIndexerImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-ragindexer-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $RagIndexerImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  ragIndexerImageTag: $RagIndexerImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  ragIndexerImageTag: $RagIndexerImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
 # -----------------------------------------------------------------------------
 # Deployment Stack create / update
 # -----------------------------------------------------------------------------
@@ -270,6 +283,7 @@ if ($WhatIf) {
         --parameters $parametersFile `
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
+            ragIndexerImageTag="$RagIndexerImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none
     if ($LASTEXITCODE -ne 0) {
@@ -290,6 +304,7 @@ else {
         --parameters $parametersFile `
             wizardImageTag="$WizardImageTag" `
             apiImageTag="$ApiImageTag" `
+            ragIndexerImageTag="$RagIndexerImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
         --yes
