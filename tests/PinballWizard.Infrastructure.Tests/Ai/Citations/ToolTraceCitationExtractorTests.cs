@@ -963,6 +963,102 @@ public sealed class ToolTraceCitationExtractorTests
         return new AgentResponse(messages);
     }
 
+    // ── fix/citation-metadata-channel: JSON-path regression tests (ADR-0035) ───
+    //
+    // These tests reproduce the PRODUCTION bug: on the real Foundry path,
+    // FunctionResultContent.Result is a JsonElement (not a typed C# object),
+    // and [JsonIgnore] on SearchCorpusHit.Score / .LastScrapedUtc strips those
+    // fields from that JSON. The existing tests above use typed objects and
+    // therefore never exposed the bug — the JSON path always produced null
+    // freshness + relevance in production.
+    //
+    // The fix: SearchCorpusTool records the metadata into a request-scoped
+    // IRetrievalCitationMetadataSink keyed by DocumentUrl; the extractor
+    // enriches citations from the sink when the typed hit fields are null.
+    //
+    // Two critical tests:
+    //   1. POSITIVE — JSON path + sink wired → citation has correct values.
+    //   2. NEGATIVE — JSON path WITHOUT sink → values are null (documents
+    //      WHY the sink is necessary; the [JsonIgnore] strips the data).
+
+    private static readonly JsonSerializerOptions WebCamelCaseJson =
+        new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Extract_JsonPath_WithSink_PopulatesLastScrapedUtcAndRelevanceScore()
+    {
+        // Arrange: serialize a SearchCorpusResult to a JsonElement the same
+        // way AIFunctionFactory.Create would on the real Foundry path. The
+        // [JsonIgnore] fields (Score, LastScrapedUtc) are stripped from the
+        // element — they arrive as null when the hit is deserialized back.
+        // The sink carries them out-of-band, bridging the gap.
+        var expectedTs = new DateTimeOffset(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
+        const double expectedScore = 0.87;
+        const string docUrl = "https://sternpinball.com/godzilla_manual.pdf";
+
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: docUrl,
+                      machineId: "GRBE-MJL05", section: "Coil Replacement",
+                      pageStart: 12, pageEnd: 14,
+                      score: expectedScore, lastScrapedUtc: expectedTs),
+        ]);
+        // Serialize with camelCase (live Foundry shape). [JsonIgnore] strips
+        // Score + LastScrapedUtc — this is the exact shape the extractor sees
+        // in production.
+        var jsonElement = JsonSerializer.SerializeToElement(corpus, WebCamelCaseJson);
+
+        // Populate the sink with the metadata that was stripped from the JSON.
+        var sink = new RetrievalCitationMetadataSink();
+        sink.Record(docUrl, new RetrievalCitationMetadata(expectedTs, expectedScore));
+
+        // Extractor constructed WITH the sink (the production wiring).
+        var extractor = new ToolTraceCitationExtractor(metadataSink: sink);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", jsonElement);
+
+        var citation = Assert.Single(extractor.Extract(response));
+
+        // The sink bridge must restore both values even though they were
+        // stripped from the JSON that the extractor's deserialization reads.
+        Assert.Equal(expectedTs, citation.LastScrapedUtc);
+        Assert.Equal(expectedScore, citation.RelevanceScore);
+    }
+
+    [Fact]
+    public void Extract_JsonPath_WithoutSink_LastScrapedUtcAndRelevanceScoreAreNull()
+    {
+        // WHY-test for the sink: this test documents exactly WHY the
+        // IRetrievalCitationMetadataSink was introduced. On the real Foundry
+        // JSON path, [JsonIgnore] strips Score + LastScrapedUtc from the
+        // FunctionResultContent.Result before the extractor reads it. Without
+        // the sink, both fields are null on every citation in production —
+        // resulting in "freshness unknown" on every citation card.
+        //
+        // If this test starts failing (values are no longer null), it means
+        // [JsonIgnore] was removed and the model can now see the fields —
+        // which is a regression (the model must NOT see retrieval internals).
+        var expectedTs = new DateTimeOffset(2026, 3, 22, 14, 30, 0, TimeSpan.Zero);
+        const double expectedScore = 0.87;
+        const string docUrl = "https://sternpinball.com/godzilla_manual.pdf";
+
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: docUrl,
+                      score: expectedScore, lastScrapedUtc: expectedTs),
+        ]);
+        // Same JSON-path serialization as the positive test above.
+        var jsonElement = JsonSerializer.SerializeToElement(corpus, WebCamelCaseJson);
+
+        // Extractor constructed WITHOUT a sink (the broken pre-fix state).
+        var extractorWithoutSink = new ToolTraceCitationExtractor();
+        var response = BuildAgentResponseWithToolResult("searchCorpus", jsonElement);
+
+        var citation = Assert.Single(extractorWithoutSink.Extract(response));
+
+        // [JsonIgnore] strips both fields from the JSON → both null when no
+        // sink is present to compensate. This is the production bug this PR fixes.
+        Assert.Null(citation.LastScrapedUtc);
+        Assert.Null(citation.RelevanceScore);
+    }
+
     // Simple capturing logger for Warning-log assertions.
     private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
     {

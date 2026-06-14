@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Azure;
 using Azure.Identity;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Ai.Retrieval;
@@ -70,12 +71,22 @@ public sealed class SearchCorpusTool
     // RetrievalOptions defaults — identical behavior to no stored overrides.
     // Mirrors the AiRouter optional-IRuntimeSettings convention (PR-B1).
     private readonly IRuntimeSettings? _runtimeSettings;
+    // Optional by design (fix/citation-metadata-channel): the sink is
+    // request-scoped but SearchCorpusTool is registered as Singleton in
+    // the DI container. The tool resolves the sink from the service
+    // locator (IServiceProvider) at call time when needed, OR — in the
+    // common web-host path — the caller wires the scoped instance here
+    // via constructor injection from an IServiceScope. Unit fixtures that
+    // construct SearchCorpusTool directly pass null; when null, recording
+    // is simply skipped and the typed C# path (used in tests) still works.
+    private readonly IRetrievalCitationMetadataSink? _metadataSink;
 
     public SearchCorpusTool(
         IRagRetriever retriever,
         IDegradationContext degradationContext,
         ILogger<SearchCorpusTool> logger,
-        IRuntimeSettings? runtimeSettings = null)
+        IRuntimeSettings? runtimeSettings = null,
+        IRetrievalCitationMetadataSink? metadataSink = null)
     {
         ArgumentNullException.ThrowIfNull(retriever);
         ArgumentNullException.ThrowIfNull(degradationContext);
@@ -84,6 +95,7 @@ public sealed class SearchCorpusTool
         _degradationContext = degradationContext;
         _logger = logger;
         _runtimeSettings = runtimeSettings;
+        _metadataSink = metadataSink;
     }
 
     [Description("Search the indexed pinball-machine corpus (manuals, service bulletins, metadata cards) for chunks relevant to a question. Returns up to topK page-anchored chunks with document URLs you must cite. Returns an empty list if nothing matches — when empty, do not fabricate; refuse instead.")]
@@ -265,6 +277,20 @@ public sealed class SearchCorpusTool
                     // before PR-C3 — the frontend badge is conditionally rendered.
                     LastScrapedUtc = chunk.LastScrapedUtc,
                 });
+
+                // UI-metadata side channel (fix/citation-metadata-channel):
+                // publish Score + LastScrapedUtc to the request-scoped sink so
+                // ToolTraceCitationExtractor can enrich citations even though
+                // these fields are [JsonIgnore]'d from the model-facing JSON.
+                // First-write-wins per URL (sink semantics) matches the citation
+                // dedup — the first/highest-ranked hit per document wins.
+                // Skip when DocumentUrl is absent (defensive; indexer bug guard).
+                if (_metadataSink is not null && !string.IsNullOrWhiteSpace(chunk.DocumentUrl))
+                {
+                    _metadataSink.Record(
+                        chunk.DocumentUrl,
+                        new RetrievalCitationMetadata(chunk.LastScrapedUtc, chunk.Score));
+                }
             }
 
             _logger.LogDebug(

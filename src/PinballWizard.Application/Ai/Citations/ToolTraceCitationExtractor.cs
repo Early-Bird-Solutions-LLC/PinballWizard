@@ -49,14 +49,26 @@ namespace PinballWizard.Application.Ai.Citations;
 public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 {
     private readonly ILogger<ToolTraceCitationExtractor> _logger;
+    // Optional (fix/citation-metadata-channel): when wired, the sink
+    // supplies Score + LastScrapedUtc that were stripped from the
+    // model-facing FunctionResultContent.Result JSON because those fields
+    // are [JsonIgnore] on SearchCorpusHit. When null (unit tests, legacy
+    // callers without a scoped container), the typed C# arm still works
+    // correctly — the hit's own properties carry the values on that path.
+    private readonly IRetrievalCitationMetadataSink? _metadataSink;
 
-    // DI constructor. ILogger is optional — NullLogger is the safe default
-    // so unit tests that construct the extractor without a DI container
-    // (passing no arguments) continue to work with zero changes.
+    // DI constructor. Both parameters are optional so unit tests that
+    // construct the extractor without a DI container continue to work
+    // with zero changes. The sink default is null — on the typed-object
+    // test path the C# properties carry Score/LastScrapedUtc directly;
+    // the sink is only needed on the real Foundry JSON path where those
+    // [JsonIgnore] fields are stripped by FunctionResultContent serialization.
     public ToolTraceCitationExtractor(
-        ILogger<ToolTraceCitationExtractor>? logger = null)
+        ILogger<ToolTraceCitationExtractor>? logger = null,
+        IRetrievalCitationMetadataSink? metadataSink = null)
     {
         _logger = logger ?? NullLogger<ToolTraceCitationExtractor>.Instance;
+        _metadataSink = metadataSink;
     }
 
     // Matches both OPDB URL schemes: the legacy /machines/{id} form and
@@ -172,18 +184,17 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     continue;
                 }
 
-                ExtractFromFunctionResult(functionResult, seenUrls, citations, _logger);
+                ExtractFromFunctionResult(functionResult, seenUrls, citations);
             }
         }
 
         return citations.Count == 0 ? [] : citations;
     }
 
-    private static void ExtractFromFunctionResult(
+    private void ExtractFromFunctionResult(
         FunctionResultContent functionResult,
         HashSet<string> seenUrls,
-        List<Citation> citations,
-        ILogger logger)
+        List<Citation> citations)
     {
         var result = functionResult.Result;
         if (result is null)
@@ -214,7 +225,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // array; MachineGroundingDto has a top-level "OpdbId" string.
         if (result is JsonElement element)
         {
-            ExtractFromJsonElement(element, functionCallId, seenUrls, citations, logger);
+            ExtractFromJsonElement(element, functionCallId, seenUrls, citations);
             return;
         }
 
@@ -227,12 +238,11 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         }
     }
 
-    private static void ExtractFromJsonElement(
+    private void ExtractFromJsonElement(
         JsonElement element,
         string functionCallId,
         HashSet<string> seenUrls,
-        List<Citation> citations,
-        ILogger logger)
+        List<Citation> citations)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -241,7 +251,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             if (TryGetPropertyIgnoreCase(element, "Hits", out var hitsElement)
                 && hitsElement.ValueKind == JsonValueKind.Array)
             {
-                if (TryDeserialize<SearchCorpusResult>(element, functionCallId, logger) is { } corpusResult)
+                if (TryDeserialize<SearchCorpusResult>(element, functionCallId, _logger) is { } corpusResult)
                 {
                     AddCitationsFromCorpusHits(corpusResult.Hits, seenUrls, citations);
                     return;
@@ -254,7 +264,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
                 // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
-                if (TryDeserialize<MachineGroundingDto>(element, functionCallId, logger) is { } dto)
+                if (TryDeserialize<MachineGroundingDto>(element, functionCallId, _logger) is { } dto)
                 {
                     AddCitationFromGroundingDto(dto, seenUrls, citations);
                     return;
@@ -303,7 +313,20 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // wins for the title. Phase 5 may layer union-of-ranges across
     // collapsed chunks (ADR-0022 § Negative consequence #4); for
     // Phase 4, single-anchor citations are the contract.
-    private static void AddCitationsFromCorpusHits(
+    //
+    // Two-channel design (fix/citation-metadata-channel, ADR-0035):
+    // Score and LastScrapedUtc are [JsonIgnore] on SearchCorpusHit so
+    // the model never sees retrieval internals. On the real Foundry path,
+    // FunctionResultContent.Result is a JsonElement produced by
+    // AIFunctionFactory.Create serializing the C# return value — and
+    // [JsonIgnore] strips Score + LastScrapedUtc from that JSON, so
+    // hit.Score and hit.LastScrapedUtc arrive as null here. The
+    // _metadataSink (populated by SearchCorpusTool before the agent run)
+    // carries those values out-of-band and is the fallback source.
+    // Priority: typed C# hit values first (non-null when the typed arm
+    // fires, e.g. unit tests); sink values second (non-null on the real
+    // JSON path). Either or both may be null for pre-C3 chunks.
+    private void AddCitationsFromCorpusHits(
         IReadOnlyList<SearchCorpusHit> hits,
         HashSet<string> seenUrls,
         List<Citation> citations)
@@ -320,6 +343,15 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 continue;
             }
 
+            // Look up UI metadata from the side channel. On the typed-object
+            // path (unit tests) the sink is null or empty and hit.Score /
+            // hit.LastScrapedUtc carry the values directly. On the real
+            // Foundry JSON path both hit fields are null (stripped by
+            // [JsonIgnore] during FunctionResultContent serialization) and
+            // the sink is the authoritative source.
+            RetrievalCitationMetadata? sinkMeta = null;
+            _metadataSink?.TryGet(hit.DocumentUrl, out sinkMeta);
+
             var title = BuildCorpusCitationTitle(hit);
             citations.Add(new Citation(
                 Title: title,
@@ -330,19 +362,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 PageEnd: hit.PageEnd,
                 SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
                 SourceType: CitationSourceType.CorpusChunk,
-                // RelevanceScore threaded from SearchCorpusHit.Score in
-                // PR-C2. The score is [JsonIgnore] on the DTO so the model
-                // never sees it, but C# code can read it here to surface
-                // relevance on the citation card (ADR-0026 § 8). Null when
-                // the retriever did not return a score (pure keyword query
-                // that bypassed the semantic re-ranker edge case).
-                RelevanceScore: hit.Score,
-                // LastScrapedUtc threaded from SearchCorpusHit.LastScrapedUtc
-                // in PR-C3. [JsonIgnore] keeps it model-invisible; C# code
-                // reads it here to populate the freshness badge (ADR-0026 § 4).
-                // Null for chunks indexed before PR-C3 — the frontend
-                // CitationCard renders the badge conditionally.
-                LastScrapedUtc: hit.LastScrapedUtc));
+                // Typed C# value wins (non-null on the unit-test / typed arm);
+                // sink value is the fallback for the real Foundry JSON path
+                // where [JsonIgnore] strips Score from FunctionResultContent.
+                RelevanceScore: hit.Score ?? sinkMeta?.RelevanceScore,
+                // Same two-channel pattern for LastScrapedUtc (ADR-0026 § 4).
+                // Null for pre-C3 chunks regardless of path.
+                LastScrapedUtc: hit.LastScrapedUtc ?? sinkMeta?.LastScrapedUtc));
         }
     }
 

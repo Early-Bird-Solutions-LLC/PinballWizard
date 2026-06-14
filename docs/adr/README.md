@@ -44,6 +44,7 @@ negative) it carries.
 | [0031](0031-document-machine-linking-source-of-truth.md) | Document→Machine linking source of truth | Proposed |
 | [0032](0032-document-edition-scope-model.md) | Document edition-scope model (edition-aware citations) | Proposed |
 | [0033](0033-rag-indexer-batching-and-tpm-capacity.md) | RAG indexer batching parameters and TPM capacity | Accepted |
+| [0035](0035-citation-ui-metadata-channel.md) | Citation UI-metadata side channel for freshness + relevance score | Accepted |
 
 ## Conventions
 
