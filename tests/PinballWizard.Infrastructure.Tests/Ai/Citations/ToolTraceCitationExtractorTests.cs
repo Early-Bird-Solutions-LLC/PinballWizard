@@ -1059,6 +1059,55 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Null(citation.RelevanceScore);
     }
 
+    // Citation dedup precedence: getMachineByTitle and searchCorpus both ground
+    // the same machine, so their citations share the OPDB URL. The RICHER
+    // searchCorpus CorpusChunk (page anchor + freshness + relevance + content)
+    // must win over the bare getMachineByTitle MachineRecord — regardless of
+    // which tool's result appears first in the trace. Before this fix, the
+    // first-seen URL won, so a valuation answer that called getMachineByTitle
+    // first surfaced only the bare OPDB record (no freshness, no relevance).
+    // Exercises the real Foundry JSON path.
+    [Theory]
+    [InlineData(true)]   // getMachineByTitle result first, then searchCorpus
+    [InlineData(false)]  // searchCorpus result first, then getMachineByTitle
+    public void Extract_CorpusChunk_supersedes_MachineRecord_for_same_url(bool machineRecordFirst)
+    {
+        const string opdbId = "GRBE-MJL05";
+        var sharedUrl = $"https://opdb.org/machines/{opdbId}"; // == SampleGroundingDto.OpdbSourceUrl
+        var expectedTs = new DateTimeOffset(2026, 6, 9, 21, 0, 0, TimeSpan.Zero);
+        const double expectedScore = 1.94;
+
+        var dto = SampleGroundingDto(opdbId, "Godzilla (Premium)");
+        var corpus = new SearchCorpusResult([
+            // A metadata-card hit pointing at the SAME OPDB url as the record.
+            SampleHit(documentId: $"meta_{opdbId}", documentUrl: sharedUrl,
+                      machineId: opdbId, section: "Metadata",
+                      pageStart: 0, pageEnd: 0,
+                      score: expectedScore, lastScrapedUtc: expectedTs),
+        ]);
+
+        var dtoEl = JsonSerializer.SerializeToElement(dto, WebCamelCaseJson);
+        var corpusEl = JsonSerializer.SerializeToElement(corpus, WebCamelCaseJson);
+
+        var sink = new RetrievalCitationMetadataSink();
+        sink.Record(sharedUrl, new RetrievalCitationMetadata(expectedTs, expectedScore));
+        var extractor = new ToolTraceCitationExtractor(metadataSink: sink);
+
+        var machineMsg = new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_machine", dtoEl)]);
+        var corpusMsg = new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_corpus", corpusEl)]);
+        var response = BuildAgentResponse(machineRecordFirst
+            ? [machineMsg, corpusMsg]
+            : [corpusMsg, machineMsg]);
+
+        // Exactly one citation for the shared URL — and it is the RICHER
+        // CorpusChunk carrying freshness + relevance, not the bare record.
+        var citation = Assert.Single(extractor.Extract(response));
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+        Assert.Equal(sharedUrl, citation.SourceUrl);
+        Assert.Equal(expectedTs, citation.LastScrapedUtc);
+        Assert.Equal(expectedScore, citation.RelevanceScore);
+    }
+
     // Simple capturing logger for Warning-log assertions.
     private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
     {

@@ -167,7 +167,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // not a general extension point.
     internal IReadOnlyList<Citation> ExtractFromMessages(IEnumerable<ChatMessage> messages)
     {
-        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // byUrl maps a citation's SourceUrl to its index in `citations` so a
+        // later, RICHER citation can supersede an earlier bare one for the same
+        // URL (see AddOrUpgrade) — not merely first-write-wins. This matters when
+        // getMachineByTitle and searchCorpus both ground the same machine: their
+        // citations share the OPDB URL, and the searchCorpus metadata-card chunk
+        // (page anchor, freshness, relevance, synthesized content) must win over
+        // the bare OPDB MachineRecord regardless of which tool fired first.
+        var byUrl = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var citations = new List<Citation>();
 
         // Null-coalesce both collections: Microsoft.Agents.AI 1.4.0
@@ -184,7 +191,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     continue;
                 }
 
-                ExtractFromFunctionResult(functionResult, seenUrls, citations);
+                ExtractFromFunctionResult(functionResult, byUrl, citations);
             }
         }
 
@@ -193,7 +200,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 
     private void ExtractFromFunctionResult(
         FunctionResultContent functionResult,
-        HashSet<string> seenUrls,
+        Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
         var result = functionResult.Result;
@@ -210,13 +217,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // Typed object arm (unit tests and any future SDK that preserves type).
         if (result is MachineGroundingDto dto)
         {
-            AddCitationFromGroundingDto(dto, seenUrls, citations);
+            AddCitationFromGroundingDto(dto, byUrl, citations);
             return;
         }
 
         if (result is SearchCorpusResult corpus)
         {
-            AddCitationsFromCorpusHits(corpus.Hits, seenUrls, citations);
+            AddCitationsFromCorpusHits(corpus.Hits, byUrl, citations);
             return;
         }
 
@@ -225,7 +232,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // array; MachineGroundingDto has a top-level "OpdbId" string.
         if (result is JsonElement element)
         {
-            ExtractFromJsonElement(element, functionCallId, seenUrls, citations);
+            ExtractFromJsonElement(element, functionCallId, byUrl, citations);
             return;
         }
 
@@ -234,14 +241,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // via regex — the only structural anchor available in plain text.
         if (result is string text && !string.IsNullOrWhiteSpace(text))
         {
-            AddCitationsFromText(text, seenUrls, citations);
+            AddCitationsFromText(text, byUrl, citations);
         }
     }
 
     private void ExtractFromJsonElement(
         JsonElement element,
         string functionCallId,
-        HashSet<string> seenUrls,
+        Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
         if (element.ValueKind == JsonValueKind.Object)
@@ -253,7 +260,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             {
                 if (TryDeserialize<SearchCorpusResult>(element, functionCallId, _logger) is { } corpusResult)
                 {
-                    AddCitationsFromCorpusHits(corpusResult.Hits, seenUrls, citations);
+                    AddCitationsFromCorpusHits(corpusResult.Hits, byUrl, citations);
                     return;
                 }
                 // Shape probe matched but the payload didn't bind — fall
@@ -266,7 +273,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
                 if (TryDeserialize<MachineGroundingDto>(element, functionCallId, _logger) is { } dto)
                 {
-                    AddCitationFromGroundingDto(dto, seenUrls, citations);
+                    AddCitationFromGroundingDto(dto, byUrl, citations);
                     return;
                 }
             }
@@ -279,13 +286,46 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         var text = element.ToString();
         if (!string.IsNullOrWhiteSpace(text))
         {
-            AddCitationsFromText(text, seenUrls, citations);
+            AddCitationsFromText(text, byUrl, citations);
         }
+    }
+
+    // Dedup + precedence: add a candidate citation unless its URL is already
+    // present, EXCEPT that a richer CorpusChunk (page anchor + freshness +
+    // relevance + synthesized content) supersedes an already-recorded bare
+    // MachineRecord / CuratedLink for the same URL — replacing it in place to
+    // preserve ordering. This is what lets a searchCorpus metadata-card chunk
+    // win over the getMachineByTitle OPDB record they both point at, regardless
+    // of which tool's result appeared first in the trace. Two CorpusChunks for
+    // the same URL still collapse first-wins (first hit's anchor wins, per
+    // ADR-0022); a MachineRecord never downgrades an existing CorpusChunk.
+    private static void AddOrUpgrade(
+        Dictionary<string, int> byUrl,
+        List<Citation> citations,
+        Citation candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate.SourceUrl))
+        {
+            return;
+        }
+
+        if (byUrl.TryGetValue(candidate.SourceUrl, out var index))
+        {
+            if (candidate.SourceType == CitationSourceType.CorpusChunk
+                && citations[index].SourceType != CitationSourceType.CorpusChunk)
+            {
+                citations[index] = candidate;
+            }
+            return;
+        }
+
+        byUrl[candidate.SourceUrl] = citations.Count;
+        citations.Add(candidate);
     }
 
     private static void AddCitationFromGroundingDto(
         MachineGroundingDto dto,
-        HashSet<string> seenUrls,
+        Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
         if (string.IsNullOrWhiteSpace(dto.OpdbSourceUrl))
@@ -293,12 +333,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
-        if (!seenUrls.Add(dto.OpdbSourceUrl))
-        {
-            return;
-        }
-
-        citations.Add(new Citation(
+        AddOrUpgrade(byUrl, citations, new Citation(
             Title: $"OPDB record {dto.OpdbId}",
             SourceUrl: dto.OpdbSourceUrl,
             MachineId: dto.OpdbId,
@@ -328,17 +363,12 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // JSON path). Either or both may be null for pre-C3 chunks.
     private void AddCitationsFromCorpusHits(
         IReadOnlyList<SearchCorpusHit> hits,
-        HashSet<string> seenUrls,
+        Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
         foreach (var hit in hits)
         {
             if (string.IsNullOrWhiteSpace(hit.DocumentUrl))
-            {
-                continue;
-            }
-
-            if (!seenUrls.Add(hit.DocumentUrl))
             {
                 continue;
             }
@@ -353,7 +383,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             _metadataSink?.TryGet(hit.DocumentUrl, out sinkMeta);
 
             var title = BuildCorpusCitationTitle(hit);
-            citations.Add(new Citation(
+            AddOrUpgrade(byUrl, citations, new Citation(
                 Title: title,
                 SourceUrl: hit.DocumentUrl,
                 MachineId: hit.MachineId,
@@ -397,17 +427,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 
     private static void AddCitationsFromText(
         string text,
-        HashSet<string> seenUrls,
+        Dictionary<string, int> byUrl,
         List<Citation> citations)
     {
         var matches = OpdbMachineUrlRegex().Matches(text);
         foreach (Match match in matches)
         {
             var url = match.Value;
-            if (!seenUrls.Add(url))
-            {
-                continue;
-            }
 
             // OPDB alias IDs have three dash-separated segments (e.g.
             // "Gj66Z-Mp4BN-A9Y6n"). Citations should point to base
@@ -416,7 +442,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             var rawId = match.Groups["id"].Value;
             var machineId = ToBaseMachineId(rawId);
 
-            citations.Add(new Citation(
+            AddOrUpgrade(byUrl, citations, new Citation(
                 Title: $"OPDB record {machineId}",
                 SourceUrl: url,
                 MachineId: machineId,
