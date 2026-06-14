@@ -367,7 +367,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     Manufacturer: machine.ManufacturerDisplayName,
                     DocumentId: $"meta_{machine.Id}",
                     DocumentUrl: machine.OpdbSourceUrl ?? OpdbMachineMapper.OpdbWebUrl(machine.Id),
-                    DocumentType: DocumentType.MetadataCard);
+                    DocumentType: DocumentType.MetadataCard,
+                    // Metadata cards are synthesized from the OPDB-keyed Machine
+                    // record, not scraped — so they carry no Timeline.LastDownloadedAt.
+                    // Use the machine's LastSeenAt (refreshed on each OPDB sync) as
+                    // the freshness signal so the citation freshness badge shows when
+                    // the catalog data was last refreshed instead of "freshness
+                    // unknown". Existing cards stay null until the next
+                    // --sync-metadata-cards run re-indexes them.
+                    LastScrapedUtc: MetadataCardSynthesizer.CardFreshness(machine));
 
                 try
                 {

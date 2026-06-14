@@ -160,17 +160,51 @@ public sealed class CitationCardTests
     // High-score accent: data-relevance-score attribute matches input
     // ──────────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public async Task High_score_citation_shows_relevance_score_text()
+    // RelevanceScore is the Azure semantic reranker score (0–4 range), NOT a
+    // 0–1 fraction. It must render as a normalized 0–100% match — the old
+    // `score * 100` produced nonsense like "190% match" (the value seen live).
+    [Theory]
+    [InlineData(1.9, "48% match")]    // a typical reranker score — was "190% match"
+    [InlineData(2.47, "62% match")]   // the value seen live ("247% match")
+    [InlineData(3.4, "85% match")]    // at the high-score bar
+    [InlineData(4.0, "100% match")]   // reranker ceiling
+    [InlineData(8.0, "100% match")]   // BM25-fallback above the ceiling clamps to 100, never exceeds
+    public async Task Relevance_score_renders_as_normalized_percent(double rerankerScore, string expected)
     {
         await using var ctx = BuildCtx();
-        var citation = BuildCitation(relevanceScore: 0.92);
+        var citation = BuildCitation(relevanceScore: rerankerScore);
 
         var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation));
 
         var scoreEl = cut.Find("[data-testid='citation-relevance-score']");
-        Assert.Contains("92", scoreEl.TextContent); // "92% match"
+        Assert.Equal(expected, scoreEl.TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task Strong_match_gets_high_score_accent()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation(relevanceScore: 3.4); // 85% — at HighMatchPercent
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var card = cut.Find("[data-testid='citation-card']");
+        Assert.Contains("citation-card-high-score", card.GetAttribute("class"));
+    }
+
+    [Fact]
+    public async Task Moderate_match_does_not_get_high_score_accent()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation(relevanceScore: 1.9); // 48% — below the bar
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var card = cut.Find("[data-testid='citation-card']");
+        Assert.DoesNotContain("citation-card-high-score", card.GetAttribute("class"));
     }
 
     [Fact]

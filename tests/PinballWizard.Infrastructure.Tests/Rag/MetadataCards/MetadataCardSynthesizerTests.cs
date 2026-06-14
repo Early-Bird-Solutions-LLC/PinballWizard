@@ -31,6 +31,48 @@ public sealed class MetadataCardSynthesizerTests
         Assert.Throws<ArgumentNullException>(() => NewSynthesizer().Synthesize(null!));
     }
 
+    // Metadata cards are synthesized from the Machine record, not scraped, so
+    // their citation freshness comes from Machine.LastSeenAt (refreshed on each
+    // OPDB sync) rather than a scraper download timestamp. Guards the fix for
+    // the live "freshness unknown" on metadata-card citations.
+    [Fact]
+    public void CardFreshness_ReturnsLastSeenAt_WhenSet()
+    {
+        var lastSeen = new DateTimeOffset(2026, 6, 7, 3, 0, 0, TimeSpan.Zero);
+        var machine = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Stranger Things",
+            LastSeenAt = lastSeen,
+        };
+
+        Assert.Equal(lastSeen, MetadataCardSynthesizer.CardFreshness(machine));
+    }
+
+    // An unset LastSeenAt (DateTimeOffset default = year 0001) must map to null,
+    // NOT flow through to the freshness badge as a nonsensical "2000 years ago".
+    [Fact]
+    public void CardFreshness_ReturnsNull_WhenLastSeenAtUnset()
+    {
+        var machine = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Stranger Things",
+        };
+
+        Assert.Null(MetadataCardSynthesizer.CardFreshness(machine));
+    }
+
+    [Fact]
+    public void CardFreshness_NullMachine_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => MetadataCardSynthesizer.CardFreshness(null!));
+    }
+
     [Fact]
     public void Synthesize_RichMachine_IncludesAllRetrievalSignals()
     {
