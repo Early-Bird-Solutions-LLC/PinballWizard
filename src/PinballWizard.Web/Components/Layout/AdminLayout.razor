@@ -22,6 +22,12 @@
 
 @using PinballWizard.Web.Components.Theming
 
+@* Providers are intentionally STATIC here (no @rendermode): every /admin/*
+ * page is statically rendered (@layout AdminLayout, no @rendermode directive),
+ * so a static popover never reaches an interactive island — no mismatch, no
+ * crash. ⚠️ If any admin page ever adds `@rendermode InteractiveServer`, pin
+ * these four providers to InteractiveServer the same way MainLayout does, or
+ * its popovers will crash the circuit with "Missing <MudPopoverProvider />". *@
 <MudThemeProvider Theme="@_theme" IsDarkMode="true" />
 <MudPopoverProvider />
 <MudDialogProvider />
