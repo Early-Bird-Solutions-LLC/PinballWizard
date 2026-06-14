@@ -7,11 +7,12 @@ using Xunit;
 namespace PinballWizard.Infrastructure.Tests.Integrations.AiSearch;
 
 // Unit tests for AzureAiSearchSmokeProbe's misconfiguration paths. The
-// success path requires a deployed AI Search service + AAD; that's
-// exercised by the H1 operational hand-off, not unit tests, per the
-// DL-0002/DL-0003 lesson — contract tests should hit the real API at
-// the live-validation step, not pin a self-defined stub. Mirrors the
-// AzureFoundrySmokeProbeTests shape.
+// success path (GetDocumentCountAsync against the configured index) requires
+// a deployed AI Search service + AAD; that's exercised by the H1 operational
+// hand-off, not unit tests, per the DL-0002/DL-0003 lesson — contract tests
+// should hit the real API at the live-validation step, not pin a self-defined
+// stub. The config-validation early-returns tested here don't touch the wire.
+// Mirrors the AzureFoundrySmokeProbeTests shape.
 public sealed class AzureAiSearchSmokeProbeTests
 {
     [Fact]

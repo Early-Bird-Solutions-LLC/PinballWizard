@@ -1,23 +1,29 @@
 using Azure.Identity;
-using Azure.Search.Documents.Indexes;
+using Azure.Search.Documents;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Infrastructure.Integrations.AiSearch;
 
-// Post-deploy smoke-test for Azure AI Search. Connects to the deployed
-// search service via DefaultAzureCredential, calls a lightweight
-// management-surface API (GetServiceStatistics) to confirm the endpoint
-// is reachable AND that the developer principal has the RBAC needed to
-// read service state. Mirrors the shape of AzureFoundrySmokeProbe —
+// Post-deploy smoke-test for Azure AI Search. Connects to the configured
+// index via DefaultAzureCredential and calls GetDocumentCountAsync to confirm
+// that the endpoint is reachable, AAD auth succeeds, and the configured index
+// is queryable with the runtime role. Mirrors the shape of AzureFoundrySmokeProbe —
 // idempotent, structured-result-on-failure, safe to re-run.
 //
-// Per ADR-0021's index-name versioning strategy, the configured
-// IndexName (default `pinwiz-rag-v1`) is reported as "expected" but is
-// NOT required to exist at H1 — Wave 2 W2-3 creates it. The probe's
-// purpose at H1 is to verify the SERVICE itself is provisioned and
-// accessible; index existence is a Wave 2 concern.
+// GetDocumentCountAsync requires only "Search Index Data Reader" — the
+// least-privilege role the managed identity already holds for live retrieval.
+// The previous implementation called GetServiceStatisticsAsync (SearchIndexClient),
+// which requires "Search Service Contributor" — a broader management-plane role
+// the runtime identity deliberately does not have. That mismatch caused 403s in
+// production and painted the LiveStatusBadge RED for every visitor even though
+// the searchCorpus tool was working correctly.
+//
+// The probe now validates exactly what matters at runtime: the configured index
+// (AiSearch:IndexName, default `pinwiz-rag-v1`) is reachable and queryable. The
+// index was created by W2-3 and contains 23,748 documents — the "does not need
+// to exist yet" framing in the original comment is no longer true.
 public sealed class AzureAiSearchSmokeProbe : IAzureAiSearchSmokeProbe
 {
     private readonly AiSearchOptions _options;
@@ -53,43 +59,30 @@ public sealed class AzureAiSearchSmokeProbe : IAzureAiSearchSmokeProbe
                 Error: $"Configuration {AiSearchOptions.EndpointKey} is not a valid absolute URL: '{_options.Endpoint}'.");
         }
 
-        SearchIndexClient client;
         try
         {
-            client = new SearchIndexClient(endpoint, Credentials.SharedAzureCredential.Instance);
+            // SearchClient (data-plane) targets the specific index and requires
+            // only "Search Index Data Reader" — the same role the managed identity
+            // uses for live document retrieval via searchCorpus. GetDocumentCountAsync
+            // is a single lightweight API call that exercises endpoint reachability,
+            // AAD token exchange, and confirms the index exists and is accessible.
+            // We don't use the count value; a successful return proves the probe
+            // contract: the runtime role is sufficient and the index is queryable.
+            var client = new SearchClient(endpoint, _options.IndexName, Credentials.SharedAzureCredential.Instance);
+            await client.GetDocumentCountAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Failed to construct SearchIndexClient against {Endpoint}.", endpoint);
+            _logger.LogError(ex, "AI Search GetDocumentCount failed at {Endpoint} for index {IndexName}.", endpoint, _options.IndexName);
             return new AiSearchSmokeProbeResult(
                 Success: false,
                 FoundEndpoint: endpoint.ToString(),
                 ExpectedIndexName: _options.IndexName,
-                Error: $"Failed to construct SearchIndexClient: {ex.GetType().Name}: {ex.Message}");
-        }
-
-        try
-        {
-            // GetServiceStatisticsAsync is the lightest-weight call that
-            // exercises both endpoint reachability AND AAD auth (it requires
-            // Search Service Contributor or the equivalent data-plane RBAC
-            // — not just public access). Returns service-level counters
-            // (document count, storage size). We don't care about the
-            // values, only that the call succeeds.
-            await client.GetServiceStatisticsAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "AI Search GetServiceStatistics failed at {Endpoint}.", endpoint);
-            return new AiSearchSmokeProbeResult(
-                Success: false,
-                FoundEndpoint: endpoint.ToString(),
-                ExpectedIndexName: _options.IndexName,
-                Error: $"GetServiceStatistics failed: {ex.GetType().Name}: {ex.Message}");
+                Error: $"GetDocumentCount failed: {ex.GetType().Name}: {ex.Message}");
         }
 
         _logger.LogInformation(
-            "AI Search smoke probe succeeded: endpoint={Endpoint} expectedIndex={IndexName}",
+            "AI Search smoke probe succeeded: endpoint={Endpoint} index={IndexName}",
             endpoint, _options.IndexName);
 
         return new AiSearchSmokeProbeResult(
