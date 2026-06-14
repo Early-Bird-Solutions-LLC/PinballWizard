@@ -43,6 +43,9 @@ param tags object
 @description('Object ID of the developer principal to grant RBAC at deploy time. If empty, role assignments are skipped.')
 param developerObjectId string
 
+@description('Object (principal) ID of the CI/CD deploy service principal — the "PinballWizard GitHub Actions" app registration that the deploy.yml workflow logs in as via OIDC. When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the workflow can run `az containerapp update --image` against each app. Empty (default) skips these grants. Replaces the former manual per-app `az role assignment create` step in the deploy.yml header — CI-identity RBAC is now IaC. NOTE: this is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret).')
+param cicdDeployPrincipalId string = ''
+
 @description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
 param deployPhase2 bool
 
@@ -1891,6 +1894,56 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
         enabled: true
       }
     ]
+  }
+}
+
+// -----------------------------------------------------------------------------
+// CI/CD deploy identity RBAC (Contributor on the deployed Container Apps)
+// -----------------------------------------------------------------------------
+// The deploy.yml GitHub Actions workflow logs in via OIDC as the
+// "PinballWizard GitHub Actions" app registration and runs
+// `az containerapp update --image :{sha}` to swap each app to the freshly
+// built image. That call needs Contributor on each target app. These grants
+// were historically created by hand (per the deploy.yml setup header); they
+// are now IaC, gated on a non-empty cicdDeployPrincipalId so a deploy without
+// the workflow SP (e.g. a local-only stack) skips them cleanly.
+//
+// principalType is ServicePrincipal (an app-registration SP), matching the
+// RAG-indexer MI assignments above. Contributor built-in role definition:
+//   b24988ac-6180-42a0-ab88-20f7382dd24c
+//
+// Scope is per-app (least privilege) — the workflow only mutates these three
+// apps, never the data-plane resources (Cosmos / Key Vault / Storage). The
+// ragindexer grant additionally gates on deployAiSearch, matching the
+// ragIndexerApp resource itself.
+
+resource cicdWizardContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  scope: wizardApp
+  name: guid(wizardApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource cicdApiContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  scope: apiApp
+  name: guid(apiApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch && !empty(cicdDeployPrincipalId)) {
+  scope: ragIndexerApp
+  name: guid(ragIndexerApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
   }
 }
 
