@@ -165,13 +165,23 @@ jobs:
             --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
 
   smoke:
-    # Runs after BOTH matrix legs deployed — the wizard app depends on the
-    # Api app for answers, so probing before both are updated would pass
+    # Runs after the build-deploy matrix completes — the wizard app depends on
+    # the Api app for answers, so probing before both are updated would pass
     # against a mixed-version pair.
+    #
+    # `if: !cancelled()` overrides the default GHA behavior where any failed
+    # matrix leg causes downstream jobs to be SKIPPED. Without it, a failure in
+    # an unrelated leg (e.g., pinwiz-rag-indexer RBAC, pinwiz-cli linker) silently
+    # disables the only gate that catches landing-circuit regressions — which is
+    # exactly how the PR #401 outage shipped "green". The smoke probe itself
+    # queries the wizard /alive endpoint, so if the wizard leg genuinely failed,
+    # smoke will fail correctly; if only an unrelated leg failed, smoke runs and
+    # validates the wizard surface as intended.
     name: Smoke test /alive
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: build-deploy
+    if: ${{ !cancelled() }}
 
     permissions:
       id-token: write

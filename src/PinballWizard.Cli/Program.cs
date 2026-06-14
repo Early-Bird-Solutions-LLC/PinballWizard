@@ -86,7 +86,7 @@ var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
 
 var ensureAiSearchOption = new Option<bool>("--ensure-ai-search")
 {
-    Description = "Post-deploy smoke-test for the Azure AI Search service backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetServiceStatistics to confirm endpoint reachability + AAD auth. The configured index (AiSearch:IndexName, default pinwiz-rag-v1) does NOT need to exist yet — Wave 2 W2-3 creates it. Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
+    Description = "Post-deploy smoke-test for the Azure AI Search index backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetDocumentCount on the configured index (AiSearch:IndexName, default pinwiz-rag-v1) to confirm endpoint reachability + AAD auth + that the index is queryable with the Search Index Data Reader role. The index is expected to exist (W2-3 created it). Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
 };
 
 var ensureRagIndexOption = new Option<bool>("--ensure-rag-index")
