@@ -73,6 +73,21 @@ public sealed class MetadataCardSynthesizer : IMetadataCardSynthesizer
             TokenCount: tokenCount);
     }
 
+    // Freshness signal for a metadata card's citation. Metadata cards are
+    // synthesized from the OPDB-keyed Machine record (not scraped), so they
+    // have no Timeline.LastDownloadedAt — instead the card's freshness is when
+    // the catalog record was last refreshed (Machine.LastSeenAt, updated on
+    // each OPDB sync). Returns null for an unset LastSeenAt (default) so the
+    // freshness badge renders "freshness unknown" rather than a nonsensical
+    // "2000 years ago" computed from DateTimeOffset.MinValue. Public + static so
+    // the ingestion glue (Cli --sync-metadata-cards) and tests share one
+    // definition of the rule.
+    public static DateTimeOffset? CardFreshness(Machine machine)
+    {
+        ArgumentNullException.ThrowIfNull(machine);
+        return machine.LastSeenAt == default ? null : machine.LastSeenAt;
+    }
+
     private static string BuildText(Machine machine)
     {
         var sb = new StringBuilder(capacity: 512);
