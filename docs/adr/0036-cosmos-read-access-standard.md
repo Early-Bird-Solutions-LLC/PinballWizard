@@ -81,6 +81,8 @@ projections — i.e. it *composes with* Tier 3, never a global rewrite.
 
 ### Selection flow
 
+Tier 0 = the source container itself; the flow below classifies *reads* against it.
+
 ```mermaid
 flowchart TD
     A[New Cosmos read for a view] --> B{Access pattern aligns<br/>to a source partition key?}
@@ -98,9 +100,10 @@ flowchart TD
 - Any `pk: null` query must state its bound + justification (Tier 2) or be replaced by
   a Tier 3 projection.
 - User-facing aggregate views must be projection-backed.
-- An **architecture test** flags any new `pk: null` Cosmos query for explicit review
-  (allow-list keyed to the justified Tier 2 sites). This makes a new cross-partition
-  query a conscious, reviewed act — not an accident.
+- Cross-partition queries route through `StreamCrossPartitionAsync`; an architecture
+  test (`CrossPartitionQueryAllowListTests`) pins every call site to a reviewed
+  allow-list, so a new cross-partition query fails the build until consciously reviewed
+  and added.
 
 ---
 
@@ -123,5 +126,6 @@ are grandfathered with explicit bound comments; no rewrite required.
 ## References
 
 - ADR-0007 — Per-manufacturer ingestion sources are Cosmos data, not Bicep config
+- ADR-0012 — Cosmos schema CRUD via ARM, item CRUD via data-plane SDK
 - ADR-0025 — Cosmos for User Delight (the decision this ADR generalizes; not superseded)
-- ADR-0031 — Document→Machine linking source of truth (rebuildable projection pattern)
+- ADR-0031 (Proposed) — Document→Machine linking source of truth (rebuildable projection pattern)
