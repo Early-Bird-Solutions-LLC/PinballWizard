@@ -234,7 +234,7 @@ public sealed class CosmosRepositoryTests
     }
 
     [Fact]
-    public async Task StreamAsync_BindsParametersWithAtPrefix()
+    public async Task StreamCrossPartitionAsync_BindsParametersWithAtPrefix()
     {
         QueryDefinition? capturedQuery = null;
         _container
@@ -247,10 +247,9 @@ public sealed class CosmosRepositoryTests
             ["minScore"] = 100,
         };
 
-        await foreach (var _ in _repository.StreamAsync(
+        await foreach (var _ in _repository.StreamCrossPartitionAsync(
             "SELECT * FROM c WHERE c.status = @status AND c.score >= @minScore",
             parameters,
-            partitionKey: null,
             CancellationToken.None))
         {
             // drain
@@ -264,14 +263,14 @@ public sealed class CosmosRepositoryTests
     }
 
     [Fact]
-    public async Task StreamAsync_NullPartitionKey_DoesNotConstrainQuery()
+    public async Task StreamCrossPartitionAsync_DoesNotConstrainQueryToPartition()
     {
         QueryRequestOptions? capturedOptions = null;
         _container
             .GetItemQueryIterator<TestEntity>(Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Do<QueryRequestOptions>(o => capturedOptions = o))
             .Returns(new FakeFeedIterator<TestEntity>([[]]));
 
-        await foreach (var _ in _repository.StreamAsync("SELECT * FROM c", parameters: null, partitionKey: null, CancellationToken.None))
+        await foreach (var _ in _repository.StreamCrossPartitionAsync("SELECT * FROM c", parameters: null, CancellationToken.None))
         {
             // drain
         }

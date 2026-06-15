@@ -31,15 +31,14 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             cancellationToken: cancellationToken);
     }
 
-    // Cross-partition scan (partitionKey: null) so all manufacturers are
+    // Cross-partition scan (ADR-0036 Tier 2) so all manufacturers are
     // covered in a single pass. RU cost scales with total item count —
     // acceptable for the infrequent InitializeAsync call on the linker.
     public IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken) =>
-        StreamAsync(
+        StreamCrossPartitionAsync(
             "SELECT * FROM c",
             parameters: null,
-            partitionKey: null,
-            cancellationToken: cancellationToken);
+            cancellationToken);
 
     /// <inheritdoc />
     public async IAsyncEnumerable<Machine> QueryByTitleAsync(

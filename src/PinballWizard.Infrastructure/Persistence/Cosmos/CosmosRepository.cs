@@ -128,7 +128,24 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<T> StreamAsync(
+    public IAsyncEnumerable<T> StreamAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? parameters,
+        string partitionKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(partitionKey);
+        return StreamCoreAsync(query, parameters, partitionKey, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<T> StreamCrossPartitionAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? parameters,
+        CancellationToken cancellationToken)
+        => StreamCoreAsync(query, parameters, partitionKey: null, cancellationToken);
+
+    private async IAsyncEnumerable<T> StreamCoreAsync(
         string query,
         IReadOnlyDictionary<string, object>? parameters,
         string? partitionKey,

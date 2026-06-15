@@ -59,10 +59,9 @@ public sealed class FeaturedMachineRepository
         // slug-by-slug point-reads instead.
         var results = new List<FeaturedMachineDocument>();
 
-        await foreach (var doc in StreamAsync(
+        await foreach (var doc in StreamCrossPartitionAsync(
             "SELECT * FROM c ORDER BY c.display_order ASC",
             parameters: null,
-            partitionKey: null,
             cancellationToken).ConfigureAwait(false))
         {
             results.Add(doc);

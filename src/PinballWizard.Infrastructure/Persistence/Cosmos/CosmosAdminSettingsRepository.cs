@@ -55,10 +55,9 @@ internal sealed class CosmosAdminSettingsRepository
         // must show truth, not a stale window. Tens of documents at most.
         var result = new List<AdminSettingRecord>();
 
-        await foreach (var cosmos in StreamAsync(
+        await foreach (var cosmos in StreamCrossPartitionAsync(
             "SELECT * FROM c",
             parameters: null,
-            partitionKey: null,
             cancellationToken).ConfigureAwait(false))
         {
             result.Add(ToDomain(cosmos));
