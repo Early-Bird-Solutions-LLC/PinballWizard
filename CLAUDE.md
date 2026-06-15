@@ -6,7 +6,7 @@
 
 Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a polite, manufacturer-fanned-out scraper that crawls pinball-machine sources and persists into Cosmos with rich provenance metadata. **Phase 2** (in progress) adds an event-driven RAG pipeline with source-cited Q&A. See `project_phase2_architecture_decisions.md` for locked decisions and `project_phased_build_sequence.md` for the build order.
 
-**Hosted on the personal Earlybird Azure subscription** (sub `4dce9fdd-…`, tenant `9793cd0f-…`). Never linked to work tooling — see `feedback_personal_identity_only.md`. The personal-account constraint is administrative, not a quality posture: this is a reference app and is held to enterprise standards.
+**Hosted on the personal Earlybird Azure subscription** (sub `b1f33f17-…` "pinwiz.ai", tenant `9793cd0f-…`). Never linked to work tooling — see `feedback_personal_identity_only.md`. The personal-account constraint is administrative, not a quality posture: this is a reference app and is held to enterprise standards.
 
 ## Showcase obligations (overriding guidance)
 

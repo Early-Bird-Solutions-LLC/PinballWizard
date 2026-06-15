@@ -615,7 +615,7 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 
 **Decision:** H-Dash hand-off complete. "PinballWizard Ops" workbook deployed and verified in the Azure portal.
 
-**Workbook URL:** `https://portal.azure.com/#@9793cd0f-2b27-4757-9986-1f7f1e35864a/resource/subscriptions/4dce9fdd-ea5f-4f67-9a00-80279e58659d/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.Insights/workbooks/ecabee92-c5ef-5e2f-8597-9a2ad352804d/workbook`
+**Workbook URL:** `https://portal.azure.com/#@9793cd0f-2b27-4757-9986-1f7f1e35864a/resource/subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.Insights/workbooks/68831803-ad04-5f3c-83aa-31f67e391249/workbook`
 
 **State at verification (2026-05-15):** 7 tiles rendered. All tiles show "no data" — expected while the Wizard ACA app runs a placeholder image (no real `pinwiz.ai.*` / `pinwiz.rag.*` metrics emitted yet). One tile ("RAG changefeed health") showed a KQL parse error (`latest` is a reserved KQL token) — fixed in PR #215 (column alias renamed to `currentValue`). The workbook will show live signal once Phase 7 deploys the real app image.
 
