@@ -76,7 +76,7 @@ az ad app federated-credential create \
 
 ```bash
 APP_ID="<appId from step 1>"
-SUBSCRIPTION="4dce9fdd-ea5f-4f67-9a00-80279e58659d"
+SUBSCRIPTION="b1f33f17-74a9-4ecc-b46c-c4f31776b840"
 RG="rg-pinwiz-shared-dev"
 
 # Create service principal
@@ -86,7 +86,7 @@ SP_ID=$(az ad sp create --id $APP_ID --query id -o tsv)
 az role assignment create \
   --assignee $SP_ID \
   --role AcrPush \
-  --scope "/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.ContainerRegistry/registries/pinwizacrdevhlpz4"
+  --scope "/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.ContainerRegistry/registries/pinwizacrdevbuutj"
 
 # Contributor on the Wizard ACA app
 az role assignment create \
@@ -109,7 +109,7 @@ Go to: `https://github.com/Early-Bird-Solutions-LLC/PinballWizard/settings/secre
 | --- | --- |
 | `AZURE_CLIENT_ID` | `<appId from step 1>` |
 | `AZURE_TENANT_ID` | `9793cd0f-2b27-4757-9986-1f7f1e35864a` |
-| `AZURE_SUBSCRIPTION_ID` | `4dce9fdd-ea5f-4f67-9a00-80279e58659d` |
+| `AZURE_SUBSCRIPTION_ID` | `b1f33f17-74a9-4ecc-b46c-c4f31776b840` |
 
 ### Step 5 — Add GitHub repository variables
 

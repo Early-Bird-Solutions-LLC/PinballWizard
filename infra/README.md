@@ -53,14 +53,14 @@ Authenticate to the personal tenant:
 
 ```powershell
 az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a
-az account set --subscription 4dce9fdd-ea5f-4f67-9a00-80279e58659d
+az account set --subscription b1f33f17-74a9-4ecc-b46c-c4f31776b840
 az account show
 ```
 
 The third command should show:
 
 ```
-"id":       "4dce9fdd-ea5f-4f67-9a00-80279e58659d"
+"id":       "b1f33f17-74a9-4ecc-b46c-c4f31776b840"
 "tenantId": "9793cd0f-2b27-4757-9986-1f7f1e35864a"
 ```
 
