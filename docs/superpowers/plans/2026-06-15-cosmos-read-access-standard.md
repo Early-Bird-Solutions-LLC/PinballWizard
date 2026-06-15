@@ -292,6 +292,8 @@ git add tests/PinballWizard.Infrastructure.Tests/Architecture/CrossPartitionQuer
 git commit -m "test(infra) AB#259: ADR-0036 cross-partition query allow-list guard"
 ```
 
+> **Note (post-delivery):** The delivered test was deliberately broadened beyond the sketch above in two ways: (a) it detects BOTH `StreamCrossPartitionAsync` AND direct `GetItemQueryIterator<` calls (the direct-iterator escape hatch is also a cross-partition mechanism); and (b) it scans the entire `src/PinballWizard.Infrastructure` tree rather than just `Persistence/Cosmos`, so cross-partition queries that live outside the repository layer (e.g. `CosmosAiSearchRagReconciler.cs`) are caught too. A standard with a bypass is the failure mode the test exists to prevent.
+
 ---
 
 ### Task 5: Record the standard as a locked invariant

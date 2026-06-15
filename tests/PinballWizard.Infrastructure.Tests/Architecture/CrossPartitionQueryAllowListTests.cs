@@ -12,30 +12,38 @@ namespace PinballWizard.Infrastructure.Tests.Architecture;
 //
 //   (b) Container.GetItemQueryIterator<T> called directly with no PartitionKey —
 //       a direct SDK escape hatch used when the method needs custom per-page logic
-//       (e.g. MaxItemCount tuning, non-generic projection). Routing these through
-//       the base is a tracked future cleanup (see allow-list justifications below).
+//       (e.g. MaxItemCount tuning, non-generic projection, or a Container that is
+//       not a CosmosRepository subclass). Routing these through the base is a
+//       tracked future cleanup (see allow-list justifications below).
 //
-// Every .cs file in the Cosmos repository directory (other than CosmosRepository.cs,
-// which is the definition site for both patterns) that uses EITHER mechanism MUST
-// appear in AllowList with a justification. A new cross-partition site in a file
-// not yet in the list fails this test until a reviewer consciously adds it here —
+// Scan scope: the ENTIRE src/PinballWizard.Infrastructure tree (recursive), not
+// just Persistence/Cosmos. Cross-partition queries can appear anywhere in the
+// Infrastructure layer — limiting the scan to one subdirectory creates a bypass.
+//
+// Every .cs file in the Infrastructure tree (other than CosmosRepository.cs,
+// which is the definition site for StreamCrossPartitionAsync and uses
+// GetItemQueryIterator internally) that uses EITHER mechanism MUST appear in
+// AllowList with a justification. A new cross-partition site in a file not yet
+// in the list fails this test until a reviewer consciously adds it here —
 // forcing cross-partition queries to be an explicit, documented decision.
 public sealed class CrossPartitionQueryAllowListTests
 {
-    // Keys: file names (not paths) of every .cs file in the Cosmos persistence
-    // directory that legitimately issues a cross-partition query.
+    // Keys: file names (not paths) of every .cs file in the Infrastructure tree
+    // that legitimately issues a cross-partition query.
     // Values: short justification — which pattern(s) and why it is bounded/Tier-2.
     private static readonly Dictionary<string, string> AllowList = new(StringComparer.Ordinal)
     {
         // StreamCrossPartitionAsync — StreamAllAsync scans all manufacturers in
         // one pass for the linker initialiser. Direct-iterator GetItemQueryIterator
         // used for QueryByTitleAsync (MaxItemCount=1, equality match, ~2,400 docs)
-        // and GetSiblingsByGroupIdAsync (MaxItemCount=10, equality match, 1–10 docs).
-        // Both direct-iterator callers emit metrics via ExecuteWithMetricsAsync.
-        // Routing them through the base is a tracked cleanup (ADR-0025 § 4 PR-5).
+        // and GetSiblingsByGroupIdAsync (SELECT TOP 50, MaxItemCount=10, equality
+        // match, expected 1–10 per ADR-0029, TOP 50 is the hard ceiling per
+        // ADR-0036). Both direct-iterator callers emit metrics via
+        // ExecuteWithMetricsAsync. Routing them through the base is a tracked
+        // cleanup (ADR-0025 § 4 PR-5).
         ["MachineRepository.cs"] =
             "StreamCrossPartitionAsync (StreamAllAsync) + direct GetItemQueryIterator<Machine> " +
-            "(QueryByTitleAsync MaxItemCount=1, GetSiblingsByGroupIdAsync MaxItemCount=10); " +
+            "(QueryByTitleAsync MaxItemCount=1, GetSiblingsByGroupIdAsync SELECT TOP 50 MaxItemCount=10); " +
             "bounded equality matches, metered; direct-iterator routing is tracked cleanup.",
 
         // Direct-iterator GetItemQueryIterator<string> — projects only machine_id
@@ -75,12 +83,23 @@ public sealed class CrossPartitionQueryAllowListTests
         ["CosmosAdminSettingsRepository.cs"] =
             "StreamCrossPartitionAsync in GetAllAsync; uncached settings-page load " +
             "showing truth; tens of documents at most.",
+
+        // Direct GetItemQueryIterator<IndexStateDocument> — startup-only reconciler
+        // samples the most-recently-recorded N rows from rag_index_state using a
+        // bounded SELECT TOP @sampleSize ORDER BY recorded_utc DESC. This container
+        // is not a CosmosRepository subclass (direct Container injection), so
+        // StreamCrossPartitionAsync is not available. Tier 2: bounded sample,
+        // recency-biased, runs only at worker startup.
+        ["CosmosAiSearchRagReconciler.cs"] =
+            "Direct GetItemQueryIterator<IndexStateDocument> in ReconcileAsync; startup-only " +
+            "reconcile bounded by SELECT TOP @sampleSize ORDER BY recorded_utc DESC; not a " +
+            "CosmosRepository subclass (direct Container injection); Tier 2.",
     };
 
     [Fact]
     public void EveryCrossPartitionCallSite_IsInTheAllowList()
     {
-        var cosmosDir = Path.Combine(RepoRoot(), "src", "PinballWizard.Infrastructure", "Persistence", "Cosmos");
+        var infraDir = Path.Combine(RepoRoot(), "src", "PinballWizard.Infrastructure");
 
         // Detect EITHER cross-partition pattern:
         //   (a) .StreamCrossPartitionAsync( — the ADR-0036 base method
@@ -91,7 +110,7 @@ public sealed class CrossPartitionQueryAllowListTests
 
         var offenders = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(cosmosDir, "*.cs", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(infraDir, "*.cs", SearchOption.AllDirectories))
         {
             var name = Path.GetFileName(file);
 
