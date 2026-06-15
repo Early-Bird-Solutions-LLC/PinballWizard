@@ -55,6 +55,9 @@ data/*
 .DS_Store
 Thumbs.db
 
+# Superpowers brainstorming companion artifacts (mockups + session state)
+.superpowers/
+
 # Bicep — local parameter overrides (never committed; deploy script auto-detects)
 *.local.bicepparam
 
