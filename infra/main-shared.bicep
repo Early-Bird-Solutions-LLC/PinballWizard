@@ -8,7 +8,7 @@
 // sharing across other personal projects. Per ADR 0010 the deploying identity
 // must be authenticated against the personal Earlybird tenant
 // (9793cd0f-2b27-4757-9986-1f7f1e35864a) and subscription
-// (4dce9fdd-ea5f-4f67-9a00-80279e58659d) — that guard is enforced by
+// (b1f33f17-74a9-4ecc-b46c-c4f31776b840 "pinwiz.ai") — that guard is enforced by
 // `infra/scripts/Deploy-SharedResources.ps1` before this template runs.
 //
 // Deploy:

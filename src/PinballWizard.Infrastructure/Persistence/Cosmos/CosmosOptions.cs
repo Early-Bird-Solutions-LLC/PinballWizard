@@ -208,6 +208,17 @@ public sealed class CosmosOptions
                 ExcludedPaths = ["/*"],
             },
         },
+        // catalog_stats — Tier-3 read model per ADR-0036. One rollup doc
+        // per manufacturer (id == /manufacturer) holding per-machine doc
+        // counts/types for the admin catalog summary. Maintained by the
+        // CatalogStatsChangeFeedHandler consumer over scraped_documents;
+        // rebuildable via `--rebuild-catalog-stats`. Default indexing:
+        // reads are point-reads by manufacturer.
+        new() { Name = "catalog_stats", PartitionKeyPath = "/manufacturer" },
+        // catalog_stats_leases — dedicated Change Feed lease container for
+        // the catalog-stats consumer. MUST be separate from rag_leases so
+        // the two consumers track independent cursors over scraped_documents.
+        new() { Name = "catalog_stats_leases", PartitionKeyPath = "/id" },
         // scraped_documents_raw: scraper write target (Phase 4.5 document-linking)
         // Partition key: /document_id (one record per unique file URL).
         // Written by scrapers; read + updated by the linker.

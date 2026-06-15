@@ -222,7 +222,13 @@ public sealed class IngestionSourcePolitenessResolverTests
         public IAsyncEnumerable<IngestionSource> StreamAsync(
             string query,
             IReadOnlyDictionary<string, object>? parameters,
-            string? partitionKey,
+            string partitionKey,
+            CancellationToken cancellationToken)
+            => throw new NotImplementedException();
+
+        public IAsyncEnumerable<IngestionSource> StreamCrossPartitionAsync(
+            string query,
+            IReadOnlyDictionary<string, object>? parameters,
             CancellationToken cancellationToken)
             => throw new NotImplementedException();
 
@@ -252,7 +258,13 @@ public sealed class IngestionSourcePolitenessResolverTests
         public IAsyncEnumerable<IngestionSource> StreamAsync(
             string query,
             IReadOnlyDictionary<string, object>? parameters,
-            string? partitionKey,
+            string partitionKey,
+            CancellationToken cancellationToken)
+            => throw toThrow;
+
+        public IAsyncEnumerable<IngestionSource> StreamCrossPartitionAsync(
+            string query,
+            IReadOnlyDictionary<string, object>? parameters,
             CancellationToken cancellationToken)
             => throw toThrow;
 

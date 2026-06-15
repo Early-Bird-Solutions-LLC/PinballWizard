@@ -23,7 +23,7 @@ Before starting H1, verify all of the following. If any check fails, fix it firs
 | Prerequisite | Verify with | Expected |
 | --- | --- | --- |
 | `az` CLI installed, ≥ 2.50 | `az version` | Prints version + extensions block |
-| Logged into the personal Earlybird tenant | `az account show --query "{tid:tenantId,sid:id,user:user.name}" -o jsonc` | `tid=9793cd0f-2b27-4757-9986-1f7f1e35864a`, `sid=4dce9fdd-ea5f-4f67-9a00-80279e58659d`. The Bicep deploy script will hard-fail otherwise (ADR-0010 guard). |
+| Logged into the personal Earlybird tenant | `az account show --query "{tid:tenantId,sid:id,user:user.name}" -o jsonc` | `tid=9793cd0f-2b27-4757-9986-1f7f1e35864a`, `sid=b1f33f17-74a9-4ecc-b46c-c4f31776b840` (pinwiz.ai). The Bicep deploy script will hard-fail otherwise (ADR-0010 guard). |
 | Bicep CLI present | `az bicep version` | Auto-installed by `az`; reinstall via `az bicep install` if missing |
 | PowerShell 7+ shell (NOT Git-Bash) | `$PSVersionTable.PSVersion` | ≥ 7.0. See § Known gotchas — Git-Bash mangles Cosmos resource ID env vars (CLAUDE.md § Locked invariants #6). |
 | `dotnet` SDK floor | `dotnet --version` | Matches `global.json` floor (currently 10.0.200) |
@@ -291,7 +291,7 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 | Failure mode | Action |
 | --- | --- |
 | H1: Bicep apply fails on `InsufficientResourcesAvailable` | Edit `searchLocation` in the local override to a sibling region (`eastus`, `centralus`); re-run from step 3. Don't open a quota ticket — that's regional capacity, not quota. |
-| H1: ADR-0010 subscription guard fires | Run `az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a` then `az account set --subscription 4dce9fdd-ea5f-4f67-9a00-80279e58659d`; re-run from step 3. |
+| H1: ADR-0010 subscription guard fires | Run `az login --tenant 9793cd0f-2b27-4757-9986-1f7f1e35864a` then `az account set --subscription b1f33f17-74a9-4ecc-b46c-c4f31776b840`; re-run from step 3. |
 | H1: smoke probe exits with code 2 + remediation message | The relevant env var (`Cosmos__AccountEndpoint` / `AiSearch__Endpoint` / `AiFoundry__ProjectEndpoint`) isn't set in the current shell. Re-run step 5 of H1. |
 | H1: Bicep apply succeeds but smoke probe fails authentication | RBAC propagation lag (typically ≤ 60s after first deploy). Wait, retry; if persistent, verify the principal has `Cosmos DB Operator` (Cosmos) or `Search Service Contributor` (AI Search) at the resource scope per [ADR-0012](../adr/0012-cosmos-arm-schema-data-plane-items.md). |
 | H1: deploy succeeded but `deployAiSearch` was secretly false | Local-override drift (see § Known gotchas — H1). Fix the local override, re-run from step 3. The Bicep is idempotent. |

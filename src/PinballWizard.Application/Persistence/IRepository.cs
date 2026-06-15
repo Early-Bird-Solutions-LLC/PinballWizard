@@ -49,17 +49,26 @@ public interface IRepository<T> where T : class, IEntity
     Task DeleteAsync(string id, string partitionKey, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Stream documents matching a SQL query, optionally scoped to a
-    /// partition. Pages are pulled lazily — the caller controls
-    /// throughput by enumerating slowly or quickly.
+    /// Stream documents matching a SQL query within a SINGLE partition
+    /// (Tier 1 per ADR-0036). Pages are pulled lazily.
     /// </summary>
-    /// <param name="query">SQL text. Parameters supplied via <paramref name="parameters"/>.</param>
-    /// <param name="parameters">Named parameter bag (parameter names without the <c>@</c> prefix).</param>
-    /// <param name="partitionKey">Partition to scope the query to. <c>null</c> = cross-partition.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="partitionKey">Partition to scope the query to. Required — a single-partition read.</param>
     IAsyncEnumerable<T> StreamAsync(
         string query,
         IReadOnlyDictionary<string, object>? parameters,
-        string? partitionKey,
+        string partitionKey,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stream documents matching a SQL query ACROSS ALL PARTITIONS
+    /// (fan-out). Per ADR-0036 this is a Tier 2 escape hatch: permitted
+    /// ONLY for back-office/admin/startup paths over a provably bounded
+    /// set, and every call site MUST be listed in
+    /// CrossPartitionQueryAllowListTests. User-facing or unbounded
+    /// aggregate reads MUST use a Tier 3 projection instead.
+    /// </summary>
+    IAsyncEnumerable<T> StreamCrossPartitionAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? parameters,
         CancellationToken cancellationToken);
 }
