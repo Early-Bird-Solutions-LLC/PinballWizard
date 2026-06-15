@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
@@ -139,6 +140,36 @@ public static class ServiceCollectionExtensions
                 ResolveContainer(sp, "scraped_documents"),
                 sp.GetRequiredService<IRawDocumentRepository>(),
                 sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentRecord>>>()));
+
+        return services;
+    }
+
+    // Registers the catalog_stats rebuild service + its two CosmosRepository<T>
+    // dependencies for the --rebuild-catalog-stats CLI verb. Call this inside
+    // the cosmosWired gate in Program.cs alongside the other Cosmos-dependent
+    // service registrations.
+    //
+    // CosmosRepository<ScrapedDocumentRecord> reads from `scraped_documents`
+    // (single-partition per-machine scan — Tier 1 ADR-0036).
+    // CosmosRepository<CatalogStatsCosmosRecord> writes to `catalog_stats`
+    // (one upsert per manufacturer — point operation, not a query).
+    public static IServiceCollection AddCatalogStatsRebuild(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton(TimeProvider.System);
+
+        services.AddTransient<ICatalogStatsRebuildService>(sp =>
+            new CatalogStatsRebuildService(
+                sp.GetRequiredService<IMachineRepository>(),
+                new CosmosRepository<ScrapedDocumentRecord>(
+                    ResolveContainer(sp, "scraped_documents"),
+                    sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentRecord>>>()),
+                new CosmosRepository<CatalogStatsCosmosRecord>(
+                    ResolveContainer(sp, "catalog_stats"),
+                    sp.GetRequiredService<ILogger<CosmosRepository<CatalogStatsCosmosRecord>>>()),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<CatalogStatsRebuildService>>()));
 
         return services;
     }
