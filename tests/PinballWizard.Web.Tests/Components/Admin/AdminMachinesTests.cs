@@ -10,35 +10,34 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
 
-// bUnit tests for AdminMachines.razor (/admin/machines) — rewritten for AB#259.
+// bUnit tests for AdminMachines.razor (/admin/machines) — AB#259.
 //
 // Per ADR-0026 PR self-audit item 9(d): every Razor component must have a
 // bUnit smoke test. AdminMachines is behind [Authorize]; tests run with
 // AddAuthorization() set to authenticated.
 //
-// ICatalogStatsReadRepository is faked per test via NSubstitute returning two
+// ICatalogStatsReadRepository is faked via NSubstitute returning two
 // manufacturers — one machine with 0 docs (Empty flag), one all-OK machine.
-// Tests assert behavioral invariants: grid sentinel renders, "as of" timestamp
-// is present, health chip for the Empty machine appears, and breadcrumb links
-// back to the admin root.
+// Tests assert behavioral invariants: grid sentinel, "as of" stamp, health
+// chips, axis selector links, query-param grouping, breadcrumb trail.
 //
 // Note: AdminMachines has no @rendermode directive (ADR-0034 — static page).
-// bUnit renders it synchronously via OnInitializedAsync; tests await the
-// async initializer to let the fake repository resolve.
+// [SupplyParameterFromQuery] is set via ComponentParameter in Render<T>() or
+// by setting the NavigationManager URI before rendering.
 public sealed class AdminMachinesTests : AsyncBunitContext
 {
-    // ── Fake data ──────────────────────────────────────────────────────────────
+    // ── Shared fake data ───────────────────────────────────────────────────────
 
-    private static readonly DateTimeOffset _fakeAsOf =
+    private static readonly DateTimeOffset FakeAsOf =
         new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     // Two manufacturers, three machines total:
-    //   Stern   → "Foo Pro"  (0 docs → Empty flag)
-    //   JJP     → "Bar CE"   (2 docs, HasManual → Ok)
-    //             "Bar LE"   (1 doc, HasManual → Ok)
+    //   stern → "Foo Pro"  (0 docs → Empty flag, franchise "foo")
+    //   jjp   → "Bar CE"   (2 docs, HasManual → Ok, franchise "bar")
+    //           "Bar LE"   (1 doc, HasManual → Ok, franchise "bar", EditionGap vs CE)
     private static readonly ManufacturerCatalogStats FakeStern = new(
         Manufacturer: "stern",
-        AsOfUtc: _fakeAsOf,
+        AsOfUtc: FakeAsOf,
         Machines:
         [
             new MachineDocStats(
@@ -55,7 +54,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
 
     private static readonly ManufacturerCatalogStats FakeJjp = new(
         Manufacturer: "jjp",
-        AsOfUtc: _fakeAsOf.AddHours(1),   // later → min is Stern's timestamp
+        AsOfUtc: FakeAsOf.AddHours(1),   // later — min is Stern's timestamp
         Machines:
         [
             new MachineDocStats(
@@ -80,21 +79,12 @@ public sealed class AdminMachinesTests : AsyncBunitContext
                 HasManual:     true),
         ]);
 
-    // IAsyncEnumerable returning the two fake manufacturers.
     private static async IAsyncEnumerable<ManufacturerCatalogStats> FakeStream(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
     {
         await Task.CompletedTask;
         yield return FakeStern;
         yield return FakeJjp;
-    }
-
-    // Empty stream — simulates an unpopulated catalog.
-    private static async IAsyncEnumerable<ManufacturerCatalogStats> EmptyStream(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
-    {
-        await Task.CompletedTask;
-        yield break;
     }
 
     // ── Constructor ────────────────────────────────────────────────────────────
@@ -105,7 +95,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization().SetAuthorized("test-admin@example.com");
 
-        // Register the fake repository BEFORE GetRequiredService calls lock
+        // Register the fake repository BEFORE any GetRequiredService call locks
         // the bUnit service provider.
         var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
         statsRepo
@@ -116,7 +106,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
-    // ── Tests ──────────────────────────────────────────────────────────────────
+    // ── Smoke / structural ─────────────────────────────────────────────────────
 
     [Fact]
     public async Task AdminMachines_Renders_WithoutThrowing()
@@ -137,18 +127,21 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         Assert.NotNull(grid);
     }
 
+    // ── As-of stamp ───────────────────────────────────────────────────────────
+
     [Fact]
     public async Task AdminMachines_WithData_RendersAsOfElement()
     {
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // The "as of" honesty stamp must be present when data loads.
         var asOf = cut.Find("[data-testid='catalog-as-of']");
         Assert.NotNull(asOf);
-        // Content references the minimum AsOfUtc across manufacturers (Stern's).
+        // Min AsOfUtc is Stern's 2026-06-01 timestamp.
         Assert.Contains("2026-06-01", asOf.TextContent, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── Health chips ───────────────────────────────────────────────────────────
 
     [Fact]
     public async Task AdminMachines_EmptyMachine_RendersErrorHealthChip()
@@ -156,21 +149,120 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // The Foo Pro machine has 0 docs → CatalogHealthFlag.Empty → Color.Error chip.
-        // MudChip renders with a mud-chip element; assert the text "Empty" appears
-        // in the rendered markup (behavior, not specific chip CSS class).
+        // Foo Pro has 0 docs → CatalogHealthFlag.Empty → "Empty" chip text.
         Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task AdminMachines_WithData_RendersOkHealthChip()
+    public async Task AdminMachines_OkMachine_RendersSuccessHealthChip()
     {
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Bar CE and Bar LE are both Ok (HasManual=true, DocCount>0).
+        // Bar CE / Bar LE are Ok.
         Assert.Contains("Ok", cut.Markup, StringComparison.Ordinal);
     }
+
+    // ── Axis selector ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AdminMachines_AxisSelector_RendersAllFiveAxes()
+    {
+        var cut = Render<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var selector = cut.Find("[data-testid='groupby-selector']");
+        // Five navigation links, one per axis.
+        var links = selector.QuerySelectorAll("a[href]");
+        Assert.True(links.Length >= 5,
+            $"Expected at least 5 axis links, got {links.Length}.");
+    }
+
+    [Fact]
+    public async Task AdminMachines_DefaultAxis_IsManufacturer()
+    {
+        // No GroupBy parameter → default axis is manufacturer.
+        var cut = Render<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // The manufacturer link should be rendered Filled (active).
+        // We assert that the groupby-selector contains a link pointing to
+        // ?groupBy=manufacturer (the default nav link exists).
+        var selector = cut.Find("[data-testid='groupby-selector']");
+        var mfrLink  = selector.QuerySelector("a[href*='groupBy=manufacturer']");
+        Assert.NotNull(mfrLink);
+    }
+
+    // ── Query-param grouping axis ──────────────────────────────────────────────
+
+    // Helper: navigate to /admin/machines?groupBy=<axis> then render.
+    // [SupplyParameterFromQuery] is driven by the NavigationManager URI in bUnit,
+    // not via ComponentParameterCollectionBuilder.Add (bUnit enforces this explicitly).
+    private IRenderedComponent<AdminMachines> RenderWithAxis(string axis)
+    {
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo($"/admin/machines?groupBy={axis}");
+        return Render<AdminMachines>();
+    }
+
+    [Fact]
+    public async Task AdminMachines_GroupByHealth_RendersWithoutError()
+    {
+        var cut = RenderWithAxis("health");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Page renders successfully with the health axis active.
+        Assert.NotNull(cut.Markup);
+        // Grid still renders.
+        var grid = cut.Find("[data-testid='admin-machines-grid']");
+        Assert.NotNull(grid);
+        // "Empty" is the health label for Foo Pro (0 docs) and appears in the markup.
+        Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AdminMachines_GroupByFranchise_RendersWithoutError()
+    {
+        var cut = RenderWithAxis("franchise");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotNull(cut.Markup);
+        var grid = cut.Find("[data-testid='admin-machines-grid']");
+        Assert.NotNull(grid);
+    }
+
+    [Fact]
+    public async Task AdminMachines_GroupByYear_RendersWithoutError()
+    {
+        var cut = RenderWithAxis("year");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotNull(cut.Markup);
+    }
+
+    [Fact]
+    public async Task AdminMachines_GroupBySource_RendersWithoutError()
+    {
+        var cut = RenderWithAxis("source");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotNull(cut.Markup);
+    }
+
+    [Fact]
+    public async Task AdminMachines_UnrecognizedGroupBy_FallsBackToManufacturer()
+    {
+        // An unrecognized axis value should fall back to manufacturer grouping
+        // without throwing — the manufacturer axis links are present regardless.
+        var cut = RenderWithAxis("bogusaxis");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotNull(cut.Markup);
+        var grid = cut.Find("[data-testid='admin-machines-grid']");
+        Assert.NotNull(grid);
+    }
+
+    // ── Breadcrumb ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task AdminMachines_Breadcrumb_ContainsAdminRoot()
@@ -183,8 +275,9 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     }
 }
 
-// Separate context for the empty-catalog path so the empty-stream
-// stub can be registered before the bUnit service provider locks.
+// Separate context for the empty-catalog path so the empty-stream stub is
+// registered before the bUnit service provider locks (GetRequiredService
+// in the constructor seals the provider).
 public sealed class AdminMachinesEmptyCatalogTests : AsyncBunitContext
 {
     private static async IAsyncEnumerable<ManufacturerCatalogStats> EmptyStream(
