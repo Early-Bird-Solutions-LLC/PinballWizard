@@ -46,6 +46,7 @@ negative) it carries.
 | [0033](0033-rag-indexer-batching-and-tpm-capacity.md) | RAG indexer batching parameters and TPM capacity | Accepted |
 | [0034](0034-blazor-render-mode-and-mudblazor-providers.md) | Blazor render-mode strategy and MudBlazor provider pinning | Accepted |
 | [0035](0035-citation-ui-metadata-channel.md) | Citation UI-metadata side channel for freshness + relevance score | Accepted |
+| [0036](0036-cosmos-read-access-standard.md) | Cosmos read-access standard — four-tier partition-alignment model | Accepted |
 
 ## Conventions
 

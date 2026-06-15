@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Downloading;
@@ -23,6 +24,7 @@ using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
+using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
@@ -139,6 +141,11 @@ var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
     Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
 };
 
+var rebuildCatalogStatsOption = new Option<bool>("--rebuild-catalog-stats")
+{
+    Description = "Recomputes every per-manufacturer catalog_stats rollup from scratch: streams all machines, reads each machine's scraped_documents (single-partition), aggregates doc counts and type distribution, and upserts the authoritative per-manufacturer rollup document. This is the rebuildable-projection backstop (ADR-0031/ADR-0036) — also the only path that sets authoritative identity fields (EditionLabel, GroupId, Year, IsOpdbOnly) on each MachineStatEntry from the live Machine record. Idempotent. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -158,6 +165,7 @@ rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
 rootCommand.Options.Add(migrateDownloadPathsOption);
+rootCommand.Options.Add(rebuildCatalogStatsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -179,6 +187,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
     var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
+    var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -644,6 +653,28 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --rebuild-catalog-stats (rebuildable-projection backstop for the
+    // catalog_stats Tier-3 read model; ADR-0031/ADR-0036). Resolves
+    // ICatalogStatsRebuildService from DI; the service is only registered when
+    // AddCatalogStatsRebuild is wired inside the cosmosWired gate below.
+    // Mirrors the --ensure-cosmos-containers exit-code-2 remediation pattern.
+    if (rebuildCatalogStats)
+    {
+        var rebuilder = host.Services.GetService<ICatalogStatsRebuildService>();
+        if (rebuilder is null)
+        {
+            Console.Error.WriteLine(
+                "--rebuild-catalog-stats requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var (manufacturers, machines) = await rebuilder.RebuildAsync(cancellationToken);
+        Console.WriteLine($"Rebuilt catalog_stats: {manufacturers} manufacturers, {machines} machines.");
+        return;
+    }
+
     // Default behavior: scrape (discover + upsert to Cosmos).
     var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
 
@@ -738,6 +769,12 @@ static IHost CreateHost(string[] args)
         // file-system read; IFeaturedMachineRepository is the Cosmos write target.
         // Both are checked via GetService in the --seed-featured-machines handler.
         builder.Services.AddSingleton<IFeaturedMachineSeedLoader, FeaturedMachineSeedLoader>();
+
+        // catalog_stats rebuild service (--rebuild-catalog-stats). Depends on
+        // IMachineRepository + two CosmosRepository<T> wrappers; all three are
+        // available inside this cosmosWired gate. GetService<ICatalogStatsRebuildService>()
+        // in the handler returns null (→ exit code 2) when Cosmos is not configured.
+        builder.Services.AddCatalogStatsRebuild();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,

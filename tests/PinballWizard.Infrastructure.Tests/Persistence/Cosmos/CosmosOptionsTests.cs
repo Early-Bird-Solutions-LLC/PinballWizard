@@ -124,8 +124,11 @@ public sealed class CosmosOptionsTests
         // Document-linking Pass 1: adds scraped_documents_raw + link_overrides.
         // Admin settings PR-B1: adds admin_settings (runtime-mutable config).
         // Admin prompts PR-B3: adds admin_prompts (per-agent prompt overrides).
+        // AB#259 catalog_stats ADR-0036 Tier-3 projection: adds catalog_stats
+        // (per-manufacturer rollup, /manufacturer) + catalog_stats_leases
+        // (Change Feed lease container for the second consumer, /id).
         var options = new CosmosOptions();
-        Assert.Equal(12, options.Containers.Count);
+        Assert.Equal(14, options.Containers.Count);
 
         var settings = Assert.Single(options.Containers, c => c.Name == "admin_settings");
         Assert.Equal("/key", settings.PartitionKeyPath);

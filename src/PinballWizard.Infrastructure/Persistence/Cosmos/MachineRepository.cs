@@ -31,15 +31,14 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             cancellationToken: cancellationToken);
     }
 
-    // Cross-partition scan (partitionKey: null) so all manufacturers are
+    // Cross-partition scan (ADR-0036 Tier 2) so all manufacturers are
     // covered in a single pass. RU cost scales with total item count —
     // acceptable for the infrequent InitializeAsync call on the linker.
     public IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken) =>
-        StreamAsync(
+        StreamCrossPartitionAsync(
             "SELECT * FROM c",
             parameters: null,
-            partitionKey: null,
-            cancellationToken: cancellationToken);
+            cancellationToken);
 
     /// <inheritdoc />
     public async IAsyncEnumerable<Machine> QueryByTitleAsync(
@@ -105,11 +104,14 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
 
         // Cross-partition equality match on groupId. Expected cardinality
         // is 1–10 per ADR-0029 § data observation (typically 3: Pro /
-        // Premium / LE). MaxItemCount=10 fetches all siblings in a single
-        // page at the expected sizes; a second page fetch only occurs for
-        // unusually large groups (>10 editions).
+        // Premium / LE). TOP 50 is the hard result ceiling per ADR-0036
+        // (Tier 2 cross-partition reads must carry a real TOP guard —
+        // MaxItemCount controls page size but the HasMoreResults loop
+        // would return all results without a TOP clause). 50 is
+        // comfortably above any realistic edition family; MaxItemCount=10
+        // keeps the first-page RU cost small for the typical 1–10 case.
         var queryDefinition = new QueryDefinition(
-            "SELECT * FROM c WHERE c.groupId = @groupId")
+            "SELECT TOP 50 * FROM c WHERE c.groupId = @groupId")
             .WithParameter("@groupId", groupId);
         var requestOptions = new QueryRequestOptions { MaxItemCount = 10 };
 

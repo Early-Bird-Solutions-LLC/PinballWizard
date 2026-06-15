@@ -26,10 +26,9 @@ internal sealed class CosmosLinkOverrideRepository
     {
         var result = new Dictionary<string, LinkOverrideRecord>();
 
-        await foreach (var cosmos in StreamAsync(
+        await foreach (var cosmos in StreamCrossPartitionAsync(
             "SELECT * FROM c",
             parameters: null,
-            partitionKey: null,
             cancellationToken).ConfigureAwait(false))
         {
             var domain = ToDomain(cosmos);

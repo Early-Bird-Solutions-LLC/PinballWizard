@@ -109,7 +109,7 @@ internal sealed class CosmosRawDocumentRepository
             parameters[$"s{i}"] = ToWireStatus(statusList[i]);
         }
 
-        await foreach (var cosmos in StreamAsync(query, parameters, partitionKey: null, cancellationToken).ConfigureAwait(false))
+        await foreach (var cosmos in StreamCrossPartitionAsync(query, parameters, cancellationToken).ConfigureAwait(false))
         {
             yield return MapToDomain(cosmos);
         }
@@ -119,7 +119,7 @@ internal sealed class CosmosRawDocumentRepository
     public async IAsyncEnumerable<RawDocumentRecord> StreamAllAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var cosmos in StreamAsync("SELECT * FROM c", parameters: null, partitionKey: null, cancellationToken).ConfigureAwait(false))
+        await foreach (var cosmos in StreamCrossPartitionAsync("SELECT * FROM c", parameters: null, cancellationToken).ConfigureAwait(false))
         {
             yield return MapToDomain(cosmos);
         }
@@ -252,7 +252,7 @@ internal sealed class CosmosRawDocumentRepository
             };
         }
 
-        await foreach (var cosmos in StreamAsync(query, parameters, partitionKey: null, cancellationToken).ConfigureAwait(false))
+        await foreach (var cosmos in StreamCrossPartitionAsync(query, parameters, cancellationToken).ConfigureAwait(false))
         {
             yield return MapToDomain(cosmos);
         }

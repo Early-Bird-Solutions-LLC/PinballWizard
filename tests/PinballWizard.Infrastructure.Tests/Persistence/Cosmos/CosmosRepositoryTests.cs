@@ -234,7 +234,7 @@ public sealed class CosmosRepositoryTests
     }
 
     [Fact]
-    public async Task StreamAsync_BindsParametersWithAtPrefix()
+    public async Task StreamCrossPartitionAsync_BindsParametersWithAtPrefix()
     {
         QueryDefinition? capturedQuery = null;
         _container
@@ -247,10 +247,9 @@ public sealed class CosmosRepositoryTests
             ["minScore"] = 100,
         };
 
-        await foreach (var _ in _repository.StreamAsync(
+        await foreach (var _ in _repository.StreamCrossPartitionAsync(
             "SELECT * FROM c WHERE c.status = @status AND c.score >= @minScore",
             parameters,
-            partitionKey: null,
             CancellationToken.None))
         {
             // drain
@@ -264,14 +263,14 @@ public sealed class CosmosRepositoryTests
     }
 
     [Fact]
-    public async Task StreamAsync_NullPartitionKey_DoesNotConstrainQuery()
+    public async Task StreamCrossPartitionAsync_DoesNotConstrainQueryToPartition()
     {
         QueryRequestOptions? capturedOptions = null;
         _container
             .GetItemQueryIterator<TestEntity>(Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Do<QueryRequestOptions>(o => capturedOptions = o))
             .Returns(new FakeFeedIterator<TestEntity>([[]]));
 
-        await foreach (var _ in _repository.StreamAsync("SELECT * FROM c", parameters: null, partitionKey: null, CancellationToken.None))
+        await foreach (var _ in _repository.StreamCrossPartitionAsync("SELECT * FROM c", parameters: null, CancellationToken.None))
         {
             // drain
         }
@@ -281,15 +280,57 @@ public sealed class CosmosRepositoryTests
     }
 
     [Fact]
-    public async Task StreamAsync_BlankQuery_ThrowsBeforeSdkCall()
+    public async Task StreamAsync_SetsPartitionKeyOnRequestOptions()
     {
-        await Assert.ThrowsAnyAsync<ArgumentException>(async () =>
+        QueryRequestOptions? capturedOptions = null;
+        _container
+            .GetItemQueryIterator<TestEntity>(Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Do<QueryRequestOptions>(o => capturedOptions = o))
+            .Returns(new FakeFeedIterator<TestEntity>([[]]));
+
+        await foreach (var _ in _repository.StreamAsync("SELECT * FROM c", parameters: null, partitionKey: TestPartitionKey, CancellationToken.None))
         {
-            await foreach (var _ in _repository.StreamAsync("", parameters: null, partitionKey: TestPartitionKey, CancellationToken.None))
-            {
-                // never reached
-            }
-        });
+            // drain
+        }
+
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(new PartitionKey(TestPartitionKey), capturedOptions!.PartitionKey);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void StreamAsync_BlankPartitionKey_ThrowsEagerly(string? partitionKey)
+    {
+        // Guard fires at call time (before enumeration) — same pattern as
+        // GetByIdAsync_BlankPartitionKey_ThrowsBeforeSdkCall.
+        Assert.ThrowsAny<ArgumentException>(() =>
+            _repository.StreamAsync("SELECT * FROM c", parameters: null, partitionKey: partitionKey!, CancellationToken.None));
+
+        _container.DidNotReceiveWithAnyArgs().GetItemQueryIterator<TestEntity>(
+            default(QueryDefinition)!, default, default);
+    }
+
+    [Fact]
+    public void StreamAsync_BlankQuery_ThrowsEagerly()
+    {
+        // Guard is now in the public wrapper — throws at call time, not on
+        // first MoveNextAsync(). No enumeration needed to trigger the throw.
+        Assert.ThrowsAny<ArgumentException>(() =>
+            _repository.StreamAsync("", parameters: null, partitionKey: TestPartitionKey, CancellationToken.None));
+
+        _container.DidNotReceiveWithAnyArgs().GetItemQueryIterator<TestEntity>(
+            default(QueryDefinition)!, default, default);
+    }
+
+    [Fact]
+    public void StreamCrossPartitionAsync_BlankQuery_ThrowsEagerly()
+    {
+        Assert.ThrowsAny<ArgumentException>(() =>
+            _repository.StreamCrossPartitionAsync("", parameters: null, CancellationToken.None));
+
+        _container.DidNotReceiveWithAnyArgs().GetItemQueryIterator<TestEntity>(
+            default(QueryDefinition)!, default, default);
     }
 
     // ------------------------------------------------------------------------
