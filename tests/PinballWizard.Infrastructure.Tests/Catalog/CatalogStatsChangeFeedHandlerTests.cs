@@ -183,6 +183,115 @@ public sealed class CatalogStatsChangeFeedHandlerTests
     }
 
     // -------------------------------------------------------------------------
+    // MergeEntry — pure in-memory logic; no Container mocking needed.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MergeEntry_ExistingEntryPresent_CarriesForwardIdentityFields()
+    {
+        // Arrange — a rollup doc that already has mch_A with identity fields
+        // set by the Task-6 rebuild service (authoritative OPDB enrichment).
+        var existing = new MachineStatEntry
+        {
+            MachineId    = MachineId,
+            Title        = "Old Title",
+            EditionLabel = "Pro",
+            GroupId      = "GweeP",
+            Year         = 2021,
+            IsOpdbOnly   = true,
+            DocCount     = 3,
+        };
+
+        var doc = new CatalogStatsCosmosRecord
+        {
+            Id           = Manufacturer,
+            PartitionKey = Manufacturer,
+            Machines     = [existing],
+        };
+
+        // Freshly-recomputed entry (identity fields at default).
+        var recomputed = new MachineStatEntry
+        {
+            MachineId    = MachineId,
+            Title        = "Godzilla Pro",
+            DocCount     = 5,
+            DocTypeCounts = new Dictionary<string, int> { ["Manual"] = 2, ["Bulletin"] = 3 },
+            HasManual    = true,
+        };
+
+        var asOf = new DateTimeOffset(2026, 6, 15, 12, 0, 0, TimeSpan.Zero);
+
+        // Act
+        CatalogStatsChangeFeedHandler.MergeEntry(doc, recomputed, asOf);
+
+        // Assert — exactly one entry, identity carried forward, counts from recomputed
+        Assert.Single(doc.Machines);
+        var result = doc.Machines[0];
+        Assert.Equal(MachineId,      result.MachineId);
+        Assert.Equal("Godzilla Pro", result.Title);
+        Assert.Equal("Pro",          result.EditionLabel);   // carried forward
+        Assert.Equal("GweeP",        result.GroupId);         // carried forward
+        Assert.Equal(2021,           result.Year);            // carried forward
+        Assert.True(result.IsOpdbOnly);                       // carried forward
+        Assert.Equal(5,              result.DocCount);         // from recomputed
+        Assert.Equal(2,              result.DocTypeCounts["Manual"]);
+        Assert.Equal(asOf,           doc.AsOfUtc);
+    }
+
+    [Fact]
+    public void MergeEntry_NewMachine_AddsEntryWithoutCarryForward()
+    {
+        // Arrange — empty rollup doc (first time this machine is seen).
+        var doc = new CatalogStatsCosmosRecord
+        {
+            Id           = Manufacturer,
+            PartitionKey = Manufacturer,
+            Machines     = [],
+        };
+
+        var entry = new MachineStatEntry
+        {
+            MachineId = MachineId,
+            Title     = "Godzilla Pro",
+            DocCount  = 2,
+        };
+
+        var asOf = new DateTimeOffset(2026, 6, 15, 9, 0, 0, TimeSpan.Zero);
+
+        // Act
+        CatalogStatsChangeFeedHandler.MergeEntry(doc, entry, asOf);
+
+        // Assert
+        Assert.Single(doc.Machines);
+        Assert.Equal(MachineId, doc.Machines[0].MachineId);
+        Assert.Equal(2, doc.Machines[0].DocCount);
+        Assert.Equal(asOf, doc.AsOfUtc);
+    }
+
+    [Fact]
+    public void MergeEntry_AsOfUtcIsStampedFromArgument()
+    {
+        // Arrange — fixed deterministic timestamp (never DateTimeOffset.UtcNow).
+        var fixedAsOf = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
+        var doc = new CatalogStatsCosmosRecord
+        {
+            Id           = Manufacturer,
+            PartitionKey = Manufacturer,
+            AsOfUtc      = DateTimeOffset.MinValue,  // deliberately stale
+            Machines     = [],
+        };
+
+        var entry = new MachineStatEntry { MachineId = MachineId, Title = "T" };
+
+        // Act
+        CatalogStatsChangeFeedHandler.MergeEntry(doc, entry, fixedAsOf);
+
+        // Assert
+        Assert.Equal(fixedAsOf, doc.AsOfUtc);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -214,15 +323,6 @@ public sealed class CatalogStatsChangeFeedHandlerTests
             DocumentType = documentType,
             EditionScope = "single-edition",
         };
-
-    private static ItemResponse<T> MakeItemResponse<T>(T resource, HttpStatusCode status = HttpStatusCode.OK)
-    {
-        var response = Substitute.For<ItemResponse<T>>();
-        response.Resource.Returns(resource);
-        response.StatusCode.Returns(status);
-        response.RequestCharge.Returns(0.0);
-        return response;
-    }
 
     // -------------------------------------------------------------------------
     // FeedIterator fake — same pattern as CosmosRepositoryTests

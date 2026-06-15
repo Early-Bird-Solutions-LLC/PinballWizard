@@ -127,6 +127,32 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
         };
     }
 
+    // Pure merge: finds the existing entry for entry.MachineId (if any),
+    // carries forward its authoritative identity fields (EditionLabel, GroupId,
+    // Year, IsOpdbOnly) onto the recomputed entry, removes the old row,
+    // appends the updated entry, and stamps AsOfUtc. No I/O — testable without
+    // a Container mock.
+    internal static void MergeEntry(
+        CatalogStatsCosmosRecord doc,
+        MachineStatEntry entry,
+        DateTimeOffset asOf)
+    {
+        var existing = doc.Machines.Find(m => m.MachineId == entry.MachineId);
+        if (existing is not null)
+        {
+            // Carry forward identity fields set by the Task-6 rebuild service,
+            // which is the authoritative source for OPDB enrichment.
+            entry.EditionLabel = existing.EditionLabel;
+            entry.GroupId      = existing.GroupId;
+            entry.Year         = existing.Year;
+            entry.IsOpdbOnly   = existing.IsOpdbOnly;
+            doc.Machines.Remove(existing);
+        }
+
+        doc.Machines.Add(entry);
+        doc.AsOfUtc = asOf;
+    }
+
     // Reads the manufacturer's rollup document, merges the updated entry,
     // and upserts with ETag-based optimistic concurrency. On 404 starts a
     // fresh record. Retries on 412 PreconditionFailed up to MaxETagRetries.
@@ -152,18 +178,6 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
 
                 doc = response.Resource;
                 matchEtag = doc.ETag;
-
-                // Carry forward identity fields from any existing entry so the
-                // Task-6 rebuild service's authoritative enrichment is preserved.
-                var existing = doc.Machines.Find(m => m.MachineId == entry.MachineId);
-                if (existing is not null)
-                {
-                    entry.EditionLabel = existing.EditionLabel;
-                    entry.GroupId = existing.GroupId;
-                    entry.Year = existing.Year;
-                    entry.IsOpdbOnly = existing.IsOpdbOnly;
-                    doc.Machines.Remove(existing);
-                }
             }
             catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -177,8 +191,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
                 matchEtag = null;
             }
 
-            doc.Machines.Add(entry);
-            doc.AsOfUtc = _clock.GetUtcNow();
+            MergeEntry(doc, entry, _clock.GetUtcNow());
 
             try
             {
