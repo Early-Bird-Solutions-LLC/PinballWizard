@@ -57,8 +57,14 @@
                  DELIBERATE. xUnit's Method_Scenario_ExpectedResult naming
                  convention requires underscores in test method names. This is
                  the universal norm for xUnit suites and we follow it.
+        CA1711 - "Identifiers should not have incorrect suffix."
+                 DELIBERATE. CatalogHealthFlag uses the 'Flag' suffix to
+                 express that each member is a diagnostic health flag surfaced
+                 in the admin catalog view (not a bitmask [Flags] enum).
+                 The 'Flag' suffix is domain language here, not an accidental
+                 collision with the CA1711 pattern for [Flags] enums.
     -->
-    <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CA1707</NoWarn>
+    <NoWarn>$(NoWarn);CA1848;CA1873;CA1310;CA1822;CA1707;CA1711</NoWarn>
   </PropertyGroup>
 
   <!--
