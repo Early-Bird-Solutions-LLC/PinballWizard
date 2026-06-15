@@ -52,8 +52,17 @@
         <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
     }
 
+    @* ── Cosmos load failure ──────────────────────────────────────────────────── *@
+    @if (!_loading && _loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="detail-load-failed">
+            Machine details could not be loaded. Please refresh the page or check Cosmos
+            connectivity. If the problem persists, verify the Cosmos account is reachable.
+        </MudAlert>
+    }
+
     @* ── No manufacturer supplied ─────────────────────────────────────────────── *@
-    @if (!_loading && _missingMfr)
+    @if (!_loading && !_loadFailed && _missingMfr)
     {
         <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="detail-missing-mfr">
             Manufacturer is required to load machine details. Navigate here from the
@@ -63,7 +72,7 @@
     }
 
     @* ── Machine not found ────────────────────────────────────────────────────── *@
-    @if (!_loading && !_missingMfr && _notFound)
+    @if (!_loading && !_loadFailed && !_missingMfr && _notFound)
     {
         <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="detail-not-found">
             No machine found for OPDB ID <code>@OpdbId</code> in manufacturer
@@ -78,7 +87,7 @@
     }
 
     @* ── Machine detail ───────────────────────────────────────────────────────── *@
-    @if (!_loading && !_missingMfr && !_notFound && _machine is not null)
+    @if (!_loading && !_loadFailed && !_missingMfr && !_notFound && _machine is not null)
     {
         @* Header *@
         <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="2" Class="mb-1">
@@ -252,6 +261,7 @@
     private List<SiblingEntry> _siblings = [];
     private List<MachineDocumentLink> _docs = [];
     private bool _loading = true;
+    private bool _loadFailed;
     private bool _missingMfr;
     private bool _notFound;
 
@@ -337,11 +347,13 @@
         {
             Logger.LogWarning("Machine detail load timed out for {OpdbId} / {Mfr}.", OpdbId, Mfr);
             Snackbar.Add("Page load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load machine detail for {OpdbId} / {Mfr}.", OpdbId, Mfr);
             Snackbar.Add($"Failed to load machine: {ex.Message}", Severity.Error);
+            _loadFailed = true;
         }
         finally
         {
@@ -351,18 +363,9 @@
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
-    private static Color HealthFlagColor(IReadOnlyList<CatalogHealthFlag> flags)
-    {
-        if (flags.Count == 0) return Color.Default;
-        return flags[0] switch
-        {
-            CatalogHealthFlag.Empty      => Color.Error,
-            CatalogHealthFlag.NoManual   => Color.Warning,
-            CatalogHealthFlag.EditionGap => Color.Warning,
-            CatalogHealthFlag.Ok         => Color.Success,
-            _                            => Color.Default,
-        };
-    }
+    // Delegated to the shared helper so a new flag only requires one update (ADR-0008 / FE-08).
+    private static Color HealthFlagColor(IReadOnlyList<CatalogHealthFlag> flags) =>
+        CatalogHealthColors.ForFlags(flags);
 
     private static string HealthLabel(IReadOnlyList<CatalogHealthFlag> flags) =>
         flags.Count == 0 || (flags.Count == 1 && flags[0] == CatalogHealthFlag.Ok)

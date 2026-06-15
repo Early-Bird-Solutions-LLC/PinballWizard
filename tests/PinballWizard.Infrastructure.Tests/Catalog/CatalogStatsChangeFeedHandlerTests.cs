@@ -266,6 +266,14 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         Assert.Equal(MachineId, doc.Machines[0].MachineId);
         Assert.Equal(2, doc.Machines[0].DocCount);
         Assert.Equal(asOf, doc.AsOfUtc);
+
+        // Identity fields are owned by --rebuild-catalog-stats, NOT the change-feed handler.
+        // The handler must never fabricate them from the change payload — they stay null/default
+        // until the rebuild service enriches them from OPDB (ADR-0036 ownership contract).
+        Assert.Null(doc.Machines[0].EditionLabel);
+        Assert.Null(doc.Machines[0].GroupId);
+        Assert.Null(doc.Machines[0].Year);
+        Assert.False(doc.Machines[0].IsOpdbOnly);
     }
 
     [Fact]

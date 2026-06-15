@@ -327,3 +327,46 @@ public sealed class AdminMachinesEmptyCatalogTests : AsyncBunitContext
         Assert.Contains("No machines in catalog", empty.TextContent, StringComparison.Ordinal);
     }
 }
+
+// Separate context for the Cosmos load-failure path.
+// The repo throws so the page must show the distinct error alert and must NOT
+// show the "No machines in catalog" empty-state (which implies data, not failure).
+public sealed class AdminMachinesLoadFailureTests : AsyncBunitContext
+{
+    public AdminMachinesLoadFailureTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var failRepo = Substitute.For<ICatalogStatsReadRepository>();
+        failRepo
+            .StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns<IAsyncEnumerable<ManufacturerCatalogStats>>(_ =>
+                throw new InvalidOperationException("Cosmos unavailable"));
+        Services.AddSingleton(failRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminMachines_LoadFails_RendersErrorAlert()
+    {
+        var cut = Render<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Must render the distinct load-failed sentinel.
+        cut.Find("[data-testid='catalog-load-failed']");
+    }
+
+    [Fact]
+    public async Task AdminMachines_LoadFails_DoesNotRenderEmptyStateText()
+    {
+        var cut = Render<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // The misleading "No machines in catalog" text must be absent — a load failure
+        // is not an empty catalog and must not tell admins to re-scrape.
+        Assert.Empty(cut.FindAll("[data-testid='admin-machines-empty']"));
+    }
+}

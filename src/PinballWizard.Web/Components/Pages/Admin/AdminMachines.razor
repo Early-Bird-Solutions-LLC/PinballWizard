@@ -79,6 +79,15 @@
         <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
     }
 
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="catalog-load-failed">
+            The machine catalog could not be loaded. Please refresh the page or check Cosmos
+            connectivity. If the problem persists, verify the catalog stats container is
+            populated by running <code>--build-catalog</code>.
+        </MudAlert>
+    }
+
     <MudDataGrid T="MachineCatalogRow"
                  Items="@_machines"
                  Hover="true"
@@ -138,17 +147,20 @@
         </Columns>
 
         <NoRecordsContent>
-            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1" data-testid="admin-machines-empty">
-                    No machines in catalog
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
-                </MudText>
-            </MudStack>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-machines-empty">
+                        No machines in catalog
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
+                    </MudText>
+                </MudStack>
+            }
         </NoRecordsContent>
 
     </MudDataGrid>
@@ -192,6 +204,7 @@
     // ── State ──────────────────────────────────────────────────────────────────
     private List<MachineCatalogRow> _machines = [];
     private bool _loading = true;
+    private bool _loadFailed;
     private DateTimeOffset? _asOf;
     private GroupByAxis _activeAxis = GroupByAxis.Manufacturer;
 
@@ -254,11 +267,13 @@
         {
             Logger.LogWarning("Admin machine catalog load timed out after 30 s.");
             Snackbar.Add("Catalog load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load admin machine catalog.");
             Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
+            _loadFailed = true;
         }
         finally
         {
@@ -288,13 +303,8 @@
                 _                            => "OK",
             };
 
-    // Map health flags to MudBlazor Color tokens — no hex values (ADR-0008 / FE-08).
-    private static Color HealthFlagColor(CatalogHealthFlag flag) => flag switch
-    {
-        CatalogHealthFlag.Empty      => Color.Error,
-        CatalogHealthFlag.NoManual   => Color.Warning,
-        CatalogHealthFlag.EditionGap => Color.Warning,
-        CatalogHealthFlag.Ok         => Color.Success,
-        _                            => Color.Default,
-    };
+    // Map health flags to MudBlazor Color tokens — delegated to the shared helper
+    // so a new flag only requires one update in CatalogHealthColors (ADR-0008 / FE-08).
+    private static Color HealthFlagColor(CatalogHealthFlag flag) =>
+        CatalogHealthColors.ForFlag(flag);
 }

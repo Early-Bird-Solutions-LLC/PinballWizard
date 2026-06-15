@@ -459,6 +459,59 @@ public sealed class AdminMachineDetailNullDocsTests : AsyncBunitContext
     }
 }
 
+// ── Cosmos load-failure path (separate context) ───────────────────────────────
+// The machine repo throws so the page must show the distinct error alert and
+// must NOT render the machine body (which would be empty/blank in that scenario).
+
+public sealed class AdminMachineDetailLoadFailureTests : AsyncBunitContext
+{
+    private const string FakeOpdbId = "GRBN-MQR4P";
+    private const string FakeMfr    = "stern";
+
+    public AdminMachineDetailLoadFailureTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var failRepo = Substitute.For<IMachineRepository>();
+        failRepo
+            .GetByOpdbIdAsync(FakeOpdbId, FakeMfr, Arg.Any<CancellationToken>())
+            .Returns<Task<Machine?>>(_ => throw new InvalidOperationException("Cosmos unavailable"));
+
+        Services.AddSingleton(failRepo);
+        Services.AddSingleton(Substitute.For<ICatalogStatsReadRepository>());
+        Services.AddSingleton(Substitute.For<IMachineDocumentReadRepository>());
+        Services.AddSingleton<Microsoft.Extensions.Logging.ILogger<AdminMachineDetail>>(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AdminMachineDetail>.Instance);
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo($"/admin/machines/{FakeOpdbId}?mfr={FakeMfr}");
+    }
+
+    [Fact]
+    public async Task AdminMachineDetail_LoadFails_RendersErrorAlert()
+    {
+        var cut = Render<AdminMachineDetail>(p => p.Add(x => x.OpdbId, FakeOpdbId));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Must render the distinct load-failed sentinel.
+        cut.Find("[data-testid='detail-load-failed']");
+    }
+
+    [Fact]
+    public async Task AdminMachineDetail_LoadFails_DoesNotRenderEmptyStateText()
+    {
+        var cut = Render<AdminMachineDetail>(p => p.Add(x => x.OpdbId, FakeOpdbId));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // The misleading empty-state UI must not appear — a load failure is distinct
+        // from a machine-not-found scenario.
+        Assert.Empty(cut.FindAll("[data-testid='detail-not-found']"));
+        Assert.Empty(cut.FindAll("[data-testid='detail-no-docs']"));
+    }
+}
+
 // ── Missing-mfr guard (separate context) ──────────────────────────────────────
 
 public sealed class AdminMachineDetailMissingMfrTests : AsyncBunitContext
