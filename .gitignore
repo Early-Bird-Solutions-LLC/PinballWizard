@@ -5,7 +5,16 @@ publish/
 
 # IDE / editor
 .vs/
-.vscode/
+# .vscode workspace config is checked in (tasks/launch/extensions/settings
+# apply for every contributor — e.g. the "Run AppHost (Aspire)" task that
+# launches the local Aspire AppHost). Per-user files under .vscode/ stay
+# ignored. Mirrors the .claude/ checked-in-config approach below.
+!.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
 .claude/
 # Project-scoped skills + commands are checked in (they apply for every
 # contributor); the shared settings.json (allowlist) is also checked in

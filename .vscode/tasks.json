@@ -1,0 +1,36 @@
+{
+  // Runs the .NET Aspire AppHost locally (Cosmos preview emulator + Azurite).
+  // Mirrors start-apphost.ps1. Terminal > Run Task… > "Run AppHost (Aspire)".
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run AppHost (Aspire)",
+      "detail": "Launch the .NET Aspire AppHost locally (Cosmos emulator + Azurite).",
+      "type": "shell",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/start-apphost.ps1"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "group": "build"
+    },
+    {
+      "label": "Run AppHost (dotnet run)",
+      "detail": "Same as above but invokes dotnet run directly on the AppHost csproj.",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["run", "--project", "${workspaceFolder}/src/PinballWizard.AppHost"],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}
