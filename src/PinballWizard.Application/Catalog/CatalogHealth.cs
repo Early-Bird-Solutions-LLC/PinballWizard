@@ -1,5 +1,8 @@
 namespace PinballWizard.Application.Catalog;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Naming", "CA1711:Identifiers should not have incorrect suffix",
+    Justification = "\"Flag\" is accurate domain language for a catalog-health diagnostic signal; this is not a [Flags] bitmask enum.")]
 public enum CatalogHealthFlag { Ok, Empty, NoManual, EditionGap }
 
 public static class CatalogHealth
