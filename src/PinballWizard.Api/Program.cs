@@ -17,8 +17,10 @@
 // ADR-0026 § 2 — SSE transport (not SignalR, not WebSocket)
 // ADR-0026 § 4 — AnswerChunk discriminated union on the wire
 
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Api.Endpoints;
 using PinballWizard.Api.Middleware;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Landing;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
@@ -42,6 +44,17 @@ builder.AddServiceDefaults();
 // 8+ ProblemDetails pattern. UseExceptionHandler() (below) activates it.
 builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// ProblemDetailsExceptionHandler (registered above, unconditionally) depends on
+// IDegradationContext to map SearchUnavailable -> 503. That dependency must be
+// registered unconditionally too: app.UseExceptionHandler() resolves the handler
+// while building the middleware pipeline at host start, so a missing
+// IDegradationContext fails startup outright when Foundry is NOT wired (local
+// dev / Aspire emulator) — the exact "starts cleanly" path documented below.
+// AmbientDegradationContext is a zero-dependency AsyncLocal singleton (the
+// IHttpContextAccessor pattern); AddAiRouter TryAdds the same registration on the
+// Foundry-wired path, so this is a harmless no-op when foundryWired is true.
+builder.Services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>();
 
 // ── Foundry + AI Router (gated — mirrors CLI + Web wiring) ────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Api starts cleanly in local
@@ -124,3 +137,8 @@ app.MapWizardStreamingEndpoints();
 app.MapWizardLandingEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);
+
+// Exposed for WebApplicationFactory<Program> composition-root regression tests.
+// Top-level statements emit an internal Program; this public partial makes the
+// entry point referenceable from PinballWizard.Api.Tests without InternalsVisibleTo.
+public partial class Program { }
