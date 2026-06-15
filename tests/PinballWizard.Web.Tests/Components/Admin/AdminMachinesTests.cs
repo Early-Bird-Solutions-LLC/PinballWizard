@@ -149,8 +149,12 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Foo Pro has 0 docs → CatalogHealthFlag.Empty → "Empty" chip text.
+        // Foo Pro has 0 docs → CatalogHealthFlag.Empty → Color.Error chip.
+        // Assert BOTH the text AND the Color.Error CSS class so a regression that
+        // maps every chip to Color.Default still fails this test.
+        // Class confirmed from MudBlazor 8.5.0 MudBlazor.min.css: mud-chip-color-error.
         Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
+        cut.Find(".mud-chip-color-error");   // throws NotFoundException if absent
     }
 
     [Fact]
@@ -159,8 +163,12 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Bar CE / Bar LE are Ok.
+        // Bar CE / Bar LE are Ok → Color.Success chip.
+        // Assert BOTH the text AND the Color.Success CSS class.
+        // Class confirmed from MudBlazor 8.5.0 MudBlazor.min.css: mud-chip-color-success.
+        // The chip renders @flag.ToString() which is "Ok" (CatalogHealthFlag.Ok.ToString()).
         Assert.Contains("Ok", cut.Markup, StringComparison.Ordinal);
+        cut.Find(".mud-chip-color-success"); // throws NotFoundException if absent
     }
 
     // ── Axis selector ─────────────────────────────────────────────────────────
@@ -206,18 +214,25 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task AdminMachines_GroupByHealth_RendersWithoutError()
+    public async Task AdminMachines_GroupByHealth_ActiveAxisButtonIsFilledPrimary()
     {
         var cut = RenderWithAxis("health");
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Page renders successfully with the health axis active.
-        Assert.NotNull(cut.Markup);
-        // Grid still renders.
-        var grid = cut.Find("[data-testid='admin-machines-grid']");
-        Assert.NotNull(grid);
-        // "Empty" is the health label for Foo Pro (0 docs) and appears in the markup.
+        // Grid renders.
+        cut.Find("[data-testid='admin-machines-grid']");
+
+        // The health axis button must carry mud-button-filled-primary (Filled + Color.Primary)
+        // — this proves the ?groupBy=health param drove the page state and the active button
+        // is visually distinguished. Class confirmed from MudBlazor 8.5.0 MudBlazor.min.css.
+        var selector = cut.Find("[data-testid='groupby-selector']");
+        var activeBtn = selector.QuerySelector("a.mud-button-filled-primary[href*='groupBy=health']");
+        Assert.NotNull(activeBtn);
+
+        // Health chip text appears in the markup.
+        // "Empty" is the flag label for Foo Pro (0 docs); "Ok" is flag.ToString() for Bar CE / LE.
         Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Ok", cut.Markup, StringComparison.Ordinal);
     }
 
     [Fact]
