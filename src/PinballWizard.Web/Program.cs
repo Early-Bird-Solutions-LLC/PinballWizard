@@ -27,7 +27,10 @@ using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
 using Polly;
 using PinballWizard.Web.Clients;
@@ -252,6 +255,20 @@ if (foundryWired)
 {
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
     builder.Services.AddHostedService<WizardAgentWarmupHostedService>();
+}
+
+// ── Cosmos persistence + catalog read (gated — mirrors Api Program.cs wiring) ─
+// Gated on Cosmos:AccountEndpoint so the Web starts cleanly in local dev
+// without Cosmos configured (Aspire emulator path excluded from Web — the Web
+// host has no AppHost Cosmos dependency unlike the Cli). When the endpoint IS
+// configured, AddCosmosPersistence registers CosmosClient (Managed Identity via
+// DefaultAzureCredential) and the core repositories; AddCatalogStatsRead then
+// registers ICatalogStatsReadRepository for the /admin/machines summary page
+// (AB#259 — ADR-0036 Tier-1 point reads, no cross-partition queries).
+if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
+{
+    builder.Services.AddCosmosPersistence(builder.Configuration);
+    builder.Services.AddCatalogStatsRead();
 }
 
 // ── Build + pipeline ───────────────────────────────────────────────────────

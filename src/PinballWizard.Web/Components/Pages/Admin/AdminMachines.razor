@@ -1,25 +1,36 @@
 @page "/admin/machines"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
 @attribute [Authorize(Policy = "AdminOnly")]
 
-@* AdminMachines — /admin/machines machine catalog list (PR-Q2 Wave 3 skeleton).
+@* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).
  *
- * Renders a MudDataGrid of pinball machines from the catalog. No real data
- * transport yet — the grid binds to an empty list with an empty-state message.
- * A follow-up PR will wire the IMachineRepository query here.
+ * Loads all manufacturer rollup docs via ICatalogStatsReadRepository.StreamAllManufacturersAsync
+ * (bounded ~8-9 point reads, ADR-0036 compliant). Flattens to per-machine rows;
+ * computes CatalogHealth.Evaluate per row. Grouped by manufacturer by default.
  *
- * MachineCatalogRow is a nested record representing a catalog entry.
- * Columns: Title, Manufacturer, Year, Source.
+ * Static page (no @rendermode) per ADR-0034 — AdminLayout providers are static.
+ * Data loads in OnInitializedAsync; MudDataGrid renders server-side with grouping
+ * applied to the in-memory list at load time. Group-by switching would require a
+ * circuit; manufacturer grouping is the single shipped grouping (see DONE_WITH_CONCERNS).
  *
- * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
- *
- * Auth: protected by the global FallbackPolicy — see AdminDashboard.razor.
+ * Health column = MudChip (Color.Error / Color.Warning / Color.Success) — no row
+ * background tinting per the design-review accessibility/contrast decision.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/machines)
+ * ADR-0034  — admin pages are static (no @rendermode)
+ * ADR-0036  — Cosmos read-access standard (Tier-1 reads only)
  *@
+
+@inject ICatalogStatsReadRepository Stats
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject ILogger<AdminMachines> Logger
 
 <PageTitle>Machine Catalog — PinballWizard Admin</PageTitle>
 
@@ -27,9 +38,24 @@
     <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
 
     <MudText Typo="Typo.h4" GutterBottom="true">Machine Catalog</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        All pinball machines indexed across manufacturers and OPDB.
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+        All pinball machines indexed across manufacturers and OPDB — grouped by manufacturer.
     </MudText>
+
+    @if (_asOf is not null)
+    {
+        <MudText Typo="Typo.caption"
+                 Color="Color.Tertiary"
+                 Class="mb-6"
+                 data-testid="catalog-as-of">
+            Catalog as of @_asOf.Value.ToString("u") (UTC)
+        </MudText>
+    }
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
 
     <MudDataGrid T="MachineCatalogRow"
                  Items="@_machines"
@@ -37,13 +63,34 @@
                  Striped="true"
                  Dense="true"
                  Elevation="2"
+                 Groupable="true"
+                 GroupExpanded="true"
+                 RowClick="@OnRowClick"
                  data-testid="admin-machines-grid">
 
         <Columns>
+            <PropertyColumn Property="x => x.Manufacturer"
+                            Title="Manufacturer"
+                            Groupable="true"
+                            Grouping="true" />
             <PropertyColumn Property="x => x.Title" Title="Title" />
-            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer" />
-            <PropertyColumn Property="x => x.Year" Title="Year" />
-            <PropertyColumn Property="x => x.Source" Title="Source" />
+            <PropertyColumn Property="x => x.Edition" Title="Edition" />
+            <PropertyColumn Property="x => x.Year" Title="Year" Sortable="true" />
+            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" />
+            <TemplateColumn Title="Health">
+                <CellTemplate>
+                    @foreach (var flag in context.Item.HealthFlags)
+                    {
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@HealthFlagColor(flag)"
+                                 Variant="Variant.Filled"
+                                 Class="mr-1">
+                            @flag.ToString()
+                        </MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
         </Columns>
 
         <NoRecordsContent>
@@ -64,20 +111,98 @@
 </MudContainer>
 
 @code {
-    // Placeholder row type — mirrors the machines Cosmos container shape.
-    // No deps on Infrastructure; real transport arrives in a follow-up PR.
+    // ── Row model ──────────────────────────────────────────────────────────────
     private sealed record MachineCatalogRow(
-        string Title,
+        string MachineId,
         string Manufacturer,
-        string Year,
-        string Source);
+        string Title,
+        string Edition,
+        int? Year,
+        int DocCount,
+        IReadOnlyList<CatalogHealthFlag> HealthFlags);
 
-    // Empty list — grid renders the empty state.
-    private readonly IEnumerable<MachineCatalogRow> _machines = [];
+    // ── State ──────────────────────────────────────────────────────────────────
+    private List<MachineCatalogRow> _machines = [];
+    private bool _loading = true;
+    private DateTimeOffset? _asOf;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
         new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
         new BreadcrumbItem("Machines", href: "/admin/machines", icon: Icons.Material.Filled.SportsBaseball),
     ];
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var rows = new List<MachineCatalogRow>();
+            DateTimeOffset? minAsOf = null;
+
+            await foreach (var mfr in Stats.StreamAllManufacturersAsync(cts.Token))
+            {
+                if (minAsOf is null || mfr.AsOfUtc < minAsOf)
+                    minAsOf = mfr.AsOfUtc;
+
+                foreach (var machine in mfr.Machines)
+                {
+                    // Siblings = same GroupId within the same manufacturer.
+                    var siblings = machine.GroupId is not null
+                        ? mfr.Machines
+                              .Where(m => m.MachineId != machine.MachineId
+                                       && m.GroupId == machine.GroupId)
+                              .ToList()
+                        : (IReadOnlyList<MachineDocStats>)[];
+
+                    var flags = CatalogHealth.Evaluate(machine, siblings);
+
+                    rows.Add(new MachineCatalogRow(
+                        MachineId:    machine.MachineId,
+                        Manufacturer: mfr.Manufacturer,
+                        Title:        machine.Title,
+                        Edition:      machine.EditionLabel ?? string.Empty,
+                        Year:         machine.Year,
+                        DocCount:     machine.DocCount,
+                        HealthFlags:  flags));
+                }
+            }
+
+            _machines = rows;
+            _asOf     = minAsOf;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin machine catalog load timed out after 30 s.");
+            Snackbar.Add("Catalog load timed out — please refresh.", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin machine catalog.");
+            Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ── Event handlers ─────────────────────────────────────────────────────────
+    private void OnRowClick(DataGridRowClickEventArgs<MachineCatalogRow> args)
+    {
+        var row = args.Item;
+        Nav.NavigateTo($"/admin/machines/{row.MachineId}?mfr={Uri.EscapeDataString(row.Manufacturer)}");
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    // Map health flags to MudBlazor Color tokens — no hex values (ADR-0008 / FE-08).
+    private static Color HealthFlagColor(CatalogHealthFlag flag) => flag switch
+    {
+        CatalogHealthFlag.Empty      => Color.Error,
+        CatalogHealthFlag.NoManual   => Color.Warning,
+        CatalogHealthFlag.EditionGap => Color.Warning,
+        CatalogHealthFlag.Ok         => Color.Success,
+        _                            => Color.Default,
+    };
 }
