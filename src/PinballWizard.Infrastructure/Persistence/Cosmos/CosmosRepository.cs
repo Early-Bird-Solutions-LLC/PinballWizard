@@ -134,6 +134,7 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
         string partitionKey,
         CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
         ArgumentException.ThrowIfNullOrWhiteSpace(partitionKey);
         return StreamCoreAsync(query, parameters, partitionKey, cancellationToken);
     }
@@ -143,7 +144,10 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
         string query,
         IReadOnlyDictionary<string, object>? parameters,
         CancellationToken cancellationToken)
-        => StreamCoreAsync(query, parameters, partitionKey: null, cancellationToken);
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        return StreamCoreAsync(query, parameters, partitionKey: null, cancellationToken);
+    }
 
     private async IAsyncEnumerable<T> StreamCoreAsync(
         string query,
@@ -151,7 +155,6 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
         string? partitionKey,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         var queryDefinition = new QueryDefinition(query);
         if (parameters is not null)
