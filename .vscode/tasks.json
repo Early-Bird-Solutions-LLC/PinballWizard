@@ -4,6 +4,17 @@
   "version": "2.0.0",
   "tasks": [
     {
+      // preLaunchTask for the launch.json coreclr configs — ensures the dll
+      // each config points at is freshly built before the debugger attaches.
+      "label": "build",
+      "detail": "dotnet build the solution (preLaunchTask for the F5 debug configs).",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/PinballWizard.slnx"],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
       "label": "Run AppHost (Aspire)",
       "detail": "Launch the .NET Aspire AppHost locally (Cosmos emulator + Azurite).",
       "type": "shell",

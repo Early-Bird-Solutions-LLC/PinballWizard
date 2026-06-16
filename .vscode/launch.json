@@ -1,45 +1,82 @@
 {
   // Debug configurations (Run and Debug view, F5).
   //
-  // These use the C# Dev Kit "dotnet" launch type, which resolves the build
-  // output from the .csproj directly — no hardcoded bin/<config>/<tfm> dll
-  // paths to drift as the target framework moves. Requires the C# Dev Kit
-  // extension (ms-dotnettools.csdevkit); install it if F5 reports an unknown
-  // debug type.
+  // These use the "coreclr" launch type (not the C# Dev Kit "dotnet" type)
+  // specifically because the "dotnet" type does NOT reliably honour an explicit
+  // env block or a launchSettings.json profile — environmentVariables are
+  // silently dropped (microsoft/vscode-dotnettools#608, #241). "coreclr" honours
+  // the "env" block below, which is load-bearing here:
   //
-  // The canonical local entry point is the Aspire AppHost — it orchestrates
-  // the Cosmos preview emulator + Azurite and the API/Web/Worker resources
-  // (mirrors start-apphost.ps1 / the "Run AppHost" tasks in tasks.json). The
-  // standalone API / Web / CLI configs are for debugging a single process in
-  // isolation, without the orchestrator.
+  //   DOTNET_ENVIRONMENT=Development makes the .NET Generic Host load
+  //   user-secrets. The AppHost's Cosmos preview emulator passphrase lives in
+  //   user-secrets (Parameters:cosmos-certificate-passphrase); without
+  //   Development, Aspire can't resolve it and prompts for a password on every
+  //   launch. Running via "dotnet run" (the tasks.json tasks / start-apphost.ps1)
+  //   gets Development from the launchSettings "https" profile automatically —
+  //   these configs replicate that so F5 behaves the same.
+  //
+  // Cost of "coreclr": an explicit dll path with the target framework (net10.0,
+  // centrally pinned in Directory.Build.props). The shared "build" preLaunchTask
+  // (tasks.json) ensures the dll is fresh before launch.
+  //
+  // The canonical local entry point is the Aspire AppHost — it orchestrates the
+  // Cosmos preview emulator + Azurite and the API/Web resources. The standalone
+  // API / Web / CLI configs debug a single process in isolation.
   "version": "0.2.0",
   "configurations": [
     {
       "name": "AppHost (Aspire)",
-      "type": "dotnet",
+      "type": "coreclr",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/src/PinballWizard.AppHost/PinballWizard.AppHost.csproj"
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.AppHost/bin/Debug/net10.0/PinballWizard.AppHost.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.AppHost",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal"
     },
     {
       "name": "CLI (scraper / sync / eval)",
-      "type": "dotnet",
+      "type": "coreclr",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/src/PinballWizard.Cli/PinballWizard.Cli.csproj",
-      // Add the command you're debugging, e.g. ["--help"] or
-      // ["--source", "opdb"]. Left empty so it prompts for usage on launch.
-      "args": []
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Cli/bin/Debug/net10.0/PinballWizard.Cli.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Cli",
+      // Add the command you're debugging, e.g. ["--help"] or ["--source", "opdb"].
+      "args": [],
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal"
     },
     {
       "name": "API (standalone)",
-      "type": "dotnet",
+      "type": "coreclr",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/src/PinballWizard.Api/PinballWizard.Api.csproj"
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Api/bin/Debug/net10.0/PinballWizard.Api.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Api",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal"
     },
     {
       "name": "Web (standalone)",
-      "type": "dotnet",
+      "type": "coreclr",
       "request": "launch",
-      "projectPath": "${workspaceFolder}/src/PinballWizard.Web/PinballWizard.Web.csproj"
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Web/bin/Debug/net10.0/PinballWizard.Web.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Web",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "console": "integratedTerminal"
     }
   ]
 }
