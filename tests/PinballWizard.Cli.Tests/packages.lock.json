@@ -776,7 +776,7 @@
       "pinballwizard.cli": {
         "type": "Project",
         "dependencies": {
-          "Aspire.Microsoft.Azure.Cosmos": "[13.4.0, )",
+          "Aspire.Microsoft.Azure.Cosmos": "[13.4.4, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.8, )",
           "Microsoft.Extensions.Hosting": "[10.0.7, )",
           "Microsoft.Extensions.Http": "[10.0.7, )",
@@ -839,9 +839,9 @@
       },
       "Aspire.Microsoft.Azure.Cosmos": {
         "type": "CentralTransitive",
-        "requested": "[13.4.0, )",
-        "resolved": "13.4.0",
-        "contentHash": "3lPYwqksSThcsTK7tPB5w5/aGDU9l6EXFWXIecYbHFyUoS2kzDvlSsLsobA8RcehEZxQP95XSYUkuv8c6LtAHw==",
+        "requested": "[13.4.4, )",
+        "resolved": "13.4.4",
+        "contentHash": "mJQUAaPzR8pJ2R4G3BwAOmxt+LCXyViVVUFUtYyOe89libZmL+ikXTocyLmVhNW+Vc3F+pWPY+Ua8JunwWauog==",
         "dependencies": {
           "Azure.Core": "1.55.0",
           "Azure.Identity": "1.21.0",
