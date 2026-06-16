@@ -1,46 +1,36 @@
 {
   // Debug configurations (Run and Debug view, F5).
   //
-  // These use the "coreclr" launch type (not the C# Dev Kit "dotnet" type)
-  // specifically because the "dotnet" type does NOT reliably honour an explicit
-  // env block or a launchSettings.json profile — environmentVariables are
-  // silently dropped (microsoft/vscode-dotnettools#608, #241). "coreclr" honours
-  // the "env" block below, which is load-bearing here:
+  // AppHost uses the "aspire" launch type (Aspire VS Code extension
+  // microsoft-aspire.aspire-vscode + the Aspire CLI on PATH). It runs the
+  // AppHost under `aspire run`, which applies the launchSettings "https"
+  // profile — Development (so user-secrets load, including the Cosmos emulator
+  // passphrase), the stable dashboard token, and auto-launching the dashboard
+  // in a browser. This replaces an earlier coreclr config that had to
+  // hand-replicate each of those (env + token + browser) and still couldn't
+  // open the dashboard. Prereqs: the Aspire extension + `aspire` CLI
+  // (~/.dotnet/tools, on PATH) — `dotnet tool install -g Aspire.Cli`.
   //
-  //   DOTNET_ENVIRONMENT=Development makes the .NET Generic Host load
-  //   user-secrets. The AppHost's Cosmos preview emulator passphrase lives in
-  //   user-secrets (Parameters:cosmos-certificate-passphrase); without
-  //   Development, Aspire can't resolve it and prompts for a password on every
-  //   launch. Running via "dotnet run" (the tasks.json tasks / start-apphost.ps1)
-  //   gets Development from the launchSettings "https" profile automatically —
-  //   these configs replicate that so F5 behaves the same.
-  //
-  // Cost of "coreclr": an explicit dll path with the target framework (net10.0,
-  // centrally pinned in Directory.Build.props). The shared "build" preLaunchTask
-  // (tasks.json) ensures the dll is fresh before launch.
-  //
-  // The canonical local entry point is the Aspire AppHost — it orchestrates the
-  // Cosmos preview emulator + Azurite and the API/Web resources. The standalone
-  // API / Web / CLI configs debug a single process in isolation.
+  // CLI / API / Web use the "coreclr" type for debugging a single process in
+  // isolation (no orchestrator). The "dotnet" (C# Dev Kit) type silently drops
+  // env vars (microsoft/vscode-dotnettools#608, #241), so coreclr + an explicit
+  // "env" block is used to force Development (loads each project's user-secrets
+  // / Development config). Cost: an explicit net10.0 dll path (TFM is centrally
+  // pinned in Directory.Build.props); the shared "build" preLaunchTask
+  // (tasks.json) keeps the dll fresh.
   "version": "0.2.0",
   "configurations": [
     {
       "name": "AppHost (Aspire)",
-      "type": "coreclr",
+      "type": "aspire",
       "request": "launch",
-      "preLaunchTask": "build",
-      "program": "${workspaceFolder}/src/PinballWizard.AppHost/bin/Debug/net10.0/PinballWizard.AppHost.dll",
-      "cwd": "${workspaceFolder}/src/PinballWizard.AppHost",
+      "program": "${workspaceFolder}/src/PinballWizard.AppHost/PinballWizard.AppHost.csproj",
+      // Belt-and-suspenders for the passphrase: `aspire run` already applies the
+      // launchSettings https profile (Development), but set it explicitly so a
+      // future launchSettings change can't silently drop user-secrets loading.
       "env": {
-        "DOTNET_ENVIRONMENT": "Development",
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        // Stable Aspire dashboard login token — mirrors the launchSettings
-        // "https" profile. Without it the dashboard mints a random per-run
-        // token and F5 lands on the login page every launch. (coreclr does not
-        // auto-apply the launchSettings profile, so this is set explicitly.)
-        "DOTNET_DASHBOARD_FRONTEND_BROWSERTOKEN": "pinwiz-dev"
-      },
-      "console": "integratedTerminal"
+        "DOTNET_ENVIRONMENT": "Development"
+      }
     },
     {
       "name": "CLI (scraper / sync / eval)",
