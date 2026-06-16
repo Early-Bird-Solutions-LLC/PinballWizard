@@ -41,14 +41,18 @@ public static class ServiceCollectionExtensions
         // flow-local, not instance-shared.
         services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>();
 
-        // UI-metadata side channel (fix/citation-metadata-channel): request-scoped
-        // store that carries Score + LastScrapedUtc from SearchCorpusTool to
-        // ToolTraceCitationExtractor. These fields are [JsonIgnore] on
-        // SearchCorpusHit (model must not see retrieval internals), so they are
-        // stripped from FunctionResultContent.Result JSON on the real Foundry path.
-        // The sink bridges that gap without exposing the fields to the model.
-        // Scoped so each HTTP request / streaming turn gets its own clean store.
-        services.TryAddScoped<IRetrievalCitationMetadataSink, RetrievalCitationMetadataSink>();
+        // UI-metadata side channel (fix/citation-metadata-channel): carries Score +
+        // LastScrapedUtc from SearchCorpusTool to ToolTraceCitationExtractor. These
+        // fields are [JsonIgnore] on SearchCorpusHit (model must not see retrieval
+        // internals), so they are stripped from FunctionResultContent.Result JSON on
+        // the real Foundry path. The sink bridges that gap without exposing the fields
+        // to the model. SINGLETON: both consumers (SearchCorpusTool above, and
+        // ToolTraceCitationExtractor held by the singleton AiRouter) are singletons, so
+        // the channel they share must be a singleton too — a scoped registration here is
+        // a captive dependency (rejected by the Development scope validator; silently
+        // root-captured as a de-facto singleton in Production). See the sink's own
+        // remarks for why a shared store is correct and bounded here.
+        services.TryAddSingleton<IRetrievalCitationMetadataSink, RetrievalCitationMetadataSink>();
 
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<SearchCorpusTool>();

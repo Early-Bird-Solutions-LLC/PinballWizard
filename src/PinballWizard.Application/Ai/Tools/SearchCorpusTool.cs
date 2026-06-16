@@ -71,14 +71,11 @@ public sealed class SearchCorpusTool
     // RetrievalOptions defaults — identical behavior to no stored overrides.
     // Mirrors the AiRouter optional-IRuntimeSettings convention (PR-B1).
     private readonly IRuntimeSettings? _runtimeSettings;
-    // Optional by design (fix/citation-metadata-channel): the sink is
-    // request-scoped but SearchCorpusTool is registered as Singleton in
-    // the DI container. The tool resolves the sink from the service
-    // locator (IServiceProvider) at call time when needed, OR — in the
-    // common web-host path — the caller wires the scoped instance here
-    // via constructor injection from an IServiceScope. Unit fixtures that
-    // construct SearchCorpusTool directly pass null; when null, recording
-    // is simply skipped and the typed C# path (used in tests) still works.
+    // Optional by design (fix/citation-metadata-channel): the sink is a
+    // singleton (see IRetrievalCitationMetadataSink remarks) shared with the
+    // ToolTraceCitationExtractor, injected here normally. Unit fixtures that
+    // construct SearchCorpusTool directly pass null; when null, recording is
+    // simply skipped and the typed C# path (used in tests) still works.
     private readonly IRetrievalCitationMetadataSink? _metadataSink;
 
     public SearchCorpusTool(
@@ -279,7 +276,7 @@ public sealed class SearchCorpusTool
                 });
 
                 // UI-metadata side channel (fix/citation-metadata-channel):
-                // publish Score + LastScrapedUtc to the request-scoped sink so
+                // publish Score + LastScrapedUtc to the singleton sink so
                 // ToolTraceCitationExtractor can enrich citations even though
                 // these fields are [JsonIgnore]'d from the model-facing JSON.
                 // First-write-wins per URL (sink semantics) matches the citation
