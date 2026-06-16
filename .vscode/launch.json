@@ -33,7 +33,12 @@
       "cwd": "${workspaceFolder}/src/PinballWizard.AppHost",
       "env": {
         "DOTNET_ENVIRONMENT": "Development",
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        // Stable Aspire dashboard login token — mirrors the launchSettings
+        // "https" profile. Without it the dashboard mints a random per-run
+        // token and F5 lands on the login page every launch. (coreclr does not
+        // auto-apply the launchSettings profile, so this is set explicitly.)
+        "DOTNET_DASHBOARD_FRONTEND_BROWSERTOKEN": "pinwiz-dev"
       },
       "console": "integratedTerminal"
     },
