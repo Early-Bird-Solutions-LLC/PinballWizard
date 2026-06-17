@@ -51,37 +51,31 @@ public sealed class LayoutProviderRenderModeTests
             $"See ADR-0034 for the full render-mode strategy.");
     }
 
-    // AdminLayout's providers must NOT carry @rendermode — they are intentionally
-    // static because every /admin/* page is static. This assertion documents the
-    // deliberate asymmetry so a future "make admin interactive" change explicitly
-    // revisits whether to pin these providers too.
+    // AdminLayout's providers MUST carry @rendermode="InteractiveServer" — the same
+    // invariant as MainLayout. As of 2026-06-17 (ADR-0034 amendment), admin is
+    // per-need render mode: several /admin/* pages are interactive, so their layout's
+    // providers must match or those pages crash with "Missing <MudPopoverProvider />".
+    // Both layouts now pin interactive providers; the former static-admin asymmetry is
+    // retired. See ADR-0034.
     [Theory]
     [InlineData("MudThemeProvider")]
     [InlineData("MudPopoverProvider")]
     [InlineData("MudDialogProvider")]
     [InlineData("MudSnackbarProvider")]
-    public void AdminLayout_Provider_IsStaticNoRenderMode(string providerName)
+    public void AdminLayout_Provider_HasInteractiveServerRenderMode(string providerName)
     {
         var adminLayout = File.ReadAllText(AdminLayoutPath());
 
-        // A provider line in AdminLayout must not carry @rendermode. We only look at
-        // the section of the file that contains the provider tag to avoid false
-        // positives from comments or documentation prose.
-        var providerLinePattern = new Regex($@"<{Regex.Escape(providerName)}\b[^>]*/?>", RegexOptions.Singleline);
-        var match = providerLinePattern.Match(adminLayout);
+        var hasInteractiveRenderMode = Regex.IsMatch(
+            adminLayout,
+            $@"<{Regex.Escape(providerName)}[^>]*@rendermode=""InteractiveServer""");
 
         Assert.True(
-            match.Success,
-            $"AdminLayout.razor must contain a <{providerName} /> element.");
-
-        Assert.DoesNotContain(
-            "@rendermode",
-            match.Value,
-            StringComparison.Ordinal);
-
-        // Explanatory failure message for the DoesNotContain assertion above:
-        // If this assertion fails, an /admin/* page was likely given @rendermode
-        // InteractiveServer without updating the providers. See ADR-0034.
+            hasInteractiveRenderMode,
+            $"AdminLayout.razor must declare <{providerName} @rendermode=\"InteractiveServer\" ... />. " +
+            $"Interactive /admin/* pages (Settings, Triage, LinkOverrides, Machines, MachineDetail) " +
+            $"resolve their popover/dialog/snackbar services from this layout's providers; a static " +
+            $"provider crashes the circuit with 'Missing <{providerName} />'. See ADR-0034.");
     }
 
     private static string MainLayoutPath() =>
