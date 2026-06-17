@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace PinballWizard.Application.Ai.Citations;
 
 // UI-only metadata that must reach the citation surface but must NOT
@@ -12,7 +14,7 @@ namespace PinballWizard.Application.Ai.Citations;
 // reads on the real Foundry path, arriving as null despite being
 // populated on the typed C# object.
 //
-// The fix is a request-scoped side channel: SearchCorpusTool records
+// The fix is a process-wide side channel: SearchCorpusTool records
 // UI metadata here by DocumentUrl immediately after building each hit;
 // ToolTraceCitationExtractor enriches each corpus Citation from the
 // sink when the typed C# fields are null (the JSON-path case).
@@ -25,14 +27,26 @@ public sealed record RetrievalCitationMetadata(
     DateTimeOffset? LastScrapedUtc,
     double? RelevanceScore);
 
-// Request-scoped store for UI-only retrieval metadata that cannot
+// Process-wide side channel for UI-only retrieval metadata that cannot
 // travel through the model-facing tool-result trace.
 //
-// Scoped (one instance per HTTP request / per streaming turn). The
-// SearchCorpusTool records into it during retrieval; the
-// ToolTraceCitationExtractor reads from it during citation assembly.
-// This decoupling keeps the model-facing JSON clean while allowing
-// the citation surface to carry freshness + relevance.
+// Singleton, shared between two singleton consumers: SearchCorpusTool
+// records into it during retrieval; ToolTraceCitationExtractor (held by the
+// singleton AiRouter) reads from it during citation assembly. Both are
+// app-lifetime singletons, so the channel they share MUST also be a singleton
+// — a scoped registration is a captive dependency that the DI scope validator
+// rejects in Development and that silently degraded to a root-captured
+// singleton in Production anyway. This decoupling keeps the model-facing JSON
+// clean while letting the citation surface carry freshness + relevance.
+//
+// The store is keyed by DocumentUrl with first-write-wins, so it is bounded by
+// the corpus size (not per-request unbounded), and LastScrapedUtc is stable
+// per URL. The one consequence of sharing across requests: RelevanceScore is
+// query-specific, so a URL seen by an earlier query keeps that query's score
+// on the citation card (a cosmetic, UI-only staleness — never a provenance or
+// answer-correctness issue). True per-turn isolation would require making the
+// whole tool/extractor/router chain scoped — an accepted limitation (not yet
+// tracked); revisit if the citation surface ever renders RelevanceScore.
 public interface IRetrievalCitationMetadataSink
 {
     // Records UI metadata for a given document URL. First-write-wins
@@ -47,15 +61,15 @@ public interface IRetrievalCitationMetadataSink
     bool TryGet(string documentUrl, out RetrievalCitationMetadata? metadata);
 }
 
-// Concrete request-scoped implementation backed by a Dictionary.
+// Concrete singleton implementation backed by a ConcurrentDictionary.
 //
-// Not thread-safety-critical: the sink is request-scoped and the
-// citation assembly flow is a single logical sequence (retrieval
-// → agent turn → extractor). If that ever changes (e.g., parallel
-// sub-agent retrieval), swap to ConcurrentDictionary here.
+// Thread-safe because, as a singleton, this instance is shared across all
+// concurrent requests (and across the retrieval / agent-turn / extractor flow
+// within each). ConcurrentDictionary.TryAdd preserves the first-write-wins
+// semantics the citation dedup relies on without a lock.
 public sealed class RetrievalCitationMetadataSink : IRetrievalCitationMetadataSink
 {
-    private readonly Dictionary<string, RetrievalCitationMetadata> _store =
+    private readonly ConcurrentDictionary<string, RetrievalCitationMetadata> _store =
         new(StringComparer.OrdinalIgnoreCase);
 
     public void Record(string documentUrl, RetrievalCitationMetadata metadata)
