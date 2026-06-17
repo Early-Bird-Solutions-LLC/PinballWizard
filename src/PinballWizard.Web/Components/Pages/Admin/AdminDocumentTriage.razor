@@ -1,7 +1,9 @@
 @page "/admin/document-triage"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
 @attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
 @* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
  *
@@ -21,6 +23,7 @@
 @inject IRawDocumentRepository RawDocRepo
 @inject IDocumentLinker DocumentLinker
 @inject ISnackbar Snackbar
+@inject ILogger<AdminDocumentTriage> Logger
 
 <PageTitle>Document Triage — PinballWizard Admin</PageTitle>
 
@@ -35,6 +38,13 @@
     @if (_loading)
     {
         <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="triage-load-failed">
+            The triage queue could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
     }
 
     <MudDataGrid T="DocumentTriageRow"
@@ -89,17 +99,20 @@
         </Columns>
 
         <NoRecordsContent>
-            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                <MudIcon Icon="@Icons.Material.Outlined.CheckCircle"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1" data-testid="admin-document-triage-empty">
-                    No documents awaiting triage.
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    All scraped documents have been linked or resolved.
-                </MudText>
-            </MudStack>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.CheckCircle"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-document-triage-empty">
+                        No documents awaiting triage.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        All scraped documents have been linked or resolved.
+                    </MudText>
+                </MudStack>
+            }
         </NoRecordsContent>
 
     </MudDataGrid>
@@ -120,6 +133,7 @@
 
     private List<DocumentTriageRow> _documents = [];
     private bool _loading = true;
+    private bool _loadFailed;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
@@ -150,9 +164,17 @@
             }
             _documents = rows;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
+            Logger.LogWarning("Admin document triage load timed out after 30 s.");
+            Snackbar.Add("Triage queue load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin document triage queue.");
             Snackbar.Add($"Failed to load triage queue: {ex.Message}", Severity.Error);
+            _loadFailed = true;
         }
         finally
         {

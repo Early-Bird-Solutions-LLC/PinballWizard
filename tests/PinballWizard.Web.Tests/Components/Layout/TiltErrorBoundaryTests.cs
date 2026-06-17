@@ -1,4 +1,5 @@
 using Bunit;
+using Bunit.TestDoubles;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 using PinballWizard.Web.Components.Theming;
@@ -21,6 +22,7 @@ public sealed class TiltErrorBoundaryTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]
@@ -50,6 +52,20 @@ public sealed class TiltErrorBoundaryTests : AsyncBunitContext
         // Assert — request-id span is present (may read "no-trace" in test context
         // since Activity.Current is null without OTel pipeline, which is expected).
         cut.Find("[data-testid='tilt-request-id']");
+    }
+
+    [Fact]
+    public void TiltErrorBoundary_Recovery_IsStaticSafeAnchor_NotAClickHandler()
+    {
+        var cut = Render<TiltErrorBoundary>(parameters => parameters
+            .AddChildContent<ThrowingComponent>());
+
+        // The boundary can trip on a statically-hosted page where OnClick is dead.
+        // Recovery must be a real anchor (full reload of the current URI), not a
+        // circuit-dependent click handler (ADR-0034 amendment §3.4).
+        var recover = cut.Find("[data-testid='tilt-recover']");
+        Assert.Equal("a", recover.TagName, ignoreCase: true);
+        Assert.Equal("false", recover.GetAttribute("data-enhance-nav"));
     }
 
     // ── Helper ─────────────────────────────────────────────────────────────

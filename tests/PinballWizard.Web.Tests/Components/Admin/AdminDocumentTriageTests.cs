@@ -89,3 +89,47 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
         Assert.NotNull(adminLink);
     }
 }
+
+// Separate context for the Cosmos load-failure path.
+// The repo throws so the page must show the distinct error alert and must NOT
+// show the "No documents awaiting triage" empty-state (which implies data, not failure).
+public sealed class AdminDocumentTriageLoadFailureTests : AsyncBunitContext
+{
+    public AdminDocumentTriageLoadFailureTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var failRepo = Substitute.For<IRawDocumentRepository>();
+        failRepo
+            .StreamByStatusAsync(Arg.Any<IReadOnlyCollection<LinkStatus>>(), Arg.Any<CancellationToken>())
+            .Returns<IAsyncEnumerable<RawDocumentRecord>>(_ =>
+                throw new InvalidOperationException("Cosmos unavailable"));
+        Services.AddSingleton(failRepo);
+        Services.AddSingleton(Substitute.For<IDocumentLinker>());
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminDocumentTriage_LoadFails_RendersErrorAlert()
+    {
+        var cut = Render<AdminDocumentTriage>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Must render the distinct load-failed sentinel.
+        cut.Find("[data-testid='triage-load-failed']");
+    }
+
+    [Fact]
+    public async Task AdminDocumentTriage_LoadFails_DoesNotRenderEmptyStateText()
+    {
+        var cut = Render<AdminDocumentTriage>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // The misleading "No documents awaiting triage" text must be absent — a load
+        // failure is not an empty queue and must not tell admins that all docs are resolved.
+        Assert.Empty(cut.FindAll("[data-testid='admin-document-triage-empty']"));
+    }
+}

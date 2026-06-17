@@ -6,6 +6,7 @@
 @using PinballWizard.Application.Persistence
 @using PinballWizard.Core.Domain
 @attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
 @* AdminMachineDetail — /admin/machines/{opdbId} per-game diagnostic view (AB#259).
  *
@@ -25,13 +26,15 @@
  * ?mfr= is required — the machine record is partition-keyed by manufacturer.
  * Without it we refuse the lookup (no cross-partition fallback — ADR-0036 Tier-1 only).
  *
- * Static page (no @rendermode) per ADR-0034 — AdminLayout providers are static.
+ * Interactive page (@rendermode InteractiveServer) per the ADR-0034 amendment
+ * (2026-06-17) — the linked-documents grid sorts/filters client-side without
+ * reloads. AdminLayout providers are pinned interactive to match.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/machines/{opdbId})
  * ADR-0029  — version-aware answering / edition siblings
- * ADR-0034  — admin pages are static
+ * ADR-0034  — admin per-need render mode (this page is interactive)
  * ADR-0036  — Cosmos read-access standard (Tier-1 reads only)
  *@
 

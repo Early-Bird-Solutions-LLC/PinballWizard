@@ -84,6 +84,76 @@ The fix: pin the four providers to `InteractiveServer` as described above (PR #4
 
 ---
 
+## Amendment (2026-06-17) — admin per-need render mode + render-mode doctrine
+
+The original decision made every `/admin/*` page static with static providers.
+Admin has since grown interactive controls that cannot function on a static
+render (the mismatch is silent — no compile error, the control just doesn't
+respond). This amendment moves admin to **per-need render mode** and codifies
+the general doctrine.
+
+### Doctrine
+
+> **Static SSR is the default render mode.** A page or component gets
+> `@rendermode InteractiveServer` only on a *demonstrated interactive need* —
+> event handlers (`@onclick`/`OnClick`), two-way binding (`@bind-Value`),
+> dialogs (`IDialogService`/`MudDialog`), or live grids (client-side
+> sort/filter/group). Static SSR form handling (`EditForm` +
+> `[SupplyParameterFromForm]`), enhanced navigation, and plain anchors do **not**
+> require interactivity and stay static. **Error/degraded surfaces stay static**
+> for robustness; their controls must be static-friendly (real links / reloads),
+> never circuit-dependent. Adding interactivity to a page under a layout requires
+> that layout's MudBlazor providers be pinned `InteractiveServer` to match (the
+> MainLayout pattern).
+
+### Admin per-page render-mode matrix
+
+| Page | Mode | Rationale |
+| --- | --- | --- |
+| `AdminDashboard` (`/admin`) | static | link cards only |
+| `AdminSources` (`/admin/sources`) | static | read-only grid, no data transport yet |
+| `AdminMachines` (`/admin/machines`) | interactive | sortable/filterable/groupable grid, native client-side grouping (no reloads) |
+| `AdminMachineDetail` (`/admin/machines/{OpdbId}`) | interactive | sortable linked-docs grid |
+| `AdminDocumentTriage` (`/admin/document-triage`) | interactive | Relink / MarkGeneric `OnClick` actions |
+| `AdminLinkOverrides` (`/admin/link-overrides`) | interactive | create dialog + delete |
+| `AdminSettings` (`/admin/settings`) | interactive | `@bind` form controls |
+
+### Provider pinning
+
+`AdminLayout.razor`'s four MudBlazor providers are now pinned
+`@rendermode="InteractiveServer"`, identical to `MainLayout` — the interactive
+admin pages resolve their popover/dialog/snackbar services from the shared
+circuit. This is the *inverse* of the PR #401 crash (which was a static provider
+under an interactive page). `LayoutProviderRenderModeTests` now asserts the
+interactive invariant on **both** layouts; the former static-admin asymmetry is
+retired. The former `AdminLayout_Provider_IsStaticNoRenderMode` theory was
+renamed to `AdminLayout_Provider_HasInteractiveServerRenderMode` and now asserts
+the interactive invariant on both layouts.
+
+### Nav
+
+`AdminLayout`'s drawer is now always-open (`DrawerVariant.Persistent` in MudBlazor 8.x) — the hamburger toggle removed. An always-open drawer's `MudNavLink`s are plain anchors that navigate on every admin page regardless of that page's render mode, decoupling nav from per-page interactivity.
+
+### Error / degraded surfaces
+
+`Error.razor`'s "Try Again" is now an `Href="/wizard"` anchor (was a dead
+`OnClick`); `TiltErrorBoundary`'s recovery is a reload-current-URI anchor
+(`data-enhance-nav="false"`) that resets the boundary via a full reload. Both
+stay static for robustness.
+
+### Enforcement
+
+`RenderModeConventionTests` build-fails when a routable `@page` carries an
+interactivity signal (`@onclick`/`OnClick`/`@bind-Value`/dialog) without
+`@rendermode`. The component-only case (an interactive component hosted only on
+static pages) is a deferred component-graph stretch covered by the
+`/local-review` backstop.
+
+This is aligned with Microsoft's Blazor Web App guidance: use the
+least-powerful render mode that meets the need, applied granularly.
+
+---
+
 ## References
 
 - ADR-0008 — MudBlazor strict (single UI component library)

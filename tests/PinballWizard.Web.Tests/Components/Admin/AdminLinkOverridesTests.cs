@@ -92,3 +92,46 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
         Assert.NotNull(adminLink);
     }
 }
+
+// Separate context for the Cosmos load-failure path.
+// The repo throws so the page must show the distinct error alert and must NOT
+// show the "No overrides configured" empty-state (which implies data, not failure).
+public sealed class AdminLinkOverridesLoadFailureTests : AsyncBunitContext
+{
+    public AdminLinkOverridesLoadFailureTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var failRepo = Substitute.For<ILinkOverrideRepository>();
+        failRepo
+            .LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyDictionary<string, LinkOverrideRecord>>>(_ =>
+                throw new InvalidOperationException("Cosmos unavailable"));
+        Services.AddSingleton(failRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminLinkOverrides_LoadFails_RendersErrorAlert()
+    {
+        var cut = Render<AdminLinkOverrides>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Must render the distinct load-failed sentinel.
+        cut.Find("[data-testid='overrides-load-failed']");
+    }
+
+    [Fact]
+    public async Task AdminLinkOverrides_LoadFails_DoesNotRenderEmptyStateText()
+    {
+        var cut = Render<AdminLinkOverrides>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // The misleading "No overrides configured" text must be absent — a load failure
+        // is not an empty override set and must not tell admins there is nothing to manage.
+        Assert.Empty(cut.FindAll("[data-testid='admin-link-overrides-empty']"));
+    }
+}

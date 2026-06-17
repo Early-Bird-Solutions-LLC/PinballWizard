@@ -5,6 +5,7 @@
 @using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
 @attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
 @* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).
  *
@@ -12,14 +13,15 @@
  * (bounded ~8-9 point reads, ADR-0036 compliant). Flattens to per-machine rows;
  * computes CatalogHealth.Evaluate per row.
  *
- * Group-by axis is driven by the ?groupBy= query parameter (default: manufacturer).
- * Recognized axes: manufacturer, health, franchise, year, source.
- * The axis selector renders as plain navigation links (href="/admin/machines?groupBy=..."),
- * each producing a full server-side re-render — no circuit required (ADR-0034).
- * MudDataGrid receives the active axis column with Grouping="true" at server-render
- * time; all other groupable columns have Grouping="false".
+ * Group-by axis is selected by in-circuit OnClick buttons (native client-side
+ * grouping — no query param, no page reload). MudDataGrid receives the active
+ * axis column with Grouping="true"; all other groupable columns have
+ * Grouping="false". The axis switch mutates _activeAxis and the grid regroups
+ * in place on the shared circuit.
  *
- * Static page (no @rendermode) per ADR-0034 — AdminLayout providers are static.
+ * Interactive page (@rendermode InteractiveServer) per the ADR-0034 amendment
+ * (2026-06-17) — the sortable/filterable/groupable grid is the showcase data
+ * surface; AdminLayout providers are pinned interactive to match.
  *
  * Health column = MudChip (Color.Error / Color.Warning / Color.Success) — no row
  * background tinting per the design-review accessibility/contrast decision.
@@ -27,7 +29,7 @@
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/machines)
- * ADR-0034  — admin pages are static (no @rendermode)
+ * ADR-0034  — admin per-need render mode (this page is interactive)
  * ADR-0036  — Cosmos read-access standard (Tier-1 reads only)
  *@
 
@@ -46,16 +48,11 @@
         All pinball machines indexed across manufacturers and OPDB.
     </MudText>
 
-    @* ── Group-by axis selector ──────────────────────────────────────────────
-     * Plain href navigation — each click is a full server-side re-render.
-     * Active axis gets Color.Primary + Filled variant; others are outlined.
-     * This is entirely static; no @rendermode / circuit required.
-     *@
     <MudStack Row="true" Spacing="1" Class="mb-4" data-testid="groupby-selector">
         @foreach (var axis in _axes)
         {
             var isActive = _activeAxis == axis.Value;
-            <MudButton Href="@($"/admin/machines?groupBy={axis.Key}")"
+            <MudButton OnClick="@(() => _activeAxis = axis.Value)"
                        Variant="@(isActive ? Variant.Filled : Variant.Outlined)"
                        Color="@(isActive ? Color.Primary : Color.Default)"
                        Size="Size.Small">
@@ -182,12 +179,6 @@
         new("source",        GroupByAxis.Source,       "Source"),
     ];
 
-    // ── Query parameter ────────────────────────────────────────────────────────
-    // Blazor populates this from the query string before OnInitializedAsync runs
-    // on a static server render — no circuit required.
-    [SupplyParameterFromQuery(Name = "groupBy")]
-    public string? GroupBy { get; set; }
-
     // ── Row model ──────────────────────────────────────────────────────────────
     private sealed record MachineCatalogRow(
         string MachineId,
@@ -217,12 +208,6 @@
     // ── Lifecycle ──────────────────────────────────────────────────────────────
     protected override async Task OnInitializedAsync()
     {
-        // Resolve the active axis from the query param — available at this point
-        // on a static server render because Blazor sets [SupplyParameterFromQuery]
-        // properties before calling OnInitializedAsync.
-        _activeAxis = _axes.FirstOrDefault(a => string.Equals(a.Key, GroupBy, StringComparison.OrdinalIgnoreCase))?.Value
-                      ?? GroupByAxis.Manufacturer;
-
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
