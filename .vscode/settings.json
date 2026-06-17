@@ -1,0 +1,22 @@
+{
+  // Integrated-terminal environment for this repo.
+  //
+  // AZURE_CONFIG_DIR points the Azure CLI at an isolated, gitignored config dir
+  // (.azure-local) so commands run here — `az login`, `dotnet user-secrets`,
+  // `dotnet run` — resolve the PERSONAL pinwiz.ai identity (where the Bicep-managed
+  // Foundry lives) without disturbing the machine-default ~/.azure session (which
+  // may be signed in to another tenant). The F5 debug configs set the same var in
+  // launch.json, and the AppHost relays it to its orchestrated children. First-time:
+  // open a NEW terminal so this applies, run `az login`, then select the pinwiz.ai
+  // subscription. ${workspaceFolder} keeps this portable across machines/clones.
+  // Set for all three host OSes so a macOS/Linux contributor gets the same isolation.
+  "terminal.integrated.env.windows": {
+    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+  },
+  "terminal.integrated.env.osx": {
+    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+  },
+  "terminal.integrated.env.linux": {
+    "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+  }
+}

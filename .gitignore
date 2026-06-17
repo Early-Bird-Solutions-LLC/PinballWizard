@@ -3,6 +3,12 @@ bin/
 obj/
 publish/
 
+# Isolated per-developer Azure CLI config dir (AZURE_CONFIG_DIR) used so the
+# local app's DefaultAzureCredential resolves the PERSONAL pinwiz.ai identity
+# (where the Bicep-managed Foundry lives) without disturbing the default
+# ~/.azure session. Holds live MSAL token caches — never commit.
+.azure-local/
+
 # IDE / editor
 .vs/
 # .vscode workspace config is checked in (tasks/launch/extensions/settings
