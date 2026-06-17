@@ -1,6 +1,7 @@
 @page "/admin/link-overrides"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
 @attribute [Authorize(Policy = "AdminOnly")]
 @rendermode InteractiveServer
 
@@ -20,6 +21,7 @@
 @inject ILinkOverrideRepository OverrideRepo
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<AdminLinkOverrides> Logger
 
 <PageTitle>Link Overrides — PinballWizard Admin</PageTitle>
 
@@ -43,6 +45,13 @@
     @if (_loading)
     {
         <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="overrides-load-failed">
+            Link overrides could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
     }
 
     <MudDataGrid T="LinkOverrideRow"
@@ -72,17 +81,20 @@
         </Columns>
 
         <NoRecordsContent>
-            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1" data-testid="admin-link-overrides-empty">
-                    No overrides configured.
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Overrides are created manually to resolve ambiguous or failed document links.
-                </MudText>
-            </MudStack>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-link-overrides-empty">
+                        No overrides configured.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Overrides are created manually to resolve ambiguous or failed document links.
+                    </MudText>
+                </MudStack>
+            }
         </NoRecordsContent>
 
     </MudDataGrid>
@@ -126,6 +138,7 @@
 
     private List<LinkOverrideRow> _overrides = [];
     private bool _loading = true;
+    private bool _loadFailed;
     private bool _showCreateDialog;
     private bool _createBusy;
     private string _newPattern = string.Empty;
@@ -153,9 +166,17 @@
                     Notes: r.Notes))
                 .ToList();
         }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin link overrides load timed out after 30 s.");
+            Snackbar.Add("Overrides load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to load admin link overrides.");
             Snackbar.Add($"Failed to load overrides: {ex.Message}", Severity.Error);
+            _loadFailed = true;
         }
         finally
         {
