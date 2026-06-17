@@ -2,6 +2,7 @@
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
 @* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
  *

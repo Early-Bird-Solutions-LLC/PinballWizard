@@ -2,6 +2,7 @@
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
 @* AdminLinkOverrides — /admin/link-overrides admin-configured document-to-machine mapping view.
  *
