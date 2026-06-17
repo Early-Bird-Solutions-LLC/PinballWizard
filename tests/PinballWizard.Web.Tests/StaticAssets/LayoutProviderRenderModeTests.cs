@@ -15,9 +15,12 @@ namespace PinballWizard.Web.Tests.StaticAssets;
 // @rendermode="InteractiveServer" — a static provider cannot host a popover
 // rendered inside an interactive page island, which crashes the circuit.
 //
-// AdminLayout is the deliberate asymmetry: all /admin/* pages are static (no
-// @rendermode directive), so a static MudBlazor provider is correct there.
-// If any admin page ever adds @rendermode, those providers must be pinned too.
+// AdminLayout's providers are now ALSO pinned @rendermode="InteractiveServer"
+// (ADR-0034 amendment, 2026-06-17): several /admin/* pages are interactive
+// (Settings, Triage, LinkOverrides, Machines, MachineDetail), so the layout's
+// providers must match or those pages crash with "Missing <MudPopoverProvider />".
+// Both layouts now assert the same interactive invariant; the former static-admin
+// asymmetry is retired.
 //
 // ADR-0034 documents the full render-mode strategy.
 public sealed class LayoutProviderRenderModeTests

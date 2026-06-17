@@ -27,12 +27,14 @@ public sealed class RenderModeConventionTests
 
     // Genuine interactivity signals. Each is matched against comment-stripped
     // content. OnClick= matches the MudBlazor parameter and @onclick the HTML
-    // attribute; <MudDialog matches an inline dialog element; the IDialogService
-    // trio matches programmatic dialogs.
+    // attribute; RowClick= is the MudDataGrid row-click handler (dead on a static
+    // render, same class as OnClick); <MudDialog matches an inline dialog element;
+    // the IDialogService trio matches programmatic dialogs.
     private static readonly (string Name, Regex Pattern)[] Signals =
     [
         ("@onclick",          new Regex(@"@onclick\b", RegexOptions.Compiled)),
         ("OnClick=",          new Regex(@"\bOnClick=", RegexOptions.Compiled)),
+        ("RowClick=",         new Regex(@"\bRowClick=", RegexOptions.Compiled)),
         ("@bind-Value",       new Regex(@"@bind-Value\b", RegexOptions.Compiled)),
         ("IDialogService",    new Regex(@"\bIDialogService\b", RegexOptions.Compiled)),
         (".ShowAsync(",       new Regex(@"\.ShowAsync\(", RegexOptions.Compiled)),
