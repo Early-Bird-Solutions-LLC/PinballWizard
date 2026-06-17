@@ -30,14 +30,24 @@ render-mode spec calling for them to stay axe-clean.
 
 Issue #423 tracks both gaps.
 
-### Constraint discovered during design
+### Constraints discovered during design
 
-The existing in-process Playwright host (`PlaywrightWebApplicationFactory`) deliberately
-serves **SSR HTML only** — it does not serve `blazor.web.js` / MudBlazor JS (the
-`MapStaticAssets` manifest "only exists in the published Web project"), so there is **no
-interactive circuit** in that harness today. And `TestAuthHandler` returns
-`AuthenticateResult.NoResult()` (anonymous), which is correct for `[AllowAnonymous]` public
-pages but fails `AdminOnly` (`RequireRole("GlobalAdmin")`, `Program.cs:118`).
+**(a) The SSR host serves no circuit.** The existing in-process Playwright host
+(`PlaywrightWebApplicationFactory`) deliberately serves **SSR HTML only** — it does not serve
+`blazor.web.js` / MudBlazor JS (the `MapStaticAssets` manifest "only exists in the published
+Web project"), so there is **no interactive circuit** in that harness today.
+
+**(b) Admin auth has a permissive no-tenant path — no test-auth handler needed.** `Program.cs`
+branches on `AzureAd:TenantId` (lines 90-146): when a real tenant **is** configured it wires
+OIDC (`AddMicrosoftIdentityWebApp`) and `AdminOnly = RequireRole("GlobalAdmin")`; when it is
+**not** configured it registers `AddAuthentication()` with **no OIDC** and
+`AdminOnly = RequireAssertion(_ => true)` — the documented local-dev posture. So a test host
+that runs **without `AzureAd:TenantId`** has no OIDC middleware to challenge the circuit and an
+`AdminOnly` policy that passes for an anonymous request. Admin pages render without any
+test-auth handler. (The existing minimal SSR factory can't render admin pages today only
+because it registers `AddAuthorization()` with **no `AdminOnly` policy** and none of the admin
+pages' injected services — both fixed below.) This also retires the deployed-canary's
+standing-admin-account problem: the in-process route never needs a real `GlobalAdmin`.
 
 A deployed-canary approach (extend `canary.yml`) was rejected during design: the canary
 points `E2E__BaseUrl` at the ACA FQDN (bypassing Cloudflare anyway), the existing public
@@ -60,19 +70,24 @@ tenant. The deterministic in-process route below avoids all of that.
 
 ## 3. Shared foundation
 
-Both halves authenticate as admin and need the admin pages' injected services satisfied.
+Both halves render admin pages (which carry `[Authorize(Policy = "AdminOnly")]`) and need the
+admin pages' injected services satisfied.
 
-### 3.1 `TestAuthHandler` admin mode
+### 3.1 Satisfy `AdminOnly` via the permissive no-tenant policy (no test-auth handler)
 
-Today `TestAuthHandler.HandleAuthenticateAsync()` returns `NoResult()`. Add an **opt-in admin
-mode** that returns a success ticket for a `ClaimsPrincipal` carrying the `GlobalAdmin` role
-(claim type `ClaimTypes.Role`, value `GlobalAdmin`) so the `AdminOnly` policy
-(`RequireRole("GlobalAdmin")`) passes.
+Admin pages render in a test host that registers the **permissive `AdminOnly` policy** exactly
+as `Program.cs`'s no-tenant branch does:
 
-- The mode is selected **per factory** (constructor flag / scheme option), so the existing
-  public anonymous axe suite keeps `NoResult` and is untouched.
-- Anonymous mode (`NoResult`) remains the default; admin mode is explicitly requested by the
-  admin factories.
+```csharp
+services.AddAuthorization(o => o.AddPolicy("AdminOnly", p => p.RequireAssertion(_ => true)));
+```
+
+This is the real local-dev posture (no `AzureAd:TenantId` ⇒ no OIDC, permissive `AdminOnly`),
+so it is faithful to how the app actually runs without a tenant — not a test-only fiction. No
+`TestAuthHandler` change is required: the existing anonymous `NoResult` identity passes a
+`RequireAssertion(_ => true)` policy. The existing public anonymous axe suite is untouched (it
+uses the factory's existing `AddAuthorization()` with no `AdminOnly` policy; admin tests use a
+factory that adds the permissive policy).
 
 ### 3.2 `AdminTestDoubles` — one registration extension + seed fixture
 
@@ -99,11 +114,11 @@ or circuit tests) — a simple toggle on the doubles registration.
 
 ## 4. Half A — admin axe (a11y)
 
-An admin-authed variant of the SSR factory: same minimal Kestrel + SSR-only host as
-`PlaywrightWebApplicationFactory`, but with `TestAuthHandler` in **admin mode** and
-`AddAdminTestDoubles`. Implementation may parameterize the existing factory (preferred — one
-factory, a constructor flag) or add a focused subclass; the plan decides based on the cleanest
-diff.
+An admin variant of the SSR factory: same minimal Kestrel + SSR-only host as
+`PlaywrightWebApplicationFactory`, but registering the **permissive `AdminOnly` policy** (§3.1)
++ `AddAdminTestDoubles` + the `EmbeddedResourceAgentPromptProvider` singleton. Implementation
+may parameterize the existing factory (preferred — one factory, a constructor flag) or add a
+focused subclass; the plan decides based on the cleanest diff.
 
 A `Theory` covers every routable admin route, asserting **zero WCAG 2.1 AA violations** on the
 SSR HTML (axe on `DOMContentLoaded`, identical to the public test):
@@ -124,27 +139,38 @@ a possible bonus but is **out of scope** — YAGNI.)
 
 ### 5.1 Walking skeleton (task 1 — the de-risk)
 
-Stand up a Kestrel-hosted factory (`InteractiveAdminWebApplicationFactory`) that:
+Stand up a Kestrel-hosted host (`InteractiveAdminWebApplicationFactory`) that:
 
-1. **Serves the Web project's published static assets** — the `staticwebassets` endpoint
-   manifest + `blazor.web.js` + MudBlazor JS — so the browser establishes a live circuit.
-2. Authenticates as admin via `TestAuthHandler` admin mode.
-3. Registers `AddAdminTestDoubles`.
+1. **Runs the real Web app** (`Program.cs`) **with `AzureAd:TenantId` unset** → the no-tenant
+   branch: **no OIDC** (so nothing challenges the `/_blazor` circuit) and a permissive
+   `AdminOnly`. This is the key simplification — the OIDC-override problem the SSR factory
+   documented only exists when a tenant is configured; with none, the real app serves admin
+   pages and its **real `MapStaticAssets()`** delivers `blazor.web.js` + MudBlazor JS, so the
+   browser establishes a live circuit.
+2. **Replaces the admin pages' backend services with `AddAdminTestDoubles`** (the Web host has
+   no Foundry/Cosmos; the real repos would fail to resolve or hang) via the host's test-service
+   override hook.
+3. **Exposes a real TCP address on Kestrel** (loopback, port 0) so Playwright can connect —
+   `WebApplicationFactory`'s in-memory `TestServer` is not reachable by a real browser, so the
+   host must bind Kestrel and surface the address (the existing `PlaywrightWebApplicationFactory`
+   already demonstrates the Kestrel-on-loopback pattern).
 
 The skeleton is **proven** by one decisive interaction in a real browser: load
 `/admin/machines`, click a group-by axis button, assert the grid regroups / the active button
 flips **without a navigation** (pure in-circuit client-side state). If this cannot be made to
-work at acceptable cost, **stop and reassess** (fall back options in §7) before building the
-rest of Half B — this is the single riskiest assumption in the design.
+work at acceptable cost, **stop and reassess** (fallback in §7) before building the rest of
+Half B — static-asset manifest discovery in the test host is now the single riskiest
+assumption (auth is no longer a risk per §3.1 / the no-tenant branch).
 
-- **Approach (recommended):** extend the proven minimal-Kestrel host to also serve the
-  published static assets — point the web root at the Web project's publish/build output and
-  load the static-web-assets manifest from there. Keeps `TestAuthHandler` (avoids the OIDC
-  override-ordering problem that made `WebApplicationFactory<App>` unusable for the SSR
-  factory).
-- **Fallback:** a real-Kestrel `WebApplicationFactory<App>` (real `Program.cs`) with an auth
-  override, if serving the manifest standalone proves harder than overriding OIDC. Documented
-  as the alternative; the skeleton task picks whichever works.
+- **Approach (recommended):** run the real `Program.cs` app (real `MapStaticAssets`) with
+  `AzureAd:TenantId` unset + `AddAdminTestDoubles` overrides, bound to a real Kestrel loopback
+  port for Playwright. The static-asset manifest (`PinballWizard.Web.staticwebassets.endpoints.json`)
+  is produced by building the Web project and is discovered from its content root — so the host
+  sets its content root to the Web project so `MapStaticAssets` finds the manifest.
+- **Fallback:** if in-process manifest discovery proves intractable, **spawn the real published
+  Web app out-of-process** (the `tools/e2e/Run-E2E.ps1` spawn pattern) with `AzureAd__TenantId`
+  unset and the admin backends stubbed via configuration, and point Playwright at its URL. Still
+  deterministic and local (no Azure/Entra/Cloudflare). The skeleton task picks whichever works.
 
 ### 5.2 Per-page interactive tests (broad coverage)
 
@@ -182,12 +208,13 @@ is both in PR CI.
 
 ## 7. Risks
 
-- **Static-asset serving in a test host (Half B) is the real unknown.** Mitigated by the
-  skeleton-first task: if the recommended approach and the `WebApplicationFactory<App>` fallback
-  both prove too costly, Half B degrades to a **documented manual admin smoke step** in the
-  deploy runbook (you, with a real admin login, click one control post-deploy) while Half A
-  still ships — and #423 is updated to reflect the partial automated closure. This fallback is
-  only taken if the skeleton genuinely can't be made to work.
+- **Static-asset manifest discovery in a test host (Half B) is the real unknown** (auth is
+  not, per §3.1). Mitigated by the skeleton-first task: if the recommended in-process approach
+  and the out-of-process-spawn fallback (§5.1) both prove too costly, Half B degrades to a
+  **documented manual admin smoke step** in the deploy runbook (you, with a real admin login,
+  click one control post-deploy) while Half A still ships — and #423 is updated to reflect the
+  partial automated closure. This fallback is only taken if the skeleton genuinely can't be made
+  to work.
 - **Playwright circuit-lag flakiness** → reuse the existing bounded-retry pattern; no fixed
   sleeps.
 - **Stub-repo breadth** (6 pages × several services) → contained in the single
