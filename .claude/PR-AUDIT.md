@@ -23,9 +23,9 @@ Run `/local-review`. The skill spawns a `general-purpose` agent that critiques t
 13. **ADR follow-up in the same PR.** If this PR changes behavior an ADR describes (formulas, resolution paths, cost/throughput characteristics, locked patterns), append a dated follow-up entry to that ADR in this PR — not retroactively. ADRs are append-only; a follow-up entry is cheap, drift is not. (Added after the 2026-06-10 audit found ADR-0025/0029 describing superseded behavior.)
 
 14. **Render-mode correctness:** no static page/component carries circuit-dependent
-  controls (`@onclick`/`@bind`/dialogs) without `@rendermode`; error/degraded surfaces
-  stay static with link/reload controls (real `Href`, not `OnClick`). The page-level
-  case is enforced by `RenderModeConventionTests`; this catches the component-only case
-  the test cannot (ADR-0034 §3.6). 🔴 if violated.
+    controls (`@onclick`/`@bind`/dialogs) without `@rendermode`; error/degraded surfaces
+    stay static with link/reload controls (real `Href`, not `OnClick`). The page-level
+    case is enforced by `RenderModeConventionTests`; this catches the component-only case
+    the test cannot (ADR-0034 §3.6). 🔴 if violated.
 
 The PR description records the local-review outcome (number of findings + how each was addressed). The PR template at `.github/PULL_REQUEST_TEMPLATE.md` includes this line.

@@ -84,8 +84,6 @@ The fix: pin the four providers to `InteractiveServer` as described above (PR #4
 
 ---
 
----
-
 ## Amendment (2026-06-17) — admin per-need render mode + render-mode doctrine
 
 The original decision made every `/admin/*` page static with static providers.
@@ -116,9 +114,9 @@ the general doctrine.
 | `AdminSources` (`/admin/sources`) | static | read-only grid, no data transport yet |
 | `AdminMachines` (`/admin/machines`) | interactive | sortable/filterable/groupable grid, native client-side grouping (no reloads) |
 | `AdminMachineDetail` (`/admin/machines/{OpdbId}`) | interactive | sortable linked-docs grid |
-| `AdminDocumentTriage` | interactive | Relink / MarkGeneric `OnClick` actions |
-| `AdminLinkOverrides` | interactive | create dialog + delete |
-| `AdminSettings` | interactive | `@bind` form controls |
+| `AdminDocumentTriage` (`/admin/document-triage`) | interactive | Relink / MarkGeneric `OnClick` actions |
+| `AdminLinkOverrides` (`/admin/link-overrides`) | interactive | create dialog + delete |
+| `AdminSettings` (`/admin/settings`) | interactive | `@bind` form controls |
 
 ### Provider pinning
 
@@ -128,7 +126,9 @@ admin pages resolve their popover/dialog/snackbar services from the shared
 circuit. This is the *inverse* of the PR #401 crash (which was a static provider
 under an interactive page). `LayoutProviderRenderModeTests` now asserts the
 interactive invariant on **both** layouts; the former static-admin asymmetry is
-retired.
+retired. The former `AdminLayout_Provider_IsStaticNoRenderMode` theory was
+renamed to `AdminLayout_Provider_HasInteractiveServerRenderMode` and now asserts
+the interactive invariant on both layouts.
 
 ### Nav
 

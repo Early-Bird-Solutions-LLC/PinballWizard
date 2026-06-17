@@ -1,7 +1,7 @@
 ---
 title: Admin per-need render modes + app-wide render-mode correctness
 date: 2026-06-17
-status: draft
+status: accepted
 related:
   - docs/adr/0034-blazor-render-mode-and-mudblazor-providers.md   # amended by this work
   - docs/adr/0026-user-delight-frontend-and-streaming.md          # per-page render-mode strategy
@@ -87,13 +87,13 @@ Each interactive page adds `@rendermode InteractiveServer` at the page level. St
 are left unchanged. (When a grid page becomes interactive, the existing URL-param grouping
 on `AdminMachines` is replaced by the grid's native client-side grouping.)
 
-### 3.3 Admin nav — permanent drawer
+### 3.3 Admin nav — always-open drawer
 
-Make `AdminLayout`'s `MudDrawer` **permanent / always-visible** (`DrawerVariant.Permanent`,
-open by default) and **remove the hamburger `MudIconButton` + `ToggleDrawer`/`_drawerOpen`**.
-A permanent drawer's `MudNavLink`s are plain anchors — they navigate correctly regardless
+Make `AdminLayout`'s `MudDrawer` **always-open (`DrawerVariant.Persistent` in MudBlazor 8.x)**,
+open by default, and **remove the hamburger `MudIconButton` + `ToggleDrawer`/`_drawerOpen`**.
+An always-open drawer's `MudNavLink`s are plain anchors — they navigate correctly regardless
 of each page's render mode, giving a **consistent nav across the mixed-mode admin area**
-without depending on a circuit. (This is why the permanent drawer is correct even now that
+without depending on a circuit. (This is why the always-open drawer is correct even now that
 admin is partly interactive: it decouples nav from per-page interactivity.)
 
 ### 3.4 Error / Tilt surfaces — stay static, fix the controls

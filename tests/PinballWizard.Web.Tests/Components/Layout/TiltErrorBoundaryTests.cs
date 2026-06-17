@@ -22,7 +22,7 @@ public sealed class TiltErrorBoundaryTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        _ = Services.GetRequiredService<Bunit.TestDoubles.BunitNavigationManager>();
+        _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
     [Fact]

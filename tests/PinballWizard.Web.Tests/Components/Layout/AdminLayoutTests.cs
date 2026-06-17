@@ -10,9 +10,10 @@ namespace PinballWizard.Web.Tests.Components.Layout;
 
 // Per ADR-0026 PR self-audit item 9(d): AdminLayout is the chrome wrapper for
 // all /admin/* pages. Per the ADR-0034 amendment (2026-06-17) the drawer is
-// PERMANENT (always visible) and the hamburger toggle is removed — a toggle
-// OnClick is dead on the static admin pages, and a permanent drawer's nav links
-// are plain anchors that work regardless of each page's render mode.
+// always-open (DrawerVariant.Persistent in MudBlazor 8.x) and the hamburger
+// toggle is removed — a toggle OnClick is dead on the static admin pages, and
+// an always-open drawer's nav links are plain anchors that work regardless of
+// each page's render mode.
 //
 // ADR-0008 (MudBlazor strict), ADR-0034 (admin per-need render mode).
 public sealed class AdminLayoutTests : AsyncBunitContext
@@ -52,7 +53,7 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     }
 
     [Fact]
-    public void AdminLayout_Drawer_IsPermanent()
+    public void AdminLayout_Drawer_IsPersistent()
     {
         var cut = RenderWithBody();
 
