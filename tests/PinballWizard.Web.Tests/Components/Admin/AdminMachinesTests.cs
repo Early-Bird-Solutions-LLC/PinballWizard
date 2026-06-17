@@ -21,9 +21,12 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // Tests assert behavioral invariants: grid sentinel, "as of" stamp, health
 // chips, axis selector links, query-param grouping, breadcrumb trail.
 //
-// Note: AdminMachines has no @rendermode directive (ADR-0034 — static page).
-// [SupplyParameterFromQuery] is set via ComponentParameter in Render<T>() or
-// by setting the NavigationManager URI before rendering.
+// Note: AdminMachines is interactive (@rendermode InteractiveServer, ADR-0034
+// amendment 2026-06-17). The group-by axis is switched by in-circuit OnClick
+// buttons (no query param, no page reload); native MudDataGrid grouping
+// re-evaluates per the active axis. Tests drive the axis by clicking buttons
+// inside InvokeAsync (the dispatcher-click pattern — clicking an element found
+// outside InvokeAsync uses a stale handler id under load).
 public sealed class AdminMachinesTests : AsyncBunitContext
 {
     // ── Shared fake data ───────────────────────────────────────────────────────
@@ -174,107 +177,82 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     // ── Axis selector ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AdminMachines_AxisSelector_RendersAllFiveAxes()
+    public async Task AdminMachines_AxisSelector_RendersAllFiveAxisButtons()
     {
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var selector = cut.Find("[data-testid='groupby-selector']");
-        // Five navigation links, one per axis.
-        var links = selector.QuerySelectorAll("a[href]");
-        Assert.True(links.Length >= 5,
-            $"Expected at least 5 axis links, got {links.Length}.");
+        // Five in-circuit buttons, one per axis (MudButton with OnClick renders
+        // as <button>, not <a> — the static href selector is retired).
+        var buttons = selector.QuerySelectorAll("button");
+        Assert.True(buttons.Length >= 5,
+            $"Expected at least 5 axis buttons, got {buttons.Length}.");
     }
 
     [Fact]
     public async Task AdminMachines_DefaultAxis_IsManufacturer()
     {
-        // No GroupBy parameter → default axis is manufacturer.
         var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // The manufacturer link should be rendered Filled (active).
-        // We assert that the groupby-selector contains a link pointing to
-        // ?groupBy=manufacturer (the default nav link exists).
+        // Default active axis = manufacturer → that button is Filled + Primary.
+        // Class confirmed from MudBlazor 8.x: mud-button-filled-primary.
         var selector = cut.Find("[data-testid='groupby-selector']");
-        var mfrLink  = selector.QuerySelector("a[href*='groupBy=manufacturer']");
-        Assert.NotNull(mfrLink);
+        var activeBtn = selector.QuerySelector("button.mud-button-filled-primary");
+        Assert.NotNull(activeBtn);
+        Assert.Contains("Manufacturer", activeBtn!.TextContent, StringComparison.Ordinal);
     }
 
-    // ── Query-param grouping axis ──────────────────────────────────────────────
+    // ── Click-driven grouping axis ─────────────────────────────────────────────
 
-    // Helper: navigate to /admin/machines?groupBy=<axis> then render.
-    // [SupplyParameterFromQuery] is driven by the NavigationManager URI in bUnit,
-    // not via ComponentParameterCollectionBuilder.Add (bUnit enforces this explicitly).
-    private IRenderedComponent<AdminMachines> RenderWithAxis(string axis)
+    // Helper: click an axis button by its visible label, inside InvokeAsync so
+    // the handler id is fresh (dispatcher-click pattern, memory note 2026-06-12).
+    private static async Task ClickAxisAsync(IRenderedComponent<AdminMachines> cut, string label)
     {
-        var nav = Services.GetRequiredService<BunitNavigationManager>();
-        nav.NavigateTo($"/admin/machines?groupBy={axis}");
-        return Render<AdminMachines>();
+        await cut.InvokeAsync(() =>
+        {
+            var selector = cut.Find("[data-testid='groupby-selector']");
+            var button = selector.QuerySelectorAll("button")
+                .First(b => b.TextContent.Contains(label, StringComparison.Ordinal));
+            button.Click();
+        });
     }
 
     [Fact]
-    public async Task AdminMachines_GroupByHealth_ActiveAxisButtonIsFilledPrimary()
+    public async Task AdminMachines_ClickingHealthAxis_ActivatesItWithoutReload()
     {
-        var cut = RenderWithAxis("health");
+        var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Grid renders.
+        await ClickAxisAsync(cut, "Health");
+
+        // The Health button is now Filled + Primary; the grid is still present
+        // (in-circuit regroup, no navigation).
+        var selector = cut.Find("[data-testid='groupby-selector']");
+        var activeBtn = selector.QuerySelector("button.mud-button-filled-primary");
+        Assert.NotNull(activeBtn);
+        Assert.Contains("Health", activeBtn!.TextContent, StringComparison.Ordinal);
         cut.Find("[data-testid='admin-machines-grid']");
 
-        // The health axis button must carry mud-button-filled-primary (Filled + Color.Primary)
-        // — this proves the ?groupBy=health param drove the page state and the active button
-        // is visually distinguished. Class confirmed from MudBlazor 8.5.0 MudBlazor.min.css.
-        var selector = cut.Find("[data-testid='groupby-selector']");
-        var activeBtn = selector.QuerySelector("a.mud-button-filled-primary[href*='groupBy=health']");
-        Assert.NotNull(activeBtn);
-
-        // Health chip text appears in the markup.
-        // "Empty" is the flag label for Foo Pro (0 docs); "Ok" is flag.ToString() for Bar CE / LE.
+        // Health flag labels render: "Empty" (Foo Pro, 0 docs) and "Ok" (Bar CE/LE).
         Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
         Assert.Contains("Ok", cut.Markup, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task AdminMachines_GroupByFranchise_RendersWithoutError()
+    [Theory]
+    [InlineData("Franchise")]
+    [InlineData("Year")]
+    [InlineData("Source")]
+    public async Task AdminMachines_ClickingAxis_RegroupsWithoutError(string label)
     {
-        var cut = RenderWithAxis("franchise");
+        var cut = Render<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        Assert.NotNull(cut.Markup);
-        var grid = cut.Find("[data-testid='admin-machines-grid']");
-        Assert.NotNull(grid);
-    }
-
-    [Fact]
-    public async Task AdminMachines_GroupByYear_RendersWithoutError()
-    {
-        var cut = RenderWithAxis("year");
-        await cut.InvokeAsync(() => Task.CompletedTask);
+        await ClickAxisAsync(cut, label);
 
         Assert.NotNull(cut.Markup);
-    }
-
-    [Fact]
-    public async Task AdminMachines_GroupBySource_RendersWithoutError()
-    {
-        var cut = RenderWithAxis("source");
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        Assert.NotNull(cut.Markup);
-    }
-
-    [Fact]
-    public async Task AdminMachines_UnrecognizedGroupBy_FallsBackToManufacturer()
-    {
-        // An unrecognized axis value should fall back to manufacturer grouping
-        // without throwing — the manufacturer axis links are present regardless.
-        var cut = RenderWithAxis("bogusaxis");
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        Assert.NotNull(cut.Markup);
-        var grid = cut.Find("[data-testid='admin-machines-grid']");
-        Assert.NotNull(grid);
+        cut.Find("[data-testid='admin-machines-grid']");
     }
 
     // ── Breadcrumb ────────────────────────────────────────────────────────────
