@@ -79,7 +79,26 @@ _ = storage.AddBlobs("blobs");
 //
 // NOTE: WaitFor not chained — same reasoning as the Web project below.
 var api = builder.AddProject<Projects.PinballWizard_Api>("pinwiz-api")
-    .WithReference(cosmos);
+    .WithReference(cosmos)
+    // Declare endpoints explicitly. A project with no launchSettings.json gets
+    // NO HTTP/HTTPS bindings from Aspire by default, so Kestrel falls back to
+    // its hardcoded http://localhost:5000 — and pinwiz-api + pinwiz-web would
+    // both land on 5000 and collide. Declaring endpoints here (no fixed port =
+    // Aspire assigns a free port per run and injects ASPNETCORE_URLS) is the
+    // 13.x-preferred source of truth, and gives WithReference(api) below a real
+    // endpoint to publish for service discovery ("https+http://pinwiz-api").
+    // Ref: https://aspire.dev/integrations/dotnet/project-resources/
+    .WithHttpEndpoint()
+    .WithHttpsEndpoint()
+    // Run the child in the AppHost's environment (Development locally). With no
+    // launchSettings.json, Aspire sets no ASPNETCORE_ENVIRONMENT, so the project
+    // defaults to Production — and in Production MapStaticAssets() expects the
+    // published wwwroot, which doesn't exist when debugging from bin/Debug, so
+    // every _content/* RCL asset, the scoped *.styles.css bundle, and
+    // _framework/blazor.web.js 500 with FileNotFound. Development auto-enables
+    // the static-web-assets loader. Propagated (not hardcoded) so a published
+    // AppHost would still hand children Production.
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName);
 
 // Blazor Web App — Wave 1 PR-F0 (amended by PR-F2). Wired with a Cosmos
 // reference and the Api reference so Aspire injects the service-discovery
@@ -89,8 +108,34 @@ var api = builder.AddProject<Projects.PinballWizard_Api>("pinwiz-api")
 // NOTE: The Cosmos preview emulator comment at the top of this file
 // documents why WaitFor is not chained here — dependency ordering is
 // handled at the application layer (CosmosBootstrapper.EnsureCreatedAsync).
-_ = builder.AddProject<Projects.PinballWizard_Web>("pinwiz-web")
+var web = builder.AddProject<Projects.PinballWizard_Web>("pinwiz-web")
     .WithReference(cosmos)
-    .WithReference(api);
+    .WithReference(api)
+    // See the pinwiz-api endpoint note above — declared explicitly so the Blazor
+    // host binds an Aspire-assigned port instead of the default 5000.
+    .WithHttpEndpoint()
+    .WithHttpsEndpoint()
+    // See the pinwiz-api ASPNETCORE_ENVIRONMENT note — required here too, and
+    // load-bearing for the Blazor host: Production breaks MudBlazor / _framework
+    // static assets (MapStaticAssets) when debugging from bin/Debug.
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName);
+
+// Local dev: relay the isolated Azure CLI config dir to the orchestrated children
+// so their DefaultAzureCredential -> AzureCliCredential resolves the PERSONAL
+// pinwiz.ai identity (where the Bicep-managed Foundry lives) instead of the machine
+// default ~/.azure (which may be signed in to a different tenant). The dir is set by
+// the launch config / terminal as AZURE_CONFIG_DIR=${workspaceFolder}/.azure-local;
+// the AppHost simply relays whatever it received (no hardcoded path). Development-only
+// — deployed children authenticate via managed identity, not the CLI, so a published
+// AppHost never carries this. Without it set, children fall back to the default
+// credential chain (Foundry then reports "not configured", the honest local signal).
+var azureConfigDir = builder.Environment.EnvironmentName is "Development"
+    ? Environment.GetEnvironmentVariable("AZURE_CONFIG_DIR")
+    : null;
+if (!string.IsNullOrWhiteSpace(azureConfigDir))
+{
+    api.WithEnvironment("AZURE_CONFIG_DIR", azureConfigDir);
+    web.WithEnvironment("AZURE_CONFIG_DIR", azureConfigDir);
+}
 
 await builder.Build().RunAsync().ConfigureAwait(false);

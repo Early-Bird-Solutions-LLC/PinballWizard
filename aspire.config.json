@@ -1,0 +1,5 @@
+{
+    "appHost": {
+        "path": "src/PinballWizard.AppHost/PinballWizard.AppHost.csproj"
+    }
+}

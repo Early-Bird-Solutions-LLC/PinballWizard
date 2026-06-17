@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <RootNamespace>PinballWizard.Api</RootNamespace>
@@ -11,6 +11,7 @@
       cross-platform lock-file failures in CI.
     -->
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <UserSecretsId>46916414-5dac-4793-a3d9-c82fbb451beb</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
