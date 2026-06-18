@@ -280,12 +280,17 @@ src/
 ├── PinballWizard.RagIngestionWorker ← Cosmos Change Feed worker — PdfPig, chunking, embedding, AI Search
 ├── PinballWizard.AppHost         ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
 └── PinballWizard.ServiceDefaults ← OTel + service discovery + HTTP resilience + health checks
-tests/
-├── PinballWizard.Scraper.Tests   ← Phase 1–4 + AI orchestration tests (scrapers, Cosmos, OPDB, Foundry, evaluators, contract)
-└── PinballWizard.Web.Tests       ← Phase 5 Web tests (bUnit component tests, Playwright E2E, endpoint tests)
+tests/                              ← per-layer test projects (ADR-0030); see CONTRIBUTING.md § Test suites
+├── PinballWizard.Core.Tests
+├── PinballWizard.Application.Tests
+├── PinballWizard.Infrastructure.Tests ← largest: scrapers, Cosmos, OPDB, RAG, AI orchestration, evaluators, contract
+├── PinballWizard.Cli.Tests
+├── PinballWizard.Api.Tests
+├── PinballWizard.Web.Tests          ← bUnit components + Playwright (Accessibility / Circuit / Snapshots / E2E) + endpoints
+└── PinballWizard.ServiceDefaults.Tests
 docs/
 ├── vision.md / guardrails.md / build-spec.md / quality-spec.md / observability.md
-├── adr/ (0001–0027)
+├── adr/ (numbered MADR-lite decision records)
 ├── decision-log.md
 ├── runbooks/ (01–06 + h-chain-operator-runbook)
 ├── ui/ (prototypes, screen specs, theme specs)
