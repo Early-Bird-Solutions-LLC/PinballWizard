@@ -227,6 +227,22 @@ jobs:
             --results-directory ./snapshot-results \
             tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
 
+      - name: Circuit tests (admin in-process host, no Azure)
+        # AdminCircuitSkeletonTests + AdminInteractiveTests (Category=Circuit).
+        # These spin up the real Web app in-process via
+        # InteractiveAdminWebApplicationFactory and need the static-asset
+        # manifest produced by the Release build above — no extra build step
+        # needed. if: always() so circuit failures don't mask snapshot failures.
+        if: always()
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --filter "Category=Circuit" \
+            --logger "trx;LogFileName=circuit-results.trx" \
+            --results-directory ./circuit-results \
+            tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
       - name: Upload accessibility test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -253,5 +269,14 @@ jobs:
         with:
           name: snapshot-results
           path: snapshot-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload circuit test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: circuit-results
+          path: circuit-results/**/*.trx
           if-no-files-found: warn
           retention-days: 14
