@@ -193,6 +193,33 @@ amplification; the retry costs at most two extra ~5 ms point-reads,
 only on misses. Latency budget impact is negligible against the
 § 4 numbers.
 
+## Follow-up 2026-06-18 — serializer parity across both client-construction paths
+
+The § 2 `CosmosClientOptions` posture (custom `SystemTextJsonCosmosSerializer`,
+`EnableContentResponseOnWrite = false`, `AllowBulkExecution`,
+`ConsistencyLevel = Session`) was being applied on **only one** of the two
+`CosmosClient` construction paths. The Managed-Identity fallback (deployed / live
+Cosmos) built its client with the options inline, so live writes were correct.
+The other path — .NET Aspire's `AddAzureCosmosClient("cosmos")`, used for the
+**local preview emulator** — was called with no options, so it fell back to the
+Cosmos SDK's default serializer.
+
+The default serializer ignores the documents' System.Text.Json
+`[JsonPropertyName]` attributes, so a write through the emulator client
+serialised the partition key under the wrong name (e.g. `PartitionKey` instead of
+`partitionKey`). The gateway rejected every such write with `400 BadRequest`
+(RU=0, empty reason). This is why the local emulator was always empty and admin /
+seeding / RAG writes silently failed locally while live Cosmos worked.
+
+Fix: the serializer + write options are extracted into
+`CosmosClientConfiguration.ApplySharedOptions` and applied on **both** paths — via
+the `configureClientOptions` argument to `AddAzureCosmosClient` (the
+`IConfigureOptions<CosmosClientOptions>` mechanism does **not** work here — Aspire
+resolves *named* options for its client) and directly in the fallback. Transport
+settings (`ConnectionMode` / `LimitToEndpoint` / `ApplicationPreferredRegions`)
+stay path-specific. Guarded by `CosmosHostRegistrationTests` (asserts the Aspire
+client carries the custom serializer) and `CosmosClientOptionsTests`.
+
 ## References
 
 - [`architecture-v2.md`](../architecture-v2.md) § 7.1 — the user-delight revisit triggers this ADR makes measurable
