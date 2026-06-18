@@ -46,9 +46,10 @@ namespace PinballWizard.Application.Ai;
 //          is now wired to wizardAgent.RunStreamingAsync, emits per-update
 //          TextDelta chunks as they arrive, aggregates updates into an
 //          AgentResponse post-stream, then calls the shared helper.
-//          AgentResponseExtensions.ToAgentResponseAsync is not present in
-//          Microsoft.Agents.AI 1.4.0; aggregation is done inline from the
-//          AgentResponseUpdate.Contents (IList<AIContent>) per update.
+//          AgentResponseExtensions.ToAgentResponseAsync was not present in
+//          Microsoft.Agents.AI 1.4.0 (SDK issue #2688); it is available
+//          from 1.5.0+. Aggregation is done inline (AggregateStreamAsync)
+//          regardless, preserving streaming semantics and text-coalescing.
 //          The 429 catch arm is duplicated at each agent-invocation site
 //          (AnswerAsync + AnswerStreamingAsync) with an explaining comment;
 //          duplication is minimal and avoids a helper that would leak
@@ -402,9 +403,10 @@ public sealed class AiRouter : IAiRouter
         // require a structural change to AggregateStreamAsync. Logged in
         // DL-0003 for Wave 3 review.
         //
-        // AgentResponseExtensions.ToAgentResponseAsync is not present in
-        // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); AggregateStreamAsync
-        // handles reconstruction inline.
+        // AgentResponseExtensions.ToAgentResponseAsync was not present in
+        // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); it is available from
+        // 1.5.0+. AggregateStreamAsync handles reconstruction inline to
+        // preserve text-coalescing and streaming semantics (see comment above).
         var (accumulatedMessages, streamChunks, refusalFromException) =
             await AggregateStreamAsync(
                     wizardAgent,

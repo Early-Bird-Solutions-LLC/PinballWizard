@@ -43,8 +43,8 @@
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.61.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
-    <PackageVersion Include="Microsoft.Agents.AI" Version="1.4.0" />
-    <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.4.0" />
+    <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
+    <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.5.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
