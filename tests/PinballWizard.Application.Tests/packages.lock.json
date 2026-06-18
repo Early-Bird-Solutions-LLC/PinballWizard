@@ -132,10 +132,10 @@
       },
       "Microsoft.Agents.AI.Abstractions": {
         "type": "Transitive",
-        "resolved": "1.4.0",
-        "contentHash": "F0/DMEnZzxrtEhTUO0kMWqafE1Wmj5wAHSSS667k9DcZhQOVHw3UTlU7E1CxepC+p4gmKwNEHLrDKacHM1HDOg==",
+        "resolved": "1.5.0",
+        "contentHash": "0kCjY+20vGJE5Tk/rJRV+kAIJ+3h2fYlDNEaFylw+olC7NAyp7u1odQDX+LRSOddgzvFeXtMeGW0sRxPxdftUA==",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "10.5.0"
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1"
         }
       },
       "Microsoft.Bcl.AsyncInterfaces": {
@@ -163,10 +163,10 @@
       },
       "Microsoft.Extensions.AI": {
         "type": "Transitive",
-        "resolved": "10.5.0",
-        "contentHash": "UwUYEUqB7v74IYFRzPmjiN0i6JvHFC2P5laO5ZV2LvDRuz84+16XIkMVwT8nKyHJHT2gWOqywiTMC2pa50IrTA==",
+        "resolved": "10.5.1",
+        "contentHash": "/PFiinNc+z8bOcDHak5uxC7l44HheG/cFaI5AAOKQ9Naf1+3O6sKXwvtRSXVz5TVb0A9rU+DVR7M8xqOzBoJNA==",
         "dependencies": {
-          "Microsoft.Extensions.AI.Abstractions": "10.5.0",
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1",
           "Microsoft.Extensions.Caching.Abstractions": "10.0.6",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.6",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.6",
@@ -175,8 +175,8 @@
       },
       "Microsoft.Extensions.AI.Abstractions": {
         "type": "Transitive",
-        "resolved": "10.5.0",
-        "contentHash": "bb2wQ1HGatf5zdBxE28zrN4jaEVmpC+IJYChcqABTfu77YtFcJe/A4ZChjVZ0V1OF+UPYSOY8mUDI/fwEljcIA=="
+        "resolved": "10.5.1",
+        "contentHash": "nB0l3IlsVbNeUxsE7nZNb9GY8rP1OSeqpj0pseORPejt474HNKEauTWTLdSJPkSvPlRMxowZNMo6nyp7APAiSg=="
       },
       "Microsoft.Extensions.AI.Evaluation": {
         "type": "Transitive",
@@ -648,7 +648,7 @@
         "type": "Project",
         "dependencies": {
           "Azure.Core": "[1.59.0, )",
-          "Microsoft.Agents.AI": "[1.4.0, )",
+          "Microsoft.Agents.AI": "[1.5.0, )",
           "Microsoft.Bcl.Memory": "[10.0.9, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.9, )",
           "Microsoft.Extensions.Hosting": "[10.0.9, )",
@@ -679,13 +679,13 @@
       },
       "Microsoft.Agents.AI": {
         "type": "CentralTransitive",
-        "requested": "[1.4.0, )",
-        "resolved": "1.4.0",
-        "contentHash": "oMany8P++DtWhLp/IkIZKAggjU2wBJ1CjSoAQCXeTgUMW2/n22+RCjMMN4uk3xHdHxhjyM82/Zm2xCXfDxHMrg==",
+        "requested": "[1.5.0, )",
+        "resolved": "1.5.0",
+        "contentHash": "7DjXYh2I4yec0a74a26RLHbQBg5M8n73LzwOT3tBOPEXLyI5SFXfgVD/luqk85ThuNeuuCzA8WrCpAE1P475Qg==",
         "dependencies": {
-          "Microsoft.Agents.AI.Abstractions": "1.4.0",
-          "Microsoft.Extensions.AI": "10.5.0",
-          "Microsoft.Extensions.AI.Abstractions": "10.5.0",
+          "Microsoft.Agents.AI.Abstractions": "1.5.0",
+          "Microsoft.Extensions.AI": "10.5.1",
+          "Microsoft.Extensions.AI.Abstractions": "10.5.1",
           "Microsoft.Extensions.AI.Evaluation": "10.4.0",
           "Microsoft.Extensions.Compliance.Abstractions": "10.5.0",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.6",
