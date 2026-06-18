@@ -19,6 +19,7 @@
 
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Api.Endpoints;
+using PinballWizard.Api.Hosting;
 using PinballWizard.Api.Middleware;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Landing;
@@ -76,20 +77,14 @@ if (foundryWired)
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
 }
 
-// ── Cosmos persistence (gated — mirrors CLI Program.cs wiring) ────────────
-// The Wizard's getMachineByTitle grounding tool (MachineGroundingTool) depends
-// on IMachineRepository, which AddCosmosPersistence registers. AddAiRouter
-// registers MachineGroundingTool as a singleton, so without this the router's
-// tool graph fails to resolve the first time a question is asked. Gated on
-// Cosmos:AccountEndpoint; AddCosmosPersistence builds a Managed-Identity
-// CosmosClient from that endpoint (deployed account and local Phase-0 runs
-// both use this path — the Api host has no Aspire Cosmos client dependency,
-// unlike the Cli which also supports the loopback emulator connection string).
-// Absent in unit tests / clean local dev — the Api starts without Cosmos.
-if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
-{
-    builder.Services.AddCosmosPersistence(builder.Configuration);
-}
+// ── Cosmos persistence ─────────────────────────────────────────────────────
+// Wires the local Aspire-emulator path AND the deployed Managed-Identity path,
+// mirroring the Cli/Web. The Wizard's getMachineByTitle grounding tool
+// (MachineGroundingTool, registered by AddAiRouter when Foundry is wired)
+// depends on IMachineRepository, which AddCosmosPersistence registers. Extracted
+// to CosmosApiRegistration so the gate is directly unit-testable
+// (ApiCosmosCompositionTests). No-op when no Cosmos signal is present.
+builder.AddApiCosmosPersistence();
 
 // ── Azure AI Search (gated — mirrors CLI Program.cs wiring) ───────────────
 // The Wizard's searchCorpus tool (SearchCorpusTool) depends on IRagRetriever,
