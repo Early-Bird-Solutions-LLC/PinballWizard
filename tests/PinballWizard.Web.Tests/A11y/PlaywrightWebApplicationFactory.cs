@@ -34,9 +34,18 @@ namespace PinballWizard.Web.Tests.A11y;
 //   No-op auth (TestAuthHandler) / stub HTTP clients / no OIDC / no AI
 //
 // The app URL is read from IServerAddressesFeature after startup.
-public sealed class PlaywrightWebApplicationFactory : IAsyncLifetime
+public class PlaywrightWebApplicationFactory : IAsyncLifetime
 {
+    private readonly bool _adminMode;
     private WebApplication? _app;
+
+    // Public parameterless ctor — the only public constructor, required by xUnit's
+    // fixture activator. Used directly by AccessibilityTests (public anonymous mode).
+    public PlaywrightWebApplicationFactory() => _adminMode = false;
+
+    // Protected ctor used by derived types (e.g. AdminPlaywrightFactory) that need
+    // admin mode. Not public: xUnit fixture activator sees only one public ctor.
+    protected PlaywrightWebApplicationFactory(bool adminMode) => _adminMode = adminMode;
 
     public string ServerAddress
     {
@@ -84,7 +93,21 @@ public sealed class PlaywrightWebApplicationFactory : IAsyncLifetime
         builder.Services
             .AddAuthentication(defaultScheme: "Test")
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
-        builder.Services.AddAuthorization();
+
+        // Admin mode reproduces Program.cs's no-tenant posture: the permissive
+        // AdminOnly policy (RequireAssertion(_ => true)) so /admin/* pages render
+        // for the anonymous TestAuthHandler identity. Public mode keeps the bare
+        // AddAuthorization() (no AdminOnly policy) — unchanged for the public axe suite.
+        if (_adminMode)
+        {
+            builder.Services.AddAuthorization(o =>
+                o.AddPolicy("AdminOnly", p => p.RequireAssertion(_ => true)));
+            builder.Services.AddAdminTestDoubles();
+        }
+        else
+        {
+            builder.Services.AddAuthorization();
+        }
 
         // Random loopback port; actual address is read from IServerAddressesFeature.
         builder.WebHost.ConfigureKestrel(opts => opts.Listen(System.Net.IPAddress.Loopback, 0));
