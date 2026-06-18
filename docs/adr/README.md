@@ -47,6 +47,7 @@ negative) it carries.
 | [0034](0034-blazor-render-mode-and-mudblazor-providers.md) | Blazor render-mode strategy and MudBlazor provider pinning | Accepted |
 | [0035](0035-citation-ui-metadata-channel.md) | Citation UI-metadata side channel for freshness + relevance score | Accepted |
 | [0036](0036-cosmos-read-access-standard.md) | Cosmos read-access standard — four-tier partition-alignment model | Accepted |
+| [0037](0037-dependency-update-automation.md) | Dependency-update automation — Renovate for versions (grouped, CI-gated auto-merge, majors held), Dependabot for security | Accepted |
 
 ## Conventions
 

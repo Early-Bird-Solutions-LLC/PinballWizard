@@ -67,5 +67,9 @@ shared keys on Storage). The custom
 [`sanitization.yml`](.github/workflows/sanitization.yml) workflow blocks
 common credential patterns from being committed.
 
-CodeQL runs on every PR and weekly. Dependabot proposes weekly
-dependency updates. Locked-mode NuGet restore prevents version drift.
+CodeQL runs on every PR and weekly. Dependency updates are automated
+([ADR-0037](docs/adr/0037-dependency-update-automation.md)): Renovate
+proposes grouped version updates (majors held for review), and Dependabot
+opens immediate security PRs for any published advisory — which matters
+because vulnerable advisories are build-breaking (`NU1903`) here.
+Locked-mode NuGet restore prevents version drift.
