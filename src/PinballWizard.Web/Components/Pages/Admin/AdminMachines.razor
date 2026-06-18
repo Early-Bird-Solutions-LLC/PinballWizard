@@ -98,8 +98,8 @@
 
         <Columns>
             @* Each groupable column has Grouping="true" only when it is the active
-             * axis. Exactly one column is active per render, determined server-side
-             * from the query param.
+             * axis. Exactly one column is active per render, determined by the
+             * circuit's `_activeAxis` state (set by the in-circuit group-by buttons).
              *
              * GroupTemplate overrides MudDataGrid's default group-header rendering
              * (<span style="font-weight:bold">) to fix a WCAG 2.1 AA color-contrast

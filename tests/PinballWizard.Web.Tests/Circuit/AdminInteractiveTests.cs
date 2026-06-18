@@ -10,10 +10,11 @@ namespace PinballWizard.Web.Tests.Circuit;
 public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory factory)
     : IClassFixture<InteractiveAdminWebApplicationFactory>
 {
-    private async Task<IBrowser> LaunchAsync()
+    private static async Task<(IPlaywright Pw, IBrowser Browser)> LaunchAsync()
     {
         var pw = await Playwright.CreateAsync();
-        return await pw.Chromium.LaunchAsync(new() { Headless = true });
+        var browser = await pw.Chromium.LaunchAsync(new() { Headless = true });
+        return (pw, browser);
     }
 
     // Retry an action until its post-condition holds — the circuit can lag the
@@ -35,7 +36,9 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
     [Fact]
     public async Task AdminSettings_EditingCeiling_UpdatesBoundValue_AndDirtyHint()
     {
-        await using var browser = await LaunchAsync();
+        var (pw, browser) = await LaunchAsync();
+        using var _pw = pw;
+        await using var _br = browser;
         var page = await browser.NewPageAsync();
         await page.GotoAsync($"{factory.ServerAddress}/admin/settings",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
@@ -64,7 +67,9 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
     [Fact]
     public async Task AdminLinkOverrides_NewOverride_OpensDialog()
     {
-        await using var browser = await LaunchAsync();
+        var (pw, browser) = await LaunchAsync();
+        using var _pw = pw;
+        await using var _br = browser;
         var page = await browser.NewPageAsync();
         await page.GotoAsync($"{factory.ServerAddress}/admin/link-overrides",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
@@ -85,7 +90,9 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
     [Fact]
     public async Task AdminDocumentTriage_Relink_ResolvesRow()
     {
-        await using var browser = await LaunchAsync();
+        var (pw, browser) = await LaunchAsync();
+        using var _pw = pw;
+        await using var _br = browser;
         var page = await browser.NewPageAsync();
         await page.GotoAsync($"{factory.ServerAddress}/admin/document-triage",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
@@ -110,7 +117,9 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
     [Fact]
     public async Task AdminMachineDetail_DocsGrid_SortsOnHeaderClick()
     {
-        await using var browser = await LaunchAsync();
+        var (pw, browser) = await LaunchAsync();
+        using var _pw = pw;
+        await using var _br = browser;
         var page = await browser.NewPageAsync();
         await page.GotoAsync($"{factory.ServerAddress}/admin/machines/mch_godzilla_pro?mfr=stern",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });

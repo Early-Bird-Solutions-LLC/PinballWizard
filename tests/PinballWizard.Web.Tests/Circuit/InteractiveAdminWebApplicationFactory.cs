@@ -253,8 +253,10 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
 
         if (current is null)
             throw new InvalidOperationException(
-                "Cannot find repo root (PinballWizard.slnx). " +
-                "Run `dotnet build src/PinballWizard.Web` before running Circuit tests.");
+                "Could not locate repo root: walked up from '" + AppContext.BaseDirectory +
+                "' without finding PinballWizard.slnx. " +
+                "Verify the working directory is inside the PinballWizard checkout " +
+                "and that the checkout is complete.");
 
         return current.FullName;
     }
