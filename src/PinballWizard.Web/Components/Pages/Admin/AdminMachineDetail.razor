@@ -184,7 +184,7 @@
                          Class="mb-4"
                          data-testid="detail-docs-grid">
                 <Columns>
-                    <PropertyColumn Property="d => d.DocumentType" Title="Type" />
+                    <PropertyColumn Property="d => d.DocumentType" Title="Type" Sortable="true" />
                     <TemplateColumn Title="Document">
                         <CellTemplate>
                             <MudLink Href="@context.Item.DocumentUrl" Target="_blank">

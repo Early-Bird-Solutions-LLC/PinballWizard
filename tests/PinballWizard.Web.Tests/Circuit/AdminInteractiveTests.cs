@@ -90,11 +90,15 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
         await page.GotoAsync($"{factory.ServerAddress}/admin/document-triage",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        var relink = page.GetByRole(AriaRole.Button, new() { Name = "Re-link" }).First;
-        await relink.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
+        // Wait for at least one Re-link button to be visible before entering the retry.
+        await page.GetByRole(AriaRole.Button, new() { Name = "Re-link" }).First
+            .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
 
         await UntilAsync(async () =>
         {
+            // Re-resolve on every attempt — a re-render between retries would
+            // otherwise produce a stale-element error on the captured locator.
+            var relink = page.GetByRole(AriaRole.Button, new() { Name = "Re-link" }).First;
             await relink.ClickAsync(new() { Timeout = 5_000 });
             // Stub linker returns Linked → the row is removed → the empty-state shows.
             await page.Locator("[data-testid='admin-document-triage-empty']")
@@ -114,18 +118,31 @@ public sealed class AdminInteractiveTests(InteractiveAdminWebApplicationFactory 
         var grid = page.Locator("[data-testid='detail-docs-grid']");
         await grid.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
 
-        // Click the "Type" column header; on a live circuit MudDataGrid applies a
-        // sort indicator (aria-sort) to the header cell.
+        // Discriminator: MudBlazor 8 renders every sortable column header with a
+        // .sort-direction-icon span (opacity:0, no modifier class). When sorted,
+        // the circuit adds .mud-direction-asc or .mud-direction-desc to that span,
+        // setting opacity:1. The modifier class is NOT present on initial render.
+        //
+        // "Absent-before" gate: assert the modifier class is absent before the click
+        // to prove this test cannot produce a false green on a dead circuit.
+        var sortIndicator = grid.Locator(".sort-direction-icon.mud-direction-asc, .sort-direction-icon.mud-direction-desc");
+        Assert.Equal(0, await sortIndicator.CountAsync());
+
+        // Click the "Type" column header (Sortable="true" on PropertyColumn).
         var typeHeader = grid.GetByText("Type", new() { Exact = true });
         await UntilAsync(async () =>
         {
             await typeHeader.ClickAsync(new() { Timeout = 5_000 });
-            // MudBlazor 8 adds .mud-direction-asc / .mud-direction-desc to the
-            // sort-direction-icon button when a column is sorted — the live
-            // circuit must handle the click for this class to appear.
-            await grid.Locator(".mud-direction-asc, .mud-direction-desc")
-                .First.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 3_000 });
+            // "Present-after" gate: the live circuit must handle the click and
+            // add the modifier class. Visible (not Attached) confirms the icon
+            // transitioned to opacity:1 — an unsorted icon has opacity:0 and
+            // would fail a Visible check.
+            await grid.Locator(".sort-direction-icon.mud-direction-asc, .sort-direction-icon.mud-direction-desc")
+                .First.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
         }, page, "Docs grid never applied a sort — circuit not interactive.");
+
+        Assert.True(await sortIndicator.CountAsync() >= 1,
+            "Sort indicator still absent after click — circuit did not handle the sort.");
     }
 
     // ── OnClick primitive (Machines): covered by AdminCircuitSkeletonTests ───

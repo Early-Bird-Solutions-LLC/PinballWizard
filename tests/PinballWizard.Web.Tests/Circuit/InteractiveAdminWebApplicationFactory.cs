@@ -165,9 +165,9 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
 
         // Middleware order aligned to Program.cs:
         //   UseAntiforgery → UseAuthentication → UseAuthorization
-        // (Antiforgery must be registered before auth middleware so the
-        // Blazor antiforgery metadata on the endpoint group is validated
-        // correctly; Program.cs follows the same ordering.)
+        // Per ASP.NET Core 8+, UseAntiforgery() must be called after UseRouting()
+        // and before UseEndpoints/endpoint middleware. Program.cs places it before
+        // UseAuthentication/UseAuthorization; this host matches that order.
         app.UseAntiforgery();
         app.UseAuthentication();
         app.UseAuthorization();
