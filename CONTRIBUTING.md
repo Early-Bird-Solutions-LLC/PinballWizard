@@ -99,6 +99,35 @@ Full details, including the exception list and the rationale behind each rule, l
 
 If your change requires suppressing a rule, justify the suppression in `Directory.Build.props` with a comment and a removal criterion. Don't bury it in `#pragma warning disable` blocks.
 
+## Test suites
+
+`dotnet test` runs the whole suite. Tests live in [per-layer projects](README.md) (ADR-0030); the browser-driven Web tests carry an xUnit `Category` trait so you can scope a run with `--filter`.
+
+The browser-driven categories need the Chromium binary installed once after a build:
+
+```bash
+pwsh tests/PinballWizard.Web.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
+```
+
+| Category | What it covers | Needs | In PR CI? |
+| --- | --- | --- | --- |
+| _(untagged)_ | unit + bUnit component tests | nothing | yes (Build/test/coverage) |
+| `Accessibility` | axe WCAG 2.1 AA over public **and** admin pages (SSR HTML, in-process) | Chromium | yes (UI-tests job) |
+| `Circuit` | a real in-process Blazor circuit — proves the admin interactive controls respond (what bUnit can't show) | Chromium + a Web-project build (for the static-asset manifest) | yes (UI-tests job) |
+| `Snapshots` | responsive-layout snapshot checks | Chromium | yes (UI-tests job) |
+| `E2E` | full browser → real app → **live Azure** (Cosmos / AI Search / Foundry); one real model call per ask | a live/deployed stack + `az login` — **skipped by default** | no — runs in the scheduled canary |
+
+Scope a category locally, e.g. `dotnet test --filter "Category=Circuit"`.
+
+**Why E2E skips by default.** `E2EFactAttribute` runs the `E2E` tests only when the suite is pointed at a real stack — either `E2E__BaseUrl` (a deployed target) or all of `Cosmos__AccountEndpoint` / `AiSearch__Endpoint` / `AiFoundry__ProjectEndpoint` (local spawn). With neither set, a bare `dotnet test` reports them **Skipped** by design: they need live Azure and each ask costs a real model call. To run them locally:
+
+```bash
+az login                       # authenticate to the pinwiz dev stack
+pwsh tools/e2e/Run-E2E.ps1     # auto-discovers endpoints, installs Chromium, runs Category=E2E
+```
+
+PR CI excludes `Category=E2E`; the deployed canary ([`.github/workflows/canary.yml`](.github/workflows/canary.yml)) runs the same four every 6 h against the live FQDN.
+
 ## Pull Requests
 
 Every PR description must contain three sections:
