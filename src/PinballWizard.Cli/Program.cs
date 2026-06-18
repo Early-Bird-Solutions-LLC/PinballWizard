@@ -738,22 +738,14 @@ static IHost CreateHost(string[] args)
     // The Cosmos:AccountEndpoint value comes from Bicep outputs in production
     // (Managed-Identity path, no shared secret); the connection string for
     // Aspire-managed local dev points at the loopback emulator.
-    var aspireConnection = builder.Configuration.GetConnectionString(CosmosOptions.CosmosConnectionName);
-    var managedIdentityEndpoint = builder.Configuration[CosmosOptions.AccountEndpointKey];
-    var cosmosWired = !string.IsNullOrWhiteSpace(aspireConnection)
-        || !string.IsNullOrWhiteSpace(managedIdentityEndpoint);
+    //
+    // The shared host gate (CosmosHostRegistration) registers the CosmosClient
+    // (emulator or Managed-Identity) + AddCosmosPersistence and returns whether
+    // Cosmos was wired; the CLI gates its own extras (politeness overrides,
+    // seeders, catalog-stats rebuild, OPDB sync) on that signal.
+    var cosmosWired = builder.AddHostCosmosPersistence();
     if (cosmosWired)
     {
-        // Aspire's AddAzureCosmosClient registers a CosmosClient built from the
-        // ConnectionStrings:cosmos value (preview emulator locally / real account
-        // in Azure). When only Cosmos:AccountEndpoint is set (no Aspire), the
-        // call is skipped and AddCosmosPersistence's TryAddSingleton fallback
-        // builds a Managed-Identity-authenticated client instead.
-        if (!string.IsNullOrWhiteSpace(aspireConnection))
-        {
-            builder.AddAzureCosmosClient(CosmosOptions.CosmosConnectionName);
-        }
-        builder.Services.AddCosmosPersistence(builder.Configuration);
         builder.Services.AddCosmosBackedPolitenessOverrides();
 
         // Ingestion-sources seeder. Application-layer service depending on

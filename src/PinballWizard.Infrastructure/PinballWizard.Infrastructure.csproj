@@ -67,6 +67,12 @@
          path for runtime item CRUD. -->
     <PackageReference Include="Azure.ResourceManager.CosmosDB" />
     <PackageReference Include="Microsoft.Azure.Cosmos" />
+    <!-- Aspire Cosmos client integration. Powers the shared CosmosHostRegistration
+         .AddHostCosmosPersistence helper, which calls AddAzureCosmosClient to build
+         a CosmosClient from the ConnectionStrings:cosmos value the AppHost injects
+         (preview emulator locally). Living here lets all hosts (Cli/Web/Api) share
+         one gate instead of each carrying its own copy + package reference. -->
+    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
     <!-- IMemoryCache + MemoryCacheOptions for SystemStatusProvider's
          stampede-safe TTL cache (PR-L3). AddMemoryCache() extension is
          included in this package. -->
