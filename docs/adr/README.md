@@ -48,6 +48,7 @@ negative) it carries.
 | [0035](0035-citation-ui-metadata-channel.md) | Citation UI-metadata side channel for freshness + relevance score | Accepted |
 | [0036](0036-cosmos-read-access-standard.md) | Cosmos read-access standard — four-tier partition-alignment model | Accepted |
 | [0037](0037-dependency-update-automation.md) | Dependency-update automation — Renovate for versions (grouped, CI-gated auto-merge, majors held), Dependabot for security | Accepted |
+| [0038](0038-origin-ca-cert-for-aca-origin.md) | Cloudflare Origin CA certificate for the ACA origin (retire auto-renewing managed cert) | Accepted |
 
 ## Conventions
 

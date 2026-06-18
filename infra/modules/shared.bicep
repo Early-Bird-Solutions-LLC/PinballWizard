@@ -82,11 +82,8 @@ param opdbSyncCronExpression string = '0 3 * * 0'
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
-@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, a managed certificate is provisioned and the domain is registered. Leave empty to skip.')
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, the domain is bound (SniEnabled) to the Cloudflare Origin CA certificate sourced from Key Vault (cert name "cloudflare-origin-pinwiz"; imported by infra/scripts/Import-OriginCaCertToKeyVault.ps1). See ADR-0038. Leave empty to skip.')
 param wizardCustomDomain string = ''
-
-@description('Two-pass flag for custom domain cert binding. Pass 1 (false, default): register hostname as Disabled + create cert. Pass 2 (true): switch binding to SniEnabled using the existing cert. Set true only after Pass 1 deployment has succeeded and the cert is in Approved state.')
-param wizardCustomDomainCertReady bool = false
 
 // -----------------------------------------------------------------------------
 // Naming
@@ -862,10 +859,22 @@ resource storageDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' 
 // `appLogsConfiguration` — diagnostic settings on Microsoft.App/managedEnvironments
 // don't reach per-replica console output, so this is the canonical sink.
 
-resource acaEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (deployPhase2) {
+resource acaEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = if (deployPhase2) {
   name: acaEnvironmentName
   location: location
   tags: tags
+  // The user-assigned identity must be attached to the managed ENVIRONMENT (not
+  // only to the Wizard Container App) so the environment-scoped certificate
+  // (wizardOriginCert) can use it to pull the Origin CA cert from Key Vault.
+  // Without this, ACA rejects the cert with "ManagedEnvironmentIdentityNotExist".
+  // acaIdentity already holds Key Vault Secrets User (acaIdentityKvSecretsUser).
+  // See ADR-0038.
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
+  }
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -1705,33 +1714,34 @@ resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployP
 // Image: placeholder (quickstart) until CI/CD pipeline wires the real image.
 // Operator swap: az containerapp update --image <acr>/pinwiz-web:<sha>
 //
-// Managed TLS certificate for the Wizard custom domain (e.g. pinwiz.ai).
-// Provisioned via CNAME validation — ACA confirms that the custom domain's
-// CNAME resolves to this app's ingress FQDN, then issues a Let's Encrypt cert.
-// Two-pass custom domain cert — avoids ARM circular dependency:
+// Cloudflare Origin CA certificate for the Wizard custom domain (e.g. pinwiz.ai).
+// The ACA ingress presents this 15-yr cert to Cloudflare (zone ssl=strict). It is
+// trusted ONLY by Cloudflare's edge — never by browsers directly — which is correct
+// for a Cloudflare-fronted origin (clients never connect to the ACA ingress).
 //
-// Pass 1 (wizardCustomDomainCertReady=false):
-//   Deploy wizardApp with bindingType='Disabled' (registers hostname).
-//   No cert resource in this pass — no cycle possible.
+// Why not an Azure-managed (Let's Encrypt) cert? Managed-cert renewal runs an ACME
+// domain-control challenge against pinwiz.ai, which is a *proxied* Cloudflare record,
+// so the challenge lands on the Cloudflare edge and never reaches this ingress —
+// renewal fails every cycle. The Origin CA cert removes ACME from the path entirely.
+// Full rationale: ADR-0038.
 //
-// Pass 2 (wizardCustomDomainCertReady=true):
-//   Deploy cert resource (hostname now registered, HTTP validation fires).
-//   wizardApp references cert.id → ARM infers cert must be created first.
-//   No dependsOn needed; no cycle.
-//
-// Run Deploy-SharedResources.ps1 twice, flipping wizardCustomDomainCertReady
-// in the local.bicepparam between runs.
-resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (deployPhase2 && !empty(wizardCustomDomain) && wizardCustomDomainCertReady) {
+// Sourced from the infra/cloudflare tofu stack (origin_certificate_pem /
+// origin_private_key_pem) and imported into Key Vault as the certificate object
+// 'cloudflare-origin-pinwiz' by infra/scripts/Import-OriginCaCertToKeyVault.ps1 (an
+// operator step — the key material lives in tofu state, not source). This resource
+// references the cert's backing secret via the acaIdentity UAMI, which already holds
+// Key Vault Secrets User (see acaIdentityKvSecretsUser). Single-pass: the cert value
+// is available in Key Vault at deploy time, so there is no ARM circular dependency.
+resource wizardOriginCert 'Microsoft.App/managedEnvironments/certificates@2025-01-01' = if (deployPhase2 && !empty(wizardCustomDomain)) {
   parent: acaEnvironment
-  name: 'pinwiz-wizard-cert'
+  name: 'pinwiz-wizard-origin-cert'
   location: location
   tags: tags
   properties: {
-    subjectName: wizardCustomDomain
-    // HTTP validation — works through Cloudflare proxy; auto-renews without
-    // DNS toggles. Requires a Cloudflare rule to bypass HTTPS redirect for
-    // .well-known/acme-challenge/* (see decision-log.md 2026-05-15).
-    domainControlValidation: 'HTTP'
+    certificateKeyVaultProperties: {
+      identity: acaIdentity.?id ?? ''
+      keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/cloudflare-origin-pinwiz'
+    }
   }
 }
 
@@ -1767,18 +1777,13 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
         stickySessions: {
           affinity: 'sticky'
         }
-        customDomains: empty(wizardCustomDomain) ? [] : (wizardCustomDomainCertReady ? [
+        customDomains: empty(wizardCustomDomain) ? [] : [
           {
             name: wizardCustomDomain
             bindingType: 'SniEnabled'
-            certificateId: wizardCustomDomainCert.id  // ARM ensures cert is created first
+            certificateId: wizardOriginCert.id  // ARM ensures the cert is created first
           }
-        ] : [
-          {
-            name: wizardCustomDomain
-            bindingType: 'Disabled'  // Pass 1: register hostname only, no cert yet
-          }
-        ])
+        ]
       }
       registries: [
         {
