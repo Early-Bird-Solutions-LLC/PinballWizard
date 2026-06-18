@@ -37,6 +37,17 @@ namespace PinballWizard.Web.Tests.Circuit;
 // output directory only contains the test assembly; it does not carry the
 // manifest, so ContentRoot must be overridden.
 //
+// AddServiceDefaults() is intentionally omitted: OTel exporters, health endpoints,
+// and service-discovery bindings add no value for circuit tests that exercise
+// admin-page interactivity. Omitting it keeps startup fast and removes noise.
+//
+// WASM render-mode gap: AddInteractiveWebAssemblyComponents() and
+// AddInteractiveWebAssemblyRenderMode() are registered here to match Program.cs
+// fidelity. However, the WASM runtime is NOT served (no WASM bootstrap JS/WASM
+// bundle is published). Admin pages are @rendermode InteractiveServer only, so
+// this gap is invisible to the current suite. Any future test targeting a WASM
+// component would need the built WASM output to be served.
+//
 // See spec §5.1 and task-4-brief.md for the full decision ladder.
 public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
 {
@@ -152,11 +163,14 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
         // the explicit path removes any ambiguity.
         app.MapStaticAssets(manifestPath);
 
-        // Antiforgery MUST come after authentication + authorization and before
-        // the Blazor endpoint group (which carries antiforgery metadata).
+        // Middleware order aligned to Program.cs:
+        //   UseAntiforgery → UseAuthentication → UseAuthorization
+        // (Antiforgery must be registered before auth middleware so the
+        // Blazor antiforgery metadata on the endpoint group is validated
+        // correctly; Program.cs follows the same ordering.)
+        app.UseAntiforgery();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.UseAntiforgery();
 
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode()
