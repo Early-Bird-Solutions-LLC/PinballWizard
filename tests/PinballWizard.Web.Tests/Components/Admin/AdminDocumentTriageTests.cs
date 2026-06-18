@@ -51,7 +51,7 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_Renders_WithoutThrowing()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.NotNull(cut.Markup);
@@ -60,7 +60,7 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_Renders_DataGridSentinel()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var grid = cut.Find("[data-testid='admin-document-triage-grid']");
@@ -70,7 +70,7 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_EmptyRepository_RendersEmptyStateMessage()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Behavioral assertion: empty async sequence causes the <NoRecordsContent>
@@ -82,7 +82,7 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_Breadcrumb_ContainsAdminRoot()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var adminLink = cut.Find("a[href='/admin']");
@@ -115,7 +115,7 @@ public sealed class AdminDocumentTriageLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_LoadFails_RendersErrorAlert()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Must render the distinct load-failed sentinel.
@@ -125,7 +125,7 @@ public sealed class AdminDocumentTriageLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminDocumentTriage_LoadFails_DoesNotRenderEmptyStateText()
     {
-        var cut = Render<AdminDocumentTriage>();
+        var cut = RenderWithPopover<AdminDocumentTriage>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // The misleading "No documents awaiting triage" text must be absent — a load

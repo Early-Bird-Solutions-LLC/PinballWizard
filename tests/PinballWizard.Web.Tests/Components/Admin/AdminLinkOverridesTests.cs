@@ -43,7 +43,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_Renders_WithoutThrowing()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.NotNull(cut.Markup);
@@ -52,7 +52,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_Renders_DataGridSentinel()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var grid = cut.Find("[data-testid='admin-link-overrides-grid']");
@@ -62,7 +62,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_EmptyRepository_RendersEmptyStateMessage()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Behavioral assertion: empty dictionary from LoadAllAsync causes the
@@ -74,7 +74,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_Renders_NewOverrideButton()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // The "New Override" button must be present and accessible.
@@ -85,7 +85,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_Breadcrumb_ContainsAdminRoot()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var adminLink = cut.Find("a[href='/admin']");
@@ -117,7 +117,7 @@ public sealed class AdminLinkOverridesLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_LoadFails_RendersErrorAlert()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Must render the distinct load-failed sentinel.
@@ -127,7 +127,7 @@ public sealed class AdminLinkOverridesLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminLinkOverrides_LoadFails_DoesNotRenderEmptyStateText()
     {
-        var cut = Render<AdminLinkOverrides>();
+        var cut = RenderWithPopover<AdminLinkOverrides>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // The misleading "No overrides configured" text must be absent — a load failure

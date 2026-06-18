@@ -60,7 +60,7 @@
     }
     else
     {
-        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6"
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-6"
                  data-testid="settings-tabs">
 
             <MudTabPanel Text="Guardrails" data-testid="tab-guardrails">
@@ -376,7 +376,7 @@
 
     private async Task ResetAsync(SettingRow row)
     {
-        var confirmed = await DialogService.ShowMessageBox(
+        var confirmed = await DialogService.ShowMessageBoxAsync(
             "Reset to default?",
             $"Removes the stored override for {row.Key}; the Wizard reverts to the deployed default ({row.DefaultValueString}) within ~2 minutes.",
             yesText: "Reset", cancelText: "Cancel").ConfigureAwait(true);
@@ -506,7 +506,7 @@
             return;
         }
 
-        var confirmed = await DialogService.ShowMessageBox(
+        var confirmed = await DialogService.ShowMessageBoxAsync(
             $"Activate v{version}?",
             $"The live {_selectedAgent} agent rebuilds with this prompt within ~2 minutes, and cached answers for the old prompt stop being served.",
             yesText: "Activate", cancelText: "Cancel").ConfigureAwait(true);
@@ -539,7 +539,7 @@
             return;
         }
 
-        var confirmed = await DialogService.ShowMessageBox(
+        var confirmed = await DialogService.ShowMessageBoxAsync(
             "Revert to embedded default?",
             $"Deactivates all {_selectedAgent} overrides; the agent rebuilds with the git-source prompt within ~2 minutes. Stored versions remain and can be re-activated.",
             yesText: "Revert", cancelText: "Cancel").ConfigureAwait(true);

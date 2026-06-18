@@ -19,11 +19,20 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 // correct behavioral assertion, not a structural smell.
 public sealed class LiveStatusBadgeTests
 {
+    // MudBlazor 9 requires <MudPopoverProvider /> in the same render tree as
+    // any popover-capable component. LiveStatusBadge contains a MudTooltip.
     private static IRenderedComponent<LiveStatusBadge> Render(
         BunitContext ctx, SystemStatus? status)
     {
-        return ctx.Render<LiveStatusBadge>(p => p
-            .Add(b => b.Status, status));
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LiveStatusBadge>(1);
+            builder.AddAttribute(2, nameof(LiveStatusBadge.Status), status);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<LiveStatusBadge>();
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -31,9 +40,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AllTrue_RendersGreenDot()
+    public async Task LiveStatusBadge_AllTrue_RendersGreenDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -50,9 +59,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AnyNull_RendersAmberDot()
+    public async Task LiveStatusBadge_AnyNull_RendersAmberDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -70,9 +79,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_NullStatus_RendersAmberDot()
+    public async Task LiveStatusBadge_NullStatus_RendersAmberDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -88,9 +97,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AnyFalse_RendersRedDot()
+    public async Task LiveStatusBadge_AnyFalse_RendersRedDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -110,9 +119,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AiSearchFalse_RendersRedDot()
+    public async Task LiveStatusBadge_AiSearchFalse_RendersRedDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -129,9 +138,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_Tooltip_EnumeratesPerSystemStatus()
+    public async Task LiveStatusBadge_Tooltip_EnumeratesPerSystemStatus()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -149,5 +158,33 @@ public sealed class LiveStatusBadgeTests
         Assert.Contains("Healthy", label, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Unknown", label, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Degraded", label, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 7. Persistent neutral label — context without hover (WCAG 1.4.1/1.4.13),
+    //    and state-independent so a degraded state never broadcasts a scary
+    //    word to prospects (colour + tooltip carry the actual state).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LiveStatusBadge_VisibleLabel_IsNeutral_EvenWhenDegraded()
+    {
+        await using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        // Known-degraded (red) state.
+        var status = new SystemStatus(CosmosHealthy: true, FoundryHealthy: false, AiSearchHealthy: true);
+        var cut = Render(ctx, status);
+
+        // The at-rest visible label is the neutral "System status" — NOT the
+        // state word. State is conveyed by the dot colour, detail by the tooltip.
+        var visibleLabel = cut.Find("[data-testid='live-status-label']");
+        Assert.Equal("System status", visibleLabel.TextContent.Trim());
+
+        // The dot still signals the real (degraded) state via colour.
+        var dot = cut.Find("[data-testid='live-status-dot']");
+        Assert.Contains("status-dot--red", dot.GetAttribute("class") ?? string.Empty,
+            StringComparison.Ordinal);
     }
 }

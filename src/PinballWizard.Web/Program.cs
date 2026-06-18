@@ -37,6 +37,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Hosting;
 using PinballWizard.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -257,19 +258,11 @@ if (foundryWired)
     builder.Services.AddHostedService<WizardAgentWarmupHostedService>();
 }
 
-// ── Cosmos persistence + catalog read (gated — mirrors Api Program.cs wiring) ─
-// Gated on Cosmos:AccountEndpoint so the Web starts cleanly in local dev
-// without Cosmos configured (Aspire emulator path excluded from Web — the Web
-// host has no AppHost Cosmos dependency unlike the Cli). When the endpoint IS
-// configured, AddCosmosPersistence registers CosmosClient (Managed Identity via
-// DefaultAzureCredential) and the core repositories; AddCatalogStatsRead then
-// registers ICatalogStatsReadRepository for the /admin/machines summary page
-// (AB#259 — ADR-0036 Tier-1 point reads, no cross-partition queries).
-if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
-{
-    builder.Services.AddCosmosPersistence(builder.Configuration);
-    builder.Services.AddCatalogStatsRead();
-}
+// ── Cosmos persistence + catalog read ─────────────────────────────────────────
+// Wires the local Aspire-emulator path AND the deployed Managed-Identity path,
+// mirroring the Cli. Extracted to CosmosWebRegistration so the gate is directly
+// unit-testable (WebCosmosCompositionTests) — see that class + extension for why.
+builder.AddWebCosmosPersistence();
 
 // ── Build + pipeline ───────────────────────────────────────────────────────
 var app = builder.Build();

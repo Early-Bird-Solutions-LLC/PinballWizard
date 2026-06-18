@@ -7,6 +7,25 @@
     align-items: center;
 }
 
+/* Dot + neutral label travel together as the tooltip trigger so hovering
+ * either surfaces the per-system detail. */
+.live-status-badge__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: default;
+}
+
+/* Neutral, subtle label — conveys WHAT the indicator is without hover, while
+ * staying quiet enough not to compete with the page chrome. */
+.live-status-badge__label {
+    font-size: 0.75rem;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: var(--mud-palette-text-secondary);
+    white-space: nowrap;
+}
+
 .status-dot {
     display: inline-block;
     width: 10px;

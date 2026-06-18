@@ -43,6 +43,19 @@ public sealed class SoundControllerTests : AsyncBunitContext
         // (e.g., audio APIs) will fail the test. Each test registers only the
         // localStorage handlers it expects.
         JSInterop.Mode = JSRuntimeMode.Strict;
+
+        // MudBlazor 9: MudPopoverProvider (rendered as a sibling alongside
+        // SoundController's MudTooltip) makes several JS calls during render
+        // and teardown. In Strict mode, every call must be registered:
+        //   - mudPopover.initialize       (void)
+        //   - mudpopoverHelper.countProviders (returns int)
+        //   - mudPopover.connect          (void, per-popover, GUID arg)
+        //   - mudPopover.dispose          (void)
+        // Use wildcard-predicate SetupVoid/Setup<T> to cover all call signatures.
+        JSInterop.SetupVoid("mudPopover.initialize", _ => true).SetVoidResult();
+        JSInterop.Setup<int>("mudpopoverHelper.countProviders", _ => true).SetResult(0);
+        JSInterop.SetupVoid("mudPopover.connect", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("mudPopover.dispose", _ => true).SetVoidResult();
     }
 
     private void SetupGetItem(string? returnValue)
@@ -80,7 +93,7 @@ public sealed class SoundControllerTests : AsyncBunitContext
         SetupGetItem(returnValue: null);
 
         // Act — render; OnInitializedAsync reads localStorage.
-        var cut = Render<SoundController>();
+        var cut = RenderWithPopover<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is true when stored value is null.
@@ -97,7 +110,7 @@ public sealed class SoundControllerTests : AsyncBunitContext
         // Arrange — localStorage returns "true" (user previously unmuted).
         SetupGetItem(returnValue: "true");
 
-        var cut = Render<SoundController>();
+        var cut = RenderWithPopover<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is false when stored value is "true" (sound enabled).
@@ -113,7 +126,7 @@ public sealed class SoundControllerTests : AsyncBunitContext
         // Arrange — localStorage returns "false" (user previously muted).
         SetupGetItem(returnValue: "false");
 
-        var cut = Render<SoundController>();
+        var cut = RenderWithPopover<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — IsMuted is true when stored value is "false".
@@ -127,7 +140,7 @@ public sealed class SoundControllerTests : AsyncBunitContext
         SetupGetItem(returnValue: null);
         SetupSetItem(); // setItem is called after toggle.
 
-        var cut = Render<SoundController>();
+        var cut = RenderWithPopover<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
         Assert.True(cut.Instance.IsMuted); // starts muted
 
@@ -179,7 +192,7 @@ public sealed class SoundControllerTests : AsyncBunitContext
         // failing the test before we even reach the assertions below.
         SetupGetItem(returnValue: null);
 
-        var cut = Render<SoundController>();
+        var cut = RenderWithPopover<SoundController>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Assert — no <audio> element in the rendered markup.
