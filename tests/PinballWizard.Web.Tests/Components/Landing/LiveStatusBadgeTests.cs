@@ -159,4 +159,32 @@ public sealed class LiveStatusBadgeTests
         Assert.Contains("Unknown", label, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Degraded", label, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 7. Persistent neutral label — context without hover (WCAG 1.4.1/1.4.13),
+    //    and state-independent so a degraded state never broadcasts a scary
+    //    word to prospects (colour + tooltip carry the actual state).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LiveStatusBadge_VisibleLabel_IsNeutral_EvenWhenDegraded()
+    {
+        await using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        // Known-degraded (red) state.
+        var status = new SystemStatus(CosmosHealthy: true, FoundryHealthy: false, AiSearchHealthy: true);
+        var cut = Render(ctx, status);
+
+        // The at-rest visible label is the neutral "System status" — NOT the
+        // state word. State is conveyed by the dot colour, detail by the tooltip.
+        var visibleLabel = cut.Find("[data-testid='live-status-label']");
+        Assert.Equal("System status", visibleLabel.TextContent.Trim());
+
+        // The dot still signals the real (degraded) state via colour.
+        var dot = cut.Find("[data-testid='live-status-dot']");
+        Assert.Contains("status-dot--red", dot.GetAttribute("class") ?? string.Empty,
+            StringComparison.Ordinal);
+    }
 }
