@@ -99,31 +99,64 @@
         <Columns>
             @* Each groupable column has Grouping="true" only when it is the active
              * axis. Exactly one column is active per render, determined server-side
-             * from the query param. *@
+             * from the query param.
+             *
+             * GroupTemplate overrides MudDataGrid's default group-header rendering
+             * (<span style="font-weight:bold">) to fix a WCAG 2.1 AA color-contrast
+             * failure. The admin layout uses IsDarkMode="true" which SSR-injects
+             * --mud-palette-background-gray: rgba(39,39,47,1) onto the group-row <td>.
+             * MudBlazor.min.css is not loaded by the test host, so the <body> colour
+             * rule (color: var(--mud-palette-text-primary)) never fires; the browser
+             * defaults to black text on a near-black background (1:1 contrast).
+             *
+             * Fix: set color: var(--mud-palette-text-primary) explicitly on the
+             * group-label span. The CSS variable IS defined in the SSR <style> tag
+             * (MudThemeProvider pre-renders it), so it resolves to the theme's light
+             * text colour (~70% white) in both the test host and production. *@
             <PropertyColumn Property="x => x.Manufacturer"
                             Title="Manufacturer"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)" />
+                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.HealthLabel"
                             Title="Health Group"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Health)"
-                            Hidden="@(_activeAxis != GroupByAxis.Health)" />
+                            Hidden="@(_activeAxis != GroupByAxis.Health)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Health Group: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.Franchise"
                             Title="Franchise"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Franchise)"
-                            Hidden="@(_activeAxis != GroupByAxis.Franchise)" />
+                            Hidden="@(_activeAxis != GroupByAxis.Franchise)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Franchise: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.YearLabel"
                             Title="Year"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Year)"
-                            Sortable="true" />
+                            Sortable="true">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Year: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.Source"
                             Title="Source"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Source)"
-                            Hidden="@(_activeAxis != GroupByAxis.Source)" />
+                            Hidden="@(_activeAxis != GroupByAxis.Source)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Source: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
             <PropertyColumn Property="x => x.Edition" Title="Edition" />
             <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" />
