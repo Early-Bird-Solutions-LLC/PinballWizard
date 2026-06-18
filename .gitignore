@@ -8,6 +8,11 @@ publish/
 # (where the Bicep-managed Foundry lives) without disturbing the default
 # ~/.azure session. Holds live MSAL token caches — never commit.
 .azure-local/
+# Default Azure CLI config dir name — az/openssl tooling can create a stray
+# `.azure/` in the repo root (e.g. when AZURE_CONFIG_DIR points at the cwd, or
+# a mistyped command). It holds azureProfile.json + MSAL token caches — never
+# commit. (Belt-and-suspenders alongside .azure-local/ above.)
+.azure/
 
 # IDE / editor
 .vs/
