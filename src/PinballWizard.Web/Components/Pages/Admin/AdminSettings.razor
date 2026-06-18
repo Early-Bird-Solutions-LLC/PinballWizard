@@ -300,8 +300,13 @@
     private bool HasDirtyRows => _rows.Values.Any(r => r.IsDirty);
     private int DirtyCount => _rows.Values.Count(r => r.IsDirty);
 
-    protected override async Task OnInitializedAsync()
+    // Use OnAfterRenderAsync so the page shell (with the loading indicator) is sent
+    // to the client immediately on first render rather than blocking the pre-render
+    // pass until Cosmos settings data returns. The indicator is visible within
+    // ~100 ms of navigation; settings populate when the query completes.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
         await LoadAsync().ConfigureAwait(true);
     }
 
@@ -332,6 +337,7 @@
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 

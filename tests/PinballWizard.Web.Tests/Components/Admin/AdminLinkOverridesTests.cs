@@ -93,6 +93,53 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
     }
 }
 
+// Behavioral test: page shell + spinner render BEFORE data arrives; spinner hides
+// AFTER. This is the instant-navigation contract (fix/admin-nav-instant-load).
+public sealed class AdminLinkOverridesLoadingStateTests : AsyncBunitContext
+{
+    private readonly TaskCompletionSource<IReadOnlyDictionary<string, LinkOverrideRecord>> _dataGate = new();
+
+    public AdminLinkOverridesLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowRepo = Substitute.For<ILinkOverrideRepository>();
+        slowRepo
+            .LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => _dataGate.Task);
+        Services.AddSingleton(slowRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminLinkOverrides_ShowsSpinner_BeforeDataArrives()
+    {
+        var cut = RenderWithPopover<AdminLinkOverrides>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        _dataGate.SetResult(new Dictionary<string, LinkOverrideRecord>());
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminLinkOverrides_HidesSpinner_AfterDataArrives()
+    {
+        var cut = RenderWithPopover<AdminLinkOverrides>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        _dataGate.SetResult(new Dictionary<string, LinkOverrideRecord>());
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+
+        await Task.CompletedTask;
+    }
+}
+
 // Separate context for the Cosmos load-failure path.
 // The repo throws so the page must show the distinct error alert and must NOT
 // show the "No overrides configured" empty-state (which implies data, not failure).

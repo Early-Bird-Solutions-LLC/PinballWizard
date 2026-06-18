@@ -141,7 +141,17 @@
         new BreadcrumbItem("Document Triage", href: "/admin/document-triage", icon: Icons.Material.Filled.RuleFolder),
     ];
 
-    protected override async Task OnInitializedAsync()
+    // Use OnAfterRenderAsync so the page shell (with the loading spinner) is sent
+    // to the client immediately on first render rather than blocking the pre-render
+    // pass until Cosmos data returns. The spinner is visible within ~100 ms of
+    // navigation; data populates when the query completes.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
@@ -179,6 +189,7 @@
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 
