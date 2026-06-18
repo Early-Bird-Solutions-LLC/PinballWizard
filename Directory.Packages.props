@@ -138,12 +138,14 @@
     -->
     <PackageVersion Include="MudBlazor" Version="9.5.0" />
     <!--
-      Microsoft.Identity.Web 3.x is the first release to support
-      Entra External ID tenants natively per ADR-0009. 3.8.4 is the
-      current GA; bump via Dependabot.
+      Microsoft.Identity.Web supports Entra External ID tenants natively per
+      ADR-0009. The app uses only AddMicrosoftIdentityWebApp + AddMicrosoftIdentityUI
+      (basic OIDC sign-in) — none of the surface v4 removed (legacy downstream-API,
+      TokenAcquirer credentials, sync client-credential shims). Majors land via the
+      Renovate Dependency Dashboard as reviewed PRs (ADR-0037).
     -->
-    <PackageVersion Include="Microsoft.Identity.Web" Version="3.8.4" />
-    <PackageVersion Include="Microsoft.Identity.Web.UI" Version="3.8.4" />
+    <PackageVersion Include="Microsoft.Identity.Web" Version="4.10.0" />
+    <PackageVersion Include="Microsoft.Identity.Web.UI" Version="4.10.0" />
     <!--
       Blazor auto-render mode (ADR-0026 § 1) requires the WASM runtime
       in the Client project and the WASM static-asset server in the
