@@ -86,6 +86,21 @@ public sealed class IndexPageTests
         return ctx.Services.GetRequiredService<IClientDegradationStore>();
     }
 
+    // MudBlazor 9 requires <MudPopoverProvider /> in the same render tree as
+    // any popover-capable component. IndexPage renders LiveStatusBadge which
+    // contains a MudTooltip. Render both as siblings in a shared fragment.
+    private static IRenderedComponent<IndexPage> RenderIndexWithPopover(BunitContext ctx)
+    {
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<IndexPage>(1);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<IndexPage>();
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 1. Page renders with IWizardLandingClient mocked to return known data
     // ──────────────────────────────────────────────────────────────────────
@@ -93,10 +108,10 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WithKnownLandingResponse_RendersHeroAndGrid()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
 
         // Wait for OnInitializedAsync to complete (client call returns synchronously
         // via NSubstitute's Task.FromResult).
@@ -118,11 +133,11 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNull_RendersFallbackSeedQuestions()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         // Simulate endpoint down — client returns null.
         RegisterIndexServices(ctx, BuildClient(response: null));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
 
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
@@ -143,9 +158,9 @@ public sealed class IndexPageTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Index_BeforeClientReturns_RendersFallbackNotSkeletons()
+    public async Task Index_BeforeClientReturns_RendersFallbackNotSkeletons()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         // NSubstitute returns a never-completing task to simulate "in-flight".
         var client = Substitute.For<IWizardLandingClient>();
         var tcs = new TaskCompletionSource<LandingResponse?>();
@@ -153,7 +168,7 @@ public sealed class IndexPageTests
               .Returns(tcs.Task);
         RegisterIndexServices(ctx, client);
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
 
         // While the client is in-flight, Questions holds the compiled-in
         // fallback (not null). The fallback is set at the start of
@@ -174,10 +189,10 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WithKnownResponse_LiveStatusBadgeIsGreen()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         RegisterIndexServices(ctx, BuildClient(BuildLandingResponse())); // all-true SystemStatus
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -199,10 +214,10 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNull_LiveStatusBadgeIsAmber()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         RegisterIndexServices(ctx, BuildClient(response: null));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -225,13 +240,13 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_OnSeedCardClick_NavigatesToWizardQ()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         // Register client BEFORE locking the service provider (SetRendererInfo
         // accesses ctx.Renderer which builds the provider). BunitNavigationManager
         // is retrieved AFTER rendering to avoid locking the provider early.
         RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -261,10 +276,10 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNull_SetsDegradationStoreLandingUnavailable()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         var store = RegisterIndexServices(ctx, BuildClient(response: null));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -276,10 +291,10 @@ public sealed class IndexPageTests
     [Fact]
     public async Task Index_WhenClientReturnsNonNull_DoesNotSetDegradationStore()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         var store = RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
@@ -311,10 +326,10 @@ public sealed class IndexPageTests
         listener.SetMeasurementEventCallback<long>((_, value, _, _) => samples.Add(value));
         listener.Start();
 
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         RegisterIndexServices(ctx, BuildClient(response: null));
 
-        var cut = ctx.Render<IndexPage>();
+        var cut = RenderIndexWithPopover(ctx);
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 

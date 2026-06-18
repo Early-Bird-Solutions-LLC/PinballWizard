@@ -19,11 +19,20 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 // correct behavioral assertion, not a structural smell.
 public sealed class LiveStatusBadgeTests
 {
+    // MudBlazor 9 requires <MudPopoverProvider /> in the same render tree as
+    // any popover-capable component. LiveStatusBadge contains a MudTooltip.
     private static IRenderedComponent<LiveStatusBadge> Render(
         BunitContext ctx, SystemStatus? status)
     {
-        return ctx.Render<LiveStatusBadge>(p => p
-            .Add(b => b.Status, status));
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LiveStatusBadge>(1);
+            builder.AddAttribute(2, nameof(LiveStatusBadge.Status), status);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<LiveStatusBadge>();
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -31,9 +40,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AllTrue_RendersGreenDot()
+    public async Task LiveStatusBadge_AllTrue_RendersGreenDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -50,9 +59,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AnyNull_RendersAmberDot()
+    public async Task LiveStatusBadge_AnyNull_RendersAmberDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -70,9 +79,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_NullStatus_RendersAmberDot()
+    public async Task LiveStatusBadge_NullStatus_RendersAmberDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -88,9 +97,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AnyFalse_RendersRedDot()
+    public async Task LiveStatusBadge_AnyFalse_RendersRedDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -110,9 +119,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_AiSearchFalse_RendersRedDot()
+    public async Task LiveStatusBadge_AiSearchFalse_RendersRedDot()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
@@ -129,9 +138,9 @@ public sealed class LiveStatusBadgeTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LiveStatusBadge_Tooltip_EnumeratesPerSystemStatus()
+    public async Task LiveStatusBadge_Tooltip_EnumeratesPerSystemStatus()
     {
-        using var ctx = new BunitContext();
+        await using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 

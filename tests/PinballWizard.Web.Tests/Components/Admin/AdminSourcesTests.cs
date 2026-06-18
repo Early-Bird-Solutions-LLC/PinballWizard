@@ -30,7 +30,7 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     [Fact]
     public void AdminSources_Renders_WithoutThrowing()
     {
-        var cut = Render<AdminSources>();
+        var cut = RenderWithPopover<AdminSources>();
 
         Assert.NotNull(cut.Markup);
     }
@@ -38,7 +38,7 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     [Fact]
     public void AdminSources_Renders_DataGridSentinel()
     {
-        var cut = Render<AdminSources>();
+        var cut = RenderWithPopover<AdminSources>();
 
         // The MudDataGrid wrapper element carries data-testid.
         var grid = cut.Find("[data-testid='admin-sources-grid']");
@@ -48,7 +48,7 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     [Fact]
     public void AdminSources_EmptyList_RendersNoSourcesConfiguredMessage()
     {
-        var cut = Render<AdminSources>();
+        var cut = RenderWithPopover<AdminSources>();
 
         // Behavioral assertion: empty-list path renders the "No sources configured"
         // empty-state content defined in <NoRecordsContent>.
@@ -59,7 +59,7 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     [Fact]
     public void AdminSources_Breadcrumb_ContainsAdminRoot()
     {
-        var cut = Render<AdminSources>();
+        var cut = RenderWithPopover<AdminSources>();
 
         // Breadcrumb trail includes a link back to /admin.
         var adminLink = cut.Find("a[href='/admin']");

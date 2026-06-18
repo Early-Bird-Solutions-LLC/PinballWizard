@@ -197,8 +197,21 @@ public sealed class AdminMachineDetailTests : AsyncBunitContext
     // [SupplyParameterFromQuery] Mfr comes from the NavigationManager URI
     // (set in the constructor via NavigateTo). Both are required.
 
-    private IRenderedComponent<AdminMachineDetail> RenderDetail() =>
-        Render<AdminMachineDetail>(p => p.Add(x => x.OpdbId, FakeOpdbId));
+    // MudBlazor 9 requires MudPopoverProvider in the same render tree.
+    // Render it as a sibling fragment alongside AdminMachineDetail (which
+    // contains MudDataGrid, MudChip, and MudBreadcrumbs — all popover-capable).
+    private IRenderedComponent<AdminMachineDetail> RenderDetail()
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminMachineDetail>(1);
+            builder.AddAttribute(2, nameof(AdminMachineDetail.OpdbId), FakeOpdbId);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminMachineDetail>();
+    }
 
     // ── Header renders title, edition, and OPDB ID ────────────────────────────
 

@@ -28,14 +28,15 @@ public sealed class RefusalCategoryViewTests
         return ctx;
     }
 
+
     // ─────────────────────────────────────────────────────────────────────────
     // CostCeilingView
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void CostCeilingView_Render_ContainsTooLargeHeadline()
+    public async Task CostCeilingView_Render_ContainsTooLargeHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<CostCeilingView>();
 
         // The fixed headline for cost ceiling is "Request Too Large to Process".
@@ -47,9 +48,9 @@ public sealed class RefusalCategoryViewTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void InsufficientGroundingView_Render_ContainsNotEnoughHeadline()
+    public async Task InsufficientGroundingView_Render_ContainsNotEnoughHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<InsufficientGroundingView>();
 
         // Headline text per InsufficientGroundingView.razor.
@@ -57,16 +58,25 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void InsufficientGroundingView_WithRelatedMachines_RendersRelatedMachinesSection()
+    public async Task InsufficientGroundingView_WithRelatedMachines_RendersRelatedMachinesSection()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var machines = new List<RelatedMachine>
         {
             new("mch_avengers", "Stern Avengers", "https://opdb.org/machines/stern-avengers"),
         };
 
-        var cut = ctx.Render<InsufficientGroundingView>(p => p
-            .Add(x => x.RelatedMachines, machines));
+        // MudBlazor 9: MudList/MudListItem require MudPopoverProvider in the same
+        // render tree. Render as sibling fragment (see AdminSettingsTests pattern).
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<InsufficientGroundingView>(1);
+            builder.AddAttribute(2, nameof(InsufficientGroundingView.RelatedMachines), (IReadOnlyList<RelatedMachine>)machines);
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<InsufficientGroundingView>();
 
         cut.Find("[data-testid='related-machines-section']");
         Assert.Contains("Stern Avengers", cut.Markup, StringComparison.OrdinalIgnoreCase);
@@ -77,9 +87,9 @@ public sealed class RefusalCategoryViewTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LowConfidenceView_Render_ContainsNotConfidentHeadline()
+    public async Task LowConfidenceView_Render_ContainsNotConfidentHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<LowConfidenceView>();
 
         // Headline per LowConfidenceView.razor.
@@ -87,9 +97,9 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void LowConfidenceView_WithConfidence_RendersBreakdownElement()
+    public async Task LowConfidenceView_WithConfidence_RendersBreakdownElement()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var confidence = new ConfidenceBreakdown(
             RetrievalSimilarity: 0.50,
             ModelSelfReported: 0.55,
@@ -104,9 +114,9 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void LowConfidenceView_WithNullConfidence_DoesNotRenderBreakdown()
+    public async Task LowConfidenceView_WithNullConfidence_DoesNotRenderBreakdown()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<LowConfidenceView>(p => p
             .Add(x => x.Confidence, null));
 
@@ -118,9 +128,9 @@ public sealed class RefusalCategoryViewTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void NoCitationView_Render_ContainsNoDocumentedEvidenceHeadline()
+    public async Task NoCitationView_Render_ContainsNoDocumentedEvidenceHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<NoCitationView>();
 
         // Headline per NoCitationView.razor.
@@ -128,16 +138,25 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void NoCitationView_WithRelatedMachines_RendersRelatedMachinesSection()
+    public async Task NoCitationView_WithRelatedMachines_RendersRelatedMachinesSection()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var machines = new List<RelatedMachine>
         {
             new("mch_iron_maiden", "Stern Iron Maiden", null),
         };
 
-        var cut = ctx.Render<NoCitationView>(p => p
-            .Add(x => x.RelatedMachines, machines));
+        // MudBlazor 9: MudList/MudListItem require MudPopoverProvider in the same
+        // render tree. Render as sibling fragment (see AdminSettingsTests pattern).
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<NoCitationView>(1);
+            builder.AddAttribute(2, nameof(NoCitationView.RelatedMachines), (IReadOnlyList<RelatedMachine>)machines);
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<NoCitationView>();
 
         cut.Find("[data-testid='related-machines-section']");
         Assert.Contains("Stern Iron Maiden", cut.Markup, StringComparison.OrdinalIgnoreCase);
@@ -148,9 +167,9 @@ public sealed class RefusalCategoryViewTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void OutOfScopeView_Render_ContainsOutsideMyCoverageHeadline()
+    public async Task OutOfScopeView_Render_ContainsOutsideMyCoverageHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<OutOfScopeView>();
 
         // Headline per OutOfScopeView.razor.
@@ -158,25 +177,34 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void OutOfScopeView_WithRelatedMachines_RendersRelatedMachinesSection()
+    public async Task OutOfScopeView_WithRelatedMachines_RendersRelatedMachinesSection()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var machines = new List<RelatedMachine>
         {
             new("mch_jjp_potc", "JJP Pirates of the Caribbean", "https://opdb.org/machines/jjp-potc"),
         };
 
-        var cut = ctx.Render<OutOfScopeView>(p => p
-            .Add(x => x.RelatedMachines, machines));
+        // MudBlazor 9: MudList/MudListItem require MudPopoverProvider in the same
+        // render tree. Render as sibling fragment (see AdminSettingsTests pattern).
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<OutOfScopeView>(1);
+            builder.AddAttribute(2, nameof(OutOfScopeView.RelatedMachines), (IReadOnlyList<RelatedMachine>)machines);
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<OutOfScopeView>();
 
         cut.Find("[data-testid='related-machines-section']");
         Assert.Contains("JJP Pirates of the Caribbean", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void OutOfScopeView_WithNullRelatedMachines_DoesNotRenderRelatedMachinesSection()
+    public async Task OutOfScopeView_WithNullRelatedMachines_DoesNotRenderRelatedMachinesSection()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<OutOfScopeView>(p => p
             .Add(x => x.RelatedMachines, null));
 
@@ -188,9 +216,9 @@ public sealed class RefusalCategoryViewTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void UpstreamThrottledView_Render_ContainsHighDemandHeadline()
+    public async Task UpstreamThrottledView_Render_ContainsHighDemandHeadline()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<UpstreamThrottledView>();
 
         // Headline per UpstreamThrottledView.razor.
@@ -198,9 +226,9 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void UpstreamThrottledView_WithRetryAfterSeconds_RendersRetryHint()
+    public async Task UpstreamThrottledView_WithRetryAfterSeconds_RendersRetryHint()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<UpstreamThrottledView>(p => p
             .Add(x => x.RetryAfterSeconds, 30));
 
@@ -210,9 +238,9 @@ public sealed class RefusalCategoryViewTests
     }
 
     [Fact]
-    public void UpstreamThrottledView_WithNullRetryAfterSeconds_RendersGenericRetryHint()
+    public async Task UpstreamThrottledView_WithNullRetryAfterSeconds_RendersGenericRetryHint()
     {
-        using var ctx = BuildCtx();
+        await using var ctx = BuildCtx();
         var cut = ctx.Render<UpstreamThrottledView>(p => p
             .Add(x => x.RetryAfterSeconds, null));
 

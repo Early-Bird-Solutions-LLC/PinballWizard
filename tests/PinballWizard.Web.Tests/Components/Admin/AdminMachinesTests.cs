@@ -114,7 +114,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_Renders_WithoutThrowing()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.NotNull(cut.Markup);
@@ -123,7 +123,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_Renders_DataGridSentinel()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var grid = cut.Find("[data-testid='admin-machines-grid']");
@@ -135,7 +135,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_WithData_RendersAsOfElement()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var asOf = cut.Find("[data-testid='catalog-as-of']");
@@ -149,7 +149,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_EmptyMachine_RendersErrorHealthChip()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Foo Pro has 0 docs → CatalogHealthFlag.Empty → Color.Error chip.
@@ -163,7 +163,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_OkMachine_RendersSuccessHealthChip()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Bar CE / Bar LE are Ok → Color.Success chip.
@@ -179,7 +179,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_AxisSelector_RendersAllFiveAxisButtons()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var selector = cut.Find("[data-testid='groupby-selector']");
@@ -193,7 +193,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_DefaultAxis_IsManufacturer()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Default active axis = manufacturer → that button is Filled + Primary.
@@ -222,7 +222,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_ClickingHealthAxis_ActivatesItWithoutReload()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         await ClickAxisAsync(cut, "Health");
@@ -246,7 +246,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [InlineData("Source")]
     public async Task AdminMachines_ClickingAxis_RegroupsWithoutError(string label)
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         await ClickAxisAsync(cut, label);
@@ -260,7 +260,7 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_Breadcrumb_ContainsAdminRoot()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var adminLink = cut.Find("a[href='/admin']");
@@ -298,7 +298,7 @@ public sealed class AdminMachinesEmptyCatalogTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_EmptyCatalog_RendersEmptyStateMessage()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var empty = cut.Find("[data-testid='admin-machines-empty']");
@@ -330,7 +330,7 @@ public sealed class AdminMachinesLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_LoadFails_RendersErrorAlert()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Must render the distinct load-failed sentinel.
@@ -340,7 +340,7 @@ public sealed class AdminMachinesLoadFailureTests : AsyncBunitContext
     [Fact]
     public async Task AdminMachines_LoadFails_DoesNotRenderEmptyStateText()
     {
-        var cut = Render<AdminMachines>();
+        var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // The misleading "No machines in catalog" text must be absent — a load failure
