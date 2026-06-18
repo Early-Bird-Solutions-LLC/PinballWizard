@@ -63,11 +63,8 @@ param deployCohereConnection bool = false
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
 
-@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Cloudflare proxy must be in DNS-only mode during cert provisioning.')
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Bound (SniEnabled) to the Cloudflare Origin CA cert from Key Vault — works with the Cloudflare proxy enabled (no DNS-only toggle needed). See ADR-0038.')
 param wizardCustomDomain string = ''
-
-@description('Two-pass flag for custom domain cert binding. false=Pass 1 (register hostname, Disabled). true=Pass 2 (create cert + SniEnabled binding). See shared.bicep wizardCustomDomainCert comment.')
-param wizardCustomDomainCertReady bool = false
 
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half). Empty default = Entra wiring off. See modules/shared.bicep azureAdClientId for the full contract; the client secret lives only in Key Vault.')
 param azureAdClientId string = ''
@@ -135,7 +132,6 @@ module shared 'modules/shared.bicep' = {
     deployCohereConnection: deployCohereConnection
     wizardAliveUrl: wizardAliveUrl
     wizardCustomDomain: wizardCustomDomain
-    wizardCustomDomainCertReady: wizardCustomDomainCertReady
     wizardImageTag: wizardImageTag
     azureAdClientId: azureAdClientId
     apiImageTag: apiImageTag
