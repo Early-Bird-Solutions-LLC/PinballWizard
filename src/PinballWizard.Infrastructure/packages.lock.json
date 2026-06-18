@@ -8,6 +8,27 @@
         "resolved": "1.5.1",
         "contentHash": "jFG0tKwFMNzIdv0rX3qvyiKyxAzUIvDyTLTJo2ORKtv/hiJC8juZTknc4b9DQmBFbrky+0twr58QQWt6DR48Og=="
       },
+      "Aspire.Microsoft.Azure.Cosmos": {
+        "type": "Direct",
+        "requested": "[13.4.5, )",
+        "resolved": "13.4.5",
+        "contentHash": "smrZ4DtkfFZTIAelxFT0pb1yrrDr1eAo78PpSvP5cQwy/oFV+25r/BtJ90eLBoP3U0tQRa4IOroyoF+vu/6vtw==",
+        "dependencies": {
+          "Azure.Core": "1.55.0",
+          "Azure.Identity": "1.21.0",
+          "Microsoft.Azure.Cosmos": "3.59.0",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.8",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Logging": "10.0.8",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Options": "10.0.8",
+          "Microsoft.Extensions.Primitives": "10.0.8",
+          "Newtonsoft.Json": "13.0.4",
+          "OpenTelemetry.Extensions.Hosting": "1.15.3"
+        }
+      },
       "Azure.AI.DocumentIntelligence": {
         "type": "Direct",
         "requested": "[1.0.0, )",
@@ -647,6 +668,30 @@
           "System.ClientModel": "1.10.0"
         }
       },
+      "OpenTelemetry": {
+        "type": "Transitive",
+        "resolved": "1.15.3",
+        "contentHash": "N0i6WjPoHPbZyms1ugbDIFAJFuGlpeExJMU/+XSL0lQRUkg/D0utFkDoLXf8Z1km5B+xVZ2GyMXXiX8qdeNmPg==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Logging.Configuration": "10.0.0",
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.15.3"
+        }
+      },
+      "OpenTelemetry.Api": {
+        "type": "Transitive",
+        "resolved": "1.15.3",
+        "contentHash": "fX+fkCysfPut+qCcT3bKqyX4QN9Saf4CgX8HLOHywEVD+Xr7sULtfuypITpoDysjx8R59dn/3mWhgimMH8cm/g=="
+      },
+      "OpenTelemetry.Api.ProviderBuilderExtensions": {
+        "type": "Transitive",
+        "resolved": "1.15.3",
+        "contentHash": "SYn0lqYDwLMWhv/zlNGsQcl2yX++yTumanX46bmOZE/ZDOd1WjPBO2kZaZgKLEZTZk48pavIFGJ6vOvxXgWVFQ==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "OpenTelemetry.Api": "1.15.3"
+        }
+      },
       "System.ClientModel": {
         "type": "Transitive",
         "resolved": "1.14.0",
@@ -808,6 +853,16 @@
           "Microsoft.Bcl.HashCode": "6.0.0",
           "Microsoft.Bcl.Memory": "9.0.4",
           "Microsoft.ML.Tokenizers": "2.0.0"
+        }
+      },
+      "OpenTelemetry.Extensions.Hosting": {
+        "type": "CentralTransitive",
+        "requested": "[1.16.0, )",
+        "resolved": "1.15.3",
+        "contentHash": "u8n/W8yIlqv0BXZmvId1iVaeWXG42tGKdTkuLYg5g57Y/r9CeUNzqtrSHNdG5IoO8iPX79w3v+WsbAHgUQbfeg==",
+        "dependencies": {
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.0",
+          "OpenTelemetry": "1.15.3"
         }
       }
     }

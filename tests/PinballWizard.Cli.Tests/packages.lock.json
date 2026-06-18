@@ -776,7 +776,6 @@
       "pinballwizard.cli": {
         "type": "Project",
         "dependencies": {
-          "Aspire.Microsoft.Azure.Cosmos": "[13.4.5, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.9, )",
           "Microsoft.Extensions.Hosting": "[10.0.9, )",
           "Microsoft.Extensions.Http": "[10.0.9, )",
@@ -795,6 +794,7 @@
         "type": "Project",
         "dependencies": {
           "AngleSharp": "[1.5.1, )",
+          "Aspire.Microsoft.Azure.Cosmos": "[13.4.5, )",
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",

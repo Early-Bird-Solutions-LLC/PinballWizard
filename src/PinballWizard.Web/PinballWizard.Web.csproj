@@ -69,16 +69,6 @@
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" />
     <PackageReference Include="Azure.Extensions.AspNetCore.DataProtection.Keys" />
     <PackageReference Include="Azure.Identity" />
-
-    <!--
-      Aspire Cosmos client integration. Lets the Web consume the
-      ConnectionStrings:cosmos value that the AppHost injects via
-      pinwiz-web.WithReference(cosmos) — the local preview-emulator path that
-      makes the /admin data pages work in local dev. Mirrors the Cli, which
-      already references this. In deployed environments Cosmos:AccountEndpoint
-      drives the Managed-Identity path instead and this call is skipped.
-    -->
-    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
   </ItemGroup>
 
   <ItemGroup>

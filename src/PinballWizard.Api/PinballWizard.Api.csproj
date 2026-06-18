@@ -15,17 +15,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!--
-      Aspire Cosmos client integration. Lets the Api consume the
-      ConnectionStrings:cosmos value the AppHost injects via
-      pinwiz-api.WithReference(cosmos) — the local preview-emulator path.
-      Mirrors the Cli and Web; in deployed environments Cosmos:AccountEndpoint
-      drives the Managed-Identity path instead and this call is skipped.
-    -->
-    <PackageReference Include="Aspire.Microsoft.Azure.Cosmos" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
     <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />

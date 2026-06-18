@@ -1,7 +1,5 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 
@@ -9,43 +7,25 @@ namespace PinballWizard.Web.Hosting;
 
 // Cosmos persistence + catalog-read wiring for the Web host.
 //
-// Extracted from Program.cs so the gate is directly unit-testable
+// Delegates the shared host gate to CosmosHostRegistration.AddHostCosmosPersistence
+// and layers on the Web-only AddCatalogStatsRead when Cosmos is wired — that
+// registers ICatalogStatsReadRepository for the /admin/machines pages
+// (AB#259 — ADR-0036), which would otherwise fail DI-injection locally.
+//
+// Kept as a thin Web extension (rather than calling the shared helper inline in
+// Program.cs) so the catalog-stats addition stays directly unit-testable
 // (WebCosmosCompositionTests) — a WebApplicationFactory<Program> test can't
-// exercise it because config injected via the factory isn't visible to
-// Program.cs's top-level GetConnectionString read in minimal hosting.
+// exercise it because factory-injected config isn't visible to Program.cs's
+// top-level config read in minimal hosting.
 public static class CosmosWebRegistration
 {
-    // Wires Cosmos via the same two paths the Cli uses:
-    //  - Local dev: the AppHost wires pinwiz-web.WithReference(cosmos), injecting
-    //    ConnectionStrings:cosmos (the preview emulator). AddAzureCosmosClient
-    //    builds the CosmosClient from it; AddCosmosPersistence's TryAddSingleton
-    //    then no-ops over that registration. This is what makes the /admin data
-    //    pages (AdminMachines/MachineDetail — ADR-0036) work locally instead of
-    //    failing DI-injection.
-    //  - Deployed: Cosmos:AccountEndpoint is set (Bicep output); no Aspire
-    //    connection string, so AddCosmosPersistence builds the Managed-Identity
-    //    client itself.
-    // AddCatalogStatsRead registers ICatalogStatsReadRepository for /admin/machines
-    // (AB#259 — ADR-0036 Tier-1 point reads). No-op only when NEITHER signal is
-    // present (a genuinely Cosmos-less run).
     public static void AddWebCosmosPersistence(this IHostApplicationBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        var aspireCosmosConnection = builder.Configuration.GetConnectionString(CosmosOptions.CosmosConnectionName);
-        var cosmosEndpoint = builder.Configuration[CosmosOptions.AccountEndpointKey];
-
-        if (string.IsNullOrWhiteSpace(aspireCosmosConnection) && string.IsNullOrWhiteSpace(cosmosEndpoint))
+        if (builder.AddHostCosmosPersistence())
         {
-            return;
+            builder.Services.AddCatalogStatsRead();
         }
-
-        if (!string.IsNullOrWhiteSpace(aspireCosmosConnection))
-        {
-            builder.AddAzureCosmosClient(CosmosOptions.CosmosConnectionName);
-        }
-
-        builder.Services.AddCosmosPersistence(builder.Configuration);
-        builder.Services.AddCatalogStatsRead();
     }
 }

@@ -712,6 +712,7 @@
         "type": "Project",
         "dependencies": {
           "AngleSharp": "[1.5.1, )",
+          "Aspire.Microsoft.Azure.Cosmos": "[13.4.5, )",
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
@@ -753,6 +754,27 @@
         "requested": "[1.5.1, )",
         "resolved": "1.5.1",
         "contentHash": "jFG0tKwFMNzIdv0rX3qvyiKyxAzUIvDyTLTJo2ORKtv/hiJC8juZTknc4b9DQmBFbrky+0twr58QQWt6DR48Og=="
+      },
+      "Aspire.Microsoft.Azure.Cosmos": {
+        "type": "CentralTransitive",
+        "requested": "[13.4.5, )",
+        "resolved": "13.4.5",
+        "contentHash": "smrZ4DtkfFZTIAelxFT0pb1yrrDr1eAo78PpSvP5cQwy/oFV+25r/BtJ90eLBoP3U0tQRa4IOroyoF+vu/6vtw==",
+        "dependencies": {
+          "Azure.Core": "1.55.0",
+          "Azure.Identity": "1.21.0",
+          "Microsoft.Azure.Cosmos": "3.59.0",
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Configuration.Binder": "10.0.8",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Logging": "10.0.8",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.8",
+          "Microsoft.Extensions.Options": "10.0.8",
+          "Microsoft.Extensions.Primitives": "10.0.8",
+          "Newtonsoft.Json": "13.0.4",
+          "OpenTelemetry.Extensions.Hosting": "1.15.3"
+        }
       },
       "Azure.AI.DocumentIntelligence": {
         "type": "CentralTransitive",
