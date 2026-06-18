@@ -192,6 +192,16 @@ pwsh ./start-apphost.ps1
 
 First run pulls ~3 GB of container images (Cosmos preview emulator + Azurite); subsequent runs reuse persistent volumes. Requires Docker Desktop (for the emulator containers) and the .NET Aspire workload (`dotnet workload install aspire`).
 
+### AI coding agent integration (Aspire MCP)
+
+`start-apphost.ps1` launches via `aspire run` (not `dotnet run`) so the Aspire CLI registers the running AppHost. The committed [`.mcp.json`](.mcp.json) wires the Aspire MCP server:
+
+```json
+{ "mcpServers": { "aspire": { "command": "aspire", "args": ["agent", "mcp"] } } }
+```
+
+When the AppHost is running, AI coding agents (Claude Code and compatible tools) that load `.mcp.json` automatically get live access to Aspire logs, traces, and resource state via the MCP server — no manual configuration required. The `.agents/` directory that the Aspire CLI populates with machine-generated agent skills is gitignored; the portable wiring lives in `.mcp.json` only.
+
 The dashboard runs at the URL printed in the AppHost output (default `https://localhost:17110`). Inspect the `cosmos` resource for the auto-generated connection string; copy it into a shell env var:
 
 ```pwsh
