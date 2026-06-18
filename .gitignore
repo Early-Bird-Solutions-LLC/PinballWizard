@@ -136,3 +136,7 @@ crash.*.log
 # local symlinked directory and Playwright MCP scratch are never source)
 thoughts/
 .playwright-mcp/
+
+# Local workflow gate state — machine/worktree-specific SHA markers written by
+# the track-gates hook. Never commit; each checkout has its own (ref: PR self-audit).
+.claude-gates/
