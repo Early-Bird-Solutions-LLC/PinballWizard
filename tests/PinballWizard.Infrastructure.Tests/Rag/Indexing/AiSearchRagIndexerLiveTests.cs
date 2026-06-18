@@ -138,7 +138,7 @@ public sealed class AiSearchRagIndexerLiveTests
             // cost on Basic SKU but pollutes the index list.
             try
             {
-                await indexClient.DeleteIndexAsync(testIndexName);
+                await indexClient.DeleteIndexAsync(testIndexName, CancellationToken.None);
             }
             catch (Exception)
             {
@@ -169,7 +169,7 @@ public sealed class AiSearchRagIndexerLiveTests
         // make the first-call assertion unreliable.
         try
         {
-            await indexClient.DeleteIndexAsync(bootstrapTestIndex);
+            await indexClient.DeleteIndexAsync(bootstrapTestIndex, CancellationToken.None);
         }
         catch (Exception)
         {
@@ -206,7 +206,7 @@ public sealed class AiSearchRagIndexerLiveTests
         {
             try
             {
-                await indexClient.DeleteIndexAsync(bootstrapTestIndex);
+                await indexClient.DeleteIndexAsync(bootstrapTestIndex, CancellationToken.None);
             }
             catch (Exception)
             {
