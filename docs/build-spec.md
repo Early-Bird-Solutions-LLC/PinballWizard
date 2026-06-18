@@ -1324,6 +1324,11 @@ PR #202 (Lighthouse fix: dotnet publish NO_FCP) and #203 (bUnit 2.7.2 migration)
 - **Rate limiting in code** (threat-model R-01/R-02). Cloudflare Bot Fight is the current sole defence; Phase 7 design conversation if logs show abuse patterns post-launch.
 - **`pinwiz.ai.cost_usd_cents` shows 0** until `NullTokenUsageReader` is replaced (tracked since Phase 3). Workbook cost tile reads from `customMetrics`; $300 hard-cap alert reads from Azure Cost Management (correct source). Resolve when `Microsoft.Agents.AI` exposes `UsageDetails` on `AgentResponse`.
 
+**Update (2026-06-18) — status since this 2026-05-15 retrospective:**
+
+- **The "deploy the real app" block has cleared.** The Wizard and Api are now containerized and deployed (Phase 7 A-track); `pinwiz.ai` serves the live app behind Cloudflare (CSP promoted to enforced, `decision-log.md` 2026-06-12) with Entra `GlobalAdmin`-gated `/admin` auth (live + smoke-verified, `decision-log.md` 2026-06-12). The three gates deferred above are therefore **unblocked** — live-surface Lighthouse and axe-core (+ NVDA) can now run against the real surface, and the 30-day cost-burn clock has started. Their formal pass / sign-off is **not yet captured here** (record when run); the burn snapshot the note above projected to "~June 14" is now due for capture against Azure Cost Management.
+- **Subscription consolidation.** The `*-hlpz4` resource names in the drill results above belong to the original `UpworkDemo` subscription (`4dce9fdd`), a duplicate stack. The project has since consolidated onto the canonical `pinwiz.ai` subscription (`b1f33f17`, suffix `buutj`); the `4dce9fdd` / `hlpz4` duplicate was deleted 2026-06-15. The drill results stand as recorded — only the subscription they ran against changed.
+
 ---
 
 ## Phase 7+ — Post-launch features
