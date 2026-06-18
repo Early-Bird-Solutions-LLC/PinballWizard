@@ -1,14 +1,19 @@
-# Dependabot configuration for PinballWizard.
+# Dependabot configuration for PinballWizard — SECURITY-ONLY role.
 # Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
-# Two ecosystems are tracked:
-#   - nuget         — scans every csproj under the repo (directory: "/")
-#   - github-actions — keeps workflow action pins up to date
+# Division of labour (see .github/renovate.json):
+#   - Renovate owns ALL *version* updates (NuGet + GitHub Actions) and weekly
+#     lock-file maintenance — grouped, scheduled, CI-gated auto-merge, with
+#     majors held for explicit approval on the Renovate Dependency Dashboard.
+#   - Dependabot is kept ONLY as the native CVE/security-PR layer. It opens a
+#     PR the moment a GitHub Advisory affects a dependency — faster than the
+#     weekly Renovate cadence, and especially valuable here because vulnerable
+#     advisories are warnings-as-errors (NU1903) that break every restore.
 #
-# Security updates are grouped into a single PR per ecosystem so review of
-# a CVE batch doesn't require N round trips. Non-security version bumps stay
-# as individual PRs (capped by open-pull-requests-limit) so each can be
-# evaluated and reverted independently.
+# `open-pull-requests-limit: 0` disables Dependabot *version* updates while
+# leaving *security* updates active (these run on a separate internal limit of
+# 10 that cannot be changed). Security updates are grouped into one PR per
+# ecosystem so a CVE batch is reviewed in a single round trip.
 version: 2
 
 updates:
@@ -19,9 +24,10 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - "dependencies"
+      - "security"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
@@ -38,9 +44,10 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     labels:
       - "dependencies"
+      - "security"
       - "github-actions"
     commit-message:
       prefix: "chore(deps)"

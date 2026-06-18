@@ -1,0 +1,97 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+
+  // PinballWizard dependency automation.
+  //
+  // Division of labour (see .github/dependabot.yml):
+  //   - Renovate owns ALL *version* updates (NuGet + GitHub Actions) and
+  //     weekly lock-file maintenance: grouped, scheduled, CI-gated auto-merge,
+  //     with majors held for explicit approval on the Dependency Dashboard.
+  //   - Dependabot is kept ONLY as the native CVE/security-PR layer.
+  //
+  // Running both tools for *version* updates would double-open PRs, so
+  // Renovate's own vulnerabilityAlerts are disabled below and Dependabot's
+  // version updates are throttled to zero.
+
+  // The repo's commit convention is `chore(deps) <summary>` with NO colon
+  // after the scope. Renovate's semantic-commit mode always inserts a colon,
+  // so disable it and set the prefix verbatim.
+  semanticCommits: "disabled",
+  commitMessagePrefix: "chore(deps) ",
+
+  schedule: ["before 5am on monday"],
+  prConcurrentLimit: 5,
+  prHourlyLimit: 2,
+  labels: ["dependencies"],
+
+  dependencyDashboard: true,
+
+  // Major bumps are breaking-change-bearing in a showcase app. Hold every one
+  // behind an explicit checkbox on the Dependency Dashboard rather than
+  // auto-raising the PR — this encodes the standing "majors land as dedicated,
+  // reviewed PRs" discipline.
+  major: {
+    dependencyDashboardApproval: true,
+  },
+
+  // Weekly refresh of the committed packages.lock.json graph (the
+  // `restore --force-evaluate` equivalent), independent of any version bump.
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 5am on monday"],
+  },
+
+  // Disabled deliberately: Dependabot is the sole security-PR source (native
+  // GitHub Advisory DB, immediate). Leaving this on would duplicate every CVE PR.
+  vulnerabilityAlerts: {
+    enabled: false,
+  },
+
+  packageRules: [
+    {
+      // Auto-merge non-breaking updates once branch protection's required
+      // checks (Build/test/coverage, forbidden-token scan, CodeQL) pass.
+      // Majors are excluded — they are held via the dashboard above.
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
+      matchPackageNames: ["Aspire.*"],
+      groupName: "Aspire",
+    },
+    {
+      matchPackageNames: ["Microsoft.Extensions.*"],
+      groupName: "Microsoft.Extensions",
+    },
+    {
+      matchPackageNames: ["Microsoft.AspNetCore.*"],
+      groupName: "Microsoft.AspNetCore",
+    },
+    {
+      matchPackageNames: ["OpenTelemetry.*"],
+      groupName: "OpenTelemetry",
+    },
+    {
+      matchPackageNames: ["Azure.*", "Microsoft.Azure.Cosmos"],
+      groupName: "Azure SDKs",
+    },
+    {
+      matchPackageNames: [
+        "xunit*",
+        "NSubstitute",
+        "bunit",
+        "Microsoft.NET.Test.Sdk",
+        "Deque.AxeCore.*",
+      ],
+      groupName: "test dependencies",
+    },
+    {
+      matchManagers: ["github-actions"],
+      addLabels: ["github-actions"],
+      automerge: true,
+      platformAutomerge: true,
+    },
+  ],
+}
