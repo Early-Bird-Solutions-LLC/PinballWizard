@@ -42,7 +42,16 @@ public static class CosmosHostRegistration
 
         if (!string.IsNullOrWhiteSpace(aspireCosmosConnection))
         {
-            builder.AddAzureCosmosClient(CosmosOptions.CosmosConnectionName);
+            // configureClientOptions is load-bearing, not cosmetic: it applies
+            // PinballWizard's custom System.Text.Json serializer to the client
+            // Aspire builds. The SDK default serializer ignores the documents'
+            // [JsonPropertyName] attributes, so a write through it serializes the
+            // partition key under the wrong name and the gateway rejects it with
+            // 400 BadRequest (RU=0). The Managed-Identity fallback applies the same
+            // options directly — see CosmosClientConfiguration.ApplySharedOptions.
+            builder.AddAzureCosmosClient(
+                CosmosOptions.CosmosConnectionName,
+                configureClientOptions: CosmosClientConfiguration.ApplySharedOptions);
         }
 
         builder.Services.AddCosmosPersistence(builder.Configuration);

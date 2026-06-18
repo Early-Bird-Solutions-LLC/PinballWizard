@@ -52,6 +52,7 @@ public sealed class CosmosClientOptionsTests
 
         // Assert — Gateway path per ADR-0025 connection-mode strategy.
         Assert.Equal(ConnectionMode.Gateway, client.ClientOptions.ConnectionMode);
+        Assert.IsType<SystemTextJsonCosmosSerializer>(client.ClientOptions.Serializer);
         Assert.True(client.ClientOptions.LimitToEndpoint,
             "LimitToEndpoint must be true in Development — prevents SDK from discovering regional endpoints over unreachable direct TCP.");
         Assert.Null(client.ClientOptions.ApplicationPreferredRegions);
@@ -89,6 +90,7 @@ public sealed class CosmosClientOptionsTests
 
         // Assert — Direct path per ADR-0025 connection-mode strategy.
         Assert.Equal(ConnectionMode.Direct, client.ClientOptions.ConnectionMode);
+        Assert.IsType<SystemTextJsonCosmosSerializer>(client.ClientOptions.Serializer);
         Assert.False(client.ClientOptions.LimitToEndpoint);
         Assert.Equal(["East US 2"], client.ClientOptions.ApplicationPreferredRegions);
         Assert.Equal(ConsistencyLevel.Session, client.ClientOptions.ConsistencyLevel);
