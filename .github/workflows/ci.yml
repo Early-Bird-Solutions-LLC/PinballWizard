@@ -76,16 +76,16 @@ jobs:
         # output our downstream summary action consumes. coverage.runsettings
         # excludes test assemblies and third-party deps so the gate measures
         # production code only — see file header for rationale.
-        # Exclude Category=Accessibility and Category=Snapshots — those tests
-        # need Playwright browsers installed and run in their own parallel jobs.
-        # Category=E2E is local-only: it drives the live Azure dev stack with
+        # Exclude Category=Accessibility, Category=Snapshots, and Category=Circuit
+        # — those tests need Playwright browsers installed and run in the ui-tests
+        # job. Category=E2E is local-only: it drives the live Azure dev stack with
         # real model calls (tools/e2e/Run-E2E.ps1); the E2EFact attribute also
         # self-skips without the live-stack env.
         run: |
           dotnet test \
             --no-build \
             --configuration Release \
-            --filter "Category!=Accessibility&Category!=Snapshots&Category!=E2E" \
+            --filter "Category!=Accessibility&Category!=Snapshots&Category!=Circuit&Category!=E2E" \
             --logger "trx;LogFileName=test-results.trx" \
             --collect "Code Coverage;Format=cobertura" \
             --settings tests/coverage.runsettings \
