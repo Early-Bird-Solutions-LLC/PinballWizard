@@ -127,6 +127,11 @@ crash.*.log
 # parallel agent runs. Never committed.
 .worktrees/
 
+# Aspire CLI — machine-generated AI agent skills (populated by "aspire agent mcp"
+# when an AppHost is running). Machine-specific; the portable MCP wiring lives in
+# the committed .mcp.json instead.
+.agents/
+
 # Session tooling output (humanlayer thoughts repo lives elsewhere; the
 # local symlinked directory and Playwright MCP scratch are never source)
 thoughts/
