@@ -34,8 +34,9 @@
          auth via DefaultAzureCredential). Wave 2 W2-3 extends consumption
          for index creation + document upsert (AiSearchRagIndexer per
          ADR-0021); Wave 3 W3-3 adds hybrid-retrieval queries via
-         AiSearchRagRetriever. The 11.7.0 line is the GA major covering
-         the v2024+ semantic-ranker + vector-field surface ADR-0021 locks. -->
+         AiSearchRagRetriever. The 12.0.0 line is the GA major covering
+         the v2026-04-01 service API surface; vector, semantic, and hybrid
+         query shapes used by ADR-0021/0024 are unchanged from 11.7.0. -->
     <PackageReference Include="Azure.Search.Documents" />
     <!-- Azure.AI.OpenAI 2.x wraps the OpenAI 2.x client with Azure
          AAD auth + Foundry-hosted-deployment routing. Phase 4 W3-3

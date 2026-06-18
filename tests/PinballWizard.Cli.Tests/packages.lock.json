@@ -800,7 +800,7 @@
           "Azure.AI.Projects": "[2.0.1, )",
           "Azure.Identity": "[1.21.0, )",
           "Azure.ResourceManager.CosmosDB": "[1.4.1, )",
-          "Azure.Search.Documents": "[11.7.0, )",
+          "Azure.Search.Documents": "[12.0.0, )",
           "Microsoft.Agents.AI.Foundry": "[1.5.0, )",
           "Microsoft.Azure.Cosmos": "[3.61.0, )",
           "Microsoft.Extensions.Caching.Memory": "[10.0.9, )",
@@ -926,11 +926,11 @@
       },
       "Azure.Search.Documents": {
         "type": "CentralTransitive",
-        "requested": "[11.7.0, )",
-        "resolved": "11.7.0",
-        "contentHash": "48yBLnsf8SSgowe/OQDCNg9+G9WjzRmLX6Bghjlshxu+5Mhh4maTXvSWKi4o568ZqV6GoOYhiKPbCm/QYoufwA==",
+        "requested": "[12.0.0, )",
+        "resolved": "12.0.0",
+        "contentHash": "HziwTmbadPNT/Q0Bau3n7ubQQJde5AWGi2LpzA30JwDasJiY5ogyrp7pALpvUy5HYcgSMRrRdLtahgTT5TPyrA==",
         "dependencies": {
-          "Azure.Core": "1.49.0"
+          "Azure.Core": "1.54.0"
         }
       },
       "Microsoft.Agents.AI": {

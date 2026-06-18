@@ -61,11 +61,11 @@
       },
       "Azure.Search.Documents": {
         "type": "Direct",
-        "requested": "[11.7.0, )",
-        "resolved": "11.7.0",
-        "contentHash": "48yBLnsf8SSgowe/OQDCNg9+G9WjzRmLX6Bghjlshxu+5Mhh4maTXvSWKi4o568ZqV6GoOYhiKPbCm/QYoufwA==",
+        "requested": "[12.0.0, )",
+        "resolved": "12.0.0",
+        "contentHash": "HziwTmbadPNT/Q0Bau3n7ubQQJde5AWGi2LpzA30JwDasJiY5ogyrp7pALpvUy5HYcgSMRrRdLtahgTT5TPyrA==",
         "dependencies": {
-          "Azure.Core": "1.49.0"
+          "Azure.Core": "1.54.0"
         }
       },
       "Microsoft.Agents.AI.Foundry": {
