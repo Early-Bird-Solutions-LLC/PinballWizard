@@ -232,7 +232,7 @@
 
     private async Task DeleteAsync(LinkOverrideRow row)
     {
-        var confirmed = await DialogService.ShowMessageBox(
+        var confirmed = await DialogService.ShowMessageBoxAsync(
             "Delete Override",
             $"Remove override for '{row.SourcePattern}'?",
             yesText: "Delete",

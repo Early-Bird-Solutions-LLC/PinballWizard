@@ -10,7 +10,7 @@ namespace PinballWizard.Web.Tests.StaticAssets;
 // amendment fixes).
 //
 // Signals checked: @onclick / OnClick= (event handlers), @bind-Value (two-way
-// binding), IDialogService / .ShowAsync( / .ShowMessageBox( / <MudDialog
+// binding), IDialogService / .ShowAsync( / .ShowMessageBoxAsync( / <MudDialog
 // (dialogs). Static-SSR-safe constructs are deliberately NOT flagged: EditForm
 // + [SupplyParameterFromForm] (forms work under static SSR), plain Href/anchor
 // navigation, and comment prose (comments are stripped before scanning).
@@ -38,7 +38,7 @@ public sealed class RenderModeConventionTests
         ("@bind-Value",       new Regex(@"@bind-Value\b", RegexOptions.Compiled)),
         ("IDialogService",    new Regex(@"\bIDialogService\b", RegexOptions.Compiled)),
         (".ShowAsync(",       new Regex(@"\.ShowAsync\(", RegexOptions.Compiled)),
-        (".ShowMessageBox(",  new Regex(@"\.ShowMessageBox\(", RegexOptions.Compiled)),
+        (".ShowMessageBoxAsync(", new Regex(@"\.ShowMessageBoxAsync\(", RegexOptions.Compiled)),
         ("<MudDialog",        new Regex(@"<MudDialog\b", RegexOptions.Compiled)),
     ];
 
