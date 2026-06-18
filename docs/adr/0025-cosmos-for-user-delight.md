@@ -27,9 +27,9 @@ For projections off `machines`, dual-write from the single writer (`OpdbSyncServ
 
 | Setting | Value | Rationale |
 | --- | --- | --- |
-| `ConnectionMode` | `Direct` (TCP) | -10–30ms vs Gateway; the cost of an additional managed network hop on every call. |
+| `ConnectionMode` | **Environment-conditional** — `Gateway + LimitToEndpoint` in Development; `Direct` (TCP) in Production | Direct TCP to Cosmos partition replicas is unreachable from outside Azure (dev machine → Azure Cosmos). In Direct mode the Change Feed processor silently fails to deliver batches because it cannot open the direct TCP channels. `Gateway + LimitToEndpoint` routes all requests over HTTPS through the account endpoint, which is reachable from any network. In Production (ACA worker co-located with Cosmos) Direct is correct and saves 10–30ms vs Gateway. `LimitToEndpoint` and `ApplicationPreferredRegions` are mutually exclusive in the SDK, so the two paths are fully separated on the `IHostEnvironment.IsDevelopment()` signal. |
 | `ConsistencyLevel` | `Session` | Read-your-writes within a client session; lowest read latency that preserves correctness. Single-region deploy makes the cross-region staleness implications inert. |
-| `ApplicationPreferredRegions` | `["East US 2"]` | Match the deployed Cosmos account's primary region. Single-region today; multi-region deferred until user-geography signal. |
+| `ApplicationPreferredRegions` | `["East US 2"]` (Production only) | Match the deployed Cosmos account's primary region. Not set in Development (`LimitToEndpoint` takes precedence). Single-region today; multi-region deferred until user-geography signal. |
 | `EnableContentResponseOnWrite` | `false` | Saves one round-trip + ~1 RU per write. Callers must consume `entity` (the value passed in) not `response.Resource`. |
 | `AllowBulkExecution` | `true` | Auto-batches concurrent same-partition operations. Zero risk for current single-op call sites; meaningful win for OPDB sync (~2,400 sequential upserts) and the future Phase 1 → Cosmos backfill. |
 | `ApplicationName` | per-host (`pinwiz-cli` / `pinwiz-rag-worker` / future `pinwiz-wizard-host`) | Distinguishes hosts in Cosmos diagnostic logs + custom-metric tagging without changing the underlying client behavior. |
@@ -50,7 +50,9 @@ Drift detection follows the existing partition-key drift pattern in `ArmCosmosPr
 
 ### 4. Point-read over cross-partition for hot-path queries
 
-Cross-partition queries are the highest-latency, highest-RU shape Cosmos exposes. The user-facing critical path must NOT use them. Today's only such query — `MachineRepository.QueryByTitleAsync` — gets a deterministic-id lookup container alongside it: `machine_title_lookups`, partitioned by `/normalizedTitle`, doc shape `{ id: normalizedTitle, normalizedTitle, opdbIds: string[], manufacturers: string[], lastSyncedUtc }`.
+Cross-partition queries are the highest-latency, highest-RU shape Cosmos exposes. The user-facing critical path must NOT use them. Today's only such query — `MachineRepository.QueryByTitleAsync` — gets a deterministic-id lookup container alongside it: `machine_title_lookups`, partitioned by `/normalizedTitle`, doc shape `{ id: normalizedTitle, normalizedTitle, opdbIds: string[], manufacturers: string[], matchTokens: string[][], lastSyncedUtc }`.
+
+**Amendment (AB#259):** `machine_title_lookups` entries now carry a third parallel array `matchTokens` populated at OPDB sync time by `OpdbMachineMapper.GetMatchTokens`. Each element is the expanded set of user-typeable tokens for the manufacturer key at the same index (e.g., `"jjp"` → `["jjp","jersey","jack"]`). `MachineGroundingTool.ScoreEntryAgainstTokens` scores against these stored tokens instead of the raw key, fixing disambiguation for abbreviated/compound manufacturer keys (jjp, cgc, americanpinball, pinballbrothers, barrelsoffun). Rows written before this change have `matchTokens=null`; the scorer falls back to the raw key as a single-element list, preserving pre-feature behaviour during the backfill window. The next OPDB sync run backfills all rows automatically.
 
 `MachineGroundingTool` becomes two point reads (~5ms + ~5ms = ~10ms total) instead of one cross-partition fan-out (~50-150ms p95). RU drop from ~5-10 to ~2 (1 RU per point read).
 
@@ -111,7 +113,7 @@ These have been considered and rejected. Rationale recorded so future PRs don't 
 | # | Option | Latency | RU cost | Complexity | Decision |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Session consistency | Low (single-region) | Neutral | None | **Lock** — § 2 |
-| 2 | Direct connection mode | -10–30ms vs gateway | Neutral | None | **Lock** — § 2 |
+| 2 | Environment-conditional connection mode (Gateway+LimitToEndpoint in Dev, Direct in Prod) | -10–30ms vs Gateway in Prod; Change Feed reliable in Dev | Neutral | Low (env signal) | **Lock** — § 2 |
 | 3 | Selective indexing on write-heavy | Neutral read | -30–60% RU on write | Low | **Lock** — § 3 |
 | 4 | EnableContentResponseOnWrite=false | -1 round-trip on write | -1 RU/write | Low | **Lock** — § 2 |
 | 5 | Title→OpdbId lookup container | -50–145ms p95 | -3–8 RU/lookup | Medium | **Lock** — § 4 |
@@ -170,6 +172,26 @@ These have been considered and rejected. Rationale recorded so future PRs don't 
 - **Pre-warm in-memory `IMachineLookupCache` from a startup query.** No Cosmos write changes; load the curated subset into memory at worker boot. Effectively zero latency on hits but invalidation gets complex once the curated subset expands past Phase 4. Rejected because the dual-write pattern gives the same latency win without a per-host invalidation problem.
 - **`MeteredCosmosRepository<T>` decorator over `IRepository<T>`** (the original draft). Rejected during PR 4 implementation: `IRepository<T>` is intentionally Cosmos-agnostic and does not surface `ResponseMessage.RequestCharge`, so a decorator over the interface could capture wall-clock duration but not the RU charge — defeating the user-delight § 7.1 RU-cost-dominance trigger. A decorator that wrapped `Container` directly (sibling to `CosmosRepository<T>`, not over the interface) would solve the surfacing problem but require either a parallel implementation of every repository operation (drift risk) or a refactor of `CosmosRepository<T>` into a thin shell over virtual helpers (large change for a layering-hygiene win). The protected-`ExecuteWithMetricsAsync`-helper pattern adopted instead keeps emission at the SDK boundary, lets concrete repositories opt in to emission for specialized methods, and matches the boundary-instrumentation pattern of `MachineGroundingTool` without the interface-coupling problem.
 - **Defer all Cosmos optimization until production telemetry justifies it.** Rejected because the §7.1 revisit triggers can't fire without `pinwiz.cosmos.*` instruments, and waiting for production telemetry to motivate the very instruments that would expose production telemetry is circular. The mechanical wins (selective indexing, EnableContentResponseOnWrite, ApplicationName) ship now to lock the posture before Phase 1 → Cosmos sync introduces new write paths.
+
+## Follow-up 2026-06-10 — prefix-strip retry on title-lookup miss
+
+The § 4 point-read path gained a read-time retry in
+`MachineGroundingTool.GetMachineByTitleAsync`: when the initial
+point-read misses (or hits a row with empty `opdbIds`), the tool
+strips the leading token from the normalized title and retries, up to
+two strips, requiring the remainder to keep ≥ 2 tokens, stopping on
+the first hit. Entry scoring still uses the original title's tokens.
+
+Why: the sync writes rows for bare titles ("godzilla premium") and
+manufacturer-prefixed titles ("stern godzilla") but not the
+combinatorial "{manufacturer} {title} {edition}" shape — which is
+exactly the input the tool's own `[Description]` instructs the agent
+to send. "stern godzilla premium" was a guaranteed 404 (observed
+live: eval ev-valuation-0002 cited the Pro instead of the Premium).
+Write-side coverage was rejected as O(manufacturers × editions) row
+amplification; the retry costs at most two extra ~5 ms point-reads,
+only on misses. Latency budget impact is negligible against the
+§ 4 numbers.
 
 ## References
 

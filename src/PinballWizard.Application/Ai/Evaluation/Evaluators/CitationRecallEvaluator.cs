@@ -49,4 +49,38 @@ public sealed class CitationRecallEvaluator
 
         return (double)hits / expectedSet.Count;
     }
+
+    // Edition-aware any-of scoring (AB#259, edition-scope-model-design §6).
+    // Scores recall against the MOST FAVORABLE acceptable set in
+    // EvalQuestion.AcceptableCitationSets — symmetric with
+    // CitationPrecisionEvaluator.ComputeAnyOf. For R1 ([[Pro],[Prem/LE]]),
+    // citing the Pro base recalls the [Pro] set fully (1.0). For an
+    // edition-subset row ([[Pro,Prem/LE]]), citing one of two → 0.5.
+    //
+    // Empty acceptableSets is treated as "no citation expected" → 1.0
+    // (recall undefined), matching Compute's empty-expected branch.
+    public double ComputeAnyOf(
+        IReadOnlyCollection<string> predicted,
+        IReadOnlyList<IReadOnlyList<string>> acceptableSets)
+    {
+        ArgumentNullException.ThrowIfNull(predicted);
+        ArgumentNullException.ThrowIfNull(acceptableSets);
+
+        if (acceptableSets.Count == 0)
+        {
+            return Compute(predicted, []);
+        }
+
+        var best = 0.0;
+        foreach (var set in acceptableSets)
+        {
+            var score = Compute(predicted, set ?? []);
+            if (score > best)
+            {
+                best = score;
+            }
+        }
+
+        return best;
+    }
 }

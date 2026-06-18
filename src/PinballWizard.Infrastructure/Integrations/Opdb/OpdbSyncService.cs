@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Infrastructure.Integrations.Opdb;
@@ -29,6 +32,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
     private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpdbSyncService> _logger;
+    private readonly int _cosmosWriteConcurrency;
 
     /// <summary>Initializes a new <see cref="OpdbSyncService"/>.</summary>
     public OpdbSyncService(
@@ -37,6 +41,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         IIngestionSourceRepository ingestionSources,
         IMachineTitleLookupRepository titleLookups,
         ILogger<OpdbSyncService> logger,
+        IOptions<ScraperSettings>? scraperSettings = null,
         TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -50,6 +55,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         _titleLookups = titleLookups;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _cosmosWriteConcurrency = scraperSettings?.Value.CosmosWriteConcurrency ?? 20;
     }
 
     /// <inheritdoc />
@@ -84,6 +90,18 @@ public sealed class OpdbSyncService : IOpdbSyncService
         // stream past, so pass-2 always sees them in Cosmos.
         var aliasBuffer = new List<OpdbMachineDto>();
 
+        // Per-run cache of OPDB group-segment → clean franchise title
+        // (ADR-0029 D1). The is_machine_group record is NOT in the bulk
+        // export, so each distinct segment costs one extra polite OPDB
+        // GET — but only ONCE per run regardless of how many editions
+        // share the segment (Godzilla Pro+Premium/LE → one fetch).
+        // Bounded: ~hundreds of distinct segments. A null value is a
+        // cached miss (404 / non-group / no clean name) so a segment is
+        // never re-fetched; the existing name/opdbId title fallback then
+        // applies, unchanged. Local, not a field — per-run lifetime, GC'd
+        // after, and single-threaded by the sequential await foreach.
+        var groupTitleCache = new Dictionary<string, string?>(StringComparer.Ordinal);
+
         if (isDryRun)
         {
             _logger.LogInformation("OPDB sync starting (DRY RUN — fetch only, no Cosmos writes)...");
@@ -96,9 +114,12 @@ public sealed class OpdbSyncService : IOpdbSyncService
         try
         {
             // ── Pass 1 — base machines ──────────────────────────────────
-            // Aliases are buffered for pass 2. Buffering happens BEFORE
-            // the Cosmos round-trip to avoid spending RUs on a read we
-            // know will not be used in this pass.
+            // Two-phase: (a) stream all DTOs sequentially — this resolves
+            // group titles via polite HTTP calls and must stay sequential;
+            // (b) dispatch Cosmos read+write pairs concurrently since those
+            // are internal writes with no politeness constraint.
+            var baseMachines = new List<(OpdbMachineDto Dto, Machine Mapped, DateTimeOffset Now)>();
+
             await foreach (var dto in _client.StreamAllMachinesAsync(cancellationToken).ConfigureAwait(false))
             {
                 fetched++;
@@ -106,74 +127,93 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 if (OpdbMachineMapper.IsAlias(dto))
                 {
                     aliasBuffer.Add(dto);
+                    if (fetched % 100 == 0)
+                        _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped, {AliasesBuffered} aliases buffered).",
+                            fetched, inserted, updated, skipped, aliasBuffer.Count);
                     continue;
                 }
 
                 var now = _timeProvider.GetUtcNow();
-                var mapped = OpdbMachineMapper.Map(dto, now);
-                if (mapped is null)
-                {
-                    skipped++;
-                    continue;
-                }
+                // Group title resolution is a polite HTTP call — stays sequential.
+                var groupTitle = await ResolveGroupTitleAsync(dto.OpdbId, groupTitleCache, cancellationToken).ConfigureAwait(false);
+                var mapped = OpdbMachineMapper.Map(dto, now, groupTitle);
+                if (mapped is null) { skipped++; continue; }
 
-                // Read existing in both modes — the read is required to
-                // distinguish projected-insert from projected-update counts.
-                var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, cancellationToken).ConfigureAwait(false);
-                if (existing is null)
-                {
-                    if (!isDryRun)
-                    {
-                        await _machines.UpsertAsync(mapped, cancellationToken).ConfigureAwait(false);
-                        // Dual-write the title lookup row per ADR-0025 § 4 —
-                        // machine first (so a failed lookup write leaves the
-                        // machine resolvable via the QueryByTitleAsync
-                        // fallback), then the lookup. Session consistency on
-                        // the same client gives read-your-writes; the next
-                        // Wizard query against this title lands on the
-                        // point-read path.
-                        await UpdateTitleLookupAsync(
-                            mapped.Id,
-                            mapped.PartitionKey,
-                            priorTitle: null,
-                            newTitle: mapped.Title,
-                            now: now,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    inserted++;
-                }
-                else
-                {
-                    // Capture the prior title BEFORE the merge so the rename
-                    // case (OPDB renamed a base record) detects correctly.
-                    var priorTitle = existing.Title;
-                    // Merge runs in both modes: in dry-run the mutated `existing`
-                    // is discarded by the GC, but performing the merge confirms
-                    // the mapping itself doesn't throw on real OPDB data.
-                    OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now);
-                    if (!isDryRun)
-                    {
-                        await _machines.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
-                        // Dual-write per ADR-0025 § 4 — the helper handles the
-                        // rename case: when the normalized title changes, the
-                        // (machineId, manufacturer) entry is removed from the
-                        // OLD lookup row (deleting the row if it becomes
-                        // empty) before the new row is upserted.
-                        await UpdateTitleLookupAsync(
-                            existing.Id,
-                            existing.PartitionKey,
-                            priorTitle: priorTitle,
-                            newTitle: existing.Title,
-                            now: now,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    updated++;
-                }
+                baseMachines.Add((dto, mapped, now));
 
                 if (fetched % 100 == 0)
-                {
                     _logger.LogInformation("OPDB sync progress: fetched={Fetched} (+{Inserted} new, {Updated} updated, {Skipped} skipped, {AliasesBuffered} aliases buffered).",
                         fetched, inserted, updated, skipped, aliasBuffer.Count);
+            }
+
+            // Phase (b): parallel Cosmos machine-upserts — internal writes, no politeness gate.
+            // Title-lookup RMW is deferred to phase (c): multiple base machines can share a
+            // normalized title (e.g. Metallica Pro / Premium / LE → same lookup row). Running
+            // UpdateTitleLookupAsync concurrently would cause a classic read-modify-write race
+            // where two parallel tasks both read the same row, each add their own entry, and
+            // the last writer silently overwrites the other — violating ADR-0025 § 4's invariant
+            // that all machine entries for a shared title coexist on one row.
+            // groupTitleCacheReadOnly: populated exclusively in phase (a). Cast to IReadOnlyDictionary
+            // so accidental writes from this lambda produce a compile error, not a data race.
+            IReadOnlyDictionary<string, string?> groupTitleCacheReadOnly = groupTitleCache;
+            var titleLookupQueue = new ConcurrentBag<(string MachineId, string PartitionKey, string? PriorTitle, string NewTitle, DateTimeOffset Now)>();
+
+            // Edition-qualified title-lookup rows (AB#259, ADR-0032) are written in a
+            // dedicated phase AFTER pass-2, not here in pass-1's drain. Reason: a base's
+            // full EditionTokens set is only complete once pass-2 has folded its alias
+            // edition names (e.g. GweeP-Ml9pZ's "70th" arrives from the "70th Anniversary"
+            // alias, not the "Godzilla (Premium/LE)" label). Writing in pass-1's phase (c)
+            // would silently drop alias-derived tokens. We accumulate every base machine
+            // that flows through an upsert path (keyed by partitionKey/id, last-write-wins
+            // so the post-pass-2 reference with the complete token set wins) and write
+            // their qualified rows in phase (d). The bare-title rows stay in phase (c).
+            var editionTokenBases = new ConcurrentDictionary<string, Machine>(StringComparer.Ordinal);
+
+            await Parallel.ForEachAsync(
+                baseMachines,
+                new ParallelOptions { MaxDegreeOfParallelism = _cosmosWriteConcurrency, CancellationToken = cancellationToken },
+                async (item, ct) =>
+                {
+                    var (dto, mapped, now) = item;
+
+                    // Read existing in both modes — required to count inserts vs updates.
+                    var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, ct).ConfigureAwait(false);
+                    if (existing is null)
+                    {
+                        if (!isDryRun)
+                        {
+                            await _machines.UpsertAsync(mapped, ct).ConfigureAwait(false);
+                        }
+                        titleLookupQueue.Add((mapped.Id, mapped.PartitionKey, null, mapped.Title, now));
+                        editionTokenBases[$"{mapped.PartitionKey}/{mapped.Id}"] = mapped;
+                        Interlocked.Increment(ref inserted);
+                    }
+                    else
+                    {
+                        var priorTitle = existing.Title;
+                        OpdbMachineMapper.MergeOpdbFieldsInto(existing, dto, now,
+                            dto.OpdbId is not null
+                                ? groupTitleCacheReadOnly.GetValueOrDefault(OpdbMachineMapper.ExtractGroupSegment(dto.OpdbId) ?? string.Empty)
+                                : null);
+                        if (!isDryRun)
+                        {
+                            await _machines.UpsertAsync(existing, ct).ConfigureAwait(false);
+                        }
+                        titleLookupQueue.Add((existing.Id, existing.PartitionKey, priorTitle, existing.Title, now));
+                        editionTokenBases[$"{existing.PartitionKey}/{existing.Id}"] = existing;
+                        Interlocked.Increment(ref updated);
+                    }
+                });
+
+            // Phase (c): sequential title-lookup RMW. Each row is a shared document that maps
+            // a normalized title to all machines with that title. Sequential execution is required
+            // to avoid the lost-update race described above; the number of distinct titles (~2,400)
+            // is small relative to the machine count so the serialization cost is negligible.
+            if (!isDryRun)
+            {
+                foreach (var (machineId, partitionKey, priorTitle, newTitle, now) in titleLookupQueue)
+                {
+                    await UpdateTitleLookupAsync(machineId, partitionKey, priorTitle, newTitle, now, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -250,10 +290,27 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             && string.Equals(e.Name, edition.Name, StringComparison.OrdinalIgnoreCase)));
                     baseMachine.Editions.Add(edition);
 
+                    // Fold the alias edition's name into the base's EditionTokens
+                    // so the linker can match a per-edition document (e.g. _70th_)
+                    // to this base. Additive + de-duped (case-insensitive).
+                    foreach (var token in OpdbMachineMapper.DeriveEditionTokens(edition.Name))
+                    {
+                        if (!baseMachine.EditionTokens.Contains(token, StringComparer.OrdinalIgnoreCase))
+                        {
+                            baseMachine.EditionTokens.Add(token);
+                        }
+                    }
+
                     if (!isDryRun)
                     {
                         await _machines.UpsertAsync(baseMachine, cancellationToken).ConfigureAwait(false);
                     }
+
+                    // Record the post-fold base so phase (d) writes its edition-qualified
+                    // title-lookup rows with the COMPLETE token set (label-derived +
+                    // alias-folded, e.g. "70th"). Overwrites the pass-1 reference for the
+                    // same id — the pass-2 object carries the folded tokens.
+                    editionTokenBases[$"{baseMachine.PartitionKey}/{baseMachine.Id}"] = baseMachine;
                     aliasesAppended++;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -276,6 +333,104 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     _logger.LogInformation(
                         "OPDB sync alias progress: processed {Processed}/{Total} aliases ({Appended} appended, {Orphaned} orphaned, {Skipped} skipped).",
                         aliasIndex, aliasBuffer.Count, aliasesAppended, aliasesOrphaned, skipped);
+                }
+            }
+
+            // ── Phase (d) — edition-qualified title-lookup rows ─────────────
+            // Runs AFTER pass-2 so each base's EditionTokens is complete
+            // (label-derived + alias-folded). Writes one lookup row per token
+            // keyed NormalizeTitle("{Title} {token}") so a future
+            // getMachineByTitle("Godzilla Premium") resolves to the correct
+            // base (AB#259, ADR-0032). priorTitle is null — these rows are
+            // purely additive and never participate in rename cleanup; the
+            // bare-title entry (phase c) owns rename handling. Sequential for
+            // the same lost-update-race protection as phase (c). Guarded by
+            // !isDryRun so a projection run touches no lookup state.
+            if (!isDryRun)
+            {
+                var editionLookupNow = _timeProvider.GetUtcNow();
+                foreach (var baseMachine in editionTokenBases.Values)
+                {
+                    if (string.IsNullOrWhiteSpace(baseMachine.Title))
+                    {
+                        continue;
+                    }
+
+                    foreach (var token in baseMachine.EditionTokens)
+                    {
+                        if (string.IsNullOrWhiteSpace(token))
+                        {
+                            continue;
+                        }
+
+                        await UpdateTitleLookupAsync(
+                            baseMachine.Id,
+                            baseMachine.PartitionKey,
+                            priorTitle: null,
+                            newTitle: $"{baseMachine.Title} {token}",
+                            editionLookupNow,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+
+            // Phase (e): manufacturer-qualified title-lookup rows.
+            // Writes "{mfrToken} {Title}" rows (e.g. "stern godzilla",
+            // "jjp toy story 4", "jersey toy story 4") so getMachineByTitle
+            // resolves manufacturer-prefixed user queries directly via the
+            // fast point-read path instead of falling through to the slow
+            // cross-partition fallback query. GetMatchTokens returns one token
+            // per natural prefix ("jjp", "jersey", "jack"), producing one row
+            // per token — together covering "JJP Toy Story 4", "Jersey Toy
+            // Story 4", "Spooky Halloween", etc.
+            // priorTitle is null — these rows are purely additive and never
+            // participate in rename cleanup (same rationale as phase d).
+            // Sequential for the same lost-update-race protection as phases (c) and (d).
+            if (!isDryRun)
+            {
+                _logger.LogInformation(
+                    "OPDB sync phase (e): writing manufacturer-qualified lookup rows for {BaseMachineCount} base machines.",
+                    editionTokenBases.Count);
+                var mfrLookupNow = _timeProvider.GetUtcNow();
+                foreach (var baseMachine in editionTokenBases.Values)
+                {
+                    if (string.IsNullOrWhiteSpace(baseMachine.Title))
+                    {
+                        continue;
+                    }
+
+                    var mfrTokens = OpdbMachineMapper.GetMatchTokens(baseMachine.PartitionKey);
+                    foreach (var mfrToken in mfrTokens)
+                    {
+                        if (string.IsNullOrWhiteSpace(mfrToken))
+                        {
+                            continue;
+                        }
+
+                        try
+                        {
+                            await UpdateTitleLookupAsync(
+                                baseMachine.Id,
+                                baseMachine.PartitionKey,
+                                priorTitle: null,
+                                newTitle: $"{mfrToken} {baseMachine.Title}",
+                                mfrLookupNow,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                ex,
+                                "OPDB sync phase (e): failed to write lookup row '{MfrToken} {Title}' " +
+                                "for machine {MachineId}; row absent until next sync " +
+                                "(cross-partition fallback still resolves queries).",
+                                mfrToken, baseMachine.Title, baseMachine.Id);
+                        }
+                    }
                 }
             }
         }
@@ -482,7 +637,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 Id = newNormalized,
                 PartitionKey = newNormalized,
             };
-            lookup.UpsertEntry(machineId, manufacturer);
+            lookup.UpsertEntry(machineId, manufacturer, OpdbMachineMapper.GetMatchTokens(manufacturer));
             lookup.LastSyncedUtc = now;
             await _titleLookups.UpsertAsync(lookup, cancellationToken).ConfigureAwait(false);
         }
@@ -500,5 +655,83 @@ public sealed class OpdbSyncService : IOpdbSyncService
                 "OPDB sync: failed to update title lookup row for machine {MachineId} title '{Title}'. The cross-partition fallback in MachineGroundingTool will resolve queries for this title until the next sync repopulates the lookup.",
                 machineId, newTitle);
         }
+    }
+
+    /// <summary>
+    /// Resolves the clean franchise title for an OPDB record's group
+    /// segment (ADR-0029 D1), memoized per run. Returns null when there
+    /// is no derivable segment, no group record (OPDB 404 / non-group),
+    /// the group name is blank, or the per-segment fetch fails — in every
+    /// such case the caller (<see cref="OpdbMachineMapper.Map"/>) falls
+    /// back to the record's own name/opdbId, exactly as before this
+    /// feature. A failed or empty lookup is cached as null so a segment
+    /// is fetched at most once per run.
+    /// </summary>
+    /// <remarks>
+    /// Best-effort by design: a transient OPDB failure on the group
+    /// endpoint MUST NOT abort the catalog refresh — it only means the
+    /// affected records keep their edition-suffixed title until the next
+    /// sync (the documented D1 degradation). Cancellation propagates so a
+    /// host-stop signal still works.
+    /// </remarks>
+    private async Task<string?> ResolveGroupTitleAsync(
+        string? opdbId,
+        Dictionary<string, string?> cache,
+        CancellationToken cancellationToken)
+    {
+        var segment = string.IsNullOrWhiteSpace(opdbId)
+            ? null
+            : OpdbMachineMapper.ExtractGroupSegment(opdbId);
+        if (segment is null)
+        {
+            return null;
+        }
+
+        if (cache.TryGetValue(segment, out var cached))
+        {
+            return cached;
+        }
+
+        string? resolved = null;
+        try
+        {
+            // GetMachineGroupTitleAsync consults the persistent on-disk cache
+            // first — a cache hit avoids the polite HTTP GET entirely (10 s/call).
+            // On a cold cache the result is stored to disk after each new entry,
+            // so subsequent sync runs skip the ~1,200-request / ~3.5-h re-fetch.
+            resolved = await _client.GetMachineGroupTitleAsync(segment, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            // Warning (not debug): a 5xx / rate-limit / network failure is
+            // actionable — a systematic OPDB outage during a cold-cache sync
+            // would otherwise silently degrade every group's title with no
+            // operator-visible signal. (404s never reach here — the client
+            // returns null for those.)
+            _logger.LogWarning(
+                ex,
+                "OPDB sync: group-title HTTP request failed for segment {Segment} (status {Status}); records in this group keep their edition-suffixed title until the next sync.",
+                segment,
+                ex.StatusCode);
+            resolved = null;
+        }
+        catch (Exception ex)
+        {
+            // Best-effort: log at debug (not warning) — a missing group
+            // title is an expected, non-actionable degradation for
+            // singletons, not an operational fault.
+            _logger.LogDebug(
+                ex,
+                "OPDB sync: group-title lookup failed for segment {Segment}; records in this group keep their edition-suffixed title until the next sync.",
+                segment);
+            resolved = null;
+        }
+
+        cache[segment] = resolved;
+        return resolved;
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -44,7 +45,7 @@ builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
 // Application-layer chunker + Infrastructure-layer extractor — the
 // pipeline depends on both.
 builder.Services.AddHybridChunker();
-builder.Services.AddPdfDocumentTextExtractor();
+builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
 
 // Application-layer pipeline orchestrator.
 builder.Services.AddRagIngestionPipeline();
@@ -53,6 +54,16 @@ builder.Services.AddRagIngestionPipeline();
 // service (BackgroundService) that drives the actual Change Feed
 // processor + per-document handler routing + dead-letter sink.
 builder.Services.AddCosmosChangeFeedRagIngestion(builder.Configuration);
+
+// Second change-feed consumer — catalog_stats Tier-3 projection.
+// Runs its own processor against `scraped_documents` with an independent
+// lease container (`catalog_stats_leases`) so its checkpoint position is
+// entirely decoupled from the RAG consumer. Manufacturer-doc updates are
+// ETag-guarded and fully rebuildable via `--rebuild-catalog-stats`.
+// For strict multi-replica correctness, pin this consumer to a single
+// replica (Container App minReplicas=1/maxReplicas=1 on the scale rule
+// for catalog-stats, or fix CatalogStatsProjectionOptions.InstanceName).
+builder.Services.AddCatalogStatsProjection(builder.Configuration);
 
 var host = builder.Build();
 await host.RunAsync().ConfigureAwait(false);

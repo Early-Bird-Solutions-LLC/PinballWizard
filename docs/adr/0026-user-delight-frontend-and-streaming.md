@@ -292,6 +292,70 @@ Mirrors [ADR-0025](0025-cosmos-for-user-delight.md)'s pattern exactly:
 
 Plus contract tests (`AnswerChunkContractTests`, `RefusalDetailContractTests`, `CitationContractTests`, `RefusalPanelPluralityTests`) for mechanical drift detection — same posture as the Cosmos track's `IndexingPolicyContractTests` / `CosmosOptionsTests`.
 
+## Follow-up 2026-06-10 — multi-replica hosting: session affinity + shared Data Protection key ring
+
+Scaling the wizard Container App past one replica killed all
+interactivity: the page prerendered, but every Blazor circuit handshake
+failed (`AntiforgeryValidationException: the key … was not found in the
+key ring`) because antiforgery/circuit tokens minted by one replica
+could not be decrypted by another — each replica held its own ephemeral
+Data Protection key ring, and ingress had no session affinity. The site
+served a dead prerender: no answers, nothing clickable.
+
+This ADR's Blazor Web App decision implicitly assumed the documented
+ACA hosting setup, which was never provisioned. Microsoft's guidance
+(learn.microsoft.com/azure/container-apps/dotnet-overview § Configure
+Blazor Server; learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+§ Azure Container Apps) requires BOTH:
+
+1. **Ingress session affinity** (`stickySessions.affinity: 'sticky'`,
+   single-revision mode) — circuits are stateful per replica; every
+   request for a session must land on the circuit's owner. Even Azure
+   SignalR Service does not remove this for Blazor (it needs
+   `ServerStickyMode.Required` for the same reason).
+2. **Shared Data Protection key ring** — persisted to the
+   `dataprotection` blob container and wrapped with the
+   `pinwiz-dataprotection` Key Vault key, via the shared UAMI
+   (`AZURE_CLIENT_ID`). Keeps antiforgery/circuit tokens valid across
+   replicas, restarts, and deploys.
+
+Both are now provisioned in `infra/modules/shared.bicep` (ingress
+stickySessions, blob container, KV key, two role assignments) and wired
+in the Web app's `Program.cs`, gated on the `DataProtection:*` config so
+local dev keeps the ephemeral ring. Scale stays 1–3 replicas.
+
+## Follow-up 2026-06-10 (2) — auto render mode retired; interactive surfaces pinned to InteractiveServer
+
+§ 1's auto-render-mode decision (Server circuit first, WASM after the
+runtime downloads) was structurally broken in a way first-visit testing
+could not see: the interactive pages/components (`Index`, `Wizard`,
+`Settings`, `WizardAnswerStream`) are defined in the **server** project,
+but auto mode requires WASM-eligible components to live in the **client**
+assembly. A first visit worked (Server circuit); any return visit with
+the WASM runtime cached activated the WASM path, which failed with
+`Root component type 'PinballWizard.Web.Components.Pages.Index' could
+not be found in the assembly 'PinballWizard.Web'` — leaving a dead
+prerender (no answers, seed questions inert). Observed live 2026-06-10.
+
+The WASM half could not have worked even with the components relocated:
+the ask flow runs through `IWizardStreamingClient`, a server-side typed
+`HttpClient` bound to the **internal-ingress** Api app — unreachable
+from a browser-hosted runtime.
+
+Decision: all interactive surfaces pin to `InteractiveServer` (the mode
+`About`/`Status` already used). Blazor Server circuits are the
+interactivity contract — matched by the hosting provisioning from
+follow-up (1) (session affinity + shared Data Protection key ring). The
+WASM plumbing (`AddInteractiveWebAssemblyComponents`, the Web.Client
+project) stays in place but no component requests it, so the runtime is
+never fetched.
+
+Path back to auto mode, if first-visit latency ever warrants it: move
+the interactive components to `PinballWizard.Web.Client`, expose a
+public (Cloudflare-fronted) ask/stream surface on the Web host that
+proxies to the internal Api, and register a client-side
+`IWizardStreamingClient` against it. Tracked as future work, not Phase 5.
+
 ## References
 
 - [`architecture-v2.md`](../architecture-v2.md) § 7.1 — the user-delight revisit triggers (200ms p95, RU cost dominance) this ADR's `pinwiz.ai.first_token_ms` instrument makes measurable for the streaming path
@@ -308,3 +372,39 @@ Plus contract tests (`AnswerChunkContractTests`, `RefusalDetailContractTests`, `
 - [ADR-0021](0021-ai-search-index-schema.md) — AI Search index schema; this ADR's § 8 adds a `lastScrapedUtc` field per the schema-add convention
 - [ADR-0022](0022-citation-extraction.md), [ADR-0023](0023-citation-required-guardrail.md) — citation extraction + citation-required guardrail this ADR's § 8 surfaces to the UI
 - [ADR-0025](0025-cosmos-for-user-delight.md) — the just-shipped Cosmos for User Delight track that locks the data-access surface this ADR's user-delight surface lives above; the 5-layer enforcement weave + 6-PR phased structure are the patterns this ADR mirrors
+
+## Follow-up 2026-06-11 — multi-turn conversation contract (router layer)
+
+Jim's 2026-06-11 decision: the Wizard becomes a conversation — client-held
+history (the Blazor circuit keeps completed turns in component state and
+sends them with each ask) + a chat-thread UI. This follow-up records the
+router-layer contract; the API request shape and thread UI land in
+follow-on PRs per `thoughts/shared/plans/AB-259-multi-turn-conversation.md`.
+
+- `IAiRouter` gains history overloads: `AnswerAsync(question, history, ct)`
+  / `AnswerStreamingAsync(question, history, ct)` where `history` is an
+  ordered `ConversationTurn(Question, AnswerText, Citations?)` list,
+  oldest first. Null/empty history is contractually identical to the
+  two-argument overloads — multi-turn can never regress single-shot.
+- Prior turns are prepended to the model call as alternating
+  user/assistant `ChatMessage`s (the `AIAgent` Run overloads that accept
+  `IEnumerable<ChatMessage>`), capped at
+  `AiFoundryOptions.MaxConversationTurns` (default 8), oldest dropped
+  first. Foundry server-side threads (`WizardAnswer.FoundryThreadId`)
+  remain unused — the Microsoft.Agents.AI 1.4.0 session surface is
+  unstable (SDK issue #2688); revisit when it stabilizes.
+- **Citation inheritance:** a follow-up the model answers from
+  conversation context fires no retrieval tool. Such a turn inherits the
+  most recent cited turn's citations, flagged `Citation.Inherited = true`
+  so the UI labels them ("from earlier in this conversation"). The
+  citation-required gate itself is unchanged — a conversation with no
+  citations anywhere still refuses `NoCitation`. Inheritance runs before
+  confidence computation so the citation-coverage signal sees the
+  inherited set.
+- Cache: multi-turn asks bypass it entirely (ADR-0015 follow-up
+  2026-06-11).
+- ADR-0027's "no session-history surface" posture is NOT contradicted:
+  that ban covers *persistent* history (localStorage / cookies / saved
+  sessions / re-engagement surfaces). The conversation here lives only in
+  circuit component state and the request that carries it — a page
+  refresh starts fresh. A clarifying note lands in ADR-0027 with the UI PR.

@@ -93,4 +93,34 @@ public sealed class OpdbOptions
     /// </summary>
     [Range(0, 86400)]
     public int ExportCacheTtlSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// On-disk cache path for <c>GET /api/machines/{segment}</c>
+    /// (group-title) responses. Each cached entry is a JSON object mapping
+    /// group segment → resolved title (or <c>null</c> for a 404 /
+    /// non-group result). Freshness is judged by file modification time
+    /// vs <see cref="GroupTitleCacheTtlSeconds"/>. Empty / whitespace
+    /// disables the cache — every sync run re-fetches all segments.
+    /// </summary>
+    /// <remarks>
+    /// Franchise / group names essentially never change; a 14-day TTL
+    /// avoids ~1,200 polite OPDB GETs (×10 s each = ~3.5 h) on every
+    /// fresh sync run. Negative entries (null) are stored so a 404
+    /// segment is not re-asked each run. The cache is loaded once per
+    /// <see cref="OpdbClient"/> lifetime (lazy, on first
+    /// <c>GetMachineGroupAsync</c> call) and persisted best-effort after
+    /// each new entry.
+    /// </remarks>
+    public string GroupTitleCachePath { get; set; } = "data/cache/opdb-group-titles.json";
+
+    /// <summary>
+    /// Time-to-live for the group-title cache file, in seconds. Default
+    /// 1 209 600 (14 days). The whole cache file expires by mtime —
+    /// consistent with the export cache's TTL semantics and the simplest
+    /// correct approach given that group names are stable. Set to 0 to
+    /// force every call to bypass the cache (new entries are still written
+    /// on success).
+    /// </summary>
+    [Range(0, int.MaxValue)]
+    public int GroupTitleCacheTtlSeconds { get; set; } = 1_209_600; // 14 days
 }

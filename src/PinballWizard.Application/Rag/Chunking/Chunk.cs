@@ -49,4 +49,14 @@ public sealed record ChunkRequest(
     // Optional with a null default so existing callers (including test
     // factories that construct ChunkRequest without the new argument) do
     // not need to be updated unless they want to populate freshness.
-    DateTimeOffset? LastScrapedUtc = null);
+    DateTimeOffset? LastScrapedUtc = null,
+    // Free-text edition label ("Pro" / "Premium" / "LE") and structural
+    // edition scope (single-edition / edition-subset / franchise-wide)
+    // from the scraped_documents provenance record (Task 6, AB#259).
+    // Threaded ScrapedDocumentChange → ChunkRequest → IndexedChunkDocument
+    // so each AI Search chunk self-declares its edition + scope; a future
+    // retriever can filter by them and the Wizard can decide R1/R2/R3.
+    // Nullable with null defaults — legacy / unresolved documents carry
+    // no edition metadata and existing callers need not be updated.
+    string? Edition = null,
+    string? EditionScope = null);

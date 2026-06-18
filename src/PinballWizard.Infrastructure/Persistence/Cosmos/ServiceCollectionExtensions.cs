@@ -11,8 +11,14 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Downloading;
+using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Application.Landing;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Ai.Hosting;
+using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Landing;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -45,7 +51,7 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.TryAddSingleton<TokenCredential>(_ => new DefaultAzureCredential());
+        services.TryAddSingleton<TokenCredential>(_ => Credentials.SharedAzureCredential.Instance);
 
         services.TryAddSingleton(sp =>
         {
@@ -65,11 +71,24 @@ public static class ServiceCollectionExtensions
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             };
 
+            // Connection mode strategy (per Neighborli reference pattern + ADR-0025):
+            // - Gateway + LimitToEndpoint in Development: dev machine → Azure Cosmos
+            //   over HTTPS. Direct TCP to partition replicas is unreachable from outside
+            //   Azure — Change Feed silently fails to deliver batches in Direct mode.
+            // - Direct + PreferredRegions in Production: ACA worker is co-located with
+            //   Cosmos so direct TCP works and saves 10–30ms vs Gateway.
+            // LimitToEndpoint and ApplicationPreferredRegions are mutually exclusive in
+            // the SDK, so the two paths are fully separated on the environment signal.
+            var hostEnv = sp.GetRequiredService<IHostEnvironment>();
+            var isDevelopment = hostEnv.IsDevelopment();
+            var connectionMode = isDevelopment
+                ? ConnectionMode.Gateway
+                : ConnectionMode.Direct;
+
             var clientOptions = new CosmosClientOptions
             {
-                ApplicationPreferredRegions = [.. options.PreferredRegions],
                 Serializer = new SystemTextJsonCosmosSerializer(jsonOptions),
-                ConnectionMode = ConnectionMode.Direct,
+                ConnectionMode = connectionMode,
                 ConsistencyLevel = ConsistencyLevel.Session,
                 // Per ADR-0025 § 2 — saves one round-trip + ~1 RU per
                 // write. `IRepository<T>.UpsertAsync` returns the input
@@ -85,6 +104,15 @@ public static class ServiceCollectionExtensions
                 // upserts; future Phase 1 → Cosmos backfill).
                 AllowBulkExecution = true,
             };
+
+            if (isDevelopment)
+            {
+                clientOptions.LimitToEndpoint = true;
+            }
+            else if (options.PreferredRegions.Count > 0)
+            {
+                clientOptions.ApplicationPreferredRegions = [.. options.PreferredRegions];
+            }
 
             // CosmosClientOptions.ApplicationName is appended to the
             // User-Agent header, and the HTTP-headers parser throws on
@@ -154,6 +182,12 @@ public static class ServiceCollectionExtensions
             return new IngestionSourceRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<IngestionSourceRepository>>());
         });
 
+        services.AddSingleton<IScrapedDocumentRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scraped_documents");
+            return new CosmosScrapedDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosScrapedDocumentRepository>>());
+        });
+
         // Title→OPDB-ID lookup for the user-delight critical path per
         // ADR-0025 § 4. Inherits metering from `CosmosRepository<T>` so
         // every point-read here lands on `pinwiz.cosmos.*` tagged
@@ -164,6 +198,48 @@ public static class ServiceCollectionExtensions
             return new MachineTitleLookupRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MachineTitleLookupRepository>>());
         });
 
+        services.AddSingleton<IRawDocumentRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scraped_documents_raw");
+            return new CosmosRawDocumentRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CosmosRawDocumentRepository>>());
+        });
+
+        services.AddSingleton<ILinkOverrideRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "link_overrides");
+            return new CosmosLinkOverrideRepository(container,
+                sp.GetRequiredService<ILogger<CosmosLinkOverrideRepository>>());
+        });
+
+        // Runtime-mutable Wizard settings (admin settings plan, PR-B1).
+        // Singleton on purpose: the repository's TTL cache is the per-ask
+        // read-amortization layer and must be process-wide.
+        services.AddSingleton<IAdminSettingsRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "admin_settings");
+            return new CosmosAdminSettingsRepository(container,
+                sp.GetRequiredService<ILogger<CosmosAdminSettingsRepository>>());
+        });
+
+        // Per-agent prompt override store (admin prompts plan, PR-B3).
+        // Singleton: the repository's TTL cache is process-wide for the
+        // same reason as admin_settings above — OverridingAgentPromptProvider
+        // calls GetActiveAsync on every ask.
+        services.AddSingleton<IAgentPromptOverrideRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "admin_prompts");
+            return new CosmosAgentPromptOverrideRepository(container,
+                sp.GetRequiredService<ILogger<CosmosAgentPromptOverrideRepository>>());
+        });
+
+        // Registered HERE (not in the Application Ai extensions) on
+        // purpose: IRuntimeSettings requires the repository above, which
+        // only exists on Cosmos-wired hosts. Hosts without Cosmos resolve
+        // AiRouter with its optional IRuntimeSettings? param defaulted to
+        // null and run on IOptions defaults — identical behavior to no
+        // stored overrides.
+        services.AddSingleton<IRuntimeSettings, RuntimeSettings>();
+
         // Curated landing-page featured machines per ADR-0026 § Landing surface.
         // Inherits metering from `CosmosRepository<T>` so every SDK call here
         // lands on `pinwiz.cosmos.*` tagged `container=featured_machines`.
@@ -171,6 +247,48 @@ public static class ServiceCollectionExtensions
         {
             var container = ResolveContainer(sp, "featured_machines");
             return new FeaturedMachineRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FeaturedMachineRepository>>());
+        });
+
+        services.AddSingleton<IDocumentLinker>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var overrideRepo = sp.GetRequiredService<ILinkOverrideRepository>();
+            var machineRepo = sp.GetRequiredService<IMachineRepository>();
+            var linkedRepo = sp.GetRequiredService<IScrapedDocumentRepository>();
+            var textExtractor = sp.GetService<IDocumentTextExtractor>();
+            var logger = sp.GetRequiredService<ILogger<DocumentLinker>>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath;
+            var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
+            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot, concurrency);
+        });
+
+        // Document downloader (--download-documents) — fetches not-yet-downloaded
+        // raw documents so the linker's page-text tiers can read page-1 content.
+        // Reuses the registered IFileDownloader (polite, resilient); the downloader
+        // owns the DownloadsPath root and combines the relative path the service builds.
+        services.AddSingleton<DocumentDownloadService>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var downloader = sp.GetRequiredService<IFileDownloader>();
+            var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
+            return new DocumentDownloadService(rawRepo, downloader, logger);
+        });
+
+        // Download-path migration (--migrate-download-paths) — one-shot byte-safe
+        // correction of legacy already-rooted file.local_path values. Uses the
+        // filesystem store (SHA-256 + move) and the same DownloadsPath root the
+        // linker reads from, so the on-disk paths it computes match the linker's.
+        services.AddSingleton<IDownloadFileStore, FileSystemDownloadFileStore>();
+        services.AddSingleton<DownloadPathMigrationService>(sp =>
+        {
+            var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
+            var store = sp.GetRequiredService<IDownloadFileStore>();
+            var logger = sp.GetRequiredService<ILogger<DownloadPathMigrationService>>();
+            var settings = sp.GetService<IOptions<ScraperSettings>>();
+            var downloadsRoot = settings?.Value.DownloadsPath
+                ?? Path.Combine(AppContext.BaseDirectory, "downloads");
+            return new DownloadPathMigrationService(rawRepo, store, logger, downloadsRoot);
         });
 
         // Per ADR-0025 § 8 — warmup amortizes the SDK's lazy-connection

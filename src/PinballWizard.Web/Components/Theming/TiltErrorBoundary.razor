@@ -19,6 +19,7 @@
 
 @using System.Diagnostics
 @inherits ErrorBoundary
+@inject NavigationManager Nav
 
 @if (CurrentException is null)
 {
@@ -45,9 +46,11 @@ else
                 <span data-testid="tilt-request-id">Request&nbsp;ID:&nbsp;@requestId</span>
             </MudText>
 
-            <MudButton Variant="Variant.Text"
+            <MudButton Href="@Nav.Uri"
+                       data-enhance-nav="false"
+                       data-testid="tilt-recover"
+                       Variant="Variant.Text"
                        Color="Color.Primary"
-                       OnClick="@Recover"
                        Size="Size.Small">
                 Reset and try again
             </MudButton>

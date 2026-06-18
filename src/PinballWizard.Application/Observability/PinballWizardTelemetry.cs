@@ -98,6 +98,16 @@ public static class PinballWizardTelemetry
         unit: "{question}",
         description: "User-questions that missed the cache and were dispatched to the Wizard agent.");
 
+    public static readonly Counter<long> AiCacheBypassMultiturn = Meter.CreateCounter<long>(
+        "pinwiz.ai.cache.bypass_multiturn",
+        unit: "{question}",
+        description: "Multi-turn asks that bypassed the semantic cache entirely (no read, no write) because the cache key has no history component — a follow-up's meaning depends on its conversation. Watch this against cache.hits/misses to track the cost impact of uncacheable multi-turn traffic (ADR-0015 amendment, 2026-06-11).");
+
+    public static readonly Counter<long> AiCitationsInherited = Meter.CreateCounter<long>(
+        "pinwiz.ai.citations.inherited_total",
+        unit: "{citation}",
+        description: "Citations carried forward from a prior conversation turn because the current turn answered from conversation context without firing a retrieval tool. A high ratio of inherited-to-extracted suggests follow-ups rarely re-ground — expected for clarifying questions, worth investigating if it dominates.");
+
     public static readonly Counter<long> AiCostUsdCents = Meter.CreateCounter<long>(
         "pinwiz.ai.cost_usd_cents",
         unit: "USD-cents",
@@ -221,6 +231,19 @@ public static class PinballWizardTelemetry
     // a future Phase 2 batch — they need a periodic sampler rather than
     // hot-path emission, so the wiring shape is different.
 
+    // Tokens sent to the embedding API across all `IChunkEmbedder.EmbedBatchAsync`
+    // calls. Sourced from the SDK's `EmbeddingTokenUsage.InputTokenCount` so it
+    // reflects actual billed tokens, not an estimate. Tagged with `call_site`
+    // (`backfill` | `changefeed` | `query`) so dashboards split indexing cost
+    // from query-time cost. Drives the TPM-ceiling decision: if peak observed
+    // tokens/minute during a full rebuild approaches the 250k ceiling, raise the
+    // deployment capacity (free — Standard is pay-per-token). A sustained rate
+    // near the ceiling means 429s are likely; headroom of ~30% is the target.
+    public static readonly Counter<long> RagEmbeddingTokensTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.embedding_tokens_total",
+        unit: "{token}",
+        description: "Input tokens sent to the embedding API per EmbedBatchAsync call. Sourced from SDK Usage.InputTokenCount (actual billed tokens). Tagged with call_site (backfill | changefeed | query). Use to measure peak tokens/minute during rebuilds vs. the deployed TPM ceiling, and to compute per-rebuild embedding cost at $0.13/1M tokens.");
+
     public static readonly Histogram<double> RagIndexingDurationMs = Meter.CreateHistogram<double>(
         "pinwiz.rag.indexing_duration_ms",
         unit: "ms",
@@ -272,7 +295,7 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> RagChangefeedShortCircuitTotal = Meter.CreateCounter<long>(
         "pinwiz.rag.changefeed_short_circuit_total",
         unit: "{document}",
-        description: "Per-document Change Feed deliveries the W3-2 hosted service skipped without invoking the handler. Tagged with `reason`: `over_budget` when the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` (the structurally-poison-document case — only operator clearing the dead-letter resumes processing); `empty_document_id` when the source-document payload is malformed. Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). The pipeline-internal short-circuits (`Skipped_NotInCuratedSubset`, `Skipped_DocumentTypeFiltered`, `Skipped_HashUnchanged`) live below the hosted service and are NOT counted here — they are healthy filtering, not signal-of-trouble.");
+        description: "Per-document Change Feed deliveries the W3-2 hosted service skipped without invoking the handler. Tagged with `reason`: `over_budget` when the dead-letter row's AttemptCount has reached `RagIngestionOptions.MaxFailuresPerDocument` (the structurally-poison-document case — only operator clearing the dead-letter resumes processing); `empty_document_id` when the source-document payload is malformed. Distinguishes operator-actionable signals (over-budget = clear the dead-letter) from data-quality signals (empty id = upstream scraper bug). The pipeline-internal short-circuits (`Skipped_DocumentTypeFiltered`, `Skipped_HashUnchanged`) live below the hosted service and are NOT counted here — they are healthy filtering, not signal-of-trouble.");
 
     // ── RAG Change Feed lease-lag gauge (W3-2 PR-C follow-up — shipped) ─
     // Backed by `_changefeedLeaseLag`, a process-static cache the hosted
@@ -363,6 +386,59 @@ public static class PinballWizardTelemetry
         "pinwiz.cosmos.query_duration_ms",
         unit: "ms",
         description: "Wall-clock duration of a single Cosmos SDK call from `CosmosRepository<T>` (or a concrete subclass's specialized method). Same tags as `pinwiz.cosmos.ru_charge`. For streaming queries, one observation per page so a query that paginates through 10 pages emits 10 samples. Drives the §7.1 user-delight 200ms p95 trigger on the `getMachineByTitle` path; PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution.");
+
+    // ── Wizard stream fallback counter (invariant #17 operational signal) ───
+    //
+    // Incremented by WizardAnswerStream each time the primary streaming path
+    // throws and the component attempts the whole-response fallback. A
+    // non-zero rate signals that the streaming path is failing even though
+    // users may still receive an answer via the fallback. The fallback
+    // counter increments on ATTEMPT, not on success — pair with
+    // wizard.stream.fallback.failed (logged at Error) to see the fraction
+    // that also failed the recovery path.
+    //
+    // No tags: single code path (stream-error catch, one component instance
+    // per circuit). If A/B variants ship later, add a `variant` tag then.
+    public static readonly Counter<long> WizardStreamFallbackAttempted = Meter.CreateCounter<long>(
+        "wizard.stream.fallback.attempted",
+        unit: "{attempt}",
+        description: "WizardAnswerStream attempts to recover from a stream error via the whole-response fallback path. Non-zero rate is an operational signal that streaming is degraded even if end-users receive an answer. Pair with the wizard.stream.fallback.failed Error log to compute fallback success rate (invariant #17).");
+
+    // ── Landing fallback counter (invariant #17 operational signal) ─────────
+    //
+    // Incremented by Index.razor each time the interactive-mode initialization
+    // receives null from IWizardLandingClient (endpoint unreachable, non-2xx,
+    // or transport error). The page continues to serve HTTP 200 with compiled-in
+    // fallback content — outer health checks and uptime monitors will not see this
+    // outage; this counter is the only operational signal that the landing endpoint
+    // is unhealthy even though end-users are still being served a rendered page.
+    //
+    // A sustained non-zero rate signals: landing endpoint is down but web frontend
+    // appears healthy from the outside. Alert on p5m sum > 0 in Prod.
+    //
+    // No tags — the call site is a single code path (index page, interactive circuit);
+    // cardinality stays at 1. If a future A/B variant needs per-variant attribution,
+    // add a `variant` tag at that point rather than pre-optimising for a case that
+    // doesn't exist yet.
+    public static readonly Counter<long> LandingFallbackTotal = Meter.CreateCounter<long>(
+        "pinwiz.web.landing_fallback_total",
+        unit: "{render}",
+        description: "Interactive-mode renders where IWizardLandingClient returned null (endpoint unreachable or non-2xx) and the landing page fell back to the compiled-in static seed questions and featured machines. A sustained non-zero rate is an operational signal that the landing endpoint is unhealthy even though the page continues to serve HTTP 200s (invariant #17).");
+
+    // ── Scraper politeness fallback counter (invariant #17 operational signal)
+    //
+    // Incremented by IngestionSourcePolitenessResolver each time the Cosmos
+    // repository throws during initialization and the resolver falls back to
+    // global defaults for every host. A non-zero rate signals that per-source
+    // politeness overrides are not being applied — all scraping proceeds at
+    // the global default rate, which may be more aggressive than configured
+    // for specific sites.
+    //
+    // No tags: single code path (one resolver instance, one init attempt).
+    public static readonly Counter<long> ScraperPolitenessFallbackActive = Meter.CreateCounter<long>(
+        "pinwiz.scraper.politeness_fallback_active",
+        unit: "{occurrence}",
+        description: "IngestionSourcePolitenessResolver fell back to global politeness defaults because the Cosmos repository threw during initialization. All hosts will be scraped at the global default rate; per-source overrides are not applied (invariant #17).");
 
     // ── Activity (trace) names ───────────────────────────────────────────
 

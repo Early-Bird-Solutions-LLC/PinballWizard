@@ -56,6 +56,12 @@ public sealed class EvaluationHarness : IEvaluationHarness
         WriteIndented = true,
     };
 
+    // Edition-aware expected_outcome discriminators (AB#259,
+    // edition-scope-model-design §6). Kept in sync with EvalQuestion's
+    // ExpectedOutcome default ("grounded").
+    private const string OutcomeAnsweredAllEditions = "answered_all_editions";
+    private const string OutcomeHonestSubstitution = "honest_substitution";
+
     private readonly IAiRouter _router;
     private readonly IAgentPromptProvider _promptProvider;
     private readonly CitationPrecisionEvaluator _precisionEvaluator;
@@ -63,6 +69,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
     private readonly CitationCoverageEvaluator _coverageEvaluator;
     private readonly SubagentAccuracyEvaluator _subagentEvaluator;
     private readonly RefusalCorrectnessEvaluator _refusalEvaluator;
+    private readonly AnsweredAllEditionsEvaluator _answeredAllEditionsEvaluator;
+    private readonly HonestSubstitutionEvaluator _honestSubstitutionEvaluator;
     private readonly EvalHarnessOptions _evalOptions;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EvaluationHarness> _logger;
@@ -75,6 +83,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         CitationCoverageEvaluator coverageEvaluator,
         SubagentAccuracyEvaluator subagentEvaluator,
         RefusalCorrectnessEvaluator refusalEvaluator,
+        AnsweredAllEditionsEvaluator answeredAllEditionsEvaluator,
+        HonestSubstitutionEvaluator honestSubstitutionEvaluator,
         IOptions<EvalHarnessOptions> evalOptions,
         ILogger<EvaluationHarness> logger,
         TimeProvider? timeProvider = null)
@@ -86,6 +96,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         ArgumentNullException.ThrowIfNull(coverageEvaluator);
         ArgumentNullException.ThrowIfNull(subagentEvaluator);
         ArgumentNullException.ThrowIfNull(refusalEvaluator);
+        ArgumentNullException.ThrowIfNull(answeredAllEditionsEvaluator);
+        ArgumentNullException.ThrowIfNull(honestSubstitutionEvaluator);
         ArgumentNullException.ThrowIfNull(evalOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -96,6 +108,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         _coverageEvaluator = coverageEvaluator;
         _subagentEvaluator = subagentEvaluator;
         _refusalEvaluator = refusalEvaluator;
+        _answeredAllEditionsEvaluator = answeredAllEditionsEvaluator;
+        _honestSubstitutionEvaluator = honestSubstitutionEvaluator;
         _evalOptions = evalOptions.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -153,7 +167,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 PinballWizardTelemetry.EvalQuestionDurationMs.Record(result.DurationMs);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Per-question failures are caught and recorded inside
             // EvaluateOneAsync; anything reaching here is a fatal
@@ -162,7 +176,20 @@ public sealed class EvaluationHarness : IEvaluationHarness
             // and propagate so the caller's exit code reflects the
             // failure. Broad catch is intentional — this is a
             // log-then-rethrow; no exception is swallowed.
+            //
+            // #362: write the PARTIAL results first. The 2026-06-11
+            // credential-timeout runs aborted exactly here and lost the
+            // scorecard for every healthy question already evaluated —
+            // hiding the signal the run existed to produce. Best-effort,
+            // CancellationToken.None on purpose: the run token is what
+            // just expired, and a local file write must not be governed
+            // by it.
             PinballWizardTelemetry.EvalRunsFailed.Add(1);
+            if (perQuestionResults.Count > 0)
+            {
+                await TryWritePartialResultsAsync(startedAt, groundTruthPath, perQuestionResults, ex)
+                    .ConfigureAwait(false);
+            }
             throw;
         }
 
@@ -183,7 +210,10 @@ public sealed class EvaluationHarness : IEvaluationHarness
 
         Directory.CreateDirectory(_evalOptions.ResultsDirectory);
         var json = JsonSerializer.Serialize(runResult, ResultsSerializerOptions);
-        await File.WriteAllTextAsync(resultsPath, json, runCts.Token).ConfigureAwait(false);
+        // CancellationToken.None: by this point every question is scored —
+        // a run-timeout expiring during the local file write must not
+        // discard the completed scorecard (#362).
+        await File.WriteAllTextAsync(resultsPath, json, CancellationToken.None).ConfigureAwait(false);
 
         PinballWizardTelemetry.EvalRuns.Add(1);
         _logger.LogInformation(
@@ -200,6 +230,47 @@ public sealed class EvaluationHarness : IEvaluationHarness
             aggregate.RefusalCorrectnessMean);
 
         return runResult;
+    }
+
+    // Best-effort partial-results write on run-level abort (#362). The file
+    // is the real artifact marked clearly as partial: '.partial' suffix and
+    // the abort reason embedded — never presented as a completed run.
+    private async Task TryWritePartialResultsAsync(
+        DateTimeOffset startedAt,
+        string groundTruthPath,
+        List<EvalQuestionResult> perQuestionResults,
+        Exception abortReason)
+    {
+        try
+        {
+            var resultsPath = BuildResultsPath(startedAt) + ".partial";
+            var runResult = new EvalRunResult(
+                EvaluationId: $"pinwiz-eval-{startedAt:yyyyMMddTHHmmssZ}-PARTIAL",
+                StartedAt: startedAt,
+                CompletedAt: _timeProvider.GetUtcNow(),
+                GroundTruthPath: groundTruthPath,
+                ResultsPath: resultsPath,
+                PromptVersion: _promptProvider.PromptVersion,
+                Aggregate: ComputeAggregate(perQuestionResults),
+                Questions: perQuestionResults);
+
+            Directory.CreateDirectory(_evalOptions.ResultsDirectory);
+            var json = JsonSerializer.Serialize(runResult, ResultsSerializerOptions);
+            await File.WriteAllTextAsync(resultsPath, json, CancellationToken.None).ConfigureAwait(false);
+
+            _logger.LogWarning(
+                "EvaluationHarness run ABORTED ({Reason}) after {Count} question(s) — partial results written to {Path}.",
+                abortReason.GetType().Name,
+                perQuestionResults.Count,
+                resultsPath);
+        }
+        catch (Exception writeEx)
+        {
+            // The abort itself is about to propagate; a failed salvage
+            // write must not mask it. Log and let the original throw.
+            _logger.LogError(writeEx,
+                "EvaluationHarness could not write partial results after run abort.");
+        }
     }
 
     private async Task<EvalQuestionResult> EvaluateOneAsync(
@@ -247,12 +318,76 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var predictedRefusal = answer?.IsRefusal ?? false;
         var answerText = answer?.Text ?? string.Empty;
 
+        // Metric-hygiene (AB#259, 2026-06-10): an acceptable_refusal-only
+        // gap row that refuses carries NO citation signal — its
+        // expected_citation_set describes the answer the agent MAY give,
+        // not one it MUST give. Grading the absent answer's citations as
+        // zeros misrepresented the metric (the strike-one artifact).
+        // refusal_required rows keep the empty-set conventions (precision
+        // guards against fabricated citations inside a refusal).
+        var acceptablyRefusedGapRow = predictedRefusal
+            && question.AcceptableRefusal
+            && !question.RefusalRequired;
+
+        // Edition-aware citation scoring (AB#259): when the row supplies
+        // acceptable_citation_sets, score against the most-favorable set
+        // (any-of). Otherwise fall back to the single expected_citation_set
+        // (back-compat with pre-edition rows).
+        double? citationPrecision;
+        double? citationRecall;
+        if (acceptablyRefusedGapRow)
+        {
+            citationPrecision = null;
+            citationRecall = null;
+        }
+        else if (question.AcceptableCitationSets is { Count: > 0 } acceptableSets)
+        {
+            citationPrecision = _precisionEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
+            citationRecall = _recallEvaluator.ComputeAnyOf(predictedCitations, acceptableSets);
+        }
+        else
+        {
+            citationPrecision = _precisionEvaluator.Compute(predictedCitations, question.ExpectedCitationSet);
+            citationRecall = _recallEvaluator.Compute(predictedCitations, question.ExpectedCitationSet);
+        }
+
+        // R2 / R3 outcome evaluators only apply to rows that declare the
+        // matching expected_outcome; null elsewhere (the metric is
+        // undefined and excluded from that row's aggregate denominator).
+        double? answeredAllEditions = null;
+        double? honestSubstitution = null;
+        if (string.Equals(question.ExpectedOutcome, OutcomeAnsweredAllEditions, StringComparison.OrdinalIgnoreCase))
+        {
+            answeredAllEditions = _answeredAllEditionsEvaluator.Compute(
+                answerText, predictedCitations, question.RequiredEditions ?? []);
+        }
+        else if (string.Equals(question.ExpectedOutcome, OutcomeHonestSubstitution, StringComparison.OrdinalIgnoreCase))
+        {
+            // R3 needs the named edition. Prefer the first required edition
+            // if the curator supplied one; otherwise the row is misconfigured
+            // and scores 0 (the named-edition gap can't be checked).
+            var namedEdition = question.RequiredEditions is { Count: > 0 } reqs
+                ? reqs[0]
+                : null;
+            honestSubstitution = string.IsNullOrWhiteSpace(namedEdition)
+                ? 0.0
+                : _honestSubstitutionEvaluator.Compute(answerText, predictedCitations, namedEdition);
+        }
+
         var scores = new EvalScores(
-            CitationPrecision: _precisionEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
-            CitationRecall: _recallEvaluator.Compute(predictedCitations, question.ExpectedCitationSet),
-            CitationCoverage: _coverageEvaluator.Compute(answerText, predictedCitations),
-            SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent),
-            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal));
+            CitationPrecision: citationPrecision,
+            CitationRecall: citationRecall,
+            // Coverage measures citations-per-paragraph of an ANSWER; a
+            // refusal is not an answer, so the metric is undefined on any
+            // refused row (the refusal itself is graded by
+            // refusal_correctness, and missing citations by recall).
+            CitationCoverage: predictedRefusal
+                ? null
+                : _coverageEvaluator.Compute(answerText, predictedCitations),
+            SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent, question.AcceptableSubAgents),
+            RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal, question.RefusalRequired),
+            AnsweredAllEditions: answeredAllEditions,
+            HonestSubstitution: honestSubstitution);
 
         return new EvalQuestionResult(
             Id: question.Id,
@@ -306,27 +441,68 @@ public sealed class EvaluationHarness : IEvaluationHarness
             return new EvalAggregate(
                 QuestionCount: 0,
                 ErrorCount: 0,
-                CitationPrecisionMean: 0.0,
-                CitationRecallMean: 0.0,
-                CitationCoverageMean: 0.0,
+                CitationPrecisionMean: null,
+                CitationRecallMean: null,
+                CitationCoverageMean: null,
                 SubagentAccuracyMean: 0.0,
-                RefusalCorrectnessMean: 0.0);
+                RefusalCorrectnessMean: null);
         }
 
+        // Nullable metrics aggregate only over rows where the metric is
+        // defined (non-null score) so the signal isn't diluted by rows
+        // it doesn't apply to — R2/R3 outcome rows, refused rows
+        // (coverage), and acceptable_refusal gap rows (refusal,
+        // precision/recall on refusal). The *_count fields make each
+        // mean's denominator visible in the results file.
         double precisionSum = 0;
+        var precisionCount = 0;
         double recallSum = 0;
+        var recallCount = 0;
         double coverageSum = 0;
+        var coverageCount = 0;
         double subagentSum = 0;
         double refusalSum = 0;
+        var refusalCount = 0;
         var errorCount = 0;
+
+        double answeredAllEditionsSum = 0;
+        var answeredAllEditionsCount = 0;
+        double honestSubstitutionSum = 0;
+        var honestSubstitutionCount = 0;
 
         foreach (var r in results)
         {
-            precisionSum += r.Scores.CitationPrecision;
-            recallSum += r.Scores.CitationRecall;
-            coverageSum += r.Scores.CitationCoverage;
+            if (r.Scores.CitationPrecision is { } precision)
+            {
+                precisionSum += precision;
+                precisionCount++;
+            }
+            if (r.Scores.CitationRecall is { } recall)
+            {
+                recallSum += recall;
+                recallCount++;
+            }
+            if (r.Scores.CitationCoverage is { } coverage)
+            {
+                coverageSum += coverage;
+                coverageCount++;
+            }
             subagentSum += r.Scores.SubagentAccuracy;
-            refusalSum += r.Scores.RefusalCorrectness;
+            if (r.Scores.RefusalCorrectness is { } refusal)
+            {
+                refusalSum += refusal;
+                refusalCount++;
+            }
+            if (r.Scores.AnsweredAllEditions is { } aae)
+            {
+                answeredAllEditionsSum += aae;
+                answeredAllEditionsCount++;
+            }
+            if (r.Scores.HonestSubstitution is { } hs)
+            {
+                honestSubstitutionSum += hs;
+                honestSubstitutionCount++;
+            }
             if (!string.IsNullOrEmpty(r.Error))
             {
                 errorCount++;
@@ -337,11 +513,23 @@ public sealed class EvaluationHarness : IEvaluationHarness
         return new EvalAggregate(
             QuestionCount: n,
             ErrorCount: errorCount,
-            CitationPrecisionMean: precisionSum / n,
-            CitationRecallMean: recallSum / n,
-            CitationCoverageMean: coverageSum / n,
+            CitationPrecisionMean: precisionCount > 0 ? precisionSum / precisionCount : null,
+            CitationRecallMean: recallCount > 0 ? recallSum / recallCount : null,
+            CitationCoverageMean: coverageCount > 0 ? coverageSum / coverageCount : null,
             SubagentAccuracyMean: subagentSum / n,
-            RefusalCorrectnessMean: refusalSum / n);
+            RefusalCorrectnessMean: refusalCount > 0 ? refusalSum / refusalCount : null,
+            CitationPrecisionCount: precisionCount,
+            CitationRecallCount: recallCount,
+            CitationCoverageCount: coverageCount,
+            RefusalCorrectnessCount: refusalCount,
+            AnsweredAllEditionsMean: answeredAllEditionsCount > 0
+                ? answeredAllEditionsSum / answeredAllEditionsCount
+                : null,
+            AnsweredAllEditionsCount: answeredAllEditionsCount,
+            HonestSubstitutionMean: honestSubstitutionCount > 0
+                ? honestSubstitutionSum / honestSubstitutionCount
+                : null,
+            HonestSubstitutionCount: honestSubstitutionCount);
     }
 
     private string BuildResultsPath(DateTimeOffset startedAt)

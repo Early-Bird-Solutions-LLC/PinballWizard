@@ -111,11 +111,19 @@ public sealed class CosmosChangeFeedHostedService<T> : BackgroundService
                 (changes, cancellationToken) =>
                     HandleChangesAsync(changes, cancellationToken))
             .WithInstanceName(instanceName)
-            .WithLeaseContainer(_leaseContainer);
+            .WithLeaseContainer(_leaseContainer)
+            .WithPollInterval(TimeSpan.FromSeconds(5))
+            .WithMaxItems(100);
 
         if (_changeFeedOptions.StartFromBeginning)
         {
-            builder = builder.WithStartTime(DateTime.MinValue.ToUniversalTime());
+            // Cosmos _ts is a Unix timestamp (seconds since 1970-01-01).
+            // DateTime.MinValue (year 1) maps to a negative Unix timestamp
+            // that Cosmos treats as invalid and silently snaps to "now",
+            // causing the processor to skip all existing documents. Use a
+            // date that is (a) a valid positive Unix timestamp and (b)
+            // earlier than any document this system could have written.
+            builder = builder.WithStartTime(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         }
 
         _processor = builder.Build();

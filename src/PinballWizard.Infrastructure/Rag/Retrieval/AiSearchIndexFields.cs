@@ -29,4 +29,17 @@ internal static class AiSearchIndexFields
     // sort queries work. Added in Wave 2 PR-C3; zero-migration-cost (existing
     // chunks reindex on next ingestion run per ADR-0025 § 6).
     public const string LastScrapedUtc = "last_scraped_utc";
+
+    // edition — free-text edition label carried from the scraper
+    // provenance record (e.g. "Pro", "Premium", "LE"). Filterable +
+    // facetable so a future retriever can scope a query to a specific
+    // edition. Added in Task 6 (AB#259); zero-migration-cost — existing
+    // chunks carry null until the next Change Feed re-ingestion run.
+    public const string Edition = "edition";
+
+    // edition_scope — structural scope of the document within its
+    // franchise (single-edition / edition-subset / franchise-wide).
+    // The machine-readable signal the Wizard uses to decide R1/R2/R3
+    // (answer-all vs honest-substitution). Filterable + facetable.
+    public const string EditionScope = "edition_scope";
 }

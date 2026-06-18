@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using System.Net;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
-using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 
@@ -130,13 +128,33 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<T> StreamAsync(
+    public IAsyncEnumerable<T> StreamAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? parameters,
+        string partitionKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        ArgumentException.ThrowIfNullOrWhiteSpace(partitionKey);
+        return StreamCoreAsync(query, parameters, partitionKey, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<T> StreamCrossPartitionAsync(
+        string query,
+        IReadOnlyDictionary<string, object>? parameters,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(query);
+        return StreamCoreAsync(query, parameters, partitionKey: null, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<T> StreamCoreAsync(
         string query,
         IReadOnlyDictionary<string, object>? parameters,
         string? partitionKey,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         var queryDefinition = new QueryDefinition(query);
         if (parameters is not null)
@@ -220,69 +238,7 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         ArgumentNullException.ThrowIfNull(action);
 
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            var (result, ru) = await action(cancellationToken).ConfigureAwait(false);
-            EmitCosmosMetrics(operation, stopwatch.Elapsed, ru);
-            return result;
-        }
-        catch (CosmosException ex)
-        {
-            EmitCosmosMetrics(operation, stopwatch.Elapsed, ex.RequestCharge);
-            if (ex.StatusCode != HttpStatusCode.NotFound)
-            {
-                LogCosmosFailureWithDiagnostics(ex, operation);
-            }
-            throw;
-        }
-        // OperationCanceledException is intentionally NOT caught — it
-        // propagates to honour graceful shutdown (host stop, request
-        // cancellation). The trade-off: the in-flight duration metric is
-        // not emitted on the cancellation path. Acceptable because
-        // cancellations aren't failures and shouldn't pollute the latency
-        // distribution; alerting on cancellation cadence happens elsewhere
-        // (ACA worker lifecycle telemetry).
-    }
-
-    private void EmitCosmosMetrics(string operation, TimeSpan duration, double requestCharge)
-    {
-        // Two `KeyValuePair<string, object?>` allocations per SDK call.
-        // Below the noise floor at curated-subset scale (hundreds of
-        // documents). If a future hot-path emerges (Phase 4.5 corpus
-        // expansion, bulk-execution paths driving thousands of ops/sec),
-        // promote to a per-(container, operation) `TagList` cache to
-        // amortize the allocation — same pattern OTel SDK uses
-        // internally for high-frequency callsites.
-        var containerTag = new KeyValuePair<string, object?>("container", _container.Id);
-        var operationTag = new KeyValuePair<string, object?>("operation", operation);
-        PinballWizardTelemetry.CosmosRuCharge.Record(requestCharge, containerTag, operationTag);
-        PinballWizardTelemetry.CosmosQueryDurationMs.Record(duration.TotalMilliseconds, containerTag, operationTag);
-    }
-
-    private void LogCosmosFailureWithDiagnostics(CosmosException ex, string operation)
-    {
-        // CosmosException.Diagnostics carries region, retry count, RU
-        // consumed by the failed call, and per-stage timing — this is
-        // the load-bearing operator surface when a 429 / 503 / 408
-        // surfaces. Capture it into a structured log scope so the next
-        // App Insights query lands the operator on the failure context
-        // without needing a separate trace lookup.
-        using (_logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["pinwiz.container"] = _container.Id,
-            ["pinwiz.operation"] = operation,
-            ["cosmos.status_code"] = (int)ex.StatusCode,
-            ["cosmos.sub_status_code"] = ex.SubStatusCode,
-            ["cosmos.activity_id"] = ex.ActivityId,
-            ["cosmos.request_charge"] = ex.RequestCharge,
-            ["cosmos.diagnostics"] = ex.Diagnostics?.ToString(),
-        }))
-        {
-            _logger.LogError(
-                ex,
-                "Cosmos {Operation} on container {Container} failed: {StatusCode}. Diagnostics captured in log scope.",
-                operation, _container.Id, ex.StatusCode);
-        }
+        return await CosmosMetricsHelper.ExecuteWithMetricsAsync(
+            _container.Id, operation, _logger, action, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -32,6 +32,10 @@ namespace PinballWizard.Api.Endpoints;
 // Wave 2 PR-S2 swaps the router call to RunStreamingAsync.
 public static class WizardAskStreamEndpoint
 {
+    // Hard ceiling on client-supplied history turns (request-shaping guard;
+    // see the WizardAskRequest comment for the layering rationale).
+    private const int MaxHistoryTurns = 20;
+
     // Shared JsonSerializerOptions: camelCase property names + polymorphic
     // AnswerChunk serialization. The polymorphism is driven entirely by
     // [JsonPolymorphic] / [JsonDerivedType] attributes on AnswerChunk, so
@@ -130,6 +134,24 @@ public static class WizardAskStreamEndpoint
             return;
         }
 
+        // Request-shaping guard for client-supplied history. 20 is far above
+        // the router's MaxConversationTurns trim (8) — this rejects only
+        // shapes no legitimate client produces, so raising the router cap
+        // never requires touching this guard. Per-field length is the
+        // router's job (it caps each Question/AnswerText independently).
+        if (request.History is { Count: > MaxHistoryTurns })
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status400BadRequest,
+                "https://pinballwizard.app/errors/invalid-request",
+                "Bad Request",
+                $"'history' must not exceed {MaxHistoryTurns} turns. Start a new conversation instead.",
+                retryAfterSeconds: null,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         // ── SSE response headers ──────────────────────────────────────
         // text/event-stream with no buffering. X-Accel-Buffering disables
         // Nginx/Cloudflare proxy buffering so deltas reach the browser
@@ -138,6 +160,20 @@ public static class WizardAskStreamEndpoint
         context.Response.ContentType = "text/event-stream; charset=utf-8";
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Append("X-Accel-Buffering", "no");
+
+        // ── Flush headers + SSE preamble BEFORE the agent runs ────────
+        // ASP.NET sends response headers on the first body write/flush.
+        // Without an immediate preamble, time-to-first-byte equals the
+        // model's first-token latency (>10s under tool load), and every
+        // caller-side header-read timeout fires while the answer is still
+        // being computed — the 2026-06-11 incident: the Web app's 10s
+        // attempt timeout killed every ask and its retries re-ran whole
+        // agent runs (a non-idempotent retry storm). This preamble makes
+        // time-to-headers ≈ network RTT, independent of model latency.
+        // SSE parsers ignore ":"-prefixed comment lines by spec.
+        await context.Response.StartAsync(cancellationToken).ConfigureAwait(false);
+        await context.Response.WriteAsync(": stream-open\n\n", cancellationToken).ConfigureAwait(false);
+        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         // ── Stream AnswerChunk events ─────────────────────────────────
         // Each chunk maps to an SSE event name (snake_case). The event name
@@ -164,7 +200,7 @@ public static class WizardAskStreamEndpoint
         try
         {
             await foreach (var chunk in router
-                .AnswerStreamingAsync(request.Question, cancellationToken)
+                .AnswerStreamingAsync(request.Question, request.History, cancellationToken)
                 .ConfigureAwait(false))
             {
                 var eventName = chunk switch
@@ -201,10 +237,6 @@ public static class WizardAskStreamEndpoint
             // emit Refusal + Final so the client receives a well-formed terminal sequence
             // (ADR-0026 § 4/5 + PR self-audit item 9(c)). OOM/cancellation still propagate
             // via the runtime since OperationCanceledException is caught above this arm.
-            // Mid-stream exception: headers are already flushed, so we cannot
-            // return a ProblemDetails response. Emit a Refusal chunk then a
-            // synthetic Final chunk so the client receives a well-formed
-            // terminal sequence and can render the error gracefully.
             logger.LogError(
                 ex,
                 "Mid-stream exception interrupted the SSE stream. RequestId: {RequestId}",
@@ -242,10 +274,14 @@ public static class WizardAskStreamEndpoint
         // ── Stream terminator ─────────────────────────────────────────
         // The "end" event signals to clients that the connection will close
         // normally. Always emitted — refusal paths send final then end.
+        // CancellationToken.None for the same reason as the catch arm's
+        // writes: after a mid-stream error the caller's token may already be
+        // cancelled, and the terminal sequence must still complete rather
+        // than throw past the catch and drop the "end" event.
         await context.Response.WriteAsync(
             "event: end\ndata: {}\n\n",
-            cancellationToken).ConfigureAwait(false);
-        await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
+        await context.Response.Body.FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     // Writes an RFC 9457 application/problem+json response to the HttpContext.
@@ -294,4 +330,15 @@ public static class WizardAskStreamEndpoint
 
 // Request body shape for POST /api/wizard/ask:stream.
 // Sealed record: STJ round-trips cleanly via positional ctor.
-internal sealed record WizardAskRequest(string Question);
+//
+// History (multi-turn, 2026-06-11 design): the client's completed prior
+// turns, oldest first, reusing the Application ConversationTurn record —
+// the same layer whose types already ride the SSE wire inside AnswerChunk.
+// Null/absent = single-shot (fully backward compatible). The endpoint
+// rejects more than MaxHistoryTurns entries (a request-shaping guard);
+// the router additionally trims to AiFoundryOptions.MaxConversationTurns
+// and caps each field's length — defense at both layers, each scoped to
+// what that layer can see.
+internal sealed record WizardAskRequest(
+    string Question,
+    IReadOnlyList<ConversationTurn>? History = null);

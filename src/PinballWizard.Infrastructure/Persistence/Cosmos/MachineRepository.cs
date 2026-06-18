@@ -31,6 +31,15 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
             cancellationToken: cancellationToken);
     }
 
+    // Cross-partition scan (ADR-0036 Tier 2) so all manufacturers are
+    // covered in a single pass. RU cost scales with total item count —
+    // acceptable for the infrequent InitializeAsync call on the linker.
+    public IAsyncEnumerable<Machine> StreamAllAsync(CancellationToken cancellationToken) =>
+        StreamCrossPartitionAsync(
+            "SELECT * FROM c",
+            parameters: null,
+            cancellationToken);
+
     /// <inheritdoc />
     public async IAsyncEnumerable<Machine> QueryByTitleAsync(
         string title,
@@ -66,6 +75,46 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
         // track validates its point-read win against this path's pre-merge
         // p95 distribution — without metering, the win would only be
         // observable in synthetic benchmarks, not production traffic.
+        using var iterator = Container.GetItemQueryIterator<Machine>(
+            queryDefinition,
+            requestOptions: requestOptions);
+        while (iterator.HasMoreResults)
+        {
+            var page = await ExecuteWithMetricsAsync(
+                "query",
+                async ct =>
+                {
+                    var p = await iterator.ReadNextAsync(ct).ConfigureAwait(false);
+                    return (p, p.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
+            foreach (var machine in page)
+            {
+                yield return machine;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<Machine> GetSiblingsByGroupIdAsync(
+        string groupId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+
+        // Cross-partition equality match on groupId. Expected cardinality
+        // is 1–10 per ADR-0029 § data observation (typically 3: Pro /
+        // Premium / LE). TOP 50 is the hard result ceiling per ADR-0036
+        // (Tier 2 cross-partition reads must carry a real TOP guard —
+        // MaxItemCount controls page size but the HasMoreResults loop
+        // would return all results without a TOP clause). 50 is
+        // comfortably above any realistic edition family; MaxItemCount=10
+        // keeps the first-page RU cost small for the typical 1–10 case.
+        var queryDefinition = new QueryDefinition(
+            "SELECT TOP 50 * FROM c WHERE c.groupId = @groupId")
+            .WithParameter("@groupId", groupId);
+        var requestOptions = new QueryRequestOptions { MaxItemCount = 10 };
+
         using var iterator = Container.GetItemQueryIterator<Machine>(
             queryDefinition,
             requestOptions: requestOptions);

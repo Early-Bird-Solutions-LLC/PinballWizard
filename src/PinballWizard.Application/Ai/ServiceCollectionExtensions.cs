@@ -23,13 +23,36 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddSingleton<IAgentPromptProvider, EmbeddedResourceAgentPromptProvider>();
+        // EmbeddedResourceAgentPromptProvider is registered concretely so
+        // OverridingAgentPromptProvider can inject it directly (not via the
+        // IAgentPromptProvider abstraction, which would create a circular
+        // dependency). OverridingAgentPromptProvider is the live
+        // IAgentPromptProvider that layers the Cosmos override store on top.
+        // On hosts without Cosmos (standalone CLI, test fixtures),
+        // IAgentPromptOverrideRepository resolves as null and
+        // OverridingAgentPromptProvider degrades to embedded-resource-only
+        // behaviour — identical to pre-PR-B3.
+        services.TryAddSingleton<EmbeddedResourceAgentPromptProvider>();
+        services.TryAddSingleton<IAgentPromptProvider, OverridingAgentPromptProvider>();
         services.TryAddSingleton<ISemanticAnswerCache, SemanticAnswerCache>();
         // Wave 2 PR-D2: per-call ambient degradation context. Singleton backed
         // by AsyncLocal<T> — same pattern as IHttpContextAccessor. Safe to inject
         // into other singletons (SearchCorpusTool, AiRouter) because state is
         // flow-local, not instance-shared.
         services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>();
+
+        // UI-metadata side channel (fix/citation-metadata-channel): carries Score +
+        // LastScrapedUtc from SearchCorpusTool to ToolTraceCitationExtractor. These
+        // fields are [JsonIgnore] on SearchCorpusHit (model must not see retrieval
+        // internals), so they are stripped from FunctionResultContent.Result JSON on
+        // the real Foundry path. The sink bridges that gap without exposing the fields
+        // to the model. SINGLETON: both consumers (SearchCorpusTool above, and
+        // ToolTraceCitationExtractor held by the singleton AiRouter) are singletons, so
+        // the channel they share must be a singleton too — a scoped registration here is
+        // a captive dependency (rejected by the Development scope validator; silently
+        // root-captured as a de-facto singleton in Production). See the sink's own
+        // remarks for why a shared store is correct and bounded here.
+        services.TryAddSingleton<IRetrievalCitationMetadataSink, RetrievalCitationMetadataSink>();
 
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<SearchCorpusTool>();
@@ -72,6 +95,13 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<CitationCoverageEvaluator>();
         services.TryAddSingleton<SubagentAccuracyEvaluator>();
         services.TryAddSingleton<RefusalCorrectnessEvaluator>();
+
+        // Edition-aware evaluators (AB#259, edition-scope-model-design §6).
+        // R2 (answer differs by edition → one attributed response) and R3
+        // (named edition absent → honest substitution). Same pure-singleton
+        // shape as the four above.
+        services.TryAddSingleton<AnsweredAllEditionsEvaluator>();
+        services.TryAddSingleton<HonestSubstitutionEvaluator>();
 
         return services;
     }

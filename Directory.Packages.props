@@ -1,5 +1,4 @@
 <Project>
-
   <!--
     Centralized package management (CPM) for the PinballWizard solution.
     Every package version pinned in this file; csproj PackageReference
@@ -14,11 +13,9 @@
     the exact restored graph; CPM just centralizes the versions used to
     build that graph.
   -->
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-
   <ItemGroup>
     <!--
       Global package reference: SourceLink applies to every project so
@@ -28,32 +25,43 @@
     -->
     <GlobalPackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.203" />
   </ItemGroup>
-
-  <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.3.0" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.3.0" />
-    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.3.0" />
+  <ItemGroup Label="Security pins — direct references that lift a vulnerable transitive">
+    <!--
+      MessagePack rides in transitively via the Aspire hosting packages at
+      2.5.192, which is vulnerable to GHSA-hv8m-jj95-wg3x (LZ4 decompression
+      AccessViolation on bad input; patched in 2.5.301). NU1903 is
+      warning-as-error here, so the advisory broke every restore the day it
+      published. Direct-referencing the patched version from AppHost lifts
+      the transitive. Remove this pin (and the AppHost PackageReference)
+      when the Aspire packages ship a dependency >= 2.5.301.
+    -->
+    <PackageVersion Include="MessagePack" Version="2.5.301" />
   </ItemGroup>
-
+  <ItemGroup Label="Aspire — local-dev orchestrator + Cosmos / Storage emulator hosts">
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.4.4" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.4.4" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.4.4" />
+    <PackageVersion Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
+  </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageVersion Include="Azure.AI.Projects" Version="2.0.1" />
     <PackageVersion Include="Azure.Core" Version="1.53.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.4.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="11.7.0" />
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.59.0" />
   </ItemGroup>
-
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.4.0" />
   </ItemGroup>
-
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
@@ -64,7 +72,6 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.7" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.5.0" />
   </ItemGroup>
-
   <ItemGroup Label="Phase 4 RAG pipeline — chunking + PDF extraction">
     <!--
       Microsoft.ML.Tokenizers + Cl100kBase data package power the Phase 4
@@ -92,7 +99,6 @@
     -->
     <PackageVersion Include="PdfPig" Version="0.1.14" />
   </ItemGroup>
-
   <ItemGroup Label="OpenTelemetry — exporters + auto-instrumentation (ServiceDefaults)">
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
@@ -100,14 +106,12 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
   </ItemGroup>
-
   <ItemGroup Label="Scraping / parsing / browser automation">
     <PackageVersion Include="AngleSharp" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.59.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="System.CommandLine" Version="2.0.7" />
   </ItemGroup>
-
   <ItemGroup Label="Accessibility testing — axe-core via Playwright (Wave 3 PR-Q1b)">
     <!--
       Deque.AxeCore.Playwright wraps axe-core (the industry-standard WCAG
@@ -117,7 +121,6 @@
     -->
     <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.10.0" />
   </ItemGroup>
-
   <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
     <PackageVersion Include="bunit" Version="2.7.2" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
@@ -138,7 +141,6 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
-
   <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
     <!--
       MudBlazor 8.x targets .NET 8+. 8.5.0 is the current GA that
@@ -167,5 +169,4 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.7" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.7" />
   </ItemGroup>
-
 </Project>

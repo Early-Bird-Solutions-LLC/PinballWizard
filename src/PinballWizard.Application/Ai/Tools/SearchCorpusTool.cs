@@ -3,7 +3,9 @@ using System.Diagnostics;
 using Azure;
 using Azure.Identity;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Degradation;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Observability;
 
@@ -20,6 +22,14 @@ namespace PinballWizard.Application.Ai.Tools;
 // JSON-Schema (from [Description] attributes on the method + its
 // arguments). Sub-agent prompts (Repair / Rules / Valuation) and the
 // Wizard prompt teach the model when to call it.
+//
+// The `= null` / `= default` parameter defaults are load-bearing, not
+// style: the schema generator puts every parameter WITHOUT a C# default
+// value in the `required` array regardless of nullability. Without them
+// the model legitimately omits an "Optional:" argument, and the binder
+// throws before the tool body runs ("Error: Function failed." — the
+// ev-repair-0008 hard error in eval wizard.20260610T160646Z).
+// SearchCorpusToolContractTests pins the required-array shape.
 //
 // Failure posture (ADR-0023): a transport-level exception from the
 // retriever is caught and surfaced as an EMPTY result rather than
@@ -56,11 +66,24 @@ public sealed class SearchCorpusTool
     private readonly IRagRetriever _retriever;
     private readonly IDegradationContext _degradationContext;
     private readonly ILogger<SearchCorpusTool> _logger;
+    // Optional by design (PR retrieval-runtime-keys): hosts without the
+    // admin_settings container (standalone CLI, unit fixtures) run on
+    // RetrievalOptions defaults — identical behavior to no stored overrides.
+    // Mirrors the AiRouter optional-IRuntimeSettings convention (PR-B1).
+    private readonly IRuntimeSettings? _runtimeSettings;
+    // Optional by design (fix/citation-metadata-channel): the sink is a
+    // singleton (see IRetrievalCitationMetadataSink remarks) shared with the
+    // ToolTraceCitationExtractor, injected here normally. Unit fixtures that
+    // construct SearchCorpusTool directly pass null; when null, recording is
+    // simply skipped and the typed C# path (used in tests) still works.
+    private readonly IRetrievalCitationMetadataSink? _metadataSink;
 
     public SearchCorpusTool(
         IRagRetriever retriever,
         IDegradationContext degradationContext,
-        ILogger<SearchCorpusTool> logger)
+        ILogger<SearchCorpusTool> logger,
+        IRuntimeSettings? runtimeSettings = null,
+        IRetrievalCitationMetadataSink? metadataSink = null)
     {
         ArgumentNullException.ThrowIfNull(retriever);
         ArgumentNullException.ThrowIfNull(degradationContext);
@@ -68,15 +91,17 @@ public sealed class SearchCorpusTool
         _retriever = retriever;
         _degradationContext = degradationContext;
         _logger = logger;
+        _runtimeSettings = runtimeSettings;
+        _metadataSink = metadataSink;
     }
 
     [Description("Search the indexed pinball-machine corpus (manuals, service bulletins, metadata cards) for chunks relevant to a question. Returns up to topK page-anchored chunks with document URLs you must cite. Returns an empty list if nothing matches — when empty, do not fabricate; refuse instead.")]
     public async Task<SearchCorpusResult> SearchCorpusAsync(
         [Description("The natural-language question or query to search the corpus with. Pass the user's question through unchanged unless you need to scope it to a specific machine or document type.")] string query,
-        [Description("Optional: constrain results to a specific machine by OPDB ID (for example: 'GRBNN-MQERZ'). Use this when the user has already identified the machine via getMachineByTitle and you want manual/bulletin chunks for that specific machine.")] string? machineId,
-        [Description("Optional: constrain to a document type. Allowed values: 'manual', 'service_bulletin', 'metadata_card'. Omit for unfiltered.")] string? documentType,
-        [Description("Optional: maximum number of chunks to return. Default 8; max 20.")] int? topK,
-        CancellationToken cancellationToken)
+        [Description("Optional: constrain results to a specific machine by OPDB ID (for example: 'GRBNN-MQERZ'). Use this when the user has already identified the machine via getMachineByTitle and you want manual/bulletin chunks for that specific machine.")] string? machineId = null,
+        [Description("Optional: constrain to a document type. Allowed values: 'manual', 'service_bulletin', 'metadata_card'. Omit for unfiltered.")] string? documentType = null,
+        [Description("Optional: maximum number of chunks to return. Default 8; max 20.")] int? topK = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -99,11 +124,34 @@ public sealed class SearchCorpusTool
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var clampedTopK = ClampTopK(topK);
+            // One snapshot per tool invocation (PR retrieval-runtime-keys).
+            // Mirrors the one-snapshot-per-ask pattern AiRouter uses for
+            // confidence_threshold / cost_ceiling — a single retrieval call
+            // is internally consistent even if an admin saves mid-stream.
+            // When IRuntimeSettings is absent the record-parameter defaults
+            // apply (TopK=10, MinimumScore=0.0 per ADR-0021 § Search defaults).
+            var rtTopK = TopKDefault;
+            var rtMinimumScore = new RetrievalOptions().MinimumScore;
+            if (_runtimeSettings is not null)
+            {
+                var snapshot = await _runtimeSettings
+                    .GetSnapshotAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                rtTopK = snapshot.RetrievalTopK;
+                rtMinimumScore = snapshot.RetrievalMinimumScore;
+            }
+
+            // The model-requested topK (clamped to TopKCeiling) wins when
+            // supplied; the runtime-configured default applies when the model
+            // omits the argument (null / ≤ 0). This preserves the sub-agent
+            // ability to request fewer chunks (e.g. topK=3 for a tight Repair
+            // query) while letting the admin tune the unspecified baseline.
+            var clampedTopK = ClampTopK(topK, rtTopK);
             var options = new RetrievalOptions(
                 TopK: clampedTopK,
                 MachineId: NormalizeOptional(machineId),
-                DocumentType: NormalizeOptional(documentType));
+                DocumentType: NormalizeDocumentType(documentType),
+                MinimumScore: rtMinimumScore);
 
             IReadOnlyList<RetrievedChunk> chunks;
             try
@@ -144,12 +192,32 @@ public sealed class SearchCorpusTool
                     query);
                 return new SearchCorpusResult([]);
             }
+            catch (RequestFailedException rfe) when (rfe.Status is >= 400 and < 500)
+            {
+                // AI Search 4xx (wrong index name, auth scope mismatch,
+                // malformed query). These indicate misconfiguration, not a
+                // transient outage. Log at Error so monitoring fires on first
+                // occurrence; return empty so the NoCitation guardrail handles
+                // the turn gracefully rather than propagating a 500 to the user.
+                // Previously these were allowed to propagate unhandled — that was
+                // safe when sub-agents called searchCorpus (framework isolated the
+                // failure) but breaks the Wizard turn now that searchCorpus is
+                // called at the Wizard level before sub-agent dispatch.
+                MarkAndCountSearchUnavailable(
+                    "http_4xx",
+                    $"AI Search returned HTTP {rfe.Status} — likely misconfiguration.",
+                    rfe,
+                    options,
+                    query);
+                _logger.LogError(rfe,
+                    "SearchCorpusTool: AI Search returned HTTP {Status} — check index name, RBAC assignment, and query syntax. query={Query}",
+                    rfe.Status,
+                    query);
+                return new SearchCorpusResult([]);
+            }
             catch (RequestFailedException rfe) when (rfe.Status >= 500)
             {
-                // AI Search 5xx (service outage, gateway timeout). The
-                // when-guard keeps 4xx (auth, not-found) from being
-                // silently swallowed — those would indicate a misconfigured
-                // index and should propagate so they're surfaced as errors.
+                // AI Search 5xx (service outage, gateway timeout).
                 MarkAndCountSearchUnavailable(
                     "http_5xx",
                     $"AI Search returned HTTP {rfe.Status}.",
@@ -184,7 +252,13 @@ public sealed class SearchCorpusTool
                     PageStart: chunk.PageStart,
                     PageEnd: chunk.PageEnd,
                     SectionHeading: chunk.SectionHeading,
-                    Content: chunk.Content)
+                    Content: chunk.Content,
+                    // Model-visible (Task 7, AB#259): the model reads each
+                    // chunk's edition_scope to decide R1/R2/R3 and edition to
+                    // attribute per-edition answers. Threaded from the
+                    // retrieved chunk's index fields.
+                    Edition: chunk.Edition,
+                    EditionScope: chunk.EditionScope)
                 {
                     // Score is threaded through [JsonIgnore] so the model
                     // does not see it; the citation extractor reads it to
@@ -200,6 +274,20 @@ public sealed class SearchCorpusTool
                     // before PR-C3 — the frontend badge is conditionally rendered.
                     LastScrapedUtc = chunk.LastScrapedUtc,
                 });
+
+                // UI-metadata side channel (fix/citation-metadata-channel):
+                // publish Score + LastScrapedUtc to the singleton sink so
+                // ToolTraceCitationExtractor can enrich citations even though
+                // these fields are [JsonIgnore]'d from the model-facing JSON.
+                // First-write-wins per URL (sink semantics) matches the citation
+                // dedup — the first/highest-ranked hit per document wins.
+                // Skip when DocumentUrl is absent (defensive; indexer bug guard).
+                if (_metadataSink is not null && !string.IsNullOrWhiteSpace(chunk.DocumentUrl))
+                {
+                    _metadataSink.Record(
+                        chunk.DocumentUrl,
+                        new RetrievalCitationMetadata(chunk.LastScrapedUtc, chunk.Score));
+                }
             }
 
             _logger.LogDebug(
@@ -221,11 +309,15 @@ public sealed class SearchCorpusTool
         }
     }
 
-    internal static int ClampTopK(int? requested)
+    // When `requested` is null or ≤ 0 (model omitted the argument), the
+    // effective default is `runtimeDefault` — which is the runtime-mutable
+    // rag.retrieval_top_k value when IRuntimeSettings is wired, or
+    // TopKDefault (8) otherwise. The ceiling is always TopKCeiling (20).
+    internal static int ClampTopK(int? requested, int runtimeDefault = TopKDefault)
     {
         if (requested is null || requested <= 0)
         {
-            return TopKDefault;
+            return Math.Min(runtimeDefault, TopKCeiling);
         }
         return Math.Min(requested.Value, TopKCeiling);
     }
@@ -282,4 +374,30 @@ public sealed class SearchCorpusTool
     // looks like.
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    // The index stores document_type as the DocumentType enum's .ToString()
+    // representation (e.g. "Manual", "ServiceBulletin", "MetadataCard").
+    // The Wizard prompt and SearchCorpusTool [Description] expose lowercase
+    // snake_case aliases ("manual", "service_bulletin", "metadata_card") for
+    // readability. This method maps prompt-friendly values to the indexed form
+    // so the OData filter matches the stored data.
+    //
+    // Unknown values are passed through unchanged so the retriever's filter
+    // returns an empty result (→ NoCitation refuse) rather than silently
+    // widening the query by ignoring the constraint.
+    internal static string? NormalizeDocumentType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "manual" => "Manual",
+            "service_bulletin" => "ServiceBulletin",
+            "metadata_card" => "MetadataCard",
+            _ => value.Trim(),
+        };
+    }
 }

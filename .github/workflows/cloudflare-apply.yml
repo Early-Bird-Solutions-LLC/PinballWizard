@@ -1,0 +1,114 @@
+name: Cloudflare IaC — Apply
+
+# Runs on push to main when the Cloudflare IaC has changed. Applies the
+# plan that was generated for the merged PR.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/cloudflare/**'
+  # Manual run option, e.g. to recover from a failure.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+concurrency:
+  group: cloudflare-iac-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production  # gates this job behind GitHub environment protection rules
+    defaults:
+      run:
+        working-directory: infra/cloudflare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.8.x
+
+      - name: tofu init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+        run: tofu init -input=false
+
+      - name: tofu apply
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_zone_id: ${{ secrets.CF_ZONE_ID }}
+          TF_VAR_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
+          TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
+          TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
+        # Re-plans against current state and applies. Alternative: download
+        # the plan artifact from the merged PR's workflow run and apply that.
+        # The alternative is stricter (applies exactly what was reviewed)
+        # but more complex; this version trades a small amount of strictness
+        # for operational simplicity. Either is defensible.
+        #
+        # -input=false makes a missing required variable fail immediately
+        # instead of blocking on an interactive prompt until the job
+        # timeout (the original cause of the multi-hour hang).
+        #
+        # -lock-timeout=120s waits out a legitimately in-progress lock
+        # (the concurrency group serialises applies, so the only contender
+        # is a just-finishing run releasing its lock).
+        #
+        # Self-heal: a cancelled/timed-out run is killed before it can
+        # release the state lock, wedging every subsequent run. If apply
+        # fails specifically with "Error acquiring the state lock", parse
+        # the lock ID, force-unlock it, and retry exactly once. The
+        # force-unlock is safe here because (a) the concurrency group
+        # guarantees no other apply is legitimately holding it and (b) it
+        # only runs on the lock-error signature, never on a normal failure.
+        run: |
+          set -o pipefail
+          if tofu apply -input=false -lock-timeout=120s -auto-approve 2>&1 | tee apply.out; then
+            exit 0
+          fi
+          if ! grep -q "Error acquiring the state lock" apply.out; then
+            echo "::error::tofu apply failed for a non-lock reason — not self-healing."
+            exit 1
+          fi
+          LOCK_ID="$(grep -oE 'ID:[[:space:]]+[0-9a-f-]{36}' apply.out | head -1 | awk '{print $2}')"
+          if [ -z "$LOCK_ID" ]; then
+            echo "::error::Lock error detected but could not parse a lock ID — manual force-unlock required."
+            exit 1
+          fi
+          echo "::warning::Stale state lock $LOCK_ID detected (likely a cancelled/timed-out prior run). Force-unlocking and retrying once."
+          tofu force-unlock -force "$LOCK_ID"
+          tofu apply -input=false -lock-timeout=120s -auto-approve
+
+  drift-detection:
+    # Separate from apply — runs weekly on a schedule via a sister workflow.
+    # See cloudflare-drift.yml (not yet created).
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "see cloudflare-drift.yml"

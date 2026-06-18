@@ -35,7 +35,20 @@ public sealed record SearchCorpusHit(
     int PageStart,
     int PageEnd,
     string SectionHeading,
-    string Content)
+    string Content,
+    // Edition + EditionScope are model-VISIBLE (Task 7, AB#259) — unlike
+    // Score / LastScrapedUtc below they are NOT [JsonIgnore]'d. The whole
+    // point of surfacing them is that the model reads each chunk's scope to
+    // decide R1 (answer once, all editions) / R2 (answer per edition) / R3
+    // (honest substitution). Edition is the free-text label ("Pro" /
+    // "Premium" / "LE"); EditionScope is the structural enum
+    // (single-edition / edition-subset / franchise-wide). Null for chunks
+    // indexed before Task 6 or for unresolved documents — the Wizard prompt
+    // treats a missing scope as "assume franchise-wide unless evidence
+    // differs". Defaulted to null so existing positional construction sites
+    // (tests, citation extractor) compile unchanged.
+    string? Edition = null,
+    string? EditionScope = null)
 {
     // Re-threaded from `RetrievedChunk.Score` in PR-C2. The [JsonIgnore]
     // attribute is load-bearing: it prevents the score from appearing in

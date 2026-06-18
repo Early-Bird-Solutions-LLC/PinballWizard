@@ -1,0 +1,131 @@
+name: Cloudflare IaC — Plan
+
+# Runs on every PR that touches the Cloudflare IaC. Posts the plan as a
+# PR comment for review. Does NOT apply.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/cloudflare/**'
+      - '.github/workflows/cloudflare-plan.yml'
+
+permissions:
+  contents: read
+  id-token: write    # for Azure OIDC
+  pull-requests: write  # to post the plan as a PR comment
+
+# One in-flight plan per PR. A new push supersedes the prior plan
+# (cancel-in-progress) so stale runs don't pile up holding state locks;
+# different PRs get distinct groups so they don't block each other. The
+# cancelled run's lock is cleared by the self-heal in the tofu plan step.
+concurrency:
+  group: cloudflare-iac-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    # Dependabot PRs run with isolated secret access — org secrets are not
+    # available, so Azure OIDC login fails. Skip the job for Dependabot since
+    # a Cloudflare plan is not meaningful for dependency-only bumps.
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/cloudflare
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.8.x
+
+      - name: tofu fmt -check
+        run: tofu fmt -check -recursive
+
+      - name: tofu init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+        run: tofu init -input=false
+
+      - name: tofu validate
+        run: tofu validate
+
+      - name: tofu plan
+        id: plan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_zone_id: ${{ secrets.CF_ZONE_ID }}
+          TF_VAR_account_id: ${{ secrets.CF_ACCOUNT_ID }}
+          TF_VAR_origin_hostname: ${{ vars.ORIGIN_HOSTNAME }}
+          TF_VAR_admin_email: ${{ vars.ADMIN_EMAIL }}
+          TF_VAR_logpush_destination: ${{ secrets.LOGPUSH_DESTINATION }}
+          TF_VAR_aca_domain_verification_token: ${{ secrets.ACA_DOMAIN_VERIFICATION_TOKEN }}
+        # -input=false makes a missing required variable fail immediately
+        # instead of blocking on an interactive prompt until the job
+        # timeout (the original cause of the multi-hour hang).
+        #
+        # -lock-timeout=120s waits out a legitimately in-progress lock
+        # before failing. NOTE: deliberately NO auto force-unlock here,
+        # unlike the apply workflow. Plan has a per-PR concurrency group,
+        # so two *different* PRs plan concurrently against the same
+        # backend state lock — a timed-out plan that force-unlocked would
+        # be voiding another PR's *live* lock, risking state corruption.
+        # A plan is recoverable (just re-run), so on a genuine stale lock
+        # we surface a clear, actionable error and let a human run
+        # `tofu force-unlock` once. Auto-heal lives only in the apply
+        # workflow, where the serialized concurrency group makes it safe.
+        run: |
+          tofu plan -input=false -lock-timeout=120s -no-color -out=plan.tfplan 2>&1 | tee plan.txt
+          ec="${PIPESTATUS[0]}"
+          if [ "$ec" -ne 0 ] && grep -q "Error acquiring the state lock" plan.txt; then
+            LOCK_ID="$(grep -oE 'ID:[[:space:]]+[0-9a-f-]{36}' plan.txt | head -1 | awk '{print $2}')"
+            echo "::error::State lock contention (lock ID: ${LOCK_ID:-unparsed}). If no other Cloudflare plan/apply is running, a prior run was cancelled before releasing it — clear it manually from infra/cloudflare with: tofu force-unlock -force ${LOCK_ID:-<lock-id-from-log>}"
+          fi
+          echo "exitcode=${ec}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload plan artifact
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfplan-${{ github.event.pull_request.head.sha }}
+          path: infra/cloudflare/plan.tfplan
+          retention-days: 14
+
+      - name: Post plan to PR
+        if: always()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/cloudflare/plan.txt', 'utf8');
+            // Truncate very long plans for the PR comment
+            const max = 60000;
+            const shown = plan.length > max
+              ? plan.slice(0, max) + '\n\n…(truncated, see workflow logs for full plan)'
+              : plan;
+            const body = `### Cloudflare IaC — Plan\n\n\`\`\`hcl\n${shown}\n\`\`\``;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

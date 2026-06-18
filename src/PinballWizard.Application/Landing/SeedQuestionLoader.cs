@@ -41,7 +41,7 @@ public sealed class SeedQuestionLoader : ISeedQuestionLoader
     private readonly ILogger<SeedQuestionLoader> _logger;
 
     public SeedQuestionLoader(ILogger<SeedQuestionLoader> logger)
-        : this(DefaultRelativePath, logger)
+        : this(SeedData.SeedPathResolver.Resolve(DefaultRelativePath), logger)
     {
     }
 

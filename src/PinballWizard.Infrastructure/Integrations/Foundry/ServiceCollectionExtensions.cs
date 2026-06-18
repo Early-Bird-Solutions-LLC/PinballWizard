@@ -41,7 +41,13 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         services.TryAddSingleton<IAzureFoundrySmokeProbe, AzureFoundrySmokeProbe>();
-        services.TryAddSingleton<IFoundryAgentFactory, FoundryAgentFactory>();
+        // FoundryAgentFactory implements both IFoundryAgentFactory and
+        // IFoundryAgentCacheInvalidator. Both registrations resolve the
+        // same singleton instance so cache invalidation and agent
+        // construction operate on the same underlying dictionary.
+        services.TryAddSingleton<FoundryAgentFactory>();
+        services.TryAddSingleton<IFoundryAgentFactory>(sp => sp.GetRequiredService<FoundryAgentFactory>());
+        services.TryAddSingleton<IFoundryAgentCacheInvalidator>(sp => sp.GetRequiredService<FoundryAgentFactory>());
         services.AddAiRouter();
 
         services.TryAddSingleton<IEvaluationHarness, EvaluationHarness>();

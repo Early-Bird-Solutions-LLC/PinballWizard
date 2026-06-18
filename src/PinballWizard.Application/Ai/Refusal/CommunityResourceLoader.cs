@@ -60,7 +60,7 @@ public sealed class CommunityResourceLoader : ICommunityResourceLoader, IDisposa
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public CommunityResourceLoader(ILogger<CommunityResourceLoader> logger)
-        : this(DefaultRelativePath, logger)
+        : this(SeedData.SeedPathResolver.Resolve(DefaultRelativePath), logger)
     {
     }
 

@@ -1,8 +1,10 @@
 @* AdminLayout — admin chrome with drawer navigation.
  *
  * Used exclusively by /admin/* pages that declare @layout AdminLayout.
- * No /admin/* pages exist in Wave 1 — the layout is scaffolded so the
- * Entra External ID auth wiring has a target once that PR lands.
+ * Drawer is permanent (always visible) — its MudNavLinks are plain anchors that
+ * navigate correctly on every admin page regardless of that page's render mode
+ * (ADR-0034 amendment, 2026-06-17). The former hamburger toggle was a dead-on-
+ * static OnClick and has been removed.
  *
  * [Authorize] is present here and on /admin/* pages. The AzureAd
  * appsettings are intentionally empty in Wave 1 — real tenant config
@@ -22,19 +24,21 @@
 
 @using PinballWizard.Web.Components.Theming
 
-<MudThemeProvider Theme="@_theme" IsDarkMode="true" />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
+@* The MudBlazor providers are pinned to InteractiveServer — identical to
+ * MainLayout. Admin is per-need render mode (ADR-0034 amendment, 2026-06-17):
+ * the interactive /admin/* pages (Settings, Triage, LinkOverrides, Machines,
+ * MachineDetail) resolve IPopoverService/IDialogService/ISnackbar from these
+ * providers on the shared circuit. A static provider here would crash an
+ * interactive admin page with "Missing <MudPopoverProvider />" (the inverse of
+ * the PR #401 outage). Static admin pages (Dashboard, Sources) render no
+ * popovers, so the interactive providers are a no-op for them. *@
+<MudThemeProvider @rendermode="InteractiveServer" Theme="@_theme" IsDarkMode="true" />
+<MudPopoverProvider @rendermode="InteractiveServer" />
+<MudDialogProvider @rendermode="InteractiveServer" />
+<MudSnackbarProvider @rendermode="InteractiveServer" />
 
 <MudLayout>
     <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu"
-                       Color="Color.Inherit"
-                       Edge="Edge.Start"
-                       OnClick="@ToggleDrawer"
-                       aria-label="Toggle navigation drawer" />
-
         <MudText Typo="Typo.h6" Class="ml-2">
             PinballWizard Admin
         </MudText>
@@ -50,8 +54,8 @@
         </MudButton>
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen"
-               Variant="DrawerVariant.Temporary"
+    <MudDrawer Open="true"
+               Variant="DrawerVariant.Persistent"
                Elevation="2">
         <MudDrawerHeader>
             <MudText Typo="Typo.subtitle1" Class="mt-1">Admin Navigation</MudText>
@@ -73,6 +77,21 @@
                         Icon="@Icons.Material.Filled.SportsBaseball">
                 Machines
             </MudNavLink>
+            <MudNavLink Href="/admin/document-triage"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.RuleFolder">
+                Document Triage
+            </MudNavLink>
+            <MudNavLink Href="/admin/link-overrides"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.LinkOff">
+                Link Overrides
+            </MudNavLink>
+            <MudNavLink Href="/admin/settings"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Tune">
+                Settings
+            </MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -84,8 +103,5 @@
 </MudLayout>
 
 @code {
-    private bool _drawerOpen;
     private readonly MudTheme _theme = PinballTheme.Create();
-
-    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 }

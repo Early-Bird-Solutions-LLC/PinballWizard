@@ -30,6 +30,277 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-06-12 — Prompt templates go runtime-overridable; the last settings tab activates (PR-B3)
+
+**Decision:** Per-agent prompt overrides ship per the ADR-0018 follow-up (same date): `admin_prompts` container (partition `/agent_name`, id `{agent}:v{n}`, no TTL), `IAgentPromptOverrideRepository` with versioning + the one-active-per-agent invariant + TTL-cached `GetActiveAsync` (negative entries, evict-on-write), `OverridingAgentPromptProvider` layering active override → embedded default with visible degradation on store failure. **Two load-bearing wires:** (1) `PromptVersion` composes active overrides into the semantic-cache key (`v4.2026.05+Wizard.v2`) so prompt changes invalidate cached answers; (2) `FoundryAgentFactory` rebuilds agents on prompt-version drift — the CROSS-PROCESS convergence path, since the admin UI (Web) can only invalidate its own process's cache; the Api converges within the provider's ~2-min version TTL, matching the settings page's "live within ~2 minutes" contract. The `/admin/settings` Prompt Templates tab: agent picker, editor preloading live content, save-as-new-version (inactive — activation is a deliberate second step behind a confirm), version history with activate, revert-to-default, view-embedded-default panel.
+
+**Coverage note:** the factory's drift-rebuild has no direct unit test — `FoundryAgentFactory` requires a live `AIProjectClient` and the repo deliberately carries no factory harness; the drift input (`PromptVersion` composition) is pinned by `OverridingAgentPromptProviderTests`.
+
+**Alternatives considered:** Web→Api invalidation call (new internal endpoint) — rejected: more surface for a 2-minute convergence win the TTL already provides; per-agent cache eviction — rejected by the backend agent with documented rationale (the Wizard embeds sub-agents; all-or-nothing is the correct granularity); editing prompts only via git — the status quo the amendment deliberately preserves as the source of truth while allowing ops tuning.
+
+**Revisit when:** the SDK stabilizes agent threads (rebuild semantics change), eval data shows override churn degrading quality (then gate activation behind an eval run), or multi-replica Api makes TTL convergence visibly inconsistent.
+
+**Related:** ADR-0018 follow-up 2026-06-12, PR-B1/B2/retrieval entries above, built in parallel by a worktree agent per the 2026-06-12 parallel-tracks dispatch.
+
+## 2026-06-12 — Retrieval top-K and minimum score go runtime-mutable; the RAG settings tab activates
+
+**Decision:** `rag.retrieval_top_k` (1–20) and `rag.retrieval_minimum_score` (0.0–1.0) join `WellKnownSettings`, resolved through the same stored-override → `IOptions` layering and consumed at call time by `SearchCorpusTool` — one `IRuntimeSettings` snapshot per tool invocation (the tool is a singleton living outside `AiRouter`'s snapshot scope, so it resolves its own; the repository's TTL cache keeps that ~free). A model-supplied top-K still wins, clamped; the runtime value applies when the model omits it. Sub-agents (Repair/Rules/Valuation) inherit automatically — same singleton via DI. With real consumers wired, `/admin/settings`' RAG tab replaces its placeholder with live controls (this PR), keeping the no-dead-config rule intact in both directions.
+
+**Alternatives considered:** threading retrieval values from `AiRouter`'s snapshot through the agent-framework tool-call boundary — rejected: the framework drives tool invocation internally and the threading would couple the router to tool internals; per-invocation resolution at the tool is the narrower seam.
+
+**Revisit when:** retrieval tuning needs per-topic profiles (a single global top-K stops fitting), or eval data shows min-score changes shifting citation precision enough to warrant guarded rollout.
+
+**Related:** PR-B1/PR-B2 entries above, SearchCorpusTool (Phase 4 W4-1 design notes), built in parallel by a worktree agent per the 2026-06-12 parallel-tracks dispatch.
+
+## 2026-06-12 — /admin/settings ships with two live tabs and two honest placeholders (PR-B2)
+
+**Decision:** The settings page (admin settings plan, Phase 2) edits the PR-B1 key set through `IAdminSettingsRepository`: Guardrails tab (confidence-threshold slider, cost-ceiling field) and Conversation tab (max turns). Per-setting affordances: default hint, override provenance (`updatedBy` + `updatedAtUtc`), reset-to-default behind a confirm (delete = revert), dirty-tracked save that writes only changed rows after `WellKnownSettings.TryValidate`. `updatedBy` resolves from the cascading `AuthenticationState` (newly wired via `AddCascadingAuthenticationState` on the auth-configured path); the no-tenant dev path records an explicit local-dev marker instead of a fake name. A failed settings load renders an error state that says the Wizard itself is unaffected and offers no dead controls.
+
+**The placeholder tabs are deliberate:** RAG Retrieval and Prompt Templates render explanatory empty states rather than disabled knobs. Wiring controls before their keys have call-time consumers would ship settings that silently do nothing — the dead-config class /local-review exists to catch. They activate with their consumers (retrieval keys) and Phase 3 (prompts + ADR-0018 amendment).
+
+**Alternatives considered:** separate pages per area (the repo's pages-not-tabs norm) — rejected here per the plan's explicit carve-out: these are fields, not grids, and four shallow pages would bury two controls each; hiding the placeholder tabs entirely — rejected: the roadmap visibility is showcase-relevant and prevents "where do I tune retrieval?" confusion.
+
+**Revisit when:** retrieval keys gain consumers (tab 3 goes live), Phase 3 lands (tab 4), or the setting count outgrows the four-tab layout.
+
+**Related:** thoughts/shared/plans/AB-259-admin-settings-page.md (Phase 2), PR-B1 entry above, ADR-0008 (MudBlazor strict), ADR-0009 (AdminOnly).
+
+## 2026-06-12 — Runtime-mutable Wizard settings: Cosmos overrides layered over IOptions (PR-B1)
+
+**Decision:** The `/admin/settings` surface gets its storage + read path (admin settings plan, Phase 1). A new `admin_settings` Cosmos container (partition `/key` = id, point reads only; no TTL — auto-expiry would silently revert operator decisions; default indexing — tens of tiny docs) holds overrides as `{key, value, updated_at_utc, updated_by}`. `IAdminSettingsRepository` (Application) + `CosmosAdminSettingsRepository` (Infrastructure) front it with Conflux's proven 2-minute TTL cache including negative entries, evicted after successful writes. `IRuntimeSettings.GetSnapshotAsync` resolves the layering rule — stored override → `IOptions<AiFoundryOptions>` default — once per ask, and `AiRouter` consumes the snapshot for `ConfidenceThreshold`, `PerCallCostCeilingUsdCents`, and `MaxConversationTurns` (the guardrail + history-trim reads). Changes apply within one cache window, no restart. `WellKnownSettings` is the closed key set with server-side ranges (0.3–0.95 / 1–100¢ / 1–20, the last pinned under the API's 20-turn guard).
+
+**Deliberately absent keys (no dead config):** `ChatDeploymentName`/`AgentModels` wait for Phase 3's agent-cache invalidation hook; `SemanticCacheMaxEntries` is construction-time (restart-apply — wire when the page can say so honestly); `EmbeddingDeploymentName` is permanently excluded (re-index required). A stored-but-unparsable value (only reachable outside the validated write path) degrades to the default with a warning naming the row; repository failures propagate — an ask fails loudly rather than silently running on defaults while the operator believes an override is live (invariant #17).
+
+**Alternatives considered:** Azure App Configuration — right answer in an APS-fleet context, but a new always-on resource + SDK for three keys inside a $400/mo envelope when Cosmos is already wired and idle-cheap; rejected for now. `IOptionsMonitor` + config reload — only re-reads the providers the host already has (env vars on ACA require a revision bump = restart); doesn't deliver runtime mutation. Per-read Cosmos without cache — three point reads per ask for data that changes monthly; rejected.
+
+**Revisit when:** Phase 3 lands (prompt overrides + agent-cache eviction unlock the model-selection keys), or the key count grows past what a hand-rolled registry maintains comfortably (App Config threshold).
+
+**Related:** thoughts/shared/plans/AB-259-admin-settings-page.md (Phase 1), ADR-0012 (container creation path), ADR-0015 (ceiling semantics unchanged), ADR-0025 (point-read + metering conformance), Conflux AppConfigurationService (pattern source).
+
+## 2026-06-12 — The Wizard becomes a conversation: client-held history, chat-thread UI
+
+**Decision:** Multi-turn conversations ship in three PRs per `thoughts/shared/plans/AB-259-multi-turn-conversation.md` (Jim's decisions 2026-06-11: client-held history + chat-thread UI). PR-A1 (#374): `IAiRouter` history overloads — prior turns prepended as user/assistant ChatMessages (capped `MaxConversationTurns`=8 oldest-first, per-field `MaxConversationTurnContentChars`=4096 because history is client-supplied), semantic cache bypassed in both directions on history (metered `pinwiz.ai.cache.bypass_multiturn`), and citation inheritance — a follow-up answered from conversation context inherits the most recent cited turn's citations flagged `Inherited=true`, run before confidence computation; no citations anywhere still refuses. PR-A2 (#379): `WizardAskRequest.History` + a >20-turn 400 guard. PR-A3: the thread UI — completed turns render above the input through the same TokenRenderer/CitationStrip surfaces, "Ask a follow-up" keeps the thread (refusal/error turns never join it), "New conversation" clears it, inherited citations carry an "earlier in this conversation" chip, client turn cap mirrors the API guard.
+
+**Conversation state lives nowhere:** circuit component state + the request that carries it (ADR-0027 follow-up 2026-06-12 records why that is not the banned session-history surface; ADR-0015/0026 follow-ups 2026-06-11 record the cache and contract amendments).
+
+**Test-intent preservation:** the repeat-ask cache-hit E2E now resets via "New conversation" — the follow-up button would make its second ask multi-turn, which bypasses the cache and would have silently destroyed the coverage that test exists for. The new follow-up E2E asks a pronoun-only question ("who designed it") — unanswerable without history — as the live proof the context rides the wire.
+
+**Alternatives considered:** Foundry agent threads (`WizardAnswer.FoundryThreadId`) — native but the 1.4.0 session surface is unstable (SDK issue #2688), revisit when stable; server-side Cosmos conversation container (architecture-v2 § 8) — right for authenticated long-term history later, requires ADR-0027 amendment; hashing history into the cache key — hit probability ~zero, all cost no benefit over bypass.
+
+**Revisit when:** the SDK thread surface stabilizes (server-side threads would shrink request payloads), eval data shows inherited-citation answers degrading precision, or `cache.bypass_multiturn` dominates ask volume (cost pressure).
+
+**Related:** PR #374, #379, PR-A3; ADR-0015/0026/0027 follow-ups; issue #371 (markdown rendering — same surface, separate fix).
+
+## 2026-06-12 — /admin gated by the GlobalAdmin Entra app role (AdminOnly policy)
+
+**Decision:** Every `/admin/*` page carries `[Authorize(Policy = "AdminOnly")]`, where the policy requires the `GlobalAdmin` Entra app role (the role name ADR-0009 defined for v1 admin RBAC) (`RequireRole` — Microsoft.Identity.Web maps app-role claims to `ClaimTypes.Role`). This supersedes the earlier posture pinned by `AuthorizationContractTests` that per-page `[Authorize]` on admin routes was redundant: the `FallbackPolicy` proves *authentication*, and that was an acceptable bar for read-mostly grids — not for the runtime settings surface that follows (admin-settings plan, Phase 0), which mutates live Wizard behavior. The contract tests now pin the inverse: a new admin page WITHOUT the policy fails at authoring time, and coverage extends to all five admin pages (DocumentTriage and LinkOverrides were previously untested).
+
+**Two halves:** this code half is inert until the infra half lands — `AzureAd:TenantId`/`ClientId` are not yet set on the deployed Container App (auth is skipped entirely on the no-tenant path, where the policy is registered permissively so pages render in local dev; that branch is the documented dev posture, not a fallback). The infra half: create the `GlobalAdmin` app role on the Entra app registration, assign Jim, set the AzureAd config on the ACA app. Until then the Cloudflare Access OTP gate remains the only effective protection — unchanged from the status quo.
+
+**Alternatives considered:** (a) keep FallbackPolicy-only and gate just the future settings page — leaves the mutating triage/link-override actions on the weaker bar, rejected; (b) narrow the FallbackPolicy itself to the role — would lock public pages behind the role too, requiring [AllowAnonymous] inversion churn, rejected; (c) path-based middleware check — stringly-typed, invisible to the contract tests, rejected.
+
+**Revisit when:** the infra half lands (then E2E-smoke the 403-without-role path), or additional roles appear (e.g., a read-only operator role splitting the triage surface).
+
+**Related:** thoughts/shared/plans/AB-259-admin-settings-page.md (Phase 0), AuthorizationContractTests, ADR-0009 (Entra External ID scaffolding).
+
+## 2026-06-11 — CSP promoted to enforced; Bot Management JS Detections disabled (the only edge-injected violator)
+
+**Decision:** The edge CSP ([infra/cloudflare/headers.tf](../infra/cloudflare/headers.tf)) is promoted from `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy`, with `upgrade-insecure-requests` reintroduced (Report-Only policies ignore it). In the same change, Bot Management JavaScript Detections is switched off (`enable_js = false`, [infra/cloudflare/waf.tf](../infra/cloudflare/waf.tf)). `CspPolicySyncTests.EdgePolicy_IsEnforced_NotReportOnly` pins the promotion.
+
+**Why JSD had to go first:** JSD injects an *inline* script into every HTML response on the Cloudflare path. Per Cloudflare's docs, the only strict-CSP accommodation is nonce propagation — Cloudflare parses a nonce from the CSP response header and stamps it onto the injected script — which requires a fresh per-request nonce. Our header is a static Transform Rule that cannot mint one (a fixed nonce is cryptographically meaningless), hash allowances for JSD are not supported (open Cloudflare feature request), and nonce-via-`<meta>` is documented as unsupported. Under enforcement the JSD script would simply be refused. Disabling it is safe here: JSD only feeds `cf.bot_management.js_detection.passed` (no WAF rule keys on it — enforcement against bots does not occur from JSD alone), and behind the Cloudflare Access OTP gate the JS bot-signal is near-zero marginal value.
+
+**Promotion evidence:** the policy was tuned to zero violations 2026-06-11 (decision-log entry "CSP posture", PR #357) and simulated flat-zero across all public routes; the scoped-CSS bundle added by PR #372 is same-origin (`style-src 'self'`); the remaining DevTools noise on pinwiz.ai was exclusively the JSD inline script, removed by this change. The §7.2 week-long soak was shortened deliberately: with no report-uri receiver, soak produces no signal a re-run simulation doesn't.
+
+**Alternatives considered:** (a) Keep Report-Only forever — noise + zero protection, rejected (an evaluator inspecting headers sees a policy that never enforces). (b) Enforce with `'unsafe-inline'` to accommodate JSD — guts the XSS-load-bearing directive, explicitly discouraged by Cloudflare, rejected. (c) Worker-minted per-request nonce — the correct public-launch design if JSD is wanted back; deferred, tracked in #356. (d) Keep JSD and accept the console error under enforcement — silently broken bot signal + permanent DevTools noise, rejected.
+
+**Revisit when:** public launch (JSD value increases without the Access gate — revisit the Worker-nonce option), or Cloudflare ships hash support for JSD injection.
+
+**Related:** issue #356, PR #357 (tuning), PR #372 (scoped-CSS bundle), CLOUDFLARE_PRELAUNCH_CHECKLIST §7.2.
+
+## 2026-06-11 — Pre-rendered SVG replaces client-side Mermaid on the About page
+
+**Decision:** The `/about` architecture diagram is a pre-rendered SVG committed at `src/PinballWizard.Web/wwwroot/img/about-architecture.svg`, served statically via `MudImage`. The diagram source of truth is [docs/diagrams/about-architecture.mmd](diagrams/about-architecture.mmd) (regeneration command in its header); `PreRenderedDiagramTests` pins SVG ↔ source agreement via a SHA-256 of the `.mmd` embedded as a comment on the SVG's second line, so editing the source without re-rendering fails CI with the expected hash printed. Consequences: About.razor drops `@rendermode InteractiveServer` (it only existed for Mermaid) and its `HeadContent` script block; the edge CSP's `script-src` shrinks to `'self'` + the single App.razor bootstrap hash — no third-party script host remains anywhere in the policy, and `CspPolicySyncTests` now asserts that stays true. Scope: app-served diagrams only (About was the only one); fenced mermaid blocks in `docs/` stay native — GitHub renders them, and they have no CSP or privacy surface.
+
+**Alternatives considered:** (a) Status quo (CDN + version pin + SRI, PR #357) — integrity was closed, but every /about load still leaked visitor IPs to jsDelivr, inconsistent with the repo's self-hosted-fonts precedent (`SelfHostedFontsTests`, citing the Google Fonts GDPR ruling), and shipped a 3.3 MB script for a diagram that changes a few times a year. (b) Self-hosting `mermaid.min.js` — attempted and blocked: the minified bundle false-positives the sanitization scan's PEM private-key rule (loose three-marker match, trivially true across megabyte-long minified lines); admitting it requires narrowing that rule to the canonical dashed PEM form, a security-gate change parked for deliberate review in #356. (c) CSP nonces instead of hashes/URLs — structurally impossible here: the header is a static Cloudflare Transform Rule that cannot mint per-request values (becomes viable only if CSP emission moves to the origin or a Worker). (d) Build-step rendering (regenerate the SVG in CI) — deferred as over-engineering for one diagram; the hash test makes drift loud, which is the part automation would buy.
+
+**Rationale:** Strictly better on every axis the CSP work was optimizing: the only third-party script dependency disappears (supply-chain + privacy), the page sheds its interactive render mode (static content renders at first paint, no circuit), and the diagram becomes exactly as version-controlled as the code (the SVG diff shows in review). The .mmd keeps the diagram editable — this is not a screenshot committed to the repo.
+
+**Revisit when:** an app-served diagram needs interactivity (pan/zoom/click-through), or the count of pre-rendered diagrams grows past ~3 (then add the CI render step from (d) instead of hand-running mermaid-cli).
+
+**Related:** issue #356 (CSP rollout + self-host deferral), PR #357 (the pin+SRI predecessor this supersedes), decision-log 2026-06-11 CSP posture entry, `PreRenderedDiagramTests`, `CspPolicySyncTests`.
+
+## 2026-06-11 — INCIDENT: asks died while answers computed — scale-from-zero, SSE-vs-resilience retry storms, a success-fabricating placeholder, and a citation render race
+
+**Incident:** Through the morning of 2026-06-11 (first failed wake 11:52Z) the deployed site intermittently returned no answer at all, then — after the transport fixes — repeat asks rendered answers with no citations. Three independent transport/render defects cascaded, and a fourth (the placeholder fallback) hid them from users and operators alike.
+
+**Root cause (four compounding defects):**
+
+1. **Scale-from-zero cannot serve a 3-minute boot.** The Api Container App ran `minReplicas: 0`; ContainerAppSystemLogs show ~2.5–3 min from KEDA wake to listening. Every wake cycle burned out against client timeouts (observed 11:52Z / 12:23Z / 12:53Z) — the app repeatedly scaled up, missed the window, and scaled back to zero. Boot-time root cause is tracked separately (#361).
+2. **The SSE endpoint never flushed headers before the agent's first chunk.** Time-to-first-byte equaled model first-token latency, so HTTP attempt timeouts measured "the whole answer" instead of "the connection opened."
+3. **Two stacked standard-resilience pipelines retried a non-idempotent LLM run.** ServiceDefaults' `ConfigureHttpClientDefaults` pipeline (50s attempt / 120s total) stacks ON TOP of the per-client pipeline (10s attempt / 30s total). Defect 2 made the 10s attempt timeout fire mid-answer; retries re-ran the agent (cost + load feedback storm), and the user-visible "00:02:00" failure was the outer 120s total giving up.
+4. **Transport failures rode the Wave-1 demo placeholder into production.** `WizardStreamingClient` converted send failures into the hardcoded "Hello world!" demo stream — uncited, confidence 1.0 — rendered as if the Wizard had answered. Users saw garbage, operators saw green, and the day's canary failures read as flakes.
+
+Once transport was healthy, a fifth defect surfaced: **cache-hit answers raced `MudHidden`'s per-instance async JS breakpoint resolution.** A cache hit emits 1 TextDelta + Final in ~1s; `CitationStrip`'s MudHidden wrappers hadn't resolved their breakpoints yet, so citations were present on the wire (proven by raw SSE capture) but absent from the DOM. Measured live: 0 links at +2s, 2 links at +12s. Single-ask canaries never caught it — a single ask is always a cache miss.
+
+**Resolution:** PR #360 — `minReplicas: 1` (stack-deployed 13:27Z). PR #363 — (a) `StartAsync` + an SSE comment preamble flushes headers at accept, restoring attempt-timeout semantics to "headers only"; (b) `RemoveAllResilienceHandlers()` on the streaming client + a retry-disabled pipeline (15s attempt / 30s total) + `HttpClient.Timeout = Infinite`; (c) transport failures now propagate — the demo placeholder is confined to an explicit 503 path. PR #365 — `CitationStrip` breakpoints via CSS media query (960px) instead of MudHidden; a repeat-ask E2E (`AskFlow_RepeatedQuestion_CachedAnswerStillRendersCitations`) pins the cache-hit chunk shape. Verified post-deploy: repeat-ask canary green against the live site (2026-06-11).
+
+**Rule adopted (2026-06-11): fallbacks must not hide failures.** Defect 4 is the canonical violation: a fallback that fabricates success destroys the signal that something is broken, and the underlying defect compounds. Any degraded path must (a) be visibly degraded to the user, (b) never present synthetic/placeholder content as real output, (c) log + meter the underlying failure. Codified as invariant #17 in `.claude/INVARIANTS.md` and a 🔴 check in `/local-review` (error-handling category). A same-day audit of every fallback path found 2 violations (#366 — landing page renders static fallback as live data, which masked #351 for days; #367 — the demo stream itself), 6 review items (#368), and 9 compliant paths (`SearchCorpusTool`'s degradation pattern is the model citizen).
+
+**Lessons:** (1) SSE + standard HTTP resilience is a category error unless headers flush early and retries are off — and retrying a non-idempotent LLM call storms. (2) `ConfigureHttpClientDefaults` resilience stacks on top of per-client handlers; opting out requires `RemoveAllResilienceHandlers`, not different per-client settings. (3) Anything that must be visible at first paint after a fast render needs CSS media queries, not MudHidden (async JS breakpoint per instance). (4) The cache-hit chunk shape (1 TextDelta + Final, ~1s) is a distinct test surface that single-ask canaries never exercise. (5) A masking fallback converts every downstream defect into "flaky" noise — see the rule above.
+
+**Revisit when:** #361 lands a sub-minute boot (revisit `minReplicas`), the resilience packages stabilize `RemoveAllResilienceHandlers` (drop the EXTEXP0001 pragma), or audit remediation (#366–#368) completes.
+
+**Related:** PR #360, PR #363, PR #365; issues #361, #364 (closed by #365), #366, #367, #368; invariant #17 (`.claude/INVARIANTS.md`); ADR-0026 (streaming contract).
+
+## 2026-06-11 — Docs-only PRs vs. required checks: fully path-filtered workflows report nothing; no-op companions added
+
+**Decision:** Required branch-protection checks whose workflows are path-filtered get a no-op companion workflow with the **same `name:` key and same job name**, triggered on the **inverse path set**, succeeding immediately ([ci-docs-noop.yml](../.github/workflows/ci-docs-noop.yml), [codeql-docs-noop.yml](../.github/workflows/codeql-docs-noop.yml)). The four path lists (two `paths-ignore`, two inverse `paths`) are kept in lockstep — the rule is pinned in comments in all four files.
+
+**What forced it:** PR #355, the first docs-only PR after #346 added the path filters, sat `BLOCKED` indefinitely. A workflow that never triggers produces **no check run at all** — GitHub does not synthesize a "skipped" run, so the required check stays in "Expected" forever. The carve-out claimed in the previous ci.yml/codeql.yml comments does not exist for fully filtered workflows (this entry corrects #346's assumption). Compounding accident: the required `Analyze (csharp)` check was being satisfied by the **Code Quality preview's** dynamic run, which emits an identically-named check with no path filters — with that preview slated for disable (entry below, issue #356), docs PRs were about to lose even the accidental rescue.
+
+**Alternatives considered:** (a) Remove the path filters — burns a full build+test lane (~7 min) plus a CodeQL analysis (~3 min) on every docs PR; rejected, the filters exist for good reason. (b) Job-level early-exit guard inside ci.yml (always trigger, detect docs-only, skip steps) — single-workflow cleanliness but still spins a runner per docs PR and complicates the real lane; the companion pattern is GitHub's documented workaround ("Troubleshooting required status checks § Handling skipped but required checks") and keeps the real workflows untouched. (c) Keep relying on the Code Quality preview's name collision — an undocumented accident, rejected.
+
+**Mixed-PR semantics:** a PR touching code + docs triggers both workflows; branch protection follows the latest-completed run with that check name, which is the real build (minutes) finishing after the no-op (seconds). Drift self-polices: ignore-list-grows-first produces a loudly stuck PR; noop-paths-grow-first still runs the real lane.
+
+**Revisit when:** GitHub ships native handling for skipped-but-required checks, or the repo moves to rulesets/merge queue with different check semantics.
+
+**Related:** PR #358 (fix), PR #355 (the stuck PR — its merge 3 minutes after the fix landed is the end-to-end proof), PR #346 (introduced the filters + the wrong assumption), issue #356.
+
+## 2026-06-11 — CSP posture: strict `script-src` via hashes, MudBlazor `style-src` concession, Mermaid pinned + SRI, staged enforcement
+
+**Decision:** The edge-injected CSP ([infra/cloudflare/headers.tf](../infra/cloudflare/headers.tf)) is tuned to **zero violations** against the real app and will be promoted from `Content-Security-Policy-Report-Only` to enforced `Content-Security-Policy` (+ `upgrade-insecure-requests`) after a clean soak (CLOUDFLARE_PRELAUNCH_CHECKLIST §7.2, tracked in issue #356). Locked directive posture:
+
+- `script-src 'self'` + two SHA-256 hashes (theme/motion FOUC bootstrap in App.razor; `mermaid.initialize()` in About.razor) + the exact version-pinned Mermaid URL. **Never** `'unsafe-inline'`/`'unsafe-eval'`/`'unsafe-hashes'` — this is the XSS-load-bearing directive.
+- `style-src 'self' 'unsafe-inline'` — the documented posture for MudBlazor (44 dynamic inline style attributes on the landing page alone; not hashable). Microsoft's Blazor CSP guidance endorses it verbatim; inline-style injection is a far weaker vector than script.
+- `object-src 'none'` (per every Microsoft-recommended Blazor policy), `connect-src 'self' wss://pinwiz.ai` (SignalR circuit on engines that don't extend `'self'` to WebSocket schemes; host-scoped, never blanket `wss:`).
+- Mermaid is pinned (`@11.15.0`) with SRI `integrity` + `crossorigin="anonymous"` — previously loaded **unpinned** (silent major-version upgrades in prod) with no tamper protection.
+- `CspPolicySyncTests` (PinballWizard.Web.Tests) pins the cross-file contract: recomputes the inline-script hashes from the .razor sources, asserts headers.tf carries them and the pinned URL + full SRI literal, asserts `script-src` never regains `unsafe-*`, and closes the set of files allowed to carry inline scripts.
+
+**Why:** the original `'self'`-everything Report-Only policy logged ~48 violations per page load into DevTools — permanent Issues-panel noise for the exact audience (technical evaluators, prospective clients) this showcase serves — and could never be promoted because MudBlazor can't satisfy `style-src 'self'`. Measured 48 → 0 via simulation (the edge policy injected onto the deployed app via Playwright route interception, `securitypolicyviolation` capture, all public routes).
+
+**Alternatives considered:** (a) Status quo eternal Report-Only — noise + zero protection, rejected. (b) Enforce as-written — breaks all MudBlazor styling, rejected. (c) Drop the CSP — a security-literate evaluator inspecting headers sees nothing deliberate; rejected, the enforced policy is itself a showcase artifact. (d) **Nonces** — structurally impossible here: the header is a static Cloudflare Transform Rule that cannot mint per-request values; hashes are the static-header equivalent (nonces become viable only if CSP emission ever moves to the origin or a Worker). (e) **Self-hosting Mermaid** for consistency with the self-hosted-fonts privacy precedent (`SelfHostedFontsTests` — third-party CDN loads leak visitor IPs) — attempted and deferred: the 3.3 MB minified bundle false-positives the sanitization scan's PEM private-key-header rule — a loose wildcard that fires when its three marker words appear anywhere in order on a line, trivially true across megabyte-long minified lines (and, fittingly, true of this entry's first draft, which quoted the pattern verbatim and failed its own scan); self-hosting requires first narrowing that rule to the canonical dashed PEM header form, a security-gate change that needs its own deliberate review (parked in #356). SRI + the version pin close the *integrity* risk meanwhile; the residual is the privacy-consistency question on /about only.
+
+**Maintenance contract:** bumping Mermaid = update the URL + `integrity` in About.razor, the URL in headers.tf, and the SRI literal in `CspPolicySyncTests` (the test failure message walks through it). Editing either inline script (even whitespace) changes its hash — the test fails with the recompute instruction.
+
+**Revisit when:** the §7.2 promotion lands (then add `upgrade-insecure-requests` and decide on a `report-to` receiver); the JS surface grows beyond one bootstrap + Mermaid; or CSP emission moves origin-side (reopens nonces and per-environment policies).
+
+**Related:** PR #357 (tuning + contract test), issue #356 (measurement, recommendation, deferred items), PRs #348/#349 (prior CSP noise fixes), the 2026-06-11 Code Quality entry below (the preview's dynamic run also figured in the required-checks incident above).
+
+## 2026-06-11 — Two CodeQL runs per PR are different validations: `codeql.yml` (required gate) vs. the GitHub Code Quality preview (optional)
+
+**Decision:** [`codeql.yml`](../.github/workflows/codeql.yml) remains the repo's required static-analysis gate; the per-PR "Code Quality: PR #N" run is GitHub's **Code Quality preview** — a separate, settings-driven validation that is *not* load-bearing for branch protection and may be disabled in Settings → Code security → Code quality without losing any required check.
+
+**The two pipelines, confirmed from this repo's runs (PR #354 head SHA) and GitHub docs:**
+
+| Aspect | `codeql.yml` (advanced setup) | Code Quality preview |
+| --- | --- | --- |
+| Trigger | Workflow in-repo; PR/push to main + weekly cron | Dynamic workflow `dynamic/github-code-scanning/codeql` (`event: dynamic`), created by the Settings toggle — no file in the repo, no API |
+| Languages | csharp only | csharp **and** javascript-typescript (auto-detected) |
+| Queries | `security-and-quality` suite | Curated CodeQL *quality* rules (maintainability + reliability) per [GitHub's preview announcement](https://github.blog/changelog/2025-10-28-github-code-quality-in-public-preview/) |
+| Config | Honors [`.github/codeql/codeql-config.yml`](../.github/codeql/codeql-config.yml) (5 documented query-filter suppressions, `obj`/`bin` paths-ignore, locked-mode restore) | Ignores the repo config file; configurable only via the Settings page (language checkboxes, runner type) per [Enabling GitHub Code Quality](https://docs.github.com/en/code-security/how-tos/maintain-quality-code/enable-code-quality) |
+| Results store | Code scanning alerts (Security tab) — verified via `code-scanning/analyses` API: the **only** uploader, category `.github/workflows/codeql.yml:analyze` | Separate quality-findings store: "Security and quality" tab dashboard + `github-code-quality[bot]` PR comments with Copilot Autofix per [CodeQL-powered analysis for Code Quality](https://docs.github.com/en/code-security/reference/code-quality/codeql-detection) |
+| Checks | `Analyze (csharp)` — **required** by branch protection | `Code Quality: PR #N` run (jobs `Analyze (csharp)` + `Analyze (javascript-typescript)`) + a `CodeQL` check from the `github-advanced-security` app — not required |
+
+So the per-PR pair of `Analyze (csharp)` runs is a *partial* duplicate: the C# analysis is genuinely run twice, but under different query sets, different configs, and feeding different result stores.
+
+**Alternatives considered:** (a) Keep both — costs a duplicate C# analysis plus a JS analysis per PR in Actions minutes, and the preview produced **zero** findings across PRs #350–#354 while emitting non-retryable failure noise during the 2026-06-10 GitHub API incident; its only coverage delta is JS/TS analysis of a single 36-line `wwwroot/app.js`. (b) Drop `codeql.yml` and rely on the preview — rejected: loses the required-check gate, the weekly scheduled scan, locked-mode restore, and the curated false-positive suppressions (the preview cannot read the repo config). (c) Add `javascript-typescript` to `codeql.yml`'s matrix to preserve the preview's only coverage delta before disabling — deferred: not worth a per-PR job for one trivial interop file; reconsider if the JS surface grows.
+
+**Rationale:** The preview's quality angle is already substantially covered for C# by the `security-and-quality` suite in the required workflow, and where the preview goes beyond it (quality scores, Autofix-on-quality-findings, org dashboard), it has surfaced nothing on this codebase while it cannot honor our documented suppressions. While the feature is in preview (unbilled, evolving, no API), it is informational-only here.
+
+**Revisit when:** Code Quality reaches GA (billing + config model will change), the JS/TS surface grows beyond trivial Blazor interop, or the feature gains support for repo-level config / suppressions — then re-evaluate enabling it as the quality surface alongside the security-focused required gate.
+
+**Related:** PR #346 (pipeline optimization, where the duplicate run was first flagged), handoff 2026-06-11 (`thoughts/.../AB-259/2026-06-11_02-52-20`).
+
+## 2026-06-10 — INCIDENT: Blazor circuits dead at >1 replica — missing documented ACA hosting config (session affinity + shared Data Protection)
+
+**Incident:** Reported by operator ~17:40Z ("no answers and the suggested questions don't show as links"). The deployed wizard app rendered as a static prerender: question input visible but the Ask button never enabled, nothing interactive. Container logs showed `AntiforgeryValidationException: The key {…} was not found in the key ring` at the exact report time, plus the startup warning `EphemeralXmlRepository` (Data Protection keys held in-memory per process). The app was at 2 replicas (scale 1–3) with no ingress session affinity: page HTML served by replica A carried tokens encrypted with A's ephemeral key ring; the circuit handshake load-balanced to replica B, which couldn't decrypt them — every circuit died. The site had worked earlier in the day only because it happened to be at 1 replica.
+
+**Root cause:** ADR-0026's Blazor Web App decision was deployed without Microsoft's documented Container Apps hosting requirements — BOTH ingress session affinity ("you must enable sticky sessions", learn.microsoft.com/azure/container-apps/dotnet-overview § Configure Blazor Server) AND a shared Data Protection key ring (blob-persisted, Key Vault–wrapped; learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server § Azure Container Apps). Azure SignalR Service does not remove the affinity need for Blazor (`ServerStickyMode.Required`).
+
+**Resolution:** PR #344 — `stickySessions.affinity: 'sticky'` on the wizard ingress; `dataprotection` blob container; `pinwiz-dataprotection` RSA-2048 KV key (wrap/unwrap only); UAMI role assignments (Blob Data Contributor scoped to the container; KV Crypto Service Encryption User); `AZURE_CLIENT_ID` + `DataProtection__*` env vars; gated `AddDataProtection()` wiring in Web `Program.cs` (local dev keeps the ephemeral ring). Deployed via the `pinwiz-shared-dev` Deployment Stack 18:29Z. App-code health was proven locally end-to-end before the infra fix (circuit, ask flow, disambiguation, citations) — isolating the defect to hosting config. Time to recovery: ~50 min from report to stack deploy.
+
+**Alerting gap (follow-up):** No alert fired — the 5xx alert is blind to a site that serves 200s with a dead circuit (and to the citation outage below, which served well-formed refusals). Follow-up: an end-to-end canary (scripted ask through the SSE endpoint asserting a cited answer) per runbook 01 § Post-incident item 2.
+
+**Revisit when:** scaling posture changes (e.g., Azure SignalR Service if concurrent-circuit count outgrows single-replica affinity), or ACA ships affinity-aware autoscaling guidance.
+
+**Related:** PR #344, ADR-0026 follow-up 2026-06-10, runbook 01-incident-response.
+
+## 2026-06-10 — INCIDENT: 100% answer refusals — citation extractor never matched live camelCase JSON; URL migration removed its accidental fallback
+
+**Incident:** From ~13:30Z–16:00Z every question on the deployed site returned the canned out-of-scope refusal. Committed eval evidence: citation_precision 0.967 at 13:29Z (`wizard.20260610T132948Z.json`) → 0.111 with 30/30 refusals (`wizard.20260610T150629Z.json`).
+
+**Root cause (two compounding defects):** (1) `ToolTraceCitationExtractor`'s JsonElement arms probed PascalCase property names (`"Hits"`, `"OpdbId"`) but `AIFunctionFactory` serializes tool results camelCase — the structured arms never fired in production; unit tests stayed green because fixtures were serialized PascalCase (fixture-shape drift). (2) All citations therefore rode the regex fallback matching only `opdb.org/machines/{id}` URLs embedded in raw tool-result JSON; the same-day opdbSourceUrl migration to `/search?q={id}` (PR #339 + `tools/migrate-opdb-source-urls.csx`) removed every matchable URL → zero citations → every answer fell below the 0.65 confidence threshold → blanket refusals.
+
+**Resolution:** PR #341 — case-insensitive property probing + deserialization (`JsonSerializerDefaults.Web`); URL regex accepts both schemes; binding `JsonException` degrades to the regex fallback instead of propagating; `RegexLegacyCitationExtractor` comparator widened identically; 6 live-shape regression tests (5 fail on unfixed code). Recovery proven by eval: precision 0.111 → 0.933 (`wizard.20260610T153932Z.json`), then 0.967 on the follow-up run. Time to recovery: ~2.5 h (detection lagged ~80 min because the last eval predated the data migration).
+
+**Lessons:** (1) Serialization-boundary test fixtures must use the exact runtime serializer, not test-side defaults. (2) A live-data migration is a deploy-equivalent event — run the eval immediately after it, not only after code merges. (3) A confidence gate without citation-extraction observability turns an extraction bug into a silent total outage (see alerting-gap follow-up above).
+
+**Revisit when:** Citation extraction moves to a structured tool-result contract (e.g., typed results once the SDK preserves types), making the regex fallback deletable.
+
+**Related:** PR #341, ADR-0022 follow-up 2026-06-10, ADR-0016 follow-up 2026-06-10 (three-state refusal metric, PR #342), PR #339.
+
+## 2026-06-10 — OPDB group-title lookups get a persistent on-disk cache (positive + negative)
+
+**Decision:** `OpdbClient.GetMachineGroupTitleAsync` consults an on-disk cache (`OpdbOptions.GroupTitleCachePath`, default `data/cache/opdb-group-titles.json`; `GroupTitleCacheTtlSeconds`, default 14 days, whole-file mtime TTL) before issuing the polite `GET /api/machines/{groupSegment}`. Confirmed 404 / non-group results are cached as explicit nulls (negative entries). Transient HTTP failures are never cached — exceptions propagate before the cache write. The shared `WriteCacheFile` helper also fixes the export-cache persist failure (OneDrive marks synced files read-only; `MOVEFILE_REPLACE_EXISTING` fails with `ERROR_ACCESS_DENIED` — now clear-ReadOnly → Delete → Move).
+
+**Alternatives considered:** Per-entry TTLs (over-engineering — franchise names are effectively immutable; whole-file mtime matches the export-cache precedent). End-of-run persistence (rejected: a crash mid-run loses every fetched title; per-entry persistence is cheap because new entries are rare in steady state). Lowering the 10s OPDB politeness delay (rejected outright — the delay is the documented 2026-05-04 decision; the correct lever is fewer requests, not faster ones).
+
+**Rationale:** The in-memory per-run cache meant every fresh sync re-fetched all group segments: ~1,200 requests at 10s each ≈ 3.5h observed live 2026-06-10 before the run was abandoned (~12h projected). Steady-state syncs now make near-zero group-title requests — strictly more polite to OPDB.
+
+**Revisit when:** The weekly ACA sync job lands (incremental sync — diffing export `updated_at` vs Cosmos `lastSyncedUtc` — is the remaining optimization), or OPDB starts emitting cache-validation headers on `/api/machines/{id}`.
+
+**Related:** PR #332, ADR-0029 (follow-up 2026-06-10), decision-log 2026-05-04 (export cache + politeness override).
+
+## 2026-05-26 — Phase 4.5 H5 eval baseline; ADR-0024 Cohere Rerank gate triggered
+
+**Decision:** H5 eval run on the Phase 4.5 full corpus (30 questions, 7 curated machines) returned `citation_precision=0.478`, triggering the ADR-0024 cross-encoder gate (`< 0.50`). Proceeding with a W4 fix-up PR to wire `CohereRerankReranker` (Cohere Rerank-v3 via Foundry connection). Full H5 metrics: `citation_recall=0.500`, `citation_coverage=0.533`, `subagent_accuracy=0.167`, `refusal_correctness=0.933`. Results file: `data/eval/results/wizard.20260526T143313Z.json`.
+
+**Alternatives considered:**
+
+- **Treat 0.478 as close enough, skip Cohere.** Rejected — the gate threshold was set deliberately at 0.50; the ADR's purpose is to make this decision data-driven, not opinion-driven.
+- **Re-evaluate the gate threshold.** Rejected — threshold was set before H5 numbers existed; raising it after the fact undermines the value of the gate.
+
+**Rationale:** The ADR-0024 gate is the mechanism for deciding whether the cross-encoder layer is needed. H5 triggered it cleanly. The locked implementation path (Cohere Rerank-v3 via Foundry, `ICrossEncoderReranker` abstraction) is ready to execute.
+
+**Revisit when:** H5b eval after Cohere integration lands. If `citation_precision ≥ 0.50` post-rerank, Phase 4.5 closes; if not, investigate retrieval-side root causes before proceeding to Phase 5.
+
+**Related:** ADR-0024, `data/eval/results/wizard.20260526T143313Z.json`
+
+## 2026-05-26 — Phase 4.5 deferred items logged at phase close
+
+**Decision:** Three items deferred out of Phase 4.5 scope:
+
+1. **Flyers (208 docs in corpus)** — chunking strategy TBD. Flyers are visually dense, short-text, promotional layouts. PdfPig extracts minimal text; ADI layout mode extracts more but produces noisy chunks. Decision deferred until a Phase 5+ eval question set explicitly targets flyer content to justify the investment.
+2. **Other bucket (98 docs)** — classification TBD. `document_type=Other` items are a mixed bag (press kits, show programs, promotional PDFs). Require manual review to determine if they belong in separate document types or should be chunked with their closest sibling type.
+3. **`NullTokenUsageReader` real implementation** — pending upstream fix in `azure-sdk-for-net#2688`. The `NullTokenUsageReader` stub in `Infrastructure/Integrations/Foundry/` is intentional; the real implementation cannot be wired until the SDK surfaces token usage in the Responses API response surface. Revisit when azure-sdk-for-net ships the fix.
+
+**Alternatives considered:** N/A — these are explicit scope deferrals, not trade-off decisions.
+
+**Rationale:** Phase 4.5's demonstrable artifact is manuals in the index with bounded long-tail failure rate and a meaningful H5 lift from H4. Flyers and Other documents expand scope without improving the core citation story; `NullTokenUsageReader` is blocked on an upstream SDK gap.
+
+**Revisit when:** Phase 5+ eval questions target flyer content (flyers); manual review batch is scheduled (Other); azure-sdk-for-net#2688 is resolved (`NullTokenUsageReader`).
+
+**Related:** `docs/superpowers/plans/2026-05-21-phase45-corpus-expansion.md` Task 16
+
+## 2026-05-22 — Azure Document Intelligence instance provisioned for Phase 4.5 W1 OCR fallback
+
+**Decision:** Provisioned a single Azure Document Intelligence resource (`pinwiz-docint-dev-buutj`, S0 tier, East US 2) as the ADI OCR fallback for `AzureDocumentIntelligenceExtractor`. The RAG indexer managed identity (`ad9ea109-c33a-4f53-88df-e1397922de42`) was granted `Cognitive Services User` on the resource. The endpoint (`https://pinwiz-docint-dev-buutj.cognitiveservices.azure.com/`) is injected via env var `DocumentIntelligence__Endpoint` on the `pinwiz-ca-ragindexer-dev` Container App. `FallbackDocumentTextExtractor` activates the ADI extractor only when this endpoint is configured; local dev without the env var stays PdfPig-only.
+
+**Alternatives considered:**
+
+- **Computer Vision OCR (Read API).** Rejected — superseded by Document Intelligence for document-class inputs; Document Intelligence's Read model handles multi-page PDFs with layout awareness that CV OCR lacks.
+- **Form Recognizer (legacy).** Rejected — Document Intelligence is its successor; Form Recognizer is in maintenance mode.
+- **Shared/multi-purpose DI resource.** Deferred — at this scale (one indexer, low-volume ingestion) a dedicated resource is simpler to reason about and avoids quota contention with other workloads.
+
+**Rationale:** ADI S0 tier is pay-per-use at $1.50/1,000 pages on the Read model, consistent with the project's $300–$400/mo cost envelope. The `FallbackDocumentTextExtractor` decorator keeps ADI as a fallback-only code path; PdfPig handles the majority of PDFs that are digitally created (text layer present). ADI fires only when PdfPig returns `ExtractionStatus.OcrRequired` (no extractable text). The 404/cancellation/empty-content failure modes are covered by `AzureDocumentIntelligenceExtractorTests` (PR #266 + #267).
+
+**Revisit when:**
+
+- Monthly ADI page cost exceeds ~$30 (signals volume large enough to re-evaluate tier or batch-processing strategy).
+- Document Intelligence introduces a serverless/consumption-pricing option that better matches the bursty-ingestion pattern.
+- Phase 6 multi-region expansion requires a second DI resource or cross-region replication.
+
+**Related:** PR #266 (ADI extractor + fallback decorator), PR #267 (pre-W2 quality fixes including `AzureDocumentIntelligenceExtractorTests`), ADR-0025 § 8 (Cosmos metrics — ADI calls go through `CosmosMetricsHelper` equivalently for its own instrumentation).
+
 ## 2026-05-09 — eBay excluded from community_resources.v1.json (CI URL-liveness false positive)
 
 **Decision:** PR-R3's `data/seeds/community_resources.v1.json` does NOT include eBay even though it's a major used-pinball marketplace. The marketplace category meets its ≥3 plurality minimum (per ADR-0026 § 6 + `feedback_destination_plurality.md`) via Facebook Marketplace + Mr. Pinball + Pinside Market.
@@ -344,10 +615,65 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 
 **Decision:** H-Dash hand-off complete. "PinballWizard Ops" workbook deployed and verified in the Azure portal.
 
-**Workbook URL:** `https://portal.azure.com/#@9793cd0f-2b27-4757-9986-1f7f1e35864a/resource/subscriptions/4dce9fdd-ea5f-4f67-9a00-80279e58659d/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.Insights/workbooks/ecabee92-c5ef-5e2f-8597-9a2ad352804d/workbook`
+**Workbook URL:** `https://portal.azure.com/#@9793cd0f-2b27-4757-9986-1f7f1e35864a/resource/subscriptions/b1f33f17-74a9-4ecc-b46c-c4f31776b840/resourceGroups/rg-pinwiz-shared-dev/providers/Microsoft.Insights/workbooks/68831803-ad04-5f3c-83aa-31f67e391249/workbook`
 
 **State at verification (2026-05-15):** 7 tiles rendered. All tiles show "no data" — expected while the Wizard ACA app runs a placeholder image (no real `pinwiz.ai.*` / `pinwiz.rag.*` metrics emitted yet). One tile ("RAG changefeed health") showed a KQL parse error (`latest` is a reserved KQL token) — fixed in PR #215 (column alias renamed to `currentValue`). The workbook will show live signal once Phase 7 deploys the real app image.
 
 **Revisit when:** Phase 7 deploys the real Wizard image. Verify all 7 tiles populate with real signal at that point.
 
 **Related:** PR #207 (workbook Bicep), PR #215 (KQL fix + availability test).
+
+## 2026-05-15 — Custom domain cert: HTTP validation for Cloudflare-compatible auto-renewal
+
+**Decision:** Switch `pinwiz-wizard-cert` managed certificate from `domainControlValidation: 'CNAME'` to `'HTTP'` (PR following initial CNAME issuance).
+
+**Problem with CNAME validation + Cloudflare proxy:** ACA validates CNAME ownership by resolving the domain directly. With Cloudflare proxy active (orange cloud), the domain resolves to Cloudflare's IPs, not the ACA FQDN. This means: (a) CNAME validation requires Cloudflare to be temporarily in DNS-only mode, and (b) every Let's Encrypt renewal (~90 days) would require the same manual toggle — or automation to call the Cloudflare API.
+
+**HTTP validation:** ACA serves the ACME challenge token at `http://{domain}/.well-known/acme-challenge/<token>`. Requests flow: Let's Encrypt → Cloudflare proxy → ACA ingress. ACA handles the challenge at the ingress level (the container does not need to serve it). Works transparently with the proxy active for both initial issuance and renewals.
+
+**Cloudflare prerequisite:** Add a Transform Rule (or Page Rule) to bypass the Cloudflare HTTPS redirect for the challenge path, otherwise Cloudflare rewrites `http://pinwiz.ai/.well-known/acme-challenge/*` to HTTPS before it reaches ACA, and Let's Encrypt's HTTP-01 challenge fails.
+
+Cloudflare rule (Settings → Transform Rules → Rewrite URL):
+- **Match:** URI path contains `.well-known/acme-challenge`
+- **Action:** Off (skip "Always Use HTTPS" for this path)
+
+Or via Cloudflare Configuration Rules: disable "Automatic HTTPS Rewrites" for that path.
+
+**Revisit when:** Migrating to Cloudflare Origin Certificate (15-year validity, no ACME renewal) — would be the Option 2 follow-up documented in the renewal plan conversation.
+
+## 2026-05-22 — Catalog document-to-game linking: three-pass strategy and inline vs. deferred execution
+
+**Decision:** Implement document-to-game linking as three ordered passes in `CatalogBuilder.LinkDocumentsToGames` / `ResolveCoverPageLinksAsync`, executed inline (synchronously awaited before catalog save). Pass 1: xref-URL slug extraction. Pass 2: `Source.LinkText` edition fallback. Pass 3: cover-page ADI text extraction for remaining unlinked PDFs.
+
+**Alternatives considered:**
+
+- *Single-pass filename heuristic only (status quo):* Left ~7 documents per scrape run unlinked. Acceptable technically but weakens RAG citation fidelity — an unlinked document has no `GameSlug` and cannot be attributed to a game in Phase 2 answers.
+- *Deferred CLI flag (`--resolve-covers`):* Would keep `ScrapeAsync` leaner and allow Pass 3 to run as a scheduled ACA Job. Rejected at current scale (~7 unlinked docs) because inline adds negligible latency and avoids a separate operational step. Scale-watch rule (see below) defines the switchover threshold.
+- *All three passes inline vs. Pass 3 deferred from the start:* Chose inline-for-now with an explicit scale-watch rule rather than speculative ACA Job infrastructure. The revisit criterion is concrete and observable.
+- *Longest-match tie-breaking (Pass 2 + 3):* Ties leave the document unlinked rather than picking arbitrarily. This is consistent across passes and avoids silently wrong attribution — a provenance miss is safer than a provenance lie.
+
+**Rationale:** Provenance is the differentiator for Phase 2 RAG citations. Every document that reaches the chunker without a `GameSlug` produces a citation that says "source: unknown game." Pass 1 is zero-cost (dictionary lookup on already-loaded xref data). Pass 2 is a string scan with no I/O. Pass 3 is the only pass with real cost (PDF open + page extraction), and its cost is bounded by the number of unlinked PDFs, which is small and expected to remain so as xref coverage improves.
+
+`SyncGameReferenceToCanonical` was also fixed to sync `GamePageUrl` from the canonical `GameRecord` rather than preserving whatever `BuildGameReference` wrote. `BuildGameReference` hardcodes `https://sternpinball.com/game/{slug}/` for all manufacturers — a latent provenance bug that only surfaces for non-Stern games whose slug happens to match a Stern slug pattern. Now healed on every `--build-catalog` run.
+
+**Scale-watch rule (authoritative — also in `memory/project_adi_inline_scale_watch.md`):** Switch Pass 3 to a deferred `--resolve-covers` CLI command / ACA Job if either: (a) the unresolved count after a scrape run exceeds ~50 documents, or (b) inline Pass 3 execution adds more than ~30 seconds to the scrape run. Monitor via `pinwiz.catalog.unlinked_documents{resolution_pass="adi_pending"}`.
+
+**Revisit when:** Post-merge backfill run (`dotnet run -- --build-catalog`) shows the actual post-Pass-3 unresolved count. If count is 0 or near-0 and stays there as new manufacturers are added, the scale-watch rule can be relaxed. If count grows past the threshold, implement the deferred path.
+
+## 2026-05-30 — Per-assembly coverage policy: tiered floors replacing single aggregate
+
+**Decision:** Adopt tiered per-assembly coverage floors. Core/Application ≥80%, Api/ServiceDefaults ≥75%, Infrastructure/Web ≥65%, Cli/RagIngestionWorker excluded. Aggregate floor stays at 70% as the mechanically-enforced CI gate.
+
+**Problem with single aggregate:** The 70% gate was passing (74% aggregate) while two assemblies sat below a reasonable floor — Infrastructure at 66% and Web at 65%. These have structural coverage ceilings from architecturally untestable code: Playwright-driven scrapers (browser I/O), Cosmos SDK error paths delegated to SDK retry policies, and Razor render-tree components (pure parameter-in / HTML-out, not worth unit testing).
+
+**Alternative rejected:** Raise Infrastructure and Web to 70%+ by adding tests. Rejected — marginal tests would test Playwright page navigation and SDK internals, not application behavior. Violates the "tests assert behavior, not structure" rule.
+
+**Why not mechanically enforce per-assembly:** irongut/CodeCoverageSummary only supports a single aggregate threshold. The PR coverage table already shows per-assembly rates on every PR — cultural enforcement via review is sufficient.
+
+**Ratchet rule applies:** Both aggregate and per-assembly floors can only move up. Permanent lowering requires a new decision-log entry.
+
+**Phase 5 baselines (2026-05-30):** Core 75%, Application 90%, Api 84%, ServiceDefaults 84%, Infrastructure 66%, Web 65%, aggregate 74%.
+
+**Related:** quality-spec.md § Code quality / Coverage policy, tests/coverage.runsettings, .github/workflows/ci.yml.
+
+**Related:** PR #271, `memory/project_adi_inline_scale_watch.md`, ADR-0012 (Cosmos ARM vs data-plane — relevant if Pass 3 is later wired into the RAG ingestion pipeline).

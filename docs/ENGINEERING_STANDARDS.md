@@ -388,22 +388,26 @@ The README is the storefront. It must include, in this order:
 
 ### 10.2 Architecture Decision Records
 
-Every significant decision gets an ADR in `docs/adr/`. Use the [Nygard format](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions). Examples for this project:
+Every significant decision gets an ADR in `docs/adr/`. Use the [Nygard format](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions). The current ADR set runs 0001–0028 (Accepted) plus four Proposed (0029–0032); see [`docs/adr/README.md`](adr/README.md) for the full index. Representative examples:
 
-- ADR 0001: Record architecture decisions
+- ADR 0001: Record architecture decisions in this repository
 - ADR 0002: Deterministic document IDs derived from canonical file URL
-- ADR 0003: Playwright over Puppeteer-Sharp for Vue.js pages
-- ADR 0004: catalog.json as the Phase 1 ↔ Phase 2 contract
-- ADR 0005: Standalone Azure infrastructure (no shared resources with any other project)
-- ADR 0006: Conditional GETs over content hashing for change detection
+- ADR 0003: Playwright (.NET) over Puppeteer-Sharp for Vue.js scraping
+- ADR 0004: `catalog.json` is the Phase 1 ↔ Phase 2 contract
+- ADR 0005: Standalone Azure infrastructure (own resource group, own lifecycle)
+- ADR 0006: Clean Architecture multi-project layout
+- ADR 0007: Per-manufacturer ingestion sources are Cosmos data, not Bicep config
+- ADR 0012: Cosmos schema CRUD via ARM, item CRUD via data-plane SDK
+- ADR 0017: Confidence-threshold refusal (geometric-mean composite + categorized refusals)
+- ADR 0026: User Delight Frontend and Streaming (Blazor + SSE + dual IAiRouter)
 
 ADRs are immutable once accepted. New decisions supersede old ones with a new ADR that links back.
 
 ### 10.3 XML doc comments
 
-- All `public` types and members get `///` summary comments.
-- `internal` types get them only when they would benefit a future maintainer (the parser, the catalog merge logic).
-- Doc comments describe *intent and contract*, not implementation. "Returns the canonical document ID" — yes. "Calls `SHA256.HashData` on the lowercased URL" — no.
+XML doc comments on public surface are **not required** for this project. `CS1591` is suppressed globally in `Directory.Build.props` (`NoWarn`). The rationale: the codebase is read primarily through an IDE with rich IntelliSense, ADRs carry the architectural intent, and enforcing XML docs would be cargo-culting enterprise conventions at a scale where they add noise rather than value.
+
+*If* a doc comment is written, it should describe **intent and contract**, not implementation. "Returns the canonical document ID" — yes. "Calls `SHA256.HashData` on the lowercased URL" — no.
 
 ### 10.4 Diagrams
 
@@ -487,7 +491,7 @@ The following files exist at the repository root, with non-trivial content:
 | `LICENSE` | MIT. |
 | `CONTRIBUTING.md` | How to set up a dev environment, run tests, submit PRs, the commit convention. |
 | `SECURITY.md` | How to report a vulnerability. Even a hobby project should have this — it signals professionalism. |
-| `CHANGELOG.md` | Auto-generated, human-edited. Follows [Keep a Changelog](https://keepachangelog.com). |
+| `CHANGELOG.md` | Retired 2026-06-10. Preserved as history; see PR descriptions (`gh pr list --state merged`) and [`docs/decision-log.md`](decision-log.md) for change history. |
 | `.gitignore` | Standard .NET template plus `data/`, `*.local.json`, `.vscode/settings.json`. |
 | `.gitattributes` | Line endings: `* text=auto eol=lf`. Lockfiles marked `linguist-generated`. |
 | `.editorconfig` | Formatting rules. The single source of truth. |
@@ -550,7 +554,7 @@ A feature is *done* when:
 - [ ] Logging is in place for the success path and the failure paths.
 - [ ] Configuration is bound through `IOptions<T>` with validation.
 - [ ] The README, architecture doc, or relevant ADR is updated if the change affects them.
-- [ ] A CHANGELOG entry exists (auto-generated from the commit message is fine).
+- [ ] If the change warrants a decision record, [`docs/decision-log.md`](decision-log.md) is updated (CHANGELOG.md is retired; PR descriptions and the decision log are the maintained artifacts).
 - [ ] CI passes, including coverage delta and vulnerability scan.
 - [ ] The author has manually tested the happy path against the live site (or a fixture if live testing isn't appropriate).
 

@@ -1,41 +1,40 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using PinballWizard.Application.Downloading;
-using PinballWizard.Application.Provenance;
+using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 
 namespace PinballWizard.Application;
 
-/// <summary>
-/// Orchestrates the full scraper pipeline: discover → download → catalog.
-/// </summary>
+// Orchestrates the full scraper pipeline: discover → persist to Cosmos.
 public sealed class ScraperOrchestrator
 {
     private readonly IEnumerable<ISourceScraper> _scrapers;
-    private readonly IFileDownloader _downloader;
-    private readonly CatalogBuilder _catalogBuilder;
+    private readonly IRawDocumentRepository _rawDocRepo;
+    private readonly IScraperReconciliationService _reconciler;
     private readonly ScraperSettings _settings;
     private readonly ILogger<ScraperOrchestrator> _logger;
 
     public ScraperOrchestrator(
         IEnumerable<ISourceScraper> scrapers,
-        IFileDownloader downloader,
-        CatalogBuilder catalogBuilder,
+        IRawDocumentRepository rawDocRepo,
+        IScraperReconciliationService reconciler,
         IOptions<ScraperSettings> settings,
         ILogger<ScraperOrchestrator> logger)
     {
         _scrapers = scrapers;
-        _downloader = downloader;
-        _catalogBuilder = catalogBuilder;
+        _rawDocRepo = rawDocRepo;
+        _reconciler = reconciler;
         _settings = settings.Value;
         _logger = logger;
     }
 
     /// <summary>
-    /// Run discovery only: scrape all sources for URLs and metadata, update catalog,
-    /// but don't download any files.
+    /// Run discovery only: scrape all sources for URLs and metadata and
+    /// upsert each discovered document into the Cosmos raw document store.
     /// </summary>
     public async Task<ScrapeResult> ScrapeAsync(
         string? sourceFilter = null,
@@ -43,14 +42,15 @@ public sealed class ScraperOrchestrator
         CancellationToken cancellationToken = default)
     {
         var result = new ScrapeResult();
-        var catalog = await _catalogBuilder.LoadCatalogAsync(cancellationToken);
-        var gameCatalog = await _catalogBuilder.LoadGameCatalogAsync(cancellationToken);
-
         var scrapers = FilterScrapers(sourceFilter);
+        var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
+        var gameCatalog = new GameCatalog { GeneratedAt = DateTime.UtcNow };
 
         foreach (var scraper in scrapers)
         {
             _logger.LogInformation("Starting scraper: {Name}", scraper.Name);
+
+            var pending = new List<Task>();
 
             try
             {
@@ -58,226 +58,197 @@ public sealed class ScraperOrchestrator
                 {
                     if (item.Game is not null)
                     {
-                        _catalogBuilder.MergeGameRecord(gameCatalog, item.Game);
-                        result.GamesDiscovered++;
+                        gameCatalog.Games.Add(item.Game);
                     }
 
-                    if (item.Link is not null)
+                    if (item.Link is null) continue;
+
+                    var record = BuildDocumentRecord(item);
+                    result.TotalLinks++;
+
+                    if (dryRun) continue;
+
+                    await semaphore.WaitAsync(cancellationToken);
+                    pending.Add(Task.Run(async () =>
                     {
-                        var docId = DocumentRecord.GenerateId(item.Link.FileUrl);
-                        var isNew = !catalog.Documents.Any(d => d.DocumentId == docId);
-
-                        _catalogBuilder.MergeScrapedItem(catalog, item);
-
-                        if (isNew) result.NewDocuments++;
-                        else result.ExistingDocuments++;
-
-                        result.TotalLinks++;
+                        try
+                        {
+                            await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
+                            result.Errors.Add($"{record.DocumentId}: {ex.Message}");
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }, cancellationToken));
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Drain in-flight writes before re-throwing so no tasks are abandoned.
+                if (pending.Count > 0)
+                {
+                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                    catch (Exception drainEx)
+                    {
+                        _logger.LogError(drainEx, "Scraper {Name}: in-flight writes faulted during cancellation drain.", scraper.Name);
                     }
                 }
+                throw;
             }
             catch (Exception ex)
             {
-                // Broad catch: per-scraper failure must not abort other scrapers in the loop;
-                // OOM/cancellation still propagate via the runtime.
                 _logger.LogError(ex, "Scraper {Name} failed", scraper.Name);
                 result.Errors.Add($"{scraper.Name}: {ex.Message}");
             }
+            finally
+            {
+                // Always drain pending writes — ensures no tasks are abandoned on normal
+                // completion or on per-scraper exceptions. The OCE path above drains and
+                // re-throws before reaching this block; errors here are already logged.
+                if (pending.Count > 0)
+                {
+                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                    catch { /* per-task errors already logged inside each Task.Run lambda */ }
+                }
+            }
         }
 
-        // Cross-source linking: associate manuals with known games by filename slug.
-        _catalogBuilder.LinkDocumentsToGames(catalog, gameCatalog);
-
-        if (!dryRun)
+        if (!dryRun && gameCatalog.Games.Count > 0)
         {
-            await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
-            await _catalogBuilder.SaveGameCatalogAsync(gameCatalog, cancellationToken);
+            try
+            {
+                var reconcileResult = await _reconciler.ReconcileAsync(gameCatalog, cancellationToken)
+                    .ConfigureAwait(false);
+                _logger.LogInformation(
+                    "Reconciliation complete: considered={Considered} upserts={Upserts} unmatched={Unmatched} ambiguous={Ambiguous} failed={Failed}",
+                    reconcileResult.Considered, reconcileResult.Upserts,
+                    reconcileResult.Unmatched, reconcileResult.AmbiguousTitle, reconcileResult.FailedMapping);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Reconciliation failed after scrape — ManufacturerSlugs will not be updated this run.");
+                result.Errors.Add($"reconcile: {ex.Message}");
+            }
         }
 
         _logger.LogInformation(
-            "Scrape complete: {Total} links ({New} new, {Existing} existing), {Games} games, {Errors} errors",
-            result.TotalLinks, result.NewDocuments, result.ExistingDocuments,
-            result.GamesDiscovered, result.Errors.Count);
+            "Scrape complete: {Total} links, {Games} game records collected, {Errors} errors",
+            result.TotalLinks, gameCatalog.Games.Count, result.Errors.Count);
 
         return result;
     }
 
-    /// <summary>
-    /// Download new or changed files for all documents in the catalog.
-    /// </summary>
-    public async Task<DownloadSummary> DownloadAsync(
-        bool forceAll = false,
-        CancellationToken cancellationToken = default)
+    private static DocumentRecord BuildDocumentRecord(ScrapedItem item)
     {
-        var catalog = await _catalogBuilder.LoadCatalogAsync(cancellationToken);
-        var summary = new DownloadSummary();
+        var link = item.Link!;
+        var fileFormat = Path.GetExtension(link.FileUrl).TrimStart('.').ToLowerInvariant();
 
-        // Find documents that need downloading
-        var toDownload = catalog.Documents
-            .Where(d => forceAll || d.File is null || d.Timeline.LastDownloadedAt is null)
-            .ToList();
-
-        _logger.LogInformation("Downloading {Count} of {Total} documents (forceAll={Force})",
-            toDownload.Count, catalog.Documents.Count, forceAll);
-
-        // Download with controlled concurrency
-        using var semaphore = new SemaphoreSlim(_settings.MaxConcurrentDownloads);
-
-        var tasks = toDownload.Select(async doc =>
+        return new DocumentRecord
         {
-            await semaphore.WaitAsync(cancellationToken);
-            try
+            DocumentId = DocumentRecord.GenerateId(link.FileUrl),
+            Source = new SourceInfo
             {
-                var localPath = FileOrganizer.GetLocalPath(
-                    doc.Source.FileUrl,
-                    doc.Source.SourceType,
-                    doc.Game?.Slug,
-                    doc.Source.Tab);
-
-                var result = await _downloader.DownloadAsync(
-                    doc.Source.FileUrl, localPath, doc.Http, cancellationToken);
-
-                lock (catalog)
-                {
-                    switch (result.Status)
+                DiscoveryUrl = item.DiscoveryUrl,
+                DiscoveryContext = item.DiscoveryContext,
+                FileUrl = link.FileUrl,
+                LinkText = link.LinkText,
+                ActionType = ClassifyActionType(link.FileUrl),
+                SourceType = item.SourceType,
+                Tab = link.Tab,
+                ScrapedAt = DateTime.UtcNow
+            },
+            Classification = new ClassificationInfo
+            {
+                DocumentType = ClassifyDocumentType(link, item.DiscoveryContext),
+                FileFormat = string.IsNullOrEmpty(fileFormat) ? "unknown" : fileFormat
+            },
+            Game = BuildGameReference(item),
+            Timeline = new TimelineInfo
+            {
+                FirstDiscoveredAt = DateTime.UtcNow,
+                LastCheckedAt = DateTime.UtcNow
+            },
+            // When a scraper discovers this file from a game-specific page
+            // (GameSlug is set), record the discovery URL as a cross-reference
+            // so that UpsertRawAsync can merge it into existing records. This
+            // enables Tier 1 slug matching in DocumentLinker even when the same
+            // file was first discovered from a flat listing page (e.g. /manuals/).
+            CrossReferences = !string.IsNullOrEmpty(link.GameSlug)
+                ? [new CrossReference
                     {
-                        case DownloadStatus.Downloaded:
-                            _catalogBuilder.ApplyDownloadResult(doc, result);
-                            summary.Downloaded++;
-                            summary.BytesDownloaded += result.SizeBytes ?? 0;
-                            break;
-                        case DownloadStatus.NotModified:
-                            summary.Unchanged++;
-                            break;
-                        case DownloadStatus.TooLarge:
-                            summary.Skipped++;
-                            break;
-                        case DownloadStatus.Failed:
-                            summary.Failed++;
-                            summary.Errors.Add($"{doc.Source.FileUrl}: {result.ErrorMessage}");
-                            break;
-                    }
-                }
-
-                // Polite delay between downloads
-                await Task.Delay(500, cancellationToken);
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
-
-        await Task.WhenAll(tasks);
-
-        // Save updated catalog with download metadata
-        await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
-
-        _logger.LogInformation(
-            "Download complete: {Downloaded} downloaded ({Bytes:N0} bytes), " +
-            "{Unchanged} unchanged, {Skipped} skipped, {Failed} failed",
-            summary.Downloaded, summary.BytesDownloaded,
-            summary.Unchanged, summary.Skipped, summary.Failed);
-
-        return summary;
+                        AlsoFoundAt = item.DiscoveryUrl,
+                        DiscoveryContext = item.DiscoveryContext,
+                        LinkText = link.LinkText,
+                        DiscoveredAt = DateTime.UtcNow,
+                    }]
+                : []
+        };
     }
 
-    /// <summary>
-    /// Reconciles the catalog against the filesystem: clears `File` entries for
-    /// documents whose local path no longer exists, refreshes the timestamp,
-    /// and saves. Useful after manual file deletions or partial download runs.
-    /// </summary>
-    public async Task<BuildCatalogSummary> BuildCatalogAsync(CancellationToken cancellationToken = default)
+    private static ActionType ClassifyActionType(string fileUrl)
     {
-        var catalog = await _catalogBuilder.LoadCatalogAsync(cancellationToken);
-        var summary = new BuildCatalogSummary { TotalDocuments = catalog.Documents.Count };
-
-        foreach (var doc in catalog.Documents)
+        var ext = Path.GetExtension(fileUrl).ToLowerInvariant();
+        return ext switch
         {
-            if (doc.File is null)
-            {
-                summary.NotDownloaded++;
-                continue;
-            }
-
-            var absolutePath = Path.Combine(_settings.DownloadsPath, doc.File.LocalPath);
-            if (File.Exists(absolutePath))
-            {
-                summary.OnDisk++;
-            }
-            else
-            {
-                _logger.LogWarning("File missing on disk for {DocId}: {Path}",
-                    doc.DocumentId, doc.File.LocalPath);
-                doc.File = null;
-                summary.MissingFromDisk++;
-            }
-        }
-
-        await _catalogBuilder.SaveCatalogAsync(catalog, cancellationToken);
-
-        _logger.LogInformation(
-            "Catalog reconciled: {Total} documents ({OnDisk} on disk, " +
-            "{Missing} missing, {NotDownloaded} not downloaded)",
-            summary.TotalDocuments, summary.OnDisk,
-            summary.MissingFromDisk, summary.NotDownloaded);
-
-        return summary;
+            ".pdf" => ActionType.OpenPdf,
+            ".zip" or ".spk" => ActionType.DownloadFile,
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" => ActionType.ViewImage,
+            _ => ActionType.DownloadFile
+        };
     }
 
-    /// <summary>
-    /// Print a summary of the current catalog state.
-    /// </summary>
-    public async Task PrintStatusAsync(CancellationToken cancellationToken = default)
+    private static DocumentType ClassifyDocumentType(DiscoveredLink link, string context)
     {
-        var catalog = await _catalogBuilder.LoadCatalogAsync(cancellationToken);
-        var gameCatalog = await _catalogBuilder.LoadGameCatalogAsync(cancellationToken);
+        var url = link.FileUrl.ToLowerInvariant();
+        var text = (link.LinkText ?? "").ToLowerInvariant();
+        var ctx = context.ToLowerInvariant();
 
-        Console.WriteLine();
-        Console.WriteLine("═══════════════════════════════════════════════════");
-        Console.WriteLine("  🧙 PinballWizard — Catalog Status");
-        Console.WriteLine("═══════════════════════════════════════════════════");
-        Console.WriteLine($"  Documents:     {catalog.TotalDocuments}");
-        Console.WriteLine($"  Total size:    {catalog.TotalSizeBytes / (1024.0 * 1024.0):N1} MB");
-        Console.WriteLine($"  Games:         {gameCatalog.TotalGames}");
-        Console.WriteLine($"  Last updated:  {catalog.GeneratedAt:u}");
-        Console.WriteLine();
+        if (ctx.Contains("service bulletin")) return DocumentType.ServiceBulletin;
+        if (ctx.Contains("game code")) return DocumentType.Firmware;
+        if (ctx.Contains("promotional")) return DocumentType.Flyer;
 
-        // Breakdown by document type
-        var byType = catalog.Documents
-            .GroupBy(d => d.Classification.DocumentType)
-            .OrderByDescending(g => g.Count());
+        if (text.Contains("manual")) return DocumentType.Manual;
+        if (text.Contains("schematic")) return DocumentType.Schematic;
+        if (text.Contains("firmware") || text.Contains("game code")) return DocumentType.Firmware;
+        if (text.Contains("bulletin") || text.Contains("sb ") || text.Contains("sb#")) return DocumentType.ServiceBulletin;
+        if (text.Contains("flyer") || text.Contains("feature")) return DocumentType.Flyer;
+        if (text.Contains("spec")) return DocumentType.SpecSheet;
 
-        Console.WriteLine("  By type:");
-        foreach (var group in byType)
+        if (url.Contains("manual")) return DocumentType.Manual;
+        if (url.Contains("schematic")) return DocumentType.Schematic;
+        if (url.Contains("sb") && url.Contains(".pdf")) return DocumentType.ServiceBulletin;
+        if (url.EndsWith(".zip") || url.EndsWith(".spk")) return DocumentType.Firmware;
+
+        return DocumentType.Other;
+    }
+
+    private static GameReference? BuildGameReference(ScrapedItem item)
+    {
+        if (item.Link?.GameSlug is null && item.SourceType != SourceType.GamePage)
+            return null;
+
+        var slug = item.Link?.GameSlug;
+        if (string.IsNullOrEmpty(slug)) return null;
+
+        // GamePageUrl comes from the actual discovery URL — the page where this
+        // document was found. Scrapers that set GameSlug are always visiting a
+        // game page, so DiscoveryUrl is the correct game page URL regardless of
+        // manufacturer.
+        return new GameReference
         {
-            Console.WriteLine($"    {group.Key,-20} {group.Count(),5}");
-        }
-
-        // Breakdown by source
-        var bySource = catalog.Documents
-            .GroupBy(d => d.Source.SourceType)
-            .OrderByDescending(g => g.Count());
-
-        Console.WriteLine();
-        Console.WriteLine("  By source:");
-        foreach (var group in bySource)
-        {
-            Console.WriteLine($"    {group.Key,-20} {group.Count(),5}");
-        }
-
-        // Download status
-        var downloaded = catalog.Documents.Count(d => d.File is not null);
-        var pending = catalog.Documents.Count(d => d.File is null);
-
-        Console.WriteLine();
-        Console.WriteLine($"  Downloaded:    {downloaded}");
-        Console.WriteLine($"  Pending:       {pending}");
-
-        // Cross-references
-        var withCrossRefs = catalog.Documents.Count(d => d.CrossReferences.Count > 0);
-        Console.WriteLine($"  Cross-refs:    {withCrossRefs} documents found on multiple pages");
-        Console.WriteLine();
+            Title = slug.Replace('-', ' '),  // Best guess; updated from game metadata
+            Slug = slug,
+            GamePageUrl = item.DiscoveryUrl
+        };
     }
 
     private static readonly Dictionary<string, string> SourceAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -287,6 +258,7 @@ public sealed class ScraperOrchestrator
         ["bulletins"] = "Service Bulletins",
         ["jjp"] = "JJP",
         ["ap"] = "American Pinball",
+        ["ap_bulletins"] = "American Pinball Bulletins",
         ["spooky"] = "Spooky Pinball",
         ["pinballbrothers"] = "Pinball Brothers",
         ["barrelsoffun"] = "Barrels of Fun",
@@ -331,26 +303,5 @@ public sealed class ScraperOrchestrator
 public sealed class ScrapeResult
 {
     public int TotalLinks { get; set; }
-    public int NewDocuments { get; set; }
-    public int ExistingDocuments { get; set; }
-    public int GamesDiscovered { get; set; }
-    public List<string> Errors { get; set; } = [];
-}
-
-public sealed class DownloadSummary
-{
-    public int Downloaded { get; set; }
-    public long BytesDownloaded { get; set; }
-    public int Unchanged { get; set; }
-    public int Skipped { get; set; }
-    public int Failed { get; set; }
-    public List<string> Errors { get; set; } = [];
-}
-
-public sealed class BuildCatalogSummary
-{
-    public int TotalDocuments { get; set; }
-    public int OnDisk { get; set; }
-    public int MissingFromDisk { get; set; }
-    public int NotDownloaded { get; set; }
+    public ConcurrentBag<string> Errors { get; } = [];
 }

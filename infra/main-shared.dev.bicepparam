@@ -35,6 +35,24 @@ param searchLocation = 'eastus2'
 // Replace the empty string below with your Object ID for one-shot RBAC at deploy time.
 param developerObjectId = ''
 
+// CI/CD deploy service principal — the "PinballWizard GitHub Actions" app
+// registration (OIDC, no client secret) that deploy.yml logs in as. This is
+// the SP OBJECT id (not the appId/client id 9bfa919b-…, which is the
+// AZURE_CLIENT_ID GitHub secret). Object IDs are not secrets — safe to commit,
+// same as azureAdClientId below. Grants Contributor on the Wizard / Api /
+// RAG-indexer apps so the workflow image-swap can reach each one (replaces the
+// former manual per-app az role assignment create step). Find it via:
+//   az ad sp show --id 9bfa919b-d517-4ba8-a65f-a5d04025ddb1 --query id -o tsv
+param cicdDeployPrincipalId = 'c8466e83-9470-4cad-92a1-2d4149263fdc'
+
+// Entra OIDC sign-in for the Wizard web app (PR-B0 infra half).
+// The "PinballWizard Web" app registration's client ID — a public
+// identifier, safe to commit. The matching client SECRET lives only in
+// Key Vault (AzureAd-ClientSecret, 2-year expiry) and reaches the
+// container via the ACA secret keyVaultUrl reference; it is never a
+// parameter. GlobalAdmin app role per ADR-0009; Jim holds the assignment.
+param azureAdClientId = '4b530be1-a1e8-4c53-b595-82d9d75ff28f'
+
 // Phase 2 gate. Flipped true 2026-05-06 in PR 2b of Phase 3 — adds the
 // AI / RAG infrastructure (App Insights, Key Vault, ACR, AI Search,
 // Azure OpenAI, Foundry account + project + model deployments, Storage +
@@ -75,4 +93,8 @@ param deployAiSearch = true
 // drill; passes once Phase 7 deploys the real image on port 8080.
 // Update this value if the ACA environment is ever recreated (the random
 // DNS-label suffix in the FQDN changes on environment recreation).
-param wizardAliveUrl = 'https://pinwiz-ca-wizard-dev.calmrock-938a17ac.eastus2.azurecontainerapps.io/alive'
+param wizardAliveUrl = 'https://pinwiz-ca-wizard-dev.graybay-045982b4.eastus2.azurecontainerapps.io/alive'
+
+// Custom domain — requires Cloudflare DNS-only mode during cert provisioning.
+// Switch Cloudflare back to proxied (orange cloud) after deploy completes.
+param wizardCustomDomain = 'pinwiz.ai'

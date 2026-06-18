@@ -323,3 +323,24 @@ These options were considered and rejected. Documented here so they don't get re
 - [ADR-0026](0026-user-delight-frontend-and-streaming.md) — the User Delight Frontend track; § 7 of that ADR consumes this ADR's recovery-payload contract
 - `memory/feedback_community_resource_posture.md`, `memory/feedback_destination_plurality.md`, `memory/feedback_avoid_appearance_of_favoritism.md` — the three feedback-memory entries this ADR promotes into a discoverable architectural record
 - `memory/project_pricing_outreach_2026_05_08.md` — the operator-outreach round that motivates the operator-promotion path in § 11
+
+## Follow-up 2026-06-12 — in-circuit conversation threads are NOT "session-history persistence"
+
+The multi-turn Wizard conversation (chat-thread UI, PR-A3; design plan
+`thoughts/shared/plans/AB-259-multi-turn-conversation.md`) renders prior
+turns above the input and sends them with each follow-up. This follow-up
+records why that does not contradict § 10's rejections:
+
+- **What § 10 bans** is *persistent* session history and re-engagement
+  surfaces: localStorage/cookie session state, "save this question,"
+  per-user behavior tracking, analytics-driven re-engagement.
+- **What the thread is**: Blazor circuit component state plus the single
+  request that carries it. Nothing is written anywhere — a page refresh
+  (or "New conversation") starts fresh, no identifier links turns to a
+  person, and the server holds history only for the lifetime of the
+  request that carries it.
+
+The boundary stands: any future "resume your conversation," cross-visit
+history, or server-side conversation store IS the § 10 surface and
+requires amending this ADR first (the anonymous TTL'd Cosmos design
+sketched in architecture-v2 § 8 included).

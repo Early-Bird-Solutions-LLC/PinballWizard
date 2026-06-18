@@ -5,11 +5,29 @@
 # `--locked-mode` so a tampered or drifted lockfile fails the analysis run.
 name: CodeQL
 
+# paths-ignore: docs/eval-results changes can't alter C# analysis
+# results. A fully path-filtered workflow reports NO check at all, which
+# would leave the required "Analyze (csharp)" check stuck in "Expected" —
+# the companion codeql-docs-noop.yml satisfies it on the inverse path set
+# per GitHub's documented workaround. Keep the two path lists in lockstep.
+# The weekly schedule below still scans everything regardless of paths.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'thoughts/**'
+      - 'data/eval/results/**'
+      - '.claude/**'
   schedule:
     # Mondays 06:00 UTC — same cadence as Dependabot so the two land together.
     - cron: '0 6 * * 1'

@@ -28,9 +28,20 @@ Per-question shape:
 | `id` | yes | Unique within the file. Convention: `ev-{subagent}-{nnnn}`. |
 | `question` | yes | The user prompt verbatim. |
 | `expected_sub_agent` | yes | One of `Wizard`, `Valuation`, `Rules`, `Repair`. Out-of-scope rows route to `Wizard`. |
-| `expected_citation_set` | yes | Array of raw OPDB ids (no `mch_` prefix) the answer should cite. Empty list when `acceptable_refusal=true`. |
-| `acceptable_refusal` | yes | `true` when "I don't know" is the correct response (out-of-scope, missing grounding). |
+| `expected_citation_set` | yes | Array of raw OPDB ids (no `mch_` prefix) the answer should cite. Empty list when `refusal_required=true` (parser-enforced); on `acceptable_refusal`-only gap rows it holds the answer-path ground truth, graded only when the agent answers. |
+| `acceptable_refusal` | yes | `true` when a refusal is a correct response. Without `refusal_required`, EITHER refusing or answering correctly scores correct — the row carries no refusal signal (null score, excluded from the aggregate). |
+| `refusal_required` | no | `true` when the agent MUST refuse (genuinely out-of-scope). Answering scores `refusal_correctness=0`. Implies `acceptable_refusal=true` (parser rejects the contradiction). Default `false`. |
 | `notes` | no | Curator-only context. |
+
+Refusal expectations are three-state (metric-hygiene fix, 2026-06-10):
+`refusal_required=true` → must refuse; `acceptable_refusal=true` alone →
+either behavior is fine (content-gap rows — the prior two-state evaluator
+scored these as required-refusal, so a correctly-cited answer scored 0);
+both `false` → must answer. On a gap row that refuses, citation
+precision/recall are also null (there is no answer to grade), and
+`citation_coverage` is null on any refused row (coverage measures
+citations-per-paragraph of an answer). Each aggregate mean travels with a
+`*_count` field carrying its denominator.
 
 The harness extracts predicted citation ids from the agent's
 `WizardAnswer.Citations[].MachineId` — the same OPDB id the AiRouter
@@ -76,16 +87,23 @@ Each run produces `data/eval/results/wizard.{yyyyMMddTHHmmssZ}.json`
 containing the run metadata + per-question scores + an aggregate
 block. Shape: `EvalRunResult` in
 `src/PinballWizard.Application/Ai/Evaluation/EvalResult.cs`. The
-`aggregate` object holds the four headline metrics:
+`aggregate` object holds the headline metrics; nullable means travel
+with a `*_count` field carrying the denominator (rows where the
+metric was defined — see the three-state refusal semantics above):
 
 ```json
 "aggregate": {
   "question_count": 30,
   "error_count": 0,
-  "citation_precision_mean": 0.86,
-  "citation_recall_mean": 0.74,
-  "subagent_accuracy_mean": 0.93,
-  "refusal_correctness_mean": 1.00
+  "citation_precision_mean": 0.97,
+  "citation_recall_mean": 0.97,
+  "citation_coverage_mean": 0.66,
+  "subagent_accuracy_mean": 0.77,
+  "refusal_correctness_mean": 1.00,
+  "citation_precision_count": 30,
+  "citation_recall_count": 30,
+  "citation_coverage_count": 27,
+  "refusal_correctness_count": 27
 }
 ```
 

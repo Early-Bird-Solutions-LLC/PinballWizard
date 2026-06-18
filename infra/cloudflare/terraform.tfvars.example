@@ -1,0 +1,25 @@
+# terraform.tfvars.example
+#
+# Copy to `terraform.tfvars` for local development. The real file is
+# gitignored.
+#
+# Replace placeholder values with real IDs from the Cloudflare dashboard
+# overview page for pinwiz.ai.
+#
+# For CI, set TF_VAR_<name> env vars from GitHub Actions secrets rather
+# than committing a tfvars file.
+
+zone_id          = "<32-char zone ID from Cloudflare dashboard>"
+account_id       = "<32-char account ID from Cloudflare dashboard>"
+domain           = "pinwiz.ai"
+origin_hostname  = "pinwiz-ca-wizard-dev.calmrock-938a17ac.eastus2.azurecontainerapps.io"
+admin_email      = "security@pinwiz.ai"
+
+# ACA custom domain verification token — value of the asuid.pinwiz.ai TXT record.
+# Find in Azure Portal: Container Apps → pinwiz-wizard → Custom domains → show token.
+# Sensitive: store as TF_VAR_aca_domain_verification_token in CI, or set locally only.
+aca_domain_verification_token = "<value from Azure Portal ACA custom domains blade>"
+
+# Leave blank to skip Logpush. When ready, populate from Key Vault:
+# logpush_destination = "azure://stpinball.blob.core.windows.net/cflogs?sv=..."
+logpush_destination = ""

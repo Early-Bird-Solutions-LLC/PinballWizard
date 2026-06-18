@@ -34,7 +34,7 @@ namespace PinballWizard.Infrastructure.Integrations.Foundry;
 // functional — the LLM picks the matching sub-agent function and
 // Microsoft Agent Framework drives the call with full thread context
 // preservation. Closes the Phase 3 H2 gap (subagent_accuracy=0.033).
-public sealed class FoundryAgentFactory : IFoundryAgentFactory
+public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCacheInvalidator
 {
     private readonly AiFoundryOptions _options;
     private readonly IAgentPromptProvider _promptProvider;
@@ -43,6 +43,16 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
+
+    // The IAgentPromptProvider.PromptVersion the cache was built with.
+    // GetAgent compares against the provider's CURRENT version and rebuilds
+    // on drift. This is the CROSS-PROCESS path for prompt overrides: the
+    // admin UI (Web process) writes to Cosmos and can only Invalidate its
+    // own process; the Api's factory converges via the provider's TTL'd
+    // version refresh (~2 min) — consistent with the settings page's
+    // "live within ~2 minutes" contract. In-process Invalidate remains the
+    // immediate path.
+    private string? _agentsPromptVersion;
 
     public FoundryAgentFactory(
         IOptions<AiFoundryOptions> options,
@@ -70,13 +80,30 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
 
         // Double-checked init: the dictionary, once populated, is
-        // immutable for the process lifetime.
+        // immutable for the process lifetime — UNLESS Invalidate evicts
+        // an entry (in-process) or the prompt provider's version drifts
+        // (cross-process: an admin activated/deactivated an override from
+        // the Web process). The lock guards lazy-init, eviction, and the
+        // drift-triggered re-init alike. The version read is a cached
+        // string on the provider (TTL-refreshed) — cheap per call.
+        var currentVersion = _promptProvider.PromptVersion;
         var agents = _agents;
-        if (agents is null)
+        if (agents is null || !string.Equals(_agentsPromptVersion, currentVersion, StringComparison.Ordinal))
         {
             lock (_initLock)
             {
-                agents = _agents ??= ConstructAgents();
+                if (_agents is null || !string.Equals(_agentsPromptVersion, _promptProvider.PromptVersion, StringComparison.Ordinal))
+                {
+                    if (_agents is not null)
+                    {
+                        _logger.LogInformation(
+                            "FoundryAgentFactory rebuilding agents — prompt version drifted from '{Cached}' to '{Current}' (admin override change).",
+                            _agentsPromptVersion, _promptProvider.PromptVersion);
+                    }
+                    _agents = ConstructAgents();
+                    _agentsPromptVersion = _promptProvider.PromptVersion;
+                }
+                agents = _agents;
             }
         }
 
@@ -85,6 +112,35 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
             : throw new ArgumentException(
                 $"Unknown agent name '{agentName}'. Expected one of: {string.Join(", ", AgentName.All)}.",
                 nameof(agentName));
+    }
+
+    // IFoundryAgentCacheInvalidator — evicts the agent cache for agentName
+    // so the next GetAgent call reconstructs all agents with the current
+    // (changed) prompt from IAgentPromptProvider. We null out the entire
+    // dictionary rather than patching individual entries because the Wizard
+    // agent embeds sub-agents as AIFunction wrappers: rebuilding one sub-
+    // agent requires re-wrapping it in the Wizard, so all-or-nothing is
+    // the correct granularity. The rebuild cost (one ConstructAgents call)
+    // is incurred at most once per admin override activation — negligible
+    // compared to the per-ask Foundry round-trip.
+    public void Invalidate(string agentName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
+
+        // Null the cache inside the lock so a concurrent GetAgent call
+        // either sees the old cache (races the nulling, fine) or triggers
+        // ConstructAgents (correct: the new prompt is live). There is no
+        // window where _agents is a partial/corrupt dictionary.
+        lock (_initLock)
+        {
+            if (_agents is not null && _agents.ContainsKey(agentName))
+            {
+                _agents = null;
+                _logger.LogInformation(
+                    "FoundryAgentFactory cache evicted for agent '{AgentName}' — will rebuild on next GetAgent call.",
+                    agentName);
+            }
+        }
     }
 
     private Dictionary<string, AIAgent> ConstructAgents()
@@ -101,39 +157,44 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory
                 $"{AiFoundryOptions.ProjectEndpointKey} is not a valid absolute URL: '{_options.ProjectEndpoint}'.");
         }
 
-        var projectClient = new AIProjectClient(endpoint, new DefaultAzureCredential());
+        var projectClient = new AIProjectClient(endpoint, Credentials.SharedAzureCredential.Instance);
         var result = new Dictionary<string, AIAgent>(StringComparer.Ordinal);
 
-        // The getMachineByTitle + searchCorpus function tools are shared
-        // across all four agents per ADR-0014.
+        // getMachineByTitle is shared across all four agents. searchCorpus
+        // is attached to the Wizard only — see the two-pass construction
+        // block below for rationale.
         // Microsoft.Extensions.AI.AIFunctionFactory wraps the typed C#
         // methods into AIFunctions with auto-generated JSON schema (from
         // [Description] attributes on the method + its arguments).
-        // searchCorpus is added in this PR (Phase 4 W4-1, build-spec §
-        // scope item 21) — RAG retrieval over the AI Search index
-        // defined by ADR-0021. Both tools are attached to every agent
-        // so any sub-agent's prompt can use either grounding surface
-        // as fits its question.
         //
-        // The same AIFunction instance is shared across every agent
-        // (see subAgentTools / wizardTools below) — the underlying
-        // tool objects (MachineGroundingTool, SearchCorpusTool) are
-        // stateless singletons so concurrent invocations across agents
-        // are safe.
+        // The same AIFunction instances are reused across agents: sub-agents
+        // share the getMachineByTitle reference; the Wizard references the
+        // same getMachineByTitle instance plus the searchCorpus instance
+        // (see wizardTools initialization below, + 2 = getMachineByTitle +
+        // searchCorpus). The underlying tool objects (MachineGroundingTool,
+        // SearchCorpusTool) are stateless singletons so concurrent
+        // invocations across agents are safe.
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
         var searchCorpus = AIFunctionFactory.Create(_searchCorpusTool.SearchCorpusAsync);
 
-        // Two-pass construction (Phase 4 W1-1):
-        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get
-        //            getMachineByTitle + searchCorpus. They never
-        //            dispatch to peers so they don't need each other's
-        //            function-tool wrappers.
-        //   Pass 2 — Wizard gets both grounding tools PLUS each
+        // Two-pass construction (Phase 4 W1-1, revised fix/wizard-citation-extraction):
+        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
+        //            getMachineByTitle. searchCorpus is NOT included
+        //            because sub-agent tool results execute in an internal
+        //            agent execution context whose FunctionResultContent
+        //            objects are not surfaced in the Wizard's
+        //            AgentResponse.Messages — ToolTraceCitationExtractor
+        //            cannot observe them. The Wizard calls searchCorpus itself (Step 4
+        //            of Wizard.md) and passes the retrieved context inline
+        //            to the sub-agent, ensuring SearchCorpusResult objects
+        //            appear in the Wizard's AgentResponse.Messages where
+        //            the extractor reads them.
+        //   Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
         //            function name defaults to the AIAgent's name
         //            (passed to AsAIAgent), which matches the routing
         //            table in Wizard.md.
-        AITool[] subAgentTools = [getMachineByTitle, searchCorpus];
+        AITool[] subAgentTools = [getMachineByTitle];
         var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
         var wizardTools = new List<AITool>(subAgentNames.Length + 2)
         {

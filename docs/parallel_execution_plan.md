@@ -1,3 +1,11 @@
+---
+status: Historical
+phase: Phase-1
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Parallel Execution Plan — Phase 1.1 → Phase 5
 
 > **Purpose:** the [phased build sequence](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/scraper_plan_v4.md) reads like waterfall (Phase 1 → 2 → 3 → 4 → 5). The reality is most of those have natural seams. This document identifies the seams, names two gating PRs that unlock everything downstream, and sequences five concurrent tracks so a single developer (with AI assistance) can move ~3x faster without compromising the quality bar.

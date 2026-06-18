@@ -114,6 +114,7 @@
         @* ── Shared: SuggestedRephrase (hidden when null) ────────────────── *@
         @if (_showRecoverySections && !string.IsNullOrWhiteSpace(Detail?.SuggestedRephrase))
         {
+            var rephrase = Detail.SuggestedRephrase; // capture for lambda
             <MudPaper Class="suggested-rephrase pa-3" Elevation="0"
                       data-testid="suggested-rephrase-section">
                 <MudStack Spacing="1">
@@ -125,9 +126,23 @@
                             Try asking:
                         </MudText>
                     </MudStack>
-                    <MudText Typo="Typo.body2" Class="suggested-rephrase-text">
-                        @Detail.SuggestedRephrase
-                    </MudText>
+                    @if (QuestionSelected.HasDelegate)
+                    {
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Default"
+                                   Class="suggested-rephrase-button"
+                                   OnClick="@(() => QuestionSelected.InvokeAsync(rephrase))"
+                                   aria-label="@($"Ask: {rephrase}")"
+                                   data-testid="suggested-rephrase-button">
+                            @rephrase
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="suggested-rephrase-text">
+                            @rephrase
+                        </MudText>
+                    }
                 </MudStack>
             </MudPaper>
         }
@@ -158,6 +173,12 @@
     // Optional: RetryAfterSeconds from DegradationContext, forwarded to
     // UpstreamThrottledView when the caller has it.
     [Parameter] public int? RetryAfterSeconds { get; set; }
+
+    // Optional: raised when the user clicks the SuggestedRephrase button.
+    // When a delegate is provided, SuggestedRephrase renders as a MudButton so
+    // the user can submit the rephrased question in one tap. When not provided
+    // (e.g., in standalone tests or static contexts), plain MudText is used.
+    [Parameter] public EventCallback<string> QuestionSelected { get; set; }
 
     // Derived: whether this category shows shared recovery sections
     // (MissingWhat, SuggestedRephrase, CommunityResourceCards).

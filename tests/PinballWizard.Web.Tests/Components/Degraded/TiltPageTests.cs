@@ -85,13 +85,16 @@ public sealed class TiltPageTests : AsyncBunitContext
     }
 
     [Fact]
-    public void TiltPage_Renders_TryAgain_Button()
+    public void TiltPage_TryAgain_IsAnchorToWizard_NotAClickHandler()
     {
         var cut = Render<TiltPage>();
 
-        // Assert — the "Try Again" action button is rendered.
-        var button = cut.Find("[data-testid='tilt-try-again']");
-        Assert.NotNull(button);
+        // Error surfaces stay static (no circuit dependency). The "Try Again"
+        // control must be a real anchor to /wizard, not an OnClick handler that
+        // is dead on a statically-rendered error page (ADR-0034 amendment).
+        var tryAgain = cut.Find("[data-testid='tilt-try-again']");
+        Assert.Equal("a", tryAgain.TagName, ignoreCase: true);
+        Assert.Equal("/wizard", tryAgain.GetAttribute("href"));
     }
 
     [Fact]

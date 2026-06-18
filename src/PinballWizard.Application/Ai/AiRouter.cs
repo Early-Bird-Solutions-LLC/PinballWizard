@@ -7,10 +7,12 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
@@ -72,6 +74,7 @@ public sealed class AiRouter : IAiRouter
     private readonly IDegradationContext _degradationContext;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
+    private readonly IRuntimeSettings? _runtimeSettings;
 
     public AiRouter(
         IFoundryAgentFactory agentFactory,
@@ -85,7 +88,8 @@ public sealed class AiRouter : IAiRouter
         IRefusalRecoveryService refusalRecovery,
         IDegradationContext degradationContext,
         IOptions<AiFoundryOptions> options,
-        ILogger<AiRouter> logger)
+        ILogger<AiRouter> logger,
+        IRuntimeSettings? runtimeSettings = null)
     {
         ArgumentNullException.ThrowIfNull(agentFactory);
         ArgumentNullException.ThrowIfNull(cache);
@@ -99,6 +103,11 @@ public sealed class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(degradationContext);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+
+        // Optional by design (PR-B1): hosts without the admin_settings
+        // container (standalone CLI, unit fixtures) run on IOptions
+        // defaults — identical behavior to no stored overrides.
+        _runtimeSettings = runtimeSettings;
 
         _agentFactory = agentFactory;
         _cache = cache;
@@ -114,7 +123,13 @@ public sealed class AiRouter : IAiRouter
         _logger = logger;
     }
 
-    public async Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken)
+    public Task<WizardAnswer> AnswerAsync(string question, CancellationToken cancellationToken)
+        => AnswerAsync(question, history: null, cancellationToken);
+
+    public async Task<WizardAnswer> AnswerAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
@@ -123,15 +138,32 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
+        var settings = await ResolveRuntimeSettingsAsync(cancellationToken).ConfigureAwait(false);
+        var trimmedHistory = TrimHistory(history, settings.MaxConversationTurns);
 
-        if (_cache.TryGet(normalized, promptVersion, out var cached))
+        // Multi-turn asks bypass the cache in BOTH directions (no read, no
+        // write below). The cache key is a pure function of the isolated
+        // question text; a follow-up like "what about its repair cost?"
+        // means different things in different conversations, so a cache hit
+        // would replay the wrong conversation's answer, and a write would
+        // poison the key for single-shot askers. Metered so the cost impact
+        // of uncacheable multi-turn traffic stays observable (ADR-0015
+        // amendment, 2026-06-11).
+        if (trimmedHistory is null && _cache.TryGet(normalized, promptVersion, out var cached))
         {
             PinballWizardTelemetry.AiCacheHits.Add(1);
             _logger.LogDebug("AiRouter cache hit for normalized question (PromptVersion={PromptVersion}).", promptVersion);
             return cached;
         }
 
-        PinballWizardTelemetry.AiCacheMisses.Add(1);
+        if (trimmedHistory is null)
+        {
+            PinballWizardTelemetry.AiCacheMisses.Add(1);
+        }
+        else
+        {
+            PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
+        }
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
@@ -140,8 +172,13 @@ public sealed class AiRouter : IAiRouter
         AgentResponse? response;
         try
         {
-            response = await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            response = trimmedHistory is null
+                ? await wizardAgent.RunAsync(question, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false)
+                : await wizardAgent.RunAsync(
+                        BuildConversationMessages(question, trimmedHistory),
+                        cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -196,7 +233,7 @@ public sealed class AiRouter : IAiRouter
         var elapsedMs = (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
         PinballWizardTelemetry.AiDurationMs.Record(elapsedMs);
 
-        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, cancellationToken)
+        var answer = await ApplyPostAgentGuardrailsAsync(response, normalized, promptVersion, wizardModel, trimmedHistory, settings, cancellationToken)
             .ConfigureAwait(false);
 
         // Cache successful answers only — refusals are not cached so a
@@ -207,7 +244,8 @@ public sealed class AiRouter : IAiRouter
         // transient call-level guard, not a stable signal about the
         // question's answerability. The cache key (normalized + promptVersion)
         // ensures a PromptVersion bump invalidates all cached answers.
-        if (!answer.IsRefusal)
+        // Multi-turn answers are never cached (see the bypass note above).
+        if (!answer.IsRefusal && trimmedHistory is null)
         {
             _cache.Store(normalized, promptVersion, answer);
         }
@@ -259,8 +297,14 @@ public sealed class AiRouter : IAiRouter
     // [EnumeratorCancellation] propagates CancellationToken through the
     // IAsyncEnumerable machinery so callers can cancel mid-iteration
     // (e.g., user navigates away before Final arrives).
+    public IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        CancellationToken cancellationToken)
+        => AnswerStreamingAsync(question, history: null, cancellationToken);
+
     public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
         string question,
+        IReadOnlyList<ConversationTurn>? history,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
@@ -270,6 +314,8 @@ public sealed class AiRouter : IAiRouter
 
         var normalized = Normalize(question);
         var promptVersion = _promptProvider.PromptVersion;
+        var settings = await ResolveRuntimeSettingsAsync(cancellationToken).ConfigureAwait(false);
+        var trimmedHistory = TrimHistory(history, settings.MaxConversationTurns);
 
         // Stopwatch started at entry so first_token_ms covers the full
         // caller-visible latency including cache lookup. Both cache-hit
@@ -282,7 +328,10 @@ public sealed class AiRouter : IAiRouter
         // Streaming a cached answer as multiple deltas would be misleading
         // (the deltas don't map to real model output). One TextDelta is
         // the honest contract for a cache-hit reply.
-        if (_cache.TryGet(normalized, promptVersion, out var cached))
+        // Multi-turn asks bypass the cache in both directions — same
+        // rationale as AnswerAsync (the key has no history component, so a
+        // hit would replay the wrong conversation's answer).
+        if (trimmedHistory is null && _cache.TryGet(normalized, promptVersion, out var cached))
         {
             PinballWizardTelemetry.AiCacheHits.Add(1);
             _logger.LogDebug("AiRouter cache hit for normalized question (PromptVersion={PromptVersion}).", promptVersion);
@@ -317,7 +366,14 @@ public sealed class AiRouter : IAiRouter
             yield break;
         }
 
-        PinballWizardTelemetry.AiCacheMisses.Add(1);
+        if (trimmedHistory is null)
+        {
+            PinballWizardTelemetry.AiCacheMisses.Add(1);
+        }
+        else
+        {
+            PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
+        }
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);
         var wizardModel = ResolveAgentModel(AgentName.Wizard);
@@ -350,7 +406,12 @@ public sealed class AiRouter : IAiRouter
         // Microsoft.Agents.AI 1.4.0 (SDK issue #2688); AggregateStreamAsync
         // handles reconstruction inline.
         var (accumulatedMessages, streamChunks, refusalFromException) =
-            await AggregateStreamAsync(wizardAgent, question, promptVersion, cancellationToken)
+            await AggregateStreamAsync(
+                    wizardAgent,
+                    question,
+                    trimmedHistory is null ? null : BuildConversationMessages(question, trimmedHistory),
+                    promptVersion,
+                    cancellationToken)
                 .ConfigureAwait(false);
 
         // Yield the buffered chunks (TextDelta, ToolCallStarted, ToolCallCompleted,
@@ -405,6 +466,8 @@ public sealed class AiRouter : IAiRouter
                 normalized,
                 promptVersion,
                 wizardModel,
+                trimmedHistory,
+                settings,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -425,8 +488,9 @@ public sealed class AiRouter : IAiRouter
 
         yield return new AnswerChunk.Final(answer);
 
-        // Cache write only on successful (non-refusal) answers.
-        if (!answer.IsRefusal)
+        // Cache write only on successful (non-refusal) single-shot answers
+        // (multi-turn answers are context-specific — see the bypass note).
+        if (!answer.IsRefusal && trimmedHistory is null)
         {
             _cache.Store(normalized, promptVersion, answer);
         }
@@ -439,8 +503,11 @@ public sealed class AiRouter : IAiRouter
     // in a safe context.
     //
     // Returns:
-    //   messages     — One ChatMessage per AgentResponseUpdate, preserving
-    //                  FunctionResultContent for the citation extractor.
+    //   messages     — ChatMessages reconstructed from the stream, with
+    //                  contiguous text-only updates coalesced into a single
+    //                  ChatMessage per run (see text-coalescing note below).
+    //                  FunctionResultContent entries are preserved verbatim
+    //                  so the citation extractor can iterate them.
     //   streamChunks — AnswerChunk events in arrival order: TextDelta (per
     //                  non-empty text update), ToolCallStarted (per first
     //                  FunctionCallContent sighting), ToolCallCompleted (per
@@ -450,6 +517,32 @@ public sealed class AiRouter : IAiRouter
     //   refusal      — Non-null only when a 429 was caught; caller emits
     //                  Refusal + Final and skips the guardrail pipeline.
     //
+    // WHY text coalescing matters (bug AB#259):
+    //   AgentResponse.Text (Microsoft.Agents.AI 1.4.0) concatenates the text
+    //   content of its ChatMessages with a newline separator between each
+    //   non-empty piece. When the stream produces one ChatMessage per model
+    //   token (e.g. "God", "zilla", " pin", "ball"), the reconstructed
+    //   AgentResponse.Text becomes "God\nzilla\n pin\nball" — and the browser
+    //   collapses those newlines to spaces, producing "God zilla pin ball".
+    //   The non-streaming AnswerAsync path is unaffected (whole messages from
+    //   the live response), which is why the eval harness never caught this.
+    //
+    //   Fix: maintain a pending-text StringBuilder. While updates carry only
+    //   TextContent (text-only updates), append to the builder without emitting
+    //   a ChatMessage yet. Flush the accumulated text as ONE ChatMessage when:
+    //     • a non-text update arrives (flush first, then handle the non-text
+    //       update as before), or
+    //     • the role changes between consecutive text-only updates, or
+    //     • the loop ends.
+    //   Result: each assistant text run (however many model tokens it spans)
+    //   becomes a single ChatMessage, and AgentResponse.Text has at most one
+    //   separator between the text run and any subsequent non-text content.
+    //
+    //   TextDelta chunk emission is UNCHANGED — the live token-by-token stream
+    //   to the browser still fires per update; only the reconstructed message
+    //   granularity changes. Tool-call dedup, citation extraction, and the 429
+    //   catch are all unaffected.
+    //
     // Wave 2 PR-S3 adds ToolCall/Citation chunk emission and interleaves them
     // with TextDelta chunks in streamChunks. The deduplication set (seenCallIds)
     // prevents double-emission when multiple updates carry the same call ID
@@ -458,10 +551,15 @@ public sealed class AiRouter : IAiRouter
     //
     // See DL-0003: true per-token delivery (no buffering) requires surfacing
     // the stream below the try/catch boundary — deferred to Wave 3.
+    // conversationMessages: non-null only for multi-turn asks — the full
+    // prior-turn ChatMessage list with the current question appended (built
+    // by BuildConversationMessages). Null selects the single-string overload
+    // so single-shot behavior is byte-for-byte unchanged.
     private async Task<(List<ChatMessage> messages, List<AnswerChunk> streamChunks, WizardAnswer? refusal)>
         AggregateStreamAsync(
             AIAgent wizardAgent,
             string question,
+            IReadOnlyList<ChatMessage>? conversationMessages,
             string promptVersion,
             CancellationToken cancellationToken)
     {
@@ -477,26 +575,58 @@ public sealed class AiRouter : IAiRouter
         var seenCallIds = new HashSet<string>(StringComparer.Ordinal);
         var completedCallIds = new HashSet<string>(StringComparer.Ordinal);
 
+        // Pending-text accumulator. Contiguous text-only updates are appended
+        // here and flushed as a single ChatMessage when a non-text update
+        // arrives, when the role changes, or at end-of-stream. This prevents
+        // AgentResponse.Text from inserting a newline between every model
+        // token (see "WHY text coalescing matters" above).
+        var pendingText = new StringBuilder();
+        ChatRole pendingRole = ChatRole.Assistant;
+
+        void FlushPendingText()
+        {
+            if (pendingText.Length > 0)
+            {
+                messages.Add(new ChatMessage(pendingRole, pendingText.ToString()));
+                pendingText.Clear();
+            }
+        }
+
         try
         {
-            await foreach (var update in wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
-                .ConfigureAwait(false))
+            var updates = conversationMessages is null
+                ? wizardAgent.RunStreamingAsync(question, cancellationToken: cancellationToken)
+                : wizardAgent.RunStreamingAsync(conversationMessages, cancellationToken: cancellationToken);
+
+            await foreach (var update in updates.ConfigureAwait(false))
             {
-                // Build a ChatMessage from this update so the reconstructed
-                // AgentResponse carries all FunctionResultContent entries.
-                // When Contents is already populated (Microsoft.Agents.AI 1.4.0
-                // sets Contents = [TextContent(text)] when constructed via
-                // AgentResponseUpdate(role, text)), do NOT add a second
-                // TextContent — that would double the text in AgentResponse.Text.
-                // The supplemental TextContent path handles SDK variants that
-                // populate Text without populating Contents.
-                var contentItems = new List<AIContent>();
-                if (update.Contents is { Count: > 0 })
+                // Determine whether this update is text-only or carries non-text
+                // content. Text arrives via two SDK paths:
+                //   (a) update.Contents = [TextContent(text)] — 1.4.0 default
+                //   (b) update.Text populated, Contents empty — older SDK variants
+                // A "text-only" update has either path (a) with every item being
+                // TextContent, or path (b) with non-empty Text.
+                // Non-text updates (FunctionCallContent, FunctionResultContent, or
+                // a mix of text and non-text AIContent) bypass the accumulator and
+                // are handled verbatim to preserve tool-call dedup and citation
+                // extraction exactly as before.
+
+                var updateRole = update.Role ?? ChatRole.Assistant;
+
+                // Check whether Contents, if present, contains any non-text items.
+                bool hasNonTextContent = update.Contents is { Count: > 0 }
+                    && update.Contents.Any(c => c is not TextContent);
+
+                if (hasNonTextContent)
                 {
-                    contentItems.AddRange(update.Contents);
+                    // Mixed or pure non-text update. Flush any pending text first
+                    // so ordering in the messages list is preserved.
+                    FlushPendingText();
+
+                    var contentItems = new List<AIContent>(update.Contents!);
 
                     // Inspect each content item for ToolCall/Result signals.
-                    foreach (var content in update.Contents)
+                    foreach (var content in update.Contents!)
                     {
                         if (content is FunctionCallContent call)
                         {
@@ -568,23 +698,57 @@ public sealed class AiRouter : IAiRouter
                             }
                         }
                     }
-                }
-                else if (!string.IsNullOrEmpty(update.Text))
-                {
-                    contentItems.Add(new TextContent(update.Text));
-                }
 
-                if (contentItems.Count > 0)
+                    messages.Add(new ChatMessage(updateRole, contentItems));
+                }
+                else
                 {
-                    var role = update.Role ?? ChatRole.Assistant;
-                    messages.Add(new ChatMessage(role, contentItems));
+                    // Text-only update (path a or b). Accumulate into the pending
+                    // builder rather than creating a new ChatMessage immediately.
+                    // Flush first if the role has changed (rare, but theoretically
+                    // possible if the SDK emits a non-Assistant text update).
+                    if (pendingText.Length > 0 && updateRole != pendingRole)
+                        FlushPendingText();
+
+                    pendingRole = updateRole;
+
+                    // Determine the text fragment from whichever SDK path populated it.
+                    // Path (a): Contents = [TextContent(text)] — use the TextContent value.
+                    // Path (b): Contents empty, update.Text populated — use update.Text.
+                    string? fragment = null;
+                    if (update.Contents is { Count: > 0 })
+                    {
+                        // All items are TextContent (hasNonTextContent == false).
+                        // Concatenate them in case multiple TextContent items appear
+                        // in a single update (defensive; SDK normally emits one).
+                        var sb = new StringBuilder();
+                        foreach (var c in update.Contents)
+                        {
+                            if (c is TextContent tc && !string.IsNullOrEmpty(tc.Text))
+                                sb.Append(tc.Text);
+                        }
+                        fragment = sb.Length > 0 ? sb.ToString() : null;
+                    }
+                    else if (!string.IsNullOrEmpty(update.Text))
+                    {
+                        fragment = update.Text;
+                    }
+
+                    if (fragment is not null)
+                        pendingText.Append(fragment);
                 }
 
                 // Collect non-empty text fragments as TextDelta chunks,
                 // interleaved with ToolCall/Citation chunks in arrival order.
+                // This emission is per-update (unchanged) — the live browser
+                // animation depends on per-token granularity here.
                 if (!string.IsNullOrEmpty(update.Text))
                     streamChunks.Add(new AnswerChunk.TextDelta(update.Text));
             }
+
+            // Flush any text that accumulated after the last non-text update
+            // (or the entire text run when there were no non-text updates at all).
+            FlushPendingText();
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -729,6 +893,8 @@ public sealed class AiRouter : IAiRouter
         string normalized,
         string promptVersion,
         string wizardModel,
+        IReadOnlyList<ConversationTurn>? history,
+        RuntimeSettingsSnapshot settings,
         CancellationToken cancellationToken)
     {
         // Wave 2 PR-R2: IRefusalRecoveryService.BuildRecoveryAsync is called on
@@ -745,7 +911,15 @@ public sealed class AiRouter : IAiRouter
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var responseText = response?.Text ?? string.Empty;
+        // The Web renderer is plain-text by design (no MarkupString — XSS
+        // surface stays zero, ADR-0026), so inline markdown links the model
+        // emits ("[Source: OPDB](https://…)") would display as raw syntax.
+        // Strip them to their labels: provenance display belongs to the
+        // Sources cards, which are built from tool-trace citations extracted
+        // off the AgentResponse object below — this transform cannot lose a
+        // citation. Decision: Jim, 2026-06-10 (option a — strip inline,
+        // rely on Sources cards).
+        var responseText = StripInlineMarkdownLinks(response?.Text ?? string.Empty);
 
         // W2-1: which sub-agent (if any) the Wizard dispatched to.
         // Read once from the trace and reused at every downstream
@@ -789,7 +963,7 @@ public sealed class AiRouter : IAiRouter
         // RefusalCategory.CostCeilingHit. Phase 5+ multi-turn will
         // also check before continuing the next turn; the ceiling
         // value (PerCallCostCeilingUsdCents) carries forward unchanged.
-        if (costUsdCents > _options.PerCallCostCeilingUsdCents)
+        if (costUsdCents > settings.PerCallCostCeilingUsdCents)
         {
             PinballWizardTelemetry.AiRefusals.Add(
                 1,
@@ -799,7 +973,7 @@ public sealed class AiRouter : IAiRouter
             _logger.LogInformation(
                 "AiRouter refused on cost ceiling: cost={CostUsdCents:F2}c ceiling={Ceiling}c model={Model} subAgent={SubAgent}",
                 costUsdCents,
-                _options.PerCallCostCeilingUsdCents,
+                settings.PerCallCostCeilingUsdCents,
                 wizardModel,
                 subAgentUsed);
 
@@ -843,10 +1017,34 @@ public sealed class AiRouter : IAiRouter
                 new KeyValuePair<string, object?>("source", _regexLegacyExtractor.SourceTag));
         }
 
+        // Multi-turn citation inheritance (2026-06-11 design). A grounded
+        // follow-up that the model answers from conversation context fires
+        // no retrieval tool, so the extractor sees zero citations — and
+        // without intervention the confidence gate (citation-coverage
+        // signal) or the NoCitation gate below would refuse a legitimate
+        // answer. The grounding for such an answer IS the prior turn's
+        // cited material, so we inherit the most recent cited turn's
+        // citations, flagged Inherited=true so the UI can label them.
+        // Placement matters: this must run BEFORE Compute() so inherited
+        // citations feed the citation-coverage signal, not just the binary
+        // gate. Single-shot behavior is untouched (history is null).
+        if (citations.Count == 0 && history is { Count: > 0 })
+        {
+            var donor = history.LastOrDefault(t => t.Citations is { Count: > 0 });
+            if (donor is not null)
+            {
+                citations = donor.Citations!.Select(c => c with { Inherited = true }).ToList();
+                PinballWizardTelemetry.AiCitationsInherited.Add(citations.Count);
+                _logger.LogDebug(
+                    "AiRouter inherited {Count} citations from the prior conversation turn (no retrieval tool fired this turn).",
+                    citations.Count);
+            }
+        }
+
         var signals = _confidenceCalculator.Compute(responseText, citations);
         var confidence = signals.Composite();
 
-        if (confidence < _options.ConfidenceThreshold)
+        if (confidence < settings.ConfidenceThreshold)
         {
             var category = _confidenceCalculator.CategorizeRefusal(signals);
 
@@ -858,7 +1056,7 @@ public sealed class AiRouter : IAiRouter
             _logger.LogInformation(
                 "AiRouter refused below-threshold answer: confidence={Confidence:F3} threshold={Threshold:F3} category={Category} subAgent={SubAgent} signals=[r={R:F2} m={M:F2} c={C:F2}]",
                 confidence,
-                _options.ConfidenceThreshold,
+                settings.ConfidenceThreshold,
                 category,
                 subAgentUsed,
                 signals.RetrievalSimilarity,
@@ -956,6 +1154,107 @@ public sealed class AiRouter : IAiRouter
             FoundryThreadId: null,
             RefusalDetail: null,
             Degradation: _degradationContext.Snapshot());
+    }
+
+    // Caps the prior turns sent to the model at MaxConversationTurns,
+    // dropping the OLDEST first — recency carries the disambiguating
+    // context a follow-up needs ("it" almost always binds to the last
+    // answer, not the first). Returns null for no-history so callers can
+    // branch single-shot behavior on a single null check.
+    // Effective settings for THIS ask (PR-B1): stored admin override ->
+    // IOptions default. One snapshot per ask keeps a single answer
+    // internally consistent even if an admin saves mid-stream.
+    private async Task<RuntimeSettingsSnapshot> ResolveRuntimeSettingsAsync(CancellationToken cancellationToken)
+    {
+        if (_runtimeSettings is not null)
+        {
+            return await _runtimeSettings.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // No IRuntimeSettings (standalone CLI, unit fixtures): build directly
+        // from IOptions. Retrieval defaults come from RetrievalOptions record
+        // defaults so the fallback path stays in sync with the stored-override
+        // path without duplicating magic numbers here.
+        var retrievalDefaults = new RetrievalOptions();
+        return new RuntimeSettingsSnapshot(
+            _options.ConfidenceThreshold,
+            _options.PerCallCostCeilingUsdCents,
+            _options.MaxConversationTurns,
+            retrievalDefaults.TopK,
+            retrievalDefaults.MinimumScore);
+    }
+
+    private IReadOnlyList<ConversationTurn>? TrimHistory(IReadOnlyList<ConversationTurn>? history, int maxTurns)
+    {
+        if (history is null || history.Count == 0)
+        {
+            return null;
+        }
+
+        var max = maxTurns;
+        return history.Count <= max
+            ? history
+            : history.Skip(history.Count - max).ToList();
+    }
+
+    // Builds the multi-turn message list for the AIAgent Run* overloads
+    // that accept IEnumerable<ChatMessage>: alternating user/assistant
+    // pairs for each prior turn, then the current question as the final
+    // user message. Refusal turns are excluded by the CLIENT (it only
+    // records successful turns into history) — the router trusts the
+    // shape it is given, bounded by TrimHistory and the per-field cap.
+    //
+    // Per-field cap: history is client-supplied, so each Question /
+    // AnswerText is truncated to MaxConversationTurnContentChars before it
+    // reaches the model. A whole-request size guard (API layer) cannot do
+    // this job — it bounds the body, not a field, so a single turn could
+    // smuggle a near-body-sized adversarial payload past it. Truncation
+    // costs context, never correctness: the guardrail pipeline still runs
+    // in full on the model's output.
+    private List<ChatMessage> BuildConversationMessages(
+        string question,
+        IReadOnlyList<ConversationTurn> history)
+    {
+        var cap = _options.MaxConversationTurnContentChars;
+        var messages = new List<ChatMessage>((history.Count * 2) + 1);
+        foreach (var turn in history)
+        {
+            messages.Add(new ChatMessage(ChatRole.User, Truncate(turn.Question, cap)));
+            messages.Add(new ChatMessage(ChatRole.Assistant, Truncate(turn.AnswerText, cap)));
+        }
+
+        messages.Add(new ChatMessage(ChatRole.User, question));
+        return messages;
+    }
+
+    private string Truncate(string value, int cap)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= cap)
+        {
+            return value;
+        }
+
+        _logger.LogDebug(
+            "AiRouter truncated a conversation-turn field from {Length} to {Cap} chars (MaxConversationTurnContentChars).",
+            value.Length,
+            cap);
+        return value[..cap];
+    }
+
+    // Markdown links in answer prose render as raw "[label](url)" syntax in
+    // the plain-text TokenRenderer. Reduce each to its label; URLs stay
+    // available via the Sources cards (tool-trace citations). `internal` so
+    // tests can pin the transform without a full AiRouter.
+    private static readonly System.Text.RegularExpressions.Regex MarkdownLinkRegex =
+        new(@"\[([^\]]*)\]\(\s*[^)\s]*\s*\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    internal static string StripInlineMarkdownLinks(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("](", StringComparison.Ordinal))
+        {
+            return text;
+        }
+        return MarkdownLinkRegex.Replace(text, "$1");
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin

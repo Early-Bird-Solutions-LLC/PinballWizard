@@ -1,23 +1,42 @@
 @page "/admin/machines"
 @layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
 
-@* AdminMachines — /admin/machines machine catalog list (PR-Q2 Wave 3 skeleton).
+@* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).
  *
- * Renders a MudDataGrid of pinball machines from the catalog. No real data
- * transport yet — the grid binds to an empty list with an empty-state message.
- * A follow-up PR will wire the IMachineRepository query here.
+ * Loads all manufacturer rollup docs via ICatalogStatsReadRepository.StreamAllManufacturersAsync
+ * (bounded ~8-9 point reads, ADR-0036 compliant). Flattens to per-machine rows;
+ * computes CatalogHealth.Evaluate per row.
  *
- * MachineCatalogRow is a nested record representing a catalog entry.
- * Columns: Title, Manufacturer, Year, Source.
+ * Group-by axis is selected by in-circuit OnClick buttons (native client-side
+ * grouping — no query param, no page reload). MudDataGrid receives the active
+ * axis column with Grouping="true"; all other groupable columns have
+ * Grouping="false". The axis switch mutates _activeAxis and the grid regroups
+ * in place on the shared circuit.
  *
- * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
+ * Interactive page (@rendermode InteractiveServer) per the ADR-0034 amendment
+ * (2026-06-17) — the sortable/filterable/groupable grid is the showcase data
+ * surface; AdminLayout providers are pinned interactive to match.
  *
- * Auth: protected by the global FallbackPolicy — see AdminDashboard.razor.
+ * Health column = MudChip (Color.Error / Color.Warning / Color.Success) — no row
+ * background tinting per the design-review accessibility/contrast decision.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/machines)
+ * ADR-0034  — admin per-need render mode (this page is interactive)
+ * ADR-0036  — Cosmos read-access standard (Tier-1 reads only)
  *@
+
+@inject ICatalogStatsReadRepository Stats
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject ILogger<AdminMachines> Logger
 
 <PageTitle>Machine Catalog — PinballWizard Admin</PageTitle>
 
@@ -25,9 +44,46 @@
     <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
 
     <MudText Typo="Typo.h4" GutterBottom="true">Machine Catalog</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
         All pinball machines indexed across manufacturers and OPDB.
     </MudText>
+
+    <MudStack Row="true" Spacing="1" Class="mb-4" data-testid="groupby-selector">
+        @foreach (var axis in _axes)
+        {
+            var isActive = _activeAxis == axis.Value;
+            <MudButton OnClick="@(() => _activeAxis = axis.Value)"
+                       Variant="@(isActive ? Variant.Filled : Variant.Outlined)"
+                       Color="@(isActive ? Color.Primary : Color.Default)"
+                       Size="Size.Small">
+                @axis.Label
+            </MudButton>
+        }
+    </MudStack>
+
+    @if (_asOf is not null)
+    {
+        <MudText Typo="Typo.caption"
+                 Color="Color.Tertiary"
+                 Class="mb-4"
+                 data-testid="catalog-as-of">
+            Catalog as of @_asOf.Value.ToString("u") (UTC)
+        </MudText>
+    }
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="catalog-load-failed">
+            The machine catalog could not be loaded. Please refresh the page or check Cosmos
+            connectivity. If the problem persists, verify the catalog stats container is
+            populated by running <code>--build-catalog</code>.
+        </MudAlert>
+    }
 
     <MudDataGrid T="MachineCatalogRow"
                  Items="@_machines"
@@ -35,47 +91,238 @@
                  Striped="true"
                  Dense="true"
                  Elevation="2"
+                 Groupable="true"
+                 GroupExpanded="true"
+                 RowClick="@OnRowClick"
                  data-testid="admin-machines-grid">
 
         <Columns>
+            @* Each groupable column has Grouping="true" only when it is the active
+             * axis. Exactly one column is active per render, determined by the
+             * circuit's `_activeAxis` state (set by the in-circuit group-by buttons).
+             *
+             * GroupTemplate overrides MudDataGrid's default group-header rendering
+             * (<span style="font-weight:bold">) to fix a WCAG 2.1 AA color-contrast
+             * failure. The admin layout uses IsDarkMode="true" which SSR-injects
+             * --mud-palette-background-gray: rgba(39,39,47,1) onto the group-row <td>.
+             * MudBlazor.min.css is not loaded by the test host, so the <body> colour
+             * rule (color: var(--mud-palette-text-primary)) never fires; the browser
+             * defaults to black text on a near-black background (1:1 contrast).
+             *
+             * Fix: set color: var(--mud-palette-text-primary) explicitly on the
+             * group-label span. The CSS variable IS defined in the SSR <style> tag
+             * (MudThemeProvider pre-renders it), so it resolves to the theme's light
+             * text colour (~70% white) in both the test host and production. *@
+            <PropertyColumn Property="x => x.Manufacturer"
+                            Title="Manufacturer"
+                            Groupable="true"
+                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
+            <PropertyColumn Property="x => x.HealthLabel"
+                            Title="Health Group"
+                            Groupable="true"
+                            Grouping="@(_activeAxis == GroupByAxis.Health)"
+                            Hidden="@(_activeAxis != GroupByAxis.Health)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Health Group: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
+            <PropertyColumn Property="x => x.Franchise"
+                            Title="Franchise"
+                            Groupable="true"
+                            Grouping="@(_activeAxis == GroupByAxis.Franchise)"
+                            Hidden="@(_activeAxis != GroupByAxis.Franchise)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Franchise: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
+            <PropertyColumn Property="x => x.YearLabel"
+                            Title="Year"
+                            Groupable="true"
+                            Grouping="@(_activeAxis == GroupByAxis.Year)"
+                            Sortable="true">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Year: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
+            <PropertyColumn Property="x => x.Source"
+                            Title="Source"
+                            Groupable="true"
+                            Grouping="@(_activeAxis == GroupByAxis.Source)"
+                            Hidden="@(_activeAxis != GroupByAxis.Source)">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Source: @context.Grouping.Key</MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
-            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer" />
-            <PropertyColumn Property="x => x.Year" Title="Year" />
-            <PropertyColumn Property="x => x.Source" Title="Source" />
+            <PropertyColumn Property="x => x.Edition" Title="Edition" />
+            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" />
+            <TemplateColumn Title="Health">
+                <CellTemplate>
+                    @foreach (var flag in context.Item.HealthFlags)
+                    {
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@HealthFlagColor(flag)"
+                                 Variant="Variant.Filled"
+                                 Class="mr-1">
+                            @flag.ToString()
+                        </MudChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
         </Columns>
 
         <NoRecordsContent>
-            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1" data-testid="admin-machines-empty">
-                    No machines in catalog
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
-                </MudText>
-            </MudStack>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-machines-empty">
+                        No machines in catalog
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
+                    </MudText>
+                </MudStack>
+            }
         </NoRecordsContent>
 
     </MudDataGrid>
 </MudContainer>
 
 @code {
-    // Placeholder row type — mirrors the machines Cosmos container shape.
-    // No deps on Infrastructure; real transport arrives in a follow-up PR.
-    private sealed record MachineCatalogRow(
-        string Title,
-        string Manufacturer,
-        string Year,
-        string Source);
+    // ── Axis enum + registry ───────────────────────────────────────────────────
 
-    // Empty list — grid renders the empty state.
-    private readonly IEnumerable<MachineCatalogRow> _machines = [];
+    private enum GroupByAxis { Manufacturer, Health, Franchise, Year, Source }
+
+    private sealed record AxisDef(string Key, GroupByAxis Value, string Label);
+
+    private static readonly AxisDef[] _axes =
+    [
+        new("manufacturer", GroupByAxis.Manufacturer, "Manufacturer"),
+        new("health",        GroupByAxis.Health,       "Health"),
+        new("franchise",     GroupByAxis.Franchise,    "Franchise"),
+        new("year",          GroupByAxis.Year,         "Year"),
+        new("source",        GroupByAxis.Source,       "Source"),
+    ];
+
+    // ── Row model ──────────────────────────────────────────────────────────────
+    private sealed record MachineCatalogRow(
+        string MachineId,
+        string Manufacturer,
+        string Title,
+        string Edition,
+        string YearLabel,       // string so it groups as "2024" not int bucket
+        int    DocCount,
+        string HealthLabel,     // dominant flag as short string for grouping
+        string Franchise,       // GroupId or "(none)"
+        string Source,          // "OPDB only" | manufacturer key
+        IReadOnlyList<CatalogHealthFlag> HealthFlags);
+
+    // ── State ──────────────────────────────────────────────────────────────────
+    private List<MachineCatalogRow> _machines = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+    private DateTimeOffset? _asOf;
+    private GroupByAxis _activeAxis = GroupByAxis.Manufacturer;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
         new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
         new BreadcrumbItem("Machines", href: "/admin/machines", icon: Icons.Material.Filled.SportsBaseball),
     ];
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var rows = new List<MachineCatalogRow>();
+            DateTimeOffset? minAsOf = null;
+
+            await foreach (var mfr in Stats.StreamAllManufacturersAsync(cts.Token))
+            {
+                if (minAsOf is null || mfr.AsOfUtc < minAsOf)
+                    minAsOf = mfr.AsOfUtc;
+
+                foreach (var machine in mfr.Machines)
+                {
+                    // Siblings = same GroupId within the same manufacturer.
+                    var siblings = machine.GroupId is not null
+                        ? mfr.Machines
+                              .Where(m => m.MachineId != machine.MachineId
+                                       && m.GroupId   == machine.GroupId)
+                              .ToList()
+                        : (IReadOnlyList<MachineDocStats>)[];
+
+                    var flags = CatalogHealth.Evaluate(machine, siblings);
+
+                    rows.Add(new MachineCatalogRow(
+                        MachineId:   machine.MachineId,
+                        Manufacturer: mfr.Manufacturer,
+                        Title:       machine.Title,
+                        Edition:     machine.EditionLabel ?? string.Empty,
+                        YearLabel:   machine.Year?.ToString() ?? "Unknown",
+                        DocCount:    machine.DocCount,
+                        HealthLabel: HealthLabel(flags),
+                        Franchise:   machine.GroupId ?? "(none)",
+                        Source:      machine.IsOpdbOnly ? "OPDB only" : mfr.Manufacturer,
+                        HealthFlags: flags));
+                }
+            }
+
+            _machines = rows;
+            _asOf     = minAsOf;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin machine catalog load timed out after 30 s.");
+            Snackbar.Add("Catalog load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin machine catalog.");
+            Snackbar.Add($"Failed to load catalog: {ex.Message}", Severity.Error);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ── Event handlers ─────────────────────────────────────────────────────────
+    private void OnRowClick(DataGridRowClickEventArgs<MachineCatalogRow> args)
+    {
+        var row = args.Item;
+        Nav.NavigateTo($"/admin/machines/{row.MachineId}?mfr={Uri.EscapeDataString(row.Manufacturer)}");
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    // Short string for the dominant health flag — used as the group label when
+    // grouping by health axis.
+    private static string HealthLabel(IReadOnlyList<CatalogHealthFlag> flags) =>
+        flags.Count == 0 || (flags.Count == 1 && flags[0] == CatalogHealthFlag.Ok)
+            ? "OK"
+            : flags[0] switch
+            {
+                CatalogHealthFlag.Empty      => "Empty",
+                CatalogHealthFlag.NoManual   => "No manual",
+                CatalogHealthFlag.EditionGap => "Edition gap",
+                _                            => "OK",
+            };
+
+    // Map health flags to MudBlazor Color tokens — delegated to the shared helper
+    // so a new flag only requires one update in CatalogHealthColors (ADR-0008 / FE-08).
+    private static Color HealthFlagColor(CatalogHealthFlag flag) =>
+        CatalogHealthColors.ForFlag(flag);
 }

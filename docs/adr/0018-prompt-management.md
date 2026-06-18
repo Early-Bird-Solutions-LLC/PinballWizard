@@ -217,3 +217,32 @@ prompt changes:
 - [guardrails.md](../guardrails.md) § Run-time triggers — 5%
   citation-accuracy regression deploy-block
 - [vision.md](../vision.md) — showcase posture this ADR serves
+
+## Follow-up 2026-06-12 — runtime prompt overrides (admin settings PR-B3)
+
+The locked decision stands amended, not reversed: **embedded-resource
+markdown prompts in the Application csproj remain the defaults and the
+version-zero source of truth in git, and the Foundry portal remains
+forbidden.** What changes: an `admin_prompts` Cosmos container MAY carry
+per-agent override versions, edited through `/admin/settings` (GlobalAdmin
+role). Resolution order: active Cosmos override → embedded resource.
+
+Boundaries that keep this within the ADR's intent:
+
+- One active version per agent, enforced by the repository
+  (`ActivateAsync` demotes siblings atomically from the caller's view).
+  New versions save INACTIVE — activation is a deliberate second step.
+- Deactivation reverts to the embedded default; the git prompt is never
+  unreachable.
+- `IAgentPromptProvider.PromptVersion` composes the embedded version with
+  active overrides (`v4.2026.05+Wizard.v2`, alphabetical) — the semantic
+  cache keys on it, so a prompt change invalidates cached answers, and
+  `FoundryAgentFactory` rebuilds agents on version drift (the
+  cross-process path: the Web process writes; the Api converges within
+  the provider's ~2-minute version-refresh TTL).
+- An unreachable override store degrades to the embedded default with a
+  warning — visibly, never silently (invariant #17).
+
+The eval harness should be run after any production prompt activation;
+overrides are ops tuning, not a bypass of prompt review — substantial
+prompt changes still belong in git as new embedded versions.

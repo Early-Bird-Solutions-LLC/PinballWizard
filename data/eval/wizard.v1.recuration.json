@@ -1,17 +1,17 @@
 {
-  "recurated_at_utc": "2026-05-08T19:18:49.1886997+00:00",
-  "cosmos_endpoint": "https://pinwiz-cosmos-dev-hlpz4.documents.azure.com:443/",
+  "recurated_at_utc": "2026-05-19T00:22:31.5599218+00:00",
+  "cosmos_endpoint": "https://pinwiz-cosmos-dev-buutj.documents.azure.com:443/",
   "cosmos_database": "pinwiz",
   "cosmos_container": "machines",
-  "jsonl_sha256_before": "c44bc0d6301ffb6a",
+  "jsonl_sha256_before": "e11b8895d1c154a2",
   "script_sha256": "0cde680fbf636f02",
   "counts": {
     "processed": 30,
-    "recurated": 3,
-    "unchanged": 5,
+    "recurated": 4,
+    "unchanged": 19,
     "skipped_out_of_scope": 4,
-    "skipped_no_match": 15,
-    "skipped_mfg_mismatch": 3,
+    "skipped_no_match": 3,
+    "skipped_mfg_mismatch": 0,
     "manufacturer_unconstrained": 0
   },
   "outcomes": [
@@ -19,19 +19,25 @@
       "id": "ev-rules-0001",
       "curated_title": "Foo Fighters",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GpeoL-MyNPq",
+      "status": "unchanged"
     },
     {
       "id": "ev-rules-0002",
       "curated_title": "Stranger Things",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "Gzy89-MNEeO",
+      "status": "unchanged"
     },
     {
       "id": "ev-rules-0003",
       "curated_title": "Godzilla",
       "expected_manufacturer": "stern",
-      "status": "mfg_mismatch"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GweeP-MW95j",
+      "status": "unchanged"
     },
     {
       "id": "ev-rules-0004",
@@ -39,7 +45,7 @@
       "expected_manufacturer": "stern",
       "resolved_manufacturer": "stern",
       "resolved_opdb_id": "G4yZN-MDEP7",
-      "status": "recurated"
+      "status": "unchanged"
     },
     {
       "id": "ev-rules-0005",
@@ -67,31 +73,41 @@
       "id": "ev-rules-0008",
       "curated_title": "AC/DC",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "G43W4-MXrPx",
+      "status": "recurated"
     },
     {
       "id": "ev-rules-0009",
       "curated_title": "Metallica",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GRBE4-MJ9rE",
+      "status": "recurated"
     },
     {
       "id": "ev-rules-0010",
       "curated_title": "Rush",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "G2Lkd-MNEdK",
+      "status": "unchanged"
     },
     {
       "id": "ev-valuation-0001",
       "curated_title": "Foo Fighters",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GpeoL-MyNPq",
+      "status": "unchanged"
     },
     {
       "id": "ev-valuation-0002",
       "curated_title": "Stranger Things",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "Gzy89-MNEeO",
+      "status": "unchanged"
     },
     {
       "id": "ev-valuation-0003",
@@ -105,7 +121,9 @@
       "id": "ev-valuation-0004",
       "curated_title": "Godzilla",
       "expected_manufacturer": "stern",
-      "status": "mfg_mismatch"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GweeP-MW95j",
+      "status": "recurated"
     },
     {
       "id": "ev-valuation-0005",
@@ -117,7 +135,7 @@
       "expected_manufacturer": "stern",
       "resolved_manufacturer": "stern",
       "resolved_opdb_id": "G4yZN-MDEP7",
-      "status": "recurated"
+      "status": "unchanged"
     },
     {
       "id": "ev-valuation-0007",
@@ -137,7 +155,9 @@
       "id": "ev-valuation-0009",
       "curated_title": "Rush",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "G2Lkd-MNEdK",
+      "status": "unchanged"
     },
     {
       "id": "ev-valuation-0010",
@@ -147,19 +167,25 @@
       "id": "ev-repair-0001",
       "curated_title": "Foo Fighters",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GpeoL-MyNPq",
+      "status": "unchanged"
     },
     {
       "id": "ev-repair-0002",
       "curated_title": "Stranger Things",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "Gzy89-MNEeO",
+      "status": "unchanged"
     },
     {
       "id": "ev-repair-0003",
       "curated_title": "Godzilla",
       "expected_manufacturer": "stern",
-      "status": "mfg_mismatch"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "GweeP-MW95j",
+      "status": "unchanged"
     },
     {
       "id": "ev-repair-0004",
@@ -167,7 +193,7 @@
       "expected_manufacturer": "stern",
       "resolved_manufacturer": "stern",
       "resolved_opdb_id": "G4yZN-MDEP7",
-      "status": "recurated"
+      "status": "unchanged"
     },
     {
       "id": "ev-repair-0005",
@@ -181,7 +207,9 @@
       "id": "ev-repair-0006",
       "curated_title": "AC/DC",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "G43W4-MXrPx",
+      "status": "recurated"
     },
     {
       "id": "ev-repair-0007",
@@ -193,7 +221,9 @@
       "id": "ev-repair-0008",
       "curated_title": "Rush",
       "expected_manufacturer": "stern",
-      "status": "no_match"
+      "resolved_manufacturer": "stern",
+      "resolved_opdb_id": "G2Lkd-MNEdK",
+      "status": "unchanged"
     },
     {
       "id": "ev-repair-0009",

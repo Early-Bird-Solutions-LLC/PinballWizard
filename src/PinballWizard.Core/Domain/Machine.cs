@@ -36,6 +36,20 @@ public sealed class Machine : IEntity
     [JsonPropertyName("title")]
     public required string Title { get; set; }
 
+    /// <summary>
+    /// OPDB group segment — the leading part of the OPDB ID before the
+    /// first hyphen (e.g. <c>GweeP</c> for "Godzilla (Pro)"
+    /// <c>GweeP-MW95j</c>). A <em>relational</em> key for discovering
+    /// sibling machines of the same title (different editions / a
+    /// cross-year reissue), NOT a merge key — every base record stays a
+    /// distinct Machine per
+    /// <see href="../../../docs/adr/0029-version-aware-answering.md">ADR-0029</see>.
+    /// Null when the OPDB ID has no derivable segment (defensive only —
+    /// well-formed OPDB IDs always do).
+    /// </summary>
+    [JsonPropertyName("groupId")]
+    public string? GroupId { get; set; }
+
     /// <summary>Year the machine was released. Null if unknown.</summary>
     [JsonPropertyName("year")]
     public int? Year { get; set; }
@@ -51,6 +65,24 @@ public sealed class Machine : IEntity
     /// <summary>Editions (Pro / Premium / LE / Vault, etc.) shipped under this OPDB ID.</summary>
     [JsonPropertyName("editions")]
     public List<MachineEdition> Editions { get; set; } = [];
+
+    /// <summary>
+    /// Edition-qualified OPDB label for this base when it shares a franchise
+    /// (GroupId) with sibling bases — e.g. "Pro", "Premium/LE". Derived from the
+    /// parenthetical of OPDB's edition-qualified name. Null for singleton machines.
+    /// NOT the Title — Title stays the clean franchise name per ADR-0029 D1.
+    /// </summary>
+    [JsonPropertyName("editionLabel")]
+    public string? EditionLabel { get; set; }
+
+    /// <summary>
+    /// Normalized edition tokens this base answers to — e.g. ["pro"] for the Pro
+    /// base, ["premium","le","70th"] for the Premium/LE base (folded from its
+    /// alias editions). The reliable per-base discriminator the linker matches a
+    /// document's edition token against (NOT Title). Empty for singletons.
+    /// </summary>
+    [JsonPropertyName("editionTokens")]
+    public List<string> EditionTokens { get; set; } = [];
 
     /// <summary>Manufacturer-specific identifiers — e.g., {"stern": "stranger-things", "jjp": "..."}.</summary>
     [JsonPropertyName("manufacturerSlugs")]
@@ -119,10 +151,11 @@ public sealed class MachineEdition
 
     /// <summary>
     /// OPDB record URL for this edition (e.g.,
-    /// <c>https://opdb.org/machines/GRBN-MQR4P-A97X1</c>). Populated
-    /// alongside <see cref="OpdbAliasId"/>. The base machine's
-    /// <c>OpdbSourceUrl</c> on <see cref="Machine"/> covers the parent
-    /// record; this field covers the alias.
+    /// <c>https://opdb.org/search?q=GRBN-MQR4P-A97X1</c> — opdb.org has
+    /// no /machines/{opdb_id} route; search-by-id is the durable deep
+    /// link). Populated alongside <see cref="OpdbAliasId"/>. The base
+    /// machine's <c>OpdbSourceUrl</c> on <see cref="Machine"/> covers
+    /// the parent record; this field covers the alias.
     /// </summary>
     [JsonPropertyName("opdbSourceUrl")]
     public string? OpdbSourceUrl { get; set; }

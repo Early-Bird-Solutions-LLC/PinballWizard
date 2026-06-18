@@ -1,3 +1,11 @@
+---
+status: Active
+phase: Phase-5
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Community Resources — Outbound Routing Contract
 
 > **Status:** Live system contract — promoted from brainstorm 2026-05-09 by [ADR-0027](adr/0027-community-resource-posture.md).

@@ -73,6 +73,9 @@
          pinning. Mirrors the same line in PinballWizard.Infrastructure
          and PinballWizard.Core. -->
     <InternalsVisibleTo Include="PinballWizard.Scraper.Tests" />
+    <InternalsVisibleTo Include="PinballWizard.Core.Tests" />
+    <InternalsVisibleTo Include="PinballWizard.Application.Tests" />
+    <InternalsVisibleTo Include="PinballWizard.Infrastructure.Tests" />
   </ItemGroup>
 
 </Project>

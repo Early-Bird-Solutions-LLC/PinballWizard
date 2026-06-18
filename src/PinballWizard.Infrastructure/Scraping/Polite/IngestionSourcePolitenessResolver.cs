@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
@@ -86,6 +87,9 @@ public sealed class IngestionSourcePolitenessResolver : IPerSourcePolitenessReso
                 _logger.LogWarning(ex,
                     "Failed to load IngestionSource records for politeness override resolution; falling back to global defaults for every host.");
                 // Map remains empty — every ResolveAsync call returns _defaults.
+                // Meter the fallback (invariant #17 audit 2026-06-12) so dashboards
+                // can detect when per-source overrides are not being applied.
+                PinballWizardTelemetry.ScraperPolitenessFallbackActive.Add(1);
             }
 
             _initialized = true;

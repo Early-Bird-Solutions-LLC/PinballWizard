@@ -23,9 +23,13 @@ public sealed class AiFoundryOptions
 
     // Default chat-completion deployment name in the Foundry project.
     // Surfaced as the smoke probe's expected chat deployment and as the
-    // Wave 2 IAiRouter Wizard agent's default model. Per ADR-0015, individual
-    // sub-agents may override via AgentModels[<name>].
-    public string ChatDeploymentName { get; set; } = "gpt-4o-mini";
+    // Wave 2 IAiRouter Wizard agent's default model. Per ADR-0015 (amended
+    // 2026-05-17), the default is gpt-4o (Standard SKU, version 2024-11-20)
+    // rather than gpt-4o-mini — gpt-4o-mini 2024-07-18 is deprecated for new
+    // Standard deployments, and gpt-4o produces measurably better citation
+    // fidelity and structured-output reliability for the showcase quality bar.
+    // Individual sub-agents may override via AgentModels[<name>].
+    public string ChatDeploymentName { get; set; } = "gpt-4o";
 
     // Default embedding deployment name. Used for semantic-cache key
     // generation (Wave 2) and for Phase 4 RAG embedding. Per ADR-0014,
@@ -63,6 +67,25 @@ public sealed class AiFoundryOptions
     [Range(0.0, 1.0)]
     public double ConfidenceThreshold { get; set; } = 0.65;
 
+    // Multi-turn conversations (2026-06-11 design): maximum prior turns
+    // prepended to the model call. Oldest turns are dropped first — recency
+    // carries the disambiguating context a follow-up needs. Bounds prompt
+    // growth (each turn adds its question + full answer text to the prompt)
+    // so the per-call cost ceiling isn't routinely consumed by history.
+    [Range(1, 20)]
+    public int MaxConversationTurns { get; set; } = 8;
+
+    // Per-field length cap (chars) applied to each history turn's Question
+    // and AnswerText before they are prepended to the model call. History is
+    // CLIENT-SUPPLIED — without a bound, a crafted turn can smuggle an
+    // arbitrarily large adversarial payload under any request-size guard
+    // (which bounds the whole body, not a field). 4096 chars comfortably
+    // covers every real Wizard answer; truncation degrades context, never
+    // correctness (the turn cap + citation gates still apply). This is the
+    // Application-layer defense; the API layer adds a whole-request guard.
+    [Range(256, 32768)]
+    public int MaxConversationTurnContentChars { get; set; } = 4096;
+
     // Phase 4 W1-2 cutover flag (ADR-0022). When true, the legacy regex
     // citation extractor runs in parallel with the tool-trace extractor;
     // its citation count is emitted under
@@ -77,15 +100,15 @@ public sealed class AiFoundryOptions
     // USD-cent pricing per 1k input + output tokens, keyed by deployment
     // name (per ADR-0015's per-agent model selection). Populated with
     // 2026 May Azure OpenAI public pricing for the deployments shipped
-    // by the H1 hand-off (gpt-4o-mini, gpt-4-1, text-embedding-3-large);
+    // by the H2 hand-off (gpt-4o, gpt-4-1, text-embedding-3-large);
     // operators override via configuration when prices change. Empty
     // dictionary disables cost attribution (cost_usd_cents always 0).
     public Dictionary<string, ModelPricing> PricingTable { get; init; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        // gpt-4o-mini GlobalStandard: $0.15 / 1M input ≈ 0.015 cents/1k;
-        // $0.60 / 1M output ≈ 0.060 cents/1k.
-        ["gpt-4o-mini"] = new ModelPricing(InputCentsPer1K: 0.015, OutputCentsPer1K: 0.060),
-        // gpt-4.1 GlobalStandard (deployment name 'gpt-4-1' due to
+        // gpt-4o Standard (2024-11-20): $2.50 / 1M input ≈ 0.25 cents/1k;
+        // $10.00 / 1M output ≈ 1.00 cents/1k.
+        ["gpt-4o"] = new ModelPricing(InputCentsPer1K: 0.25, OutputCentsPer1K: 1.00),
+        // gpt-4.1 Standard (deployment name 'gpt-4-1' due to
         // Foundry's no-dot rule): $2.00 / 1M input ≈ 0.20 cents/1k;
         // $8.00 / 1M output ≈ 0.80 cents/1k.
         ["gpt-4-1"] = new ModelPricing(InputCentsPer1K: 0.20, OutputCentsPer1K: 0.80),

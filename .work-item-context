@@ -1,0 +1,3 @@
+WORK_ITEM_ID="259"
+WORK_ITEM_TITLE="fix: Change Feed StartFromBeginning skips existing documents; Direct mode silently fails from outside Azure"
+LAST_UPDATE="2026-05-20T00:00:00Z"

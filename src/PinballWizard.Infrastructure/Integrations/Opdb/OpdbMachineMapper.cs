@@ -17,7 +17,17 @@ public static class OpdbMachineMapper
     /// list by <see cref="MapToEdition"/> in a second pass. Sync
     /// orchestrator counts non-mappable records as "skipped".
     /// </summary>
-    public static Machine? Map(OpdbMachineDto dto, DateTimeOffset now)
+    /// <param name="groupTitle">
+    /// The clean franchise title resolved once per OPDB group segment
+    /// from the <c>is_machine_group</c> record (see ADR-0029 D1). When
+    /// the record's own <c>common_name</c> is blank — true for modern
+    /// Stern records, which would otherwise produce an edition-suffixed
+    /// title like "Godzilla (Pro)" — the group title supplies the clean
+    /// name. Null when the caller could not resolve a group record
+    /// (singleton machines, or OPDB 404 on the segment); the existing
+    /// <c>name</c>/<c>opdbId</c> fallback then applies, unchanged.
+    /// </param>
+    public static Machine? Map(OpdbMachineDto dto, DateTimeOffset now, string? groupTitle = null)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -27,22 +37,113 @@ public static class OpdbMachineMapper
 
         var manufacturerName = dto.Manufacturer.Name;
         var manufacturerKey = NormalizeManufacturerKey(FirstNonBlank(dto.Manufacturer.ShortName, manufacturerName)!);
+        var editionLabel = ExtractEditionLabel(dto.Name, dto.Features);
 
         return new Machine
         {
             Id = dto.OpdbId,
             PartitionKey = manufacturerKey,
             ManufacturerDisplayName = manufacturerName,
-            Title = FirstNonBlank(dto.CommonName, dto.Name) ?? dto.OpdbId,
+            // Title precedence (ADR-0029 D1): OPDB common_name when
+            // present; else the clean group title; else the edition-
+            // suffixed name; else the OPDB ID. The group title slots
+            // *between* common_name and name so a populated common_name
+            // is never overridden, but an empty one (modern Stern) gets
+            // the clean franchise name instead of "Godzilla (Pro)".
+            Title = FirstNonBlank(dto.CommonName, groupTitle, dto.Name) ?? dto.OpdbId,
+            GroupId = ExtractGroupSegment(dto.OpdbId),
             Year = ParseYear(dto.ManufactureDate),
             Designers = dto.Designers.Where(d => !string.IsNullOrWhiteSpace(d.Name)).Select(d => d.Name!).ToList(),
             Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList(),
             Editions = [],
+            EditionLabel = editionLabel,
+            EditionTokens = DeriveEditionTokens(editionLabel),
             ManufacturerSlugs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            OpdbSourceUrl = $"https://opdb.org/machines/{dto.OpdbId}",
+            // opdb.org's machine pages use internal numeric ids that the API
+            // does not expose; /machines/{opdb_id} 404s (observed live
+            // 2026-06-10). /search?q={opdb_id} resolves directly to the
+            // machine page and is the only durable deep link the export
+            // data can produce. Provenance is sacred — the citation link
+            // must actually land.
+            OpdbSourceUrl = OpdbWebUrl(dto.OpdbId),
             FirstSeenAt = now,
             LastSeenAt = now,
         };
+    }
+
+    /// <summary>
+    /// The canonical opdb.org web link for an OPDB ID. opdb.org's machine
+    /// pages use internal numeric ids the API does not expose, so
+    /// <c>/machines/{opdb_id}</c> returns 404 (observed live 2026-06-10);
+    /// <c>/search?q={opdb_id}</c> resolves directly to the machine page
+    /// and is the only durable deep link the export data can produce.
+    /// </summary>
+    public static string OpdbWebUrl(string opdbId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
+        return $"https://opdb.org/search?q={Uri.EscapeDataString(opdbId)}";
+    }
+
+    /// <summary>
+    /// The OPDB group segment — the leading part of an OPDB ID before
+    /// the first hyphen (e.g. <c>GweeP-MW95j</c> → <c>GweeP</c>). A
+    /// relational key for sibling discovery per ADR-0029, never a merge
+    /// key. Returns null if the ID has no hyphen (defensive — well-formed
+    /// OPDB machine IDs always have at least two segments).
+    /// </summary>
+    public static string? ExtractGroupSegment(string opdbId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(opdbId);
+        var firstHyphen = opdbId.IndexOf('-', StringComparison.Ordinal);
+        return firstHyphen <= 0 ? null : opdbId[..firstHyphen];
+    }
+
+    /// <summary>
+    /// The parenthetical of an edition-qualified OPDB name: "Godzilla (Pro)" → "Pro",
+    /// "Godzilla (Premium/LE)" → "Premium/LE". Falls back to the joined features when
+    /// the name has no parenthetical. Null when neither yields an edition label.
+    /// </summary>
+    public static string? ExtractEditionLabel(string? name, IReadOnlyList<string>? features)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var open = name.LastIndexOf('(');
+            var close = name.LastIndexOf(')');
+            if (open >= 0 && close > open)
+            {
+                var inner = name[(open + 1)..close].Trim();
+                if (inner.Length > 0) return inner;
+            }
+        }
+        if (features is { Count: > 0 })
+        {
+            var labels = features
+                .Select(f => f.Replace(" edition", "", StringComparison.OrdinalIgnoreCase).Trim())
+                .Where(f => f.Length > 0);
+            var joined = string.Join("/", labels);
+            if (joined.Length > 0) return joined;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Normalized lowercase tokens from an edition label: "Premium/LE" →
+    /// ["premium","le"], "Pro" → ["pro"], "70th Anniversary" → ["70th"]. Splits on
+    /// '/' and whitespace, drops noise words. Alias-fold (OpdbSyncService pass 2)
+    /// appends more tokens later.
+    /// </summary>
+    public static List<string> DeriveEditionTokens(string? editionLabel)
+    {
+        if (string.IsNullOrWhiteSpace(editionLabel)) return [];
+        var tokens = new List<string>();
+        foreach (var part in editionLabel.Split(['/', ' ', ','], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = part.Trim().ToLowerInvariant();
+            if (t is "anniversary" or "edition" or "and") continue;
+            if (t.Length == 0 || tokens.Contains(t)) continue;
+            tokens.Add(t);
+        }
+        return tokens;
     }
 
     /// <summary>
@@ -138,7 +239,7 @@ public static class OpdbMachineMapper
             OpdbAliasId = alias.OpdbId,
             OpdbSourceUrl = string.IsNullOrWhiteSpace(alias.OpdbId)
                 ? null
-                : $"https://opdb.org/machines/{alias.OpdbId}",
+                : OpdbWebUrl(alias.OpdbId),
         };
     }
 
@@ -148,12 +249,19 @@ public static class OpdbMachineMapper
     /// editions, first-seen timestamp). Used on sync upsert when a
     /// matching machine already exists in the repository.
     /// </summary>
-    public static void MergeOpdbFieldsInto(Machine existing, OpdbMachineDto dto, DateTimeOffset now)
+    public static void MergeOpdbFieldsInto(Machine existing, OpdbMachineDto dto, DateTimeOffset now, string? groupTitle = null)
     {
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(dto);
 
-        existing.Title = FirstNonBlank(dto.CommonName, dto.Name) ?? existing.Title;
+        // Same title precedence as Map (ADR-0029 D1): a re-sync must
+        // converge an existing edition-suffixed title to the clean group
+        // title once the group record is resolvable.
+        existing.Title = FirstNonBlank(dto.CommonName, groupTitle, dto.Name) ?? existing.Title;
+        if (!string.IsNullOrWhiteSpace(dto.OpdbId))
+        {
+            existing.GroupId = ExtractGroupSegment(dto.OpdbId);
+        }
         existing.Year = ParseYear(dto.ManufactureDate) ?? existing.Year;
 
         if (dto.Designers.Count > 0)
@@ -166,7 +274,40 @@ public static class OpdbMachineMapper
             existing.Themes = dto.Keywords.Where(k => !string.IsNullOrWhiteSpace(k)).ToList();
         }
 
+        // INTENTIONAL overwrite (NOT field-guarded like Designers/Themes above):
+        // a re-sync must converge EditionLabel/EditionTokens to the fresh
+        // label-derived set, discarding any stale tokens from a prior run.
+        // Pass-2 (OpdbSyncService) then re-folds alias tokens on top of this
+        // reset — the reset is precisely what makes the full sync idempotent.
+        // Do NOT add an `if`/non-blank guard here: that would let stale tokens
+        // accumulate and break the reset/idempotency contract.
+        existing.EditionLabel = ExtractEditionLabel(dto.Name, dto.Features);
+        existing.EditionTokens = DeriveEditionTokens(existing.EditionLabel);
+
         existing.LastSeenAt = now;
+    }
+
+    private static readonly Dictionary<string, IReadOnlyList<string>> ManufacturerMatchTokens =
+        new(StringComparer.Ordinal)
+        {
+            ["stern"]           = ["stern"],
+            ["jjp"]             = ["jjp", "jersey", "jack"],
+            ["americanpinball"] = ["americanpinball", "american", "pinball", "ap"],
+            ["spooky"]          = ["spooky"],
+            ["multimorphic"]    = ["multimorphic"],
+            ["cgc"]             = ["cgc", "chicago", "gaming"],
+            ["haggis"]          = ["haggis"],
+            ["pinballbrothers"] = ["pinballbrothers", "pinball", "brothers", "pb"],
+            ["dutch"]           = ["dutch"],
+            ["barrelsoffun"]    = ["barrelsoffun", "barrels", "fun", "bof"],
+        };
+
+    public static IReadOnlyList<string> GetMatchTokens(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        return ManufacturerMatchTokens.TryGetValue(key, out var tokens)
+            ? tokens
+            : [key];
     }
 
     // Returns the first argument that is non-null AND non-whitespace,

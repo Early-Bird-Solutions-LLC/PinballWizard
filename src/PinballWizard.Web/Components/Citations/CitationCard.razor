@@ -13,8 +13,10 @@
  * is rendered as a Unicode glyph inside the <a> so that no MudBlazor child component
  * (which Razor's parser can mis-handle) is nested inside the native element.
  *
- * Score accent: cards with RelevanceScore >= 0.85 receive the "citation-card-high-score"
- * CSS class which renders a subtle amber accent border per ADR-0026 § 4.
+ * Score accent: cards whose normalized match is >= HighMatchPercent receive the
+ * "citation-card-high-score" CSS class which renders a subtle amber accent border
+ * per ADR-0026 § 4. The relevance value is the Azure semantic reranker score
+ * (0–4 range), normalized to a 0–100% match — see MatchPercent.
  *
  * Community-resource posture (feedback_community_resource_posture.md):
  *   Every citation link routes to the original source URL. No PinballWizard
@@ -30,11 +32,10 @@
 @{
     var pageAnchor  = BuildPageAnchor(Citation.PageStart, Citation.PageEnd);
     var sourceIcon  = IconForSourceType(Citation.SourceType);
-    var isHighScore = Citation.RelevanceScore is >= 0.85;
+    var matchPct    = MatchPercent(Citation.RelevanceScore);
+    var isHighScore = matchPct is >= HighMatchPercent;
     var cardClass   = isHighScore ? "citation-card citation-card-high-score" : "citation-card";
-    var scoreText   = Citation.RelevanceScore is double s
-                          ? $"{(int)Math.Round(s * 100)}% match"
-                          : null;
+    var scoreText   = matchPct is int p ? $"{p}% match" : null;
 }
 
 <MudPaper Class="@cardClass"
@@ -86,6 +87,22 @@
 
             <FreshnessBadge LastScrapedUtc="@Citation.LastScrapedUtc" />
 
+            @* Multi-turn provenance honesty (PR-A3): a follow-up answered
+               from conversation context inherits the prior turn's citations
+               (Citation.Inherited, set by the router). Label them so the
+               provenance display is honest about WHEN the grounding
+               happened — this turn cited nothing new. *@
+            @if (Citation.Inherited)
+            {
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Variant="Variant.Text"
+                         Color="Color.Secondary"
+                         data-testid="citation-inherited-chip">
+                    earlier in this conversation
+                </MudChip>
+            }
+
             @if (scoreText is not null)
             {
                 <MudText Typo="Typo.caption"
@@ -130,6 +147,25 @@
             (int s, int e) when s == e   => $"p. {s}",
             (int s, int e)               => $"p. {s}–{e}", // en-dash for ranges
         };
+
+    // RelevanceScore is the Azure AI Search semantic reranker score
+    // (@search.rerankerScore), documented range 0.0–4.0 — NOT a 0–1 fraction.
+    // The old `score * 100` rendered a typical reranker score of 1.9 as
+    // "190% match". Normalize against the reranker ceiling to a true 0–100%
+    // match, clamped so a rare BM25-fallback score (semantic ranker bypassed,
+    // unbounded) cannot exceed 100%. Internal so CitationCardTests can assert
+    // the mapping without rendering.
+    internal const double MaxRerankerScore = 4.0;
+
+    // A citation whose normalized match is >= this percent earns the amber
+    // high-score accent (ADR-0026 § 4). 85% of the reranker ceiling is a 3.4
+    // reranker score — a genuinely strong semantic match.
+    internal const int HighMatchPercent = 85;
+
+    internal static int? MatchPercent(double? relevanceScore) =>
+        relevanceScore is double s
+            ? Math.Clamp((int)Math.Round(s / MaxRerankerScore * 100.0), 0, 100)
+            : null;
 
     internal static string IconForSourceType(CitationSourceType sourceType) => sourceType switch
     {

@@ -46,4 +46,12 @@ public enum ExtractionStatus
     // gives operational telemetry a way to count size-rejections
     // separately from parse failures.
     SizeExceeded,
+
+    // PdfPig returned 0 (or near-zero) tokens AND the Azure Document
+    // Intelligence OCR fallback also returned 0 tokens. The document
+    // is permanently unrecoverable with available tooling; the
+    // orchestrator logs it and skips. Distinct from OcrRequired
+    // (where ADI hasn't been attempted yet) so telemetry can
+    // distinguish "ADI not configured" from "ADI tried and failed".
+    OcrFailed,
 }

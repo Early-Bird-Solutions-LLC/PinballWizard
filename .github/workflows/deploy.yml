@@ -1,0 +1,310 @@
+name: Deploy
+
+# Builds and pushes container images to ACR, then updates the ACA apps
+# when source code changes land on main. Separated from ci.yml so a
+# failed deploy does not block test-coverage reporting, and so the deploy
+# can be re-triggered independently.
+#
+# Authentication: GitHub OIDC federated credentials (no long-lived secrets).
+# Required one-time operator setup in Entra before this workflow can run:
+#   1. Create an app registration in the Earlybird Entra tenant.
+#   2. Add a federated credential for:
+#        Issuer:  https://token.actions.githubusercontent.com
+#        Subject: repo:Early-Bird-Solutions-LLC/PinballWizard:ref:refs/heads/main
+#        Audience: api://AzureADTokenExchange
+#   3. Grant the app registration this Azure RBAC role (data-plane, manual):
+#        AcrPush       on  <acr-resource>           (push + az acr login token exchange)
+#      The Container App Contributor grants needed for `az containerapp update
+#      --image` (Wizard / Api / RAG-indexer) are NO LONGER manual — they are IaC:
+#      infra/modules/shared.bicep assigns Contributor from the cicdDeployPrincipalId
+#      param (the SP OBJECT id, set in main-shared.<env>.bicepparam). They apply on
+#      the next `Deploy-SharedResources.ps1` run. ⚠️ Adding a NEW app to the matrix
+#      below? Add its Contributor assignment in shared.bicep too (an un-granted app
+#      makes `az containerapp update` fail with a misleading "does not exist").
+#   4. Add these GitHub repository secrets:
+#        AZURE_CLIENT_ID       — app registration client ID (appId)
+#        AZURE_TENANT_ID       — 9793cd0f-2b27-4757-9986-1f7f1e35864a
+#        AZURE_SUBSCRIPTION_ID — b1f33f17-74a9-4ecc-b46c-c4f31776b840
+#   5. Add these GitHub repository variables (Settings → Variables → Actions):
+#        ACR_LOGIN_SERVER      — <acr-name>.azurecr.io  (full login server)
+#        ACA_RESOURCE_GROUP    — rg-pinwiz-shared-dev
+#        WIZARD_APP_NAME       — pinwiz-ca-wizard-dev
+#        API_APP_NAME          — pinwiz-ca-api-dev
+#        RAGINDEXER_APP_NAME   — pinwiz-ca-ragindexer-dev
+#
+# Build approach: docker buildx build --push (runner-side build).
+# This only requires AcrPush (data-plane) on the ACR — no control-plane
+# access needed. az acr build (cloud build) was dropped because it requires
+# Microsoft.ContainerRegistry/registries/runs/write which has no least-
+# privilege built-in role. Runner-side builds use GitHub compute and add
+# GHA cache layer caching (cache-from/cache-to: type=gha).
+#
+# Image tagging policy (locked invariant — CLAUDE.md #16):
+#   - Every build pushes :{sha} tag (explicit, immutable reference).
+#   - :latest is also pushed as a convenience alias for `docker pull`.
+#   - ACA container configuration ALWAYS uses :{sha} — never :latest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/PinballWizard.Web/**'
+      - 'src/PinballWizard.Web.Client/**'
+      - 'src/PinballWizard.Api/**'
+      - 'src/PinballWizard.RagIngestionWorker/**'
+      - 'src/PinballWizard.Cli/**'
+      - 'src/PinballWizard.Application/**'
+      - 'src/PinballWizard.Infrastructure/**'
+      - 'src/PinballWizard.Core/**'
+      - 'src/PinballWizard.ServiceDefaults/**'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+
+  # Allow manual trigger from the Actions tab (useful for re-deploying
+  # without a code change, e.g. after an infra-only deploy reverts the image).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC token exchange with Azure
+
+concurrency:
+  # One deploy at a time on main; a new push cancels an in-progress one.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    # Web and Api images build + deploy in parallel matrix legs — they
+    # share no build outputs (independent Dockerfiles over the same
+    # context), so serializing them only added wall-clock. Per-image GHA
+    # cache scopes keep the two legs from thrashing each other's layer
+    # cache (the default shared scope would race under mode=max).
+    name: Build + deploy ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pinwiz-web
+            dockerfile: src/PinballWizard.Web/Dockerfile
+            app_name_var: WIZARD_APP_NAME
+          - image: pinwiz-api
+            dockerfile: src/PinballWizard.Api/Dockerfile
+            app_name_var: API_APP_NAME
+          # RAG ingestion worker (Change-Feed → embed → AI Search). No HTTP
+          # surface, so no smoke/e2e probe — it just builds + swaps the image.
+          # Closes the W3-2 gap where the worker shipped a Dockerfile but the
+          # pipeline never built it, leaving the live app on the quickstart
+          # placeholder (the real worker code never ran). Scale floor stays
+          # min=0 in Bicep, so first activation is near-zero runtime risk.
+          - image: pinwiz-rag-indexer
+            dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
+            app_name_var: RAGINDEXER_APP_NAME
+          # CLI image — feeds ACA *Jobs* (nightly linker + weekly OPDB sync),
+          # NOT an ACA *App*. So this leg is build + push only: there is no
+          # `az containerapp update` to run (that command targets apps, not
+          # jobs). Jobs pick up the new :{sha} image on the next Deployment
+          # Stack run via Deploy-SharedResources.ps1 (operator-controlled), which
+          # is the deliberate gate before the resurrected linker / new OPDB cron
+          # mutate live Cosmos data. The empty app_name_var below disables the
+          # update step for this leg.
+          - image: pinwiz-cli
+            dockerfile: src/PinballWizard.Cli/Dockerfile
+            app_name_var: ''
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # ── Azure login via OIDC (no long-lived secret) ────────────────────────
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Docker login to ACR ───────────────────────────────────────────────
+      - name: Login to ACR
+        run: az acr login --name ${{ vars.ACR_LOGIN_SERVER }}
+
+      # ── Docker Buildx setup ───────────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # ── Build + push image ────────────────────────────────────────────────
+      - name: Build and push ${{ matrix.image }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      # ── Deploy to ACA ─────────────────────────────────────────────────────
+      # Always use the explicit :{sha} tag — never :latest (locked invariant).
+      # Skipped for job-only images (app_name_var == ''), e.g. pinwiz-cli, which
+      # feed ACA Jobs swapped via the Deployment Stack rather than app revisions.
+      - name: Update ACA image
+        if: ${{ matrix.app_name_var != '' }}
+        run: |
+          az containerapp update \
+            --name ${{ vars[matrix.app_name_var] }} \
+            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ github.sha }}
+
+  smoke:
+    # Runs after the build-deploy matrix completes — the wizard app depends on
+    # the Api app for answers, so probing before both are updated would pass
+    # against a mixed-version pair.
+    #
+    # `if: !cancelled()` overrides the default GHA behavior where any failed
+    # matrix leg causes downstream jobs to be SKIPPED. Without it, a failure in
+    # an unrelated leg (e.g., pinwiz-rag-indexer RBAC, pinwiz-cli linker) silently
+    # disables the only gate that catches landing-circuit regressions — which is
+    # exactly how the PR #401 outage shipped "green". The smoke probe itself
+    # queries the wizard /alive endpoint, so if the wizard leg genuinely failed,
+    # smoke will fail correctly; if only an unrelated leg failed, smoke runs and
+    # validates the wizard surface as intended.
+    name: Smoke test /alive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: build-deploy
+    if: ${{ !cancelled() }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Wait for the new revision to be healthy, then probe /alive.
+      # ACA revision rollover takes ~30–60 s; 120 s timeout is generous.
+      - name: Smoke test /alive
+        id: probe
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ vars.WIZARD_APP_NAME }} \
+            --resource-group ${{ vars.ACA_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "fqdn=${FQDN}" >> "$GITHUB_OUTPUT"
+
+          echo "Probing https://${FQDN}/alive ..."
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/alive" || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ /alive returned 200 after ${i} attempts"
+              exit 0
+            fi
+            echo "  attempt ${i}/12 — got ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "❌ /alive did not return 200 after 120 s"
+          exit 1
+
+    outputs:
+      wizard_fqdn: ${{ steps.probe.outputs.fqdn }}
+
+  e2e:
+    # Post-deploy functional canary: real browser through the deployed
+    # wizard app's own FQDN (no Cloudflare in this path) — circuit
+    # interactivity, seed-question hand-off with auto-submit, and a full
+    # ask returning a CITED answer. /alive stayed green through every
+    # functional outage on 2026-06-10; this job is the gate the incident
+    # postmortems called for. Costs one model call per deploy.
+    name: E2E canary (deployed target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: smoke
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Restore
+        run: dotnet restore PinballWizard.slnx
+
+      - name: Build (Release)
+        run: dotnet build --no-restore --configuration Release tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Install Playwright browsers
+        run: |
+          pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
+            install --with-deps chromium
+
+      - name: Run E2E against deployed app
+        env:
+          E2E__BaseUrl: https://${{ needs.smoke.outputs.wizard_fqdn }}
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --filter "Category=E2E" \
+            --logger "trx;LogFileName=e2e-results.trx" \
+            --results-directory ./e2e-results \
+            tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: e2e-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+      # ── Summary ───────────────────────────────────────────────────────────
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "### Deployed + E2E canary green :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag | Target |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-web\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-api\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-rag-indexer\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | ACA Jobs (next Deployment Stack run) |" >> $GITHUB_STEP_SUMMARY

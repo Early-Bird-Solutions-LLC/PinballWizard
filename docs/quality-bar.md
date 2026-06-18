@@ -1,3 +1,11 @@
+---
+status: Superseded
+phase: Cross-cutting
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Quality Bar
 
 The durable checklist for any change landing in PinballWizard. Skim this before

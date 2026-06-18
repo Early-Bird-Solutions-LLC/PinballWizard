@@ -14,8 +14,17 @@
 #   az containerapp update -n <ca-name> -g <rg> --image <acr>/pinwiz-rag-indexer:<sha>
 # to swap this image in.
 
+# Runtime base is `aspnet`, NOT `runtime`: the worker references
+# PinballWizard.ServiceDefaults, which takes `<FrameworkReference
+# Include="Microsoft.AspNetCore.App" />` (shared OTel + health + service
+# discovery). That framework reference flows transitively into the worker's
+# runtimeconfig, so the published app demands the ASP.NET shared framework at
+# launch even though the worker opens no HTTP socket (KEDA/Change-Feed driven,
+# ingress disabled). On the bare `dotnet/runtime` image it fails immediately
+# with "No frameworks were found" (verified locally) — a latent bug that never
+# surfaced while #396 was inert and the image never actually ran.
 ARG DOTNET_VERSION=10.0
-ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}
+ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}
 ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}
 
 FROM ${SDK_IMAGE} AS build
@@ -42,17 +51,22 @@ RUN dotnet publish src/PinballWizard.RagIngestionWorker/PinballWizard.RagIngesti
     --no-restore \
     /p:UseAppHost=false
 
-# Runtime stage — `runtime` (not `aspnet`) since the worker is a console
-# host with no HTTP ingress (KEDA-Cosmos-driven; the ACA resource has
-# `ingress` omitted = disabled).
+# Runtime stage. The worker is a console host with no HTTP ingress
+# (KEDA-Cosmos-driven; the ACA resource has `ingress` omitted = disabled), but
+# it still needs the ASP.NET shared framework — see the RUNTIME_IMAGE comment
+# at the top of the file.
 FROM ${RUNTIME_IMAGE} AS runtime
 WORKDIR /app
 
 # Run as a non-root user. ACA's default seccomp profile + the Container
 # App ingress disabled mean network exposure is minimal, but defense-in-
 # depth costs nothing here.
-RUN groupadd --system --gid 1000 pinwiz \
-    && useradd --system --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin pinwiz
+# Let the system assign the UID/GID — the dotnet/runtime base image
+# already occupies GID 1000, so pinning --gid 1000 fails the build
+# ("GID '1000' already exists"). Matches the working api/web Dockerfiles,
+# which create the system user without explicit id pins.
+RUN groupadd --system pinwiz \
+    && useradd --system --no-create-home --gid pinwiz --shell /usr/sbin/nologin pinwiz
 USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .

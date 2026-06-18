@@ -1,44 +1,77 @@
-# PinballWizard Phase 3 evaluation ground-truth (v1).
+# PinballWizard Phase 4.5 evaluation ground-truth (v1, realigned 2026-05-21).
 # See data/eval/README.md for the format and curation conventions.
-# Citation IDs are raw OPDB ids (e.g. "GRBN-MQR4P"), not prefixed —
+# Citation IDs are raw OPDB ids (e.g. "GweeP-Ml9pZ"), not prefixed —
 # AiRouter.ExtractCitationsFromText extracts these from the
 # https://opdb.org/machines/<id> URL pattern in the agent's text.
 #
-# 30 questions: 10 Rules, 10 Valuation, 10 Repair (with a few
-# OutOfScope mixed in to exercise refusal-correctness symmetry).
+# Edition-aware fields (AB#259, edition-scope-model-design §6):
+#   acceptable_citation_sets : any-of list of acceptable citation sets;
+#                              a prediction matching ANY set scores correct.
+#   franchise_wide_ok        : true => a franchise-wide doc cited for any
+#                              edition is acceptable (limitation: Citation
+#                              carries no edition_scope yet, so this is the
+#                              row-level intent, not a per-citation check).
+#   expected_outcome         : grounded | answered_all_editions (R2) |
+#                              honest_substitution (R3). Default grounded.
+#   required_editions        : R2 => each label must appear attributed;
+#                              R3 => [0] is the named edition the disclosure
+#                              must reference.
+#
+# 30 questions: 27 graded + 3 acceptable-refusal.
+# All graded questions target the 7 Phase 4 curated-subset machines so
+# retrieval can actually fire against the indexed corpus.
+#
+# Distribution (graded):
+#   Godzilla (Stern, edition-aware)  — 2 Rules + 2 Valuation + 2 Repair (AB#259: R1/R2/R3)
+#   Foo Fighters LE (Stern)         — 2 Rules + 2 Valuation + 2 Repair
+#   Toy Story 4 (JJP)               — 1 Rules + 1 Valuation + 1 Repair
+#   Galactic Tank Force (AP)        — 1 Rules + 1 Valuation + 1 Repair
+#   Halloween (Spooky)              — 1 Rules + 1 Valuation + 1 Repair
+#   Attack from Mars Remake (CGC)   — 1 Rules + 1 Valuation + 1 Repair
+#   Queen LE (Pinball Brothers)     — 1 Rules + 1 Valuation + 1 Repair
+#
+# OPDB IDs used:
+#   GweeP-MW95j  Stern | Godzilla (Pro)         — AB#259 edition-aware base
+#   GweeP-Ml9pZ  Stern | Godzilla (Premium/LE)
+#   GpeoL-MkPz1  Stern | Foo Fighters (Premium/LE)
+#   GJ2o0-MrRye  Jersey Jack Pinball | Toy Story 4
+#   Gj6PZ-Mb5z6  American Pinball | Galactic Tank Force
+#   Gj66Z-Mp4BN  Spooky Pinball | Halloween
+#   G4do5-MkPnV  Chicago Gaming | Attack From Mars (Remake)
+#   GELkO-Ml9zZ  Pinball Brothers | Queen
 
 # ── Rules ─────────────────────────────────────────────────────────
-{"id":"ev-rules-0001","question":"What manufacturer makes the Foo Fighters pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GRBN-MQR4P"],"acceptable_refusal":false,"notes":"Stern Pinball; trivial-grounding lookup that exercises the OPDB function tool"}
-{"id":"ev-rules-0002","question":"Tell me about the Stranger Things pinball game by Stern.","expected_sub_agent":"Rules","expected_citation_set":["GRBN-LWPLB"],"acceptable_refusal":false,"notes":"Stern Pinball, 2019; baseline-grounding question"}
-{"id":"ev-rules-0003","question":"What is the theme of the Godzilla pinball machine from Stern?","expected_sub_agent":"Rules","expected_citation_set":["G5po2-MeP6B"],"acceptable_refusal":false,"notes":"Stern Godzilla 2021; theme = Godzilla / Toho monsters"}
-{"id":"ev-rules-0004","question":"Who designed the Stern Iron Maiden pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["G4yZN-MDEP7"],"acceptable_refusal":false,"notes":"Iron Maiden: Legacy of the Beast, Stern 2018"}
-{"id":"ev-rules-0005","question":"When was Jersey Jack's The Wizard of Oz pinball released?","expected_sub_agent":"Rules","expected_citation_set":["G4xyR-MJ2v0"],"acceptable_refusal":false,"notes":"JJP The Wizard of Oz 2013; manufacturer + year lookup"}
-{"id":"ev-rules-0006","question":"What designers worked on Jersey Jack's Dialed In pinball?","expected_sub_agent":"Rules","expected_citation_set":["G4X2l-MYepl"],"acceptable_refusal":false,"notes":"JJP Dialed In! 2017; designer = Pat Lawlor"}
-{"id":"ev-rules-0007","question":"What is the Beatles pinball machine and who makes it?","expected_sub_agent":"Rules","expected_citation_set":["GRZBR-MQjXk"],"acceptable_refusal":false,"notes":"Stern Beatles 2018; lookup with manufacturer fact"}
-{"id":"ev-rules-0008","question":"Tell me about the AC/DC pinball machine by Stern.","expected_sub_agent":"Rules","expected_citation_set":["GREw9-MdRy7"],"acceptable_refusal":false,"notes":"Stern AC/DC 2012"}
-{"id":"ev-rules-0009","question":"What pinball machine has the Metallica theme made by Stern?","expected_sub_agent":"Rules","expected_citation_set":["G4M3K-MZP74"],"acceptable_refusal":false,"notes":"Stern Metallica 2013"}
-{"id":"ev-rules-0010","question":"Tell me about Stern's Rush pinball machine.","expected_sub_agent":"Rules","expected_citation_set":["GR3DN-MJYO0"],"acceptable_refusal":false,"notes":"Stern Rush 2022"}
+{"id":"ev-rules-0001","question":"What is the theme of the Stern Godzilla pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): title/theme-level, identical across editions. No clarify, no friction; either base id ok, franchise-wide source ok. GweeP-MW95j=Pro, GweeP-Ml9pZ=Premium/LE."}
+{"id":"ev-rules-0002","question":"How does multiball work in Stern's Godzilla pinball?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"answered_all_editions","required_editions":["Pro","Premium/LE"],"acceptable_refusal":false,"notes":"R2 (AB#259): multiball rules differ by edition. ONE response attributing each edition (no clarify round-trip), a source cited per edition. Collapsing to one base FAILS answered_all_editions."}
+{"id":"ev-rules-0003","question":"What is the main objective in the Foo Fighters LE pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters LE 2023; rules question for the second Stern machine"}
+{"id":"ev-rules-0004","question":"How do you start the main wizard mode in Foo Fighters pinball?","expected_sub_agent":"Rules","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters wizard-mode question; exercises deep manual retrieval"}
+{"id":"ev-rules-0005","question":"What is the theme of the Jersey Jack Toy Story 4 pinball machine?","expected_sub_agent":"Rules","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Toy Story 4 JJP 2019; manufacturer + theme lookup against OPDB record"}
+{"id":"ev-rules-0006","question":"What is the Galactic Tank Force pinball machine about?","expected_sub_agent":"Rules","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"American Pinball Galactic Tank Force; theme + rules overview"}
+{"id":"ev-rules-0007","question":"What is the theme of the Spooky Pinball Halloween machine?","expected_sub_agent":"Rules","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"Spooky Halloween 2021; theme lookup against OPDB record"}
+{"id":"ev-rules-0008","question":"What is the Attack from Mars Remake pinball machine and who makes it?","expected_sub_agent":"Rules","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Chicago Gaming Attack from Mars Remake; manufacturer + theme fact"}
+{"id":"ev-rules-0009","question":"What is the theme of the Queen LE pinball machine by Pinball Brothers?","expected_sub_agent":"Rules","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Pinball Brothers Queen LE; theme + manufacturer fact"}
 
 # ── Valuation ─────────────────────────────────────────────────────
-{"id":"ev-valuation-0001","question":"How much does the Stern Foo Fighters Pro edition cost?","expected_sub_agent":"Valuation","expected_citation_set":["GRBN-MQR4P"],"acceptable_refusal":false,"notes":"Editions present on OPDB record"}
-{"id":"ev-valuation-0002","question":"What editions are available for Stern's Stranger Things pinball?","expected_sub_agent":"Valuation","expected_citation_set":["GRBN-LWPLB"],"acceptable_refusal":false,"notes":"Pro / Premium / LE editions on OPDB record"}
-{"id":"ev-valuation-0003","question":"Is Jersey Jack's Dialed In! still available new?","expected_sub_agent":"Valuation","expected_citation_set":["G4X2l-MYepl"],"acceptable_refusal":false,"notes":"Older title; OPDB editions list documents availability"}
-{"id":"ev-valuation-0004","question":"What does the Premium edition of Stern Godzilla retail for?","expected_sub_agent":"Valuation","expected_citation_set":["G5po2-MeP6B"],"acceptable_refusal":false,"notes":"Edition-specific MSRP grounded in OPDB"}
-{"id":"ev-valuation-0005","question":"What's the resale value trend for old AC/DC pinball machines?","expected_sub_agent":"Valuation","expected_citation_set":[],"acceptable_refusal":true,"notes":"Resale-pricing question is out of Phase 3 scope (no IFPA/PinballPrices integration yet) — the agent should refuse politely"}
-{"id":"ev-valuation-0006","question":"Tell me what editions of Stern Iron Maiden exist.","expected_sub_agent":"Valuation","expected_citation_set":["G4yZN-MDEP7"],"acceptable_refusal":false,"notes":"Pro / Premium / LE editions documented on OPDB"}
-{"id":"ev-valuation-0007","question":"How much is The Wizard of Oz Limited Edition pinball?","expected_sub_agent":"Valuation","expected_citation_set":["G4xyR-MJ2v0"],"acceptable_refusal":false,"notes":"JJP Wizard of Oz LE edition pricing on OPDB"}
-{"id":"ev-valuation-0008","question":"Where can I find the current price of Stern's Beatles Gold edition?","expected_sub_agent":"Valuation","expected_citation_set":["GRZBR-MQjXk"],"acceptable_refusal":false,"notes":"Beatles Gold/Diamond/Platinum editions on OPDB"}
-{"id":"ev-valuation-0009","question":"What's the original retail price of the Rush pinball machine?","expected_sub_agent":"Valuation","expected_citation_set":["GR3DN-MJYO0"],"acceptable_refusal":false,"notes":"Stern Rush MSRP grounded in OPDB"}
-{"id":"ev-valuation-0010","question":"How much does it cost to ship a pinball machine across the country?","expected_sub_agent":"Valuation","expected_citation_set":[],"acceptable_refusal":true,"notes":"Shipping logistics is out of scope for the Wizard's grounded knowledge — refusal expected"}
+{"id":"ev-valuation-0001","question":"What editions are available for the Stern Godzilla pinball machine?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): editions-overview is franchise-level; either base or both ok. The edition list itself doesn't vary by which base answers it."}
+{"id":"ev-valuation-0002","question":"What does the Stern Godzilla Premium retail for?","expected_sub_agent":"Valuation","expected_citation_set":["GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-Ml9pZ"]],"franchise_wide_ok":false,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"Edition-named-exact (AB#259): 'Premium' names a specific base -> exactly GweeP-Ml9pZ (Premium/LE). MSRP is edition-specific; citing Pro (GweeP-MW95j) or a franchise-wide doc is a FAIL, hence franchise_wide_ok=false."}
+{"id":"ev-valuation-0003","question":"What editions of the Foo Fighters pinball machine exist?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Foo Fighters Pro / Premium / LE editions on OPDB"}
+{"id":"ev-valuation-0004","question":"How much does the Foo Fighters LE pinball machine cost?","expected_sub_agent":"Valuation","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"LE-tier MSRP; exercises edition-aware pricing retrieval"}
+{"id":"ev-valuation-0005","question":"Is the Jersey Jack Toy Story 4 pinball still available new?","expected_sub_agent":"Valuation","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Availability question grounded in OPDB editions record"}
+{"id":"ev-valuation-0006","question":"What editions of the Galactic Tank Force pinball are there?","expected_sub_agent":"Valuation","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"Classic / Deluxe / LE / Signature editions on OPDB"}
+{"id":"ev-valuation-0007","question":"How much does it cost to ship a pinball machine across the country?","expected_sub_agent":"Valuation","expected_citation_set":[],"acceptable_refusal":true,"notes":"Shipping logistics is out of scope — refusal expected; tests refusal-correctness on Valuation path"}
+{"id":"ev-valuation-0008","question":"What editions of the Spooky Halloween pinball machine are available?","expected_sub_agent":"Valuation","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"SE / CE / Blood Sucker editions on OPDB"}
+{"id":"ev-valuation-0009","question":"What editions of the Attack from Mars Remake exist?","expected_sub_agent":"Valuation","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Remake / Remake LE / Remake Special editions on OPDB"}
+{"id":"ev-valuation-0010","question":"What editions of the Pinball Brothers Queen pinball are available?","expected_sub_agent":"Valuation","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Standard / CE / LE editions on OPDB"}
 
 # ── Repair ─────────────────────────────────────────────────────────
-{"id":"ev-repair-0001","question":"What troubleshooting docs are available for the Foo Fighters pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GRBN-MQR4P"],"acceptable_refusal":false,"notes":"OPDB record + machine catalog grounding; Phase 4 RAG will also cite manuals"}
-{"id":"ev-repair-0002","question":"Where do I find the manual for Stern's Stranger Things pinball?","expected_sub_agent":"Repair","expected_citation_set":["GRBN-LWPLB"],"acceptable_refusal":false,"notes":"OPDB grounding + future Phase 4 manual chunks"}
-{"id":"ev-repair-0003","question":"My Godzilla pinball flippers feel weak — what should I check?","expected_sub_agent":"Repair","expected_citation_set":["G5po2-MeP6B"],"acceptable_refusal":false,"notes":"Diagnostic question; Phase 3 grounds against the machine record only"}
-{"id":"ev-repair-0004","question":"Are there service bulletins for Stern Iron Maiden?","expected_sub_agent":"Repair","expected_citation_set":["G4yZN-MDEP7"],"acceptable_refusal":false,"notes":"Phase 4 RAG will surface bulletin chunks; Phase 3 grounds against machine record"}
-{"id":"ev-repair-0005","question":"What service documents exist for The Wizard of Oz pinball?","expected_sub_agent":"Repair","expected_citation_set":["G4xyR-MJ2v0"],"acceptable_refusal":false,"notes":"JJP service documentation; OPDB grounding"}
-{"id":"ev-repair-0006","question":"How do I fix a stuck ball on the AC/DC pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GREw9-MdRy7"],"acceptable_refusal":false,"notes":"Stern AC/DC; Phase 3 grounds against machine record"}
-{"id":"ev-repair-0007","question":"My Beatles pinball won't start up — where do I begin troubleshooting?","expected_sub_agent":"Repair","expected_citation_set":["GRZBR-MQjXk"],"acceptable_refusal":false,"notes":"Diagnostic question against Stern Beatles record"}
-{"id":"ev-repair-0008","question":"Are there any known issues with the Stern Rush pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GR3DN-MJYO0"],"acceptable_refusal":false,"notes":"Stern Rush; Phase 4 RAG will surface bulletin chunks"}
-{"id":"ev-repair-0009","question":"Can you fix my car's transmission?","expected_sub_agent":"Repair","expected_citation_set":[],"acceptable_refusal":true,"notes":"Out-of-domain repair question — refusal expected; tests refusal-correctness on the Repair sub-agent path"}
-{"id":"ev-repair-0010","question":"What's the weather like in Tokyo today?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"notes":"Pure out-of-scope; Wizard should refuse without sub-agent dispatch"}
+{"id":"ev-repair-0001","question":"My Stern Godzilla LE flippers feel weak — what should I check?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"honest_substitution","required_editions":["LE"],"acceptable_refusal":false,"notes":"R3 (AB#259): user names LE. If no LE-specific flipper data exists, the Wizard must DISCLOSE the gap and cite the Pro/franchise substitute. Silent Pro answer or blanket refusal both FAIL. required_editions[0]='LE' is the named edition the disclosure must reference."}
+{"id":"ev-repair-0002","question":"Are there service bulletins for the Stern Godzilla pinball?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j","GweeP-Ml9pZ"],"acceptable_citation_sets":[["GweeP-MW95j"],["GweeP-Ml9pZ"],["GweeP-MW95j","GweeP-Ml9pZ"]],"franchise_wide_ok":true,"expected_outcome":"grounded","acceptable_refusal":false,"notes":"R1 (AB#259): bulletin-availability is franchise-level; bulletins aren't edition-split here, so either base or both ok and a franchise-wide source is acceptable."}
+{"id":"ev-repair-0003","question":"What troubleshooting documents exist for the Foo Fighters pinball machine?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Document-availability question; exercises manual + bulletin retrieval for Foo Fighters"}
+{"id":"ev-repair-0004","question":"Are there service bulletins for Stern's Foo Fighters pinball?","expected_sub_agent":"Repair","expected_citation_set":["GpeoL-MkPz1"],"acceptable_refusal":false,"notes":"Bulletin-specific question for Foo Fighters; second Stern bulletin retrieval test"}
+{"id":"ev-repair-0005","question":"Where can I find the manual for the Jersey Jack Toy Story 4 pinball?","expected_sub_agent":"Repair","expected_citation_set":["GJ2o0-MrRye"],"acceptable_refusal":false,"notes":"Manual-location question; OPDB grounding + manual chunk retrieval"}
+{"id":"ev-repair-0006","question":"My Galactic Tank Force pinball won't boot — where do I begin troubleshooting?","expected_sub_agent":"Repair","expected_citation_set":["Gj6PZ-Mb5z6"],"acceptable_refusal":false,"notes":"Boot-failure diagnostic; exercises manual chunk retrieval for AP machine"}
+{"id":"ev-repair-0007","question":"What service documents exist for the Spooky Halloween pinball?","expected_sub_agent":"Repair","expected_citation_set":["Gj66Z-Mp4BN"],"acceptable_refusal":false,"notes":"Document-availability question; outline-poor PDF tests ADI fallback path"}
+{"id":"ev-repair-0008","question":"How do I fix a stuck ball on the Attack from Mars Remake pinball?","expected_sub_agent":"Repair","expected_citation_set":["G4do5-MkPnV"],"acceptable_refusal":false,"notes":"Stuck-ball diagnostic; exercises manual chunk retrieval for CGC machine"}
+{"id":"ev-repair-0009","question":"Are there known issues with the Pinball Brothers Queen LE pinball?","expected_sub_agent":"Repair","expected_citation_set":["GELkO-Ml9zZ"],"acceptable_refusal":false,"notes":"Known-issues question; exercises manual chunk retrieval for Queen LE"}
+{"id":"ev-repair-0010","question":"Can you fix my car's transmission?","expected_sub_agent":"Repair","expected_citation_set":[],"acceptable_refusal":true,"notes":"Out-of-domain repair question — refusal expected; tests refusal-correctness on Repair path"}
+{"id":"ev-oos-0001","question":"What's the weather like in Tokyo today?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true,"notes":"Pure out-of-scope; Wizard should refuse without sub-agent dispatch"}

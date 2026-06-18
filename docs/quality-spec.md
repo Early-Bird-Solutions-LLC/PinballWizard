@@ -53,7 +53,22 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 - Bicep syntax validation: [`.github/workflows/bicep.yml`](../.github/workflows/bicep.yml)
 - Dependabot: [`.github/dependabot.yml`](../.github/dependabot.yml) — weekly bumps
 - `.slnx` solution format
-- **Test coverage threshold + CI enforcement**: [`tests/coverage.runsettings`](../tests/coverage.runsettings) excludes test assemblies and 3rd-party deps so the gate measures production code only. CI runs `dotnet test --collect "Code Coverage;Format=cobertura" --settings tests/coverage.runsettings` and the [`irongut/CodeCoverageSummary`](../.github/workflows/ci.yml) step fails the job if production line coverage drops below the threshold (currently **70%**, ratchet up at phase boundaries). Phase 5 entry baseline: 73.3% line / 70.9% branch.
+- **Test coverage threshold + CI enforcement**: CI runs dotnet test with coverage.runsettings and fails if aggregate production line coverage drops below **70%** (current: 74%; ratchet up at phase boundaries per the ratchet rule). See [decision-log.md](decision-log.md) entry 2026-05-30 for the per-assembly policy.
+
+  **Per-assembly policy** (cultural gate — verified during PR review via the coverage table; irongut/CodeCoverageSummary enforces only the aggregate):
+
+  | Assembly | Floor | Rationale |
+  | --- | --- | --- |
+  | PinballWizard.Core | ≥ 80% | Pure domain logic; high testability |
+  | PinballWizard.Application | ≥ 80% | Orchestration + AI routing; high testability |
+  | PinballWizard.Api | ≥ 75% | Endpoint middleware + problem details |
+  | PinballWizard.ServiceDefaults | ≥ 75% | Resilience config + health check endpoints |
+  | PinballWizard.Infrastructure | ≥ 65% | Playwright scrapers and Cosmos/Azure SDK I/O paths are architecturally untestable in unit tests |
+  | PinballWizard.Web | ≥ 65% | Razor render-tree; bUnit smoke tests + axe-core are the load-bearing quality gates, not line rate |
+  | PinballWizard.Cli | excluded | DI composition only |
+  | PinballWizard.RagIngestionWorker | excluded | DI composition only |
+
+  Phase 5 baselines: Core 75%, Application 90%, Api 84%, ServiceDefaults 84%, Infrastructure 66%, Web 65%.
 - **Accessibility tests (axe-core via Playwright)**: [`tests/PinballWizard.Web.Tests/A11y/`](../tests/PinballWizard.Web.Tests/A11y/) — `PlaywrightWebApplicationFactory` starts the app on a real Kestrel port; `AccessibilityTests` navigates a headless Chromium browser to every public route (`/`, `/wizard`, `/settings`, `/error`, `/tilt`) and runs axe-core with `wcag2a` + `wcag2aa` tags. Zero violations required; failing axe rule = failing CI job. Runs as a separate parallel job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) `accessibility` job.
 
 ### To add
@@ -74,7 +89,8 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 - **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires; "rejects merch" must include merch in the input. `/local-review` § Test quality is the enforcer.
 - **Test naming:** `Method_State_Expectation` (e.g., `ExtractSlug_NullArg_Throws`, `Sync_FetchedItemAlreadyPresent_SkipsWrite`).
-- **Integration test infrastructure:** `FakePolitenessGate` + `QueueingHttpMessageHandler` in `tests/PinballWizard.Scraper.Tests/Infrastructure/Scraping/Pipelines/`; pins yield order, full provenance, gate-vs-wire URL equality, per-page failure isolation, and `PolitenessException` propagation on both Acquire and Report paths.
+- **Test project naming:** `<ProductionProject>.Tests` for unit tests, `<ProductionProject>.IntegrationTests` for tests requiring live dependencies, `<ProductionProject>.E2ETests` for browser-driven tests. One project per production project. See [ADR-0030](adr/0030-test-project-naming.md) for the full convention and the project mapping table.
+- **Integration test infrastructure:** `FakePolitenessGate` + `QueueingHttpMessageHandler` in `tests/PinballWizard.Infrastructure.Tests/Scraping/Pipelines/`; pins yield order, full provenance, gate-vs-wire URL equality, per-page failure isolation, and `PolitenessException` propagation on both Acquire and Report paths.
 - **Contract tests pin invariants:** `SourceAliasContractTests` ensures every `ISourceScraper.Name` matches its `--source` alias; adding a scraper without that test passing is a 🔴.
 - **Behavior over coverage padding.** Coverage measures lines exercised; mutation testing measures whether tests would catch a bug. The latter is the load-bearing metric from Phase 3 onward.
 

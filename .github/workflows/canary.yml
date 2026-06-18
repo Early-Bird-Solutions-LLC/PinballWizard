@@ -1,0 +1,121 @@
+# Scheduled E2E canary against the deployed app (AB#259).
+#
+# The deploy-time canary only runs when something deploys; the 2026-06-10/11
+# incidents both demonstrated outage classes that arrive BETWEEN deploys
+# (live-data migrations, edge config changes, dependency drift). This is the
+# alerting gap the incident decision-log entries called for: the same four
+# E2E behaviors (circuit interactivity, cited single-shot ask, cache-hit
+# replay, multi-turn follow-up), every 6 hours, against the live FQDN.
+#
+# Cost: one-to-three real model calls per run (~cents), 4 runs/day. A failed
+# run opens/refreshes a pinned issue via the failure step below — visible
+# without watching the Actions tab.
+#
+# The FQDN is pinned here (not discovered) on purpose: discovery requires
+# Azure login + secrets in a cron context; the FQDN only changes if the ACA
+# environment is recreated, which is already a documented update-this-value
+# event (see main-shared.dev.bicepparam wizardAliveUrl).
+
+name: Scheduled canary
+
+on:
+  schedule:
+    - cron: '17 */6 * * *' # every 6h, offset to dodge top-of-hour GH congestion
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: scheduled-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: E2E canary (scheduled)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Restore
+        run: dotnet restore PinballWizard.slnx
+
+      - name: Build (Release)
+        run: dotnet build --no-restore --configuration Release tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Install Playwright browsers
+        run: |
+          pwsh tests/PinballWizard.Web.Tests/bin/Release/net10.0/playwright.ps1 \
+            install --with-deps chromium
+
+      - name: Run E2E against deployed app
+        env:
+          E2E__BaseUrl: https://pinwiz-ca-wizard-dev.graybay-045982b4.eastus2.azurecontainerapps.io
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --filter "Category=E2E" \
+            --logger "trx;LogFileName=canary-results.trx" \
+            --results-directory ./canary-results \
+            tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: canary-results
+          path: canary-results/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+      # On failure: open (or comment on) the pinned canary issue so a broken
+      # live site is visible without anyone watching the Actions tab. Honest
+      # failure surfacing per invariant #17 — a red cron nobody sees is a
+      # masked failure.
+      - name: Raise the alarm
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled canary FAILING against the deployed app"
+          body="Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing. $body"
+          else
+            gh issue create --title "$title" --label bug \
+              --body "The 6-hourly E2E canary failed against the live site. $body
+
+Triage: check the run's TRX artifact; the four tests cover circuit interactivity, cited asks, cache-hit replay, and multi-turn follow-up. Close this issue when a run goes green."
+          fi

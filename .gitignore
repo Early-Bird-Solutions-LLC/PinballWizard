@@ -3,20 +3,41 @@ bin/
 obj/
 publish/
 
+# Isolated per-developer Azure CLI config dir (AZURE_CONFIG_DIR) used so the
+# local app's DefaultAzureCredential resolves the PERSONAL pinwiz.ai identity
+# (where the Bicep-managed Foundry lives) without disturbing the default
+# ~/.azure session. Holds live MSAL token caches — never commit.
+.azure-local/
+
 # IDE / editor
 .vs/
-.vscode/
+# .vscode workspace config is checked in (tasks/launch/extensions/settings
+# apply for every contributor — e.g. the "Run AppHost (Aspire)" task that
+# launches the local Aspire AppHost). Per-user files under .vscode/ stay
+# ignored. Mirrors the .claude/ checked-in-config approach below.
+!.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
 .claude/
 # Project-scoped skills + commands are checked in (they apply for every
 # contributor); the shared settings.json (allowlist) is also checked in
-# so every clone gets the same baseline. Everything else under .claude/
-# — runtime history, scheduled-task locks, per-user settings.local.json
-# — stays ignored.
+# so every clone gets the same baseline. INVARIANTS.md and PR-AUDIT.md
+# are durable architectural artifacts — they tell the story of how this
+# repo is maintained. Everything else under .claude/ — runtime history,
+# scheduled-task locks, per-user settings.local.json — stays ignored.
+!.claude/
+.claude/*
 !.claude/skills/
 !.claude/skills/**
 !.claude/commands/
 !.claude/commands/**
 !.claude/settings.json
+!.claude/INVARIANTS.md
+!.claude/PR-AUDIT.md
+!.claude/README.md
 *.user
 *.suo
 *.DotSettings.user
@@ -49,6 +70,9 @@ data/*
 .DS_Store
 Thumbs.db
 
+# Superpowers brainstorming companion artifacts (mockups + session state)
+.superpowers/
+
 # Bicep — local parameter overrides (never committed; deploy script auto-detects)
 *.local.bicepparam
 
@@ -71,3 +95,34 @@ infra/**/build/
 # directory is captured as the `responsive-screenshots` artifact by the
 # `snapshots` job — they are NOT committed to the repo.
 screenshots/
+
+# Cloudflare inventory — raw API dumps containing sensitive values
+# (origin hostnames, cert fingerprints, error bodies). SUMMARY.md is
+# the safe-to-share output; the JSON files are never committed.
+cf-inventory/
+
+# OpenTofu / Terraform local working artifacts. The provider mirror,
+# crash logs, and saved plan files are machine-local: a plan (`tfplan`)
+# contains the proposed state and may carry sensitive values — the
+# README's "Things to avoid" section forbids committing it. The remote
+# state lives in Azure Blob, so no local *.tfstate either.
+#
+# EXCEPTION: `.terraform.lock.hcl` is intentionally NOT ignored — it is
+# the provider dependency lock and MUST be committed so CI and every
+# developer resolve identical provider versions. Do not add it here.
+.terraform/
+*.tfplan
+tfplan
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Agent worktree scratch — transient git worktrees created for isolated
+# parallel agent runs. Never committed.
+.worktrees/
+
+# Session tooling output (humanlayer thoughts repo lives elsewhere; the
+# local symlinked directory and Playwright MCP scratch are never source)
+thoughts/
+.playwright-mcp/

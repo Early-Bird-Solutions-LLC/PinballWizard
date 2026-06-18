@@ -4,8 +4,15 @@
  *   WizardAnswerStream | RefusalPanel | CitationStrip family | TiltPage/TiltErrorBoundary
  *
  * Layout:
- *   Mobile  (xs/sm) — vertical stack of CitationGroup components.
- *   Desktop (md+)   — horizontal scrollable strip.
+ *   Mobile  (<960px) — vertical stack of CitationGroup components.
+ *   Desktop (≥960px) — horizontal scrollable strip.
+ *   Switched via CSS media query (CitationStrip.razor.css), deliberately NOT
+ *   MudHidden: MudHidden resolves its breakpoint through an async JS interop
+ *   roundtrip per instance, so on fast (cache-hit) answers the citation cards
+ *   appeared seconds AFTER the answer — the user saw a "Sources" header with
+ *   no sources, and the E2E citation assertion raced it (2026-06-11, #364).
+ *   CSS evaluates synchronously with first paint; the cards exist in the DOM
+ *   the moment the strip renders. 960px matches MudBlazor's md breakpoint.
  *
  * Ordering: groups sorted by max RelevanceScore of their citations, descending.
  * Null scores sort last (score treated as double.MinValue for ordering only).
@@ -40,28 +47,16 @@
             Sources
         </MudText>
 
-        @* Mobile layout: vertical stack (xs + sm breakpoints) *@
-        <MudHidden Breakpoint="Breakpoint.MdAndUp">
-            <MudStack Spacing="2" Class="citation-strip-vertical">
-                @foreach (var group in groups)
-                {
+        @* Single render of the groups; the layout flips column↔row purely in
+           CSS (CitationStrip.razor.css) so no JS roundtrip gates visibility. *@
+        <div class="citation-strip-layout">
+            @foreach (var group in groups)
+            {
+                <div class="citation-strip-group">
                     <CitationGroup Host="@group.Host" Citations="@group.Citations" />
-                }
-            </MudStack>
-        </MudHidden>
-
-        @* Desktop layout: horizontal scrollable strip (md+) *@
-        <MudHidden Breakpoint="Breakpoint.SmAndDown">
-            <div class="citation-strip-horizontal"
-                 style="overflow-x: auto; display: flex; gap: 12px; padding-bottom: 4px;">
-                @foreach (var group in groups)
-                {
-                    <div style="min-width: 280px; max-width: 360px; flex-shrink: 0;">
-                        <CitationGroup Host="@group.Host" Citations="@group.Citations" />
-                    </div>
-                }
-            </div>
-        </MudHidden>
+                </div>
+            }
+        </div>
 
     </div>
 }

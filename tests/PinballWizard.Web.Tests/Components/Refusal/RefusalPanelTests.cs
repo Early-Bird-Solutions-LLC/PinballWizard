@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 using PinballWizard.Application.Ai;
@@ -273,6 +274,115 @@ public sealed class RefusalPanelTests
             .Add(x => x.Detail, detail));
 
         cut.Find("[data-testid='suggested-rephrase-section']");
+        Assert.Contains(rephrase, cut.Markup, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Behavior: SuggestedRephrase renders as a clickable MudButton when
+    //           QuestionSelected delegate is provided
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RefusalPanel_SuggestedRephrase_RendersButton_WhenDelegateProvided()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        const string rephrase = "What service bulletins exist for Stern Godzilla?";
+
+        var detail = new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: null,
+            SuggestedRephrase: rephrase);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail)
+            .Add(x => x.QuestionSelected, EventCallback.Factory.Create<string>(this, _ => { })));
+
+        // SuggestedRephrase section must be present.
+        cut.Find("[data-testid='suggested-rephrase-section']");
+
+        // A clickable button must be rendered (not plain text).
+        cut.Find("[data-testid='suggested-rephrase-button']");
+
+        // The button must carry the correct aria-label for screen readers.
+        var btn = cut.Find("[data-testid='suggested-rephrase-button']");
+        Assert.Equal($"Ask: {rephrase}", btn.GetAttribute("aria-label"));
+
+        await Task.CompletedTask;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Behavior: Clicking SuggestedRephrase button raises QuestionSelected
+    //           callback with the rephrase text
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RefusalPanel_SuggestedRephrase_Click_RaisesCallback_WithRephraseText()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        const string rephrase = "What service bulletins exist for Stern Godzilla?";
+        string? received = null;
+
+        var detail = new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: null,
+            SuggestedRephrase: rephrase);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail)
+            .Add(x => x.QuestionSelected, EventCallback.Factory.Create<string>(
+                this, q => received = q)));
+
+        var btn = cut.Find("[data-testid='suggested-rephrase-button']");
+        await cut.InvokeAsync(() => btn.Click());
+
+        Assert.Equal(rephrase, received);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Behavior: SuggestedRephrase renders as plain text when no delegate is set
+    //           (backward-compat: standalone / static rendering contexts)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefusalPanel_SuggestedRephrase_RendersPlainText_WhenNoDelegateProvided()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        const string rephrase = "What service bulletins exist for Stern Godzilla?";
+
+        var detail = new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: null,
+            CommunityResources: null,
+            MissingWhat: null,
+            SuggestedRephrase: rephrase);
+
+        // No QuestionSelected delegate.
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // Section must still be present.
+        cut.Find("[data-testid='suggested-rephrase-section']");
+
+        // No button — plain text only.
+        Assert.Empty(cut.FindAll("[data-testid='suggested-rephrase-button']"));
+
+        // Rephrase text must be visible.
         Assert.Contains(rephrase, cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 

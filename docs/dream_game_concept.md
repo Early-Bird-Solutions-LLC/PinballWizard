@@ -1,3 +1,11 @@
+---
+status: Superseded
+phase: Phase-7
+owner: Jim
+last-reviewed: 2026-05-16
+supersedes: ""
+---
+
 # Dream Game — Phase 5 Marquee Feature (Concept Spec)
 
 > **Status:** Documented for future implementation. **Phase 5+** (lands with

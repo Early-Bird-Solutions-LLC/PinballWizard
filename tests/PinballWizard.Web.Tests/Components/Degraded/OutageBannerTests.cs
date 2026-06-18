@@ -84,6 +84,8 @@ public sealed class OutageBannerTests : AsyncBunitContext
         "AI is rate-limited; results may be slower than usual.")]
     [InlineData(DegradationMode.PartialResults,
         "Partial answer received; some sources did not load.")]
+    [InlineData(DegradationMode.LandingUnavailable,
+        "Showing cached content — live data is temporarily unavailable.")]
     public void OutageBanner_Renders_ModeSpecificText(DegradationMode mode, string expectedText)
     {
         // Arrange

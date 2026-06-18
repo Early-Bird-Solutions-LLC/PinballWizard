@@ -92,5 +92,65 @@
     "politenessOverrides": {
       "requestDelayMs": 5000
     }
+  },
+  {
+    "id": "jjp_bulletins",
+    "displayName": "Jersey Jack Pinball — Service Bulletins (NoSource)",
+    "scraperImplKey": "jjp_bulletins",
+    "baseUrl": "https://www.jerseyjackpinball.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "discoveryStatus": "NoSource",
+    "discoveryNotes": "No service bulletin section on jerseyjackpinball.com. Per-game support pages at /pages/support/{slug} contain manuals, code updates, ISOs, and rules — but no bulletin-class documents. robots.txt (Shopify) has no path restrictions on support content.",
+    "discoveryDate": "2026-05-26"
+  },
+  {
+    "id": "ap_bulletins",
+    "displayName": "American Pinball — Service Bulletins",
+    "scraperImplKey": "ap_bulletins",
+    "baseUrl": "https://www.american-pinball.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null,
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Service bulletins published at american-pinball.com/support/ — single static HTML page with anchor-tab layout per game (Houdini, Oktoberfest, Hot Wheels, Galactic Tank Force, Legends of Valhalla, Barry O's BBQ Challenge). Bulletin PDFs hosted on CDN subdomain s4.american-pinball.com under /img/support/YYYY-M/{filename}.pdf. No robots.txt restrictions found. ApBulletinScraper wired.",
+    "discoveryDate": "2026-05-26"
+  },
+  {
+    "id": "spooky_bulletins",
+    "displayName": "Spooky Pinball — Service Bulletins (NoSource)",
+    "scraperImplKey": "spooky_bulletins",
+    "baseUrl": "https://www.spookypinball.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "discoveryStatus": "NoSource",
+    "discoveryNotes": "No service bulletin document type on spookypinball.com. /game-support/ hub has per-game pages with manuals, switch/coil charts, rules PDFs, and code update packages — but no distinct bulletin/advisory category. robots.txt specifies 10-second crawl-delay; no path restrictions on support content.",
+    "discoveryDate": "2026-05-26"
+  },
+  {
+    "id": "cgc_bulletins",
+    "displayName": "Chicago Gaming Company — Service Bulletins (NoSource)",
+    "scraperImplKey": "cgc_bulletins",
+    "baseUrl": "https://chicago-gaming.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "discoveryStatus": "NoSource",
+    "discoveryNotes": "chicago-gaming.com/product/bulletins/ exists but contains only arcade product bulletins (Arcade Legends, Golden Tee). Pinball titles (Attack From Mars, Medieval Madness, Monster Bash, Pulp Fiction, Cactus Canyon) are not covered. Pinball support routed via Freshdesk; /coinop/{slug}/update pages list code updates only.",
+    "discoveryDate": "2026-05-26"
+  },
+  {
+    "id": "pb_bulletins",
+    "displayName": "Pinball Brothers — Service Bulletins (Deferred)",
+    "scraperImplKey": "pb_bulletins",
+    "baseUrl": "https://pinballbrothers.freshdesk.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "discoveryStatus": "Deferred",
+    "discoveryNotes": "Service bulletins exist at pinballbrothers.freshdesk.com/support/solutions (General > Service Bulletins folder, 4 confirmed notices). Freshdesk REST API available at {subdomain}.freshdesk.com/api/v2/solutions/folders/{id}/articles returns JSON but requires API key even for public portals. Deferred pending API key acquisition.",
+    "discoveryDate": "2026-05-26"
   }
 ]

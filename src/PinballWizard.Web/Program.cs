@@ -18,13 +18,21 @@
 // ADR-0009    — Entra External ID auth (configured in a follow-up PR)
 // ADR-0008    — MudBlazor strict for all chrome
 
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.FileProviders.Physical;
 using Microsoft.Identity.Web;
 using Microsoft.Identity.Web.UI;
 using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
+using Polly;
 using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
@@ -46,35 +54,104 @@ builder.Services.AddRazorComponents()
 // ── MudBlazor (ADR-0008 — sole chrome library) ────────────────────────────
 builder.Services.AddMudServices();
 
-// ── Entra External ID auth scaffolding (ADR-0009) ─────────────────────────
-// AzureAd section is intentionally empty in this Wave 1 skeleton.
-// Authentication is required for /admin routes; public routes
-// (/wizard, /, /about, /status, /error) carry [AllowAnonymous].
+// ── Data Protection key ring (multi-replica ACA hosting) ──────────────────
+// Blazor Server circuits + antiforgery tokens are encrypted with the Data
+// Protection key ring. On Container Apps with >1 replica (or across
+// restarts/deploys), the default ephemeral per-process key ring means a
+// token minted by one replica cannot be decrypted by another — every
+// circuit handshake fails and the app degrades to a dead prerender
+// (observed live 2026-06-10: AntiforgeryValidationException / "key was
+// not found in the key ring"). Persist the ring to blob storage and wrap
+// it with a Key Vault key per the documented ACA setup
+// (learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+// § Azure Container Apps). Works alongside ingress session affinity —
+// affinity routes a live circuit to its owning replica; the shared ring
+// keeps tokens valid across replicas and restarts.
 //
-// FOLLOW-UP: set AzureAd:TenantId, AzureAd:ClientId, and related
-// fields in appsettings.json or Key Vault before shipping admin routes.
-// Until then, the builder is registered so the wiring compiles and
-// the auth middleware pipeline is structurally correct.
-builder.Services
-    .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApp(builder.Configuration.GetSection("AzureAd"));
-
-// Blanket authorization policy: every route requires authentication by default.
-// Public routes (/wizard, /, /about, /settings, /status, /error, /tilt, /{**slug})
-// opt out with [AllowAnonymous]. Admin routes (/admin/**) are protected automatically
-// without needing per-page [Authorize] attributes — new admin pages are secure by
-// default and cannot be accidentally left open. The API minimal-API endpoints
-// (/api/wizard/ask:stream, /api/wizard/landing) and health check endpoints
-// (/healthz, /alive) carry explicit .AllowAnonymous() in their registrations.
-builder.Services.AddAuthorization(options =>
+// Gated on both URIs so local dev (no config) keeps the ephemeral ring.
+// DefaultAzureCredential resolves the UAMI in ACA via AZURE_CLIENT_ID and
+// the developer's az login locally.
+var dpKeyRingBlobUri = builder.Configuration["DataProtection:KeyRingBlobUri"];
+var dpKeyVaultKeyUri = builder.Configuration["DataProtection:KeyVaultKeyUri"];
+if (!string.IsNullOrWhiteSpace(dpKeyRingBlobUri) && !string.IsNullOrWhiteSpace(dpKeyVaultKeyUri))
 {
-    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build();
-});
+    var dpCredential = new DefaultAzureCredential();
+    builder.Services.AddDataProtection()
+        .PersistKeysToAzureBlobStorage(new Uri(dpKeyRingBlobUri), dpCredential)
+        .ProtectKeysWithAzureKeyVault(new Uri(dpKeyVaultKeyUri), dpCredential);
+}
 
-builder.Services.AddControllersWithViews()
-    .AddMicrosoftIdentityUI();
+// ── Entra External ID auth scaffolding (ADR-0009) ─────────────────────────
+// Auth is gated on a real TenantId being present. When TenantId is empty or
+// the all-zeros placeholder (Dockerfile default), auth is skipped entirely —
+// the zero-GUID causes OIDC metadata fetch failures that crash static-file
+// requests. Set AzureAd:TenantId + AzureAd:ClientId in Key Vault / ACA env
+// vars before shipping /admin routes.
+var entraSection = builder.Configuration.GetSection("AzureAd");
+var tenantId = entraSection["TenantId"] ?? string.Empty;
+var isAuthConfigured = !string.IsNullOrWhiteSpace(tenantId)
+    && tenantId != "00000000-0000-0000-0000-000000000000";
+
+if (isAuthConfigured)
+{
+    builder.Services
+        .AddAuthentication(OpenIdConnectDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApp(entraSection);
+
+    // NO FallbackPolicy — deliberately, found the hard way (2026-06-12,
+    // first live activation of this auth branch): MapRazorComponents'
+    // endpoint group includes the Blazor Server SignalR endpoints
+    // (/_blazor + negotiate), and a RequireAuthenticatedUser fallback
+    // challenged the anonymous negotiate with an OIDC redirect — every
+    // circuit on the public site died (prerender fine, zero
+    // interactivity; all four E2E canaries red, run 27427228442). A
+    // group-level AllowAnonymous is NOT the fix: IAllowAnonymous metadata
+    // short-circuits authorization for the whole group, silently opening
+    // /admin. The posture is therefore public-by-default with explicitly
+    // locked admin surfaces: every /admin/* page carries
+    // [Authorize(Policy = "AdminOnly")], and AuthorizationContractTests
+    // enforces that by ASSEMBLY SCAN (any routable component in the Admin
+    // namespace missing the policy fails the build), so a new admin page
+    // cannot ship open.
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy("AdminOnly", policy => policy.RequireRole("GlobalAdmin"));
+    });
+
+    // Cascades Task<AuthenticationState> to components — /admin/settings
+    // records the authenticated admin's name as updatedBy (the audit
+    // field PR-B1 added). Auth-configured path only; the no-tenant branch
+    // below leaves it absent and the page records the local-dev marker.
+    builder.Services.AddCascadingAuthenticationState();
+
+    builder.Services.AddControllersWithViews()
+        .AddMicrosoftIdentityUI();
+}
+else
+{
+    // No real Entra tenant — register permissive auth so middleware compiles.
+    builder.Services.AddAuthentication();
+    builder.Services.AddAuthorization(options =>
+    {
+        // The AdminOnly policy must EXIST on this path too — admin pages
+        // reference it by name and an unregistered policy throws at render.
+        // Permissive here by design: this whole branch IS the documented
+        // local-dev/no-tenant posture (no FallbackPolicy either). The role
+        // requirement applies wherever a real tenant is configured — which
+        // includes the deployed app once AzureAd:TenantId lands (PR-B0
+        // infra half).
+        options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
+    });
+    builder.Services.AddControllersWithViews();
+}
+
+// ── Embedded-resource agent prompts (admin prompt-templates tab) ──────────
+// Parameterless; reads the Application assembly's .md resources. The Web
+// host doesn't run AddAiRouter (no Foundry here — asks go through the Api),
+// but /admin/settings' Prompt Templates tab shows the embedded DEFAULT next
+// to Cosmos overrides. Unconditional: the page renders on the local-dev
+// no-auth path too.
+builder.Services.AddSingleton<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>();
 
 // ── Degradation state store (scoped per circuit) ──────────────────────────
 // IClientDegradationStore propagates DegradationContext from WizardAnswer
@@ -102,23 +179,69 @@ builder.Services
         // renders so the prospect doesn't wait for a broken dependency.
         client.Timeout = TimeSpan.FromSeconds(5);
     })
+    // Stacked standard pipelines (this + the ServiceDefaults one) are fine
+    // HERE, unlike the streaming client below: /api/wizard/landing is an
+    // idempotent, cheap GET — retries are safe and the 5s HttpClient.Timeout
+    // above is the effective bound. The asymmetry is deliberate.
     .AddStandardResilienceHandler();
 
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
 // Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")
 // so Aspire injects the correct host in local dev and ACA injects the
-// internal FQDN in Azure. AddStandardResilienceHandler adds standard
-// retry + circuit-breaker from Microsoft.Extensions.Http.Resilience.
+// internal FQDN in Azure.
+//
+// Resilience is deliberately NOT the stock pipeline (2026-06-11 incident):
+// ask:stream is a long-lived SSE response to a NON-IDEMPOTENT request —
+// every send triggers a full multi-agent LLM run on the Api. The stacked
+// defaults (ServiceDefaults' 50s-attempt/120s-total pipeline plus a bare
+// per-client standard handler at 10s/30s) retried that request on attempt
+// timeout, re-running whole agent runs in a feedback storm while the user
+// saw "Wizard is thinking" forever. The client sends with
+// ResponseHeadersRead and the Api flushes an SSE preamble at accept, so a
+// pipeline attempt now completes at headers (~network RTT) — timeouts below
+// bound CONNECTION+HEADERS only, never model latency.
+//
+// EXTEXP0001 suppressed for this statement: RemoveAllResilienceHandlers is
+// marked experimental, but it is the supported opt-out from
+// ConfigureHttpClientDefaults pipelines — the alternative (two stacked
+// retrying pipelines around a non-idempotent LLM call) is precisely the
+// 2026-06-11 incident. The compiler reports the diagnostic at the statement
+// head, so the pragma wraps the full fluent chain.
+#pragma warning disable EXTEXP0001
 builder.Services
     .AddHttpClient<IWizardStreamingClient, WizardStreamingClient>(client =>
     {
         client.BaseAddress = new Uri("https+http://pinwiz-api");
-        // SSE streams can run for seconds; the default 100s timeout is fine
-        // for Wave 1 one-shot answers. Wave 2 PR-S2 (RunStreamingAsync) may
-        // need an infinite timeout — document at that point.
+        // The stream outlives any fixed request timeout (agent answers run
+        // 10s–2min+); HttpClient.Timeout would also cancel mid-stream body
+        // reads. The component owns the user-facing budget via its
+        // CancellationToken; the server always terminates with final+end.
+        client.Timeout = Timeout.InfiniteTimeSpan;
     })
-    .AddStandardResilienceHandler();
+    // Drop the ServiceDefaults pipeline for this client — its retries are
+    // unsafe here (see above) and its 120s total was the "00:02:00" failure
+    // users saw. Replaced wholesale by the handler below.
+    .RemoveAllResilienceHandlers()
+    .AddStandardResilienceHandler(options =>
+    {
+        // Never retry: a duplicate attempt is a duplicate LLM agent run
+        // (cost + latency + Api saturation). The WizardAnswerStream
+        // component owns the single deliberate fallback re-attempt.
+        options.Retry.ShouldHandle = _ => PredicateResult.False();
+        // Headers arrive at request-accept (Api preamble), so this bounds
+        // routing + TLS + dispatch + preamble — never the model. Measured
+        // basis: warm-path header arrival is sub-second (the deploy smoke's
+        // /alive RTT and the canary's ask both confirm), but during the
+        // 2026-06-11 incident a CPU-saturated Api delayed request dispatch
+        // by multiple seconds; 15s rides out that observed worst case
+        // without re-introducing the wait-on-model failure mode.
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(15);
+        // With ResponseHeadersRead the pipeline completes at headers; the
+        // total only matters when the connection itself wedges pre-headers.
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
+    });
+#pragma warning restore EXTEXP0001
 
 // ── Foundry + AI Router (gated — mirrors CLI wiring) ──────────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Web project starts cleanly
@@ -132,6 +255,20 @@ if (foundryWired)
 {
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
     builder.Services.AddHostedService<WizardAgentWarmupHostedService>();
+}
+
+// ── Cosmos persistence + catalog read (gated — mirrors Api Program.cs wiring) ─
+// Gated on Cosmos:AccountEndpoint so the Web starts cleanly in local dev
+// without Cosmos configured (Aspire emulator path excluded from Web — the Web
+// host has no AppHost Cosmos dependency unlike the Cli). When the endpoint IS
+// configured, AddCosmosPersistence registers CosmosClient (Managed Identity via
+// DefaultAzureCredential) and the core repositories; AddCatalogStatsRead then
+// registers ICatalogStatsReadRepository for the /admin/machines summary page
+// (AB#259 — ADR-0036 Tier-1 point reads, no cross-partition queries).
+if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
+{
+    builder.Services.AddCosmosPersistence(builder.Configuration);
+    builder.Services.AddCatalogStatsRead();
 }
 
 // ── Build + pipeline ───────────────────────────────────────────────────────
@@ -149,6 +286,26 @@ if (!app.Environment.IsDevelopment())
 // HTTP; the LB already enforces HTTPS at the edge). HSTS is likewise the
 // LB's responsibility via the Azure Front Door / Application Gateway layer.
 app.UseStaticFiles();
+
+// Serve .well-known/ explicitly — PhysicalFileProvider excludes dot-prefixed
+// directories by default (ExclusionFilters.DotPrefixed), so a second middleware
+// registration with ExclusionFilters.None is required.
+// WebRootPath can be null when no wwwroot exists (e.g. CI environments without
+// static assets); fall back to ContentRootPath/wwwroot and skip if absent.
+var wellKnownPath = Path.Combine(
+    builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"),
+    ".well-known");
+if (Directory.Exists(wellKnownPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(wellKnownPath, ExclusionFilters.None),
+        RequestPath = "/.well-known",
+        ServeUnknownFileTypes = true,
+        DefaultContentType = "text/plain; charset=utf-8",
+    });
+}
+
 app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -156,7 +313,10 @@ app.UseAuthorization();
 // OTel default routes (/healthz + /alive) from ServiceDefaults.
 app.MapDefaultEndpoints();
 
-app.MapStaticAssets();
+// AllowAnonymous so static assets (CSS, JS, fonts, Blazor framework files)
+// are never caught by the fallback RequireAuthenticatedUser policy. Static
+// files are not sensitive — they carry no user data and are public by design.
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()

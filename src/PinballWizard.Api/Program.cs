@@ -17,11 +17,16 @@
 // ADR-0026 § 2 — SSE transport (not SignalR, not WebSocket)
 // ADR-0026 § 4 — AnswerChunk discriminated union on the wire
 
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PinballWizard.Api.Endpoints;
 using PinballWizard.Api.Middleware;
+using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Landing;
+using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Landing;
+using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -39,6 +44,17 @@ builder.AddServiceDefaults();
 // 8+ ProblemDetails pattern. UseExceptionHandler() (below) activates it.
 builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// ProblemDetailsExceptionHandler (registered above, unconditionally) depends on
+// IDegradationContext to map SearchUnavailable -> 503. That dependency must be
+// registered unconditionally too: app.UseExceptionHandler() resolves the handler
+// while building the middleware pipeline at host start, so a missing
+// IDegradationContext fails startup outright when Foundry is NOT wired (local
+// dev / Aspire emulator) — the exact "starts cleanly" path documented below.
+// AmbientDegradationContext is a zero-dependency AsyncLocal singleton (the
+// IHttpContextAccessor pattern); AddAiRouter TryAdds the same registration on the
+// Foundry-wired path, so this is a harmless no-op when foundryWired is true.
+builder.Services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>();
 
 // ── Foundry + AI Router (gated — mirrors CLI + Web wiring) ────────────────
 // Gated on AiFoundry:ProjectEndpoint so the Api starts cleanly in local
@@ -60,7 +76,49 @@ if (foundryWired)
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
 }
 
+// ── Cosmos persistence (gated — mirrors CLI Program.cs wiring) ────────────
+// The Wizard's getMachineByTitle grounding tool (MachineGroundingTool) depends
+// on IMachineRepository, which AddCosmosPersistence registers. AddAiRouter
+// registers MachineGroundingTool as a singleton, so without this the router's
+// tool graph fails to resolve the first time a question is asked. Gated on
+// Cosmos:AccountEndpoint; AddCosmosPersistence builds a Managed-Identity
+// CosmosClient from that endpoint (deployed account and local Phase-0 runs
+// both use this path — the Api host has no Aspire Cosmos client dependency,
+// unlike the Cli which also supports the loopback emulator connection string).
+// Absent in unit tests / clean local dev — the Api starts without Cosmos.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[CosmosOptions.AccountEndpointKey]))
+{
+    builder.Services.AddCosmosPersistence(builder.Configuration);
+}
+
+// ── Azure AI Search (gated — mirrors CLI Program.cs wiring) ───────────────
+// The Wizard's searchCorpus tool (SearchCorpusTool) depends on IRagRetriever,
+// which AddAzureAiSearchIntegration registers. AddAiRouter registers
+// SearchCorpusTool as a singleton, so without this the router's tool graph
+// fails to resolve. Gated on AiSearch:Endpoint; the retriever's IQueryEmbedder
+// additionally requires AiFoundry:ProjectEndpoint (already wired above when
+// present). Absent in local dev before the AI Search hand-off — start clean.
+if (!string.IsNullOrWhiteSpace(builder.Configuration[AiSearchOptions.EndpointKey]))
+{
+    builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
+}
+
 var app = builder.Build();
+
+// ── Boot-duration instrumentation (#361) ──────────────────────────────────
+// The 2026-06-11 incident measured ~2.5-3 min from container start to first
+// listen under KEDA scale-from-zero wake; under minReplicas=1 (#360) boots
+// are ~1s and the pathology no longer reproduces. This single line is the
+// witness either way: process-start → ApplicationStarted elapsed, in every
+// boot's logs. If scale-from-zero ever returns and the number balloons,
+// the breakdown question ("where did the time go?") starts answered.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var elapsed = DateTimeOffset.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime();
+    app.Logger.LogInformation(
+        "api.boot_duration_ms={BootMs:F0} (process start -> ApplicationStarted)",
+        elapsed.TotalMilliseconds);
+});
 
 // ── Exception handler ─────────────────────────────────────────────────────
 // Must be placed BEFORE other middleware so unhandled exceptions from any
@@ -79,3 +137,8 @@ app.MapWizardStreamingEndpoints();
 app.MapWizardLandingEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);
+
+// Exposed for WebApplicationFactory<Program> composition-root regression tests.
+// Top-level statements emit an internal Program; this public partial makes the
+// entry point referenceable from PinballWizard.Api.Tests without InternalsVisibleTo.
+public partial class Program { }

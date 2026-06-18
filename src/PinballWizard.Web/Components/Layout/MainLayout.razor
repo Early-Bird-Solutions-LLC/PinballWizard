@@ -21,10 +21,22 @@
 @using PinballWizard.Web.Components.Theming
 @using PinballWizard.Web.Components.Degraded
 
-<MudThemeProvider Theme="@_theme" IsDarkMode="true" />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
+@* The MudBlazor providers MUST render in an interactive render mode. This
+ * layout is static (LayoutComponentBase), and pages opt into interactivity
+ * per-page (@rendermode InteractiveServer on Index/Wizard/etc. — #347 kept
+ * static pages like About static, so global interactivity is not an option).
+ * A statically-rendered MudPopoverProvider cannot serve a popover (MudTooltip,
+ * MudMenu, …) that lives in an interactive page island → the circuit crashes
+ * with "Missing <MudPopoverProvider />". Pinning the providers to
+ * InteractiveServer makes them interactive islands within this static layout;
+ * Blazor Server shares one circuit per page, so the scoped popover/dialog/
+ * snackbar services + host elements are shared with the interactive pages.
+ * Static pages stay static (they render no popovers, so they never reach the
+ * providers). The theme provider prerenders its CSS, so no FOUC. *@
+<MudThemeProvider @rendermode="InteractiveServer" Theme="@_theme" IsDarkMode="true" />
+<MudPopoverProvider @rendermode="InteractiveServer" />
+<MudDialogProvider @rendermode="InteractiveServer" />
+<MudSnackbarProvider @rendermode="InteractiveServer" />
 
 <MudLayout>
     <MudAppBar Elevation="1">

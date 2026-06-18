@@ -96,9 +96,9 @@
 
                 @* ── Action buttons ────────────────────────────────────── *@
                 <MudStack Row="true" Spacing="2" Class="mt-2">
-                    <MudButton Variant="Variant.Filled"
+                    <MudButton Href="/wizard"
+                               Variant="Variant.Filled"
                                Color="Color.Primary"
-                               OnClick="@TryAgain"
                                data-testid="tilt-try-again">
                         Try Again
                     </MudButton>
@@ -152,5 +152,4 @@
         }
     }
 
-    private void TryAgain() => Nav.NavigateTo("/wizard");
 }

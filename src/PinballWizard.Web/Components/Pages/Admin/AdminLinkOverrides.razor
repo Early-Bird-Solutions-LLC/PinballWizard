@@ -1,0 +1,254 @@
+@page "/admin/link-overrides"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@* AdminLinkOverrides — /admin/link-overrides admin-configured document-to-machine mapping view.
+ *
+ * Renders a MudDataGrid of link overrides loaded from ILinkOverrideRepository.LoadAllAsync.
+ * Actions: New Override (create dialog), Delete (confirm dialog per row).
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth
+ * ADR-0026  § 1 — routing inventory (/admin/link-overrides)
+ *@
+
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Models
+
+@inject ILinkOverrideRepository OverrideRepo
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<AdminLinkOverrides> Logger
+
+<PageTitle>Link Overrides — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-6">
+        <MudText Typo="Typo.h4" Style="flex:1">Link Overrides</MudText>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="OpenCreateDialogAsync">
+            New Override
+        </MudButton>
+    </MudStack>
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+        Admin-configured document-to-machine mappings.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="overrides-load-failed">
+            Link overrides could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
+    }
+
+    <MudDataGrid T="LinkOverrideRow"
+                 Items="@_overrides"
+                 Hover="true"
+                 Striped="true"
+                 Dense="true"
+                 Elevation="2"
+                 data-testid="admin-link-overrides-grid">
+
+        <Columns>
+            <PropertyColumn Property="x => x.SourcePattern" Title="Source Pattern" />
+            <PropertyColumn Property="x => x.MachineIds" Title="Machine IDs" />
+            <PropertyColumn Property="x => x.CreatedBy" Title="Created By" />
+            <PropertyColumn Property="x => x.CreatedAt" Title="Created At" />
+            <PropertyColumn Property="x => x.Notes" Title="Notes" />
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    <MudButton Size="Size.Small"
+                               Variant="Variant.Text"
+                               Color="Color.Error"
+                               OnClick="@(() => DeleteAsync(context.Item))">
+                        Delete
+                    </MudButton>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+
+        <NoRecordsContent>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-link-overrides-empty">
+                        No overrides configured.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Overrides are created manually to resolve ambiguous or failed document links.
+                    </MudText>
+                </MudStack>
+            }
+        </NoRecordsContent>
+
+    </MudDataGrid>
+</MudContainer>
+
+@* Create Override dialog *@
+<MudDialog @bind-Visible="_showCreateDialog">
+    <TitleContent>New Link Override</TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_newPattern"
+                          Label="Source Pattern"
+                          HelperText="Format: discovery_url|DocumentType (e.g. https://sternpinball.com/game/foo/|Manual)"
+                          Required="true" />
+            <MudTextField @bind-Value="_newMachineIds"
+                          Label="Machine IDs"
+                          HelperText="Comma-separated OPDB machine IDs. Leave empty to mark as platform-generic." />
+            <MudTextField @bind-Value="_newNotes"
+                          Label="Notes"
+                          Lines="2" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showCreateDialog = false)">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="ConfirmCreateAsync"
+                   Disabled="@(string.IsNullOrWhiteSpace(_newPattern) || _createBusy)">
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private sealed record LinkOverrideRow(
+        string SourcePattern,
+        string MachineIds,
+        string CreatedBy,
+        string CreatedAt,
+        string? Notes);
+
+    private List<LinkOverrideRow> _overrides = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _showCreateDialog;
+    private bool _createBusy;
+    private string _newPattern = string.Empty;
+    private string _newMachineIds = string.Empty;
+    private string _newNotes = string.Empty;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Link Overrides", href: "/admin/link-overrides", icon: Icons.Material.Filled.LinkOff),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var all = await OverrideRepo.LoadAllAsync(cts.Token);
+            _overrides = all.Values
+                .Select(r => new LinkOverrideRow(
+                    SourcePattern: r.SourcePattern,
+                    MachineIds: string.Join(", ", r.MachineIds),
+                    CreatedBy: r.CreatedBy,
+                    CreatedAt: r.CreatedAt.ToString("u"),
+                    Notes: r.Notes))
+                .ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin link overrides load timed out after 30 s.");
+            Snackbar.Add("Overrides load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin link overrides.");
+            Snackbar.Add($"Failed to load overrides: {ex.Message}", Severity.Error);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenCreateDialogAsync()
+    {
+        _newPattern = string.Empty;
+        _newMachineIds = string.Empty;
+        _newNotes = string.Empty;
+        _showCreateDialog = true;
+    }
+
+    private async Task ConfirmCreateAsync()
+    {
+        if (_createBusy) return;
+        _createBusy = true;
+        try
+        {
+            var machineIds = _newMachineIds
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var record = new LinkOverrideRecord
+            {
+                SourcePattern = _newPattern.Trim(),
+                MachineIds = machineIds,
+                CreatedBy = "admin",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Notes = string.IsNullOrWhiteSpace(_newNotes) ? null : _newNotes.Trim()
+            };
+
+            await OverrideRepo.UpsertAsync(record, CancellationToken.None);
+            _overrides.Add(new LinkOverrideRow(
+                SourcePattern: record.SourcePattern,
+                MachineIds: string.Join(", ", record.MachineIds),
+                CreatedBy: record.CreatedBy,
+                CreatedAt: record.CreatedAt.ToString("u"),
+                Notes: record.Notes));
+            _showCreateDialog = false;
+            Snackbar.Add("Override created.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Create failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _createBusy = false;
+        }
+    }
+
+    private async Task DeleteAsync(LinkOverrideRow row)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Override",
+            $"Remove override for '{row.SourcePattern}'?",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        try
+        {
+            await OverrideRepo.DeleteAsync(row.SourcePattern, CancellationToken.None);
+            _overrides.Remove(row);
+            Snackbar.Add("Override deleted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+    }
+}

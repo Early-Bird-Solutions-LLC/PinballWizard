@@ -2,8 +2,10 @@ using PinballWizard.Application.Ai.Evaluation.Evaluators;
 
 namespace PinballWizard.Infrastructure.Integrations.Foundry;
 
-// Canonical Python equivalents of the four custom code-based evaluators
-// per ADR-0016. Foundry's evaluator runtime executes Python; the .NET
+// Canonical Python equivalents of the seven custom code-based evaluators
+// per ADR-0016 (the original four + the AB#259 edition-aware additions:
+// answered_all_editions and honest_substitution). Foundry's evaluator
+// runtime executes Python; the .NET
 // classes in PinballWizard.Application.Ai.Evaluation.Evaluators are the
 // in-process Phase 3 implementation; these snippets are the spec for
 // the future Foundry-side registration when Azure.AI.Projects exposes
@@ -23,6 +25,8 @@ internal static class EvaluatorPythonSpecs
         yield return $"{evaluatorNamespace}.{CitationCoverageEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{SubagentAccuracyEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{RefusalCorrectnessEvaluator.EvaluatorName}";
+        yield return $"{evaluatorNamespace}.{AnsweredAllEditionsEvaluator.EvaluatorName}";
+        yield return $"{evaluatorNamespace}.{HonestSubstitutionEvaluator.EvaluatorName}";
     }
 
     public const string CitationPrecisionPython = """
@@ -52,9 +56,18 @@ def evaluate(predicted_sub_agent, expected_sub_agent, **_):
     return {"score": 1.0 if a == b else 0.0}
 """;
 
+    // Three-state per the AB#259 metric-hygiene fix (2026-06-10):
+    // refusal_required rows must refuse; acceptable_refusal-only rows
+    // accept either behavior (score None → excluded from the aggregate,
+    // mirroring the C# null); all other rows must answer. Mirrors
+    // RefusalCorrectnessEvaluator.
     public const string RefusalCorrectnessPython = """
-def evaluate(predicted_refusal, acceptable_refusal, **_):
-    return {"score": 1.0 if bool(predicted_refusal) == bool(acceptable_refusal) else 0.0}
+def evaluate(predicted_refusal, acceptable_refusal, refusal_required=False, **_):
+    if bool(refusal_required):
+        return {"score": 1.0 if bool(predicted_refusal) else 0.0}
+    if bool(acceptable_refusal):
+        return {"score": None}
+    return {"score": 0.0 if bool(predicted_refusal) else 1.0}
 """;
 
     public const string CitationCoveragePython = """
@@ -69,5 +82,63 @@ def evaluate(answer_text, predicted, **_):
     n = max(len(paragraphs), 1)
     coverage = len(cites) / n
     return {"score": min(coverage, 1.0)}
+""";
+
+    // R2 (AB#259): every required edition named in the text (WHOLE WORD,
+    // \b…\b — mirrors EditionLabelMatcher; naked substring would match
+    // "Pro" inside "appropriate") + at least one distinct citation per
+    // edition. Mirrors AnsweredAllEditionsEvaluator.
+    public const string AnsweredAllEditionsPython = """
+import re
+
+def _names_edition(text, edition):
+    tokens = [t.strip() for t in (edition or "").split("/") if t.strip()]
+    return any(re.search(r"\b" + re.escape(t) + r"\b", text, re.IGNORECASE) for t in tokens)
+
+def evaluate(answer_text, predicted, required_editions, **_):
+    reqs = list(required_editions or [])
+    if not reqs:
+        return {"score": 0.0}
+    text = answer_text or ""
+    for edition in reqs:
+        if not _names_edition(text, edition):
+            return {"score": 0.0}
+    distinct = len(set(s.lower() for s in (predicted or [])))
+    return {"score": 1.0 if distinct >= len(reqs) else 0.0}
+""";
+
+    // R3 (AB#259): disclose the named edition's gap + cite a substitute.
+    // The named-edition check is WHOLE WORD (\b…\b — mirrors
+    // EditionLabelMatcher; naked substring would match "LE" inside
+    // "available", letting the disclosure phrase defeat the guard) AND splits
+    // a slash-separated label ("Premium/LE") into sub-tokens first, matching
+    // if ANY sub-token is named — identical to EditionLabelMatcher.AnswerNamesEdition,
+    // which both R2 and R3 use. (Without the split, a named_edition of
+    // "Premium/LE" would require the literal substring "Premium/LE".)
+    // Mirrors HonestSubstitutionEvaluator. NOTE: C# throws on a blank
+    // named_edition (the harness guards it upstream); the Foundry runtime
+    // has no upstream guard, so this returns 0.0 — behaviorally equivalent.
+    public const string HonestSubstitutionPython = """
+import re
+
+def _names_edition(text, edition):
+    tokens = [t.strip() for t in (edition or "").split("/") if t.strip()]
+    return any(re.search(r"\b" + re.escape(t) + r"\b", text, re.IGNORECASE) for t in tokens)
+
+def evaluate(answer_text, predicted, named_edition, **_):
+    cites = list(predicted or [])
+    if not cites:
+        return {"score": 0.0}
+    edition = (named_edition or "").strip()
+    if not edition:
+        return {"score": 0.0}
+    text = answer_text or ""
+    if not _names_edition(text, edition):
+        return {"score": 0.0}
+    phrases = ["don't have", "dont have", "do not have", "isn't available",
+               "isnt available", "is not available", "aren't available",
+               "are not available", "not available", "unavailable", "no specific"]
+    low = text.lower()
+    return {"score": 1.0 if any(p in low for p in phrases) else 0.0}
 """;
 }

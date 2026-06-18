@@ -19,6 +19,9 @@ public sealed class ScraperSettings
     /// <summary>Maximum concurrent file downloads.</summary>
     public int MaxConcurrentDownloads { get; set; } = 3;
 
+    /// <summary>Maximum concurrent Cosmos upserts during scrape and link passes. Internal writes only — never applied to external HTTP.</summary>
+    public int CosmosWriteConcurrency { get; set; } = 20;
+
     /// <summary>HTTP request timeout in seconds.</summary>
     public int HttpTimeoutSeconds { get; set; } = 120;
 
@@ -37,6 +40,4 @@ public sealed class ScraperSettings
     public string LogsPath => Path.Combine(DataPath, "logs");
     public string SnapshotsPath => Path.Combine(DataPath, "metadata", "snapshots");
     public string HistoryPath => Path.Combine(DataPath, "metadata", "history");
-    public string CatalogPath => Path.Combine(DataPath, "metadata", "catalog.json");
-    public string GamesCatalogPath => Path.Combine(DataPath, "metadata", "games.json");
 }

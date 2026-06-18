@@ -167,6 +167,18 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
             _logger.LogWarning(ex, "SystemStatusProvider: Foundry probe threw unexpectedly.");
             return null;
         }
+        catch (Exception ex)
+        {
+            // Broad fallback catch (invariant #17 audit 2026-06-12): any exception
+            // type not in the typed list above (e.g. ObjectDisposedException, NRE
+            // from a misconfigured SDK) must still return null rather than letting
+            // Task.WhenAll propagate the exception and crash GetStatusAsync entirely.
+            // Logged at Warning so the unexpected type is visible to operators.
+            _logger.LogWarning(ex,
+                "SystemStatusProvider: Foundry probe threw an unexpected exception type '{ExceptionType}'. Treating as unknown.",
+                ex.GetType().Name);
+            return null;
+        }
     }
 
     private async Task<bool?> ProbeAiSearchAsync(CancellationToken cancellationToken)
@@ -193,6 +205,16 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
             _logger.LogWarning(ex, "SystemStatusProvider: AI Search probe threw unexpectedly.");
             return null;
         }
+        catch (Exception ex)
+        {
+            // Broad fallback catch (invariant #17 audit 2026-06-12): any exception
+            // type not in the typed list above must still return null rather than
+            // crashing GetStatusAsync via Task.WhenAll propagation.
+            _logger.LogWarning(ex,
+                "SystemStatusProvider: AI Search probe threw an unexpected exception type '{ExceptionType}'. Treating as unknown.",
+                ex.GetType().Name);
+            return null;
+        }
     }
 
     private async Task<bool?> ProbeCosmosAsync(CancellationToken cancellationToken)
@@ -216,6 +238,16 @@ public sealed class SystemStatusProvider : ISystemStatusProvider, IDisposable
             // (HttpRequestException), misconfigured probe (InvalidOperationException),
             // or timeout. All map to null/"unknown" — not red/green on the dashboard.
             _logger.LogWarning(ex, "SystemStatusProvider: Cosmos canary probe threw unexpectedly.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            // Broad fallback catch (invariant #17 audit 2026-06-12): any exception
+            // type not in the typed list above must still return null rather than
+            // crashing GetStatusAsync via Task.WhenAll propagation.
+            _logger.LogWarning(ex,
+                "SystemStatusProvider: Cosmos canary probe threw an unexpected exception type '{ExceptionType}'. Treating as unknown.",
+                ex.GetType().Name);
             return null;
         }
     }

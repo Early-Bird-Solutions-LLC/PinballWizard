@@ -11,6 +11,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 
 namespace PinballWizard.Infrastructure.Integrations.AiSearch;
@@ -48,6 +49,47 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IAzureAiSearchSmokeProbe, AzureAiSearchSmokeProbe>();
 
+        // ADR-0024 cross-encoder reranker. CrossEncoderOptions is bound
+        // here so AddAzureAiSearchIntegration is the single registration
+        // call for the full retrieval stack. When Rag:CrossEncoder:Enabled
+        // is false (default), NullCrossEncoderReranker is used; when true,
+        // CohereRerankReranker is wired with a dedicated named HttpClient.
+        services.AddOptions<CrossEncoderOptions>()
+            .Bind(configuration.GetSection(CrossEncoderOptions.SectionName))
+            .ValidateDataAnnotations()
+            .Validate(
+                static o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ModelEndpoint),
+                $"{CrossEncoderOptions.SectionName}:ModelEndpoint is required when {CrossEncoderOptions.SectionName}:Enabled=true.")
+            .ValidateOnStart();
+
+        // Named HttpClient for CohereRerankReranker — only resolved when
+        // Rag:CrossEncoder:Enabled=true. Attaches a DefaultAzureCredential
+        // bearer token scoped to Azure AI / Cognitive Services so the Foundry
+        // external-connection proxy accepts the request.
+        services.AddHttpClient("CohereReranker")
+            .AddHttpMessageHandler(() => new AzureCredentialBearerTokenHandler(
+                Credentials.SharedAzureCredential.Instance,
+                ["https://cognitiveservices.azure.com/.default"]));
+
+        services.TryAddSingleton<ICrossEncoderReranker>(sp =>
+        {
+            var opts = sp.GetRequiredService<IOptions<CrossEncoderOptions>>().Value;
+            if (!opts.Enabled)
+                return new NullCrossEncoderReranker();
+
+            // Cohere Rerank-v3 via Foundry connection. The HttpClient carries
+            // a DefaultAzureCredential bearer token for the Foundry endpoint.
+            // The managed identity on the Container App (or dev's az login
+            // session) must have the "Azure AI Developer" role on the Foundry
+            // project — same credential used for Foundry agent dispatch.
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>()
+                .CreateClient("CohereReranker");
+            return new CohereRerankReranker(
+                httpClient,
+                sp.GetRequiredService<IOptions<CrossEncoderOptions>>(),
+                sp.GetRequiredService<ILogger<CohereRerankReranker>>());
+        });
+
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
         services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
@@ -72,7 +114,7 @@ public static class ServiceCollectionExtensions
         }
 
         var openAiAccountEndpoint = DeriveAccountEndpoint(foundryOptions.ProjectEndpoint);
-        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, new DefaultAzureCredential());
+        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, Credentials.SharedAzureCredential.Instance);
         var embeddingClient = openAiClient.GetEmbeddingClient(aiSearchOptions.EmbeddingDeploymentName);
 
         return new AzureOpenAIQueryEmbedder(
@@ -86,12 +128,14 @@ public static class ServiceCollectionExtensions
         var searchClient = new SearchClient(
             new Uri(aiSearchOptions.Endpoint),
             aiSearchOptions.IndexName,
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
 
         return new AiSearchRagRetriever(
             searchClient,
             sp.GetRequiredService<IQueryEmbedder>(),
             sp.GetRequiredService<IOptions<AiSearchOptions>>(),
+            sp.GetRequiredService<IOptions<CrossEncoderOptions>>(),
+            sp.GetRequiredService<ICrossEncoderReranker>(),
             sp.GetRequiredService<ILogger<AiSearchRagRetriever>>());
     }
 
@@ -117,7 +161,7 @@ public static class ServiceCollectionExtensions
         }
 
         var openAiAccountEndpoint = DeriveAccountEndpoint(foundryOptions.ProjectEndpoint);
-        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, new DefaultAzureCredential());
+        var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, Credentials.SharedAzureCredential.Instance);
         var embeddingClient = openAiClient.GetEmbeddingClient(aiSearchOptions.EmbeddingDeploymentName);
 
         return new AzureOpenAIChunkEmbedder(
@@ -135,7 +179,7 @@ public static class ServiceCollectionExtensions
         var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
         return new SearchIndexClient(
             new Uri(aiSearchOptions.Endpoint),
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
     }
 
     private static AiSearchRagIndexer BuildRagIndexer(IServiceProvider sp)
@@ -144,7 +188,7 @@ public static class ServiceCollectionExtensions
         var searchClient = new SearchClient(
             new Uri(aiSearchOptions.Endpoint),
             aiSearchOptions.IndexName,
-            new DefaultAzureCredential());
+            Credentials.SharedAzureCredential.Instance);
 
         return new AiSearchRagIndexer(
             searchClient,

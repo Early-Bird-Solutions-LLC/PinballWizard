@@ -1,0 +1,406 @@
+@page "/admin/machines/{OpdbId}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@* AdminMachineDetail — /admin/machines/{opdbId} per-game diagnostic view (AB#259).
+ *
+ * Headline feature: edition-sibling strip — one card per sibling edition showing
+ * its DocCount. Makes the Godzilla-class edition mislink (Pro has docs, Premium/LE
+ * has 0) obvious at a glance.
+ *
+ * Data loading strategy (ADR-0036 — Tier-1 reads only):
+ *   1. IMachineRepository.GetByOpdbIdAsync(opdbId, mfr, ct)  — point read
+ *   2. ICatalogStatsReadRepository.GetByManufacturerAsync(mfr, ct) — point read of rollup
+ *      → used for BOTH this machine's doc stats AND each sibling's DocCount (avoids
+ *        per-sibling queries)
+ *   3. IMachineRepository.GetSiblingsByGroupIdAsync(groupId, ct) — bounded cross-partition
+ *      (cardinality 1–10 per ADR-0029; guarded in the repo per ADR-0036)
+ *   4. IMachineDocumentReadRepository.StreamByMachineIdAsync(machineId, ct) — single partition
+ *
+ * ?mfr= is required — the machine record is partition-keyed by manufacturer.
+ * Without it we refuse the lookup (no cross-partition fallback — ADR-0036 Tier-1 only).
+ *
+ * Interactive page (@rendermode InteractiveServer) per the ADR-0034 amendment
+ * (2026-06-17) — the linked-documents grid sorts/filters client-side without
+ * reloads. AdminLayout providers are pinned interactive to match.
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth
+ * ADR-0026  § 1 — routing inventory (/admin/machines/{opdbId})
+ * ADR-0029  — version-aware answering / edition siblings
+ * ADR-0034  — admin per-need render mode (this page is interactive)
+ * ADR-0036  — Cosmos read-access standard (Tier-1 reads only)
+ *@
+
+@inject IMachineRepository Machines
+@inject IMachineDocumentReadRepository Docs
+@inject ICatalogStatsReadRepository Stats
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject ILogger<AdminMachineDetail> Logger
+
+<PageTitle>@(_machine?.Title ?? OpdbId) — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @* ── Cosmos load failure ──────────────────────────────────────────────────── *@
+    @if (!_loading && _loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="detail-load-failed">
+            Machine details could not be loaded. Please refresh the page or check Cosmos
+            connectivity. If the problem persists, verify the Cosmos account is reachable.
+        </MudAlert>
+    }
+
+    @* ── No manufacturer supplied ─────────────────────────────────────────────── *@
+    @if (!_loading && !_loadFailed && _missingMfr)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="detail-missing-mfr">
+            Manufacturer is required to load machine details. Navigate here from the
+            <MudLink Href="/admin/machines">Machine Catalog</MudLink> — it always
+            supplies the <code>?mfr=</code> query parameter.
+        </MudAlert>
+    }
+
+    @* ── Machine not found ────────────────────────────────────────────────────── *@
+    @if (!_loading && !_loadFailed && !_missingMfr && _notFound)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="detail-not-found">
+            No machine found for OPDB ID <code>@OpdbId</code> in manufacturer
+            <code>@Mfr</code>. It may not have been synced yet.
+        </MudAlert>
+        <MudButton Href="/admin/machines"
+                   Variant="Variant.Outlined"
+                   Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.ArrowBack">
+            Back to Catalog
+        </MudButton>
+    }
+
+    @* ── Machine detail ───────────────────────────────────────────────────────── *@
+    @if (!_loading && !_loadFailed && !_missingMfr && !_notFound && _machine is not null)
+    {
+        @* Header *@
+        <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="2" Class="mb-1">
+            <MudText Typo="Typo.h4">@_machine.Title</MudText>
+            @if (!string.IsNullOrWhiteSpace(_machine.EditionLabel))
+            {
+                <MudText Typo="Typo.h6" Color="Color.Secondary">@_machine.EditionLabel</MudText>
+            }
+        </MudStack>
+
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-2" AlignItems="AlignItems.Center">
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Color="@HealthFlagColor(_healthFlags)"
+                     Variant="Variant.Filled"
+                     data-testid="detail-health-chip">
+                @HealthLabel(_healthFlags)
+            </MudChip>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.ManufacturerDisplayName</MudText>
+            @if (_machine.Year.HasValue)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.Year</MudText>
+            }
+            <MudText Typo="Typo.caption" Color="Color.Tertiary" data-testid="detail-opdb-id">
+                OPDB: @_machine.Id
+            </MudText>
+            @if (!string.IsNullOrWhiteSpace(_machine.OpdbSourceUrl))
+            {
+                <MudLink Href="@_machine.OpdbSourceUrl" Target="_blank" Typo="Typo.caption">
+                    View on OPDB
+                </MudLink>
+            }
+        </MudStack>
+
+        @* ── Edition-sibling strip (headline feature) ──────────────────────────── *@
+        @if (_siblings.Count > 0)
+        {
+            @* Callout when any sibling has 0 docs while others have docs *@
+            @if (_siblings.Any(s => s.DocCount == 0) && _siblings.Any(s => s.DocCount > 0))
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="detail-edition-gap-callout">
+                    Edition doc gap detected — one or more editions have no documents while
+                    others do. Check the strip below.
+                </MudAlert>
+            }
+
+            <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-4" data-testid="edition-sibling-strip">
+                @foreach (var sib in _siblings)
+                {
+                    var isEmpty = sib.DocCount == 0;
+                    <MudPaper Elevation="2" Class="pa-3">
+                        <MudStack Spacing="1" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2">
+                                @(sib.EditionLabel ?? sib.Title)
+                            </MudText>
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@(isEmpty ? Color.Error : Color.Success)"
+                                     Variant="Variant.Filled">
+                                @sib.DocCount doc@(sib.DocCount == 1 ? "" : "s")
+                            </MudChip>
+                        </MudStack>
+                    </MudPaper>
+                }
+            </MudStack>
+        }
+
+        @* ── Linked-documents table ─────────────────────────────────────────────── *@
+        <MudText Typo="Typo.h6" Class="mb-2">Linked Documents</MudText>
+
+        @if (_docs.Count == 0)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="py-6" Spacing="2" data-testid="detail-no-docs">
+                <MudIcon Icon="@Icons.Material.Outlined.FolderOff"
+                         Size="Size.Large"
+                         Color="Color.Tertiary" />
+                <MudText Typo="Typo.body1">No documents linked to this machine</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Run the scraper for this manufacturer, then re-link to populate.
+                </MudText>
+            </MudStack>
+        }
+        else
+        {
+            <MudDataGrid T="MachineDocumentLink"
+                         Items="@_docs"
+                         Dense="true"
+                         Hover="true"
+                         Striped="true"
+                         Elevation="2"
+                         Class="mb-4"
+                         data-testid="detail-docs-grid">
+                <Columns>
+                    <PropertyColumn Property="d => d.DocumentType" Title="Type" Sortable="true" />
+                    <TemplateColumn Title="Document">
+                        <CellTemplate>
+                            <MudLink Href="@context.Item.DocumentUrl" Target="_blank">
+                                @(context.Item.LinkText ?? FileNameFromUrl(context.Item.DocumentUrl))
+                            </MudLink>
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="d => d.EditionScope" Title="Edition Scope" />
+                    <TemplateColumn Title="Status">
+                        <CellTemplate>
+                            @if (!string.IsNullOrWhiteSpace(context.Item.LinkStatus))
+                            {
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Color="@LinkStatusColor(context.Item.LinkStatus)"
+                                         Variant="Variant.Filled">
+                                    @context.Item.LinkStatus
+                                </MudChip>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="d => d.ResolutionStrategy" Title="How Linked" />
+                    <TemplateColumn Title="Downloaded">
+                        <CellTemplate>
+                            @if (context.Item.LastDownloadedUtc.HasValue)
+                            {
+                                <MudText Typo="Typo.body2">
+                                    @context.Item.LastDownloadedUtc.Value.ToString("yyyy-MM-dd")
+                                </MudText>
+                                @if (context.Item.SizeBytes.HasValue || context.Item.PageCount.HasValue)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @FormatSize(context.Item.SizeBytes) @(context.Item.PageCount.HasValue ? $"· {context.Item.PageCount} pp" : "")
+                                    </MudText>
+                                }
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Tertiary">—</MudText>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </MudDataGrid>
+        }
+
+        @* ── Actions ────────────────────────────────────────────────────────────── *@
+        <MudStack Row="true" Spacing="2" Class="mb-2" data-testid="detail-actions">
+            <MudButton Href="/admin/document-triage"
+                       Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Build">
+                Document Triage
+            </MudButton>
+            <MudButton Href="/admin/link-overrides"
+                       Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Link">
+                Link Overrides
+            </MudButton>
+        </MudStack>
+    }
+</MudContainer>
+
+@code {
+    // ── Parameters ─────────────────────────────────────────────────────────────
+
+    [Parameter] public string OpdbId { get; set; } = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "mfr")]
+    public string? Mfr { get; set; }
+
+    // ── State ───────────────────────────────────────────────────────────────────
+
+    private Machine? _machine;
+    private IReadOnlyList<CatalogHealthFlag> _healthFlags = [CatalogHealthFlag.Ok];
+    private List<SiblingEntry> _siblings = [];
+    private List<MachineDocumentLink> _docs = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _missingMfr;
+    private bool _notFound;
+
+    private List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin",    href: "/admin",          icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Machines", href: "/admin/machines", icon: Icons.Material.Filled.SportsBaseball),
+    ];
+
+    // Lightweight sibling view — edition label + doc count resolved from the rollup.
+    private sealed record SiblingEntry(string MachineId, string Title, string? EditionLabel, int DocCount);
+
+    // ── Lifecycle ───────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Guard: manufacturer is required for a partition-key-aware point read.
+        if (string.IsNullOrWhiteSpace(Mfr))
+        {
+            _missingMfr = true;
+            _loading    = false;
+            return;
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            // 1. Point read for the machine.
+            _machine = await Machines.GetByOpdbIdAsync(OpdbId, Mfr, cts.Token);
+            if (_machine is null)
+            {
+                _notFound = true;
+                _loading  = false;
+                return;
+            }
+
+            // Update breadcrumbs now that we have the title.
+            _breadcrumbs.Add(new BreadcrumbItem(_machine.Title, href: null, disabled: true));
+
+            // 2. Manufacturer rollup — single point read used for both this machine's
+            //    stats AND every sibling's DocCount (avoids per-sibling queries).
+            var rollup = await Stats.GetByManufacturerAsync(Mfr, cts.Token);
+
+            // 3. Build sibling list (all editions in the same GroupId family).
+            //    GetSiblingsByGroupIdAsync may include the primary machine itself;
+            //    show all editions — the strip is the full family view.
+            if (_machine.GroupId is not null)
+            {
+                var siblingMachines = new List<Machine>();
+                await foreach (var s in Machines.GetSiblingsByGroupIdAsync(_machine.GroupId, cts.Token))
+                    siblingMachines.Add(s);
+
+                _siblings = siblingMachines
+                    .OrderBy(s => s.EditionLabel, StringComparer.OrdinalIgnoreCase)
+                    .Select(s =>
+                    {
+                        var docCount = rollup?.Machines
+                            .FirstOrDefault(m => m.MachineId == s.Id)?.DocCount ?? 0;
+                        return new SiblingEntry(s.Id, s.Title, s.EditionLabel, docCount);
+                    })
+                    .ToList();
+            }
+
+            // 4. Compute health for this machine (using the full sibling set from the rollup,
+            //    same as the summary page does — consistent flags cross both views).
+            if (rollup is not null)
+            {
+                var thisStat = rollup.Machines.FirstOrDefault(m => m.MachineId == _machine.Id);
+                if (thisStat is not null)
+                {
+                    var siblingStats = rollup.Machines
+                        .Where(m => m.MachineId != _machine.Id && m.GroupId == _machine.GroupId)
+                        .ToList();
+                    _healthFlags = CatalogHealth.Evaluate(thisStat, siblingStats);
+                }
+            }
+
+            // 5. Linked documents (single-partition stream).
+            await foreach (var d in Docs.StreamByMachineIdAsync(_machine.Id, cts.Token))
+                _docs.Add(d);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Machine detail load timed out for {OpdbId} / {Mfr}.", OpdbId, Mfr);
+            Snackbar.Add("Page load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load machine detail for {OpdbId} / {Mfr}.", OpdbId, Mfr);
+            Snackbar.Add($"Failed to load machine: {ex.Message}", Severity.Error);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────────
+
+    // Delegated to the shared helper so a new flag only requires one update (ADR-0008 / FE-08).
+    private static Color HealthFlagColor(IReadOnlyList<CatalogHealthFlag> flags) =>
+        CatalogHealthColors.ForFlags(flags);
+
+    private static string HealthLabel(IReadOnlyList<CatalogHealthFlag> flags) =>
+        flags.Count == 0 || (flags.Count == 1 && flags[0] == CatalogHealthFlag.Ok)
+            ? "OK"
+            : flags[0] switch
+            {
+                CatalogHealthFlag.Empty      => "Empty",
+                CatalogHealthFlag.NoManual   => "No manual",
+                CatalogHealthFlag.EditionGap => "Edition gap",
+                _                            => "OK",
+            };
+
+    private static Color LinkStatusColor(string? status) => status switch
+    {
+        "Linked"         => Color.Success,
+        "PlatformGeneric"=> Color.Warning,
+        "Failed"         => Color.Error,
+        "NotInCatalog"   => Color.Error,
+        _                => Color.Default,
+    };
+
+    private static string FileNameFromUrl(string url)
+    {
+        try { return Path.GetFileName(new Uri(url).LocalPath); }
+        catch { return url; }
+    }
+
+    private static string FormatSize(long? bytes)
+    {
+        if (bytes is null) return string.Empty;
+        if (bytes < 1024)       return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+}

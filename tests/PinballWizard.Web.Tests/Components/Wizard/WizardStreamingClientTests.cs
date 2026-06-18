@@ -4,7 +4,9 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using PinballWizard.Application.Ai;
 using PinballWizard.Web.Components.Wizard;
 using Xunit;
@@ -16,10 +18,13 @@ namespace PinballWizard.Web.Tests.Components.Wizard;
 // Uses a fake HttpMessageHandler to simulate the Api's SSE responses
 // without spinning up a real HTTP server. Tests cover:
 //   1. Well-formed 3-event SSE stream → client yields 3 chunks correctly.
-//   2. 503 response (Foundry unwired) → fallback hardcoded stream.
-//   3. Api unreachable (HttpRequestException) → fallback hardcoded stream.
+//   2a. 503 response in Development → demo hardcoded stream (dev-only path).
+//   2b. 503 response in non-Development → propagates as HttpRequestException
+//       (issue #367 regression test — never a fake answer in Prod/QA).
+//   3. Api unreachable (HttpRequestException) → transport failure propagates.
 //   4. Server closes mid-stream → graceful completion (no exception leak).
 //   5. Cancellation during iteration → OperationCanceledException propagates.
+//   6. SSE comment preamble (": stream-open") → ignored by the parser.
 //
 // Per ADR-0026 PR self-audit item 9(d): every new component/client has
 // tests asserting behavior, not structure.
@@ -72,14 +77,36 @@ public sealed class WizardStreamingClientTests
         Assert.Equal(answer.Text, final.Answer.Text);
     }
 
+    [Fact]
+    public async Task StreamAsync_SseCommentPreamble_IsIgnoredByParser()
+    {
+        // The Api flushes ": stream-open\n\n" at request-accept so response
+        // headers leave before the agent produces its first chunk (the
+        // caller's attempt timeout then bounds connection+headers, never
+        // model latency — 2026-06-11 incident). SSE spec: ":"-prefixed
+        // lines are comments; the parser must yield no chunk for them.
+        var answer = BuildAnswer();
+        var sseBody = ": stream-open\n\n" + BuildSseBody(
+            ("text_delta", new AnswerChunk.TextDelta("Hello")),
+            ("final",      new AnswerChunk.Final(answer)));
+
+        var client = BuildClient(HttpStatusCode.OK, sseBody, "text/event-stream");
+
+        var chunks = await CollectAsync(client, "ping");
+
+        Assert.Equal(2, chunks.Count);
+        Assert.IsType<AnswerChunk.TextDelta>(chunks[0]);
+        Assert.IsType<AnswerChunk.Final>(chunks[1]);
+    }
+
     // ──────────────────────────────────────────────────────────────
-    // 2. 503 response → fallback hardcoded stream
+    // 2a. 503 response in Development → fallback hardcoded stream
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task StreamAsync_503Response_FallsBackToHardcodedStream()
+    public async Task StreamAsync_503Response_InDevelopment_FallsBackToHardcodedStream()
     {
-        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json");
+        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json", isDevelopment: true);
 
         var chunks = await CollectAsync(client, "hello");
 
@@ -91,9 +118,9 @@ public sealed class WizardStreamingClientTests
     }
 
     [Fact]
-    public async Task StreamAsync_503Response_FallbackFinalIsNotRefusal()
+    public async Task StreamAsync_503Response_InDevelopment_FallbackFinalIsNotRefusal()
     {
-        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json");
+        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json", isDevelopment: true);
 
         var chunks = await CollectAsync(client, "hello");
 
@@ -102,19 +129,51 @@ public sealed class WizardStreamingClientTests
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 3. Api unreachable → fallback stream (no exception to caller)
+    // 2b. 503 response in non-Development → propagates as exception
+    //     Regression test for issue #367: the placeholder previously
+    //     yielded for all environments, letting a fake uncited
+    //     "Hello world!" answer render in production when the Api
+    //     was struggling. Only Development gets the demo stream.
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task StreamAsync_ApiUnreachable_FallsBackToHardcodedStream()
+    public async Task StreamAsync_503Response_InProduction_PropagatesAsHttpRequestException()
+    {
+        // Production environment — 503 must NOT yield the demo stream.
+        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json", isDevelopment: false);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CollectAsync(client, "hello"));
+    }
+
+    [Fact]
+    public async Task StreamAsync_503Response_InProduction_YieldsNoDemoChunks()
+    {
+        // Verify no placeholder chunks (TextDelta or Final) reach the UI.
+        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json", isDevelopment: false);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(
+            () => CollectAsync(client, "hello"));
+
+        Assert.NotNull(exception);
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 3. Api unreachable → transport failure PROPAGATES
+    //    (2026-06-11 incident: this path previously yielded the
+    //    hardcoded demo stream, letting a fake uncited "Hello world!"
+    //    answer render in production whenever the Api struggled. The
+    //    component owns failure UX; the demo stream is reserved for
+    //    the explicit 503 "Foundry not wired" dev signal above.)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamAsync_ApiUnreachable_PropagatesTransportFailure()
     {
         var client = BuildClientThatThrows(new HttpRequestException("Connection refused."));
 
-        var chunks = await CollectAsync(client, "hello");
-
-        Assert.Equal(3, chunks.Count);
-        Assert.IsType<AnswerChunk.TextDelta>(chunks[0]);
-        Assert.IsType<AnswerChunk.Final>(chunks[2]);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CollectAsync(client, "hello"));
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -144,10 +203,11 @@ public sealed class WizardStreamingClientTests
     public async Task StreamAsync_CancelledToken_ThrowsOperationCanceledException()
     {
         // Pre-cancel token before the call so it throws at the first yield.
+        // Uses Development so cancellation fires during the demo-stream path.
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json");
+        var client = BuildClient(HttpStatusCode.ServiceUnavailable, "", "application/json", isDevelopment: true);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
@@ -196,7 +256,8 @@ public sealed class WizardStreamingClientTests
     private static WizardStreamingClient BuildClient(
         HttpStatusCode statusCode,
         string body,
-        string contentType)
+        string contentType,
+        bool isDevelopment = true)
     {
         var handler = new FakeHttpMessageHandler(req =>
         {
@@ -212,7 +273,10 @@ public sealed class WizardStreamingClientTests
             BaseAddress = new Uri("http://pinwiz-api-test"),
         };
 
-        return new WizardStreamingClient(httpClient, NullLogger<WizardStreamingClient>.Instance);
+        return new WizardStreamingClient(
+            httpClient,
+            NullLogger<WizardStreamingClient>.Instance,
+            BuildHostEnvironment(isDevelopment));
     }
 
     private static WizardStreamingClient BuildClientThatThrows(HttpRequestException ex)
@@ -222,7 +286,17 @@ public sealed class WizardStreamingClientTests
         {
             BaseAddress = new Uri("http://pinwiz-api-test"),
         };
-        return new WizardStreamingClient(httpClient, NullLogger<WizardStreamingClient>.Instance);
+        return new WizardStreamingClient(
+            httpClient,
+            NullLogger<WizardStreamingClient>.Instance,
+            BuildHostEnvironment(isDevelopment: true));
+    }
+
+    private static IHostEnvironment BuildHostEnvironment(bool isDevelopment)
+    {
+        var env = Substitute.For<IHostEnvironment>();
+        env.EnvironmentName.Returns(isDevelopment ? "Development" : "Production");
+        return env;
     }
 
     private static WizardAnswer BuildAnswer(string text = "Test answer.")

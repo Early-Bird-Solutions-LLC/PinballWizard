@@ -10,9 +10,9 @@ public sealed class EvalHarnessOptions
     public const string SectionName = "Evaluation";
 
     // Path (relative to current working directory, typically the repo
-    // root) to the JSONL ground-truth file. ADR-0016 § Ground-truth
-    // shape pins the v1 path.
-    public string GroundTruthPath { get; set; } = "data/eval/wizard.v1.jsonl";
+    // root) to the JSONL ground-truth file. v2 is the active ground truth
+    // (Foo Fighters dual OPDB IDs + JJP Toy Story 4 acceptable_refusal).
+    public string GroundTruthPath { get; set; } = "data/eval/wizard.v2.jsonl";
 
     // Directory where timestamped results JSON files are written.
     // Each run produces wizard.{yyyyMMddTHHmmssZ}.json; ADR-0016 calls

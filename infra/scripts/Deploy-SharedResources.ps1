@@ -22,8 +22,12 @@
     file is used and is part of every resource name.
 
 .PARAMETER WhatIf
-    Run the deployment in what-if mode (Azure shows the diff but applies
-    nothing). Use this on every PR before merging Bicep changes.
+    Validate the deployment without applying it (via `az stack sub validate`).
+    Azure runs full template + parameter + resource validation but mutates
+    nothing. Note: deployment stacks do not expose the old property-level
+    what-if diff (the `--what-if` flag was removed from `az stack sub` in CLI
+    2.7x); validate is the supported pre-apply safety check. Use on every PR
+    before merging Bicep changes.
 
 .PARAMETER SkipGuard
     Skip the subscription/tenant guard. NEVER use this in normal operation.
@@ -71,7 +75,26 @@ param(
     [switch]$WhatIf,
 
     [Parameter()]
-    [switch]$SkipGuard
+    [switch]$SkipGuard,
+
+    # Image tags for the Wizard web app and Api. If not supplied, the script
+    # reads the currently-deployed image from the running ACA app so a manual
+    # Bicep re-deploy does not revert the image to the placeholder.
+    # The CI/CD deploy workflow always supplies explicit :{sha} tags — never :latest.
+    [Parameter()]
+    [string]$WizardImageTag = '',
+
+    [Parameter()]
+    [string]$ApiImageTag = '',
+
+    [Parameter()]
+    [string]$RagIndexerImageTag = '',
+
+    # CLI image tag powering the linker + OPDB sync ACA Jobs. If not supplied,
+    # the script reads the image off the currently-deployed linker job so a
+    # manual Bicep re-deploy does not revert the jobs to the placeholder.
+    [Parameter()]
+    [string]$CliImageTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,11 +107,14 @@ $ProgressPreference = 'SilentlyContinue'
 # -----------------------------------------------------------------------------
 
 $EXPECTED_TENANT_ID       = '9793cd0f-2b27-4757-9986-1f7f1e35864a'  # Earlybird
-$EXPECTED_SUBSCRIPTION_ID = '4dce9fdd-ea5f-4f67-9a00-80279e58659d'  # Earlybird personal
+$EXPECTED_SUBSCRIPTION_ID = 'b1f33f17-74a9-4ecc-b46c-c4f31776b840'  # pinwiz.ai
 
 # Stable Deployment Stack name (not timestamped — same name on every run so
 # Azure updates the existing stack rather than creating a new deployment).
 $stackName = "pinwiz-shared-$Environment"
+
+# Resource group where the ACA apps live — used for image tag auto-discovery.
+$rg = "rg-pinwiz-shared-$Environment"
 
 # -----------------------------------------------------------------------------
 # Paths (script-relative so it runs from anywhere)
@@ -198,27 +224,94 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '  Bicep build: OK' -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
+# Image tag resolution — preserve current deployed images on manual runs
+# -----------------------------------------------------------------------------
+# If caller didn't supply -WizardImageTag / -ApiImageTag, read what's currently
+# running in ACA. This prevents a manual Bicep re-deploy from reverting the app
+# to the quickstart placeholder after CI/CD has pushed the real image.
+# CI/CD always supplies explicit :{sha} tags; the auto-discovery only kicks in
+# for operator-initiated re-deploys (e.g. infra changes that don't touch the app).
+
+$placeholderImage = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+if ([string]::IsNullOrEmpty($WizardImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-wizard-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $WizardImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  wizardImageTag: $WizardImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  wizardImageTag: $WizardImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+if ([string]::IsNullOrEmpty($ApiImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-api-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $ApiImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  apiImageTag:    $ApiImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  apiImageTag:    $ApiImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+if ([string]::IsNullOrEmpty($RagIndexerImageTag)) {
+    $discovered = az containerapp show -n "pinwiz-ca-ragindexer-$Environment" -g $rg `
+        --query 'properties.template.containers[0].image' -o tsv 2>$null
+    $RagIndexerImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  ragIndexerImageTag: $RagIndexerImageTag (auto-discovered from running ACA app)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  ragIndexerImageTag: $RagIndexerImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+# The CLI image runs on ACA Jobs (linker + OPDB sync), not an ACA App, so
+# auto-discovery reads from the linker job. The job name carries a uniqueString
+# suffix (pinwiz-job-linker-<5char>), so match by prefix rather than exact name.
+# Both jobs share the same cliImageTag, so the linker job is a sufficient probe.
+if ([string]::IsNullOrEmpty($CliImageTag)) {
+    $discovered = az containerapp job list -g $rg `
+        --query "[?starts_with(name, 'pinwiz-job-linker')].template.containers[0].image | [0]" -o tsv 2>$null
+    $CliImageTag = if ($discovered) { $discovered } else { $placeholderImage }
+    Write-Host "  cliImageTag:        $CliImageTag (auto-discovered from running linker ACA Job)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "  cliImageTag:        $CliImageTag (caller-supplied)" -ForegroundColor DarkGray
+}
+
+# -----------------------------------------------------------------------------
 # Deployment Stack create / update
 # -----------------------------------------------------------------------------
 
 $location = 'eastus2'
 
 if ($WhatIf) {
-    Write-Host '[4/5] Running what-if via Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
-    az stack sub create `
+    # `az stack sub create --what-if` was removed in Azure CLI 2.7x+ (the flag
+    # no longer exists on the stacks command). The supported no-apply preview for
+    # deployment stacks is now `az stack sub validate`, which runs the same
+    # template + parameter validation Azure performs before a real create/update
+    # (template compile, parameter binding, RBAC-assignment shape, resource API
+    # validation) without mutating any resource. It does not render a
+    # property-level resource diff the way the old subscription-level what-if did
+    # — that capability is not exposed for stacks — but it is the canonical
+    # pre-apply safety check and catches the failures a preview is meant to catch.
+    Write-Host '[4/5] Validating the Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
+    Write-Host '  Note: az stack sub has no --what-if (removed in CLI 2.7x); using `validate`.' -ForegroundColor DarkGray
+    az stack sub validate `
         --name $stackName `
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            wizardImageTag="$WizardImageTag" `
+            apiImageTag="$ApiImageTag" `
+            ragIndexerImageTag="$RagIndexerImageTag" `
+            cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
-        --deny-settings-mode none `
-        --what-if `
-        --yes
+        --deny-settings-mode none
     if ($LASTEXITCODE -ne 0) {
-        throw 'what-if failed.'
+        throw 'Deployment Stack validation failed.'
     }
     Write-Host ''
-    Write-Host '[5/5] What-if complete. No changes applied.' -ForegroundColor Green
+    Write-Host '[5/5] Validation complete. No changes applied.' -ForegroundColor Green
 }
 else {
     Write-Host "[4/5] Deploying via Deployment Stack '$stackName'..." -ForegroundColor Cyan
@@ -230,6 +323,10 @@ else {
         --location $location `
         --template-file $templateFile `
         --parameters $parametersFile `
+            wizardImageTag="$WizardImageTag" `
+            apiImageTag="$ApiImageTag" `
+            ragIndexerImageTag="$RagIndexerImageTag" `
+            cliImageTag="$CliImageTag" `
         --action-on-unmanage deleteResources `
         --deny-settings-mode none `
         --yes

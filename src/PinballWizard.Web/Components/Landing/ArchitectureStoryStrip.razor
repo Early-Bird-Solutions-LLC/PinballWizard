@@ -47,25 +47,25 @@
             Id: "polite-scraping",
             Label: "Polite Scraping",
             Description: "Every outbound HTTP request routes through IPolitenessGate, robots.txt is honored unconditionally, and rate limits are per-source configurable.",
-            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/",
+            Href: "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/tree/main/docs/adr/",
             LinkText: "ADRs"),
         new(
             Id: "rag-manuals",
             Label: "RAG over Manuals",
             Description: "Manufacturer manuals and service bulletins are chunked, embedded, and indexed in Azure AI Search so answers are grounded in authoritative source text.",
-            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0021-ai-search-index-schema.md",
+            Href: "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0021-ai-search-index-schema.md",
             LinkText: "ADR-0021"),
         new(
             Id: "confidence-refusal",
             Label: "Confidence Refusal",
             Description: "A geometric-mean composite of retrieval, model self-report, and citation coverage gates every answer. Below 0.65: structured refusal, never fabrication.",
-            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0017-confidence-threshold-refusal.md",
+            Href: "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0017-confidence-threshold-refusal.md",
             LinkText: "ADR-0017"),
         new(
             Id: "source-citations",
             Label: "Source-Cited Answers",
             Description: "Every answer ends with clickable citations carrying page anchors, freshness timestamps, and relevance scores traced from the retrieval pipeline.",
-            Href: "https://github.com/jkeeley2073/PinballWizard/blob/main/docs/adr/0022-tool-call-trace-citation-extraction.md",
+            Href: "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0022-citation-extraction.md",
             LinkText: "ADR-0022"),
     ];
 }

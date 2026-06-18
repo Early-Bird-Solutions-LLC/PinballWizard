@@ -1,12 +1,19 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using MudBlazor;
 using MudBlazor.Services;
 using NSubstitute;
+using PinballWizard.Application.Ai;
 using PinballWizard.Application.Landing;
+using PinballWizard.Application.Observability;
 using PinballWizard.Web.Clients;
+using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Landing;
 using PinballWizard.Web.Components.Pages;
 using Xunit;
@@ -28,6 +35,10 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 //
 // Each test creates its own BunitContext. Services are registered BEFORE any
 // component is rendered (bUnit locks the service provider on first GetService).
+//
+// Degradation tests (§ Issue #366): when the client returns null, the page
+// sets DegradationMode.LandingUnavailable in the store and increments the
+// pinwiz.web.landing_fallback_total OTel counter (invariant #17).
 public sealed class IndexPageTests
 {
     private static LandingResponse BuildLandingResponse()
@@ -55,6 +66,26 @@ public sealed class IndexPageTests
         return client;
     }
 
+    // Registers all services required by Index.razor into a BunitContext.
+    // Call this BEFORE locking the service provider (i.e., before calling
+    // ctx.Renderer.SetRendererInfo or ctx.Render<T>).
+    private static IClientDegradationStore RegisterIndexServices(
+        BunitContext ctx,
+        IWizardLandingClient landingClient)
+    {
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        ctx.Services.AddScoped<IWizardLandingClient>(_ => landingClient);
+        ctx.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+        // ILogger<Index> — Index is the component class name; IndexPage is the
+        // test alias only. Register NullLogger under the real component type.
+        ctx.Services.AddSingleton<ILogger<IndexPage>>(_ => NullLogger<IndexPage>.Instance);
+        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+
+        // Resolve store after all registrations so the DI container is built once.
+        return ctx.Services.GetRequiredService<IClientDegradationStore>();
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 1. Page renders with IWizardLandingClient mocked to return known data
     // ──────────────────────────────────────────────────────────────────────
@@ -63,11 +94,7 @@ public sealed class IndexPageTests
     public async Task Index_WithKnownLandingResponse_RendersHeroAndGrid()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
-        var client = BuildClient(BuildLandingResponse());
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
 
         var cut = ctx.Render<IndexPage>();
 
@@ -92,12 +119,8 @@ public sealed class IndexPageTests
     public async Task Index_WhenClientReturnsNull_RendersFallbackSeedQuestions()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // Simulate endpoint down — client returns null.
-        var client = BuildClient(response: null);
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, BuildClient(response: null));
 
         var cut = ctx.Render<IndexPage>();
 
@@ -123,15 +146,12 @@ public sealed class IndexPageTests
     public void Index_BeforeClientReturns_RendersFallbackNotSkeletons()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // NSubstitute returns a never-completing task to simulate "in-flight".
         var client = Substitute.For<IWizardLandingClient>();
         var tcs = new TaskCompletionSource<LandingResponse?>();
         client.GetLandingAsync(Arg.Any<CancellationToken>())
               .Returns(tcs.Task);
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, client);
 
         var cut = ctx.Render<IndexPage>();
 
@@ -155,11 +175,7 @@ public sealed class IndexPageTests
     public async Task Index_WithKnownResponse_LiveStatusBadgeIsGreen()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
-        var client = BuildClient(BuildLandingResponse()); // all-true SystemStatus
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, BuildClient(BuildLandingResponse())); // all-true SystemStatus
 
         var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
@@ -184,11 +200,7 @@ public sealed class IndexPageTests
     public async Task Index_WhenClientReturnsNull_LiveStatusBadgeIsAmber()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
-        var client = BuildClient(response: null);
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, BuildClient(response: null));
 
         var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
@@ -214,14 +226,10 @@ public sealed class IndexPageTests
     public async Task Index_OnSeedCardClick_NavigatesToWizardQ()
     {
         using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         // Register client BEFORE locking the service provider (SetRendererInfo
         // accesses ctx.Renderer which builds the provider). BunitNavigationManager
         // is retrieved AFTER rendering to avoid locking the provider early.
-        var client = BuildClient(BuildLandingResponse());
-        ctx.Services.AddScoped<IWizardLandingClient>(_ => client);
-        ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+        RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
 
         var cut = ctx.Render<IndexPage>();
         await cut.InvokeAsync(async () => await Task.Yield());
@@ -243,5 +251,76 @@ public sealed class IndexPageTests
         await cut.InvokeAsync(() => firstCard.Click());
 
         Assert.EndsWith("/wizard/q/slug-rules", navMan.Uri, StringComparison.Ordinal);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 7. Degradation store is set to LandingUnavailable when client returns null
+    //    (Issue #366 — landing fallback must be visibly degraded, invariant #17)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Index_WhenClientReturnsNull_SetsDegradationStoreLandingUnavailable()
+    {
+        using var ctx = new BunitContext();
+        var store = RegisterIndexServices(ctx, BuildClient(response: null));
+
+        var cut = ctx.Render<IndexPage>();
+        await cut.InvokeAsync(async () => await Task.Yield());
+        cut.Render();
+
+        // The store must reflect LandingUnavailable so OutageBanner shows.
+        Assert.NotNull(store.Current);
+        Assert.Equal(DegradationMode.LandingUnavailable, store.Current!.Mode);
+    }
+
+    [Fact]
+    public async Task Index_WhenClientReturnsNonNull_DoesNotSetDegradationStore()
+    {
+        using var ctx = new BunitContext();
+        var store = RegisterIndexServices(ctx, BuildClient(BuildLandingResponse()));
+
+        var cut = ctx.Render<IndexPage>();
+        await cut.InvokeAsync(async () => await Task.Yield());
+        cut.Render();
+
+        // Healthy path: store must remain null (no degradation set).
+        Assert.Null(store.Current);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8. OTel counter incremented when client returns null
+    //    (Issue #366 — pinwiz.web.landing_fallback_total must fire)
+    //    Pattern: MeterListener + ConcurrentBag (parallel-tolerant per
+    //    project_meterlistener_test_pattern.md memory note).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Index_WhenClientReturnsNull_IncrementsFallbackTotalCounter()
+    {
+        var samples = new ConcurrentBag<long>();
+
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == PinballWizardTelemetry.Meter.Name &&
+                instrument.Name == "pinwiz.web.landing_fallback_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, _, _) => samples.Add(value));
+        listener.Start();
+
+        using var ctx = new BunitContext();
+        RegisterIndexServices(ctx, BuildClient(response: null));
+
+        var cut = ctx.Render<IndexPage>();
+        await cut.InvokeAsync(async () => await Task.Yield());
+        cut.Render();
+
+        // Drain any pending measurements.
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(samples, v => v == 1);
     }
 }

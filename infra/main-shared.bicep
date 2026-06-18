@@ -8,7 +8,7 @@
 // sharing across other personal projects. Per ADR 0010 the deploying identity
 // must be authenticated against the personal Earlybird tenant
 // (9793cd0f-2b27-4757-9986-1f7f1e35864a) and subscription
-// (4dce9fdd-ea5f-4f67-9a00-80279e58659d) — that guard is enforced by
+// (b1f33f17-74a9-4ecc-b46c-c4f31776b840 "pinwiz.ai") — that guard is enforced by
 // `infra/scripts/Deploy-SharedResources.ps1` before this template runs.
 //
 // Deploy:
@@ -45,6 +45,9 @@ param namePrefix string = 'pinwiz'
 @description('Object ID of the Entra principal that should receive RBAC roles on shared resources for development. Optional; if empty, no role assignments are created at deploy time. NOTE: ignored when deployPhase2=false — every RBAC assignment grants on a Phase 2 resource, so Phase 1 deploys never use this value.')
 param developerObjectId string = ''
 
+@description('Object (principal) ID of the CI/CD deploy service principal (the "PinballWizard GitHub Actions" OIDC app registration). When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the deploy.yml workflow can swap each app image. Empty (default) skips the grants. This is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret). See modules/shared.bicep cicdDeployPrincipalId.')
+param cicdDeployPrincipalId string = ''
+
 @description('When false (default), provisions ONLY Phase 1 resources (Cosmos serverless + Log Analytics + Cosmos diagnostic settings). Set true when Phase 2 features (RAG, Blazor Web, Admin) start landing — adds App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + 3 blob containers, and the matching diagnostic settings + developer RBAC. Phase 1 monthly spend is ~$30/mo (Cosmos serverless idle + Log Analytics 1GB cap); Phase 2 brings the platform to ~$150/mo even when idle. WARNING: flipping true->false on an existing deploy DELETES the Phase 2 resources — Key Vault enters 7-day soft-delete (recoverable but secrets inaccessible during the window), blob containers and their data are gone, the AI Search index is lost. Use a separate environment if you need to test the Phase 1 baseline against a populated Phase 2 deploy.')
 param deployPhase2 bool = false
 
@@ -54,8 +57,38 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024). Default FALSE — a Foundry ApiKey connection cannot be created without a non-empty credentials.key, and the cross-encoder reranker is disabled by default, so the connection is inert. Flip true only in the change that provisions the Cohere key and enables the reranker. Has no effect when deployPhase2=false.')
+param deployCohereConnection bool = false
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
+
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). Leave empty to skip. Cloudflare proxy must be in DNS-only mode during cert provisioning.')
+param wizardCustomDomain string = ''
+
+@description('Two-pass flag for custom domain cert binding. false=Pass 1 (register hostname, Disabled). true=Pass 2 (create cert + SniEnabled binding). See shared.bicep wizardCustomDomainCert comment.')
+param wizardCustomDomainCertReady bool = false
+
+@description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half). Empty default = Entra wiring off. See modules/shared.bicep azureAdClientId for the full contract; the client secret lives only in Key Vault.')
+param azureAdClientId string = ''
+
+@description('Wizard web ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow. Never use :latest for deployments — push :latest as a convenience tag but always deploy with :{sha}.')
+param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Api ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow.')
+param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('RAG ingestion worker ACA container image tag. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow.')
+param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('CLI ACA Job container image tag. Powers both the nightly linker job and the weekly OPDB sync job. Set to the ACR image + explicit SHA tag by the CI/CD deploy workflow; Deploy-SharedResources.ps1 auto-discovers the running job image on manual redeploys.')
+param cliImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak). Has no effect when deployPhase2=false.')
+param linkerCronExpression string = '0 2 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. Has no effect when deployPhase2=false.')
+param opdbSyncCronExpression string = '0 3 * * 0'
 
 // -----------------------------------------------------------------------------
 // Variables
@@ -95,10 +128,21 @@ module shared 'modules/shared.bicep' = {
     searchLocation: searchLocation
     tags: commonTags
     developerObjectId: developerObjectId
+    cicdDeployPrincipalId: cicdDeployPrincipalId
     deployPhase2: deployPhase2
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
+    deployCohereConnection: deployCohereConnection
     wizardAliveUrl: wizardAliveUrl
+    wizardCustomDomain: wizardCustomDomain
+    wizardCustomDomainCertReady: wizardCustomDomainCertReady
+    wizardImageTag: wizardImageTag
+    azureAdClientId: azureAdClientId
+    apiImageTag: apiImageTag
+    ragIndexerImageTag: ragIndexerImageTag
+    cliImageTag: cliImageTag
+    linkerCronExpression: linkerCronExpression
+    opdbSyncCronExpression: opdbSyncCronExpression
   }
 }
 
@@ -119,6 +163,8 @@ output keyVaultName string = shared.outputs.keyVaultName
 output containerRegistryName string = shared.outputs.containerRegistryName
 output searchServiceName string = shared.outputs.searchServiceName
 output openAiAccountName string = shared.outputs.openAiAccountName
+output documentIntelligenceName string = shared.outputs.documentIntelligenceName
+output documentIntelligenceEndpoint string = shared.outputs.documentIntelligenceEndpoint
 output storageAccountName string = shared.outputs.storageAccountName
 output appInsightsName string = shared.outputs.appInsightsName
 
@@ -131,6 +177,20 @@ output acaEnvironmentName string = shared.outputs.acaEnvironmentName
 output ragIndexerContainerAppName string = shared.outputs.ragIndexerContainerAppName
 output ragIndexerPrincipalId string = shared.outputs.ragIndexerPrincipalId
 
+// Linker ACA Job (nightly document-to-machine linking batch).
+// linkerJobPrincipalId is the post-deploy validation handle:
+//   az cosmosdb sql role assignment list --account-name <name> --resource-group <rg>
+// confirms the Cosmos sqlRoleAssignment propagated.
+output linkerJobName string = shared.outputs.linkerJobName
+output linkerJobPrincipalId string = shared.outputs.linkerJobPrincipalId
+
+// OPDB sync ACA Job (weekly OPDB catalog sync batch).
+// opdbSyncJobPrincipalId is the post-deploy validation handle:
+//   az cosmosdb sql role assignment list --account-name <name> --resource-group <rg>
+// confirms the Cosmos sqlRoleAssignment propagated.
+output opdbSyncJobName string = shared.outputs.opdbSyncJobName
+output opdbSyncJobPrincipalId string = shared.outputs.opdbSyncJobPrincipalId
+
 // Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
 // operators export as $env:AiFoundry__ProjectEndpoint for the
 // --ensure-azure-foundry smoke probe and Wave 2 PR 4 IAiRouter.
@@ -140,3 +200,12 @@ output foundryProjectEndpoint string = shared.outputs.foundryProjectEndpoint
 output foundryChatDeploymentName string = shared.outputs.foundryChatDeploymentName
 output foundryChatHeavyDeploymentName string = shared.outputs.foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = shared.outputs.foundryEmbeddingDeploymentName
+
+// Wizard + Api Container Apps (Phase 7). wizardFqdn is the ACA-assigned FQDN
+// used by the CI/CD health check and the App Insights availability test.
+// wizardPrincipalId + apiPrincipalId are used by post-deploy RBAC validation.
+output wizardContainerAppName string = shared.outputs.wizardContainerAppName
+output wizardPrincipalId string = shared.outputs.wizardPrincipalId
+output wizardFqdn string = shared.outputs.wizardFqdn
+output apiContainerAppName string = shared.outputs.apiContainerAppName
+output apiPrincipalId string = shared.outputs.apiPrincipalId

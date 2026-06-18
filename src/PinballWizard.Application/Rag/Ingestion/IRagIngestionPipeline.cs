@@ -9,8 +9,9 @@ namespace PinballWizard.Application.Rag.Ingestion;
 // abstraction the Infrastructure layer composes (IDocumentTextExtractor,
 // IChunker, IRagIndexer, IIndexState).
 //
-// Sequencing per build-spec § Phase 4 item 18:
-//   curated-subset filter → document-type filter → hash short-circuit →
+// Sequencing per build-spec § Phase 4 item 18 (curated-subset filter
+// removed in Phase 4.5 W2):
+//   document-type filter → hash short-circuit →
 //   extract → chunk → embed + upsert → record state
 //
 // Idempotency per ADR-0021 § Versioning: chunk_id is deterministic from
@@ -18,7 +19,7 @@ namespace PinballWizard.Application.Rag.Ingestion;
 // same change produces the same chunk_id set; AI Search Upload action
 // upserts in place; index size doesn't grow. The `IIndexState` short-
 // circuit additionally avoids re-embedding when ContentHash hasn't moved
-// — embedding is the dominant per-document cost on the curated subset.
+// — embedding is the dominant per-document cost.
 //
 // Hosting: this orchestrator is invoked once per Cosmos Change Feed
 // event by the Infrastructure-layer hosted service `CosmosChangeFeedHostedService`
@@ -58,14 +59,22 @@ public sealed record ScrapedDocumentChange(
     // Threaded to the AI Search index as `last_scraped_utc` in Wave 2 PR-C3.
     // Nullable because legacy Cosmos documents written before PR-C3 may not
     // carry this field; the indexer and retriever propagate null gracefully.
-    DateTimeOffset? LastScrapedUtc = null);
+    DateTimeOffset? LastScrapedUtc = null,
+    // Free-text edition label and structural edition scope from the
+    // scraped_documents provenance record (Task 6, AB#259). Threaded to
+    // the AI Search index as `edition` / `edition_scope` so each chunk
+    // self-declares its scope. EditionScope is the hyphenated wire form
+    // (single-edition / edition-subset / franchise-wide) the scraper
+    // persisted. Both nullable — legacy / unresolved documents carry none.
+    string? Edition = null,
+    string? EditionScope = null);
 
 // Possible outcomes of one pipeline invocation. Surfaced via telemetry
 // (`pinwiz.rag.changefeed_short_circuit_total{reason}` and
 // `pinwiz.rag.changefeed_dead_letter_total{reason}`) so operators can
-// distinguish between healthy filtering (NotInCuratedSubset,
-// DocumentTypeFiltered, HashUnchanged) and signal-of-trouble paths
-// (ExtractionFailed, DeadLettered) at dashboard read.
+// distinguish between healthy filtering (DocumentTypeFiltered, HashUnchanged)
+// and signal-of-trouble paths (ExtractionFailed, DeadLettered) at dashboard
+// read.
 //
 // `Indexed` is the only happy-path; the rest are deliberate skips or
 // failures that do NOT halt the Change Feed batch — the orchestrator's
@@ -74,7 +83,6 @@ public sealed record ScrapedDocumentChange(
 public enum IngestionOutcome
 {
     Indexed,
-    Skipped_NotInCuratedSubset,
     Skipped_DocumentTypeFiltered,
     Skipped_HashUnchanged,
     Skipped_ExtractionFailed,

@@ -18,4 +18,7 @@ public enum DegradationMode
     SearchUnavailable = 1,
     UpstreamThrottled = 2,
     PartialResults = 3,
+    // Landing API was unreachable; the page is showing compiled-in static content.
+    // Set by Index.razor when IWizardLandingClient returns null in interactive mode.
+    LandingUnavailable = 4,
 }

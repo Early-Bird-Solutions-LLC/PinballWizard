@@ -7,6 +7,9 @@
     <base href="/" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="app.css" />
+    @* Scoped-CSS bundle (every Components/**/*.razor.css). Without this link
+       none of the per-component styles ship — see ScopedCssBundleTests. *@
+    <link rel="stylesheet" href="PinballWizard.Web.styles.css" />
     <HeadOutlet />
 </head>
 

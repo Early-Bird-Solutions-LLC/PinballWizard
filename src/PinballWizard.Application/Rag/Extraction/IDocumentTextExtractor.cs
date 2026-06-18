@@ -6,11 +6,12 @@ namespace PinballWizard.Application.Rag.Extraction;
 // scanned-image-only / malformed) as a status enum rather than an
 // exception so callers can log and skip without try/catch.
 //
-// The default implementation is `Infrastructure.Rag.Extraction.PdfPigDocumentTextExtractor`,
-// wrapping `UglyToad.PdfPig` 0.1.x. Phase 4.5 may add a second
-// implementation backed by Azure Document Intelligence to handle
-// `ExtractionStatus.OcrRequired` PDFs; that's a follow-on, not a
-// Phase 4 concern.
+// Two implementations ship: `Infrastructure.Rag.Extraction.PdfPigDocumentTextExtractor`
+// (primary, wrapping `UglyToad.PdfPig` 0.1.x) and
+// `Infrastructure.Rag.Extraction.AzureDocumentIntelligenceExtractor`
+// (ADI Read-model OCR fallback, Phase 4.5 W1). Production DI wires
+// both through `FallbackDocumentTextExtractor` when
+// `DocumentIntelligence:Endpoint` is configured.
 public interface IDocumentTextExtractor
 {
     // Extract text + structure from the PDF in `pdfStream`. The stream

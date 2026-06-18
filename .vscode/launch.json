@@ -1,0 +1,109 @@
+{
+  // Debug configurations (Run and Debug view, F5).
+  //
+  // AppHost uses the "aspire" launch type (Aspire VS Code extension
+  // microsoft-aspire.aspire-vscode + the Aspire CLI). It runs the
+  // AppHost under `aspire run`, which applies the launchSettings "https"
+  // profile — Development (so user-secrets load, including the Cosmos emulator
+  // passphrase), the stable dashboard token, and auto-launching the dashboard
+  // in a browser. This replaces an earlier coreclr config that had to
+  // hand-replicate each of those (env + token + browser) and still couldn't
+  // open the dashboard.
+  //
+  // Prereqs: the Aspire extension + the Aspire CLI installed as a NATIVE binary
+  // at ~/.aspire/bin/aspire.exe via `irm https://aspire.dev/install.ps1 | iex`
+  // (Windows; see https://aspire.dev/get-started/install-cli/ for other OSes).
+  // The extension probes that path directly, so detection does not depend on
+  // PATH. NOTE: `dotnet tool install -g aspire.cli` is NOT sufficient on Windows
+  // — it installs an `aspire.cmd` shim, but the extension detects the CLI by
+  // spawning `aspire` without a shell (Windows resolves that only to `aspire.exe`)
+  // and by probing for `aspire.exe` at ~/.aspire/bin and ~/.dotnet/tools. A
+  // `.cmd` shim on PATH satisfies a terminal but not the extension.
+  //
+  // CLI / API / Web use the "coreclr" type for debugging a single process in
+  // isolation (no orchestrator). The "dotnet" (C# Dev Kit) type silently drops
+  // env vars (microsoft/vscode-dotnettools#608, #241), so coreclr + an explicit
+  // "env" block is used to force Development (loads each project's user-secrets
+  // / Development config). Cost: an explicit net10.0 dll path (TFM is centrally
+  // pinned in Directory.Build.props); the shared "build" preLaunchTask
+  // (tasks.json) keeps the dll fresh.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "AppHost (Aspire)",
+      "type": "aspire",
+      "request": "launch",
+      "program": "${workspaceFolder}/src/PinballWizard.AppHost/PinballWizard.AppHost.csproj",
+      // Belt-and-suspenders for the passphrase: `aspire run` already applies the
+      // launchSettings https profile (Development), but set it explicitly so a
+      // future launchSettings change can't silently drop user-secrets loading.
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        // Isolated Azure CLI config dir so the app's DefaultAzureCredential ->
+        // AzureCliCredential resolves the PERSONAL pinwiz.ai identity (where the
+        // Bicep-managed Foundry lives) instead of the machine default ~/.azure
+        // (which may be signed in to another tenant). The AppHost relays this to
+        // its orchestrated children. First-time setup: open a terminal, set
+        // $env:AZURE_CONFIG_DIR to this dir, `az login`, select the pinwiz.ai
+        // subscription. The dir is gitignored (it holds a live MSAL token cache).
+        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+      }
+    },
+    {
+      "name": "CLI (scraper / sync / eval)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Cli/bin/Debug/net10.0/PinballWizard.Cli.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Cli",
+      // Add the command you're debugging, e.g. ["--help"] or ["--source", "opdb"].
+      "args": [],
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
+        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "API (standalone)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Api/bin/Debug/net10.0/PinballWizard.Api.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Api",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
+        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Web (standalone)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/PinballWizard.Web/bin/Debug/net10.0/PinballWizard.Web.dll",
+      "cwd": "${workspaceFolder}/src/PinballWizard.Web",
+      // Pin a project-specific port so standalone Web does not bind Kestrel's
+      // framework-default http://localhost:5000 — which collides with any other
+      // ASP.NET app on 5000 (the default). This coreclr config launches the
+      // built DLL directly, which does NOT read launchSettings.json, so the URL
+      // is set here via ASPNETCORE_URLS alongside the env vars this config
+      // already controls. Under "AppHost (Aspire)" the orchestrator assigns Web
+      // a dynamic port instead, so this only affects standalone debugging.
+      // Port scheme: AppHost *110 (launchSettings), standalone Web *120.
+      "env": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_URLS": "http://localhost:15120",
+        // See the AppHost (Aspire) AZURE_CONFIG_DIR note — personal-identity isolation.
+        "AZURE_CONFIG_DIR": "${workspaceFolder}/.azure-local"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

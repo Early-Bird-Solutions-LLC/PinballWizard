@@ -20,8 +20,8 @@
 // Each resource gets diagnostic settings routed to the Log Analytics workspace.
 //
 // Cost guard: this scaffold creates the resources but does NOT deploy any
-// Azure OpenAI model deployments (gpt-4o-mini / gpt-4.1 / text-embedding-3-large
-// / vision). Model deployments need quota and are slow to provision; they ship
+// Azure OpenAI model deployments (gpt-4o / gpt-4.1 / text-embedding-3-large).
+// Model deployments need quota and are slow to provision; they ship
 // in a follow-up PR after the account exists.
 // =============================================================================
 
@@ -43,6 +43,9 @@ param tags object
 @description('Object ID of the developer principal to grant RBAC at deploy time. If empty, role assignments are skipped.')
 param developerObjectId string
 
+@description('Object (principal) ID of the CI/CD deploy service principal — the "PinballWizard GitHub Actions" app registration that the deploy.yml workflow logs in as via OIDC. When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the workflow can run `az containerapp update --image` against each app. Empty (default) skips these grants. Replaces the former manual per-app `az role assignment create` step in the deploy.yml header — CI-identity RBAC is now IaC. NOTE: this is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret).')
+param cicdDeployPrincipalId string = ''
+
 @description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
 param deployPhase2 bool
 
@@ -52,8 +55,38 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
+@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024 cross-encoder). Default FALSE: a Foundry ApiKey connection is rejected at create unless credentials.key is non-empty (Azure returns "Credentials Property cannot be empty for auth type ApiKey"), and the Cohere key is provisioned out-of-band (see the runbook by the resource). The cross-encoder reranker is disabled by default (Rag:CrossEncoder:Enabled=false), so the connection is inert until that gate work happens — flip this true in the same change that provisions the key and enables the reranker. Has no effect when deployPhase2=false.')
+param deployCohereConnection bool = false
+
+@description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
+param azureAdClientId string = ''
+
+@description('Wizard web ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy does not break before the real image is built.')
+param wizardImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Api ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder.')
+param apiImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('RAG ingestion worker ACA container image. Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the worker image is built.')
+param ragIndexerImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('CLI ACA Job container image. Powers BOTH the nightly linker job and the weekly OPDB sync job (the CLI is a command-line entrypoint, not an app). Set to the ACR image + explicit SHA tag (never :latest) by the CI/CD deploy workflow. Defaults to the quickstart placeholder so a bare Bicep deploy stays smoke-testable before the CLI image is built; Deploy-SharedResources.ps1 auto-discovers the running job image so a manual redeploy never reverts it.')
+param cliImageTag string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
+@description('Cron schedule expression (UTC) for the nightly linker ACA Job. Default is 2 am daily. Override per environment (e.g. dev: off-peak, prod: 2 am). Has no effect when deployPhase2=false.')
+param linkerCronExpression string = '0 2 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. OPDB changes slowly so weekly is the steady-state cadence; on-demand syncs run via `az containerapp job start` or the local CLI. Has no effect when deployPhase2=false.')
+param opdbSyncCronExpression string = '0 3 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
+
+@description('Custom domain to bind to the Wizard ACA app (e.g. pinwiz.ai). When non-empty, a managed certificate is provisioned and the domain is registered. Leave empty to skip.')
+param wizardCustomDomain string = ''
+
+@description('Two-pass flag for custom domain cert binding. Pass 1 (false, default): register hostname as Disabled + create cert. Pass 2 (true): switch binding to SniEnabled using the existing cert. Set true only after Pass 1 deployment has succeeded and the cert is in Approved state.')
+param wizardCustomDomainCertReady bool = false
 
 // -----------------------------------------------------------------------------
 // Naming
@@ -72,15 +105,17 @@ var searchServiceName        = '${namePrefix}-search-${environment}-${uniqueSuff
 var openAiAccountName        = '${namePrefix}-openai-${environment}-${uniqueSuffix}'
 var foundryAccountName       = '${namePrefix}-foundry-${environment}-${uniqueSuffix}'
 var foundryProjectName       = 'pinwiz-wizard'
-var foundryChatDeploymentName       = 'gpt-4o-mini'
+var foundryChatDeploymentName       = 'gpt-4o'
 var foundryChatHeavyDeploymentName  = 'gpt-4-1' // Foundry deployment names disallow '.'; the "1" suffix maps to the gpt-4.1 model.
 var foundryEmbeddingDeploymentName  = 'text-embedding-3-large'
+var documentIntelligenceName = '${namePrefix}-docint-${environment}-${uniqueSuffix}'
 var storageAccountName       = take(toLower('${namePrefix}st${environment}${uniqueSuffix}'), 24) // Storage: <=24 chars, alphanumeric
 var logAnalyticsName         = '${namePrefix}-law-${environment}'
 var appInsightsName          = '${namePrefix}-ai-${environment}'
 var acaEnvironmentName       = '${namePrefix}-acaenv-${environment}'                         // ACA Environment names are RG-scoped
 var ragIndexerContainerAppName = '${namePrefix}-ca-ragindexer-${environment}'                // RG-scoped; W3-2 Cosmos Change Feed worker
-var wizardContainerAppName     = '${namePrefix}-ca-wizard-${environment}'                    // RG-scoped; Phase 5/6 Blazor Web App + SSE API
+var wizardContainerAppName     = '${namePrefix}-ca-wizard-${environment}'                    // RG-scoped; Phase 7 Blazor Web App (Aspire "pinwiz-web")
+var apiContainerAppName        = '${namePrefix}-ca-api-${environment}'                       // RG-scoped; Phase 7 SSE + landing API (Aspire "pinwiz-api")
 var opsWorkbookName            = guid(resourceGroup().id, '${namePrefix}-ops-workbook')      // Globally unique GUID-format name per workbook contract
 var opsActionGroupName         = '${namePrefix}-ops-alerts-${environment}'
 
@@ -187,6 +222,22 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-04-01-preview' = if (deployPha
   }
 }
 
+// Key-encryption key for the wizard app's Data Protection key ring
+// (keys live in the 'dataprotection' blob container, wrapped with this
+// key — see dataProtectionContainer below for the why).
+resource dataProtectionKek 'Microsoft.KeyVault/vaults/keys@2024-04-01-preview' = if (deployPhase2) {
+  parent: keyVault
+  name: 'pinwiz-dataprotection'
+  properties: {
+    kty: 'RSA'
+    keySize: 2048
+    keyOps: [
+      'wrapKey'
+      'unwrapKey'
+    ]
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Container Registry (Basic)
 // -----------------------------------------------------------------------------
@@ -203,6 +254,137 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-pr
     publicNetworkAccess: 'Enabled'
     zoneRedundancy: 'Disabled'
     anonymousPullEnabled: false
+  }
+}
+
+// -----------------------------------------------------------------------------
+// User-assigned managed identity — shared by all ACA apps for ACR image pull.
+// Using UAMI instead of system-assigned MI eliminates the ARM race condition
+// where principalId is blank when the role assignment is evaluated in parallel
+// with resource creation. UAMI exists before any ACA app, so its principalId
+// is stable at template evaluation time.
+// -----------------------------------------------------------------------------
+
+resource acaIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = if (deployPhase2) {
+  name: '${namePrefix}-aca-id-${environment}'
+  location: location
+  tags: tags
+}
+
+resource acaIdentityAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: containerRegistry
+  name: guid(containerRegistry.id, '${namePrefix}-aca-id-${environment}', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Runtime data-plane RBAC for the user-assigned acaIdentity (the Wizard API +
+// Web container apps run as this MI). The serving path is READ-ONLY — it queries
+// the AI Search index, reads Cosmos machine records, and calls Foundry chat +
+// embedding. It never writes the index or mutates Cosmos. Roles are therefore
+// the least-privilege READER tier, in contrast to the ragIndexerApp's CONTRIBUTOR
+// roles (it upserts the index). Gated on deployPhase2 && deployAiSearch to match
+// the resources they scope to (foundry/search exist only in Phase 2). Without
+// these, the configured Api still 403s under DefaultAzureCredential.
+//
+// guid() keys on the MI name string (not acaIdentity.id) to avoid a circular
+// dependency on the MI's runtime properties — same convention as acaIdentityAcrPull.
+
+// Cosmos data-plane (Built-in Data Contributor 00000000-...-002 — the only
+// built-in data role; reads suffice but this is the project-standard data role
+// used for runtime item access, see the developer assignment + ragIndexer above).
+resource acaIdentityCosmosData 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, '${namePrefix}-aca-id-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: acaIdentity.?properties.principalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// AI Search: Search Index Data READER (1407120a-... ) — query-only. The index
+// is created + populated by the ragIndexer (Contributor); the serving API only
+// reads, so Reader is the correct least-privilege role.
+resource acaIdentitySearchReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, '${namePrefix}-aca-id-${environment}', '1407120a-92aa-4202-b7e9-c0e197c71c8f')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '1407120a-92aa-4202-b7e9-c0e197c71c8f')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Foundry: Cognitive Services OpenAI User (5e0bd9bd-...) for chat + embedding
+// inference against the deployed model deployments.
+resource acaIdentityFoundryOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, '${namePrefix}-aca-id-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Foundry: Azure AI User (53ca6127-...) for project-scoped agent/thread
+// operations via AIProjectClient (FoundryAgentFactory). The OpenAI User role
+// alone covers raw inference but not the project-management/agent surface the
+// Wizard uses; the developer identity carries the equivalent ("Foundry User")
+// at this scope, confirming the serving identity needs it too.
+resource acaIdentityFoundryAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, '${namePrefix}-aca-id-${environment}', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '53ca6127-db72-4b80-b1b0-d745d6d5456d')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Storage: Blob Data Contributor (ba92f5b4-...) so the wizard app can
+// read/write the Data Protection key ring blob. Scoped to the
+// 'dataprotection' container only — least privilege; the app has no
+// business in the scraper artifact containers.
+resource acaIdentityStorageBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: dataProtectionContainer
+  name: guid(storage.id, 'dataprotection', '${namePrefix}-aca-id-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Key Vault: Crypto Service Encryption User (e147488a-...) so the wizard
+// app can wrap/unwrap the Data Protection key ring with the
+// pinwiz-dataprotection key (dataProtectionKek).
+resource acaIdentityKvCryptoUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: keyVault
+  name: guid(keyVault.id, '${namePrefix}-aca-id-${environment}', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'e147488a-f6f5-4113-8e2d-b22465e65bf6')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Key Vault: Secrets User (4633458b-...) so the wizard app's ACA secret
+// references (the AzureAd OIDC client secret, PR-B0 infra half) resolve.
+// Distinct from the Crypto role above — keys and secrets are separate
+// RBAC planes in Key Vault.
+resource acaIdentityKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: keyVault
+  name: guid(keyVault.id, '${namePrefix}-aca-id-${environment}', '4633458b-17de-408a-b874-0445c86b69e6')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -252,6 +434,33 @@ resource openAi 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPh
   }
   properties: {
     customSubDomainName: openAiAccountName
+    publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Azure Document Intelligence — OCR fallback for scanned-image-only PDFs
+// (Phase 4.5 W1). Uses the prebuilt-read model via DefaultAzureCredential.
+// Endpoint output consumed by DocumentIntelligenceOptions:Endpoint in the
+// CLI and RagIngestionWorker when ADI is configured.
+// -----------------------------------------------------------------------------
+resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (deployPhase2) {
+  name: documentIntelligenceName
+  location: location
+  tags: tags
+  kind: 'FormRecognizer'
+  sku: {
+    name: 'S0'
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    customSubDomainName: documentIntelligenceName
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: true
     networkAcls: {
@@ -317,29 +526,31 @@ resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-0
 }
 
 // Model deployments live on the Foundry account (not the project) per the
-// Microsoft.CognitiveServices/accounts/deployments contract. Per ADR-0015,
-// gpt-4o-mini is the default for the Wizard / Valuation / Rules agents
-// (~80–85% of routed calls); gpt-4.1 is the escalation tier used by the
-// Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
+// Microsoft.CognitiveServices/accounts/deployments contract. Per ADR-0015
+// (amended 2026-05-17), gpt-4o is the default for the Wizard / Valuation /
+// Rules agents (~80–85% of routed calls); gpt-4.1 is the escalation tier for
+// the Repair agent and Heavy variants (~15–20%). text-embedding-3-large at
 // 3072 dimensions is the locked embedding choice from
-// project_phase2_architecture_decisions.md.
+// project_phase2_architecture_decisions.md. All models use GlobalStandard SKU
+// — Standard is pinned to East US 2 and hits regional ceilings; GlobalStandard
+// routes across Azure's global infrastructure (verified: gpt-4o 0/2000k,
+// gpt-4.1 0/3000k, text-embedding-3-large 0/2000k on this subscription).
+// No cost change — all SKUs are pay-per-token; capacity is only a rate ceiling.
 //
-// IMPORTANT: deployment capacity is in 1k-tokens-per-minute units and
-// counts against per-region quota. Defaults below are conservative; bump
-// via the bicepparam files if rate-limit is hit during eval-set runs.
+// IMPORTANT: deployment capacity is in 1k-tokens-per-minute units.
 
 resource foundryChatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployFoundryModelDeployments) {
   parent: foundry
   name: foundryChatDeploymentName
   sku: {
     name: 'GlobalStandard'
-    capacity: 50
+    capacity: 500
   }
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'gpt-4o-mini'
-      version: '2024-07-18'
+      name: 'gpt-4o'
+      version: '2024-11-20'
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
@@ -350,7 +561,7 @@ resource foundryChatHeavyDeployment 'Microsoft.CognitiveServices/accounts/deploy
   name: foundryChatHeavyDeploymentName
   sku: {
     name: 'GlobalStandard'
-    capacity: 20
+    capacity: 500
   }
   properties: {
     model: {
@@ -371,8 +582,14 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
   parent: foundry
   name: foundryEmbeddingDeploymentName
   sku: {
-    name: 'Standard'
-    capacity: 50
+    // GlobalStandard routes across Azure's global infrastructure rather than
+    // pinning to East US 2. Regional Standard ceiling for text-embedding-3-large
+    // is 350k TPM (verified: currentValue=350, limit=350 via az cognitiveservices
+    // usage list). GlobalStandard limit is 2,000k TPM with 0 currently consumed.
+    // No cost change — both SKUs are pay-per-token; capacity is only a rate ceiling.
+    // Switch motivated by AB#259: 429s during backfill even at 350k Standard ceiling.
+    name: 'GlobalStandard'
+    capacity: 2000
   }
   properties: {
     model: {
@@ -385,6 +602,48 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
   dependsOn: [
     foundryChatHeavyDeployment
   ]
+}
+
+// -----------------------------------------------------------------------------
+// Cohere Rerank-v3 external connection (ADR-0024 W4 fix-up)
+// -----------------------------------------------------------------------------
+// Wires Cohere Rerank-v3 as a Foundry external-model connection. The
+// CohereRerankReranker in Infrastructure calls the project connection
+// endpoint, which Foundry proxies to Cohere's API under the managed identity
+// credential. Cost: ~$1 / 1,000 reranks of 50 chunks — at 1K Wizard queries/day
+// that's ~$30/mo, well within the $300–$400/mo cap.
+//
+// The API key must be set on the connection's credentials after provisioning —
+// Bicep cannot set it because secrets must not appear in deployment outputs.
+// Operator runbook: after first deploy with deployPhase2=true, run:
+//   az cognitiveservices account project connection update \
+//     --name pinwiz-foundry-<env>-<suffix> \
+//     --project-name pinwiz-wizard \
+//     --connection-name cohere-rerank-v3 \
+//     --api-key <Cohere API key from Key Vault>
+// The Key Vault secret name is 'cohere-api-key'.
+//
+// Connection name is stable across environments — Rag:CrossEncoder:ModelEndpoint
+// points at the project endpoint, not the connection endpoint. Foundry routes
+// internally via the connection name; no per-env config change needed.
+
+resource cohereRerankConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = if (deployPhase2 && deployCohereConnection) {
+  parent: foundryProject
+  name: 'cohere-rerank-v3'
+  properties: {
+    authType: 'ApiKey'
+    // 'CohereRerank' is NOT a valid ConnectionCategory — Azure rejects it at
+    // request deserialization ("unable to deserialize request body"), which has
+    // been silently failing every stack deploy since this resource landed in
+    // #292. The generic external API-key category is 'ApiKey' (per the
+    // 2025-06-01 Project Connections schema). The Cohere API key is set
+    // post-deploy via the runbook above (credentials is non-required at create
+    // time — two-phase creation), so the reranker stays inert until that key is
+    // provisioned AND Rag__CrossEncoder__Enabled is flipped to true.
+    category: 'ApiKey'
+    target: 'https://api.cohere.com/v2/rerank'
+    isSharedToAll: false
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -444,6 +703,22 @@ resource pinwizProcessedContainer 'Microsoft.Storage/storageAccounts/blobService
 resource pinwizPhotosContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
   parent: blobService
   name: 'pinwiz-photos'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+// ASP.NET Core Data Protection key ring for the wizard Blazor app.
+// Blazor Server on Container Apps requires the key ring persisted to a
+// location every replica can read (keys encrypted at rest with a Key
+// Vault key) — otherwise antiforgery tokens and circuit handshakes
+// minted by one replica fail to decrypt on another, killing all
+// interactivity (observed live 2026-06-10 at 2 replicas). Per the
+// documented setup: learn.microsoft.com/aspnet/core/blazor/host-and-deploy/server
+// § Azure Container Apps.
+resource dataProtectionContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (deployPhase2) {
+  parent: blobService
+  name: 'dataprotection'
   properties: {
     publicAccess: 'None'
   }
@@ -617,11 +892,13 @@ resource acaEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = if (dep
 // 7-machine subset is well under $1/mo. ACA Consumption pricing is roughly
 // $0.000024/vCPU-sec + $0.000003/GiB-sec; first-run backfill is <$0.05.
 //
-// Image: placeholder (`mcr.microsoft.com/k8se/quickstart:latest`) so the deploy
-// is smoke-testable end-to-end before the worker code ships. The W3-2 code PR
-// adds the worker image to ACR; an operator runs `az containerapp update
-// --image <acr>/pinwiz-rag-indexer:<sha>` to swap it in. Matches the W1-4
-// Bicep-flip-then-consuming-PR sequencing precedent.
+// Image: `ragIndexerImageTag` param, defaulting to the quickstart
+// placeholder so a bare Bicep deploy stays smoke-testable. The CI/CD
+// deploy workflow builds src/PinballWizard.RagIngestionWorker/Dockerfile
+// as `pinwiz-rag-indexer:<sha>` (third matrix leg) and passes the SHA tag
+// here, same as web + api — so the real worker code runs, not the
+// placeholder. Deploy-SharedResources.ps1 auto-discovers the running
+// image so a manual Bicep redeploy never reverts it to the placeholder.
 //
 // Identity: system-assigned. RBAC for the MI is in the "RAG Indexer Container
 // App MI RBAC" section below — Cosmos data-plane (source + leases), AI Search
@@ -641,7 +918,10 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: acaEnvironment.id
@@ -650,7 +930,7 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
       registries: [
         {
           server: containerRegistry.?properties.loginServer ?? ''
-          identity: 'system'
+          identity: acaIdentity.?id ?? ''
         }
       ]
     }
@@ -658,7 +938,7 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
       containers: [
         {
           name: 'rag-indexer'
-          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          image: ragIndexerImageTag
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -683,6 +963,19 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
             {
               name: 'AiFoundry__EmbeddingDeploymentName'
               value: foundryEmbeddingDeploymentName
+            }
+            {
+              // ADR-0024 cross-encoder reranker. Disabled by default (Null
+              // reranker); operator flips Enabled=true once Cohere API key
+              // is set on the Foundry connection (see Cohere connection
+              // provisioning comment above). ModelEndpoint points at the
+              // Foundry project's Cohere connection proxy endpoint.
+              name: 'Rag__CrossEncoder__Enabled'
+              value: 'false'
+            }
+            {
+              name: 'Rag__CrossEncoder__ModelEndpoint'
+              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -913,18 +1206,155 @@ resource ragIndexerAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
-// Wizard ACA app — AcrPull so the system-assigned MI can pull images from ACR.
-// Without this the revision provisioning fails (Operation expired) even for
-// placeholder images because ACA validates registry auth at create time.
-resource wizardAppAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
-  scope: containerRegistry
-  name: guid(containerRegistry.id, wizardApp.id, '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+// -----------------------------------------------------------------------------
+// Api Container App (Phase 7 — internal SSE + landing API)
+// -----------------------------------------------------------------------------
+// Hosts PinballWizard.Api: POST /api/wizard/ask:stream (SSE) and
+// GET /api/wizard/landing. Called by the Wizard web app via Aspire service
+// discovery (services__pinwiz-api__http__0 = 'http://<apiContainerAppName>').
+//
+// Ingress: INTERNAL only — not publicly reachable. The Web app proxies all
+// public traffic through its own external ingress; the Api is unreachable
+// from outside the ACA environment.
+//
+// Image: same placeholder as the Wizard until CI/CD pushes the real image
+// tagged with the commit SHA (never :latest for deployed images).
+resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
+  name: apiContainerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
+  }
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
-    principalId: wizardApp.?identity.principalId ?? ''
-    principalType: 'ServicePrincipal'
+    managedEnvironmentId: acaEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 8080
+        transport: 'http'
+        allowInsecure: true  // internal traffic only; TLS termination at ACA environment boundary
+      }
+      registries: [
+        {
+          server: containerRegistry.?properties.loginServer ?? ''
+          identity: acaIdentity.?id ?? ''
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'api'
+          image: apiImageTag
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:8080'
+            }
+            {
+              name: 'ASPNETCORE_ENVIRONMENT'
+              value: 'Production'
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsights.?properties.ConnectionString ?? ''
+            }
+            // AI-runtime config (mirrors the ragIndexerApp env block above). Without
+            // these the Api host registers no IAiRouter and /api/wizard/ask:stream
+            // returns 503 by design; the searchCorpus + getMachineByTitle tools also
+            // need AiSearch + Cosmos to resolve. The Api consumes the project-scoped
+            // endpoint shape (services.ai.azure.com/api/projects/<proj>) per
+            // AiFoundryOptions, NOT the account-level cognitiveservices.azure.com URL.
+            {
+              // CRITICAL: the Api runs under the USER-ASSIGNED acaIdentity, so
+              // DefaultAzureCredential must be told which MI to use. The ragIndexerApp
+              // uses a system-assigned identity and so does NOT need this — do not
+              // "simplify" by removing it here.
+              name: 'AZURE_CLIENT_ID'
+              value: acaIdentity.?properties.clientId ?? ''
+            }
+            {
+              name: 'AiFoundry__ProjectEndpoint'
+              value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+            }
+            {
+              name: 'AiFoundry__EmbeddingDeploymentName'
+              value: foundryEmbeddingDeploymentName
+            }
+            {
+              name: 'AiSearch__Endpoint'
+              value: 'https://${searchService.?name ?? ''}.search.windows.net'
+            }
+            {
+              name: 'AiSearch__IndexName'
+              value: 'pinwiz-rag-v1'
+            }
+            {
+              name: 'Cosmos__AccountEndpoint'
+              value: cosmosAccount.properties.documentEndpoint
+            }
+            {
+              name: 'Cosmos__AccountResourceId'
+              value: cosmosAccount.id
+            }
+            {
+              // ADR-0024 cross-encoder reranker — disabled until the Cohere API key
+              // is set on the Foundry connection (matches ragIndexerApp). When the
+              // H5b gate work enables Cohere, flip this to 'true' in both places.
+              name: 'Rag__CrossEncoder__Enabled'
+              value: 'false'
+            }
+            {
+              name: 'Rag__CrossEncoder__ModelEndpoint'
+              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
+            }
+          ]
+        }
+      ]
+      scale: {
+        // minReplicas raised 0 → 1 (2026-06-11 outage): scale-from-zero cannot
+        // serve this app. The Api takes ~2.5–3 min from container start to
+        // first listen (ContainerAppSystemLogs: replica scheduled 12:41:37,
+        // first app log 12:44:30), while the Web app's resilience pipeline
+        // gives each ask attempt 10s (IWizardStreamingClient) / 30s (landing).
+        // Every wake cycle therefore burned the KEDA activation on boot, every
+        // ask timed out (wizard.stream.fallback.failed), and KEDA deactivated
+        // back to 0 — three such cycles 11:52Z–12:53Z. The Web app's own scale
+        // block documents the same cold-start rationale; the Api now matches.
+        // Idle cost of the warm replica is the price of a showcase that
+        // answers on the first click. Revisit only with a measured boot-time
+        // fix (the slow startup itself is tracked as a separate issue).
+        minReplicas: 1
+        maxReplicas: 3
+      }
+    }
   }
 }
+
+
+resource apiAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployPhase2) {
+  scope: apiApp
+  name: 'send-to-law'
+  properties: {
+    workspaceId: logAnalytics.id
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
 
 resource ragIndexerStorageBlobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
   scope: storage
@@ -1171,6 +1601,39 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   }
 }
 
+resource alertLinkerJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-linker-job-failure'
+  location: location
+  tags: tags
+  properties: {
+    displayName: 'PinballWizard — Linker ACA Job failed'
+    description: 'The nightly document-to-machine linker job completed with status Failed or did not complete. Investigate via az containerapp job execution list.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT1H'
+    windowSize: 'PT2880M'
+    scopes: [logAnalytics.id]
+    criteria: {
+      allOf: [
+        {
+          query: 'ContainerAppSystemLogs_CL | where ContainerAppName_s startswith "pinwiz-job-linker" | where Log_s contains "Failed" | summarize failCount = count()'
+          timeAggregation: 'Total'
+          metricMeasureColumn: 'failCount'
+          operator: 'GreaterThan'
+          threshold: 0
+          failingPeriods: {
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
+          }
+        }
+      ]
+    }
+    actions: {
+      actionGroups: [opsActionGroup.id]
+    }
+  }
+}
+
 // -----------------------------------------------------------------------------
 // App Insights availability test — synthetic ping every 5 min
 // -----------------------------------------------------------------------------
@@ -1242,6 +1705,36 @@ resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = if (deployP
 // Image: placeholder (quickstart) until CI/CD pipeline wires the real image.
 // Operator swap: az containerapp update --image <acr>/pinwiz-web:<sha>
 //
+// Managed TLS certificate for the Wizard custom domain (e.g. pinwiz.ai).
+// Provisioned via CNAME validation — ACA confirms that the custom domain's
+// CNAME resolves to this app's ingress FQDN, then issues a Let's Encrypt cert.
+// Two-pass custom domain cert — avoids ARM circular dependency:
+//
+// Pass 1 (wizardCustomDomainCertReady=false):
+//   Deploy wizardApp with bindingType='Disabled' (registers hostname).
+//   No cert resource in this pass — no cycle possible.
+//
+// Pass 2 (wizardCustomDomainCertReady=true):
+//   Deploy cert resource (hostname now registered, HTTP validation fires).
+//   wizardApp references cert.id → ARM infers cert must be created first.
+//   No dependsOn needed; no cycle.
+//
+// Run Deploy-SharedResources.ps1 twice, flipping wizardCustomDomainCertReady
+// in the local.bicepparam between runs.
+resource wizardCustomDomainCert 'Microsoft.App/managedEnvironments/managedCertificates@2024-03-01' = if (deployPhase2 && !empty(wizardCustomDomain) && wizardCustomDomainCertReady) {
+  parent: acaEnvironment
+  name: 'pinwiz-wizard-cert'
+  location: location
+  tags: tags
+  properties: {
+    subjectName: wizardCustomDomain
+    // HTTP validation — works through Cloudflare proxy; auto-renews without
+    // DNS toggles. Requires a Cloudflare rule to bypass HTTPS redirect for
+    // .well-known/acme-challenge/* (see decision-log.md 2026-05-15).
+    domainControlValidation: 'HTTP'
+  }
+}
+
 // Ingress: external HTTPS on port 8080 (ACA terminates TLS; app runs HTTP).
 // UseHttpsRedirection + UseHsts are disabled in the app — the ACA-managed LB
 // handles TLS termination (see PR #188 / commit 8527060).
@@ -1250,7 +1743,10 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
   location: location
   tags: tags
   identity: {
-    type: 'SystemAssigned'
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acaIdentity.id}': {}
+    }
   }
   properties: {
     managedEnvironmentId: acaEnvironment.id
@@ -1261,11 +1757,45 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
         targetPort: 8080
         transport: 'http'
         allowInsecure: false
+        // Blazor Server circuits are stateful per replica: every request
+        // for a session MUST land on the replica that owns the circuit.
+        // Microsoft's documented ACA setup for Blazor ("you must enable
+        // sticky sessions" — learn.microsoft.com/azure/container-apps/dotnet-overview
+        // § Configure Blazor Server) requires session affinity; without it,
+        // scaling past 1 replica killed all interactivity on 2026-06-10.
+        // Requires activeRevisionsMode 'Single' (already the case above).
+        stickySessions: {
+          affinity: 'sticky'
+        }
+        customDomains: empty(wizardCustomDomain) ? [] : (wizardCustomDomainCertReady ? [
+          {
+            name: wizardCustomDomain
+            bindingType: 'SniEnabled'
+            certificateId: wizardCustomDomainCert.id  // ARM ensures cert is created first
+          }
+        ] : [
+          {
+            name: wizardCustomDomain
+            bindingType: 'Disabled'  // Pass 1: register hostname only, no cert yet
+          }
+        ])
       }
       registries: [
         {
           server: containerRegistry.?properties.loginServer ?? ''
-          identity: 'system'
+          identity: acaIdentity.?id ?? ''
+        }
+      ]
+      // The OIDC client secret never appears in Bicep or params — the ACA
+      // secret resolves it from Key Vault at runtime via the UAMI (which
+      // carries Key Vault Secrets User, see acaIdentityKvSecretsUser).
+      // Empty azureAdClientId (the default) omits the secret entirely so
+      // a deploy without the Entra registration keeps working unchanged.
+      secrets: empty(azureAdClientId) ? [] : [
+        {
+          name: 'azuread-client-secret'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/AzureAd-ClientSecret'
+          identity: acaIdentity.?id ?? ''
         }
       ]
     }
@@ -1273,12 +1803,12 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
       containers: [
         {
           name: 'wizard'
-          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          image: wizardImageTag
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'ASPNETCORE_URLS'
               value: 'http://+:8080'
@@ -1291,7 +1821,56 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.?properties.ConnectionString ?? ''
             }
-          ]
+            {
+              // Aspire service-discovery env var pointing at the internal ACA Api app.
+              // ACA resolves 'http://<app-name>' within the same environment.
+              // The value matches the Aspire registration name "pinwiz-api" in AppHost.
+              name: 'services__pinwiz-api__http__0'
+              value: 'http://${apiContainerAppName}'
+            }
+            {
+              // Pins DefaultAzureCredential to the shared UAMI (same pattern
+              // as the Api app) so the Data Protection wiring below can reach
+              // blob storage + Key Vault.
+              name: 'AZURE_CLIENT_ID'
+              value: acaIdentity.?properties.clientId ?? ''
+            }
+            {
+              // Data Protection key ring blob (see dataProtectionContainer).
+              // Presence of both DataProtection__* values activates the
+              // PersistKeysToAzureBlobStorage + ProtectKeysWithAzureKeyVault
+              // wiring in the Web app's Program.cs; absent (local dev) the
+              // app keeps the default ephemeral key ring.
+              name: 'DataProtection__KeyRingBlobUri'
+              value: 'https://${storageAccountName}.blob.${az.environment().suffixes.storage}/dataprotection/keyring.xml'
+            }
+            {
+              name: 'DataProtection__KeyVaultKeyUri'
+              value: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/keys/pinwiz-dataprotection'
+            }
+          ], empty(azureAdClientId) ? [] : [
+            {
+              // Entra OIDC sign-in (PR-B0 infra half). Presence of
+              // AzureAd__TenantId activates the auth branch in the Web
+              // app's Program.cs (FallbackPolicy + AdminOnly role policy).
+              // tenant().tenantId is the deploying tenant — the same one
+              // holding the "PinballWizard Web" registration.
+              name: 'AzureAd__Instance'
+              value: az.environment().authentication.loginEndpoint
+            }
+            {
+              name: 'AzureAd__TenantId'
+              value: tenant().tenantId
+            }
+            {
+              name: 'AzureAd__ClientId'
+              value: azureAdClientId
+            }
+            {
+              name: 'AzureAd__ClientSecret'
+              secretRef: 'azuread-client-secret'
+            }
+          ])
         }
       ]
       scale: {
@@ -1315,6 +1894,140 @@ resource wizardAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview
         enabled: true
       }
     ]
+  }
+}
+
+// -----------------------------------------------------------------------------
+// CI/CD deploy identity RBAC (Contributor on the deployed Container Apps)
+// -----------------------------------------------------------------------------
+// The deploy.yml GitHub Actions workflow logs in via OIDC as the
+// "PinballWizard GitHub Actions" app registration and runs
+// `az containerapp update --image :{sha}` to swap each app to the freshly
+// built image. That call needs Contributor on each target app. These grants
+// were historically created by hand (per the deploy.yml setup header); they
+// are now IaC, gated on a non-empty cicdDeployPrincipalId so a deploy without
+// the workflow SP (e.g. a local-only stack) skips them cleanly.
+//
+// principalType is ServicePrincipal (an app-registration SP), matching the
+// RAG-indexer MI assignments above. Contributor built-in role definition:
+//   b24988ac-6180-42a0-ab88-20f7382dd24c
+//
+// Scope is per-app (least privilege) — the workflow only mutates these three
+// apps, never the data-plane resources (Cosmos / Key Vault / Storage). The
+// ragindexer grant additionally gates on deployAiSearch, matching the
+// ragIndexerApp resource itself.
+
+resource cicdWizardContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  scope: wizardApp
+  name: guid(wizardApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource cicdApiContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  scope: apiApp
+  name: guid(apiApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch && !empty(cicdDeployPrincipalId)) {
+  scope: ragIndexerApp
+  name: guid(ragIndexerApp.id, cicdDeployPrincipalId, 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Linker ACA Job (document-to-machine linking nightly batch)
+// -----------------------------------------------------------------------------
+// Calls deploy/linker-job/linker-job.bicep, which is a self-contained ACA Job
+// definition. The calling module (this file) owns the ACA environment + UAMI
+// and is responsible for granting the job's system-assigned MI Cosmos access.
+// Gated on deployPhase2 — the ACA environment is a Phase 2 resource.
+
+module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) {
+  name: 'linker-job-${environment}'
+  params: {
+    location: location
+    tags: tags
+    // The CLI image (pinwiz-cli:<sha>) is the real linker code. Until PR #397
+    // this was hardcoded to the public quickstart placeholder, so --link-documents
+    // never ran in production. Threading cliImageTag here resurrects the job;
+    // the ACR pull is authenticated via the UAMI (containerRegistryLoginServer).
+    containerImage: cliImageTag
+    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
+    cosmosResourceId: cosmosAccount.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    containerAppsEnvironmentId: acaEnvironment.id
+    cronExpression: linkerCronExpression
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the linker job's system-assigned MI.
+// Follows the identical pattern as ragIndexerCosmosDataContrib (line 945).
+// guid() uses the module deployment name as the stable variable component so
+// the assignment name is deterministic and idempotent across redeploys.
+resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'linker-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// OPDB sync ACA Job (weekly OPDB catalog sync batch)
+// -----------------------------------------------------------------------------
+// Calls deploy/opdb-sync-job/opdb-sync-job.bicep. Same shape as the linker job
+// (self-contained ACA Job; this module owns the environment + UAMI and grants
+// the system-assigned MI Cosmos access) but adds a Key Vault secret reference
+// for the OPDB API token. The token value is provisioned to Key Vault out of
+// band (az keyvault secret set --name Opdb-ApiToken ...) and never appears in
+// Bicep or params — the UAMI (Key Vault Secrets User) resolves it at run time.
+// Gated on deployPhase2 — the ACA environment + Key Vault are Phase 2 resources.
+
+module opdbSyncJob '../../deploy/opdb-sync-job/opdb-sync-job.bicep' = if (deployPhase2) {
+  name: 'opdb-sync-job-${environment}'
+  params: {
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
+    cosmosResourceId: cosmosAccount.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    containerAppsEnvironmentId: acaEnvironment.id
+    // Key Vault secret URI for the OPDB API token. Same construction as the
+    // Wizard app's AzureAd-ClientSecret reference (line ~1788). The secret is
+    // created manually before the first run (see PR #397 operator steps).
+    opdbApiTokenSecretUri: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Opdb-ApiToken'
+    cronExpression: opdbSyncCronExpression
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the OPDB sync job's system-assigned MI.
+// Identical pattern to linkerJobCosmosDataContrib above — the OPDB sync writes
+// machine records + lookup rows through IMachineRepository (data-plane CRUD).
+resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'opdb-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
+    scope: cosmosAccount.id
   }
 }
 
@@ -1345,6 +2058,9 @@ output searchServiceEndpoint string = empty(searchService.?name ?? '') ? '' : 'h
 output openAiAccountName string = openAi.?name ?? ''
 output openAiEndpoint string = openAi.?properties.endpoint ?? ''
 
+output documentIntelligenceName string = documentIntelligence.?name ?? ''
+output documentIntelligenceEndpoint string = documentIntelligence.?properties.endpoint ?? ''
+
 // Foundry outputs. The project endpoint URL is the canonical value
 // consumed by AiFoundryOptions.ProjectEndpoint (per ADR-0014). Operators
 // set $env:AiFoundry__ProjectEndpoint from `foundryProjectEndpoint` for
@@ -1355,6 +2071,9 @@ output foundryProjectEndpoint string = empty(foundry.?name ?? '') ? '' : 'https:
 output foundryChatDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatDeploymentName
 output foundryChatHeavyDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryEmbeddingDeploymentName
+
+@description('Cohere Rerank-v3 Foundry connection proxy endpoint (ADR-0024). Set Rag:CrossEncoder:ModelEndpoint to this value and Rag:CrossEncoder:Enabled=true to activate the cross-encoder reranker.')
+output cohereRerankEndpoint string = empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
 
 output storageAccountName string = storage.?name ?? ''
 output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ?? ''
@@ -1372,11 +2091,25 @@ output acaEnvironmentName string = acaEnvironment.?name ?? ''
 output ragIndexerContainerAppName string = ragIndexerApp.?name ?? ''
 output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
 
+output linkerJobName string = linkerJob.?outputs.linkerJobName ?? ''
+output linkerJobPrincipalId string = linkerJob.?outputs.linkerJobPrincipalId ?? ''
+
+output opdbSyncJobName string = opdbSyncJob.?outputs.opdbSyncJobName ?? ''
+output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
+
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
 //   az containerapp update -n <wizardContainerAppName> -g <rg> \
 //                          --image <containerRegistryLoginServer>/pinwiz-web:<sha>
 output wizardContainerAppName string = wizardApp.?name ?? ''
 output wizardPrincipalId string = wizardApp.?identity.principalId ?? ''
+output wizardFqdn string = wizardApp.?properties.configuration.ingress.fqdn ?? ''
+
+// Api Container App (Phase 7). Use apiContainerAppName + apiPrincipalId for
+// post-deploy smoke tests and image swaps via the CI/CD deploy workflow:
+//   az containerapp update -n <apiContainerAppName> -g <rg> --image <acr>/pinwiz-api:<sha>
+output apiContainerAppName string = apiApp.?name ?? ''
+output apiPrincipalId string = apiApp.?identity.principalId ?? ''
+
 output opsWorkbookName string = opsWorkbook.?name ?? ''
 output opsActionGroupId string = opsActionGroup.?id ?? ''

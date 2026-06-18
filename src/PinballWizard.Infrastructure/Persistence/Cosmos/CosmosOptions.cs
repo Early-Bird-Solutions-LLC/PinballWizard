@@ -114,7 +114,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/normalizedTitle",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/normalizedTitle/?"],
+                IncludedPaths = ["/normalizedTitle/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -133,7 +133,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/slug",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/slug/?", "/display_order/?"],
+                IncludedPaths = ["/slug/?", "/display_order/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -150,14 +150,12 @@ public sealed class CosmosOptions
         // worker boot. Idempotent: existing containers with matching
         // partition keys are no-ops.
         new() { Name = "scraped_documents", PartitionKeyPath = "/machine_id" },
-        // `rag_leases` intentionally has no indexing-policy override —
-        // the lease container is owned by `Cosmos.ChangeFeedProcessor`,
-        // and its document shape + query patterns are SDK-internal. A
-        // selective policy that became inconsistent with a future SDK
-        // version's query surface would manifest as a silent perf
-        // regression in change-feed processing. Default indexing is
-        // safe; the cost saving is marginal because the lease container
-        // is small (one row per partition lease).
+        // `rag_leases` — Change Feed processor lease container. Partition key
+        // /id is required by the Cosmos SDK's ChangeFeedProcessorBuilder.
+        // ARM accepts /id as a partition key path (it is not a system-property
+        // restriction — see ADR-0012). Declaring it here keeps --ensure-cosmos-
+        // containers fully idempotent: a fresh environment gets the container
+        // before the worker starts (avoiding the 404 crash on first boot).
         new() { Name = "rag_leases", PartitionKeyPath = "/id" },
         // Selective indexing on `rag_index_state` per ADR-0025 § 3:
         // every read path is either a deterministic point-read by
@@ -174,7 +172,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/document_id",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/document_id/?", "/recorded_utc/?"],
+                IncludedPaths = ["/document_id/?", "/recorded_utc/?"],
                 ExcludedPaths = ["/*"],
             },
         },
@@ -206,9 +204,84 @@ public sealed class CosmosOptions
             DefaultTtlSeconds = 7_776_000,
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/id/?", "/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
+                IncludedPaths = ["/document_id/?", "/attempt_count/?", "/last_attempt_utc/?"],
                 ExcludedPaths = ["/*"],
             },
+        },
+        // catalog_stats — Tier-3 read model per ADR-0036. One rollup doc
+        // per manufacturer (id == /manufacturer) holding per-machine doc
+        // counts/types for the admin catalog summary. Maintained by the
+        // CatalogStatsChangeFeedHandler consumer over scraped_documents;
+        // rebuildable via `--rebuild-catalog-stats`. Default indexing:
+        // reads are point-reads by manufacturer.
+        new() { Name = "catalog_stats", PartitionKeyPath = "/manufacturer" },
+        // catalog_stats_leases — dedicated Change Feed lease container for
+        // the catalog-stats consumer. MUST be separate from rag_leases so
+        // the two consumers track independent cursors over scraped_documents.
+        new() { Name = "catalog_stats_leases", PartitionKeyPath = "/id" },
+        // scraped_documents_raw: scraper write target (Phase 4.5 document-linking)
+        // Partition key: /document_id (one record per unique file URL).
+        // Written by scrapers; read + updated by the linker.
+        // Selective indexing: link_status and document_type queried in bulk;
+        // everything else is point-reads by document_id.
+        new()
+        {
+            Name = "scraped_documents_raw",
+            PartitionKeyPath = "/document_id",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
+        // link_overrides: admin feedback store (Phase 4.5 document-linking)
+        // Partition key: /source_pattern (= id). One record per
+        // {discovery_url}|{document_type} pattern. Upsert semantics.
+        // No TTL — overrides are permanent until explicitly revoked.
+        new()
+        {
+            Name = "link_overrides",
+            PartitionKeyPath = "/source_pattern",
+        },
+        // admin_settings: runtime-mutable Wizard configuration (admin
+        // settings plan, PR-B1). Partition key /key (= id) — every read is
+        // a point lookup by well-known key; CosmosAdminSettingsRepository
+        // fronts it with a 2-minute TTL cache so steady-state RU is ~zero.
+        // No TTL (DefaultTtlSeconds = null): settings are permanent until
+        // explicitly changed or deleted (delete = revert to the IOptions
+        // default) — auto-expiry would silently revert operator decisions.
+        // Default indexing policy: the container holds tens of tiny docs;
+        // GetAllAsync's cross-partition scan at that scale costs less RU
+        // than the policy churn of maintaining a selective allowlist.
+        new()
+        {
+            Name = "admin_settings",
+            PartitionKeyPath = "/key",
+        },
+        // admin_prompts: per-agent prompt override store (PR-B3).
+        // Partition key /agent_name — every read is scoped to one agent
+        // (GetActiveAsync: single point-read; GetVersionsAsync: single-
+        // partition scan). Multiple version rows live in the same
+        // partition (id = "{agent_name}:v{version}"), so the partition
+        // scan for all versions of an agent is a single-partition query
+        // with no cross-partition fan-out.
+        //
+        // No TTL (DefaultTtlSeconds = null): prompt versions are
+        // audit records — an admin needs to be able to view and
+        // re-activate prior versions; auto-expiry would silently
+        // destroy that audit trail.
+        //
+        // Default indexing policy (null): the container holds at most
+        // ~20 rows per agent (4 agents × several versions). The only
+        // non-point-read path is GetVersionsAsync's per-partition scan,
+        // which touches all rows in one partition — default Cosmos
+        // indexing is sufficient and the policy-maintenance overhead
+        // of a selective allowlist would cost more than it saves at
+        // this cardinality.
+        new()
+        {
+            Name = "admin_prompts",
+            PartitionKeyPath = "/agent_name",
         },
     ];
 

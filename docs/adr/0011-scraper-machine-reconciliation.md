@@ -146,3 +146,130 @@ until Cosmos infra is deployed.
   pricing and availability are intentionally fresher on the
   manufacturer site than on OPDB; treating "scraper as second
   citizen" loses that freshness.
+
+---
+
+## Amendment 1 — OPDB group tier and canonical-base fold (2026-05-17)
+
+**Status:** ⚠️ SUPERSEDED by [ADR-0029](0029-version-aware-answering.md)
+(2026-05-18). Retained for history (append-only log).
+
+> **Why superseded:** the "fold all editions onto a canonical `pm:1`
+> row" model below was disproven by a full OPDB data pass: `pm` is a
+> minority signal (only 7.3% of multi-base groups), the lexicographic
+> tiebreak selected semantically wrong canonicals (AC/DC → the 2017
+> Vault Edition instead of the 2012 original), and folding erases the
+> "Pro/Premium/LE are different games with substantially different
+> cost" distinction. ADR-0029 replaces this with **base = distinct
+> machine, alias = edition, version-aware answering**. The parts of
+> this amendment that survive into ADR-0029: D1 (clean `Title` from the
+> `is_machine_group` record) and `GroupId` as a *relational* (not
+> merge) field. Everything below about canonical selection and
+> cross-base folding is **void** — read ADR-0029 instead. The
+> field-ownership precedence rule (scraper merge-preserve) is carried
+> forward by ADR-0029 unchanged.
+
+**Driver (historical):** [docs/plans/opdb-group-tier-modeling.md](../plans/opdb-group-tier-modeling.md),
+then-Option A. Live OPDB + Cosmos verification.
+
+### What this amends and what it does NOT
+
+This amendment refines *which OPDB record is the canonical `Machine`*
+when OPDB splits one physical machine across several `is_machine` base
+records. It does **not** change:
+
+- The union/membership stance — OPDB still owns the catalog spine; this
+  is about resolving *within* OPDB's own data, not admitting non-OPDB
+  machines (CLAUDE.md invariant #8 unchanged).
+- The spine key — `Machine.Id` remains the 2-segment OPDB base ID. No
+  document-`id` migration.
+- The scraper reconciliation flow above — unchanged.
+
+### Correction to a falsified assumption
+
+The original **Negative** consequence "OPDB is comprehensive for
+production-scale pinball; machines OPDB doesn't know about are edge
+cases" was tested against the licensed-IP titles (Foo Fighters,
+Stranger Things, AC/DC, Metallica, Rush, The Beatles, Stern Godzilla
+2021) and found **OPDB has all of them**. The earlier eval "floor" was
+never an OPDB-coverage gap — it was three local defects (D1–D3 in the
+plan). The comprehensiveness assumption stands; what was wrong was our
+*modeling* of OPDB's three-tier structure.
+
+### OPDB's three-tier reality
+
+```text
+{group}                  is_machine_group   clean title ("Godzilla")   — NOT in /api/export
+ ├─ {group}-{base}        is_machine pm:1    "Godzilla (Pro)"           — canonical hardware
+ └─ {group}-{base}        is_machine pm:0    "Godzilla (Premium/LE)"    — edition-grouping record
+      └─ {group}-{base}-{alias}  is_alias    "(Premium)" / "(LE)" / …   — edition aliases
+```
+
+`physical_machine` (`pm`) is **not** uniformly applied:
+Godzilla/Foo Fighters use `pm:1` + `pm:0`; Metallica is 3× `pm:1`;
+Beatles is one `pm:1` named "(Gold)" + aliases. The fold below
+normalizes all three shapes.
+
+### Decision (Amendment 1)
+
+For each OPDB **group** (records sharing the leading ID segment, e.g.
+`GweeP`):
+
+1. **Canonical row** = the `is_machine` base record with `pm:1` and,
+   among ties, the lexicographically lowest OPDB ID. Its `Machine.Id`
+   is the group's catalog identity.
+2. **`Title`** = the `is_machine_group` record's clean name (fetched per
+   unique segment via `GET /api/machines/{segment}`, cached per sync
+   run; that record is absent from `/api/export`). This fixes the
+   empty-`common_name` → edition-suffixed-title defect.
+3. **`Editions[]`** = the union of (a) every alias under every base
+   record in the group and (b) each *non-canonical* base record itself,
+   each mapped to a `MachineEdition` retaining its own
+   Msrp/availability/features. Editions remain **first-class and
+   individually distinguishable** — Pro/Premium/Collector's are
+   different games with different rules and cost; the fold consolidates
+   them onto one resolvable machine, it does not flatten the
+   distinction.
+4. **`GroupId`** (new field) = the group segment, set on all related
+   rows.
+5. **Non-canonical base records** are retained but flagged
+   `IsEditionGroupingRecord = true` (new field) and excluded from
+   title-lookup so a title resolves to exactly the canonical row.
+
+Expected group cardinality: typically ~3 editions, at most ~10 — the
+fold is a small bounded in-memory operation.
+
+### Field-ownership precedence (resolves a conflict with the table above)
+
+The original field-ownership table marks `Editions` **Scraper-owned,
+replaced wholesale on reconcile**. The OPDB fold now *also* writes
+`Editions[]`. Precedence is explicit:
+
+- **OPDB sync** establishes the *baseline* `Editions[]` from the group
+  fold (every edition exists, with OPDB-derived names + source URLs).
+- **Scraper reconciliation** still replaces `Editions[]` wholesale when
+  it has a slug/title match — manufacturer pricing/availability is
+  intentionally fresher (the original rationale stands). The scraper
+  reconciler MUST preserve any edition the OPDB fold knew about that the
+  scraper page omits (merge-by-edition-name, OPDB-known editions are not
+  dropped) so a sparse manufacturer page cannot erase an edition the
+  catalog legitimately has. `Title`, `GroupId`, `IsEditionGroupingRecord`
+  remain OPDB-owned and are never touched by the reconciler.
+
+This keeps "scraper data is the freshest pricing truth" intact while
+guaranteeing the fold's completeness invariant survives a thin scraper
+run.
+
+### Consequences (Amendment 1)
+
+- Positive: a generic question ("tell me about Stern Godzilla") resolves
+  to one machine whose `Editions[]` is the complete distinct set — the
+  `getMachineByTitle` contract already returns that shape, so the
+  user-facing surface becomes *correct* without a tool/citation change.
+- Negative: OPDB sync gains a per-group metadata fetch (bounded, cached)
+  and a cross-base fold pass; `OpdbMachineDto` gains `physical_machine`;
+  `Machine` gains `GroupId` + `IsEditionGroupingRecord`. The
+  reconciler's wholesale-replace gains a merge-preserve rule (above).
+- Neutral: existing single-edition machines are unaffected (no group →
+  no fold; the negative-fixture test "Indiana Jones (The Pinball
+  Adventure)" guards against spurious folding).

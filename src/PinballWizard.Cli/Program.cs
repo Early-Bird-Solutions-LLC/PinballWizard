@@ -1,6 +1,9 @@
 using System.CommandLine;
+using System.Globalization;
 using Microsoft.Extensions.Configuration;
+using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
@@ -8,20 +11,28 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Application;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Downloading;
-using PinballWizard.Application.Provenance;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
+using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
+using PinballWizard.Application.Rag.Chunking;
+using PinballWizard.Application.Rag.Indexing;
+using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Application.Rag.MetadataCards;
+using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Ingestion;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -43,31 +54,6 @@ var sourceOption = new Option<string?>("--source", "-s")
     Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, opdb, all. " +
                   "NOTE: 'all' runs every ISourceScraper but does NOT include 'opdb' — OPDB writes to IMachineRepository instead of yielding ScrapedItems and is special-cased; run --source opdb explicitly to sync the OPDB catalog.",
     DefaultValueFactory = _ => "all"
-};
-
-var scrapeOnlyOption = new Option<bool>("--scrape-only")
-{
-    Description = "Discover URLs and metadata only, don't download files"
-};
-
-var downloadOption = new Option<bool>("--download")
-{
-    Description = "Download new/changed files"
-};
-
-var downloadAllOption = new Option<bool>("--download-all")
-{
-    Description = "Force re-download everything"
-};
-
-var buildCatalogOption = new Option<bool>("--build-catalog")
-{
-    Description = "Rebuild catalog from current state"
-};
-
-var statusOption = new Option<bool>("--status")
-{
-    Description = "Show catalog summary"
 };
 
 var dryRunOption = new Option<bool>("--dry-run")
@@ -102,12 +88,17 @@ var ensureAzureFoundryOption = new Option<bool>("--ensure-azure-foundry")
 
 var ensureAiSearchOption = new Option<bool>("--ensure-ai-search")
 {
-    Description = "Post-deploy smoke-test for the Azure AI Search service backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetServiceStatistics to confirm endpoint reachability + AAD auth. The configured index (AiSearch:IndexName, default pinwiz-rag-v1) does NOT need to exist yet — Wave 2 W2-3 creates it. Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
+    Description = "Post-deploy smoke-test for the Azure AI Search index backing Phase 4 RAG retrieval (ADR-0021): connects via DefaultAzureCredential, calls GetDocumentCount on the configured index (AiSearch:IndexName, default pinwiz-rag-v1) to confirm endpoint reachability + AAD auth + that the index is queryable with the Search Index Data Reader role. The index is expected to exist (W2-3 created it). Idempotent. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the smoke probe fails."
 };
 
 var ensureRagIndexOption = new Option<bool>("--ensure-rag-index")
 {
     Description = "Idempotently creates the Phase 4 RAG index (ADR-0021, default name `pinwiz-rag-v1`) on the configured Azure AI Search service if it does not yet exist. No-op when the index is already present — schema mutations follow the v1→v2 cutover documented in ADR-0021 § Versioning strategy, not in-place updates. Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured or the create call fails."
+};
+
+var rebuildRagIndexOption = new Option<bool>("--rebuild-rag-index")
+{
+    Description = "DESTRUCTIVE: drops the RAG index entirely and recreates it empty from the current schema, then exits. Removes ALL indexed chunks — you must re-ingest afterwards (--run-rag-backfill + --sync-metadata-cards). This is the supported way to correct mislabeled chunks (e.g. after the linker re-link): the index is a rebuildable projection of Cosmos, so corrections happen by wipe-and-rebuild, never by per-chunk deletion. Requires AiSearch:Endpoint to be configured."
 };
 
 var askOption = new Option<string?>("--ask")
@@ -120,13 +111,43 @@ var evalOption = new Option<bool>("--eval")
     Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
 };
 
+var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
+{
+    Description = "One-shot RAG index backfill: iterates all scraped_documents via the raw Change Feed stream iterator (no lease checkpoints) and runs each document through the full RAG ingestion pipeline (extract → chunk → embed → AI Search upsert). Idempotent: documents already indexed with the same content hash are skipped. Use after provisioning a fresh RAG index to populate it from existing scraped documents before the Change Feed Processor starts handling ongoing writes. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
+};
+
+var syncMetadataCardsOption = new Option<bool>("--sync-metadata-cards")
+{
+    Description = "Synthesize metadata_card chunks from the Cosmos machines container and upsert them into AI Search. One card per machine record — covers title, manufacturer, year, designers, themes, editions, and MSRP. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
+};
+
+var linkDocumentsOption = new Option<bool>("--link-documents")
+{
+    Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
+var relinkAllOption = new Option<bool>("--relink-all")
+{
+    Description = "Re-run the linker over ALL previously-linked documents: first resets every Linked / NotInCatalog record in scraped_documents_raw back to Pending (preserving ManuallyLinked admin overrides and PlatformGeneric), then runs the standard --link-documents pass. Use after the linker logic changes (e.g. the manufacturer-disambiguation fix) so existing mislabeled links are re-resolved. Implies --link-documents. Requires Cosmos to be configured."
+};
+
+var downloadDocumentsOption = new Option<bool>("--download-documents")
+{
+    Description = "Download every not-yet-downloaded document in scraped_documents_raw to the local downloads root so the linker's page-text tiers (Tier 3/4) can read page-1 content for edition resolution. Polite (throttled, robots-honored) and idempotent (documents with a local file are skipped). Run before --link-documents / --relink-all when page-1 content is needed. Requires Cosmos to be configured."
+};
+
+var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
+{
+    Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
+};
+
+var rebuildCatalogStatsOption = new Option<bool>("--rebuild-catalog-stats")
+{
+    Description = "Recomputes every per-manufacturer catalog_stats rollup from scratch: streams all machines, reads each machine's scraped_documents (single-partition), aggregates doc counts and type distribution, and upserts the authoritative per-manufacturer rollup document. This is the rebuildable-projection backstop (ADR-0031/ADR-0036) — also the only path that sets authoritative identity fields (EditionLabel, GroupId, Year, IsOpdbOnly) on each MachineStatEntry from the live Machine record. Idempotent. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
-rootCommand.Options.Add(scrapeOnlyOption);
-rootCommand.Options.Add(downloadOption);
-rootCommand.Options.Add(downloadAllOption);
-rootCommand.Options.Add(buildCatalogOption);
-rootCommand.Options.Add(statusOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
@@ -135,17 +156,20 @@ rootCommand.Options.Add(seedFeaturedMachinesOption);
 rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
+rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
+rootCommand.Options.Add(runRagBackfillOption);
+rootCommand.Options.Add(syncMetadataCardsOption);
+rootCommand.Options.Add(linkDocumentsOption);
+rootCommand.Options.Add(relinkAllOption);
+rootCommand.Options.Add(downloadDocumentsOption);
+rootCommand.Options.Add(migrateDownloadPathsOption);
+rootCommand.Options.Add(rebuildCatalogStatsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
     var source = parseResult.GetValue(sourceOption);
-    var scrapeOnly = parseResult.GetValue(scrapeOnlyOption);
-    var download = parseResult.GetValue(downloadOption);
-    var downloadAll = parseResult.GetValue(downloadAllOption);
-    var buildCatalog = parseResult.GetValue(buildCatalogOption);
-    var status = parseResult.GetValue(statusOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
@@ -154,8 +178,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureAzureFoundry = parseResult.GetValue(ensureAzureFoundryOption);
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
+    var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
+    var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
+    var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
+    var linkDocuments = parseResult.GetValue(linkDocumentsOption);
+    var relinkAll = parseResult.GetValue(relinkAllOption);
+    var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
+    var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
+    var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -168,7 +200,21 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
     // Build host with DI
     using var host = CreateHost(args);
-    var orchestrator = host.Services.GetRequiredService<ScraperOrchestrator>();
+
+    // ScraperOrchestrator is only registered when AddCosmosPersistence was wired
+    // (i.e., Cosmos config is present). GetService<T>() returns null rather than
+    // throwing an opaque DI exception; the null-check below surfaces a friendly
+    // remediation message instead.
+    var orchestrator = host.Services.GetService<ScraperOrchestrator>();
+    if (orchestrator is null)
+    {
+        Console.Error.WriteLine(
+            "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+            "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
+            "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
+        Environment.ExitCode = 2;
+        return;
+    }
 
     // Handle --ensure-cosmos-containers (post-deploy Cosmos smoke-test).
     // Resolves CosmosBootstrapper from DI; the bootstrapper is only registered
@@ -247,6 +293,154 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine($"Featured machines seeded: {upserted} upserted.");
+        return;
+    }
+
+    // Handle --run-rag-backfill (one-shot RAG index population of all
+    // eligible scraped_documents). Resolves IRagBackfillService
+    // from DI; only registered when Cosmos + AI Search + AI Foundry are
+    // all configured. Mirrors the --ensure-cosmos-containers exit-code-2
+    // remediation pattern.
+    if (runRagBackfill)
+    {
+        var backfill = host.Services.GetService<IRagBackfillService>();
+        if (backfill is null)
+        {
+            Console.Error.WriteLine(
+                "--run-rag-backfill requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("RAG backfill starting — this may take several minutes depending on corpus size...");
+        var result = await backfill.RunAsync(cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"RAG backfill complete: {result.Processed} processed, " +
+                          $"{result.Indexed} indexed, {result.Skipped} skipped, " +
+                          $"{result.Failed} failed, duration {result.Duration.TotalSeconds:N1}s");
+        if (result.Failed > 0)
+        {
+            Console.Error.WriteLine($"  {result.Failed} documents failed — check logs for details.");
+            Environment.ExitCode = 1;
+        }
+        return;
+    }
+
+    // Handle --sync-metadata-cards (Phase 4.5 W3a — synthesize one metadata_card
+    // chunk per Cosmos machine record and upsert into AI Search). Gated on the
+    // same three backend services as --run-rag-backfill. Idempotent: re-running
+    // overwrites in-place (AI Search upsert semantics; chunk_id is a hash of the
+    // machine+document+position key computed by AiSearchRagIndexer.ComputeChunkId).
+    if (syncMetadataCards)
+    {
+        var machineRepo = host.Services.GetService<IMachineRepository>();
+        var synthesizer = host.Services.GetService<IMetadataCardSynthesizer>();
+        var indexer = host.Services.GetService<IRagIndexer>();
+
+        if (machineRepo is null || synthesizer is null || indexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-metadata-cards requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Synthesizing metadata cards from Cosmos machines...");
+
+        var upserted = 0;
+        var failed = 0;
+        var indexerOptions = new RagIndexerOptions();
+
+        string[] allManufacturers =
+        [
+            ScraperManufacturerKey.Stern,
+            ScraperManufacturerKey.Jjp,
+            ScraperManufacturerKey.AmericanPinball,
+            ScraperManufacturerKey.Spooky,
+            ScraperManufacturerKey.PinballBrothers,
+            ScraperManufacturerKey.BarrelsOfFun,
+            ScraperManufacturerKey.ChicagoGaming,
+            ScraperManufacturerKey.Multimorphic,
+        ];
+
+        foreach (var manufacturer in allManufacturers)
+        {
+            await foreach (var machine in machineRepo.StreamByManufacturerAsync(manufacturer, cancellationToken))
+            {
+                var chunk = synthesizer.Synthesize(machine);
+                var chunkRequest = new ChunkRequest(
+                    MachineId: machine.Id,
+                    MachineTitle: machine.Title,
+                    Manufacturer: machine.ManufacturerDisplayName,
+                    DocumentId: $"meta_{machine.Id}",
+                    DocumentUrl: machine.OpdbSourceUrl ?? OpdbMachineMapper.OpdbWebUrl(machine.Id),
+                    DocumentType: DocumentType.MetadataCard,
+                    // Metadata cards are synthesized from the OPDB-keyed Machine
+                    // record, not scraped — so they carry no Timeline.LastDownloadedAt.
+                    // Use the machine's LastSeenAt (refreshed on each OPDB sync) as
+                    // the freshness signal so the citation freshness badge shows when
+                    // the catalog data was last refreshed instead of "freshness
+                    // unknown". Existing cards stay null until the next
+                    // --sync-metadata-cards run re-indexes them.
+                    LastScrapedUtc: MetadataCardSynthesizer.CardFreshness(machine));
+
+                try
+                {
+                    var result = await indexer.UpsertAsync(chunkRequest, [chunk], indexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                            Console.Error.WriteLine($"  AI Search rejected chunk '{failure.ChunkId}' for {machine.Title} ({machine.Id}): HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        upserted++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index metadata card for {machine.Title} ({machine.Id}): {ex.Message}");
+                    failed++;
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-metadata-cards complete: upserted={upserted} failed={failed}");
+        if (failed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
+    // Handle --link-documents / --relink-all (document-to-machine linking pass;
+    // processes all pending, failed, and not_in_catalog records in
+    // scraped_documents_raw via the 5-tier algorithm and fans resolved documents
+    // into scraped_documents). --relink-all first resets prior Linked/NotInCatalog
+    // records to Pending so they re-resolve. Gated on IDocumentLinker (Cosmos).
+    // Handle --download-documents (fetch not-yet-downloaded raw documents so the
+    // linker's page-text tiers can read page-1 content). Runs before linking.
+    // Gated on DocumentDownloadService (Cosmos).
+    if (downloadDocuments)
+    {
+        await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --migrate-download-paths (one-shot byte-safe correction of legacy
+    // already-rooted file.local_path values; --dry-run reports without changing).
+    // Gated on DownloadPathMigrationService (Cosmos).
+    if (migrateDownloadPaths)
+    {
+        await MigrateDownloadPathsCommand.RunAsync(host.Services, dryRun, cancellationToken);
+        return;
+    }
+
+    if (linkDocuments || relinkAll)
+    {
+        await LinkDocumentsCommand.RunAsync(host.Services, cancellationToken, relinkAll);
         return;
     }
 
@@ -339,6 +533,30 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --rebuild-rag-index (DESTRUCTIVE drop + recreate). The only delete
+    // in the system, and an explicit operator step — the index is a rebuildable
+    // projection, so corrections happen by wipe-and-re-ingest, never by per-chunk
+    // deletion. After this, re-ingest with --run-rag-backfill + --sync-metadata-cards.
+    if (rebuildRagIndex)
+    {
+        var bootstrapper = host.Services.GetService<RagIndexBootstrapper>();
+        if (bootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--rebuild-rag-index requires Azure AI Search to be configured. Set " +
+                $"{AiSearchOptions.EndpointKey} (the deployed search service endpoint URL).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Rebuilding AI Search RAG index (DROP + recreate) — all chunks will be removed...");
+        var rebuildResult = await bootstrapper.RecreateAsync(cancellationToken);
+        Console.WriteLine(
+            $"AI Search RAG index rebuilt: {rebuildResult.IndexName}. " +
+            "Re-ingest now: --run-rag-backfill then --sync-metadata-cards.");
+        return;
+    }
+
     // Handle --eval (Phase 3 evaluation harness; ADR-0016). Resolves
     // IEvaluationHarness from DI; the harness is only registered when
     // AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
@@ -358,15 +576,20 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         var runResult = await harness.RunAsync(cancellationToken);
+        // Nullable means are "n/a" when no row exercised the metric
+        // (metric-hygiene fix: gap/refusal rows carry null scores and
+        // are excluded from the denominator).
+        static string FormatMean(double? mean) =>
+            mean is { } value ? value.ToString("F3", CultureInfo.InvariantCulture) : "n/a";
         Console.WriteLine();
         Console.WriteLine($"Evaluation harness completed: {runResult.Aggregate.QuestionCount} questions " +
                           $"({runResult.Aggregate.ErrorCount} errors), " +
                           $"results at {runResult.ResultsPath}");
-        Console.WriteLine($"  citation_precision={runResult.Aggregate.CitationPrecisionMean:F3} " +
-                          $"citation_recall={runResult.Aggregate.CitationRecallMean:F3} " +
-                          $"citation_coverage={runResult.Aggregate.CitationCoverageMean:F3} " +
-                          $"subagent_accuracy={runResult.Aggregate.SubagentAccuracyMean:F3} " +
-                          $"refusal_correctness={runResult.Aggregate.RefusalCorrectnessMean:F3}");
+        Console.WriteLine($"  citation_precision={FormatMean(runResult.Aggregate.CitationPrecisionMean)} " +
+                          $"citation_recall={FormatMean(runResult.Aggregate.CitationRecallMean)} " +
+                          $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
+                          $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
+                          $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
         return;
     }
 
@@ -392,13 +615,6 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             answer,
             new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
         Console.WriteLine(json);
-        return;
-    }
-
-    // Handle --status
-    if (status)
-    {
-        await orchestrator.PrintStatusAsync(cancellationToken);
         return;
     }
 
@@ -437,50 +653,37 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Default behavior: if no action flags, do scrape + download
-    if (!scrapeOnly && !download && !downloadAll && !buildCatalog)
+    // Handle --rebuild-catalog-stats (rebuildable-projection backstop for the
+    // catalog_stats Tier-3 read model; ADR-0031/ADR-0036). Resolves
+    // ICatalogStatsRebuildService from DI; the service is only registered when
+    // AddCatalogStatsRebuild is wired inside the cosmosWired gate below.
+    // Mirrors the --ensure-cosmos-containers exit-code-2 remediation pattern.
+    if (rebuildCatalogStats)
     {
-        scrapeOnly = true;
-        download = true;
-    }
-
-    // Phase 1: Discover
-    if (scrapeOnly || download || downloadAll)
-    {
-        var result = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Discovery: {result.TotalLinks} links " +
-                          $"({result.NewDocuments} new, {result.ExistingDocuments} existing), " +
-                          $"{result.GamesDiscovered} games");
-
-        if (result.Errors.Count > 0)
+        var rebuilder = host.Services.GetService<ICatalogStatsRebuildService>();
+        if (rebuilder is null)
         {
-            Console.WriteLine($"  {result.Errors.Count} errors during discovery");
+            Console.Error.WriteLine(
+                "--rebuild-catalog-stats requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
         }
+
+        var (manufacturers, machines) = await rebuilder.RebuildAsync(cancellationToken);
+        Console.WriteLine($"Rebuilt catalog_stats: {manufacturers} manufacturers, {machines} machines.");
+        return;
     }
 
-    // Phase 2: Download
-    if ((download || downloadAll) && !dryRun)
+    // Default behavior: scrape (discover + upsert to Cosmos).
+    var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
+
+    Console.WriteLine();
+    Console.WriteLine($"Discovery: {scrapeResult.TotalLinks} links");
+
+    if (!scrapeResult.Errors.IsEmpty)
     {
-        var summary = await orchestrator.DownloadAsync(downloadAll, cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Downloads: {summary.Downloaded} files " +
-                          $"({summary.BytesDownloaded / (1024.0 * 1024.0):N1} MB), " +
-                          $"{summary.Unchanged} unchanged, {summary.Failed} failed");
-    }
-
-    // Phase 3: Reconcile catalog with disk
-    if (buildCatalog && !dryRun)
-    {
-        var summary = await orchestrator.BuildCatalogAsync(cancellationToken);
-
-        Console.WriteLine();
-        Console.WriteLine($"Catalog: {summary.TotalDocuments} documents " +
-                          $"({summary.OnDisk} on disk, " +
-                          $"{summary.MissingFromDisk} missing, " +
-                          $"{summary.NotDownloaded} not downloaded)");
+        Console.WriteLine($"  {scrapeResult.Errors.Count} errors during discovery");
     }
 });
 
@@ -566,6 +769,12 @@ static IHost CreateHost(string[] args)
         // file-system read; IFeaturedMachineRepository is the Cosmos write target.
         // Both are checked via GetService in the --seed-featured-machines handler.
         builder.Services.AddSingleton<IFeaturedMachineSeedLoader, FeaturedMachineSeedLoader>();
+
+        // catalog_stats rebuild service (--rebuild-catalog-stats). Depends on
+        // IMachineRepository + two CosmosRepository<T> wrappers; all three are
+        // available inside this cosmosWired gate. GetService<ICatalogStatsRebuildService>()
+        // in the handler returns null (→ exit code 2) when Cosmos is not configured.
+        builder.Services.AddCatalogStatsRebuild();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,
@@ -612,6 +821,20 @@ static IHost CreateHost(string[] args)
     if (aiSearchWired)
     {
         builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
+    }
+
+    // RAG backfill service — gated on all three backend services being present.
+    // Registers the full ingestion stack (pipeline + chunker + extractor +
+    // Cosmos-backed IIndexState + backfill service) so `--run-rag-backfill`
+    // can populate the AI Search index from existing scraped_documents without
+    // running the Change Feed Processor.
+    if (cosmosWired && aiSearchWired && foundryWired)
+    {
+        builder.Services.AddRagIngestionPipeline();
+        builder.Services.AddHybridChunker();
+        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
+        builder.Services.AddRagBackfillService(builder.Configuration);
+        builder.Services.AddMetadataCardSynthesizer();
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
@@ -688,10 +911,15 @@ static IHost CreateHost(string[] args)
     // their respective studios per OPDB attribution).
     builder.Services.AddMultimorphicScraping(builder.Configuration);
 
-    // Provenance
-    builder.Services.AddTransient<CatalogBuilder>();
+    // TimeProvider is required by ScraperReconciliationService. Registered here so
+    // the reconciler works in Phase 1/2 environments where the RAG pipeline (which
+    // also registers TimeProvider.System) is not wired.
+    builder.Services.TryAddSingleton(TimeProvider.System);
+    builder.Services.AddTransient<IScraperReconciliationService, ScraperReconciliationService>();
 
-    // Orchestrator
+    // Orchestrator — DI resolves all constructor parameters automatically.
+    // IRawDocumentRepository is registered by AddCosmosPersistence; the CLI
+    // requires Cosmos to be configured for the scraping path.
     builder.Services.AddTransient<ScraperOrchestrator>();
 
     // Ensure data directories exist

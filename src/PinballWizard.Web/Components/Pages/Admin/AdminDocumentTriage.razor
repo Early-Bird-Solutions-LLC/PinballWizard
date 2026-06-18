@@ -1,0 +1,256 @@
+@page "/admin/document-triage"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@attribute [Authorize(Policy = "AdminOnly")]
+@rendermode InteractiveServer
+
+@* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
+ *
+ * Renders a MudDataGrid of documents with LinkStatus in {Failed, NotInCatalog, PlatformGeneric}.
+ * Capped at 200 rows (triage backlog guard). Actions: Re-link (runs IDocumentLinker.LinkAsync
+ * for the single record), Mark Generic (stamps PlatformGeneric via UpdateLinkStatusAsync).
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth
+ * ADR-0026  § 1 — routing inventory (/admin/document-triage)
+ *@
+
+@using PinballWizard.Application.Linking
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Models
+
+@inject IRawDocumentRepository RawDocRepo
+@inject IDocumentLinker DocumentLinker
+@inject ISnackbar Snackbar
+@inject ILogger<AdminDocumentTriage> Logger
+
+<PageTitle>Document Triage — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Document Triage</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Unlinked, failed, and platform-generic documents awaiting resolution.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="triage-load-failed">
+            The triage queue could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
+    }
+
+    <MudDataGrid T="DocumentTriageRow"
+                 Items="@_documents"
+                 Hover="true"
+                 Striped="true"
+                 Dense="true"
+                 Elevation="2"
+                 data-testid="admin-document-triage-grid">
+
+        <Columns>
+            <PropertyColumn Property="x => x.DocumentType" Title="Document Type" />
+            <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
+            <PropertyColumn Property="x => x.LinkText" Title="Link Text" />
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string"
+                             Size="Size.Small"
+                             Color="@StatusColor(context.Item.Status)"
+                             Variant="Variant.Filled">
+                        @context.Item.Status
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.FailureReason" Title="Failure Reason" />
+            <PropertyColumn Property="x => x.LastAttemptedAt" Title="Last Attempt" />
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    @if (context.Item.ActionBusy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    }
+                    else
+                    {
+                        <MudStack Row="true" Spacing="1">
+                            <MudButton Size="Size.Small"
+                                       Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       OnClick="@(() => RelinkAsync(context.Item))">
+                                Re-link
+                            </MudButton>
+                            <MudButton Size="Size.Small"
+                                       Variant="Variant.Text"
+                                       Color="Color.Secondary"
+                                       OnClick="@(() => MarkGenericAsync(context.Item))">
+                                Mark Generic
+                            </MudButton>
+                        </MudStack>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+
+        <NoRecordsContent>
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.CheckCircle"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-document-triage-empty">
+                        No documents awaiting triage.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        All scraped documents have been linked or resolved.
+                    </MudText>
+                </MudStack>
+            }
+        </NoRecordsContent>
+
+    </MudDataGrid>
+</MudContainer>
+
+@code {
+    private sealed class DocumentTriageRow
+    {
+        public required string DocumentId { get; init; }
+        public required string DocumentType { get; init; }
+        public required string SourceUrl { get; init; }
+        public required string LinkText { get; init; }
+        public required string Status { get; set; }
+        public required string FailureReason { get; set; }
+        public required string LastAttemptedAt { get; init; }
+        public bool ActionBusy { get; set; }
+    }
+
+    private List<DocumentTriageRow> _documents = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Document Triage", href: "/admin/document-triage", icon: Icons.Material.Filled.RuleFolder),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var statuses = new[] { LinkStatus.Failed, LinkStatus.NotInCatalog, LinkStatus.PlatformGeneric };
+            var rows = new List<DocumentTriageRow>();
+            await foreach (var doc in RawDocRepo.StreamByStatusAsync(statuses, cts.Token))
+            {
+                rows.Add(new DocumentTriageRow
+                {
+                    DocumentId = doc.DocumentId,
+                    DocumentType = doc.DocumentType.ToString(),
+                    SourceUrl = doc.Source.DiscoveryUrl,
+                    LinkText = doc.Source.LinkText ?? string.Empty,
+                    Status = doc.LinkStatus.ToString(),
+                    FailureReason = doc.LinkFailureReason ?? string.Empty,
+                    LastAttemptedAt = doc.Timeline.LastCheckedAt?.ToString("u") ?? string.Empty
+                });
+                if (rows.Count >= 200) break;
+            }
+            _documents = rows;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin document triage load timed out after 30 s.");
+            Snackbar.Add("Triage queue load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin document triage queue.");
+            Snackbar.Add($"Failed to load triage queue: {ex.Message}", Severity.Error);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RelinkAsync(DocumentTriageRow row)
+    {
+        row.ActionBusy = true;
+        StateHasChanged();
+        try
+        {
+            await DocumentLinker.InitializeAsync(CancellationToken.None);
+            var rawDoc = await RawDocRepo.GetAsync(row.DocumentId, CancellationToken.None);
+            if (rawDoc is null)
+            {
+                Snackbar.Add($"Document {row.DocumentId} not found.", Severity.Warning);
+                return;
+            }
+            var result = await DocumentLinker.LinkAsync(rawDoc, CancellationToken.None);
+            if (result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked)
+            {
+                _documents.Remove(row);
+                Snackbar.Add($"Linked to {result.LinkedMachineIds.Count} machine(s) via {result.ResolutionStrategy}.", Severity.Success);
+            }
+            else
+            {
+                row.Status = result.FinalStatus.ToString();
+                row.FailureReason = result.FailureReason ?? string.Empty;
+                Snackbar.Add($"Still unlinked: {result.FinalStatus} — {result.FailureReason}", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Re-link failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            row.ActionBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task MarkGenericAsync(DocumentTriageRow row)
+    {
+        row.ActionBusy = true;
+        StateHasChanged();
+        try
+        {
+            await RawDocRepo.UpdateLinkStatusAsync(
+                row.DocumentId,
+                LinkStatus.PlatformGeneric,
+                resolutionStrategy: "admin_manual",
+                failureReason: null,
+                overrideId: null,
+                CancellationToken.None);
+            _documents.Remove(row);
+            Snackbar.Add("Marked as platform-generic.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Mark Generic failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            row.ActionBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Failed"          => Color.Error,
+        "NotInCatalog"    => Color.Warning,
+        "PlatformGeneric" => Color.Info,
+        _                 => Color.Default,
+    };
+}

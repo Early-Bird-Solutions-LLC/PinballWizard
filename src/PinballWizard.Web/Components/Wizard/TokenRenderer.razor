@@ -20,6 +20,12 @@
         answer text from Final.Answer.Text split into a single span (or a cleared
         list + the full text in one span). This is handled by the parent
         WizardAnswerStream — TokenRenderer just renders whatever it receives.
+      • Markdown rendering: during streaming (IsStreaming=true) the plain-text
+        span path is used unchanged — deltas can split mid-marker so formatting
+        must be deferred. When IsStreaming=false (Final has landed or historical
+        turn) the canonical single-span text is passed to MarkdownContent which
+        renders bold/italic/lists via MarkdownTokenizer. The streaming hot path
+        is completely untouched by this change.
 
     Category: delight surface (within WizardAnswerStream scope per ADR-0026
     § 6). Custom CSS animation component — within the locked set.
@@ -36,19 +42,34 @@
          role="region"
          aria-live="polite"
          aria-label="Answer text">
-        <MudText Typo="Typo.body1" Class="token-renderer__text">
-            @foreach (var (text, index) in SpanTexts.Select((t, i) => (t, i)))
-            {
-                @* The "bumper-pulse" class triggers the entry animation.
-                   Only apply it to the last span (the most recently arrived delta)
-                   so prior spans are stable and don't re-animate on re-render.
-                   The parent passes IsStreaming=true while chunks are arriving;
-                   once Final lands, IsStreaming=false and no new pulse fires. *@
-                var isNewest = IsStreaming && index == SpanTexts.Count - 1;
-                <span class="@(isNewest ? "token-renderer__span token-renderer__span--new" : "token-renderer__span")"
-                      data-testid="token-span">@text</span>
-            }
-        </MudText>
+        @if (IsStreaming)
+        {
+            @* Streaming path: plain-text spans with bumper-pulse animation.
+               Deltas may split mid-marker ("**Godz" + "illa**") so markdown
+               formatting is deferred until Final. Hot path — no change here. *@
+            <MudText Typo="Typo.body1" Class="token-renderer__text">
+                @foreach (var (text, index) in SpanTexts.Select((t, i) => (t, i)))
+                {
+                    @* The "bumper-pulse" class triggers the entry animation.
+                       Only apply it to the last span (the most recently arrived
+                       delta) so prior spans are stable and don't re-animate on
+                       re-render. *@
+                    var isNewest = index == SpanTexts.Count - 1;
+                    <span class="@(isNewest ? "token-renderer__span token-renderer__span--new" : "token-renderer__span")"
+                          data-testid="token-span">@text</span>
+                }
+            </MudText>
+        }
+        else
+        {
+            @* Canonical path (Final landed or historical turn): render through
+               MarkdownContent so bold/italic/list syntax becomes real markup.
+               SpanTexts is a single-entry list at this point (Final.Answer.Text).
+               Join the entries to handle the edge case where the parent passes
+               multiple spans in non-streaming mode (shouldn't happen, but
+               defensive). *@
+            <MarkdownContent Text="@string.Join(string.Empty, SpanTexts)" />
+        }
     </div>
 }
 

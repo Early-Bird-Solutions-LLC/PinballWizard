@@ -1,0 +1,9 @@
+# Site is not yet publicly launched.
+# TODO [PRE-LAUNCH]: Replace this file with production crawl rules before launch.
+# Suggested production content:
+#   User-agent: *
+#   Allow: /
+#   Sitemap: https://pinwiz.ai/sitemap.xml
+
+User-agent: *
+Disallow: /

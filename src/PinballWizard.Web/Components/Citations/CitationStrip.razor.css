@@ -1,0 +1,26 @@
+/* Responsive layout for the citation strip — CSS media query, deliberately
+   NOT MudHidden (see the component header comment + #364): breakpoint
+   resolution must not depend on a JS interop roundtrip, or fast cache-hit
+   answers render a "Sources" header whose cards pop in seconds later.
+   960px = MudBlazor's md breakpoint, preserving the previous behavior. */
+
+.citation-strip-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+@media (min-width: 960px) {
+    .citation-strip-layout {
+        flex-direction: row;
+        overflow-x: auto;
+        gap: 12px;
+        padding-bottom: 4px;
+    }
+
+    .citation-strip-group {
+        min-width: 280px;
+        max-width: 360px;
+        flex-shrink: 0;
+    }
+}
