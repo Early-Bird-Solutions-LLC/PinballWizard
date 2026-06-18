@@ -1,4 +1,5 @@
 using Bunit;
+using Microsoft.AspNetCore.Components;
 using Xunit;
 
 namespace PinballWizard.Web.Tests;
@@ -24,7 +25,30 @@ public abstract class AsyncBunitContext : BunitContext, IAsyncLifetime
     // Interactive-server matches the mode every interactive surface uses
     // in production (ADR-0026 follow-up (2)).
     protected void UseInteractiveServerRendererInfo() =>
-        Renderer.SetRendererInfo(new Microsoft.AspNetCore.Components.RendererInfo("Server", isInteractive: true));
+        Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
+
+    // MudBlazor 9 requires <MudPopoverProvider /> to be present in the same
+    // render tree as any popover-capable component (MudSelect, MudMenu,
+    // MudTooltip, MudAutocomplete, MudDataGrid, MudTabs, MudList, etc.).
+    // In v8 these components could be rendered without the provider; v9 throws
+    // "Missing <MudPopoverProvider />" at render time.
+    //
+    // The provider takes no ChildContent, so it renders as a SIBLING fragment
+    // alongside the component under test rather than as a render-tree wrapper.
+    // These helpers encapsulate that pattern and return the typed component
+    // handle so call sites are identical to Render<T>() / Render<T>(builder).
+    protected IRenderedComponent<TComponent> RenderWithPopover<TComponent>()
+        where TComponent : IComponent
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<TComponent>(1);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<TComponent>();
+    }
 
     Task IAsyncLifetime.InitializeAsync() => Task.CompletedTask;
 

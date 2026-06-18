@@ -131,12 +131,12 @@
   </ItemGroup>
   <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
     <!--
-      MudBlazor 8.x targets .NET 8+. 8.5.0 is the current GA that
-      supports .NET 10 via the .NET 8 TFM forward-compat path.
-      Pin to a specific minor so template / theme shape is reproducible.
-      Bump in a dedicated Dependabot PR.
+      MudBlazor 9.x targets .NET 8+; 9.5.0 supports .NET 10 via the .NET 8
+      TFM forward-compat path. Pin to a specific minor so template / theme
+      shape is reproducible. Bump majors as a dedicated, reviewed PR (the
+      Renovate Dependency Dashboard holds them — ADR-0037).
     -->
-    <PackageVersion Include="MudBlazor" Version="8.5.0" />
+    <PackageVersion Include="MudBlazor" Version="9.5.0" />
     <!--
       Microsoft.Identity.Web 3.x is the first release to support
       Entra External ID tenants natively per ADR-0009. 3.8.4 is the

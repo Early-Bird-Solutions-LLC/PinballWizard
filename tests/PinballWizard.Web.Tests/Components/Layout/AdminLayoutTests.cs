@@ -59,7 +59,15 @@ public sealed class AdminLayoutTests : AsyncBunitContext
 
         var drawer = cut.FindComponent<MudDrawer>();
         Assert.Equal(DrawerVariant.Persistent, drawer.Instance.Variant);
+        // MudBlazor 9 turned Open into a ParameterState property. The MUD0012 analyzer
+        // steers component authors to GetState(x => x.Open), but GetState is protected —
+        // reachable only from MudBlazor's own InternalsVisibleTo tests, not an external
+        // test project. Reading the public Open parameter is functionally correct here
+        // (we're asserting the value AdminLayout passes in), so the authoring analyzer
+        // is suppressed for this single external-inspection assertion.
+#pragma warning disable MUD0012
         Assert.True(drawer.Instance.Open, "Persistent (always-open) admin drawer must be open.");
+#pragma warning restore MUD0012
     }
 
     [Fact]
