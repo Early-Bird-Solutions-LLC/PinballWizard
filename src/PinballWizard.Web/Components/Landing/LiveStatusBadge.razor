@@ -23,8 +23,17 @@
 
 <div class="live-status-badge" data-testid="live-status-badge">
     <MudTooltip Text="@TooltipText()" Placement="Placement.Bottom" Arrow="true">
-        <span class="@DotCssClass()" data-testid="live-status-dot"
-              role="img" aria-label="@TooltipText()">
+        @* Persistent neutral label + color dot. Best-practice for a status
+         * indicator: meaning must be available without hover (WCAG 1.4.13) and
+         * never carried by colour alone (WCAG 1.4.1). The label is deliberately
+         * NEUTRAL and state-independent — on a customer-facing surface it must
+         * not broadcast a scary state word to prospects; colour conveys the
+         * state at a glance and the tooltip carries the per-system detail. *@
+        <span class="live-status-badge__trigger">
+            <span class="live-status-badge__label" data-testid="live-status-label">System status</span>
+            <span class="@DotCssClass()" data-testid="live-status-dot"
+                  role="img" aria-label="@TooltipText()">
+            </span>
         </span>
     </MudTooltip>
 </div>
