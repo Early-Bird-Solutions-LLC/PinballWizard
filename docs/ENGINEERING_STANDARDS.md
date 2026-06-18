@@ -117,7 +117,8 @@ PinballWizard/
 │   │   ├── ci.yml
 │   │   ├── codeql.yml
 │   │   └── docker.yml
-│   ├── dependabot.yml
+│   ├── dependabot.yml             # Security-only (version updates → Renovate)
+│   ├── renovate.json5             # Version updates + lock maintenance (ADR-0037)
 │   ├── pull_request_template.md
 │   └── ISSUE_TEMPLATE/
 │
@@ -336,7 +337,8 @@ Use `Microsoft.Extensions.Http.Resilience` (Polly v8). Every named `HttpClient` 
 ### 8.2 Dependencies
 
 - `dotnet list package --vulnerable --include-transitive` runs in CI. Any vulnerability of severity High or Critical fails the build.
-- Dependabot updates dependencies weekly. Major version bumps require an ADR.
+- **Renovate** owns version updates — grouped by package family, minor/patch auto-merged once CI is green, majors held for explicit approval on the Dependency Dashboard. **Dependabot** is scoped to security-only (immediate CVE PRs). Full rationale and the two-tool division of labour: [ADR-0037](adr/0037-dependency-update-automation.md).
+- Major version bumps land as dedicated, individually reviewed PRs (the Renovate dashboard gate enforces this); a non-obvious major also warrants its own ADR.
 - License scanning verifies no GPL/AGPL transitives sneak in (we'll publish under MIT).
 
 ### 8.3 Container
@@ -506,7 +508,8 @@ GitHub-specific files in `.github/`:
 | `pull_request_template.md` | Checklist: tests added, docs updated, ADR added if needed. |
 | `ISSUE_TEMPLATE/bug_report.md` | Reproducible-bug template. |
 | `ISSUE_TEMPLATE/feature_request.md` | Why-then-what template. |
-| `dependabot.yml` | Weekly updates for nuget, github-actions, docker. |
+| `dependabot.yml` | Security-only CVE PRs for nuget + github-actions (version updates throttled to 0; ADR-0037). |
+| `renovate.json5` | Version updates + weekly lock-file maintenance; grouped, CI-gated auto-merge, majors held (ADR-0037). |
 | `CODEOWNERS` | Even with one owner, this is good practice. |
 
 ---

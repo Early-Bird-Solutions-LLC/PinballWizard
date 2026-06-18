@@ -97,6 +97,15 @@ The repository enforces a strict quality bar:
 
 Full details, including the exception list and the rationale behind each rule, live in [`docs/quality-bar.md`](docs/quality-bar.md).
 
+### Dependency updates
+
+Don't hand-bump packages for routine updates — **Renovate** raises grouped
+version PRs (minor/patch auto-merge once CI is green) and **Dependabot** opens
+security PRs. Major bumps are held for explicit approval on the Renovate
+Dependency Dashboard and land as dedicated, individually reviewed PRs. See
+[ADR-0037](docs/adr/0037-dependency-update-automation.md). Manual bumps are for
+spikes and incidents, not routine maintenance.
+
 If your change requires suppressing a rule, justify the suppression in `Directory.Build.props` with a comment and a removal criterion. Don't bury it in `#pragma warning disable` blocks.
 
 ## Test suites
