@@ -1073,6 +1073,210 @@ public class DocumentLinkerTests
         Assert.Equal("G5po2-MeP6B", result.LinkedMachineIds[0]); // single candidate still links
     }
 
+    // -------------------------------------------------------------------------
+    // NotInCatalog prune: stale fan-out rows must be deleted when a doc
+    // resolves to NotInCatalog so --relink-all never leaves orphaned rows
+    // that include the doc in the catalog under a machine it no longer maps to.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_ResolvesToNotInCatalog_WithExistingFanOutRows_PrunesAllRows()
+    {
+        // A doc that previously linked to machine X (fan-out row exists) but now
+        // resolves NotInCatalog (no tier matched) must DELETE the old row.
+        // Without this prune, --relink-all leaves the stale scraped_documents row
+        // and the doc continues to appear under machine X in the catalog.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machine = MakeMachine(slug: "stranger-things");
+        // Filename matches nothing in the catalog.
+        var raw = MakeRaw(fileUrl: "https://example.com/files/unknown_thing.pdf");
+
+        // Prior state: doc previously linked to the Stranger Things machine.
+        var priorFanOut = new List<string> { machine.Id };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        // The stale fan-out row must be deleted.
+        await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, machine.Id, Arg.Any<CancellationToken>());
+        // No new scraped_documents write — the resolved set is empty.
+        await docWriter.DidNotReceive().UpsertFromRawAsync(
+            Arg.Any<RawDocumentRecord>(), Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<EditionScope>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_ResolvesToNotInCatalog_MultipleExistingRows_PrunesAll()
+    {
+        // A doc with multiple stale fan-out rows (previously fanned to two machines)
+        // that now resolves NotInCatalog must delete ALL of them.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machine = MakeMachine(slug: "stranger-things");
+        const string otherMachineId = "OTHER-000";
+
+        var raw = MakeRaw(fileUrl: "https://example.com/files/unknown_thing.pdf");
+
+        // Prior state: two fan-out rows.
+        var priorFanOut = new List<string> { machine.Id, otherMachineId };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, machine.Id, Arg.Any<CancellationToken>());
+        await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, otherMachineId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_ResolvesToNotInCatalog_NoExistingRows_NoPruneAttempt()
+    {
+        // A doc with no prior fan-out rows that resolves NotInCatalog must not
+        // call DeleteFanOutRowAsync at all — guards against spurious delete attempts.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machine = MakeMachine(slug: "stranger-things");
+        var raw = MakeRaw(fileUrl: "https://example.com/files/unknown_thing.pdf");
+
+        // No prior fan-out rows.
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(new List<string>().ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        await docWriter.DidNotReceive().DeleteFanOutRowAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_ResolvesToNotInCatalog_PruneFails_DoesNotFailLink()
+    {
+        // A prune failure (DeleteFanOutRowAsync throws) on a NotInCatalog result
+        // must be best-effort: the document still lands at NotInCatalog status,
+        // never at Failed. Mirroring the Linked-path prune error handling.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machine = MakeMachine(slug: "stranger-things");
+        var raw = MakeRaw(fileUrl: "https://example.com/files/unknown_thing.pdf");
+
+        var priorFanOut = new List<string> { machine.Id };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+        docWriter.DeleteFanOutRowAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("cosmos unavailable"));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Link status must be NotInCatalog, not Failed — prune is best-effort.
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        await rawRepo.Received(1).UpdateLinkStatusAsync(
+            raw.DocumentId,
+            LinkStatus.NotInCatalog,
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_ResolvesToNotInCatalog_AmbiguousFilename_PrunesExistingRows()
+    {
+        // Regression guard for the Tier-2 ambiguous-filename NotInCatalog path:
+        // two machines with the same slug length both match the filename and the
+        // manufacturer hint can't break the tie → NotInCatalog. Any prior fan-out
+        // rows must also be pruned on this path (same data-hygiene requirement).
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machineA = MakeMachine(id: "AAAA-0001", title: "Tron Pro", slug: "tron");
+        var machineB = MakeMachine(id: "BBBB-0002", title: "Tron Legacy", slug: "tron");
+
+        // "tron_manual.pdf" — both slug "tron" match, same length, no mfr hint breaks tie.
+        var raw = MakeRaw(fileUrl: "https://example.com/files/tron_manual.pdf");
+
+        // Prior state: doc linked to machineA before it was later deemed ambiguous.
+        var priorFanOut = new List<string> { machineA.Id };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machineA, machineB]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        // Stale row from the previous Linked state must be pruned.
+        await docWriter.Received(1).DeleteFanOutRowAsync(raw.DocumentId, machineA.Id, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task LinkAsync_Linked_PruneFails_DoesNotFailLink()
+    {
+        // Regression guard: a prune failure on the Linked path (the existing behavior)
+        // must also be best-effort and not stamp Failed. Mirrors the NotInCatalog guard.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro = MakeMachine(id: "GweeP-MW95j", title: "Godzilla (Pro)", slug: "godzilla");
+        pro.GroupId = "GweeP"; pro.Year = 2021; pro.EditionTokens = ["pro"];
+        var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
+        premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/05/Godzilla_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        // Prior state has both rows; StreamByDocumentIdAsync succeeds, DeleteFanOutRowAsync throws.
+        var priorFanOut = new List<string> { "GweeP-MW95j", "GweeP-Ml9pZ" };
+        docWriter.StreamByDocumentIdAsync(raw.DocumentId, Arg.Any<CancellationToken>())
+            .Returns(priorFanOut.ToAsyncEnumerable());
+        docWriter.DeleteFanOutRowAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("cosmos unavailable"));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, premLe]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Link must succeed even though prune threw — best-effort.
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GweeP-MW95j"], result.LinkedMachineIds);
+    }
+
     [Fact]
     public async Task LinkAsync_Tier3Page_GodzillaCollision_FansOutToSternOnlyBySource()
     {

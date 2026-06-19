@@ -271,6 +271,11 @@ public sealed class DocumentLinker : IDocumentLinker
             LinkedMachineIds: [],
             FailureReason: "No tier matched: override=miss, xref_slug=miss, filename_slug=miss");
 
+        // Prune any stale scraped_documents rows from a prior Linked state. This path
+        // bypasses FanOutAndUpdateAsync so we call the helper directly with an empty
+        // keep-set (resolved set is empty — all prior rows are now stale).
+        await PruneStaleFanOutRowsAsync(raw.DocumentId, keepMachineIds: new HashSet<string>(), cancellationToken).ConfigureAwait(false);
+
         await _rawRepo.UpdateLinkStatusAsync(
             raw.DocumentId,
             noMatchResult.FinalStatus,
@@ -807,42 +812,18 @@ public sealed class DocumentLinker : IDocumentLinker
             }
         }
 
-        // Prune stale fan-out: delete any existing scraped_documents row for this
-        // document whose machine is no longer in the resolved set. Without this,
-        // re-linking a doc to FEWER machines (e.g. the edition fix narrowing a Pro
-        // manual from {Pro, Premium/LE} down to {Pro}) leaves the old row orphaned,
-        // which then pollutes the index rebuild. Only prune on a successful link
-        // (Failed/Pending leave existing rows alone); only delete machines NOT in
-        // the new set; best-effort (a prune failure must not abort the batch).
+        // Prune stale fan-out rows: any existing scraped_documents row whose machine is
+        // NOT in the resolved set must be deleted. The Linked path passes the resolved
+        // set so only removed machines are deleted; NotInCatalog passes an empty set so
+        // ALL prior rows are deleted (the doc no longer maps to any machine).
+        // Only prune on deterministic outcomes (Linked, ManuallyLinked, NotInCatalog);
+        // skip when a machine lookup failed (missingMachineIds > 0) because the resolved
+        // set is incomplete and pruning against it could wrongly delete valid rows.
         if (missingMachineIds.Count == 0
-            && result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked)
+            && result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.NotInCatalog)
         {
-            var resolved = new HashSet<string>(result.LinkedMachineIds, StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                var existing = new List<string>();
-                await foreach (var machineId in _docWriter
-                    .StreamByDocumentIdAsync(raw.DocumentId, cancellationToken).ConfigureAwait(false))
-                {
-                    existing.Add(machineId);
-                }
-
-                foreach (var staleMachineId in existing.Where(m => !resolved.Contains(m)))
-                {
-                    await _docWriter.DeleteFanOutRowAsync(raw.DocumentId, staleMachineId, cancellationToken).ConfigureAwait(false);
-                    _logger.LogInformation(
-                        "FanOut: pruned stale scraped_documents row {DocumentId}_{MachineId} (no longer in resolved set).",
-                        raw.DocumentId, staleMachineId);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Best-effort: a failed prune leaves a stale row (visible as a
-                // re-runnable cleanup), but must not fail the link itself.
-                _logger.LogWarning(ex,
-                    "FanOut: stale-fan-out prune failed for {DocumentId}; stale rows (if any) remain for next re-link.",
-                    raw.DocumentId);
-            }
+            var keepSet = new HashSet<string>(result.LinkedMachineIds, StringComparer.OrdinalIgnoreCase);
+            await PruneStaleFanOutRowsAsync(raw.DocumentId, keepSet, cancellationToken).ConfigureAwait(false);
         }
 
         // Determine overrideId if this was an override match.
@@ -884,6 +865,46 @@ public sealed class DocumentLinker : IDocumentLinker
             if (machine.Id == machineId) return machine;
         }
         return null;
+    }
+
+    // Deletes every existing scraped_documents fan-out row for the document whose
+    // machine_id is NOT in keepMachineIds. Passing an empty set prunes all rows
+    // (used when the document resolves to NotInCatalog — the resolved set is empty).
+    //
+    // Best-effort: a StreamByDocumentIdAsync or DeleteFanOutRowAsync failure logs a
+    // warning and returns without throwing so the caller's link/status decision is
+    // never aborted by a cleanup step. Stale rows left by a failed prune are
+    // re-pruned on the next --relink-all run.
+    private async Task PruneStaleFanOutRowsAsync(
+        string documentId,
+        HashSet<string> keepMachineIds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var existing = new List<string>();
+            await foreach (var machineId in _docWriter
+                .StreamByDocumentIdAsync(documentId, cancellationToken).ConfigureAwait(false))
+            {
+                existing.Add(machineId);
+            }
+
+            foreach (var staleMachineId in existing.Where(m => !keepMachineIds.Contains(m)))
+            {
+                await _docWriter.DeleteFanOutRowAsync(documentId, staleMachineId, cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "FanOut: pruned stale scraped_documents row {DocumentId}_{MachineId} (no longer in resolved set).",
+                    documentId, staleMachineId);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort: a failed prune leaves a stale row (visible as a
+            // re-runnable cleanup), but must not fail the link or the batch.
+            _logger.LogWarning(ex,
+                "FanOut: stale-fan-out prune failed for {DocumentId}; stale rows (if any) remain for next re-link.",
+                documentId);
+        }
     }
 
     private static string ExtractFilename(string fileUrl)
