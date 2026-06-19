@@ -9,6 +9,18 @@
     resources when they are removed from Bicep — preventing the silent drift that
     plain `az deployment` creates.
 
+    After the stack create/update succeeds, the script automatically runs
+    `--ensure-cosmos-containers` against the just-deployed Cosmos account using
+    the captured cosmosAccountEndpoint + cosmosAccountResourceId stack outputs.
+    This prevents the class of live incident where a new container added to
+    CosmosOptions.Containers (code) is never created in the deployed environment
+    because no operator ran the CLI manually — the root cause of the
+    catalog_stats + catalog_stats_leases outage that crash-looped the RAG worker
+    and emptied /admin/machines (2026-06-15). The deployer identity running this
+    script has control-plane RBAC (ARM SDK path via ArmCosmosProvisioner); the
+    runtime managed identity deliberately does NOT (per ADR-0012). Use
+    -SkipEnsureContainers to bypass this step when testing infra-only changes.
+
     Enforces the ADR 0010 subscription/tenant guard before any deployment occurs.
     If the active `az` context is NOT the personal Earlybird tenant + subscription,
     the script aborts with a clear message and does NOT touch Azure.
@@ -33,6 +45,14 @@
     Skip the subscription/tenant guard. NEVER use this in normal operation.
     Provided only for the case of testing the deploy script itself in
     a non-Earlybird subscription explicitly. Carries an unmissable warning.
+
+.PARAMETER SkipEnsureContainers
+    Skip the post-deploy `--ensure-cosmos-containers` step. By default the
+    script runs the CLI against the just-deployed Cosmos account after every
+    successful stack create/update so that new containers added to
+    CosmosOptions.Containers are created automatically. Pass this flag when
+    you are doing a WhatIf-style infra-only check or when you know the
+    container set has not changed and want a faster turnaround.
 
 .EXAMPLE
     pwsh ./infra/scripts/Deploy-SharedResources.ps1 -Environment dev -WhatIf
@@ -76,6 +96,9 @@ param(
 
     [Parameter()]
     [switch]$SkipGuard,
+
+    [Parameter()]
+    [switch]$SkipEnsureContainers,
 
     # Image tags for the Wizard web app and Api. If not supplied, the script
     # reads the currently-deployed image from the running ACA app so a manual
@@ -143,7 +166,7 @@ if (-not (Test-Path $parametersFile)) {
 # Tooling check
 # -----------------------------------------------------------------------------
 
-Write-Host '[1/5] Checking tooling...' -ForegroundColor Cyan
+Write-Host '[1/6] Checking tooling...' -ForegroundColor Cyan
 
 $azVersion = az version --output json 2>$null | ConvertFrom-Json
 if (-not $azVersion) {
@@ -163,7 +186,7 @@ if ($azMajor -lt 2 -or ($azMajor -eq 2 -and $azMinor -lt 61)) {
 # Subscription / tenant guard (ADR 0010)
 # -----------------------------------------------------------------------------
 
-Write-Host '[2/5] Verifying az context against the personal Earlybird tenant...' -ForegroundColor Cyan
+Write-Host '[2/6] Verifying az context against the personal Earlybird tenant...' -ForegroundColor Cyan
 
 $ctx = az account show --output json 2>$null | ConvertFrom-Json
 if (-not $ctx) {
@@ -216,7 +239,7 @@ else {
 # Bicep build (syntax check)
 # -----------------------------------------------------------------------------
 
-Write-Host '[3/5] Building Bicep template (syntax check only)...' -ForegroundColor Cyan
+Write-Host '[3/6] Building Bicep template (syntax check only)...' -ForegroundColor Cyan
 az bicep build --file $templateFile
 if ($LASTEXITCODE -ne 0) {
     throw 'Bicep build failed. Fix syntax errors before deploying.'
@@ -294,7 +317,7 @@ if ($WhatIf) {
     # property-level resource diff the way the old subscription-level what-if did
     # — that capability is not exposed for stacks — but it is the canonical
     # pre-apply safety check and catches the failures a preview is meant to catch.
-    Write-Host '[4/5] Validating the Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
+    Write-Host '[4/6] Validating the Deployment Stack (no changes will be applied)...' -ForegroundColor Cyan
     Write-Host '  Note: az stack sub has no --what-if (removed in CLI 2.7x); using `validate`.' -ForegroundColor DarkGray
     az stack sub validate `
         --name $stackName `
@@ -311,10 +334,11 @@ if ($WhatIf) {
         throw 'Deployment Stack validation failed.'
     }
     Write-Host ''
-    Write-Host '[5/5] Validation complete. No changes applied.' -ForegroundColor Green
+    Write-Host '[5/6] Validation complete. No changes applied.' -ForegroundColor Green
+    Write-Host '  [6/6] --ensure-cosmos-containers skipped under -WhatIf (no mutation).' -ForegroundColor DarkGray
 }
 else {
-    Write-Host "[4/5] Deploying via Deployment Stack '$stackName'..." -ForegroundColor Cyan
+    Write-Host "[4/6] Deploying via Deployment Stack '$stackName'..." -ForegroundColor Cyan
     Write-Host '  action-on-unmanage: deleteResources (orphan resources are deleted on next deploy)' -ForegroundColor DarkGray
     Write-Host '  deny-settings-mode: none (portal edits permitted)' -ForegroundColor DarkGray
 
@@ -335,7 +359,7 @@ else {
     }
 
     Write-Host ''
-    Write-Host "[5/5] Deployment Stack '$stackName' updated successfully." -ForegroundColor Green
+    Write-Host "[5/6] Deployment Stack '$stackName' updated successfully." -ForegroundColor Green
 
     # Print Bicep outputs so the operator can copy endpoints without a
     # separate az call. Stack outputs live at .properties.outputs.
@@ -353,15 +377,93 @@ else {
                 Write-Host ("    {0,-30} {1}" -f $prop.Name, $value)
             }
         }
-        Write-Host ''
-        Write-Host '  Smoke-test (Cosmos via Managed Identity):' -ForegroundColor Cyan
-        $endpoint = $outputs.cosmosAccountEndpoint.value
-        if (-not [string]::IsNullOrEmpty([string]$endpoint)) {
-            Write-Host "    `$env:Cosmos__AccountEndpoint = '$endpoint'"
-            Write-Host '    dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers'
-        }
     }
     else {
         Write-Host '    (failed to retrieve outputs; run az stack sub show --name $stackName manually)' -ForegroundColor Yellow
+    }
+
+    # -------------------------------------------------------------------------
+    # [6/6] Ensure Cosmos containers exist after every successful deploy.
+    #
+    # WHY HERE: CosmosOptions.Containers is the canonical list of containers
+    # the runtime expects to exist. New containers are added to that list in
+    # code, but the deployed Cosmos account is not updated until an operator
+    # manually runs --ensure-cosmos-containers. This gap caused a live outage
+    # (2026-06-15): catalog_stats + catalog_stats_leases were never created
+    # after the PR that introduced them (#410), crash-looping the RAG worker
+    # and emptying /admin/machines.
+    #
+    # WHY OPTION A (dotnet run, not an ACA Job): the deploy identity running
+    # this script has Subscription Owner → Cosmos DB Operator (control-plane
+    # RBAC), which is exactly what ArmCosmosProvisioner requires. The runtime
+    # managed identity deliberately does NOT have control-plane RBAC per
+    # ADR-0012 — so an ACA Job approach would need a second identity with
+    # elevated permissions that ADR-0012 explicitly excludes from app
+    # identities. dotnet run on the deploy machine is the clean path.
+    #
+    # IDEMPOTENCY: ArmCosmosProvisioner.EnsureCreatedAsync calls
+    # CreateOrUpdateAsync for each container in CosmosOptions.Containers.
+    # Containers that already exist with a matching partition key are no-ops.
+    # Containers with a partition-key mismatch fail loudly (fatal drift).
+    #
+    # FAILURE SURFACE: any non-zero exit from the CLI is caught and re-thrown
+    # so it surfaces as a deploy failure with a clear error message — not
+    # silently swallowed. The deployer sees exactly which step failed.
+    # -------------------------------------------------------------------------
+
+    Write-Host ''
+    Write-Host '[6/6] Ensuring Cosmos containers match CosmosOptions.Containers...' -ForegroundColor Cyan
+
+    if ($SkipEnsureContainers) {
+        Write-Host '  -SkipEnsureContainers was specified — skipping.' -ForegroundColor Yellow
+    }
+    else {
+        $cosmosEndpoint   = $null
+        $cosmosResourceId = $null
+
+        if ($null -ne $outputs) {
+            # $outputs was already parsed above from the az stack sub show call; re-use it.
+            $cosmosEndpoint   = $outputs.cosmosAccountEndpoint.value
+            $cosmosResourceId = $outputs.cosmosAccountResourceId.value
+        }
+
+        if ([string]::IsNullOrEmpty([string]$cosmosEndpoint) -or
+            [string]::IsNullOrEmpty([string]$cosmosResourceId)) {
+            Write-Host '  WARNING: cosmosAccountEndpoint or cosmosAccountResourceId not found in stack' `
+                -ForegroundColor Yellow
+            Write-Host '    outputs. Run manually when the outputs are available:' -ForegroundColor Yellow
+            Write-Host '      $env:Cosmos__AccountEndpoint    = "<endpoint>"' -ForegroundColor Yellow
+            Write-Host '      $env:Cosmos__AccountResourceId  = "<resourceId>"' -ForegroundColor Yellow
+            Write-Host '      dotnet run --project src/PinballWizard.Cli -- --ensure-cosmos-containers' `
+                -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "  Endpoint:    $cosmosEndpoint" -ForegroundColor DarkGray
+            Write-Host "  ResourceId:  $cosmosResourceId" -ForegroundColor DarkGray
+
+            # Resolve the repo root two levels above infra/scripts/ so dotnet
+            # run works regardless of the caller's working directory.
+            $repoRoot  = Split-Path -Parent $infraDir
+            $cliProject = Join-Path $repoRoot 'src' 'PinballWizard.Cli' 'PinballWizard.Cli.csproj'
+
+            $env:Cosmos__AccountEndpoint   = $cosmosEndpoint
+            $env:Cosmos__AccountResourceId = $cosmosResourceId
+            $env:DOTNET_ENVIRONMENT        = $Environment
+
+            try {
+                dotnet run --project $cliProject --no-launch-profile -- --ensure-cosmos-containers
+                if ($LASTEXITCODE -ne 0) {
+                    throw "--ensure-cosmos-containers exited with code $LASTEXITCODE."
+                }
+                Write-Host '  Cosmos containers: OK' -ForegroundColor Green
+            }
+            finally {
+                # Always clear the env vars — don't leave Cosmos credentials
+                # in the session after the script exits, regardless of outcome.
+                Remove-Item Env:Cosmos__AccountEndpoint   -ErrorAction SilentlyContinue
+                Remove-Item Env:Cosmos__AccountResourceId -ErrorAction SilentlyContinue
+                Remove-Item Env:DOTNET_ENVIRONMENT        -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
