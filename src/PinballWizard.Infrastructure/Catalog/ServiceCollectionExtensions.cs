@@ -141,7 +141,7 @@ public static class ServiceCollectionExtensions
             new CosmosMachineDocumentReadRepository(
                 ResolveContainer(sp, "scraped_documents"),
                 sp.GetRequiredService<IRawDocumentRepository>(),
-                sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentRecord>>>()));
+                sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentReadProjection>>>()));
 
         return services;
     }
