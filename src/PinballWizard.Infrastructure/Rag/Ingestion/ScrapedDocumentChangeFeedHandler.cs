@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -15,12 +16,30 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 //   2. Short-circuits on document type BEFORE fetching bytes — avoids
 //      downloading non-indexable binary blobs (firmware, software
 //      releases) that would have been filtered by the pipeline anyway.
-//   3. Pulls PDF bytes via `IDocumentBytesSource` (default impl
-//      `HttpDocumentBytesSource`).
-//   4. Invokes the pipeline. Outcome is logged but NOT thrown —
+//   3. Resolves the stored blob name from the raw document record so
+//      bytes are served from pinwiz-raw blob storage when available,
+//      falling back to HTTP when the blob name is absent (document not
+//      yet downloaded) or the raw record cannot be found.
+//   4. Pulls PDF bytes via `IDocumentBytesSource` (default impl
+//      `BlobDocumentBytesSource`, which decorates `HttpDocumentBytesSource`).
+//   5. Invokes the pipeline. Outcome is logged but NOT thrown —
 //      `Indexed`, `Skipped_*`, and `DeadLettered` are all valid
 //      pipeline returns; only unexpected exceptions bubble up to
 //      the hosted service for dead-lettering.
+//
+// BLOB-FIRST READ (Task 7):
+// The change-feed payload carries only the source URL in `DocumentUrl`.
+// A URL alone cannot be mapped to the `{sourceType}/{filename}` blob key
+// because the scraped_documents projection doesn't carry source_type.
+// To activate the blob path, this handler looks up the raw document
+// record by `DocumentId` and reads `File.LocalPath` — the blob name
+// stamped by the downloader (Task 3/4). When present, that blob name
+// is passed to `IDocumentBytesSource.OpenAsync`; `BlobDocumentBytesSource`
+// recognises a blob-name shape (contains '/', no '://') and serves from
+// pinwiz-raw. A blob miss (not yet uploaded) falls through to HTTP inside
+// `BlobDocumentBytesSource` — a genuine fetch, not masking (invariant #17).
+// When the raw record is absent or `File` is null the URL is passed
+// instead, keeping the previous HTTP fallback behaviour.
 //
 // Document-type parsing falls back to `DocumentType.Other` when the
 // source string doesn't match a `DocumentType` enum member. Defensive
@@ -32,21 +51,25 @@ public sealed class ScrapedDocumentChangeFeedHandler
 {
     private readonly IRagIngestionPipeline _pipeline;
     private readonly IDocumentBytesSource _bytesSource;
+    private readonly IRawDocumentRepository _rawDocumentRepository;
     private readonly HashSet<DocumentType> _acceptedTypes;
     private readonly ILogger<ScrapedDocumentChangeFeedHandler> _logger;
 
     public ScrapedDocumentChangeFeedHandler(
         IRagIngestionPipeline pipeline,
         IDocumentBytesSource bytesSource,
+        IRawDocumentRepository rawDocumentRepository,
         IOptions<RagIngestionOptions> options,
         ILogger<ScrapedDocumentChangeFeedHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
         ArgumentNullException.ThrowIfNull(bytesSource);
+        ArgumentNullException.ThrowIfNull(rawDocumentRepository);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
         _pipeline = pipeline;
         _bytesSource = bytesSource;
+        _rawDocumentRepository = rawDocumentRepository;
         _acceptedTypes = [.. options.Value.AcceptedDocumentTypes];
         _logger = logger;
     }
@@ -87,8 +110,15 @@ public sealed class ScrapedDocumentChangeFeedHandler
             Edition: change.Edition,
             EditionScope: change.EditionScope);
 
+        // Resolve the blob name from the raw document record so bytes are
+        // served from pinwiz-raw when the document has been downloaded.
+        // Falls back to the source URL when the raw record is absent or
+        // its File.LocalPath is not set (document not yet downloaded).
+        var bytesKey = await ResolveBytesKeyAsync(change.DocumentId, change.DocumentUrl, cancellationToken)
+            .ConfigureAwait(false);
+
         await using var pdfStream = await _bytesSource
-            .OpenAsync(change.DocumentUrl, cancellationToken).ConfigureAwait(false);
+            .OpenAsync(bytesKey, cancellationToken).ConfigureAwait(false);
 
         var outcome = await _pipeline
             .IngestAsync(pipelineChange, pdfStream, cancellationToken).ConfigureAwait(false);
@@ -104,4 +134,29 @@ public sealed class ScrapedDocumentChangeFeedHandler
         Enum.TryParse<DocumentType>(raw, ignoreCase: true, out var parsed)
             ? parsed
             : DocumentType.Other;
+
+    // Looks up the raw document record to get the blob name stamped by the
+    // downloader. Returns the blob name when available so BlobDocumentBytesSource
+    // can serve from pinwiz-raw; returns the source URL when absent so the HTTP
+    // fallback fires — a genuine fetch, not masking (invariant #17).
+    private async Task<string> ResolveBytesKeyAsync(
+        string documentId, string documentUrl, CancellationToken cancellationToken)
+    {
+        var raw = await _rawDocumentRepository
+            .GetAsync(documentId, cancellationToken).ConfigureAwait(false);
+
+        var blobName = raw?.File?.LocalPath;
+        if (!string.IsNullOrEmpty(blobName))
+        {
+            _logger.LogDebug(
+                "RAG change-feed handler: resolved blob key '{BlobName}' for document={DocumentId}.",
+                blobName, documentId);
+            return blobName;
+        }
+
+        _logger.LogDebug(
+            "RAG change-feed handler: no stored blob path for document={DocumentId} — using source URL for HTTP fetch.",
+            documentId);
+        return documentUrl;
+    }
 }

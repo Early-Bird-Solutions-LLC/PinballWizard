@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Rag.Indexing;
@@ -136,6 +138,60 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
             ctx.Handler.HandleAsync(null!, CancellationToken.None));
     }
 
+    // ── Task 7: blob-key threading tests ─────────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_RawRecordHasBlobPath_PassesBlobNameToBytesSource()
+    {
+        // When the raw document record carries a File.LocalPath (= blob name),
+        // the handler must pass that blob name (not the URL) to OpenAsync so
+        // BlobDocumentBytesSource can serve from pinwiz-raw.
+        var ctx = new TestContext();
+        ctx.SeedExtractionAndChunking();
+
+        const string blobName = "stern_manuals/Foo_Fighters_web.pdf";
+        ctx.SeedRawRecord("doc_x", blobName);
+
+        var change = NewChange(documentId: "doc_x", contentHash: "hash-x");
+        await ctx.Handler.HandleAsync(change, CancellationToken.None);
+
+        // The bytes source must have been called with the blob name, not the URL.
+        Assert.Contains(blobName, ctx.BytesSource.Calls);
+        Assert.DoesNotContain(change.DocumentUrl, ctx.BytesSource.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RawRecordAbsent_PassesDocumentUrlToBytesSource()
+    {
+        // When there is no raw record for the document (e.g. the document was
+        // never downloaded — freshly scraped), the handler must fall back to
+        // the original DocumentUrl so the HTTP source can perform a genuine fetch.
+        var ctx = new TestContext();
+        ctx.SeedExtractionAndChunking();
+        // No raw record seeded — GetAsync returns null.
+
+        var change = NewChange(documentId: "doc_y", contentHash: "hash-y");
+        await ctx.Handler.HandleAsync(change, CancellationToken.None);
+
+        Assert.Contains(change.DocumentUrl, ctx.BytesSource.Calls);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RawRecordExistsButFileIsNull_PassesDocumentUrlToBytesSource()
+    {
+        // When the raw record exists but File is null (record was discovered but
+        // not yet downloaded), the handler must fall back to the DocumentUrl so
+        // the HTTP source performs a live fetch — not a crash.
+        var ctx = new TestContext();
+        ctx.SeedExtractionAndChunking();
+        ctx.SeedRawRecord("doc_z", blobName: null); // File present but LocalPath absent
+
+        var change = NewChange(documentId: "doc_z", contentHash: "hash-z");
+        await ctx.Handler.HandleAsync(change, CancellationToken.None);
+
+        Assert.Contains(change.DocumentUrl, ctx.BytesSource.Calls);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // Test fixture
     // ────────────────────────────────────────────────────────────────
@@ -168,6 +224,9 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
         public RecordingChunker Chunker { get; } = new();
         public ScrapedDocumentChangeFeedHandler Handler { get; }
 
+        private readonly IRawDocumentRepository _rawRepo =
+            Substitute.For<IRawDocumentRepository>();
+
         public TestContext()
         {
             var ingestionOptions = Options.Create(new RagIngestionOptions
@@ -189,8 +248,44 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
             Handler = new ScrapedDocumentChangeFeedHandler(
                 pipeline,
                 BytesSource,
+                _rawRepo,
                 ingestionOptions,
                 NullLogger<ScrapedDocumentChangeFeedHandler>.Instance);
+        }
+
+        // Seeds the raw-document-repository mock to return a record with the
+        // given blob name in File.LocalPath. Pass null blobName to seed a record
+        // whose File property is null (document discovered but not yet downloaded).
+        public void SeedRawRecord(string documentId, string? blobName)
+        {
+            var source = new SourceInfo
+            {
+                SourceType = SourceType.ManualsPage,
+                DiscoveryUrl = $"https://example/{documentId}",
+                DiscoveryContext = "Manuals Page",
+                FileUrl = $"https://example/{documentId}.pdf",
+            };
+            var timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow };
+
+            RawDocumentRecord record = new()
+            {
+                DocumentId = documentId,
+                DocumentUrl = $"https://example/{documentId}.pdf",
+                DocumentType = DocumentType.Manual,
+                Source = source,
+                Timeline = timeline,
+                File = blobName is not null
+                    ? new DownloadedFileInfo
+                    {
+                        LocalPath = blobName,
+                        Filename = System.IO.Path.GetFileName(blobName),
+                    }
+                    : null,
+            };
+
+            _rawRepo
+                .GetAsync(documentId, Arg.Any<CancellationToken>())
+                .Returns(record);
         }
 
         public void SeedExtractionAndChunking()
