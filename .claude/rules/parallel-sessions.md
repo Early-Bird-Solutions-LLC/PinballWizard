@@ -2,7 +2,7 @@
      adapted-for: PinballWizard (worktree-safety; APS-repo framing removed)
      last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
-# Parallel Claude Sessions — Worktree Default (DRS-15951)
+# Parallel Claude Sessions — Worktree Default
 
 **Why this rule exists:** on 2026-06-10, two concurrent Claude sessions shared the
 working tree of this repo; one session's "discard changes" wiped ~30 agents of
