@@ -19,6 +19,7 @@ using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Infrastructure.Documents;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
@@ -754,6 +755,17 @@ static IHost CreateHost(string[] args)
     if (cosmosWired)
     {
         builder.Services.AddCosmosBackedPolitenessOverrides();
+
+        // Document blob store (pinwiz-raw container) — registered here so
+        // --download-documents can write to durable blob storage (blob name =
+        // the same relative path that DocumentDownloadService builds). The RAG
+        // ingestion path also calls AddDocumentBlobStore inside
+        // AddBlobDocumentBytesSource; AddSingleton is idempotent (first wins),
+        // so double-registration is harmless. Gracefully no-ops when neither
+        // ConnectionStrings:blobs (Aspire/Azurite) nor Storage:BlobEndpoint
+        // (deployed managed identity) is present — missing config produces a
+        // loud DI resolution error at the point of first use.
+        builder.Services.AddDocumentBlobStore(builder.Configuration);
 
         // Ingestion-sources seeder. Application-layer service depending on
         // IIngestionSourceRepository (registered by AddCosmosPersistence above);

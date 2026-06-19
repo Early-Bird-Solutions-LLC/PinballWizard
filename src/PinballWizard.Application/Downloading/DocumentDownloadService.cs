@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
 
@@ -10,25 +11,30 @@ namespace PinballWizard.Application.Downloading;
 /// resolution. Polite (the injected <see cref="IFileDownloader"/> routes every
 /// download through the shared politeness gate — robots.txt, per-origin
 /// throttle, 429 backoff — and owns the read timeout), idempotent (skips
-/// documents that already have a local file — unless <c>force</c> is set), and
-/// provenance-preserving (only the <c>File</c> field is written back).
+/// documents whose blob already exists in <c>pinwiz-raw</c> — unless
+/// <c>force</c> is set), and provenance-preserving (only the <c>File</c>
+/// field is written back; <c>File.LocalPath</c> holds the blob name).
 /// </summary>
 public sealed class DocumentDownloadService
 {
     private readonly IRawDocumentRepository _repo;
     private readonly IFileDownloader _downloader;
+    private readonly IDocumentBlobStore _blobStore;
     private readonly ILogger<DocumentDownloadService> _logger;
 
     public DocumentDownloadService(
         IRawDocumentRepository repo,
         IFileDownloader downloader,
+        IDocumentBlobStore blobStore,
         ILogger<DocumentDownloadService> logger)
     {
         ArgumentNullException.ThrowIfNull(repo);
         ArgumentNullException.ThrowIfNull(downloader);
+        ArgumentNullException.ThrowIfNull(blobStore);
         ArgumentNullException.ThrowIfNull(logger);
         _repo = repo;
         _downloader = downloader;
+        _blobStore = blobStore;
         _logger = logger;
     }
 
@@ -57,31 +63,74 @@ public sealed class DocumentDownloadService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!force && raw.File?.LocalPath is not null) { skipped++; continue; }
-
             var fileUrl = raw.Source.FileUrl;
             if (string.IsNullOrEmpty(fileUrl)) { skipped++; continue; }
+
+            // Blob name = the relative path used as the durable storage key.
+            // Computed here (before the skip check) so ExistsAsync can use it
+            // as the source-of-truth "already stored" signal — blob presence is
+            // durable across ACA runs; File.LocalPath may reference a blob key
+            // from a prior run that still exists in pinwiz-raw.
+            var blobName = BuildBlobName(raw, fileUrl);
+
+            if (!force)
+            {
+                // Primary skip: Cosmos record already carries a LocalPath (blob name)
+                // AND the blob is confirmed durable in pinwiz-raw. Either alone could
+                // be stale (record set but blob deleted, or blob present but record
+                // not yet stamped); checking both guards against both cases without
+                // requiring a network call when LocalPath is null (fast path).
+                var alreadyStored = raw.File?.LocalPath is not null
+                    || await _blobStore.ExistsAsync(blobName, cancellationToken).ConfigureAwait(false);
+                if (alreadyStored) { skipped++; continue; }
+            }
 
             var host = TryGetHost(fileUrl);
             if (host is not null && poisonedHosts.Contains(host)) { skipped++; continue; }
 
-            // Pass the path RELATIVE to the downloads root — IFileDownloader owns the
-            // root and combines it (so the persisted LocalPath stays portable across
-            // environments, e.g. dev box vs ACA, rather than baking in an absolute path).
-            var relPath = BuildLocalPath(raw, fileUrl);
             // Force ⇒ unconditional GET (null previousMetadata): see the RunAsync param doc —
-            // a 304 NotModified would write LocalPath back with no bytes on this machine.
+            // a 304 NotModified could leave no bytes in pinwiz-raw for the page-1 tier.
             var previousMetadata = force ? null : raw.Http;
             var result = await _downloader
-                .DownloadAsync(fileUrl, relPath, previousMetadata, cancellationToken)
+                .DownloadAsync(fileUrl, blobName, previousMetadata, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (result.Status is DownloadStatus.Downloaded or DownloadStatus.NotModified)
+            if (result.Status is DownloadStatus.Downloaded)
             {
+                // result.Content holds the downloaded bytes; write them to the durable
+                // blob store so they survive across ACA executions (ephemeral /tmp).
+                // WriteAsync overwrites any stale blob when force is true.
+                // Content must be set for Downloaded status — IFileDownloader contract.
+                if (result.Content is null)
+                    throw new InvalidOperationException(
+                        $"IFileDownloader returned Downloaded status with no Content stream for {fileUrl}");
+                await using (result.Content)
+                {
+                    await _blobStore.WriteAsync(blobName, result.Content, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                // Only the File field is written back (provenance invariant); blob name
+                // becomes the durable LocalPath reference.
                 await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
                 {
-                    LocalPath = result.LocalPath,
-                    Filename = result.Filename ?? Path.GetFileName(result.LocalPath),
+                    LocalPath = blobName,
+                    Filename = result.Filename ?? Path.GetFileName(blobName),
+                    SizeBytes = result.SizeBytes ?? 0,
+                    Sha256 = result.Sha256,
+                }, cancellationToken).ConfigureAwait(false);
+                downloaded++;
+            }
+            else if (result.Status is DownloadStatus.NotModified)
+            {
+                // 304 means the server confirmed the blob is current. Stamp the record
+                // if it didn't already have this blobName — preserves idempotency for
+                // records whose LocalPath was written by a previous run but whose Http
+                // metadata matched. No blob write needed (blob already current).
+                await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
+                {
+                    LocalPath = blobName,
+                    Filename = result.Filename ?? Path.GetFileName(blobName),
                     SizeBytes = result.SizeBytes ?? 0,
                     Sha256 = result.Sha256,
                 }, cancellationToken).ConfigureAwait(false);
@@ -113,13 +162,15 @@ public sealed class DocumentDownloadService
     private static string? TryGetHost(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
 
-    // Lay downloads out as {sourceType}/{filename} under the downloads root so
-    // each manufacturer's docs stay grouped and filenames don't collide globally.
-    private static string BuildLocalPath(RawDocumentRecord raw, string fileUrl)
+    // Blob name = {sourceType}/{filename} — groups each manufacturer's documents
+    // and avoids global filename collisions. The forward-slash separator is
+    // intentional: blob names use '/' as a virtual directory delimiter regardless
+    // of the OS running the downloader (ACA Linux vs. dev Windows).
+    private static string BuildBlobName(RawDocumentRecord raw, string fileUrl)
     {
         var sourceType = raw.Source.SourceType.ToString().ToLowerInvariant();
         var filename = Path.GetFileName(new Uri(fileUrl).AbsolutePath);
-        return Path.Combine(sourceType, filename);
+        return $"{sourceType}/{filename}";
     }
 }
 

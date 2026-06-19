@@ -69,7 +69,6 @@ public sealed class FileDownloader : IFileDownloader
         HttpMetadata? previousMetadata = null,
         CancellationToken cancellationToken = default)
     {
-        var absolutePath = Path.Combine(_settings.DownloadsPath, localPath);
         var uri = new Uri(fileUrl);
 
         try
@@ -136,26 +135,29 @@ public sealed class FileDownloader : IFileDownloader
                 };
             }
 
-            var directory = Path.GetDirectoryName(absolutePath);
-            if (directory is not null) Directory.CreateDirectory(directory);
-
+            // Buffer into a MemoryStream so SHA-256, size, and content are all
+            // captured in a single streaming pass. The caller (DocumentDownloadService)
+            // disposes the stream after writing it to the durable blob store.
+            // Largest known document in scope is ~80 MB (Stern Godzilla service manual),
+            // which fits safely inside the ACA container's 1 GiB memory limit —
+            // same headroom analysis as BlobDocumentStore.OpenReadAsync.
             using var hash = SHA256.Create();
             long bytesWritten = 0;
+            var buffer = new byte[81920];
+            var contentBuffer = new MemoryStream();
 
             await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
-            await using (var fileStream = new FileStream(absolutePath, FileMode.Create, FileAccess.Write,
-                FileShare.None, bufferSize: 81920, useAsync: true))
             {
-                var buffer = new byte[81920];
                 int bytesRead;
                 while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                    await contentBuffer.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
                     hash.TransformBlock(buffer, 0, bytesRead, null, 0);
                     bytesWritten += bytesRead;
 
                     if (bytesWritten > _settings.MaxFileSizeBytes)
                     {
+                        await contentBuffer.DisposeAsync();
                         throw new InvalidOperationException(
                             $"File exceeded max size during download: {bytesWritten:N0} bytes");
                     }
@@ -173,9 +175,10 @@ public sealed class FileDownloader : IFileDownloader
                 ContentLength = bytesWritten
             };
 
-            _logger.LogInformation("Downloaded {Size:N0} bytes: {Url} → {Path}",
+            _logger.LogInformation("Downloaded {Size:N0} bytes: {Url} → {BlobName}",
                 bytesWritten, fileUrl, localPath);
 
+            contentBuffer.Position = 0;
             return new DownloadResult
             {
                 Status = DownloadStatus.Downloaded,
@@ -184,7 +187,8 @@ public sealed class FileDownloader : IFileDownloader
                 Filename = Path.GetFileName(localPath),
                 SizeBytes = bytesWritten,
                 Sha256 = sha256,
-                Http = httpMetadata
+                Http = httpMetadata,
+                Content = contentBuffer
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

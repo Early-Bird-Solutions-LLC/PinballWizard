@@ -51,4 +51,12 @@ public sealed class DownloadResult
     public string? Sha256 { get; init; }
     public HttpMetadata? Http { get; init; }
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// The downloaded bytes as a readable stream. Set only when
+    /// <see cref="Status"/> is <see cref="DownloadStatus.Downloaded"/>;
+    /// null for all other statuses (NotModified, Failed, etc.).
+    /// The caller is responsible for disposing this stream.
+    /// </summary>
+    public Stream? Content { get; init; }
 }

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Application.Landing;
@@ -245,15 +246,16 @@ public static class ServiceCollectionExtensions
         });
 
         // Document downloader (--download-documents) — fetches not-yet-downloaded
-        // raw documents so the linker's page-text tiers can read page-1 content.
-        // Reuses the registered IFileDownloader (polite, resilient); the downloader
-        // owns the DownloadsPath root and combines the relative path the service builds.
+        // raw documents and writes them to the durable pinwiz-raw blob store so
+        // content survives across ACA runs (ephemeral /tmp). Reuses the registered
+        // IFileDownloader (polite, resilient) and IDocumentBlobStore (managed-identity).
         services.AddSingleton<DocumentDownloadService>(sp =>
         {
             var rawRepo = sp.GetRequiredService<IRawDocumentRepository>();
             var downloader = sp.GetRequiredService<IFileDownloader>();
+            var blobStore = sp.GetRequiredService<IDocumentBlobStore>();
             var logger = sp.GetRequiredService<ILogger<DocumentDownloadService>>();
-            return new DocumentDownloadService(rawRepo, downloader, logger);
+            return new DocumentDownloadService(rawRepo, downloader, blobStore, logger);
         });
 
         // Download-path migration (--migrate-download-paths) — one-shot byte-safe
