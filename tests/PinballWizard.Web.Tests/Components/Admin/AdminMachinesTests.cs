@@ -306,6 +306,72 @@ public sealed class AdminMachinesEmptyCatalogTests : AsyncBunitContext
     }
 }
 
+// Behavioral test: page shell + spinner render BEFORE data arrives; data
+// populates AFTER. This is the instant-navigation contract (fix/admin-nav-instant-load).
+//
+// Pattern: hold the repository call with a TaskCompletionSource so we can assert
+// the loading state between render and data arrival. The component's OnAfterRenderAsync
+// kicks off LoadAsync() asynchronously — the spinner must be present immediately
+// after the first render cycle, before the TCS is released.
+public sealed class AdminMachinesLoadingStateTests : AsyncBunitContext
+{
+    private readonly TaskCompletionSource _dataGate = new();
+
+    private async IAsyncEnumerable<ManufacturerCatalogStats> SlowStream(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        // Hold until the test releases the gate — simulates slow Cosmos query.
+        await _dataGate.Task.WaitAsync(ct);
+        yield break;
+    }
+
+    public AdminMachinesLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowRepo = Substitute.For<ICatalogStatsReadRepository>();
+        slowRepo
+            .StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(callInfo => SlowStream(callInfo.Arg<CancellationToken>()));
+        Services.AddSingleton(slowRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminMachines_ShowsSpinner_BeforeDataArrives()
+    {
+        // Render without awaiting the slow data — spinner must be present immediately.
+        var cut = RenderWithPopover<AdminMachines>();
+
+        // The loading indicator is visible before the data gate is released.
+        // MudProgressLinear renders as a <div> with the mud-progress-indeterminate class.
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        // Release the gate so the test teardown doesn't hang.
+        _dataGate.SetResult();
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminMachines_HidesSpinner_AfterDataArrives()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+
+        // Spinner present while gate is held.
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        // Release the gate — data load completes and StateHasChanged triggers re-render.
+        _dataGate.SetResult();
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+
+        await Task.CompletedTask;
+    }
+}
+
 // Separate context for the Cosmos load-failure path.
 // The repo throws so the page must show the distinct error alert and must NOT
 // show the "No machines in catalog" empty-state (which implies data, not failure).

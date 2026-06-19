@@ -555,3 +555,81 @@ public sealed class AdminMachineDetailMissingMfrTests : AsyncBunitContext
         cut.Find("[data-testid='detail-missing-mfr']");
     }
 }
+
+// Behavioral test: page shell + spinner render BEFORE data arrives; spinner hides
+// AFTER. This is the instant-navigation contract (fix/admin-nav-instant-load).
+public sealed class AdminMachineDetailLoadingStateTests : AsyncBunitContext
+{
+    private const string FakeOpdbId  = "GRBN-MQR4P";
+    private const string FakeMfr     = "stern";
+
+    private readonly TaskCompletionSource<Machine?> _machineGate = new();
+
+    private static async IAsyncEnumerable<Machine> EmptySiblings(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    private static async IAsyncEnumerable<MachineDocumentLink> EmptyDocs(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    public AdminMachineDetailLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowMachineRepo = Substitute.For<IMachineRepository>();
+        // Hold until gate released — simulates slow Cosmos point read.
+        slowMachineRepo
+            .GetByOpdbIdAsync(FakeOpdbId, FakeMfr, Arg.Any<CancellationToken>())
+            .Returns(_ => _machineGate.Task);
+        slowMachineRepo
+            .GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => EmptySiblings(callInfo.Arg<CancellationToken>()));
+
+        Services.AddSingleton(slowMachineRepo);
+        Services.AddSingleton(Substitute.For<ICatalogStatsReadRepository>());
+        var docsRepo = Substitute.For<IMachineDocumentReadRepository>();
+        docsRepo.StreamByMachineIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => EmptyDocs(callInfo.Arg<CancellationToken>()));
+        Services.AddSingleton(docsRepo);
+        Services.AddSingleton<Microsoft.Extensions.Logging.ILogger<AdminMachineDetail>>(
+            NullLogger<AdminMachineDetail>.Instance);
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo($"/admin/machines/{FakeOpdbId}?mfr={FakeMfr}");
+    }
+
+    [Fact]
+    public async Task AdminMachineDetail_ShowsSpinner_BeforeDataArrives()
+    {
+        var cut = Render<AdminMachineDetail>(p => p.Add(x => x.OpdbId, FakeOpdbId));
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        _machineGate.SetResult(null);
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminMachineDetail_HidesSpinner_AfterDataArrives()
+    {
+        var cut = Render<AdminMachineDetail>(p => p.Add(x => x.OpdbId, FakeOpdbId));
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        // null → machine not found path — still completes LoadAsync and clears spinner.
+        _machineGate.SetResult(null);
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+
+        await Task.CompletedTask;
+    }
+}
