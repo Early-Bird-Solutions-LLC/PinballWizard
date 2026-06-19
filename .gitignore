@@ -37,6 +37,8 @@ publish/
 .claude/*
 !.claude/rules/
 !.claude/rules/**
+!.claude/agents/
+!.claude/agents/**
 !.claude/skills/
 !.claude/skills/**
 !.claude/commands/
