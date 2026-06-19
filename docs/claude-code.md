@@ -17,10 +17,13 @@ directory is the authoritative source. It provides four layers of behavior:
 | `.claude/commands/` | 14 slash-command definitions (`/ship`, `/debug`, `/spec`, `/plan`, `/pr`, …) | Short-form entry points into the skills |
 | `.claude/agents/` | `codebase-analyzer`, `web-search-researcher`, `thoughts-analyzer`, `modernization-analyst` | Specialized sub-agents dispatched for targeted research tasks |
 
-Global rules from `~/.claude/` (the APS standards corpus) are path-scoped to
-suppress in this repo. APS-specific standards — auth, SQL, Cosmos, compute, etc. —
-auto-suppress here because the trigger conditions reference APS repo names, resource
-types, and package IDs that are not present in this codebase.
+Global rules from `~/.claude/` (the APS standards corpus) largely don't apply here:
+their trigger conditions reference APS repo names, resource types, and package IDs
+that are absent from this codebase, so they are silent in practice. Full upstream
+suppression — path-scoped so the APS corpus never loads in `c:\earlybird\` sessions
+— ships as a separate change against `APS.JimClaudeCodeConfig` (ADR-0040 Half B) and
+is not yet merged. Until that lands, the in-repo config is the operative override
+layer.
 
 ## How the pieces compose
 
@@ -59,12 +62,14 @@ Two scripts guard against drift and leakage:
 
 ## Watch it work
 
-Every merged PR description records the `/local-review` outcome: finding count,
-severity breakdown, and how each finding was addressed. The `claude-code` label is
-applied to every PR where Claude Code participated. Recent examples:
+Every PR where Claude Code participated carries the `claude-code` label. PR
+descriptions note when the diff was reviewed locally (via `/local-review`) before
+push. Recent examples:
 
-- [PR #454 — fix(infra) exclude Managed Identity from shared credential in Development](https://github.com/jkeeley2073/PinballWizard/pull/454)
-- [PR #453 — refactor(web) extract shared AdminLoadingBar component](https://github.com/jkeeley2073/PinballWizard/pull/453)
+- [PR #453 — refactor(web) extract shared AdminLoadingBar component](https://github.com/jkeeley2073/PinballWizard/pull/453) — includes a "## Local review" prose section confirming test results and confirming no provenance/security/scraper surface was touched.
+- [PR #452 — docs(ui) add PinballWizard "Modern LCD" design system source](https://github.com/jkeeley2073/PinballWizard/pull/452) — likewise carries a "## Local review" section.
 
-Both follow the same pattern: `/local-review` runs on the diff before `gh pr create`,
-findings are addressed or documented, and the PR description carries the result.
+The review is a qualitative prose summary, not a structured finding-count table: it
+records what the diff touched, what tests passed, and any risk areas confirmed clear.
+`/local-review` runs on the diff before `gh pr create`; the PR description records
+the outcome.

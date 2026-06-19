@@ -79,3 +79,11 @@ current and that APS-internal artifacts never leak in.
 - Half B (path-scoping the global config) is a separate PR against a separate repo
   and must ship before the suppression is fully effective. Until it does, APS
   artifacts still load but the in-repo config provides the override layer.
+
+## References
+
+- [`CLAUDE.md`](../../CLAUDE.md) — project-level context file; the canonical session-entry point for this repo
+- [`scripts/check_claude_config_drift.py`](../../scripts/check_claude_config_drift.py) — compares each vendored file against its upstream SHA and reports staleness
+- [`scripts/assert_no_excluded_aps_skills.py`](../../scripts/assert_no_excluded_aps_skills.py) — asserts that no APS-internal skills are present under `.claude/`
+- [`.claude/README.md`](../../.claude/README.md) — index of the in-repo config structure
+- **Half B** ships against the `APS.JimClaudeCodeConfig` repo (global config), not this repo — it adds path-scope guards so the APS standards corpus suppresses itself when the working directory is inside `c:\earlybird\`
