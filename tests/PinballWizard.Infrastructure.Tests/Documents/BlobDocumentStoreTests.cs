@@ -17,8 +17,9 @@ namespace PinballWizard.Infrastructure.Tests.Documents;
 // That port is not guaranteed available in every CI agent. Using an env
 // var lets the caller point at any Azurite instance (local, Docker, the
 // Aspire-managed one) without code changes. When the variable is absent,
-// xUnit skips the test via [Fact(Skip = ...)]; when it is present the
-// test runs for real and exercises the full IO path.
+// [RequiresAzuriteFact] sets Skip so xUnit reports the tests as Skipped
+// (not Passed); when it is present the tests run for real and exercise
+// the full IO path.
 public sealed class BlobDocumentStoreTests
 {
     // The container name is the sealed behavioral contract — callers that
@@ -34,15 +35,10 @@ public sealed class BlobDocumentStoreTests
     // call to the blob named by the caller without transforming the name.
     // Uses a real BlobContainerClient pointed at a non-existent host so
     // the client is correctly constructed but no network I/O occurs.
-    [Fact]
+    [RequiresAzuriteFact]
     public async Task ExistsAsync_ReturnsFalse_ForNonExistentBlobWhenAzuriteAvailable()
     {
-        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
-        if (string.IsNullOrWhiteSpace(azuriteUrl))
-        {
-            // No Azurite configured — skip gracefully.
-            return;
-        }
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
 
         var serviceClient = new BlobServiceClient(azuriteUrl);
         var containerName = $"test-{Guid.NewGuid():N}";
@@ -63,14 +59,10 @@ public sealed class BlobDocumentStoreTests
         }
     }
 
-    [Fact]
+    [RequiresAzuriteFact]
     public async Task WriteThenOpenRead_RoundTripsBytes()
     {
-        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
-        if (string.IsNullOrWhiteSpace(azuriteUrl))
-        {
-            return;
-        }
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
 
         var serviceClient = new BlobServiceClient(azuriteUrl);
         var containerName = $"test-{Guid.NewGuid():N}";
@@ -105,14 +97,10 @@ public sealed class BlobDocumentStoreTests
         }
     }
 
-    [Fact]
+    [RequiresAzuriteFact]
     public async Task OpenReadAsync_AbsentBlob_ThrowsRequestFailedException404()
     {
-        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
-        if (string.IsNullOrWhiteSpace(azuriteUrl))
-        {
-            return;
-        }
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
 
         var serviceClient = new BlobServiceClient(azuriteUrl);
         var containerName = $"test-{Guid.NewGuid():N}";
