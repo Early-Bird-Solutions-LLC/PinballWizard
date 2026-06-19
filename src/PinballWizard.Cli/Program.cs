@@ -149,7 +149,7 @@ var downloadAndLinkOption = new Option<bool>("--download-and-link")
 
 var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
 {
-    Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
+    Description = "[DEPRECATED — ADR-0039] No-op against any post-ADR-0039 corpus: the downloader now writes documents to the pinwiz-raw blob container instead of local disk, so there are no on-disk paths left to migrate. Slated for removal in a follow-up PR. (Historically: a one-shot, byte-safe migration that corrected legacy already-rooted scraped_documents_raw file.local_path values — e.g. 'data/downloads/manualspage/x.pdf' — to the clean relative form 'manualspage/x.pdf', verifying each file's SHA-256 before moving it.) Requires Cosmos to be configured."
 };
 
 var rebuildCatalogStatsOption = new Option<bool>("--rebuild-catalog-stats")
