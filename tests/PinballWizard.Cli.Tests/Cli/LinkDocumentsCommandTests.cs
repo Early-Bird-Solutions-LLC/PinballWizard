@@ -15,6 +15,7 @@ namespace PinballWizard.Cli.Tests.Cli;
 /// <see cref="IDocumentLinker"/> and what exit-codes / console output are
 /// produced — is what matters.
 /// </summary>
+[Collection("ConsoleCapture")]
 public sealed class LinkDocumentsCommandTests : IDisposable
 {
     // Redirect Console so tests don't pollute test output and can assert messages.

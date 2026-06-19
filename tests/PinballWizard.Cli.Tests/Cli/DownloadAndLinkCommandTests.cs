@@ -21,6 +21,7 @@ namespace PinballWizard.Cli.Tests.Cli;
 /// called) to verify the skip-on-failure composition. The "both stages succeed"
 /// integration path is covered by the full host DI integration tests.
 /// </summary>
+[Collection("ConsoleCapture")]
 public sealed class DownloadAndLinkCommandTests : IDisposable
 {
     private readonly StringWriter _stdout = new();
