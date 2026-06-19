@@ -10,7 +10,10 @@ This directory configures how [Claude Code](https://claude.ai/code) assists with
 | `INVARIANTS.md` | 16 locked architectural decisions. Claude will not relitigate these; each has an ADR or incident record. |
 | `PR-AUDIT.md` | Pre-push self-audit checklist run before every non-trivial PR. Step 0 is a qualitative `/local-review`; Steps 1–12 are mechanical invariant checks. |
 | `settings.json` | Shared permission allowlist — `dotnet build/test/restore` are pre-approved; everything else requires per-session confirmation |
-| `skills/local-review/` | Custom skill that spawns a `general-purpose` agent to critique the diff across 13 categories before push |
+| `rules/` | 4 auto-loaded rules files: universal engineering discipline, worktree safety, and GitHub-native workflow |
+| `skills/` | 8 project-scoped skills invoked on demand — local-review, commit, PR, pre-commit, and generic dev workflow |
+| `commands/` | 14 slash-commands (plan, spec, ship, debug, and more) |
+| `agents/` | 4 specialist research/analysis agents |
 
 ## How this repo is built
 
@@ -29,7 +32,31 @@ feature branch
 
 The `git log` reflects this discipline — look at any PR description to see the local-review finding count and how each was addressed.
 
-## The skills layer
+## The config layer (self-contained)
+
+As of ADR-0040, this repo owns its full Claude Code workflow config in-repo — no
+dependency on any personal/global config. Each vendored file carries a
+`vendored-from: … @ <sha>` provenance header; `scripts/check_claude_config_drift.py`
+reports when an upstream source has moved. `scripts/assert_no_excluded_aps_skills.py`
+guards against accidental APS tooling leakage.
+
+| Included | Why |
+|---|---|
+| `rules/no-guessing.md`, `rules/timeout-debugging.md` | Universal engineering discipline |
+| `rules/parallel-sessions.md` | Worktree safety (multi-session hazard) |
+| `rules/pinball-workflows.md` | GitHub-native commit/PR/branch flow (replaces APS mandatory-workflows) |
+| `skills/commit`, `skills/pr`, `skills/pre-commit-workflow` | Commit/PR/pre-commit, adapted to `gh` + personal identity |
+| `skills/local-review` | This repo's 13-category diff critique |
+| `skills/context-management`, `skills/screenshot`, `skills/playwright-setup`, `skills/ci-preview` | Generic dev workflow |
+| `commands/*` | 14 curated slash-commands (plan/spec/ship/debug/…) |
+| `agents/*` | 4 generic research/analysis agents |
+
+**Deliberately excluded** (and why): all `aps-*-standard` rules/skills, `jira`,
+`work-item-time-tracking`, Azure DevOps/TeamCity/Basecamp/Linear, `sonarqube`,
+SSO/VPN/SSL ops — they belong to APS work, not a personal GitHub showcase. The APS
+standards are also path-scoped upstream (ADR-0040 Half B) so they no longer load here.
+
+### The local-review skill
 
 `skills/local-review/` is a project-scoped Claude Code skill — a markdown file that Claude loads on demand when `/local-review` is invoked. It contains:
 
@@ -37,8 +64,6 @@ The `git log` reflects this discipline — look at any PR description to see the
 - Verdict semantics (🔴 blocking / ⚠️ advisory / ✅ no concerns)
 - Explicit non-goals (it's not a security audit, it doesn't auto-fix)
 - The incident that motivated it (a dead config property that slipped through 3 PRs)
-
-The global Claude Code setup (at `~/.claude/`) adds skills for commit formatting, time tracking, PR creation, and pre-commit validation — those are personal workflow tools and aren't checked in here.
 
 ## Why the invariants and audit checklist are committed
 
