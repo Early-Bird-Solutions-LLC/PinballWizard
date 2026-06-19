@@ -186,12 +186,12 @@ Reading latest screenshot from $SCREENSHOT_DIR...
 
 [Reads and displays screenshot: Screenshot 2025-11-02 003045.png]
 
-I can see the Azure Application Gateway backend health page showing:
-- Backend pool: aps-qa-portal-primary-api-pool
-- Status: Healthy (green checkmark)
-- All instances: 1/1 healthy
+I can see the pinwiz.ai Container App overview page showing:
+- Resource: pinwiz-wizard-api
+- Status: Running (green checkmark)
+- Active revisions: 1/1 healthy
 
-What would you like me to help you with regarding this gateway configuration?
+What would you like me to help you with regarding this Container App configuration?
 ```
 
 ### Flow 2: Multiple Screenshots

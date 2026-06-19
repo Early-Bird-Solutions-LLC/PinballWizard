@@ -1,5 +1,5 @@
 <!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/playwright-setup/prompt.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
+     adapted-for: PinballWizard (adapted: removed Azure Playwright Testing integration — npm package, service config, az login prereq, workspace role, test:azure script; not applicable to this repo)
      last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # /playwright-setup
