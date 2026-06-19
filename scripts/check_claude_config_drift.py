@@ -20,6 +20,17 @@ HEADER_RE = re.compile(
 )
 DEFAULT_SOURCE = Path(r"C:/aps/projects/APS.JimClaudeCodeConfig")
 
+# Only scan these subdirectories of the vendored root — excludes .worktrees/, .superpowers/, etc.
+VENDORED_SUBDIRS = ("rules", "skills", "commands", "agents")
+
+
+def _iter_md(root: Path):
+    """Yield .md files only from the four canonical vendored config subdirs."""
+    for sub in VENDORED_SUBDIRS:
+        d = root / sub
+        if d.exists():
+            yield from sorted(d.rglob("*.md"))
+
 
 @dataclass
 class Header:
@@ -69,7 +80,7 @@ def check_drift(vendored_root: Path, source: Path = DEFAULT_SOURCE) -> list[Drif
     reports: list[Drift] = []
     source_ok = source.exists() and _git(source, "rev-parse", "HEAD") is not None
 
-    for f in sorted(vendored_root.rglob("*.md")):
+    for f in _iter_md(vendored_root):
         text = f.read_text(encoding="utf-8", errors="replace")
         h = parse_header(text)
         if h is None:
@@ -105,9 +116,9 @@ def main() -> int:
     behind = [r for r in reports if r.status == "behind"]
     missing = [r for r in reports if r.status == "source-missing"]
 
-    # Count skipped (non-vendored) files for transparency
-    all_md = list(root.rglob("*.md"))
-    skipped = len(all_md) - len(reports)
+    # Count skipped (non-vendored) files for transparency — scoped to the same dirs
+    all_scoped_md = list(_iter_md(root))
+    skipped = len(all_scoped_md) - len(reports)
 
     for r in reports:
         print(f"{r.status:14} {r.path} (@{r.recorded_sha or '-'})")

@@ -77,3 +77,35 @@ def test_headerless_file_not_reported_as_drift():
     assert all(r.status != "no-header" for r in reports), (
         "no-header status must never appear in drift reports"
     )
+
+
+def test_worktrees_dir_excluded_from_scan():
+    """Files inside .worktrees/ snapshots must never appear in drift reports."""
+    import tempfile, pathlib
+    from check_claude_config_drift import check_drift
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = pathlib.Path(tmpdir)
+
+        # A legitimate vendored file under rules/
+        vendored = root / "rules" / "x.md"
+        vendored.parent.mkdir(parents=True)
+        vendored.write_text(
+            "<!-- vendored-from: APS.JimClaudeCodeConfig/global/rules/x.md @ 6dfd2cf -->\n# X\n",
+            encoding="utf-8",
+        )
+
+        # A worktree snapshot that also has a vendored-from header — must be excluded
+        worktree_copy = root / "worktrees" / "snap" / ".claude" / "rules" / "y.md"
+        worktree_copy.parent.mkdir(parents=True)
+        worktree_copy.write_text(
+            "<!-- vendored-from: APS.JimClaudeCodeConfig/global/rules/y.md @ 6dfd2cf -->\n# Y\n",
+            encoding="utf-8",
+        )
+
+        reports = check_drift(root, source=pathlib.Path("/nonexistent"))
+
+    paths = [r.path for r in reports]
+    assert len(reports) == 1, f"Expected exactly 1 report (rules/x.md), got: {paths}"
+    assert any("x.md" in p for p in paths), f"rules/x.md must be in reports, got: {paths}"
+    assert not any("y.md" in p for p in paths), f"worktrees/snap/y.md must NOT be in reports, got: {paths}"
