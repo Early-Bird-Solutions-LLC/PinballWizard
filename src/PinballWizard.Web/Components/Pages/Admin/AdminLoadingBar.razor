@@ -1,0 +1,42 @@
+@* AdminLoadingBar — the shared indeterminate progress bar for the /admin pages.
+   Replaces the MudProgressLinear markup the five admin pages copy-pasted. The
+   WCAG accessible name (aria-label) is a REQUIRED parameter so the PR #450
+   regression — a progressbar with no accessible name (aria-progressbar-name) —
+   cannot recur by omission. Any extra attributes (e.g. data-testid) splat onto
+   the bar. *@
+
+<MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="@Class"
+                   UserAttributes="@_attributes" />
+
+@code {
+    // Screen-reader accessible name (WCAG aria-progressbar-name). Required —
+    // EditorRequired warns at compile time, the runtime guard below enforces it.
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    // CSS classes. Defaults to the admin-standard bottom margin every page used.
+    [Parameter] public string Class { get; set; } = "mb-4";
+
+    // Extra attributes (e.g. data-testid) splatted onto the underlying bar.
+    [Parameter(CaptureUnmatchedValues = true)]
+    public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private Dictionary<string, object> _attributes = new(StringComparer.Ordinal);
+
+    protected override void OnParametersSet()
+    {
+        // The accessible name is the whole point of the component — a blank one
+        // is the exact a11y defect this extraction exists to prevent.
+        ArgumentException.ThrowIfNullOrWhiteSpace(Label);
+
+        var attributes = new Dictionary<string, object>(StringComparer.Ordinal);
+        if (AdditionalAttributes is not null)
+        {
+            foreach (var pair in AdditionalAttributes)
+                attributes[pair.Key] = pair.Value;
+        }
+        // aria-label is authoritative: a caller cannot accidentally clear it via
+        // a splatted attribute, because it is written last.
+        attributes["aria-label"] = Label;
+        _attributes = attributes;
+    }
+}
