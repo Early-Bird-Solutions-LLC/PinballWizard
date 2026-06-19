@@ -1,0 +1,38 @@
+<!-- @dsCard group="Components" name="Flipper-button CTA pair" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Flipper-button CTA pair</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; display: flex; flex-direction: column; gap: 18px; }
+  .pair { display: flex; gap: 14px; max-width: 520px; }
+  /* Recessed cabinet button: face sits below the cabinet plane, backlit at rest, flares on press */
+  .flip { flex: 1; display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-radius: var(--pw-radius-button); font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; font-size: 14px; cursor: pointer; border: 1px solid var(--pw-border-quiet); box-shadow: inset 0 2px 6px rgba(0,0,0,.6); background: var(--pw-bg-surface-hi); }
+  .flip.left { justify-content: flex-start; color: var(--pw-accent-mode); border-color: var(--pw-accent-mode); }
+  .flip.right { justify-content: flex-end; color: var(--pw-accent-grounded); border-color: var(--pw-accent-grounded); }
+  .flip.left.lit  { box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 0 18px var(--pw-border-glow-magenta); background: linear-gradient(var(--pw-bg-surface-hi), #241a25); }
+  .flip.right.lit { box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 0 18px var(--pw-border-glow-green);  background: linear-gradient(var(--pw-bg-surface-hi), #15241a); }
+  .flip.pressed { transform: translateY(2px); }
+  .cap { font-family: var(--pw-font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--pw-text-secondary); }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">The most distinctly-pinball element in the UI — recessed, backlit, 44–56px, 1–2px press depression</div>
+  <div class="cap">Rest — backlit at low intensity</div>
+  <div class="pair">
+    <span class="flip left">◀&nbsp;&nbsp;View in answer</span>
+    <span class="flip right">View the original&nbsp;&nbsp;▶</span>
+  </div>
+  <div class="cap">Hover — backlight flares to peak</div>
+  <div class="pair">
+    <span class="flip left lit">◀&nbsp;&nbsp;View in answer</span>
+    <span class="flip right lit">View the original&nbsp;&nbsp;▶</span>
+  </div>
+  <div class="cap">Press — 2px depression (the one earned tactile-click in the system)</div>
+  <div class="pair">
+    <span class="flip right lit pressed" style="max-width:50%">View the original&nbsp;&nbsp;▶</span>
+  </div>
+  <div class="cap" style="color:var(--pw-text-secondary);text-transform:none;letter-spacing:0;line-height:1.5">Left flipper (magenta / <b>accent-mode</b>) = navigation back to the inline citation. Right flipper (green / <b>accent-grounded</b>) = open the canonical source — the strategic CTA. Peer parity: within a plural set, peers are visually identical.</div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!-- @dsCard group="Components" name="Buttons" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Buttons</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; display: flex; flex-direction: column; gap: 22px; }
+  .row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .label { font-family: var(--pw-font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--pw-text-secondary); width: 58px; }
+  .btn-primary { display: inline-flex; align-items: center; gap: 9px; padding: 12px 24px; background: var(--pw-accent-primary); color: #1a1a1a; font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; font-size: 14px; border-radius: var(--pw-radius); cursor: pointer; }
+  .btn-primary.hovered { box-shadow: 0 0 16px var(--pw-border-glow-amber); }
+  .btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; background: transparent; color: var(--pw-text-primary); border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); font-family: var(--pw-font-display); font-weight: 500; letter-spacing: .03em; text-transform: uppercase; font-size: 13px; cursor: pointer; }
+  .btn-secondary.hovered { border-color: var(--pw-accent-primary); box-shadow: 0 0 12px var(--pw-border-glow-amber); }
+  .btn-ghost { color: var(--pw-text-secondary); font-size: 13px; border-bottom: 1px solid var(--pw-border-quiet); padding-bottom: 2px; cursor: pointer; }
+  .btn-ghost.hovered { color: var(--pw-accent-primary); border-color: var(--pw-accent-primary); }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">Chrome actions · MudBlazor primitives + tokens (ADR-0026 chrome-strict)</div>
+  <div class="row">
+    <div class="label">Rest</div>
+    <span class="btn-primary">Ask the Wizard ▶</span>
+    <span class="btn-secondary">Browse machines</span>
+    <span class="btn-ghost">Clear</span>
+  </div>
+  <div class="row">
+    <div class="label">Hover</div>
+    <span class="btn-primary hovered">Ask the Wizard ▶</span>
+    <span class="btn-secondary hovered">Browse machines</span>
+    <span class="btn-ghost hovered">Clear</span>
+  </div>
+  <div class="row">
+    <div class="label">Disabled</div>
+    <span class="btn-primary" style="background:#3a3a3a;color:#5e5b56;cursor:not-allowed">Ask the Wizard ▶</span>
+  </div>
+</body>
+</html>

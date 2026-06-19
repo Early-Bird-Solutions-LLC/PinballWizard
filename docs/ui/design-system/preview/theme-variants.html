@@ -1,0 +1,51 @@
+<!-- @dsCard group="Foundations" name="Theme Variants (dark / light / neon)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Theme Variants</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .theme { border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); overflow: hidden; }
+  .bar { padding: 10px 14px; font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .04em; font-size: 13px; }
+  .body { padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .line { font-family: var(--pw-font-display); font-weight: 700; font-size: 18px; }
+  .sub { font-size: 12px; }
+  .dots { display: flex; gap: 8px; margin-top: 4px; }
+  .dot { width: 22px; height: 22px; border-radius: 50%; }
+  .hex { font-family: var(--pw-font-mono); font-size: 10px; opacity: .7; }
+</style>
+</head>
+<body>
+  <!-- Modern LCD (default, dark) -->
+  <div class="theme" style="background:#0c0b0e">
+    <div class="bar" style="background:#08070a; color:#ff9a1f">MODERN LCD · default</div>
+    <div class="body">
+      <div class="line" style="color:#f4f1ea">Atomic arcade dark</div>
+      <div class="sub" style="color:#9a9590">Warm near-black · amber primary</div>
+      <div class="dots"><div class="dot" style="background:#ff9a1f"></div><div class="dot" style="background:#34d96a"></div><div class="dot" style="background:#ff3b30"></div><div class="dot" style="background:#e13bd9"></div></div>
+      <div class="hex" style="color:#9a9590">bg #0c0b0e · primary #ff9a1f</div>
+    </div>
+  </div>
+  <!-- Daytime (light) -->
+  <div class="theme" style="background:#faf6ef">
+    <div class="bar" style="background:#f0e9d8; color:#cc5500">DAYTIME · light</div>
+    <div class="body">
+      <div class="line" style="color:#1f1a14">Sunlit expo hall</div>
+      <div class="sub" style="color:#6a6052">Warm paper · burnt-orange primary</div>
+      <div class="dots"><div class="dot" style="background:#cc5500"></div><div class="dot" style="background:#0d6e2d"></div><div class="dot" style="background:#a8201a"></div><div class="dot" style="background:#9a1c8a"></div></div>
+      <div class="hex" style="color:#6a6052">bg #faf6ef · primary #cc5500</div>
+    </div>
+  </div>
+  <!-- Neon (alt dark) -->
+  <div class="theme" style="background:#0a0e1a">
+    <div class="bar" style="background:#0a0e1a; color:#ff3399">NEON · alt</div>
+    <div class="body">
+      <div class="line" style="color:#e8edf5">Backbox glow</div>
+      <div class="sub" style="color:#8a96b5">Deep navy · hot-pink primary</div>
+      <div class="dots"><div class="dot" style="background:#ff3399"></div><div class="dot" style="background:#00e5cc"></div><div class="dot" style="background:#ff4466"></div><div class="dot" style="background:#b066ff"></div></div>
+      <div class="hex" style="color:#8a96b5">bg #0a0e1a · primary #ff3399</div>
+    </div>
+  </div>
+</body>
+</html>

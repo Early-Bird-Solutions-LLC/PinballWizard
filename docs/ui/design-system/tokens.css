@@ -1,0 +1,65 @@
+/* PinballWizard — Modern LCD design tokens (default dark theme).
+   Source of truth:
+     - src/PinballWizard.Web/Components/Theming/PinballTheme.cs (MudBlazor palette + type)
+     - src/PinballWizard.Web/wwwroot/app.css :root (tokens MudPalette can't model)
+     - docs/ui/themes/modern-lcd.md (design authority)
+   The palette is CLOSED: five semantic roles, each paired with a non-color signal.
+   "Near-black with warmth, not pure black — machine in a dim arcade, not phone OLED." */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* Surfaces — depth by tone shift, almost never by shadow (flat-on-glass) */
+  --pw-bg-base: #0c0b0e;        /* the LCD bezel */
+  --pw-bg-surface: #161519;     /* panel interiors, cards */
+  --pw-bg-surface-hi: #1f1d22;  /* hovered/active panels, citation cards */
+
+  /* Text — warm off-white, never clinical white */
+  --pw-text-primary: #f4f1ea;
+  --pw-text-secondary: #9a9590; /* labels, metadata, timestamps */
+  --pw-text-disabled: #5e5b56;
+
+  /* Semantic accents — closed set; each color MEANS something, everywhere */
+  --pw-accent-primary: #ff9a1f;   /* amber  — primary action (ask / submit / confirm) */
+  --pw-accent-grounded: #34d96a;  /* green  — citations, source-grounded, success */
+  --pw-accent-refusal: #ff3b30;   /* red    — confidence-threshold refusal (not system error) */
+  --pw-accent-mode: #e13bd9;      /* magenta— mode/topic nav state ("you are in machine X") */
+
+  /* Borders — 1px visible lines, never the Material 12% wisp; glow on interaction */
+  --pw-border-quiet: #2a282d;
+  --pw-border-glow-amber: #ff9a1f99;
+  --pw-border-glow-green: #34d96a99;
+  --pw-border-glow-magenta: #e13bd999;
+  --pw-border-glow-red: #ff3b3099;
+
+  /* Type — display reserved for announcements; Inter body; mono is the one DMD nod */
+  --pw-font-display: "Barlow Condensed", Roboto, sans-serif;
+  --pw-font-body: Inter, Roboto, sans-serif;
+  --pw-font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  /* Shape & spacing — 2px "machined edge" panels; 6px flipper buttons; 8px base unit */
+  --pw-radius: 2px;
+  --pw-radius-button: 6px;
+  --pw-space: 8px;
+
+  /* Motion — signal, not decoration; ~600ms ceiling per interaction */
+  --pw-motion-fast: 150ms;
+  --pw-motion-medium: 300ms;
+  --pw-motion-slow: 600ms;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--pw-bg-base);
+  color: var(--pw-text-primary);
+  font-family: var(--pw-font-body);
+  font-feature-settings: "tnum";   /* tabular figures site-wide — pinball numbers don't jitter */
+  -webkit-font-smoothing: antialiased;
+}
+.pw-eyebrow {
+  font-family: var(--pw-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pw-text-secondary);
+}

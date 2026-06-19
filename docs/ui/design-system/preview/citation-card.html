@@ -1,0 +1,38 @@
+<!-- @dsCard group="Components" name="Citation card (hero)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Citation card</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; }
+  .card { max-width: 540px; background: var(--pw-bg-surface-hi); border: 1px solid var(--pw-accent-grounded); border-radius: var(--pw-radius); box-shadow: 0 0 16px var(--pw-border-glow-green); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .tag { align-self: flex-start; font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .08em; font-size: 11px; color: var(--pw-accent-grounded); border: 1px solid var(--pw-accent-grounded); border-radius: 999px; padding: 3px 12px; box-shadow: 0 0 10px var(--pw-border-glow-green); }
+  .identity { font-family: var(--pw-font-display); font-weight: 500; font-size: 1.25rem; color: var(--pw-text-primary); line-height: 1.15; }
+  .excerpt { font-family: var(--pw-font-body); font-size: .9rem; line-height: 1.5; color: var(--pw-text-primary); border-left: 2px solid var(--pw-accent-grounded); padding-left: 12px; }
+  .trail { font-family: var(--pw-font-mono); font-size: 11px; color: var(--pw-text-secondary); line-height: 1.6; }
+  .timeline { font-family: var(--pw-font-body); font-size: 12px; color: var(--pw-text-secondary); }
+  .flippers { display: flex; gap: 12px; margin-top: 4px; }
+  .flip { flex: 1; display: flex; align-items: center; padding: 13px 16px; border-radius: var(--pw-radius-button); font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; font-size: 13px; border: 1px solid; box-shadow: inset 0 2px 6px rgba(0,0,0,.6); background: var(--pw-bg-surface-hi); }
+  .flip.left { justify-content: flex-start; color: var(--pw-accent-mode); border-color: var(--pw-accent-mode); }
+  .flip.right { justify-content: flex-end; color: var(--pw-accent-grounded); border-color: var(--pw-accent-grounded); }
+  .legend { margin-top: 14px; font-family: var(--pw-font-mono); font-size: 10px; letter-spacing: .04em; color: var(--pw-text-secondary); line-height: 1.7; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">The hero object — the loudest thing on the page after the answer body. Never collapsed behind a disclosure.</div>
+  <div style="height:14px"></div>
+  <div class="card">
+    <span class="tag">▢ BULLETIN</span>
+    <div class="identity">Stern · Godzilla (Premium) · Service Bulletin SB-243</div>
+    <div class="excerpt">"Reset the double-drop-target bank only after the switch test passes; a stuck target will re-trigger the multiball award on the next ball."</div>
+    <div class="trail">discovery&nbsp; sternpinball.com/support/service-bulletins/<br>→ file&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sternpinball.com/.../SB-243.pdf</div>
+    <div class="timeline">Discovered May 4 · Last verified Jun 19</div>
+    <div class="flippers">
+      <span class="flip left">◀&nbsp; In answer</span>
+      <span class="flip right">Original&nbsp; ▶</span>
+    </div>
+  </div>
+  <div class="legend">SLOTS · 1 source-type tag · 2 source identity · 3 excerpt · 4 provenance trail · 5 timeline · 6 flipper-button pair</div>
+</body>
+</html>
