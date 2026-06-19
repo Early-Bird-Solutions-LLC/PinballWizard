@@ -133,7 +133,12 @@ var relinkAllOption = new Option<bool>("--relink-all")
 
 var downloadDocumentsOption = new Option<bool>("--download-documents")
 {
-    Description = "Download every not-yet-downloaded document in scraped_documents_raw to the local downloads root so the linker's page-text tiers (Tier 3/4) can read page-1 content for edition resolution. Polite (throttled, robots-honored) and idempotent (documents with a local file are skipped). Run before --link-documents / --relink-all when page-1 content is needed. Requires Cosmos to be configured."
+    Description = "Download every not-yet-downloaded document in scraped_documents_raw to the local downloads root so the linker's page-text tiers (Tier 3/4) can read page-1 content for edition resolution. Polite (throttled, robots-honored) and idempotent (documents with a local file are skipped). Combine with --force-redownload to re-download even documents already recorded as downloaded (edition_scope backfill). Run before --link-documents / --relink-all when page-1 content is needed. Requires Cosmos to be configured."
+};
+
+var forceRedownloadOption = new Option<bool>("--force-redownload")
+{
+    Description = "Modifier for --download-documents: re-download EVERY document even if its raw record already records a file.local_path, using an unconditional GET (ignores stored ETag/Last-Modified). Use when the recorded LocalPath points at a file from an earlier ephemeral run (e.g. an ACA job's /tmp) that is not present on this machine, so the linker's page-1 edition tier has the bytes to read. Still fully polite (every request routes through the politeness gate). Intended for the edition_scope backfill: --download-documents --force-redownload, then --relink-all."
 };
 
 var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
@@ -164,6 +169,7 @@ rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
+rootCommand.Options.Add(forceRedownloadOption);
 rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
 
@@ -186,6 +192,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
+    var forceRedownload = parseResult.GetValue(forceRedownloadOption);
     var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
 
@@ -425,7 +432,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Gated on DocumentDownloadService (Cosmos).
     if (downloadDocuments)
     {
-        await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken, forceRedownload);
         return;
     }
 

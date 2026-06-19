@@ -10,13 +10,17 @@ namespace PinballWizard.Infrastructure.Catalog;
 //
 // Streams ALL machines via IMachineRepository.StreamAllAsync (cross-partition,
 // allow-listed in CrossPartitionQueryAllowListTests), then for each machine reads
-// its scraped_documents via CosmosRepository<ScrapedDocumentRecord>.StreamAsync
+// its scraped_documents via CosmosRepository<ScrapedDocumentTypeProjection>.StreamAsync
 // (single-partition — Tier 1 per ADR-0036). Aggregates per-manufacturer rollup
 // documents and upserts them wholesale (no ETag — full rebuild, not incremental).
 //
+// The per-machine scan reads the narrow ScrapedDocumentTypeProjection, not the full
+// write-model ScrapedDocumentRecord, so it tolerates documents written before later
+// `required` fields existed (e.g. edition_scope, #318). See that type's remarks.
+//
 // ADR-0036 compliance:
 //   - Machine enumeration → IMachineRepository.StreamAllAsync (allow-listed cross-partition).
-//   - Per-machine scraped_documents scan → CosmosRepository<ScrapedDocumentRecord>.StreamAsync
+//   - Per-machine scraped_documents scan → CosmosRepository<ScrapedDocumentTypeProjection>.StreamAsync
 //     (single-partition; no direct GetItemQueryIterator calls in this file).
 //   - catalog_stats write → CosmosRepository<CatalogStatsCosmosRecord>.UpsertAsync
 //     (point operation — one doc per manufacturer).
@@ -29,14 +33,14 @@ namespace PinballWizard.Infrastructure.Catalog;
 internal sealed class CatalogStatsRebuildService : ICatalogStatsRebuildService
 {
     private readonly IMachineRepository _machines;
-    private readonly CosmosRepository<ScrapedDocumentRecord> _scrapedDocs;
+    private readonly CosmosRepository<ScrapedDocumentTypeProjection> _scrapedDocs;
     private readonly CosmosRepository<CatalogStatsCosmosRecord> _statsWriter;
     private readonly TimeProvider _clock;
     private readonly ILogger<CatalogStatsRebuildService> _logger;
 
     public CatalogStatsRebuildService(
         IMachineRepository machines,
-        CosmosRepository<ScrapedDocumentRecord> scrapedDocs,
+        CosmosRepository<ScrapedDocumentTypeProjection> scrapedDocs,
         CosmosRepository<CatalogStatsCosmosRecord> statsWriter,
         TimeProvider clock,
         ILogger<CatalogStatsRebuildService> logger)
@@ -98,7 +102,7 @@ internal sealed class CatalogStatsRebuildService : ICatalogStatsRebuildService
         var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         await foreach (var doc in _scrapedDocs.StreamAsync(
-            "SELECT * FROM c",
+            "SELECT c.document_type, c.machine_title FROM c",
             parameters: null,
             partitionKey: machineId,
             cancellationToken).ConfigureAwait(false))

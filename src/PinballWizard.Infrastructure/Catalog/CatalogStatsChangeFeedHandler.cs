@@ -24,13 +24,13 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
 {
     private const int MaxETagRetries = 5;
 
-    private readonly CosmosRepository<ScrapedDocumentRecord> _scrapedDocs;
+    private readonly CosmosRepository<ScrapedDocumentTypeProjection> _scrapedDocs;
     private readonly Container _catalogStats;
     private readonly TimeProvider _clock;
     private readonly ILogger<CatalogStatsChangeFeedHandler> _logger;
 
     public CatalogStatsChangeFeedHandler(
-        CosmosRepository<ScrapedDocumentRecord> scrapedDocs,
+        CosmosRepository<ScrapedDocumentTypeProjection> scrapedDocs,
         Container catalogStats,
         TimeProvider clock,
         ILogger<CatalogStatsChangeFeedHandler> logger)
@@ -94,7 +94,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
         // NOT GetItemQueryIterator. Keeps this file out of the ADR-0036
         // cross-partition allow-list in CrossPartitionQueryAllowListTests.
         await foreach (var doc in _scrapedDocs.StreamAsync(
-            "SELECT * FROM c",
+            "SELECT c.document_type, c.machine_title FROM c",
             parameters: null,
             partitionKey: machineId,
             cancellationToken).ConfigureAwait(false))
