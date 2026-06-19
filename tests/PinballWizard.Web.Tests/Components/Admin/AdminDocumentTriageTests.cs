@@ -18,7 +18,7 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // tests run with AddAuthorization() set to authenticated.
 //
 // The repository mock returns an empty async sequence so the component
-// completes OnInitializedAsync immediately and the empty-state path fires.
+// completes OnAfterRenderAsync immediately and the empty-state path fires.
 // Tests assert structural invariants: grid sentinel, empty-state message,
 // and breadcrumb trail.
 public sealed class AdminDocumentTriageTests : AsyncBunitContext
@@ -87,6 +87,61 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
 
         var adminLink = cut.Find("a[href='/admin']");
         Assert.NotNull(adminLink);
+    }
+}
+
+// Behavioral test: page shell + spinner render BEFORE data arrives; spinner hides
+// AFTER. This is the instant-navigation contract (fix/admin-nav-instant-load).
+public sealed class AdminDocumentTriageLoadingStateTests : AsyncBunitContext
+{
+    private readonly TaskCompletionSource _dataGate = new();
+
+    private async IAsyncEnumerable<RawDocumentRecord> SlowStream(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await _dataGate.Task.WaitAsync(ct);
+        yield break;
+    }
+
+    public AdminDocumentTriageLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowRepo = Substitute.For<IRawDocumentRepository>();
+        slowRepo
+            .StreamByStatusAsync(Arg.Any<IReadOnlyCollection<LinkStatus>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => SlowStream(callInfo.Arg<CancellationToken>()));
+        Services.AddSingleton(slowRepo);
+        Services.AddSingleton(Substitute.For<IDocumentLinker>());
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminDocumentTriage_ShowsSpinner_BeforeDataArrives()
+    {
+        var cut = RenderWithPopover<AdminDocumentTriage>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        _dataGate.SetResult();
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminDocumentTriage_HidesSpinner_AfterDataArrives()
+    {
+        var cut = RenderWithPopover<AdminDocumentTriage>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        _dataGate.SetResult();
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+
+        await Task.CompletedTask;
     }
 }
 

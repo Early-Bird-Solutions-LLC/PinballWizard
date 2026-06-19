@@ -247,3 +247,77 @@ public sealed class AdminSettingsTests : AsyncBunitContext
         });
     }
 }
+
+// Behavioral test: loading indicator renders BEFORE settings data arrives; it
+// hides and the tabs appear AFTER. This is the instant-navigation contract
+// (fix/admin-nav-instant-load).
+public sealed class AdminSettingsLoadingStateTests : AsyncBunitContext
+{
+    private readonly TaskCompletionSource<IReadOnlyList<AdminSettingRecord>> _dataGate = new();
+    private readonly IAgentPromptOverrideRepository _promptRepo = Substitute.For<IAgentPromptOverrideRepository>();
+
+    public AdminSettingsLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowRepo = Substitute.For<IAdminSettingsRepository>();
+        slowRepo.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => _dataGate.Task);
+        Services.AddSingleton(slowRepo);
+        Services.AddSingleton(Options.Create(new AiFoundryOptions()));
+
+        _promptRepo.GetActiveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AgentPromptOverride?>(null));
+        _promptRepo.GetVersionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<AgentPromptOverride>>([]));
+        Services.AddSingleton(_promptRepo);
+        Services.AddSingleton(new PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider());
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    private IRenderedComponent<AdminSettings> RenderPage()
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminSettings>(1);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminSettings>();
+    }
+
+    [Fact]
+    public async Task AdminSettings_ShowsLoadingIndicator_BeforeDataArrives()
+    {
+        var cut = RenderPage();
+
+        // The MudProgressLinear loading indicator must be visible while Cosmos is in-flight.
+        cut.Find("[data-testid='settings-loading']");
+
+        _dataGate.SetResult([]);
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminSettings_HidesLoadingIndicator_AndShowsTabs_AfterDataArrives()
+    {
+        var cut = RenderPage();
+
+        // Indicator present while gate is held.
+        cut.Find("[data-testid='settings-loading']");
+
+        // Release — data arrives, StateHasChanged fires, tabs appear.
+        _dataGate.SetResult([]);
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Empty(cut.FindAll("[data-testid='settings-loading']"));
+            cut.Find("[data-testid='settings-tabs']");
+        });
+
+        await Task.CompletedTask;
+    }
+}

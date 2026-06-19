@@ -279,13 +279,24 @@
 
     // ── Lifecycle ───────────────────────────────────────────────────────────────
 
-    protected override async Task OnInitializedAsync()
+    // Use OnAfterRenderAsync so the page shell (with the loading spinner) is sent
+    // to the client immediately on first render rather than blocking the pre-render
+    // pass until Cosmos data returns. The spinner is visible within ~100 ms of
+    // navigation; data populates when the queries complete.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
     {
         // Guard: manufacturer is required for a partition-key-aware point read.
         if (string.IsNullOrWhiteSpace(Mfr))
         {
             _missingMfr = true;
             _loading    = false;
+            StateHasChanged();
             return;
         }
 
@@ -298,6 +309,7 @@
             {
                 _notFound = true;
                 _loading  = false;
+                StateHasChanged();
                 return;
             }
 
@@ -361,6 +373,7 @@
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 
