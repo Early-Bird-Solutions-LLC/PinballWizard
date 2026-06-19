@@ -50,6 +50,7 @@ negative) it carries.
 | [0037](0037-dependency-update-automation.md) | Dependency-update automation — Renovate for versions (grouped, CI-gated auto-merge, majors held), Dependabot for security | Accepted |
 | [0038](0038-origin-ca-cert-for-aca-origin.md) | Cloudflare Origin CA certificate for the ACA origin (retire auto-renewing managed cert) | Accepted |
 | [0039](0039-blob-document-store.md) | Blob-backed document store (`pinwiz-raw`) | Accepted |
+| [0040](0040-fork-claude-config-for-pinballwizard.md) | Fork Claude Code config in-repo for PinballWizard | Accepted |
 
 ## Conventions
 
