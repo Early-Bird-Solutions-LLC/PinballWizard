@@ -129,3 +129,36 @@ are grandfathered with explicit bound comments; no rewrite required.
 - ADR-0012 — Cosmos schema CRUD via ARM, item CRUD via data-plane SDK
 - ADR-0025 — Cosmos for User Delight (the decision this ADR generalizes; not superseded)
 - ADR-0031 (Proposed) — Document→Machine linking source of truth (rebuildable projection pattern)
+
+---
+
+## Amendment (2026-06-18) — catalog-stats count reads a narrow projection, not the write model
+
+**Context.** The `catalog_stats` Tier-3 projection is maintained two ways: the
+change-feed consumer (`CatalogStatsChangeFeedHandler`) and the rebuild backstop
+(`CatalogStatsRebuildService`). Both count `document_type` per machine by
+streaming a machine's `scraped_documents` partition. Originally both issued
+`SELECT * FROM c` and deserialized the full write-model `ScrapedDocumentRecord`.
+
+**Problem (live incident, 2026-06-19).** `ScrapedDocumentRecord` carries `required`
+write-side invariants — e.g. `edition_scope`, added in #318. Documents written
+before #318 lack the field, so deserializing them into the write model throws
+`JsonException`. With containers freshly created and the change-feed starting from
+the beginning, the catalog-stats `BackgroundService` hit a pre-#318 document and
+threw → `HostOptions.BackgroundServiceExceptionBehavior=StopHost` crash-looped the
+RAG worker, and `--rebuild-catalog-stats` failed outright. Net effect: empty
+`/admin/machines` and stalled RAG ingestion.
+
+**Decision.** The doc-type count now reads a dedicated narrow projection
+(`ScrapedDocumentTypeProjection` — `document_type` + `machine_title` only, no
+`required` fields) via `SELECT c.document_type, c.machine_title FROM c`. Counting
+must never depend on a historical document satisfying the *current* write-model
+schema; a read-for-aggregation path is not bound by write-side invariants. The
+write model and its enforcement are unchanged. This keeps the Tier-1
+single-partition read pattern; it only narrows the projected columns (also a small
+RU win).
+
+**Scope.** Limited to the catalog-stats count path. The machine-*detail* read
+(`CosmosMachineDocumentReadRepository`) still reads the full `ScrapedDocumentRecord`
+and remains susceptible to the same pre-#318 failure on the detail surface —
+tracked as a separate follow-up.

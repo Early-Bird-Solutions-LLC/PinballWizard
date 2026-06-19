@@ -96,9 +96,11 @@ public static class ServiceCollectionExtensions
 
             // Construct the handler inline (internal sealed class — not registered
             // as a named service, just instantiated for this consumer).
-            var scrapedDocsRepo = new CosmosRepository<ScrapedDocumentRecord>(
+            // Reads the narrow doc-type projection (tolerates pre-#318 documents),
+            // not the full write-model ScrapedDocumentRecord.
+            var scrapedDocsRepo = new CosmosRepository<ScrapedDocumentTypeProjection>(
                 ResolveContainer(sp, catalogOpts.SourceContainerName),
-                sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentRecord>>>());
+                sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentTypeProjection>>>());
 
             var handler = new CatalogStatsChangeFeedHandler(
                 scrapedDocsRepo,
@@ -149,8 +151,9 @@ public static class ServiceCollectionExtensions
     // the cosmosWired gate in Program.cs alongside the other Cosmos-dependent
     // service registrations.
     //
-    // CosmosRepository<ScrapedDocumentRecord> reads from `scraped_documents`
-    // (single-partition per-machine scan — Tier 1 ADR-0036).
+    // CosmosRepository<ScrapedDocumentTypeProjection> reads from `scraped_documents`
+    // (single-partition per-machine scan — Tier 1 ADR-0036; narrow projection so the
+    // scan tolerates documents predating later `required` fields like edition_scope).
     // CosmosRepository<CatalogStatsCosmosRecord> writes to `catalog_stats`
     // (one upsert per manufacturer — point operation, not a query).
     public static IServiceCollection AddCatalogStatsRebuild(this IServiceCollection services)
@@ -162,9 +165,9 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ICatalogStatsRebuildService>(sp =>
             new CatalogStatsRebuildService(
                 sp.GetRequiredService<IMachineRepository>(),
-                new CosmosRepository<ScrapedDocumentRecord>(
+                new CosmosRepository<ScrapedDocumentTypeProjection>(
                     ResolveContainer(sp, "scraped_documents"),
-                    sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentRecord>>>()),
+                    sp.GetRequiredService<ILogger<CosmosRepository<ScrapedDocumentTypeProjection>>>()),
                 new CosmosRepository<CatalogStatsCosmosRecord>(
                     ResolveContainer(sp, "catalog_stats"),
                     sp.GetRequiredService<ILogger<CosmosRepository<CatalogStatsCosmosRecord>>>()),
