@@ -265,7 +265,7 @@ Note: install-time only; documented as such.
    (per the no-ASCII-diagrams rule) showing how rules/skills/commands/agents/hooks
    compose, and the self-contained-repo vs global boundary. Include a "watch it work"
    section linking real PRs where the workflow fired.
-3. **New ADR `docs/adr/0039-fork-claude-config-for-pinballwizard.md`** (MADR-lite):
+3. **New ADR `docs/adr/0040-fork-claude-config-for-pinballwizard.md`** (MADR-lite):
    context (APS noise + showcase + self-containment), decision (fork config in-repo +
    path-scope global), alternatives considered (shared global; org-addon-only;
    do-nothing), consequences (vendoring drift, mitigated by provenance + drift-check).

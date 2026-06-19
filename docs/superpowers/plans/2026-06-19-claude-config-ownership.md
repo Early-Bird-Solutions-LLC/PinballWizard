@@ -4,7 +4,7 @@
 
 **Goal:** Make PinballWizard own its full Claude Code configuration in-repo (pristine, documented, adapted to GitHub/personal-identity/no-Jira) and make the APS standards corpus self-suppress so it stops loading in this repo.
 
-**Architecture:** Two halves in two separate PRs. **Half A** vendors rules/skills/commands/agents into `PinballWizard/.claude/` with provenance headers + a drift-check, plus showcase docs (README, `docs/claude-code.md`, ADR-0039). **Half B** adds `paths:` frontmatter to the ~20 APS standard rules in `APS.JimClaudeCodeConfig` so they fire only on APS/Neighborli paths, and adds an `orgs/earlybird/CLAUDE-ADDON.md` org identity.
+**Architecture:** Two halves in two separate PRs. **Half A** vendors rules/skills/commands/agents into `PinballWizard/.claude/` with provenance headers + a drift-check, plus showcase docs (README, `docs/claude-code.md`, ADR-0040). **Half B** adds `paths:` frontmatter to the ~20 APS standard rules in `APS.JimClaudeCodeConfig` so they fire only on APS/Neighborli paths, and adds an `orgs/earlybird/CLAUDE-ADDON.md` org identity.
 
 **Tech Stack:** Markdown (Claude Code skills/commands/rules/agents), Python (drift-check + leak assertion, matching existing `~/.claude/bin` tooling), YAML frontmatter, Mermaid, MADR-lite ADRs.
 
@@ -49,7 +49,7 @@
 .claude/agents/*.md                     # 4 generic agents
 .claude/README.md                       # rewritten
 docs/claude-code.md                     # authored (Mermaid)
-docs/adr/0039-fork-claude-config-for-pinballwizard.md
+docs/adr/0040-fork-claude-config-for-pinballwizard.md   # 0039 taken by #449 blob-store
 docs/adr/README.md                      # index row added
 scripts/check_claude_config_drift.py    # drift-check
 scripts/assert_no_excluded_aps_skills.py# leak assertion
@@ -691,7 +691,7 @@ Replace the existing §"The skills layer" paragraph (the one ending "those are p
 ```markdown
 ## The config layer (self-contained)
 
-As of ADR-0039, this repo owns its full Claude Code workflow config in-repo — no
+As of ADR-0040, this repo owns its full Claude Code workflow config in-repo — no
 dependency on any personal/global config. Each vendored file carries a
 `vendored-from: … @ <sha>` provenance header; `scripts/check_claude_config_drift.py`
 reports when an upstream source has moved.
@@ -710,7 +710,7 @@ reports when an upstream source has moved.
 **Deliberately excluded** (and why): all `aps-*-standard` rules/skills, `jira`,
 `work-item-time-tracking`, Azure DevOps/TeamCity/Basecamp/Linear, `sonarqube`,
 SSO/VPN/SSL ops — they belong to APS work, not a personal GitHub showcase. The APS
-standards are also path-scoped upstream (ADR-0039 Half B) so they no longer load here.
+standards are also path-scoped upstream (ADR-0040 Half B) so they no longer load here.
 ```
 
 - [ ] **Step 2: Update the file inventory table** at the top to add `rules/`, `commands/`, `agents/` rows.
@@ -729,11 +729,11 @@ git commit -m "docs(claude) rewrite .claude/README — repo now owns its full co
 
 ---
 
-## Task 13: Author `docs/claude-code.md` (Mermaid) + ADR-0039
+## Task 13: Author `docs/claude-code.md` (Mermaid) + ADR-0040
 
 **Files:**
 - Create: `docs/claude-code.md`
-- Create: `docs/adr/0039-fork-claude-config-for-pinballwizard.md`
+- Create: `docs/adr/0040-fork-claude-config-for-pinballwizard.md`
 - Modify: `docs/adr/README.md` (index row)
 
 - [ ] **Step 1: Write `docs/claude-code.md`**
@@ -744,7 +744,7 @@ Author a page with: purpose (showcase how this repo uses Claude Code), the self-
 # How PinballWizard uses Claude Code
 
 This repo treats Claude Code as a first-class engineering participant and owns its
-full configuration in-repo (ADR-0039). Nothing here depends on a personal/global setup.
+full configuration in-repo (ADR-0040). Nothing here depends on a personal/global setup.
 
 ```mermaid
 flowchart TD
@@ -768,19 +768,19 @@ See any recent PR description for the `/local-review` finding count and how each
 addressed. (Link 1–2 representative PRs here.)
 ```
 
-- [ ] **Step 2: Write ADR-0039** (MADR-lite: Status/Date/Deciders/Context/Decision/Consequences) covering: context (APS noise + showcase + self-containment), decision (fork config in-repo + path-scope global), alternatives (shared global; org-addon-only; do-nothing), consequences (vendoring drift mitigated by provenance + drift-check). Use the existing ADR format from `docs/adr/0038-*`.
+- [ ] **Step 2: Write ADR-0040** (MADR-lite: Status/Date/Deciders/Context/Decision/Consequences) covering: context (APS noise + showcase + self-containment), decision (fork config in-repo + path-scope global), alternatives (shared global; org-addon-only; do-nothing), consequences (vendoring drift mitigated by provenance + drift-check). Use the existing ADR format from `docs/adr/0038-*`.
 
 - [ ] **Step 3: Add the index row** to `docs/adr/README.md` for 0039.
 
 - [ ] **Step 4: Verify Mermaid + ADR present**
 
-Run: `grep -c '```mermaid' docs/claude-code.md` (≥1); `test -f docs/adr/0039-fork-claude-config-for-pinballwizard.md && echo OK`.
+Run: `grep -c '```mermaid' docs/claude-code.md` (≥1); `test -f docs/adr/0040-fork-claude-config-for-pinballwizard.md && echo OK`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/claude-code.md docs/adr/0039-fork-claude-config-for-pinballwizard.md docs/adr/README.md
-git commit -m "docs(claude) add docs/claude-code.md (Mermaid) + ADR-0039"
+git add docs/claude-code.md docs/adr/0040-fork-claude-config-for-pinballwizard.md docs/adr/README.md
+git commit -m "docs(claude) add docs/claude-code.md (Mermaid) + ADR-0040"
 ```
 
 ---
@@ -808,7 +808,7 @@ Expected: hits ONLY inside `vendored-from:` headers (those are documentation, no
 
 ```bash
 gh pr create --title "chore(claude) PinballWizard owns its Claude Code config (Half A)" \
-  --body "<summary + /local-review outcome; links the design spec + ADR-0039>"
+  --body "<summary + /local-review outcome; links the design spec + ADR-0040>"
 gh pr edit --add-label claude-code
 gh pr view --json labels   # verify label
 ```
@@ -902,7 +902,7 @@ No `Co-Authored-By: Claude` trailer.
 
 ### Session Start
 No APS `/start-auto` Jira flow. Repos in this org carry their own `.claude/` config
-(e.g. PinballWizard is fully self-contained per its ADR-0039).
+(e.g. PinballWizard is fully self-contained per its ADR-0040).
 ```
 
 - [ ] **Step 2: Verify pattern parity**
@@ -934,7 +934,7 @@ git commit -m "feat(orgs) add earlybird org addon (GitHub, personal identity, AC
   still fire for a Neighborli path.
 
 - [ ] **Step 4: Open the Half-B PR** in `APS.JimClaudeCodeConfig` via `gh pr create`,
-  referencing this plan and PinballWizard ADR-0039. Add `claude-code` label; verify.
+  referencing this plan and PinballWizard ADR-0040. Add `claude-code` label; verify.
 
 ---
 
