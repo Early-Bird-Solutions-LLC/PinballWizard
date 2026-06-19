@@ -1,13 +1,12 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/agents/modernization-analyst.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: modernization-analyst
 description: Analyzes legacy codebases for technical debt, security vulnerabilities, performance bottlenecks, and architectural issues. Produces prioritized remediation findings with file:line references.
 tools: Read, Grep, Glob, LS, Bash
 model: opus
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/agents/modernization-analyst.md @ 6dfd2cf
+     adapted-for: PinballWizard (verbatim)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Legacy Codebase Analysis & Modernization Agent
 
