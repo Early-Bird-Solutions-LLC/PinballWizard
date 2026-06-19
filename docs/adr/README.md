@@ -49,6 +49,7 @@ negative) it carries.
 | [0036](0036-cosmos-read-access-standard.md) | Cosmos read-access standard — four-tier partition-alignment model | Accepted |
 | [0037](0037-dependency-update-automation.md) | Dependency-update automation — Renovate for versions (grouped, CI-gated auto-merge, majors held), Dependabot for security | Accepted |
 | [0038](0038-origin-ca-cert-for-aca-origin.md) | Cloudflare Origin CA certificate for the ACA origin (retire auto-renewing managed cert) | Accepted |
+| [0039](0039-blob-document-store.md) | Blob-backed document store (`pinwiz-raw`) | Accepted |
 
 ## Conventions
 

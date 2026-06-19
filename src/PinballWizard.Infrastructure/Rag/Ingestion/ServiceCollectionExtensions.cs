@@ -7,8 +7,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Documents;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 
 namespace PinballWizard.Infrastructure.Rag.Ingestion;
@@ -78,7 +80,7 @@ public static class ServiceCollectionExtensions
         // Typed HttpClient gives the bytes source automatic resilience
         // (via the ServiceDefaults standard handler) + per-message
         // logging via the host's HttpClient factory.
-        AddLocalFirstBytesSource(services);
+        AddBlobDocumentBytesSource(services, configuration);
 
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
@@ -169,7 +171,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICosmosChangeFeedHandler<RagSourceDocument>, ScrapedDocumentChangeFeedHandler>();
 
         // HttpClient for IDocumentBytesSource — same as the worker host.
-        AddLocalFirstBytesSource(services);
+        AddBlobDocumentBytesSource(services, configuration);
 
         services.AddSingleton<IRagBackfillService>(sp =>
         {
@@ -193,13 +195,25 @@ public static class ServiceCollectionExtensions
         return client.GetContainer(options.DatabaseName, containerName);
     }
 
-    // Registers IDocumentBytesSource as a LocalFirstDocumentBytesSource decorator
-    // over the HTTP source: serves bytes from the local downloads tree when present
-    // (avoids re-fetching byte-verified PDFs from source sites during a full
-    // backfill), falls back to HTTP for not-yet-downloaded documents. The inner
-    // HTTP source keeps its typed-client (resilience + logging).
-    private static void AddLocalFirstBytesSource(IServiceCollection services)
+    // Registers IDocumentBytesSource as a BlobDocumentBytesSource decorator over the
+    // HTTP source: serves bytes from the pinwiz-raw blob container when the caller
+    // supplies a blob name (Task 3/4 forward path), falling back to HTTP when the
+    // blob is absent or when the caller passes a raw document URL (the current RAG
+    // change-feed path — source_type is not present in scraped_documents so the full
+    // blob key cannot be derived from the URL alone; see BlobDocumentBytesSource for
+    // full rationale). The inner HTTP source keeps its typed-client.
+    //
+    // Also wires AddDocumentBlobStore so the blob store is available for injection
+    // when the Storage:BlobEndpoint or ConnectionStrings:blobs config is present.
+    // When neither is configured (e.g. a stripped-down test host), AddDocumentBlobStore
+    // is a no-op and IDocumentBlobStore will be absent from DI — BlobDocumentBytesSource
+    // requires IDocumentBlobStore so callers must ensure storage is configured.
+    private static void AddBlobDocumentBytesSource(IServiceCollection services, IConfiguration configuration)
     {
+        // Wire the blob store (pinwiz-raw container, managed identity in deployed env,
+        // Azurite connection string in local dev via Aspire).
+        services.AddDocumentBlobStore(configuration);
+
         // Inner HTTP source keeps its typed-client (resilience + handler rotation
         // via IHttpClientFactory). Registered transient — the decorator must NOT
         // capture a single instance for process life (that would pin one HttpClient
@@ -208,20 +222,13 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<HttpDocumentBytesSource>();
         services.AddSingleton<IDocumentBytesSource>(sp =>
         {
-            // ScraperSettings.DownloadsPath is the single source of truth for where the
-            // downloader writes. It must be configured — a missing registration is a
-            // misconfiguration, not something to paper over with a guessed root that
-            // wouldn't match the downloader anyway.
-            var settings = sp.GetRequiredService<IOptions<ScraperSettings>>().Value;
-            // Resolve to an absolute path against the current working directory:
-            // DownloadsPath is relative ("data/downloads"); Path.GetFullPath anchors it
-            // to CWD (where the CLI runs from the repo/data root) so the resolved root
-            // is unambiguous, and LocalFirstDocumentBytesSource logs the count it indexed.
-            var downloadsRoot = Path.GetFullPath(settings.DownloadsPath);
-            var logger = sp.GetRequiredService<ILogger<LocalFirstDocumentBytesSource>>();
-            // Fresh inner per fallback — preserves typed-client handler rotation.
-            return new LocalFirstDocumentBytesSource(
-                () => sp.GetRequiredService<HttpDocumentBytesSource>(), downloadsRoot, logger);
+            var store = sp.GetRequiredService<IDocumentBlobStore>();
+            var logger = sp.GetRequiredService<ILogger<BlobDocumentBytesSource>>();
+            // Fresh HTTP inner per fallback — preserves typed-client handler rotation.
+            return new BlobDocumentBytesSource(
+                store,
+                () => sp.GetRequiredService<HttpDocumentBytesSource>(),
+                logger);
         });
     }
 }

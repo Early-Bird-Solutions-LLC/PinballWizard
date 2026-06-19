@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
@@ -75,7 +76,7 @@ public class DocumentLinkerTests
         IReadOnlyDictionary<string, LinkOverrideRecord>? overrides = null,
         IEnumerable<Machine>? machines = null,
         IDocumentTextExtractor? textExtractor = null,
-        string? downloadsRoot = null)
+        IDocumentBlobStore? blobStore = null)
     {
         overrideRepo.LoadAllAsync(Arg.Any<CancellationToken>())
             .Returns(overrides ?? new Dictionary<string, LinkOverrideRecord>());
@@ -86,7 +87,7 @@ public class DocumentLinkerTests
             .Returns(machineList.ToAsyncEnumerable());
 
         return new DocumentLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-            textExtractor, NullLogger<DocumentLinker>.Instance, downloadsRoot);
+            textExtractor, NullLogger<DocumentLinker>.Instance, blobStore: blobStore);
     }
 
     // -------------------------------------------------------------------------
@@ -698,42 +699,33 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
         // No filename slug match — file is "service_bulletin.pdf".
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/service_bulletin.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/service_bulletin.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://example.com/files/service_bulletin.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "service_bulletin.pdf" });
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/service_bulletin.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "service_bulletin.pdf" });
 
-            var page1 = new ExtractedPage(PageNumber: 1, Text: "This document covers Godzilla pinball machine service notes.");
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "This document covers Godzilla pinball machine service notes.");
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [machine], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-            Assert.Equal("page_1", result.ResolutionStrategy);
-            Assert.Single(result.LinkedMachineIds);
-            Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
 
     [Fact]
@@ -744,6 +736,7 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         // Edition family (group GweeP, year 2021). A rulesheet (group-level doc)
         // whose page text matches the "godzilla" slug → fans out to BOTH bases.
@@ -752,39 +745,29 @@ public class DocumentLinkerTests
         var premLe = MakeMachine(id: "GweeP-Ml9pZ", title: "Godzilla (Premium/LE)", slug: "godzilla");
         premLe.GroupId = "GweeP"; premLe.Year = 2021; premLe.EditionTokens = ["premium", "le", "70th"];
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/Godzilla-Rulesheet.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/Godzilla-Rulesheet.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://sternpinball.com/wp-content/uploads/2022/06/Godzilla-Rulesheet.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "Godzilla-Rulesheet.pdf" },
-                sourceType: SourceType.ManualsPage);
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/06/Godzilla-Rulesheet.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "Godzilla-Rulesheet.pdf" },
+            sourceType: SourceType.ManualsPage);
 
-            var page1 = new ExtractedPage(PageNumber: 1, Text: "Godzilla rulesheet — applies to all editions.");
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "Godzilla rulesheet — applies to all editions.");
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [pro, premLe], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [pro, premLe], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-            Assert.Equal(2, result.LinkedMachineIds.Count);
-            Assert.Contains("GweeP-MW95j", result.LinkedMachineIds);
-            Assert.Contains("GweeP-Ml9pZ", result.LinkedMachineIds);
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(2, result.LinkedMachineIds.Count);
+        Assert.Contains("GweeP-MW95j", result.LinkedMachineIds);
+        Assert.Contains("GweeP-Ml9pZ", result.LinkedMachineIds);
     }
 
     [Fact]
@@ -795,44 +778,35 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machineA = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
         var machineB = MakeMachine(id: "DPOL-0002", title: "Deadpool", slug: "deadpool");
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/multi_bulletin.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/multi_bulletin.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://example.com/files/multi_bulletin.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "multi_bulletin.pdf" });
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/multi_bulletin.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "multi_bulletin.pdf" });
 
-            var pageText = "Applies to the Godzilla and Deadpool platforms.";
-            var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+        var pageText = "Applies to the Godzilla and Deadpool platforms.";
+        var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [machineA, machineB], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machineA, machineB], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-            Assert.Equal("page_1", result.ResolutionStrategy);
-            Assert.Equal(2, result.LinkedMachineIds.Count);
-            Assert.Contains(machineA.Id, result.LinkedMachineIds);
-            Assert.Contains(machineB.Id, result.LinkedMachineIds);
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Equal(2, result.LinkedMachineIds.Count);
+        Assert.Contains(machineA.Id, result.LinkedMachineIds);
+        Assert.Contains(machineB.Id, result.LinkedMachineIds);
     }
 
     [Fact]
@@ -843,40 +817,31 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/corrupt.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/corrupt.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://example.com/files/corrupt.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "corrupt.pdf" });
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/corrupt.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "corrupt.pdf" });
 
-            // Extractor returns Malformed — non-Success status, no exception.
-            // This path returns (null, false) → falls through to NotInCatalog normally.
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(ExtractedDocument.Failure(ExtractionStatus.Malformed, "corrupt pdf"));
+        // Extractor returns Malformed — non-Success status, no exception.
+        // This path returns (null, false) → falls through to NotInCatalog normally.
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(ExtractedDocument.Failure(ExtractionStatus.Malformed, "corrupt pdf"));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [machine], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
-            Assert.Null(result.ResolutionStrategy);
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Null(result.ResolutionStrategy);
     }
 
     [Fact]
@@ -890,46 +855,37 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/bad.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/bad.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://example.com/files/bad.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "bad.pdf" });
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/bad.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "bad.pdf" });
 
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Throws(new InvalidOperationException("pdf library crash"));
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Throws(new InvalidOperationException("pdf library crash"));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [machine], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Failed, result.FinalStatus);
-            Assert.Equal("text_extraction_exception", result.FailureReason);
+        Assert.Equal(LinkStatus.Failed, result.FinalStatus);
+        Assert.Equal("text_extraction_exception", result.FailureReason);
 
-            await rawRepo.Received(1).UpdateLinkStatusAsync(
-                raw.DocumentId,
-                LinkStatus.Failed,
-                resolutionStrategy: null,
-                "text_extraction_exception",
-                overrideId: null,
-                Arg.Any<CancellationToken>());
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        await rawRepo.Received(1).UpdateLinkStatusAsync(
+            raw.DocumentId,
+            LinkStatus.Failed,
+            resolutionStrategy: null,
+            "text_extraction_exception",
+            overrideId: null,
+            Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------
@@ -944,43 +900,34 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/letterhead_manual.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/letterhead_manual.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            var raw = MakeRaw(
-                fileUrl: "https://example.com/files/letterhead_manual.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "letterhead_manual.pdf" });
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/letterhead_manual.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "letterhead_manual.pdf" });
 
-            // Page 1 is letterhead-only (no game slug), page 2 has the content.
-            var page1 = new ExtractedPage(PageNumber: 1, Text: "Stern Pinball Inc. Proprietary and Confidential.");
-            var page2 = new ExtractedPage(PageNumber: 2, Text: "Godzilla pinball machine operator's manual.");
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text + page2.Text, [page1, page2], [], null));
+        // Page 1 is letterhead-only (no game slug), page 2 has the content.
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "Stern Pinball Inc. Proprietary and Confidential.");
+        var page2 = new ExtractedPage(PageNumber: 2, Text: "Godzilla pinball machine operator's manual.");
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text + page2.Text, [page1, page2], [], null));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: [machine], textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-            Assert.Equal("page_2", result.ResolutionStrategy);
-            Assert.Single(result.LinkedMachineIds);
-            Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("page_2", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
     }
 
     // -------------------------------------------------------------------------
@@ -1342,44 +1289,119 @@ public class DocumentLinkerTests
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
         var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
 
         var machines = new[] { SegaGodzilla(), SternGodzilla() };
 
-        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(tmpDir);
-        var relativePath = "docs/godzilla_pro.pdf";
-        var absolutePath = Path.Combine(tmpDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(absolutePath)!);
-        await File.WriteAllBytesAsync(absolutePath, []);
+        const string blobName = "docs/godzilla_pro.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
 
-        try
-        {
-            // No xref + filename that won't slug-match → forces the Tier 3 page path.
-            var raw = MakeRaw(
-                fileUrl: "https://sternpinball.com/files/manual_2022.pdf",
-                file: new DownloadedFileInfo { LocalPath = relativePath, Filename = "manual_2022.pdf" },
-                sourceType: SourceType.ManualsPage); // Stern
+        // No xref + filename that won't slug-match → forces the Tier 3 page path.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/files/manual_2022.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "manual_2022.pdf" },
+            sourceType: SourceType.ManualsPage); // Stern
 
-            var pageText = "Owner's manual for the Godzilla pinball machine.";
-            var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
-            extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
-                .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
+        var pageText = "Owner's manual for the Godzilla pinball machine.";
+        var page1 = new ExtractedPage(PageNumber: 1, Text: pageText);
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, pageText, [page1], [], null));
 
-            var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
-                machines: machines, textExtractor: extractor, downloadsRoot: tmpDir);
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: machines, textExtractor: extractor, blobStore: blobStore);
 
-            await linker.InitializeAsync(CancellationToken.None);
-            var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-            Assert.Equal(LinkStatus.Linked, result.FinalStatus);
-            Assert.Equal("page_1", result.ResolutionStrategy);
-            Assert.Single(result.LinkedMachineIds); // narrowed, not fanned to both
-            Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
-        }
-        finally
-        {
-            Directory.Delete(tmpDir, recursive: true);
-        }
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds); // narrowed, not fanned to both
+        Assert.Equal("GweeP-Ml9pZ", result.LinkedMachineIds[0]); // Stern, not Sega
+    }
+
+    // -------------------------------------------------------------------------
+    // Tier 3 — Page-1 blob source (Task 4: reads from IDocumentBlobStore)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page1_BlobPresent_InvokesExtractorAndLinks()
+    {
+        // Arrange: doc whose page-1 blob exists → Tier-3 resolution runs using blob bytes.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
+
+        const string blobName = "docs/service_bulletin.pdf";
+        var blobStream = new MemoryStream([1, 2, 3]);
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(blobStream));
+
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "This document covers Godzilla pinball machine service notes.");
+        extractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        // No xref, filename won't match slug — forces Tier 3.
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/service_bulletin.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "service_bulletin.pdf" });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+
+        // Act
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Assert: extractor was called (blob bytes were passed through) and link resolved.
+        await extractor.Received(1).ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("page_1", result.ResolutionStrategy);
+        Assert.Single(result.LinkedMachineIds);
+        Assert.Equal(machine.Id, result.LinkedMachineIds[0]);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier3Page1_BlobAbsent_SkipsPageTierNoException()
+    {
+        // Arrange: doc whose blob is absent (miss) → page-1 tier is skipped,
+        // falls to NotInCatalog (same outcome as old missing-file case), no exception.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var extractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var machine = MakeMachine(id: "GDZL-0001", title: "Godzilla", slug: "godzilla");
+
+        const string blobName = "docs/not_yet_downloaded.pdf";
+        // TryOpenReadAsync returns null → blob not present (no exception surfaced).
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(null));
+
+        // No xref, filename won't match slug — would need Tier 3 to resolve.
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/not_yet_downloaded.pdf",
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "not_yet_downloaded.pdf" });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [machine], textExtractor: extractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+
+        // Act
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Assert: extractor never called (blob miss skips the tier); falls to NotInCatalog.
+        await extractor.DidNotReceive().ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
     }
 }
 
