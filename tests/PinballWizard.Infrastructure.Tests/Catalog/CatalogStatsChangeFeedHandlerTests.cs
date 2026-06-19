@@ -41,9 +41,9 @@ public sealed class CatalogStatsChangeFeedHandlerTests
 
     private CatalogStatsChangeFeedHandler CreateSut()
     {
-        var repo = new CosmosRepository<ScrapedDocumentRecord>(
+        var repo = new CosmosRepository<ScrapedDocumentTypeProjection>(
             _scrapedDocsContainer,
-            NullLogger<CosmosRepository<ScrapedDocumentRecord>>.Instance);
+            NullLogger<CosmosRepository<ScrapedDocumentTypeProjection>>.Instance);
 
         return new CatalogStatsChangeFeedHandler(
             repo,
@@ -68,11 +68,11 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var doc2 = MakeScrapedDoc(MachineId, "Bulletin", "Godzilla Pro");
 
         _scrapedDocsContainer
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[doc1, doc2]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[doc1, doc2]]));
 
         var change = MakeChange(MachineId, Manufacturer, "Godzilla Pro");
         var sut = CreateSut();
@@ -103,11 +103,11 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var doc1 = MakeScrapedDoc(MachineId, "Manual", "Godzilla Pro");
 
         _scrapedDocsContainer
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[doc1]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[doc1]]));
 
         // 404 on first read → new empty record each retry
         _catalogStatsContainer
@@ -163,11 +163,11 @@ public sealed class CatalogStatsChangeFeedHandlerTests
     public async Task ComputeMachineEntryAsync_EmptyPartition_YieldsZeroCount()
     {
         _scrapedDocsContainer
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[]]));
 
         var sut = CreateSut();
         var change = MakeChange(MachineId, Manufacturer, null);
@@ -316,7 +316,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
             MachineTitle = machineTitle ?? string.Empty,
         };
 
-    private static ScrapedDocumentRecord MakeScrapedDoc(
+    private static ScrapedDocumentTypeProjection MakeScrapedDoc(
         string machineId,
         string documentType,
         string? machineTitle) =>
@@ -324,12 +324,8 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         {
             Id           = $"doc_{documentType.ToLowerInvariant()}",
             PartitionKey = machineId,
-            DocumentId   = $"doc_{documentType.ToLowerInvariant()}",
-            DocumentUrl  = $"https://example.com/{documentType.ToLowerInvariant()}.pdf",
             MachineTitle = machineTitle ?? machineId,
-            Manufacturer = Manufacturer,
             DocumentType = documentType,
-            EditionScope = "single-edition",
         };
 
     // -------------------------------------------------------------------------

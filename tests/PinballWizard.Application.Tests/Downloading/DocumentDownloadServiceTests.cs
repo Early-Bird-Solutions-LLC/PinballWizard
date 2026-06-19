@@ -34,7 +34,7 @@ public sealed class DocumentDownloadServiceTests
             });
 
         var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
-        var summary = await svc.RunAsync(CancellationToken.None);
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
 
         Assert.Equal(1, summary.Downloaded);
         Assert.Equal(0, summary.Skipped);
@@ -61,7 +61,7 @@ public sealed class DocumentDownloadServiceTests
             });
 
         var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
-        await svc.RunAsync(CancellationToken.None);
+        await svc.RunAsync(force: false, CancellationToken.None);
 
         // {sourceType}/{filename} via Path.Combine (dir separator is platform-specific),
         // and crucially NOT rooted/absolute — Path.IsPathRooted must be false.
@@ -81,12 +81,43 @@ public sealed class DocumentDownloadServiceTests
         StubStream(raw);
 
         var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
-        var summary = await svc.RunAsync(CancellationToken.None);
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
 
         Assert.Equal(1, summary.Skipped);
         Assert.Equal(0, summary.Downloaded);
         await _downloader.DidNotReceive().DownloadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Force_ReDownloadsAlreadyDownloadedDoc_WithUnconditionalGet()
+    {
+        // A doc whose Cosmos record already has a LocalPath (downloaded by a prior /
+        // ephemeral run) — the actual file is NOT on this machine. Force must (a) skip the
+        // already-downloaded skip and re-fetch, and (b) bypass conditional headers (pass
+        // null previousMetadata) so the server returns the bytes rather than a 304
+        // NotModified that would leave no local file for the linker's page-1 tier to read.
+        var raw = MakeRaw("doc_b", "https://sternpinball.com/x/y.pdf",
+            file: new DownloadedFileInfo { LocalPath = "manualspage/y.pdf", Filename = "y.pdf" },
+            http: new HttpMetadata { ETag = "\"prev-etag\"" });
+        StubStream(raw);
+        _downloader.DownloadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>())
+            .Returns(new DownloadResult
+            {
+                Status = DownloadStatus.Downloaded,
+                FileUrl = raw.Source.FileUrl!,
+                LocalPath = "manualspage/y.pdf",
+                Filename = "y.pdf",
+            });
+
+        var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
+        var summary = await svc.RunAsync(force: true, CancellationToken.None);
+
+        Assert.Equal(1, summary.Downloaded);
+        Assert.Equal(0, summary.Skipped);
+        // Unconditional GET — previousMetadata is null even though the record carries an ETag.
+        await _downloader.Received(1).DownloadAsync(
+            raw.Source.FileUrl!, Arg.Any<string>(), null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -104,7 +135,7 @@ public sealed class DocumentDownloadServiceTests
             });
 
         var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
-        var summary = await svc.RunAsync(CancellationToken.None);
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
 
         Assert.Equal(1, summary.Failed);
         await _repo.DidNotReceive().UpdateFileAsync(Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
@@ -141,7 +172,7 @@ public sealed class DocumentDownloadServiceTests
             });
 
         var svc = new DocumentDownloadService(_repo, _downloader, NullLogger<DocumentDownloadService>.Instance);
-        var summary = await svc.RunAsync(CancellationToken.None);
+        var summary = await svc.RunAsync(force: false, CancellationToken.None);
 
         // first.pdf aborted (skipped), second.pdf skipped without a download attempt
         // (origin poisoned), ok.pdf downloaded from the healthy origin.
@@ -166,7 +197,8 @@ public sealed class DocumentDownloadServiceTests
         foreach (var d in docs) { yield return d; await Task.Yield(); }
     }
 
-    private static RawDocumentRecord MakeRaw(string documentId, string fileUrl, DownloadedFileInfo? file) => new()
+    private static RawDocumentRecord MakeRaw(
+        string documentId, string fileUrl, DownloadedFileInfo? file, HttpMetadata? http = null) => new()
     {
         DocumentId = documentId,
         DocumentUrl = fileUrl,
@@ -181,5 +213,6 @@ public sealed class DocumentDownloadServiceTests
         },
         Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
         File = file,
+        Http = http,
     };
 }
