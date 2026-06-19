@@ -10,8 +10,8 @@ namespace PinballWizard.Application.Downloading;
 /// resolution. Polite (the injected <see cref="IFileDownloader"/> routes every
 /// download through the shared politeness gate — robots.txt, per-origin
 /// throttle, 429 backoff — and owns the read timeout), idempotent (skips
-/// documents that already have a local file), and provenance-preserving (only
-/// the <c>File</c> field is written back).
+/// documents that already have a local file — unless <c>force</c> is set), and
+/// provenance-preserving (only the <c>File</c> field is written back).
 /// </summary>
 public sealed class DocumentDownloadService
 {
@@ -32,7 +32,17 @@ public sealed class DocumentDownloadService
         _logger = logger;
     }
 
-    public async Task<DownloadSummary> RunAsync(CancellationToken cancellationToken)
+    /// <param name="force">
+    /// When true, re-download every document even if its raw record already carries a
+    /// <c>File.LocalPath</c>, and issue an UNCONDITIONAL GET (ignoring the stored
+    /// ETag / Last-Modified). This is the backfill path: the recorded LocalPath may point
+    /// at a file produced by an earlier, ephemeral run (e.g. an ACA job's /tmp) that does
+    /// not exist on the machine running the linker, so a conditional GET could return 304
+    /// NotModified and leave no local file for the page-1 edition tier to read. Forcing a
+    /// full fetch guarantees the bytes land locally. Still fully polite — every request
+    /// routes through the same politeness gate.
+    /// </param>
+    public async Task<DownloadSummary> RunAsync(bool force, CancellationToken cancellationToken)
     {
         int downloaded = 0, skipped = 0, failed = 0;
 
@@ -47,7 +57,7 @@ public sealed class DocumentDownloadService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (raw.File?.LocalPath is not null) { skipped++; continue; }
+            if (!force && raw.File?.LocalPath is not null) { skipped++; continue; }
 
             var fileUrl = raw.Source.FileUrl;
             if (string.IsNullOrEmpty(fileUrl)) { skipped++; continue; }
@@ -59,8 +69,11 @@ public sealed class DocumentDownloadService
             // root and combines it (so the persisted LocalPath stays portable across
             // environments, e.g. dev box vs ACA, rather than baking in an absolute path).
             var relPath = BuildLocalPath(raw, fileUrl);
+            // Force ⇒ unconditional GET (null previousMetadata): see the RunAsync param doc —
+            // a 304 NotModified would write LocalPath back with no bytes on this machine.
+            var previousMetadata = force ? null : raw.Http;
             var result = await _downloader
-                .DownloadAsync(fileUrl, relPath, raw.Http, cancellationToken)
+                .DownloadAsync(fileUrl, relPath, previousMetadata, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Status is DownloadStatus.Downloaded or DownloadStatus.NotModified)
