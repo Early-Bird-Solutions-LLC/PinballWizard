@@ -1,0 +1,41 @@
+<!-- @dsCard group="Foundations" name="Surfaces & Ink" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Surfaces & Ink</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; display: flex; flex-direction: column; gap: 22px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .swatch { border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); padding: 18px; min-height: 104px; display: flex; flex-direction: column; justify-content: space-between; }
+  .name { font-family: var(--pw-font-display); font-weight: 700; font-size: 15px; letter-spacing: .02em; }
+  .hex { font-family: var(--pw-font-mono); font-size: 11px; color: var(--pw-text-secondary); }
+  .role { font-size: 12px; color: var(--pw-text-secondary); line-height: 1.4; }
+  .ink-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .ink { border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); padding: 14px 16px; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">Modern LCD · surfaces — depth by tone shift, not shadow</div>
+  <div class="grid">
+    <div class="swatch" style="background:var(--pw-bg-base)">
+      <div class="name">bg-base</div>
+      <div><div class="hex">#0c0b0e</div><div class="role">The LCD bezel. Warm near-black — not pure #000.</div></div>
+    </div>
+    <div class="swatch" style="background:var(--pw-bg-surface)">
+      <div class="name">bg-surface</div>
+      <div><div class="hex">#161519</div><div class="role">Panel interiors, cards, info zones.</div></div>
+    </div>
+    <div class="swatch" style="background:var(--pw-bg-surface-hi)">
+      <div class="name">bg-surface-hi</div>
+      <div><div class="hex">#1f1d22</div><div class="role">Hovered/active panels, citation cards.</div></div>
+    </div>
+  </div>
+  <div class="pw-eyebrow">Ink — warm off-white, never clinical</div>
+  <div class="ink-row" style="background:var(--pw-bg-surface)">
+    <div class="ink"><div class="name" style="color:var(--pw-text-primary)">text-primary</div><div class="hex">#f4f1ea</div></div>
+    <div class="ink"><div class="name" style="color:var(--pw-text-secondary)">text-secondary</div><div class="hex">#9a9590</div></div>
+    <div class="ink"><div class="name" style="color:var(--pw-text-disabled)">text-disabled</div><div class="hex">#5e5b56</div></div>
+  </div>
+</body>
+</html>

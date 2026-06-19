@@ -1,0 +1,32 @@
+<!-- @dsCard group="Components" name="Refusal panel (directs out)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Refusal panel</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; }
+  .panel { max-width: 560px; background: var(--pw-bg-surface); border: 1px solid var(--pw-accent-refusal); border-radius: var(--pw-radius); box-shadow: 0 0 16px var(--pw-border-glow-red); padding: 22px 22px 24px; }
+  .cat { font-family: var(--pw-font-display); font-weight: 700; font-size: 2rem; letter-spacing: .04em; color: var(--pw-accent-refusal); line-height: 1; }
+  .reason { font-family: var(--pw-font-body); font-size: 1rem; line-height: 1.5; color: var(--pw-text-primary); margin: 14px 0 20px; }
+  .routes { display: flex; gap: 12px; flex-wrap: wrap; }
+  /* Recessed puck, ~38px, accent-grounded backlight — same family as flippers, third size point. Peer parity. */
+  .route { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: var(--pw-radius-button); font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; font-size: 12.5px; color: var(--pw-accent-grounded); border: 1px solid var(--pw-accent-grounded); background: var(--pw-bg-surface-hi); box-shadow: inset 0 2px 5px rgba(0,0,0,.55), 0 0 10px var(--pw-border-glow-green); cursor: pointer; }
+  .note { margin-top: 18px; max-width: 560px; font-size: 12.5px; color: var(--pw-text-secondary); line-height: 1.5; border-left: 2px solid var(--pw-accent-refusal); padding-left: 12px; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">"I don't know" becomes "but here's where to ask" — never apologetic, always actionable</div>
+  <div style="height:14px"></div>
+  <div class="panel">
+    <div class="cat">LOW CONFIDENCE</div>
+    <div class="reason">The available sources don't directly address this question.</div>
+    <div class="routes">
+      <span class="route">Pinside tech forum ▶</span>
+      <span class="route">OPDB entry ▶</span>
+      <span class="route">Stern support ▶</span>
+    </div>
+  </div>
+  <div class="note">Routing CTAs are visually identical (peer parity, Posture rule 4) — no "primary" elevated above peers; order follows the community-resources contract (alphabetical / randomized, never editorial). Static, no pulse — refusal is a deliberate outcome, not a process.</div>
+</body>
+</html>

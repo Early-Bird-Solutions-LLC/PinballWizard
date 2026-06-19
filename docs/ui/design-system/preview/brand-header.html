@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" name="Brand header & question input" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Brand header & question input</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 0; }
+  .frame { border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); overflow: hidden; margin: 24px; }
+  /* Recessed header — slightly darker than bg-base */
+  .appbar { display: flex; align-items: center; gap: 14px; background: #08070a; padding: 14px 20px; border-bottom: 1px solid var(--pw-border-quiet); }
+  .logo { font-family: var(--pw-font-display); font-weight: 700; font-size: 1.25rem; letter-spacing: .04em; color: var(--pw-text-primary); }
+  .logo b { color: var(--pw-accent-primary); }
+  .nav { display: flex; gap: 22px; margin-left: 8px; }
+  .nav a { font-family: var(--pw-font-display); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; font-size: 12.5px; color: var(--pw-text-secondary); text-decoration: none; }
+  .nav a.active { color: var(--pw-accent-primary); }
+  .spacer { flex: 1; }
+  .chip { font-family: var(--pw-font-mono); font-size: 10px; color: var(--pw-accent-grounded); border: 1px solid var(--pw-accent-grounded); border-radius: 999px; padding: 3px 10px; box-shadow: 0 0 8px var(--pw-border-glow-green); }
+  /* Question input — the "drop in coin" surface; persistent, never collapses */
+  .stage { background: var(--pw-bg-base); padding: 28px 20px; }
+  .ask { display: flex; gap: 12px; max-width: 620px; }
+  .field { flex: 1; background: var(--pw-bg-surface); border: 1px solid var(--pw-accent-primary); border-radius: var(--pw-radius); box-shadow: 0 0 14px var(--pw-border-glow-amber); padding: 14px 16px; font-family: var(--pw-font-body); font-size: 1rem; color: var(--pw-text-primary); }
+  .placeholder { color: var(--pw-text-secondary); }
+  .submit { display: inline-flex; align-items: center; gap: 8px; padding: 0 22px; background: var(--pw-accent-primary); color: #1a1a1a; font-family: var(--pw-font-display); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; font-size: 14px; border-radius: var(--pw-radius); cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="appbar">
+      <div class="logo">PINBALL<b>WIZARD</b></div>
+      <div class="nav"><a class="active">Ask</a><a>Machines</a><a>About</a></div>
+      <div class="spacer"></div>
+      <span class="chip">◆ GROUNDED</span>
+    </div>
+    <div class="stage">
+      <div class="pw-eyebrow" style="margin-bottom:14px">The "drop in coin" surface — single bright input, amber submit, always findable</div>
+      <div class="ask">
+        <div class="field"><span class="placeholder">Ask about any machine — rules, repairs, specs…</span></div>
+        <span class="submit">Ask ▶</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

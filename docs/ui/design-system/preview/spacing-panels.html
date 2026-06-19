@@ -1,0 +1,46 @@
+<!-- @dsCard group="Foundations" name="Spacing & Panel Grammar" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Spacing & Panel Grammar</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; display: flex; flex-direction: column; gap: 24px; }
+  .scale { display: flex; align-items: flex-end; gap: 14px; }
+  .step { text-align: center; }
+  .bar { background: var(--pw-accent-primary); border-radius: var(--pw-radius); width: 26px; }
+  .tick { font-family: var(--pw-font-mono); font-size: 10px; color: var(--pw-text-secondary); margin-top: 6px; }
+  .panels { display: flex; gap: 20px; flex-wrap: wrap; }
+  .panel { background: var(--pw-bg-surface); padding: 16px 18px; min-width: 150px; }
+  .p-quiet { border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); }
+  .p-glow { border: 1px solid transparent; border-radius: var(--pw-radius); box-shadow: 0 0 0 1px var(--pw-accent-grounded), 0 0 14px var(--pw-border-glow-green); }
+  .pt { font-family: var(--pw-font-display); font-weight: 700; font-size: 14px; }
+  .pd { font-size: 12px; color: var(--pw-text-secondary); margin-top: 6px; line-height: 1.45; }
+  .divider { height: 1px; background: var(--pw-border-quiet); margin: 12px 0; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">8px base unit · tight within zones (8–16) · generous between zones (24–32)</div>
+  <div class="scale">
+    <div class="step"><div class="bar" style="height:8px"></div><div class="tick">8</div></div>
+    <div class="step"><div class="bar" style="height:16px"></div><div class="tick">16</div></div>
+    <div class="step"><div class="bar" style="height:24px"></div><div class="tick">24</div></div>
+    <div class="step"><div class="bar" style="height:32px"></div><div class="tick">32</div></div>
+    <div class="step"><div class="bar" style="height:48px"></div><div class="tick">48</div></div>
+    <div class="step"><div class="bar" style="height:64px"></div><div class="tick">64</div></div>
+  </div>
+  <div class="pw-eyebrow">Panels — 2px "machined edge" radius · 1px visible borders · glow on interaction</div>
+  <div class="panels">
+    <div class="panel p-quiet">
+      <div class="pt">border-quiet</div>
+      <div class="divider"></div>
+      <div class="pd">1px solid #2a282d. Default panel border &amp; divider. Never the Material 12% wisp.</div>
+    </div>
+    <div class="panel p-glow">
+      <div class="pt" style="color:var(--pw-accent-grounded)">border-glow</div>
+      <div class="divider"></div>
+      <div class="pd">Accent-tinted pulse on hover/focus. Elevation by tone shift, not box-shadow — flat-on-glass.</div>
+    </div>
+  </div>
+</body>
+</html>

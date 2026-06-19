@@ -1,0 +1,29 @@
+<!-- @dsCard group="Components" name="Inline citation marker" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Inline citation marker</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; }
+  .answer { max-width: 560px; font-family: var(--pw-font-body); font-size: 1rem; line-height: 1.7; color: var(--pw-text-primary); }
+  /* Lit plastic playfield insert — diamond marker with accent-grounded glow */
+  .insert { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; font-family: var(--pw-font-mono); font-size: 10px; font-weight: 500; color: #0c0b0e; background: var(--pw-accent-grounded); border-radius: 4px; transform: rotate(45deg); box-shadow: 0 0 8px var(--pw-border-glow-green); vertical-align: middle; margin: 0 2px; cursor: pointer; }
+  .insert span { transform: rotate(-45deg); }
+  .portal { color: var(--pw-text-primary); border-bottom: 1px solid var(--pw-accent-grounded); cursor: pointer; }
+  .portal .arrow { color: var(--pw-accent-grounded); font-size: 11px; }
+  .tip { display: inline-block; margin-left: 10px; font-family: var(--pw-font-mono); font-size: 10px; color: var(--pw-text-secondary); background: var(--pw-bg-surface-hi); border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); padding: 4px 8px; }
+  .note { margin-top: 22px; font-size: 12.5px; color: var(--pw-text-secondary); line-height: 1.5; border-left: 2px solid var(--pw-accent-grounded); padding-left: 12px; max-width: 560px; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">Numbered pinball-insert — a wayfinding anchor, recognizably NOT a footnote</div>
+  <div style="height:16px"></div>
+  <div class="answer">
+    On <span class="portal">Godzilla<span class="arrow">↗</span></span>, the drop-target bank resets after the switch test passes<span class="insert"><span>1</span></span>, and the multiball award re-triggers only on a stuck target<span class="insert"><span>2</span></span>.
+  </div>
+  <div style="height:14px"></div>
+  <div class="tip">◆ [BULLETIN] &nbsp;Stern · Godzilla · SB-243</div>
+  <div class="note">Hover reveals <code>[SOURCE TYPE] Source name</code>; click scrolls to the matching citation card and pulses its border twice in accent-grounded. Body-text entity references (machine / manufacturer names) are quiet portals — accent-grounded underline + trailing ↗ — distinct from the insert marker.</div>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!-- @dsCard group="Foundations" name="Semantic Accents (closed set)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>Semantic Accents</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { padding: 28px; display: flex; flex-direction: column; gap: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .acc { background: var(--pw-bg-surface); border: 1px solid var(--pw-border-quiet); border-radius: var(--pw-radius); padding: 16px 18px; display: flex; gap: 14px; align-items: flex-start; }
+  .chip { width: 40px; height: 40px; border-radius: var(--pw-radius); flex: 0 0 auto; }
+  .name { font-family: var(--pw-font-display); font-weight: 700; font-size: 16px; letter-spacing: .02em; }
+  .hex { font-family: var(--pw-font-mono); font-size: 11px; color: var(--pw-text-secondary); }
+  .role { font-size: 12.5px; color: var(--pw-text-secondary); line-height: 1.45; margin-top: 4px; }
+  .ic { font-size: 13px; }
+  .glow { margin-top: 6px; padding: 8px 12px; background: var(--pw-bg-base); border-radius: var(--pw-radius); font-size: 12px; }
+  .note { font-size: 12px; color: var(--pw-text-secondary); border-left: 2px solid var(--pw-accent-primary); padding-left: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="pw-eyebrow">Closed palette · five roles · color is never the only carrier of meaning</div>
+  <div class="grid">
+    <div class="acc">
+      <div class="chip" style="background:var(--pw-accent-primary); box-shadow:0 0 12px var(--pw-border-glow-amber)"></div>
+      <div><div class="name" style="color:var(--pw-accent-primary)">accent-primary <span class="ic">▶</span></div><div class="hex">#ff9a1f · amber</div><div class="role">Primary action — ask the Wizard, submit, confirm. The single most "pinball" color: score reels → DMD → modern LCD.</div></div>
+    </div>
+    <div class="acc">
+      <div class="chip" style="background:var(--pw-accent-grounded); box-shadow:0 0 12px var(--pw-border-glow-green)"></div>
+      <div><div class="name" style="color:var(--pw-accent-grounded)">accent-grounded <span class="ic">◆</span></div><div class="hex">#34d96a · atomic green</div><div class="role">Citations, source-grounded answers, success. The "match award lit" GI glow.</div></div>
+    </div>
+    <div class="acc">
+      <div class="chip" style="background:var(--pw-accent-refusal); box-shadow:0 0 12px var(--pw-border-glow-red)"></div>
+      <div><div class="name" style="color:var(--pw-accent-refusal)">accent-refusal <span class="ic">■</span></div><div class="hex">#ff3b30 · saturated red</div><div class="role">Confidence-threshold refusal, validation errors. Distinct from system errors.</div></div>
+    </div>
+    <div class="acc">
+      <div class="chip" style="background:var(--pw-accent-mode); box-shadow:0 0 12px var(--pw-border-glow-magenta)"></div>
+      <div><div class="name" style="color:var(--pw-accent-mode)">accent-mode <span class="ic">●</span></div><div class="hex">#e13bd9 · magenta</div><div class="role">Mode/topic nav state — "you are now in machine X." Reads natively pinball (Foo Fighters, Heist, Wonka).</div></div>
+    </div>
+  </div>
+  <div class="note">Border-glow tints (amber / green / magenta / red at ~60% alpha) pulse on hover/focus — the signature "this is alive" detail. Adding a sixth accent requires deleting one: accent inflation kills the "color means something" promise.</div>
+</body>
+</html>
