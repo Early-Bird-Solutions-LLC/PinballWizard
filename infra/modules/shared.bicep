@@ -1834,6 +1834,23 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               value: 'http://${apiContainerAppName}'
             }
             {
+              // Admin data pages (/admin/machines, /admin/sources, /admin/triage,
+              // /admin/link-overrides, /admin/settings) read Cosmos directly via
+              // CosmosWebRegistration → AddCatalogStatsRead. Without these env vars
+              // the Cosmos gate is false, ICatalogStatsReadRepository is never
+              // registered, and /admin/machines 500s ("no registered service of
+              // type ICatalogStatsReadRepository"). RBAC is the shared acaIdentity
+              // UAMI (already granted the Cosmos data role, same as the Api app);
+              // AccountResourceId selects the ARM provisioner used by the admin
+              // write paths (settings + link-overrides).
+              name: 'Cosmos__AccountEndpoint'
+              value: cosmosAccount.properties.documentEndpoint
+            }
+            {
+              name: 'Cosmos__AccountResourceId'
+              value: cosmosAccount.id
+            }
+            {
               // Pins DefaultAzureCredential to the shared UAMI (same pattern
               // as the Api app) so the Data Protection wiring below can reach
               // blob storage + Key Vault.

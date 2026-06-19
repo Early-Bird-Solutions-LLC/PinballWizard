@@ -121,6 +121,15 @@ resource linkerJob 'Microsoft.App/jobs@2023-05-01' = {
               name: 'Cosmos__AccountResourceId'
               value: cosmosResourceId
             }
+            {
+              // The CLI's host builder creates data/log dirs under DataPath
+              // (default 'data' → /app/data) on startup, before any command runs.
+              // /app is not writable by the non-root job user, so the job dies with
+              // "Access to the path '/app/data' is denied" before doing any work.
+              // Point DataPath at a writable ephemeral location.
+              name: 'Scraper__DataPath'
+              value: '/tmp/pinwiz'
+            }
           ]
         }
       ]
