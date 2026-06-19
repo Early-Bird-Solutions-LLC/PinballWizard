@@ -49,7 +49,7 @@
 
     @if (_loading)
     {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" aria-label="Loading settings" data-testid="settings-loading" />
+        <AdminLoadingBar Label="Loading settings" data-testid="settings-loading" />
     }
     else if (_loadError is not null)
     {
