@@ -24,11 +24,46 @@ namespace PinballWizard.Infrastructure.Credentials;
 public static class SharedAzureCredential
 {
     private static readonly Lazy<TokenCredential> LazyInstance = new(
-        () => new DefaultAzureCredential(new DefaultAzureCredentialOptions
-        {
-            CredentialProcessTimeout = TimeSpan.FromSeconds(30),
-        }),
+        () => new DefaultAzureCredential(BuildOptions(IsDevelopment)),
         LazyThreadSafetyMode.ExecutionAndPublication);
 
     public static TokenCredential Instance => LazyInstance.Value;
+
+    // True when the host runs in the Development environment (local dev). Read
+    // from the env var rather than IHostEnvironment so this stays a dependency-
+    // free static usable from every host's DI wiring.
+    private static bool IsDevelopment =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+                ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT"),
+            "Development",
+            StringComparison.OrdinalIgnoreCase);
+
+    // Internal + parameterized so the dev-vs-deployed decision is unit-testable.
+    internal static DefaultAzureCredentialOptions BuildOptions(bool isDevelopment)
+    {
+        var options = new DefaultAzureCredentialOptions
+        {
+            CredentialProcessTimeout = TimeSpan.FromSeconds(30),
+        };
+
+        // A developer machine has no IMDS endpoint (169.254.169.254), so
+        // ManagedIdentityCredential's probe can never succeed locally — it just
+        // burns a multi-second network timeout and then emits the loudest line in
+        // the aggregate failure ("All Managed Identity sources are unavailable"),
+        // which masks the real local cause (not `az login`'d, or signed into the
+        // wrong tenant). Excluding it — and the k8s-only workload identity
+        // credential — in Development sends the chain straight to the Azure CLI /
+        // Visual Studio developer credentials: faster, and with a clear error when
+        // there is genuinely no signed-in session. Deployed hosts
+        // (ASPNETCORE_ENVIRONMENT != Development) keep both: Managed Identity is
+        // the ONLY credential available there.
+        if (isDevelopment)
+        {
+            options.ExcludeManagedIdentityCredential = true;
+            options.ExcludeWorkloadIdentityCredential = true;
+        }
+
+        return options;
+    }
 }
