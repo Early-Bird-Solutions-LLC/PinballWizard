@@ -240,9 +240,10 @@ public static class ServiceCollectionExtensions
             var textExtractor = sp.GetService<IDocumentTextExtractor>();
             var logger = sp.GetRequiredService<ILogger<DocumentLinker>>();
             var settings = sp.GetService<IOptions<ScraperSettings>>();
-            var downloadsRoot = settings?.Value.DownloadsPath;
             var concurrency = settings?.Value.CosmosWriteConcurrency ?? 20;
-            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger, downloadsRoot, concurrency);
+            var blobStore = sp.GetService<IDocumentBlobStore>();
+            return new DocumentLinker(rawRepo, overrideRepo, machineRepo, linkedRepo, textExtractor, logger,
+                cosmosWriteConcurrency: concurrency, blobStore: blobStore);
         });
 
         // Document downloader (--download-documents) — fetches not-yet-downloaded

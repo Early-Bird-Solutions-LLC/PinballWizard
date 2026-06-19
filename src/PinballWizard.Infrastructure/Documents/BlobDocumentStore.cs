@@ -79,4 +79,32 @@ public sealed class BlobDocumentStore : IDocumentBlobStore
         buffer.Position = 0;
         return buffer;
     }
+
+    public async Task<Stream?> TryOpenReadAsync(
+        string blobName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(blobName);
+
+        _logger.LogDebug("BlobDocumentStore: trying to open blob '{BlobName}'", blobName);
+
+        // Absorb 404 here (Infrastructure layer) so Application callers never
+        // need to reference Azure.RequestFailedException (an Azure SDK type).
+        // Any non-404 storage error still propagates — Invariant #17: a read
+        // error is not silently swallowed as "not available".
+        try
+        {
+            var buffer = new MemoryStream();
+            await _container.GetBlobClient(blobName)
+                .DownloadToAsync(buffer, cancellationToken)
+                .ConfigureAwait(false);
+            buffer.Position = 0;
+            return buffer;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            _logger.LogDebug("BlobDocumentStore: blob '{BlobName}' not found (404) — treating as miss.", blobName);
+            return null;
+        }
+    }
 }

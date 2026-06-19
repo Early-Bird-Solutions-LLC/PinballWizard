@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Core.Domain;
@@ -28,7 +29,7 @@ public sealed class DocumentLinker : IDocumentLinker
     private readonly IScrapedDocumentRepository _docWriter;
     private readonly IDocumentTextExtractor? _textExtractor;
     private readonly ILogger<DocumentLinker> _logger;
-    private readonly string? _downloadsRoot;
+    private readonly IDocumentBlobStore? _blobStore;
     private readonly int _cosmosWriteConcurrency;
 
     private static readonly Meter LinkerMeter =
@@ -67,8 +68,8 @@ public sealed class DocumentLinker : IDocumentLinker
         IScrapedDocumentRepository docWriter,
         IDocumentTextExtractor? textExtractor,
         ILogger<DocumentLinker> logger,
-        string? downloadsRoot = null,
-        int cosmosWriteConcurrency = 20)
+        int cosmosWriteConcurrency = 20,
+        IDocumentBlobStore? blobStore = null)
     {
         ArgumentNullException.ThrowIfNull(rawRepo);
         ArgumentNullException.ThrowIfNull(overrideRepo);
@@ -81,7 +82,7 @@ public sealed class DocumentLinker : IDocumentLinker
         _docWriter = docWriter;
         _textExtractor = textExtractor;
         _logger = logger;
-        _downloadsRoot = downloadsRoot;
+        _blobStore = blobStore;
         _cosmosWriteConcurrency = cosmosWriteConcurrency;
     }
 
@@ -206,7 +207,7 @@ public sealed class DocumentLinker : IDocumentLinker
         }
 
         // Tiers 3–4: page-text matching. Extract once, try pages 0 and 1.
-        if (_textExtractor is not null && _downloadsRoot is not null && raw.File?.LocalPath is not null)
+        if (_textExtractor is not null && _blobStore is not null && raw.File?.LocalPath is not null)
         {
             var (extracted, extractionFailed) = await TryExtractDocumentAsync(raw, cancellationToken).ConfigureAwait(false);
 
@@ -620,25 +621,29 @@ public sealed class DocumentLinker : IDocumentLinker
             FailureReason: null);
     }
 
-    // Returns (doc, false) on success, (null, false) when file is missing or extraction
+    // Returns (doc, false) on success, (null, false) when the blob is absent or extraction
     // returned a non-Success status, and (null, true) when the extractor threw — so the
     // caller can distinguish a normal fall-through from an error that warrants Failed status.
     private async Task<(ExtractedDocument? Doc, bool ExtractionFailed)> TryExtractDocumentAsync(
         RawDocumentRecord raw,
         CancellationToken cancellationToken)
     {
-        var absolutePath = Path.Combine(_downloadsRoot!, raw.File!.LocalPath!);
-        if (!File.Exists(absolutePath))
+        // TryOpenReadAsync returns null on 404 (blob not yet downloaded); the 404→null
+        // translation happens in Infrastructure so Application never references Azure SDK types.
+        var stream = await _blobStore!.TryOpenReadAsync(raw.File!.LocalPath!, cancellationToken).ConfigureAwait(false);
+        if (stream is null)
         {
-            _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — file not on disk.", raw.DocumentId);
+            _logger.LogDebug("DocumentLinker: page extraction skipped for {DocId} — blob not in store.", raw.DocumentId);
             return (null, false);
         }
 
         try
         {
-            await using var stream = File.OpenRead(absolutePath);
-            var extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
-            return extracted.Status == ExtractionStatus.Success ? (extracted, false) : (null, false);
+            await using (stream)
+            {
+                var extracted = await _textExtractor!.ExtractAsync(stream, cancellationToken).ConfigureAwait(false);
+                return extracted.Status == ExtractionStatus.Success ? (extracted, false) : (null, false);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
