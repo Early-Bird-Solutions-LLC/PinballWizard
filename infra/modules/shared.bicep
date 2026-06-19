@@ -932,13 +932,11 @@ resource acaEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = if (dep
 //
 // Ingress: omitted (= disabled). This is an internal worker; no inbound HTTP.
 
-// API version 2025-01-01 (GA) supports rule-level `identity` for KEDA scale
-// rules — the canonical way to authenticate the Cosmos Change Feed scaler
-// against the lease + source containers via the Container App's system-
-// assigned MI. Earlier 2024-03-01 only allowed `auth` (secret-based) which
-// would require a connection-string secret in Key Vault, undoing the MI
-// story. The preview-vs-GA distinction matters for showcase posture: stay
-// on GA APIs unless a feature is genuinely preview-only.
+// API version 2025-01-01 (GA). The `identity` property on `scale.rules[].custom`
+// (introduced in this version) would be the correct path for KEDA Cosmos Change
+// Feed scaling once `azure-cosmosdb` is added as a first-class ACA scaler type.
+// Today that type does not exist in ACA's KEDA vocabulary — see the scale block
+// comment for the full rationale and the TODO for the migration path.
 resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2 && deployAiSearch) {
   name: ragIndexerContainerAppName
   location: location
@@ -1021,13 +1019,40 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
         }
       ]
       scale: {
-        minReplicas: 0
+        // minReplicas raised 0 → 1: the worker must always run because ACA
+        // does not support Cosmos Change Feed-based auto-scaling today.
+        //
+        // Background: the KEDA `azure-cosmosdb` Change Feed scaler is an
+        // *external* (gRPC) scaler, not a built-in KEDA type. ACA's hosted
+        // KEDA integration does not expose the external-scaler gRPC protocol
+        // to user deployments — ACA GitHub issues #364 and #1421 confirm the
+        // gap remains unresolved as of 2026-06. There is no `azure-cosmosdb`
+        // type in ACA's `scale.rules` vocabulary; submitting one fails ARM
+        // validation with an unknown scaler type error.
+        //
+        // The worker hosts two Cosmos Change Feed processors (rag_leases +
+        // catalog_stats_leases). With minReplicas=0 and no scale trigger,
+        // neither processor runs — RAG ingestion and catalog-stats projection
+        // are dead. minReplicas=1 restores both at a steady-state cost of
+        // roughly $3–5/mo (0.5 vCPU × 1 Gi — ACA Consumption pricing
+        // ~$0.000024/vCPU-sec × 86 400 s/day = ~$1.04/vCPU-day). This is
+        // within the $300–$400/mo project cap.
+        //
+        // TODO: revisit if Microsoft adds `azure-cosmosdb` as a first-class
+        // ACA scale-rule type. When that ships, replace this with:
+        //   minReplicas: 0
+        //   maxReplicas: 1
+        //   rules: [{ name: 'cosmos-changefeed', custom: { type: 'azure-cosmosdb',
+        //     metadata: { endpoint: cosmosAccount.properties.documentEndpoint,
+        //       databaseName: 'pinwiz', containerName: 'scraped_documents',
+        //       leaseContainerName: 'rag_leases', processorName: '...' },
+        //     identity: 'system' } }]
+        // The system-assigned MI already holds Cosmos DB Built-in Data
+        // Contributor (ragIndexerCosmosDataContrib) which covers both
+        // reading the change feed and writing lease checkpoints — no
+        // connection string or access key would be needed.
+        minReplicas: 1
         maxReplicas: 1
-        // ACA's KEDA version does not expose a Cosmos Change Feed scaler
-        // (the 'cosmos-db' trigger type is not in ACA's supported list).
-        // The worker scales to 1 when deployed; operators scale to 0 via
-        // 'az containerapp update --min-replicas 0 --max-replicas 0' for
-        // extended pauses. Revisit if ACA adds native CosmosDB KEDA support.
       }
     }
   }
