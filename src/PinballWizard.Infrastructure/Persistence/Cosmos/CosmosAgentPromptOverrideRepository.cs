@@ -111,9 +111,14 @@ internal sealed class CosmosAgentPromptOverrideRepository
 
         // Auto-increment: scan the partition for the current highest
         // version. Version starts at 1 (first save on an agent is v1).
+        // Select the FULL top document, not just c.version: every field on
+        // AgentPromptOverrideCosmosRecord is `required`, so a projected
+        // `SELECT c.version` returns partial JSON that fails required-member
+        // deserialization (see AgentPromptOverrideCosmosRecordTests). The
+        // read is a single LIMIT-1 row, so reading the whole document is cheap.
         int nextVersion = 1;
         await foreach (var existing in StreamAsync(
-            "SELECT c.version FROM c ORDER BY c.version DESC OFFSET 0 LIMIT 1",
+            "SELECT * FROM c ORDER BY c.version DESC OFFSET 0 LIMIT 1",
             parameters: null,
             partitionKey: agentName,
             cancellationToken).ConfigureAwait(false))

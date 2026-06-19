@@ -299,9 +299,17 @@ if (Directory.Exists(wellKnownPath))
     });
 }
 
-app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
+// UseAntiforgery MUST come AFTER UseAuthentication. The OIDC sign-in callback
+// (/signin-oidc) is a cross-site form_post from Entra with no app antiforgery
+// token; if the antiforgery middleware runs first it marks the request's
+// IAntiforgeryValidationFeature invalid, and the remote-login handler's
+// FormFeature.ReadFormAsync then throws "invalid anti-forgery token" → sign-in
+// 500s. With auth first, the OIDC handler consumes the callback before
+// antiforgery sees it. (Ordering latent since #152; became fatal once the
+// framework started enforcing the antiforgery feature inside ReadFormAsync.)
+app.UseAntiforgery();
 
 // OTel default routes (/healthz + /alive) from ServiceDefaults.
 app.MapDefaultEndpoints();

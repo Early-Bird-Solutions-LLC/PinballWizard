@@ -5,7 +5,8 @@ namespace PinballWizard.Cli.Commands;
 
 internal static class DownloadDocumentsCommand
 {
-    internal static async Task RunAsync(IServiceProvider services, CancellationToken cancellationToken)
+    internal static async Task RunAsync(
+        IServiceProvider services, CancellationToken cancellationToken, bool force = false)
     {
         var svc = services.GetService<DocumentDownloadService>();
         if (svc is null)
@@ -17,8 +18,10 @@ internal static class DownloadDocumentsCommand
             return;
         }
 
-        Console.WriteLine("Downloading not-yet-downloaded documents (polite, idempotent)...");
-        var summary = await svc.RunAsync(cancellationToken);
+        Console.WriteLine(force
+            ? "Re-downloading ALL documents (force, unconditional GET, polite)..."
+            : "Downloading not-yet-downloaded documents (polite, idempotent)...");
+        var summary = await svc.RunAsync(force, cancellationToken);
 
         Console.WriteLine();
         Console.WriteLine($"--download-documents complete: " +

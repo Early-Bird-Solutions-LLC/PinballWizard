@@ -16,7 +16,7 @@ namespace PinballWizard.Infrastructure.Tests.Catalog;
 /// Verifies that <see cref="IMachineDocumentReadRepository.StreamByMachineIdAsync"/>:
 /// <list type="bullet">
 ///   <item>Issues a single-partition query via the base <see cref="CosmosRepository{T}.StreamAsync"/> (no direct GetItemQueryIterator call).</item>
-///   <item>Maps every <see cref="ScrapedDocumentRecord"/> field to the correct <see cref="MachineDocumentLink"/> property.</item>
+///   <item>Maps every <see cref="ScrapedDocumentReadProjection"/> field to the correct <see cref="MachineDocumentLink"/> property.</item>
 ///   <item>Enriches each link with <c>LinkText</c>, <c>LinkStatus</c>, <c>ResolutionStrategy</c>, <c>SizeBytes</c>, and <c>PageCount</c> fetched from <see cref="IRawDocumentRepository"/>.</item>
 ///   <item>Null-propagates gracefully when <see cref="IRawDocumentRepository.GetAsync"/> returns null.</item>
 /// </list>
@@ -31,7 +31,7 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
     private readonly IRawDocumentRepository _rawDocs = Substitute.For<IRawDocumentRepository>();
 
     private CosmosMachineDocumentReadRepository CreateSut() =>
-        new(_container, _rawDocs, NullLogger<CosmosRepository<ScrapedDocumentRecord>>.Instance);
+        new(_container, _rawDocs, NullLogger<CosmosRepository<ScrapedDocumentReadProjection>>.Instance);
 
     // -------------------------------------------------------------------------
     // StreamByMachineIdAsync — happy path, two docs with enrichment
@@ -47,11 +47,11 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
             new DateTimeOffset(2025, 6, 15, 0, 0, 0, TimeSpan.Zero));
 
         _container
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentReadProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[doc1, doc2]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentReadProjection>([[doc1, doc2]]));
 
         var raw1 = MakeRawDoc("doc_001", LinkStatus.Linked, "Download PDF", "deduped", 102_400L, 12);
         var raw2 = MakeRawDoc("doc_002", LinkStatus.PlatformGeneric, null, "platform", 204_800L, null);
@@ -110,11 +110,11 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
         var doc = MakeScrapedDoc("doc_orphan", MachineId, "Flyer", null, "franchise-wide", null);
 
         _container
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentReadProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[doc]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentReadProjection>([[doc]]));
 
         // Raw repository returns null — simulates a doc that hasn't been linked yet
         _rawDocs.GetAsync("doc_orphan", Arg.Any<CancellationToken>()).Returns((RawDocumentRecord?)null);
@@ -142,11 +142,11 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
     public async Task StreamByMachineIdAsync_EmptyPartition_YieldsNoItems()
     {
         _container
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentReadProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Any<QueryRequestOptions>())
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentReadProjection>([[]]));
 
         var sut = CreateSut();
         var count = 0;
@@ -166,11 +166,11 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
     {
         QueryRequestOptions? capturedOptions = null;
         _container
-            .GetItemQueryIterator<ScrapedDocumentRecord>(
+            .GetItemQueryIterator<ScrapedDocumentReadProjection>(
                 Arg.Any<QueryDefinition>(),
                 Arg.Any<string>(),
                 Arg.Do<QueryRequestOptions>(o => capturedOptions = o))
-            .Returns(new FakeFeedIterator<ScrapedDocumentRecord>([[]]));
+            .Returns(new FakeFeedIterator<ScrapedDocumentReadProjection>([[]]));
 
         var sut = CreateSut();
         await foreach (var _ in sut.StreamByMachineIdAsync(MachineId, CancellationToken.None)) { }
@@ -183,7 +183,7 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static ScrapedDocumentRecord MakeScrapedDoc(
+    private static ScrapedDocumentReadProjection MakeScrapedDoc(
         string documentId,
         string machineId,
         string documentType,
@@ -196,8 +196,6 @@ public sealed class CosmosMachineDocumentReadRepositoryTests
             PartitionKey = machineId,
             DocumentId = documentId,
             DocumentUrl = $"https://example.com/{documentId}.pdf",
-            MachineTitle = "Test Machine",
-            Manufacturer = "Stern",
             DocumentType = documentType,
             Edition = edition,
             EditionScope = editionScope,
