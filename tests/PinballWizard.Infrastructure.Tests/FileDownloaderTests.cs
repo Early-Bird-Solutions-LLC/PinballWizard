@@ -83,12 +83,12 @@ public sealed class FileDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task DownloadAsync_200_StreamsToDiskComputesHashAndPopulatesHttp()
+    public async Task DownloadAsync_200_BuffersContentComputesHashAndPopulatesHttp()
     {
         const string body = "hello pinball";
         var bodyBytes = Encoding.UTF8.GetBytes(body);
 
-        var (downloader, _, settings, _) = CreateDownloader((_, response) =>
+        var (downloader, _, _, _) = CreateDownloader((_, response) =>
         {
             response.StatusCode = HttpStatusCode.OK;
             response.Content = new ByteArrayContent(bodyBytes);
@@ -116,10 +116,14 @@ public sealed class FileDownloaderTests : IDisposable
         Assert.Equal("application/pdf", result.Http.ContentType);
         Assert.NotNull(result.Http.LastModified);
 
-        // File written
-        var absolute = Path.Combine(settings.DownloadsPath, "manuals/foo.pdf");
-        Assert.True(File.Exists(absolute));
-        Assert.Equal(body, await File.ReadAllTextAsync(absolute));
+        // Content buffered into an in-memory stream (caller writes to blob store — no disk write here)
+        Assert.NotNull(result.Content);
+        Assert.True(result.Content!.CanRead);
+        var actualBytes = new byte[bodyBytes.Length];
+        var bytesRead = await result.Content.ReadAsync(actualBytes);
+        Assert.Equal(bodyBytes.Length, bytesRead);
+        Assert.Equal(bodyBytes, actualBytes);
+        await result.Content.DisposeAsync();
     }
 
     [Fact]
