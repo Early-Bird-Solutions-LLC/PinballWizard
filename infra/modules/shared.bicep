@@ -358,6 +358,23 @@ resource acaIdentityStorageBlobContributor 'Microsoft.Authorization/roleAssignme
   }
 }
 
+// Storage: Blob Data Contributor (ba92f5b4-...) scoped to the full storage
+// account so the nightly linker ACA Job (running as the acaIdentity UAMI
+// via the shared --download-and-link verb) can read and write blobs across
+// all three scraper containers (pinwiz-raw, pinwiz-processed, pinwiz-photos).
+// The dataProtection-scoped assignment above covers the wizard web app only;
+// this account-scope assignment is the broader read/write grant for the CLI
+// download path (Task 5 — blob RBAC for deployed document download/link).
+resource acaIdentityStorageAccountBlobContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: storage
+  name: guid(storage.id, '${namePrefix}-aca-id-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // Key Vault: Crypto Service Encryption User (e147488a-...) so the wizard
 // app can wrap/unwrap the Data Protection key ring with the
 // pinwiz-dataprotection key (dataProtectionKek).
@@ -989,6 +1006,16 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.?properties.ConnectionString ?? ''
+            }
+            {
+              // Blob storage endpoint for BlobDocumentStoreRegistration (Task 5).
+              // Maps to the Bicep output storageBlobEndpoint. The RAG indexer reads
+              // source PDFs from the pinwiz-raw container via DefaultAzureCredential;
+              // the ragIndexerStorageBlobReader role assignment (below) grants the
+              // system-assigned MI the Storage Blob Data Reader role on this account.
+              // Double-underscore maps Storage:BlobEndpoint in IConfiguration.
+              name: 'Storage__BlobEndpoint'
+              value: storage.?properties.primaryEndpoints.blob ?? ''
             }
           ]
         }
@@ -1993,6 +2020,11 @@ module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) 
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     containerAppsEnvironmentId: acaEnvironment.id
     cronExpression: linkerCronExpression
+    // Blob endpoint for the --download-and-link verb (Task 5). The acaIdentity
+    // UAMI carries Storage Blob Data Contributor on the storage account
+    // (acaIdentityStorageAccountBlobContributor), so DefaultAzureCredential
+    // resolves blob auth for the job's system-assigned MI at runtime.
+    storageBlobEndpoint: storage.?properties.primaryEndpoints.blob ?? ''
   }
 }
 
@@ -2007,6 +2039,22 @@ resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRo
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
     principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
     scope: cosmosAccount.id
+  }
+}
+
+// Storage Blob Data Contributor (ba92f5b4-...) for the linker job's system-assigned
+// MI on the full storage account (Task 5). The nightly --download-and-link verb
+// writes downloaded PDFs to the pinwiz-raw container via DefaultAzureCredential,
+// which resolves to the system-assigned MI inside the ACA Job. Mirrors the
+// ragIndexerStorageBlobReader pattern (line ~1368) but grants Contributor (read +
+// write) because the downloader stage writes blobs, not just reads them.
+resource linkerJobStorageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: storage
+  name: guid(storage.id, linkerJob.?name ?? 'linker-job-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
   }
 }
 

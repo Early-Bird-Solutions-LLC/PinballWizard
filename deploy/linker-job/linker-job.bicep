@@ -42,6 +42,9 @@ param containerAppsEnvironmentId string
 @description('ACR login server (e.g. pinwizacrdevbuutj.azurecr.io) used to authenticate the image pull via the user-assigned managed identity. Empty when the job runs the public quickstart placeholder (no registry auth needed); set to the real ACR login server when containerImage is an ACR reference.')
 param containerRegistryLoginServer string = ''
 
+@description('Azure Blob Storage primary endpoint (e.g. https://pinwizstdevXXXXX.blob.core.windows.net/). Maps to Storage__BlobEndpoint in the container. Required by BlobDocumentStoreRegistration so the --download-and-link verb can write downloaded PDFs to the pinwiz-raw container via DefaultAzureCredential. Empty string disables blob-backed download (falls back to local-filesystem mode).')
+param storageBlobEndpoint string = ''
+
 @description('Cron schedule expression for the linker job (UTC). Default is 2 am daily.')
 param cronExpression string = '0 2 * * *'
 
@@ -110,7 +113,7 @@ resource linkerJob 'Microsoft.App/jobs@2023-05-01' = {
           command: [
             'dotnet'
             'PinballWizard.Cli.dll'
-            '--link-documents'
+            '--download-and-link'
           ]
           env: [
             {
@@ -129,6 +132,17 @@ resource linkerJob 'Microsoft.App/jobs@2023-05-01' = {
               // Point DataPath at a writable ephemeral location.
               name: 'Scraper__DataPath'
               value: '/tmp/pinwiz'
+            }
+            {
+              // Blob storage endpoint for BlobDocumentStoreRegistration (Task 5).
+              // Sourced from the Bicep output storageBlobEndpoint (shared.bicep).
+              // The acaIdentity UAMI carries Storage Blob Data Contributor on the
+              // storage account (acaIdentityStorageAccountBlobContributor), so
+              // DefaultAzureCredential resolves blob auth at runtime. Empty string
+              // disables blob-backed download (falls back to local-filesystem).
+              // Double-underscore maps to Storage:BlobEndpoint in IConfiguration.
+              name: 'Storage__BlobEndpoint'
+              value: storageBlobEndpoint
             }
           ]
         }

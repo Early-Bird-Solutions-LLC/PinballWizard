@@ -142,6 +142,11 @@ var forceRedownloadOption = new Option<bool>("--force-redownload")
     Description = "Modifier for --download-documents: re-download EVERY document even if its raw record already records a file.local_path, using an unconditional GET (ignores stored ETag/Last-Modified). Use when the recorded LocalPath points at a file from an earlier ephemeral run (e.g. an ACA job's /tmp) that is not present on this machine, so the linker's page-1 edition tier has the bytes to read. Still fully polite (every request routes through the politeness gate). Intended for the edition_scope backfill: --download-documents --force-redownload, then --relink-all."
 };
 
+var downloadAndLinkOption = new Option<bool>("--download-and-link")
+{
+    Description = "Combined nightly verb: first downloads not-yet-downloaded documents to blob storage (Storage:BlobEndpoint / pinwiz-raw container; polite, idempotent), then runs the document-to-machine linker so it has page-1 content for edition resolution. Equivalent to --download-documents followed by --link-documents in a single invocation. Respects --force-redownload. Exit code 1 if either stage has failures; exit code 2 if Cosmos is not configured. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var migrateDownloadPathsOption = new Option<bool>("--migrate-download-paths")
 {
     Description = "One-shot, byte-safe migration: corrects legacy already-rooted scraped_documents_raw file.local_path values (e.g. 'data/downloads/manualspage/x.pdf', written by the pre-fix downloader) to the clean relative form ('manualspage/x.pdf'). For each affected row it verifies the on-disk file's SHA-256 matches the recorded hash (refusing to migrate a mismatch), moves the file to the correct single location, and rewrites local_path. Idempotent (already-relative rows are skipped). Combine with --dry-run to report what would change without moving files or writing Cosmos. Requires Cosmos to be configured."
@@ -170,6 +175,7 @@ rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
+rootCommand.Options.Add(downloadAndLinkOption);
 rootCommand.Options.Add(forceRedownloadOption);
 rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
@@ -193,6 +199,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
+    var downloadAndLink = parseResult.GetValue(downloadAndLinkOption);
     var forceRedownload = parseResult.GetValue(forceRedownloadOption);
     var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
@@ -434,6 +441,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (downloadDocuments)
     {
         await DownloadDocumentsCommand.RunAsync(host.Services, cancellationToken, forceRedownload);
+        return;
+    }
+
+    // Handle --download-and-link (combined nightly verb: download to blob, then link).
+    // Stage 1 (download) runs first; if it sets a non-zero exit code, Stage 2 (link)
+    // is skipped so a missing-Cosmos error is not shadowed by a downstream link failure.
+    if (downloadAndLink)
+    {
+        await DownloadAndLinkCommand.RunAsync(host.Services, cancellationToken, forceRedownload);
         return;
     }
 

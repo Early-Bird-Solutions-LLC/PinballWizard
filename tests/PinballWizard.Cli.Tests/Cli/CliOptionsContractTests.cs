@@ -28,11 +28,18 @@ public sealed class CliOptionsContractTests
         "--ensure-azure-foundry",
         "--ensure-ai-search",
         "--ensure-rag-index",
+        "--rebuild-rag-index",
         "--ask",
         "--eval",
         "--run-rag-backfill",
         "--sync-metadata-cards",
         "--link-documents",
+        "--relink-all",
+        "--download-documents",
+        "--download-and-link",
+        "--force-redownload",
+        "--migrate-download-paths",
+        "--rebuild-catalog-stats",
     };
 
     [Fact]
@@ -113,11 +120,18 @@ public sealed class CliOptionsContractTests
         root.Options.Add(new Option<bool>("--ensure-azure-foundry"));
         root.Options.Add(new Option<bool>("--ensure-ai-search"));
         root.Options.Add(new Option<bool>("--ensure-rag-index"));
+        root.Options.Add(new Option<bool>("--rebuild-rag-index"));
         root.Options.Add(new Option<string?>("--ask"));
         root.Options.Add(new Option<bool>("--eval"));
         root.Options.Add(new Option<bool>("--run-rag-backfill"));
         root.Options.Add(new Option<bool>("--sync-metadata-cards"));
         root.Options.Add(new Option<bool>("--link-documents"));
+        root.Options.Add(new Option<bool>("--relink-all"));
+        root.Options.Add(new Option<bool>("--download-documents"));
+        root.Options.Add(new Option<bool>("--download-and-link"));
+        root.Options.Add(new Option<bool>("--force-redownload"));
+        root.Options.Add(new Option<bool>("--migrate-download-paths"));
+        root.Options.Add(new Option<bool>("--rebuild-catalog-stats"));
 
         return root;
     }
