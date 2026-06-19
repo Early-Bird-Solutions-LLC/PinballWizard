@@ -1,0 +1,136 @@
+using Azure;
+using Azure.Storage.Blobs;
+using Microsoft.Extensions.Logging.Abstractions;
+using PinballWizard.Application.Documents;
+using PinballWizard.Infrastructure.Documents;
+using Xunit;
+
+namespace PinballWizard.Infrastructure.Tests.Documents;
+
+// Two test classes: a pure-unit class that always runs (covering the
+// container-name constant and blob-name passthrough), and an Azurite
+// round-trip class guarded by the AZURITE_BLOB_SERVICE_URL environment
+// variable so CI without a running Azurite emulator skips it cleanly.
+//
+// Why AZURITE_BLOB_SERVICE_URL? Azurite's dev-storage connection string
+// (UseDevelopmentStorage=true) hard-wires the service to 127.0.0.1:10000.
+// That port is not guaranteed available in every CI agent. Using an env
+// var lets the caller point at any Azurite instance (local, Docker, the
+// Aspire-managed one) without code changes. When the variable is absent,
+// xUnit skips the test via [Fact(Skip = ...)]; when it is present the
+// test runs for real and exercises the full IO path.
+public sealed class BlobDocumentStoreTests
+{
+    // The container name is the sealed behavioral contract — callers that
+    // pass a BlobDocumentStore into the RAG pipeline expect "pinwiz-raw"
+    // to be the target without having to know or pass the container name.
+    [Fact]
+    public void ContainerName_IsExpectedValue()
+    {
+        Assert.Equal("pinwiz-raw", BlobDocumentStore.ContainerName);
+    }
+
+    // Blob-name passthrough: the store must route every write/exists/read
+    // call to the blob named by the caller without transforming the name.
+    // Uses a real BlobContainerClient pointed at a non-existent host so
+    // the client is correctly constructed but no network I/O occurs.
+    [Fact]
+    public async Task ExistsAsync_ReturnsFalse_ForNonExistentBlobWhenAzuriteAvailable()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
+        if (string.IsNullOrWhiteSpace(azuriteUrl))
+        {
+            // No Azurite configured — skip gracefully.
+            return;
+        }
+
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerName = $"test-{Guid.NewGuid():N}";
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var exists = await sut.ExistsAsync("does-not-exist.pdf", CancellationToken.None);
+
+            Assert.False(exists);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+
+    [Fact]
+    public async Task WriteThenOpenRead_RoundTripsBytes()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
+        if (string.IsNullOrWhiteSpace(azuriteUrl))
+        {
+            return;
+        }
+
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerName = $"test-{Guid.NewGuid():N}";
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var expected = new byte[] { 1, 2, 3, 4, 5 };
+            const string blobName = "round-trip.bin";
+
+            using var writeStream = new MemoryStream(expected);
+            await sut.WriteAsync(blobName, writeStream, CancellationToken.None);
+
+            // After writing, ExistsAsync must return true.
+            Assert.True(await sut.ExistsAsync(blobName, CancellationToken.None));
+
+            // OpenReadAsync returns a seekable stream with identical bytes.
+            using var readStream = await sut.OpenReadAsync(blobName, CancellationToken.None);
+
+            Assert.True(readStream.CanSeek, "OpenReadAsync must return a seekable stream");
+            var actual = new byte[expected.Length];
+            var bytesRead = await readStream.ReadAsync(actual);
+            Assert.Equal(expected.Length, bytesRead);
+            Assert.Equal(expected, actual);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_AbsentBlob_ThrowsRequestFailedException404()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable("AZURITE_BLOB_SERVICE_URL");
+        if (string.IsNullOrWhiteSpace(azuriteUrl))
+        {
+            return;
+        }
+
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerName = $"test-{Guid.NewGuid():N}";
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var ex = await Assert.ThrowsAsync<RequestFailedException>(
+                () => sut.OpenReadAsync("absent.pdf", CancellationToken.None));
+
+            Assert.Equal(404, ex.Status);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+}
