@@ -72,6 +72,48 @@ public sealed class StandardsConformanceTests
     }
 
     [Fact]
+    public void EveryRequirementsRow_HasAMatchingRuleInStandard()
+    {
+        // Reverse-parity check: every rule-ID token in REQUIREMENTS.md must name
+        // a rule that actually exists in the sibling STANDARD.md. This catches a
+        // REQUIREMENTS row that references a non-existent or renamed rule.
+        var tokenPattern = new Regex(
+            @"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV)-\d{2}\b",
+            RegexOptions.Compiled);
+
+        var orphans = new List<string>();
+
+        foreach (var stdFile in StandardFiles())
+        {
+            var dir = Path.GetDirectoryName(stdFile)!;
+            var reqPath = Path.Combine(dir, "REQUIREMENTS.md");
+            if (!File.Exists(reqPath))
+                continue; // EveryRule_HasARowInItsRequirementsIndex catches missing files
+
+            var stdText = File.ReadAllText(stdFile);
+            var reqText = File.ReadAllText(reqPath);
+
+            // Collect the real rule IDs defined in STANDARD.md
+            var standardIds = RuleHeader.Matches(stdText)
+                .Select(m => m.Groups[1].Value)
+                .ToHashSet(StringComparer.Ordinal);
+
+            // Every rule-ID token in REQUIREMENTS.md must appear in STANDARD.md
+            foreach (Match m in tokenPattern.Matches(reqText))
+            {
+                var id = m.Value; // e.g. "OBS-02"
+                if (!standardIds.Contains(id))
+                    orphans.Add(
+                        $"{id} ({Path.GetFileName(dir)}) — listed in REQUIREMENTS.md but no matching rule in STANDARD.md");
+            }
+        }
+
+        Assert.True(orphans.Count == 0,
+            "REQUIREMENTS.md rows referencing non-existent rules:\n  " +
+            string.Join("\n  ", orphans));
+    }
+
+    [Fact]
     public void EveryInvariantEntry_IsTracked()
     {
         var root = DocConformanceTests.FindRepoRoot();
