@@ -1,0 +1,52 @@
+name: Claude Config Guard
+
+# Guardrail: three checks on every push/PR that touches any branch targeting
+# main, with no path filter so we catch .claude/ config regressions regardless
+# of which files changed.
+#
+#   1. assert_no_excluded_aps_skills.py — block if any APS-private skill leaked
+#      into the repo-local .claude/skills/ directory.
+#   2. check_claude_frontmatter.py     — block if any skill/agent/command file
+#      has frontmatter that is not at byte-0 (precedes the opening ---), which
+#      silently breaks Claude Code's name/description parsing.
+#   3. pytest scripts/                 — the guard scripts' own unit tests must
+#      stay green; a broken guard is invisible protection.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: claude-config-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Claude config integrity checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Check for leaked APS skills
+        run: python scripts/assert_no_excluded_aps_skills.py .claude/skills
+
+      - name: Check Claude frontmatter placement
+        run: python scripts/check_claude_frontmatter.py .claude
+
+      - name: Run guard script tests
+        run: cd scripts && python -m pytest -q
