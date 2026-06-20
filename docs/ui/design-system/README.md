@@ -15,6 +15,19 @@ This project is a **mirror** of the implemented theme. The authoritative definit
 - **Design authority** (rationale, citation-as-hero, refusal posture) — `docs/ui/themes/modern-lcd.md`
 - ADR-0008 (MudBlazor strict for chrome), ADR-0026 §6 (custom components for delight surfaces only)
 
+## Governed by the frontend-blazor standard
+
+The enforceable invariants of this design system are machine-checked rules in the
+[`frontend-blazor` standard](../../../.claude/standards/frontend-blazor/STANDARD.md), run by
+`/standards-audit`:
+
+- **`FE-07` palette-pinned-modern-lcd** — the closed five-accent palette stays pinned to spec
+  (`PinballThemeContractTests`); adding a sixth accent requires deleting one.
+- **`FE-08` theme-design-system-sync** — a change to the implemented theme (`PinballTheme.cs` /
+  `app.css :root`) must re-sync `tokens.css` here in the same PR (this directory is the mirror).
+- **`FE-09` citation-as-hero-and-cta-parity** — citation cards stay full-fidelity/uncollapsed and
+  peer outbound CTAs stay visually identical (the visual expression of provenance + no-favoritism).
+
 `tokens.css` here re-states the default dark theme's tokens so the preview cards render standalone.
 
 ## Cards
