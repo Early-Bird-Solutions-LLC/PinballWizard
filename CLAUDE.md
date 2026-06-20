@@ -97,7 +97,11 @@ Run `dotnet run --project src/PinballWizard.Cli -- --help` for all options. `Sou
 
 ## Locked invariants (do not relitigate)
 
-Full list with ADR references: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md)
+Converted domains are canonical, machine-checkable standards under
+[`.claude/standards/`](.claude/standards/README.md), governed by
+[`pinball-standards-protocol.md`](.claude/standards/pinball-standards-protocol.md)
+(posture: **verify before done**). The full invariant index — converted rules
+plus wave-2 prose stubs — is [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md).
 
 Key invariants to keep top-of-mind:
 
@@ -124,6 +128,7 @@ The authoritative forward-direction design is [`docs/architecture-v2.md`](docs/a
 
 ## PR self-audit (pre-push, BLOCKING)
 
-Full 12-item checklist: [`.claude/PR-AUDIT.md`](.claude/PR-AUDIT.md)
-
-Before pushing any additive PR: run `/local-review` (Step 0, qualitative), then work through the 12-item mechanical checklist in PR-AUDIT.md (Step 1). Treat 🔴 findings as blocking. The PR description must record the local-review outcome.
+Before pushing any production-code PR: run `/local-review` (qualitative) and
+`/standards-audit` (mechanical gate over the standards rule set). Treat 🔴 as
+blocking. Details: [`.claude/PR-AUDIT.md`](.claude/PR-AUDIT.md). The PR
+description records both outcomes.

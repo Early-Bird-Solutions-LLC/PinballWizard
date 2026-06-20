@@ -47,6 +47,8 @@ publish/
 !.claude/INVARIANTS.md
 !.claude/PR-AUDIT.md
 !.claude/README.md
+!.claude/standards/
+!.claude/standards/**
 *.user
 *.suo
 *.DotSettings.user

@@ -33,7 +33,7 @@ for it. If everything is in scope, write "nothing intentionally deferred."
 - [ ] PR title follows the Conventional Commits format above
 - [ ] If this is a new architectural decision, an ADR has been added under [`docs/adr/`](../docs/adr/)
 - [ ] If user-visible behavior changes, [`README.md`](../README.md) and/or [`docs/`](../docs/) are updated in the same PR
-- [ ] If a memory in `~/.claude/projects/c--projects-PinballWizard/memory/` is now stale, it has been updated or removed in the same PR
+- [ ] If a memory in `~/.claude/projects/c--earlybird-PinballWizard/memory/` is now stale, it has been updated or removed in the same PR
 - [ ] No `TODO` / `FIXME` / commented-out code committed
 - [ ] No new entries in `<NoWarn>` without a comment explaining why and the removal criterion
 
@@ -48,12 +48,8 @@ Required for any PR that adds a scraper, options class, extension, or other addi
   <!-- e.g., "0 🔴 / 2 ⚠️ (both fixed) / 8 categories ✅" -->
   <!-- For deferred ⚠️ items, list each with a one-line justification -->
 
-#### Step 1 — Mechanical checklist
+#### Step 1 — `/standards-audit` (mechanical gate)
 
-- [ ] Every new `*Options` property has at least one real getter call in `src/` (appsettings.json + test config don't count)
-- [ ] Sibling-diffed against the closest existing implementation; drift is justified or removed
-- [ ] No bare `catch { }` — minimum scope is `catch (Exception)`
-- [ ] New `ISourceScraper`? `SourceAliasContractTests` still passes without edit
-- [ ] Tests assert behavior, not just structure (named "rejects X" → fixture contains X)
-- [ ] Build is zero-warning
-- [ ] `git log -1 --format='%an <%ae>'` shows personal noreply, not work email
+- [ ] Ran `/standards-audit`; no 🔴 rule failed (the former 7-item checklist is now machine-checked rules under `.claude/standards/`)
+- [ ] `/standards-audit` verdict:
+  <!-- e.g., "Verdict: 0 🔴 fail / 0 ⚠️ fail / 6 pass / 3 qual" -->

@@ -21,6 +21,22 @@ Spawns a `general-purpose` agent with a structured review prompt against the sta
 
 After the review, run the 10-item self-audit (mechanical preconditions), then commit and push.
 
+## Relationship to the standards system
+
+This skill is the **qualitative** half of the pre-push gate; `/standards-audit`
+is the **mechanical** half. The review categories below map to the
+machine-checkable rules under [`.claude/standards/`](../../standards/README.md).
+When a category finds an issue, cite the governing rule ID so the qualitative
+finding and the mechanical gate speak one namespace:
+
+- cat 3 (error handling / fallbacks) → `OBS-01`, `OBS-04`
+- cat 4 (sibling drift) → `TEST-03`
+- cat 5 (politeness) → `POLITE-01..04`
+- cat 6 (provenance) → `PROV-01..03`
+- cat 8 (security smells) → `OBS-03`
+- cat 11 (Cosmos surface) → `COSMOS-01..04`
+- cat 2 (test quality) → `TEST-01`, `TEST-04`
+
 ## How to invoke
 
 When the user types `/local-review`, do the following:
@@ -266,7 +282,7 @@ For each 🔴 finding, give a specific recommended fix (not just "this
 is broken"). For ⚠️ findings, give the fix plus the cost-of-deferring
 so the human can choose.
 
-End with a one-line summary: "X 🔴 / Y ⚠️ / Z categories ✅".
+End with a one-line summary: "X 🔴 / Y ⚠️ / Z categories ✅". For each 🔴/⚠️ finding in a governed category, cite the rule ID (e.g. PROV-01).
 Return the critique under 1500 words.
 ```
 
