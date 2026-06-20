@@ -35,6 +35,10 @@ publish/
 # scheduled-task locks, per-user settings.local.json — stays ignored.
 !.claude/
 .claude/*
+!.claude/rules/
+!.claude/rules/**
+!.claude/agents/
+!.claude/agents/**
 !.claude/skills/
 !.claude/skills/**
 !.claude/commands/
