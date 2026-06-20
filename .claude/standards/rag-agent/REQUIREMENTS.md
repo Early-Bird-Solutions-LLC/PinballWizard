@@ -7,4 +7,4 @@
 | RAG-03 | model-agnostic-per-agent-cost-ceiling | adding/changing an AIAgent model | 🔴 | INVARIANTS#10 · ADR-0015 |
 | RAG-04 | confidence-threshold-refusal | IAiRouter receives a Wizard answer | 🔴 | INVARIANTS#11 · ADR-0017 |
 | RAG-05 | code-resource-agent-prompts | authoring/modifying an agent system prompt | 🔴 | INVARIANTS#12 · ADR-0018 |
-| RAG-06 | citation-required-grounded-answer | IAiRouter returns a non-refusal WizardAnswer | 🔴 | INVARIANTS#11 · ADR-0017 · PROV-01 |
+| RAG-06 | citation-required-grounded-answer | IAiRouter returns a non-refusal WizardAnswer | 🔴 | INVARIANTS#11 · ADR-0017 · see-provenance |

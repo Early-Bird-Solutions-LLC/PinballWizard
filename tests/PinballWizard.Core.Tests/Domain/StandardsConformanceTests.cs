@@ -78,7 +78,7 @@ public sealed class StandardsConformanceTests
         // a rule that actually exists in the sibling STANDARD.md. This catches a
         // REQUIREMENTS row that references a non-existent or renamed rule.
         var tokenPattern = new Regex(
-            @"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV)-\d{2}\b",
+            @"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV|RAG|FE|COMM|IAC)-\d{2}\b",
             RegexOptions.Compiled);
 
         var orphans = new List<string>();
@@ -125,7 +125,7 @@ public sealed class StandardsConformanceTests
         // rule reference — only a genuine PROV-/POLITE-/COSMOS-/OBS-/TEST-/DLV-
         // reference counts as "links a rule".
         var entryStart = new Regex(@"^\d+\.\s", RegexOptions.Compiled);
-        var ruleRef = new Regex(@"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV)-\d{2}\b", RegexOptions.Compiled);
+        var ruleRef = new Regex(@"\b(PROV|POLITE|COSMOS|OBS|TEST|DLV|RAG|FE|COMM|IAC)-\d{2}\b", RegexOptions.Compiled);
 
         var untracked = invariants
             .Where(l => entryStart.IsMatch(l))
