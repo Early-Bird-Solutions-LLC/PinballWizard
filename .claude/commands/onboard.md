@@ -27,9 +27,9 @@ Key docs:
 ## PR / contribution flow
 
 1. **Feature branch** — never commit directly to `main`
-2. **`/local_review`** (qualitative, Step 0) — spawns the `local-review` skill; treat 🔴 findings as blocking
+2. **`/local-review`** (qualitative, Step 0) — spawns the `local-review` skill; treat 🔴 findings as blocking
 3. **`.claude/PR-AUDIT.md`** (12-item mechanical checklist, Step 1) — must pass before PR creation
-4. **Commit** — conventional format `<type>(<scope>): <message>`; personal identity only (`94459922+jkeeley2073@users.noreply.github.com`); **NO** `Co-Authored-By: Claude` trailer on any commit in this repo
+4. **Commit** — conventional format `<type>(<scope>) <message>` (no colon after the scope); personal identity only (`94459922+jkeeley2073@users.noreply.github.com`); **NO** `Co-Authored-By: Claude` trailer on any commit in this repo
 5. **`gh pr create`** — GitHub PRs only; add and verify the `claude-code` label after creation
 6. **No Jira, no Azure DevOps, no work-item time-tracking** — tickets live in GitHub Issues
 
@@ -40,7 +40,7 @@ Key docs:
 The `.claude/` directory is self-contained and CI-guarded:
 
 - **`.claude/commands/`** — slash commands (this file is one of them)
-- **`.claude/skills/`** — skills (local-review, smart-commit, etc.)
+- **`.claude/skills/`** — skills (local-review, commit, pr, pre-commit-workflow, etc.)
 - **`.claude/agents/`** — specialist sub-agents
 - **`.claude/rules/`** — standing project rules
 - **`.claude/README.md`** — config directory orientation

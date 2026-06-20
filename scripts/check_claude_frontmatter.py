@@ -132,7 +132,6 @@ def _check_file(path: Path, kind: str) -> list[Problem]:
                 ))
             return problems
 
-        block_text = "\n".join(block)
         has_description = any(
             ln.strip().startswith("description:") for ln in block
         )
