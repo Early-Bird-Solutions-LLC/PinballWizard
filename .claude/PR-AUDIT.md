@@ -1,31 +1,30 @@
 # PinballWizard — PR Self-Audit (pre-push, BLOCKING)
 
-Before pushing any PR that adds production code (new files, new public API, new behavior), run both steps. Treat 🔴 findings as blocking. Background: `memory/feedback_pre_pr_self_audit.md`.
+Before pushing any PR that adds production code, run both gates and treat 🔴
+as blocking. The mechanical checklist that used to live here is now the
+machine-checkable rule set under [`standards/`](standards/README.md);
+`/standards-audit` runs it. Background: `memory/feedback_pre_pr_self_audit.md`.
 
-## Step 0 — Local review (qualitative)
+## Step 0 — Qualitative review
 
-Run `/local-review`. The skill spawns a `general-purpose` agent that critiques the diff across thirteen categories (design, drift, error handling, security, provenance, Cosmos surface, User-Delight surface, community-resource posture, etc.) and returns a verdict-tagged report. Fix every 🔴 finding before continuing; fix or defer-with-justification each ⚠️ finding. Skill definition: [`.claude/skills/local-review/SKILL.md`](skills/local-review/SKILL.md).
+Run `/local-review`. Fix every 🔴; fix-or-defer (with one-line justification)
+each ⚠️. Catches design/architecture/drift a grep cannot.
 
-## Step 1 — Mechanical self-audit (checklist)
+## Step 1 — Mechanical standards audit
 
-1. **Every option field is read.** For each `*Options` property added, grep across `src/` for the property name. Hits in `appsettings.json` and test config dictionaries do **not** count — only a real getter call. If unread, wire it or delete it.
-2. **Sibling-diff for drift.** If you copied a sibling scraper, diff against its sibling for: `TryExtract*` wrapper presence, error-handling boundaries, `yield break` vs `continue`, log message wording, ctor null-checks, unused fields.
-3. **No bare `catch { }`.** Scope at minimum to `catch (Exception)` so OOM / cancellation propagate. If best-effort, log at debug.
-4. **CLI / orchestrator wiring is end-to-end.** New `ISourceScraper`? Trace `dotnet run -- --source <new-alias>` and confirm the orchestrator selects exactly that scraper. `SourceAliasContractTests` pins this.
-5. **Tests assert behavior, not just structure.** A test named "deduplicates" must include a fixture where dedup actually fires; a test named "rejects merch" must include merch in the input.
-6. **Build is zero-warning.** Treat new warnings as bugs.
-7. **Identity check.** `git log -1 --format='%an <%ae>'` shows the personal noreply, never the work email.
-8. **Cosmos surface conformance.** If the PR adds a `Container` registration, a new `IRepository<T>`, a new query, or modifies `CosmosClientOptions`: verify against [ADR-0025](../docs/adr/0025-cosmos-for-user-delight.md). Specifically: (a) write-heavy container has selective indexing policy; (b) cross-partition query is justified in the PR description with an estimated RU cost OR is replaced by a point-read; (c) `EnableContentResponseOnWrite=false` unless the caller consumes the response body; (d) new container has a documented TTL decision; (e) new repo methods route through `CosmosRepository<T>.ExecuteWithMetricsAsync` so RU + duration land on `pinwiz.cosmos.*`.
-9. **User-Delight surface conformance.** If the PR adds a Razor component, modifies `WizardAnswer` / `Citation` / `RefusalDetail` / `AnswerChunk`, touches the SSE streaming endpoint, or changes a refusal text or recovery payload: verify against [ADR-0026](../docs/adr/0026-user-delight-frontend-and-streaming.md). Specifically: (a) refusal recovery payload renders ≥3 plural community resources for marketplace, ≥2 for machine-reference; (b) every citation row carries `LastScrapedUtc` + `RelevanceScore`; (c) streaming endpoint always emits a final `Final` chunk; (d) new Razor component has bUnit smoke test AND axe-core green; (e) new custom components stay within the four locked delight surfaces; (f) SSE event payload is always `AnswerChunk`-shaped JSON; (g) audio assets are muted by default.
-10. **Community-resource posture conformance.** If the PR touches `community_resources.v1.json`, `pinside_slug_aliases.v1.json`, the refusal-routing matrix, `IDestinationResolver`, `QuestionTopic` enum, agent prompts, or any plural CTA UI: verify against [ADR-0027](../docs/adr/0027-community-resource-posture.md). Key checks: (a) plurality thresholds met; (b) alphabetical/randomized ordering — no editorial ranking; (c) refusal text names what's missing and routes outward; (d) `QuestionTopic` additions require ADR-0027 amendment in same PR; (e) new `community_resources.v1.json` entries carry all required fields; (f) no runtime Pinside probes; (g) no engagement-metric framing; (h) v1 pricing displays MSRPs only or aggregator-link-only.
-11. **No bare `az deployment` in infra scripts.** Grep `infra/scripts/` for `az deployment sub create` and `az deployment group create`. Any hit is 🔴 — use `az stack sub create` / `az stack group create` only.
-12. **No hardcoded subscription IDs or instance-specific resource names in runbook scripts.** Grep new/modified files under `docs/runbooks/` for UUID patterns and resource-instance suffixes. Runbook scripts must derive subscription via `az account show --query id -o tsv`.
-13. **ADR follow-up in the same PR.** If this PR changes behavior an ADR describes (formulas, resolution paths, cost/throughput characteristics, locked patterns), append a dated follow-up entry to that ADR in this PR — not retroactively. ADRs are append-only; a follow-up entry is cheap, drift is not. (Added after the 2026-06-10 audit found ADR-0025/0029 describing superseded behavior.)
+Run `/standards-audit`. It resolves the diff to applicable standards, runs
+each rule's CHECK, and refuses to proceed on any 🔴 fail. This replaces the
+former 14-item checklist — every item migrated to a rule:
 
-14. **Render-mode correctness:** no static page/component carries circuit-dependent
-    controls (`@onclick`/`@bind`/dialogs) without `@rendermode`; error/degraded surfaces
-    stay static with link/reload controls (real `Href`, not `OnClick`). The page-level
-    case is enforced by `RenderModeConventionTests`; this catches the component-only case
-    the test cannot (ADR-0034 §3.6). 🔴 if violated.
+- old items 2, 4, 5 → POLITE-*, TEST-02 / TEST-01
+- old item 8 → COSMOS-02..04
+- old items 6, 7 → DLV-03, DLV-01
+- old items 11, 12 → DLV-02, DLV-05
+- old items 1, 3, 13, 14, 9, 10 → /local-review qualitative categories +
+  wave-2 standards (frontend-blazor, community-posture) when promoted
 
-The PR description records the local-review outcome (number of findings + how each was addressed). The PR template at `.github/PULL_REQUEST_TEMPLATE.md` includes this line.
+## Recording the outcome
+
+The PR description records: `/local-review` finding counts (🔴 fixed, ⚠️
+fixed/deferred) and the `/standards-audit` verdict line. The PR template at
+`.github/PULL_REQUEST_TEMPLATE.md` includes these lines.
