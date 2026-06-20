@@ -37,10 +37,15 @@
 
 @if (Citations is not null && Citations.Count > 0)
 {
-    var groups = BuildGroups(Citations);
+    var groups      = BuildGroups(Citations);
     var citedLabel  = Citations.Count == 1 ? "1 cited" : $"{Citations.Count} cited";
     var sitesLabel  = groups.Count  == 1 ? "1 site"  : $"{groups.Count} sites";
     var summaryText = $"SOURCES · {citedLabel} from {sitesLabel}";
+
+    // Running ordinal counter: threads across groups so every card receives a
+    // unique 1-based citation-{N} id in render order. Task 8 will refactor this
+    // to a shared CitationOrdering.InRenderOrder helper.
+    var ordinal = 0;
 
     <div class="citation-strip"
          data-testid="citation-strip"
@@ -56,8 +61,9 @@
             @foreach (var group in groups)
             {
                 <div class="citation-strip-group">
-                    <CitationGroup Host="@group.Host" Citations="@group.Citations" />
+                    <CitationGroup Host="@group.Host" Citations="@group.Citations" StartOrdinal="@ordinal" />
                 </div>
+                ordinal += group.Citations.Count;
             }
         </div>
 

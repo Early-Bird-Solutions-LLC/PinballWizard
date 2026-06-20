@@ -154,6 +154,38 @@ public sealed class CitationStripTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // Cards receive sequential citation-{N} ids across groups (Task 4)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Cards_get_sequential_ordinals_and_anchor_ids_across_groups()
+    {
+        await using var ctx = BuildCtx();
+
+        // Three citations: A and C share a host (a.com), B is on b.com.
+        // Ordering: B has highest score → rendered first (ordinal 1).
+        // A has next highest → ordinal 2 (first in a.com group).
+        // C has lowest → ordinal 3 (second in a.com group).
+        var citations = new List<Citation>
+        {
+            new("A", "https://a.com/1", RelevanceScore: 0.9),
+            new("B", "https://b.com/1", RelevanceScore: 0.95),
+            new("C", "https://a.com/2", RelevanceScore: 0.7),
+        };
+
+        var cut = ctx.Render<CitationStrip>(p => p
+            .Add(x => x.Citations, citations));
+
+        var cards = cut.FindAll("[data-testid='citation-card']");
+        Assert.Equal(3, cards.Count);
+
+        // Each card root must have a sequential citation-{N} id in render order.
+        var ids = cards.Select(c => c.Id).ToList();
+        string[] expectedIds = ["citation-1", "citation-2", "citation-3"];
+        Assert.Equal(expectedIds, ids);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // Summary header — "SOURCES ·" prefix always present
     // ──────────────────────────────────────────────────────────────────────
 

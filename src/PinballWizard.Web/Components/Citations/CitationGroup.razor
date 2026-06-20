@@ -38,10 +38,12 @@
             </MudText>
         </MudStack>
 
-        @* All citations, full-fidelity, sorted by relevance score descending. *@
-        @foreach (var c in sorted)
+        @* All citations, full-fidelity, sorted by relevance score descending.
+         * Ordinal is 1-based across the strip; StartOrdinal carries the running
+         * offset from CitationStrip so each card gets a unique citation-{N} id. *@
+        @for (var i = 0; i < sorted.Count; i++)
         {
-            <CitationCard Citation="@c" />
+            <CitationCard Citation="@sorted[i]" Ordinal="@(StartOrdinal + i + 1)" />
         }
 
     </MudStack>
@@ -53,6 +55,13 @@
 
     [Parameter, EditorRequired]
     public IReadOnlyList<Citation> Citations { get; set; } = [];
+
+    /// <summary>
+    /// Running ordinal offset from CitationStrip. The first card in this group
+    /// gets ordinal StartOrdinal + 1; each subsequent card increments by 1.
+    /// </summary>
+    [Parameter]
+    public int StartOrdinal { get; set; }
 
     // Internal so tests can validate ordering logic independently.
     internal static IReadOnlyList<Citation> SortedCitations(IReadOnlyList<Citation> citations) =>

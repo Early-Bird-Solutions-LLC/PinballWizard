@@ -193,39 +193,44 @@ public sealed class CitationCardTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Left flipper (◀ VIEW IN ANSWER) — conditional on InAnswerAnchor.
+    // Left flipper (◀ VIEW IN ANSWER) — controlled by HasInlineMarker + Ordinal.
     //
-    // Gap #3 (inline citation markers) will pass the anchor to light up the
-    // pair. Until then InAnswerAnchor is null and the left flipper must stay
-    // hidden. When set, the href must be "#<anchor>".
+    // InAnswerAnchor is now a computed property (not a parameter): it equals
+    // "marker-{Ordinal}-1" when HasInlineMarker=true, null otherwise.
+    // Until Task 6 wires the body markers, HasInlineMarker defaults to false
+    // so the left flipper stays hidden.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Left_flipper_is_absent_when_InAnswerAnchor_is_null()
-    {
-        await using var ctx = BuildCtx();
-        var citation = BuildCitation();
-
-        var cut = ctx.Render<CitationCard>(p => p
-            .Add(c => c.Citation, citation));
-        // InAnswerAnchor defaults to null — left flipper must not appear.
-
-        var leftFlippers = cut.FindAll("[data-testid='citation-flipper-in-answer']");
-        Assert.Empty(leftFlippers);
-    }
-
-    [Fact]
-    public async Task Left_flipper_is_present_with_correct_href_when_InAnswerAnchor_is_set()
+    public async Task Left_flipper_is_absent_when_HasInlineMarker_is_false()
     {
         await using var ctx = BuildCtx();
         var citation = BuildCitation();
 
         var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation)
-            .Add(c => c.InAnswerAnchor, "marker-3"));
+            .Add(c => c.Ordinal, 3)
+            .Add(c => c.HasInlineMarker, false));
+        // HasInlineMarker=false → InAnswerAnchor=null → left flipper must not appear.
+
+        var leftFlippers = cut.FindAll("[data-testid='citation-flipper-in-answer']");
+        Assert.Empty(leftFlippers);
+    }
+
+    [Fact]
+    public async Task Left_flipper_is_present_with_correct_href_when_HasInlineMarker_is_true()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation)
+            .Add(c => c.Ordinal, 3)
+            .Add(c => c.HasInlineMarker, true));
 
         var leftFlipper = cut.Find("[data-testid='citation-flipper-in-answer']");
-        Assert.Equal("#marker-3", leftFlipper.GetAttribute("href"));
+        // InAnswerAnchor = "marker-3-1" → href = "#marker-3-1"
+        Assert.Equal("#marker-3-1", leftFlipper.GetAttribute("href"));
     }
 
     [Fact]
@@ -236,10 +241,43 @@ public sealed class CitationCardTests
 
         var cut = ctx.Render<CitationCard>(p => p
             .Add(c => c.Citation, citation)
-            .Add(c => c.InAnswerAnchor, "marker-3"));
+            .Add(c => c.Ordinal, 3)
+            .Add(c => c.HasInlineMarker, true));
 
         var leftFlipper = cut.Find("[data-testid='citation-flipper-in-answer']");
         Assert.Contains("VIEW IN ANSWER", leftFlipper.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Ordinal: DOM id + visible badge (Task 4)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Card_root_has_citation_N_id_matching_ordinal()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation)
+            .Add(c => c.Ordinal, 5));
+
+        var card = cut.Find("[data-testid='citation-card']");
+        Assert.Equal("citation-5", card.Id);
+    }
+
+    [Fact]
+    public async Task Ordinal_badge_renders_visible_number()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation)
+            .Add(c => c.Ordinal, 7));
+
+        var badge = cut.Find("[data-testid='citation-ordinal']");
+        Assert.Equal("7", badge.TextContent.Trim());
     }
 
     // ──────────────────────────────────────────────────────────────────────
