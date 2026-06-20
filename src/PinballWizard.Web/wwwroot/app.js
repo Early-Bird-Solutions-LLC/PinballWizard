@@ -6,11 +6,16 @@ window.pinwiz = window.pinwiz || {};
 
 // ── Theme ─────────────────────────────────────────────────────────────────
 // Applies a sibling-theme CSS class to <html>. Modern LCD = no class (default).
+// Class name is `theme-<name>` for every non-default theme — matching the early
+// inline applier in App.razor — so all sibling themes switch live, not only on reload.
 // Uses classList.add/remove so existing classes (e.g. mud-theme-*) are preserved.
 window.pinwiz.setTheme = function (name) {
-    document.documentElement.classList.remove('theme-daytime-route');
-    if (name === 'daytime-route') {
-        document.documentElement.classList.add('theme-daytime-route');
+    var html = document.documentElement;
+    ['daytime-route', 'backbox', 'cabinet', 'dmd-classic'].forEach(function (t) {
+        html.classList.remove('theme-' + t);
+    });
+    if (name && name !== 'modern-lcd') {
+        html.classList.add('theme-' + name);
     }
     try { localStorage.setItem('pinwiz.theme', name); } catch (_) { }
 };

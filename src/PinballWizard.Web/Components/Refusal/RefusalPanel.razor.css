@@ -14,7 +14,7 @@
  * in PinballTheme — approachable, on-brand. */
 .refusal-panel {
     border: 1px solid var(--mud-palette-warning);
-    border-radius: 8px;
+    border-radius: 2px; /* machined edge per modern-lcd.md; 8px+ reads "Material" */
     max-width: 720px;
 }
 
@@ -30,7 +30,7 @@
 .suggested-rephrase {
     border-left: 3px solid var(--mud-palette-primary);
     background-color: color-mix(in srgb, var(--mud-palette-primary) 8%, var(--mud-palette-surface));
-    border-radius: 0 4px 4px 0;
+    border-radius: 0 2px 2px 0; /* machined edge per modern-lcd.md */
 }
 
 .suggested-rephrase-text {

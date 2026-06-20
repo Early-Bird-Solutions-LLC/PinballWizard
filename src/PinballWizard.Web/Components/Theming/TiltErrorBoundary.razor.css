@@ -10,7 +10,7 @@
 
 .tilt-boundary {
     border: 1px solid var(--mud-palette-warning);
-    border-radius: 4px;
+    border-radius: 2px; /* machined edge per modern-lcd.md */
 }
 
 .tilt-title {
