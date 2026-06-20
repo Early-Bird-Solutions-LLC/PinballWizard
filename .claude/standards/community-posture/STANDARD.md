@@ -22,7 +22,7 @@ WHEN:   a `(RefusalCategory × QuestionTopic)` cell fires a recovery payload, OR
 THEN:   the recovery payload returns ≥3 entries for `marketplace` categories and ≥2 entries for every other non-singular category (`machine_reference`, `forums`, `tournament_and_play`, `tool`)
 NEVER:  render a single-CTA recovery for any non-singular category; reduce a category below its minimum in the seed JSON
 CHECK:  dotnet test --filter "FullyQualifiedName~CommunityResourcesContractTests" --no-build
-        NOTE: CommunityResourcesContractTests.Marketplace_Category_Has_At_Least_3_Entries and Machine_Reference_Has_At_Least_2_Entries assert the seed thresholds; CommunityResourceLoader also enforces at startup (fail-fast).
+        NOTE: CommunityResourcesContractTests.Marketplace_Category_Has_At_Least_3_Entries and Machine_Reference_Has_At_Least_2_Entries assert those two seed thresholds; CommunityResourceLoader also enforces at startup (fail-fast). The `forums`, `tournament_and_play`, and `tool` ≥2 floors are curated-by-convention — NOT yet asserted by a contract test; add per-category floor assertions when those categories become load-bearing.
 SEV:    🔴
 REF:    INVARIANTS#15 · ADR-0027 § 3 · feedback_destination_plurality
 
