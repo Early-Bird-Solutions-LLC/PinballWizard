@@ -32,7 +32,7 @@ REF:    INVARIANTS#17 (hard exception) · ServiceDefaults
 WHEN:   adding a log statement
 THEN:   log structured context only — never secrets, tokens, connection strings, PII, or a raw entity/request object
 NEVER:  interpolate a secret/PII value or a raw request object into a log message
-CHECK:  rg -ni "log.*(password|token|connectionstring|secret|apikey)" src/
+CHECK:  (qualitative — /local-review cat 8) — no secret/PII/connection string interpolated into any log call
 SEV:    🔴
 REF:    INVARIANTS#17 (hard exception) · local-review cat 8
 
@@ -48,5 +48,5 @@ REF:    INVARIANTS#17
 
 - OBS-01: degraded paths are visible; no fabricated success.
 - OBS-02: health endpoints intact.
-- OBS-03: no secret/PII in logs (grep clean).
+- OBS-03: no secret/PII in logs (/local-review cat 8 passes).
 - OBS-04: failures are logged + metered.
