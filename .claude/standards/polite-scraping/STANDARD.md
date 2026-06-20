@@ -14,8 +14,9 @@ robots.txt, prefer machine-consumer metadata. Politeness > performance.
 **RULE POLITE-01** (gate-routing)
 WHEN:   scraper code makes an outbound HTTP request
 THEN:   route it through IPolitenessGate via PoliteScraperBase (GetStringPolitelyAsync / SendPolitelyAsync)
-NEVER:  call HttpClient.GetAsync / GetStringAsync / SendAsync directly in scraper code
-CHECK:  rg -n "\.(GetAsync|GetStringAsync|PostAsync|SendAsync)\(" src/PinballWizard.Infrastructure/Scraping/ | rg -v "Politely|PoliteScraperBase"
+NEVER:  call HttpClient.GetAsync / GetStringAsync / PostAsync / SendAsync directly in scraper code
+CHECK:  rg -n "\.(GetAsync|GetStringAsync|PostAsync|SendAsync)\(" src/PinballWizard.Infrastructure/Scraping/ | rg -v "Politely|PoliteScraperBase|RobotsTxtCache"
+        NOTE: RobotsTxtCache is exempt — it IS the politeness infrastructure; routing its own robots.txt fetch through the gate is circular.
 SEV:    🔴
 REF:    INVARIANTS#2 · feedback_polite_scraping
 
