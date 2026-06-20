@@ -16,7 +16,7 @@ Run `/standards-audit`. It resolves the diff to applicable standards, runs
 each rule's CHECK, and refuses to proceed on any 🔴 fail. This replaces the
 former 14-item checklist — every item migrated to a rule:
 
-- old items 2, 4, 5 → POLITE-*, TEST-02 / TEST-01
+- old items 2, 4, 5 → TEST-03, TEST-02 / TEST-01 (POLITE-* is new coverage with no PR-AUDIT predecessor)
 - old item 8 → COSMOS-02..04
 - old items 6, 7 → DLV-03, DLV-01
 - old items 11, 12 → DLV-02, DLV-05
