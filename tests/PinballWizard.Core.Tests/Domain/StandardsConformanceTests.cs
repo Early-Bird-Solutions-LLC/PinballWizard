@@ -98,10 +98,20 @@ public sealed class StandardsConformanceTests
                 .Select(m => m.Groups[1].Value)
                 .ToHashSet(StringComparer.Ordinal);
 
-            // Every rule-ID token in REQUIREMENTS.md must appear in STANDARD.md
+            // The domain's own ID prefix(es) — every local rule header shares them.
+            var localPrefixes = standardIds
+                .Select(id => id.Split('-')[0])
+                .ToHashSet(StringComparer.Ordinal);
+
+            // Every LOCAL-prefix rule-ID token in REQUIREMENTS.md must name a rule
+            // that exists in STANDARD.md. Cross-domain REF tokens (e.g. a DLV-02
+            // reference in iac-deploy's REQUIREMENTS, or PROV-01 in rag-agent's)
+            // are legitimate cross-references, not local declarations — skip them.
             foreach (Match m in tokenPattern.Matches(reqText))
             {
                 var id = m.Value; // e.g. "OBS-02"
+                if (!localPrefixes.Contains(id.Split('-')[0]))
+                    continue; // cross-domain cross-reference, not a local rule
                 if (!standardIds.Contains(id))
                     orphans.Add(
                         $"{id} ({Path.GetFileName(dir)}) — listed in REQUIREMENTS.md but no matching rule in STANDARD.md");
