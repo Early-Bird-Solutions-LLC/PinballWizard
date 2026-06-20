@@ -29,8 +29,6 @@ gh pr create \
 ## Test plan
 - [ ] Local build passes
 - [ ] Relevant tests pass
-
-🤖 Generated with Claude Code
 EOF
 )" \
   --base main
@@ -139,8 +137,6 @@ gh pr create \
 
 ## Test plan
 - [ ] <checklist>
-
-🤖 Generated with Claude Code
 EOF
 )" \
   --base main

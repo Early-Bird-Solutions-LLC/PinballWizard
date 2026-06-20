@@ -41,7 +41,6 @@ Analyze the actual code changes and write a quality PR description:
 2. Write a markdown PR description with:
    - `## Summary` — 2-4 bullet points describing WHAT changed and WHY (from the actual diff)
    - `## Test plan` — how changes were verified (dotnet build, dotnet test, manual steps)
-   - Footer: `🤖 Generated with Claude Code`
 3. Save to `.superpowers/prs/pr-description.md`
 
 **Summarize the actual code changes — do not dump the issue description.**
@@ -126,7 +125,7 @@ Report the full PR URL to the user.
 
 ## Project Identity
 
-- Remote: `github.com/jkeeley2073/PinballWizard` (or Earlybird org)
+- Remote: `github.com/Early-Bird-Solutions-LLC/PinballWizard`
 - Base branch: `main`
 - Commit format: `type(scope): description`
 - No work-item prefix required

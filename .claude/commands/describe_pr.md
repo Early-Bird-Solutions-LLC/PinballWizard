@@ -59,8 +59,6 @@ You are tasked with generating a comprehensive pull request description followin
      - [ ] Local build passes (`dotnet build`)
      - [ ] Relevant tests pass (`dotnet test`)
      - [ ] [Manual step if needed]
-
-     🤖 Generated with Claude Code
      ```
    - Be specific about problems solved and changes made
    - Focus on the "why" as much as the "what"

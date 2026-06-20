@@ -1,5 +1,5 @@
 <!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/clean-context.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
+     adapted-for: PinballWizard (adapted: example output path replaced with a generic placeholder)
      last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # /clean-context - Smart Context Cleanup Command

@@ -117,7 +117,6 @@ git diff origin/$TARGET_BRANCH...HEAD
 Write a markdown PR description with:
 - `## Summary` — 2-4 bullet points describing WHAT changed and WHY
 - `## Test plan` — how changes were verified
-- Footer: `🤖 Generated with Claude Code`
 
 Save to `.superpowers/prs/pr-description.md`.
 
@@ -176,14 +175,14 @@ Merging latest main...
 Merge successful
 
 Creating Pull Request...
-PR created: https://github.com/jkeeley2073/PinballWizard/pull/123
+PR created: https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/123
 
 PR CREATED!
 
 Title: feat(scraper): add Spooky game page image extraction
 Commits: 3
 Target: main
-URL: https://github.com/jkeeley2073/PinballWizard/pull/123
+URL: https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/123
 
 Next steps:
 - Wait for CI checks

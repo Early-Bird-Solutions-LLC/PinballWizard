@@ -66,8 +66,8 @@ Every PR where Claude Code participated carries the `claude-code` label. PR
 descriptions note when the diff was reviewed locally (via `/local-review`) before
 push. Recent examples:
 
-- [PR #453 — refactor(web) extract shared AdminLoadingBar component](https://github.com/jkeeley2073/PinballWizard/pull/453) — includes a "## Local review" prose section confirming test results and confirming no provenance/security/scraper surface was touched.
-- [PR #452 — docs(ui) add PinballWizard "Modern LCD" design system source](https://github.com/jkeeley2073/PinballWizard/pull/452) — likewise carries a "## Local review" section.
+- [PR #453 — refactor(web) extract shared AdminLoadingBar component](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/453) — includes a "## Local review" prose section confirming test results and confirming no provenance/security/scraper surface was touched.
+- [PR #452 — docs(ui) add PinballWizard "Modern LCD" design system source](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/452) — likewise carries a "## Local review" section.
 
 The review is a qualitative prose summary, not a structured finding-count table: it
 records what the diff touched, what tests passed, and any risk areas confirmed clear.

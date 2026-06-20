@@ -127,7 +127,7 @@ done
 
 **After reading any screenshot, ALWAYS prompt the user to attach it to the current work item.**
 
-This repo (PinballWizard) tracks work via **GitHub Issues** on the `jkeeley2073/PinballWizard` repository.
+This repo (PinballWizard) tracks work via **GitHub Issues** on the `Early-Bird-Solutions-LLC/PinballWizard` repository.
 
 ```bash
 # Check if there's an active work item
@@ -136,7 +136,7 @@ WORK_ITEM_CONTEXT=$(cat .work-item-context 2>/dev/null)
 if [ -n "$WORK_ITEM_CONTEXT" ]; then
   # Parse GitHub issue number from context
   ISSUE_NUMBER=$(echo "$WORK_ITEM_CONTEXT" | grep -oP '#\K\d+')
-  ISSUE_URL="https://github.com/jkeeley2073/PinballWizard/issues/$ISSUE_NUMBER"
+  ISSUE_URL="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/$ISSUE_NUMBER"
 
   # Prompt user using AskUserQuestion tool
   echo "📎 Attach screenshot to GitHub Issue #$ISSUE_NUMBER?"
