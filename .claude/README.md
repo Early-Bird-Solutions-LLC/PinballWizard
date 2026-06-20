@@ -8,6 +8,7 @@ This directory configures how [Claude Code](https://claude.ai/code) assists with
 |---|---|
 | `../CLAUDE.md` | Project-level instructions loaded into every Claude session — the "constitution" for how Claude behaves in this repo |
 | `INVARIANTS.md` | 16 locked architectural decisions. Claude will not relitigate these; each has an ADR or incident record. |
+| `standards/` | Machine-checkable, enforcement-first domain standards (RULE blocks + per-domain REQUIREMENTS index) governed by `pinball-standards-protocol.md`. The canonical home for converted invariants; `/standards-audit` runs them. |
 | `PR-AUDIT.md` | Pre-push self-audit checklist run before every non-trivial PR. Step 0 is a qualitative `/local-review`; Steps 1–12 are mechanical invariant checks. |
 | `settings.json` | Shared permission allowlist — `dotnet build/test/restore` are pre-approved; everything else requires per-session confirmation |
 | `rules/` | 4 auto-loaded rules files: universal engineering discipline, worktree safety, and GitHub-native workflow |
@@ -47,6 +48,7 @@ guards against accidental APS tooling leakage.
 | `rules/pinball-workflows.md` | GitHub-native commit/PR/branch flow (replaces APS mandatory-workflows) |
 | `skills/commit`, `skills/pr`, `skills/pre-commit-workflow` | Commit/PR/pre-commit, adapted to `gh` + personal identity |
 | `skills/local-review` | This repo's 13-category diff critique |
+| `standards/*`, `skills/standards-audit` | Enforcement-first standards system for autonomous-session control (verify-before-done) |
 | `skills/context-management`, `skills/screenshot`, `skills/playwright-setup`, `skills/ci-preview` | Generic dev workflow |
 | `commands/*` | 14 curated slash-commands (plan/spec/ship/debug/…) |
 | `agents/*` | 4 generic research/analysis agents |
