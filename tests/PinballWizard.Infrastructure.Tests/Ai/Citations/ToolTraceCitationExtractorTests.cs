@@ -1108,6 +1108,95 @@ public sealed class ToolTraceCitationExtractorTests
         Assert.Equal(expectedScore, citation.RelevanceScore);
     }
 
+    // ── Task 5: ExtractWithSourceIndex exposes the k→SourceUrl table ────────
+    // The reconciler needs to map [[cite:k]] markers to SourceUrl in the order
+    // the model saw the searchCorpus hits. getMachineByTitle / OPDB-regex
+    // citations go into Citations but NOT into SourceIndex (they are grounding
+    // records, not numbered sources the model cites with [[cite:k]]).
+
+    [Fact]
+    public void ExtractWithSourceIndex_orders_searchCorpus_hits_by_tool_trace_appearance()
+    {
+        // Arrange: two sequential searchCorpus tool results.
+        // First result returns urlA then urlB; second returns urlC.
+        // SourceIndex must reflect the flattened order across both calls.
+        var corpusA = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://a/1"),
+            SampleHit(documentId: "doc_b", documentUrl: "https://b/1"),
+        ]);
+        var corpusB = new SearchCorpusResult([
+            SampleHit(documentId: "doc_c", documentUrl: "https://c/1"),
+        ]);
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_sc1", corpusA)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_sc2", corpusB)]));
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        // SourceIndex: k-1 → SourceUrl of the k-th searchCorpus hit in tool-trace order.
+        string[] expectedIndex = ["https://a/1", "https://b/1", "https://c/1"];
+        Assert.Equal(expectedIndex, sourceIndex);
+        // Citations still contain all three corpus chunks.
+        Assert.Equal(3, citations.Count);
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_excludes_getMachineByTitle_from_sourceIndex()
+    {
+        // getMachineByTitle citations are grounding records — they appear in
+        // Citations but are NOT numbered sources, so they must not appear in
+        // SourceIndex.
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf"),
+        ]);
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_machine", dto)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_corpus", corpus)]));
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        // Only the corpus hit belongs in SourceIndex; the machine record does not.
+        string[] expectedIndex = ["https://example/manual.pdf"];
+        Assert.Equal(expectedIndex, sourceIndex);
+        // Both citations are present (getMachineByTitle + searchCorpus).
+        Assert.Equal(2, citations.Count);
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_nullResponse_returnsEmpty()
+    {
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(null);
+
+        Assert.Empty(citations);
+        Assert.Empty(sourceIndex);
+    }
+
+    [Fact]
+    public void Extract_delegates_to_ExtractWithSourceIndex_and_returns_identical_citations()
+    {
+        // Extract(response) must behave identically to ExtractWithSourceIndex(response).Citations.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/doc_a.pdf",
+                      machineId: "GRBE-MJL05"),
+            SampleHit(documentId: "doc_b", documentUrl: "https://example/doc_b.pdf",
+                      machineId: "GRBE-MJL05"),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var viaDirect = Extractor.Extract(response);
+        var (viaIndex, _) = Extractor.ExtractWithSourceIndex(response);
+
+        Assert.Equal(viaDirect.Count, viaIndex.Count);
+        for (var i = 0; i < viaDirect.Count; i++)
+        {
+            Assert.Equal(viaDirect[i].SourceUrl, viaIndex[i].SourceUrl);
+            Assert.Equal(viaDirect[i].DocumentChunkId, viaIndex[i].DocumentChunkId);
+        }
+    }
+
     // Simple capturing logger for Warning-log assertions.
     private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
     {
