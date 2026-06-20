@@ -7,7 +7,6 @@ applies-to:
   - "src/PinballWizard.Infrastructure/Rag/**"
   - "src/PinballWizard.Infrastructure/Integrations/Foundry/**"
   - "src/PinballWizard.Infrastructure/Integrations/AiSearch/**"
-  - "src/PinballWizard.Application/Ai/Agents/*.md"
 ---
 
 # RAG & Agent Standard
@@ -49,9 +48,10 @@ REF:    INVARIANTS#11 · ADR-0017 · OBS-01 (no-masking-fallback) · ConfidenceC
 
 **RULE RAG-05** (code-resource-agent-prompts)
 WHEN:   authoring or modifying an agent system prompt (Wizard / Valuation / Rules / Repair)
-THEN:   the prompt lives as a Markdown file under `src/PinballWizard.Application/Ai/Agents/` registered as `<EmbeddedResource Include="Ai\Agents\*.md" />` in the Application csproj; `AiPromptVersion.Current` is bumped in the same commit
+THEN:   the prompt lives as a Markdown file under `src/PinballWizard.Application/Ai/Agents/` registered as `<EmbeddedResource Include="Ai\Agents\*.md" />` in the Application csproj; `EmbeddedResourceAgentPromptProvider.CurrentPromptVersion` is bumped in the same commit
 NEVER:  store agent prompts in the Foundry portal, Cosmos, or as hard-coded C# string literals (the Cosmos admin-override path in the 2026-06-12 ADR-0018 amendment is permitted for runtime overrides only, with embedded resource as the default fallback)
-CHECK:  git diff --name-only origin/main...HEAD | rg "Application/Ai/Agents/.*\.md$" | xargs -r sh -c 'rg -n "AiPromptVersion" src/PinballWizard.Application/Ai/AiPromptVersion.cs || echo MISSING_VERSION_BUMP' || echo CLEAN
+CHECK:  if git diff --name-only origin/main...HEAD | rg -q "Application/Ai/Agents/.*\.md$"; then git diff --name-only origin/main...HEAD | rg -q "EmbeddedResourceAgentPromptProvider\.cs" && echo CLEAN || echo "FAIL: a prompt .md changed but CurrentPromptVersion was not bumped"; else echo CLEAN; fi
+        NOTE: tripwire — a changed agent prompt requires EmbeddedResourceAgentPromptProvider.cs (home of CurrentPromptVersion) to also be in the diff; the actual value bump is confirmed in /local-review.
 SEV:    🔴
 REF:    INVARIANTS#12 · ADR-0018 · guardrails.md (5% citation-accuracy regression blocks deploy)
 
@@ -69,5 +69,5 @@ REF:    INVARIANTS#11 · ADR-0017 (citation_coverage signal) · PROV-01 (provena
 - RAG-02: no pgvector/Npgsql/Postgres in RAG code; AI Search Bicep sku is `'basic'`.
 - RAG-03: agent model selection flows through `AiFoundryOptions.AgentModels`; cost ceiling enforced in `IAiRouter`.
 - RAG-04: below-threshold confidence returns `IsRefusal=true` with non-null category; geometric-mean calculator tests pass.
-- RAG-05: agent prompts are `<EmbeddedResource>` Markdown files; `AiPromptVersion.Current` bumped with any prompt change.
+- RAG-05: agent prompts are `<EmbeddedResource>` Markdown files; `EmbeddedResourceAgentPromptProvider.CurrentPromptVersion` bumped with any prompt change.
 - RAG-06: non-refusal `WizardAnswer` has at least one citation; refusal contract tests pass.

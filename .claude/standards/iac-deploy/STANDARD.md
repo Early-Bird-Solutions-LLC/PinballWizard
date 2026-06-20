@@ -21,8 +21,8 @@ THEN:   Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI
         images)
 NEVER:  provision Phase 2 resources unconditionally; flip `deployPhase2 = true` without a
         consuming feature PR
-CHECK:  git diff --name-only origin/main...HEAD | grep "^infra/.*\.bicep$" | xargs -r grep -L "deployPhase2 bool = false" || echo CLEAN
-        NOTE: only checks changed .bicep files; pre-existing unmodified Bicep files are outside this diff's concern.
+CHECK:  git diff --name-only origin/main...HEAD | grep -E "^infra/main-.*\.bicep$" | xargs -r grep -L "deployPhase2 bool = false" || echo CLEAN
+        NOTE: only subscription-scoped entry-point templates (`infra/main-*.bicep`) are checked, and only when changed. Module Bicep files (`infra/modules/*.bicep`) receive `deployPhase2` as a parameter without a `= false` default — they are caller-scoped and legitimately omit it; tfstate templates are unrelated to the Phase 2 gate.
 SEV:    🔴
 REF:    INVARIANTS#16 · ADR-0013
 

@@ -57,7 +57,8 @@ REF:    INVARIANTS#15 · ADR-0027 § 1 · ADR-0027 § 10
 WHEN:   any code path resolves a Pinside URL for a specific machine title
 THEN:   look up the slug exclusively from `data/seeds/pinside_slug_aliases.v1.json`; fall back to a Pinside search URL (`/forum/all-pinball/topics?search=<title>`) when the alias is absent, and surface the gap in the `/about` coverage disclosure
 NEVER:  derive the Pinside machine-page slug by runtime string manipulation, HTTP probing, or scraping; call any Pinside endpoint programmatically (their UA policy prohibits it and it violates the polite-by-construction invariant)
-CHECK:  git diff --name-only origin/main...HEAD | rg "Pinside|pinside" | xargs -r rg -n "pinside\.com.*slug|ResolvePinsideSlug\|\.GetAsync\|\.SendAsync" -- | rg -v "pinside_slug_aliases" || echo CLEAN
+CHECK:  (qualitative — /local-review) — confirm no Pinside slug is derived by runtime string-manipulation / HTTP probing / scraping, and no Pinside endpoint is called programmatically; slug resolution routes through `pinside_slug_aliases.v1.json`
+        NOTE: not reliably greppable (a verb-based grep over Pinside-touching files false-fires on unrelated `.GetAsync`/`.SendAsync`); add `PinsideSlugAliasContractTests` as the mechanical CHECK when the alias resolver ships.
 SEV:    🔴
 REF:    INVARIANTS#15 · INVARIANTS#2 · ADR-0027 § 8 · feedback_polite_scraping
 
@@ -66,7 +67,7 @@ WHEN:   adding or modifying an entry in `data/seeds/community_resources.v1.json`
 THEN:   every entry carries all required fields: `category` (value in the closed enum), `name`, `url` (absolute, lowercase hostname), `description` (superlative-free), `covers_question_types` (array)
 NEVER:  omit a required field; set `category` to a value not in the canonical set (`marketplace`, `machine_reference`, `news_and_culture`, `forums`, `tournament_and_play`, `manufacturer_pages`); use a relative URL; include superlatives in `description`
 CHECK:  dotnet test --filter "FullyQualifiedName~CommunityResourcesContractTests" --no-build
-        NOTE: CommunityResourcesContractTests covers schema_version, required fields, absolute/lowercase URLs, canonical categories, and superlative-free descriptions; CommunityResourceLoader adds fail-fast startup validation.
+        NOTE: CommunityResourcesContractTests asserts schema_version, name/url presence, absolute+lowercase URLs, the canonical category enum, and superlative-free descriptions; CommunityResourceLoader adds fail-fast startup validation. `covers_question_types` presence is curated-by-convention — NOT yet asserted by the contract test; add an assertion when that field becomes load-bearing.
 SEV:    🔴
 REF:    INVARIANTS#15 · ADR-0027 § 7 · CommunityResourcesContractTests
 
