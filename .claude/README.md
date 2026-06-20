@@ -7,12 +7,12 @@ This directory configures how [Claude Code](https://claude.ai/code) assists with
 | File / folder | Purpose |
 |---|---|
 | `../CLAUDE.md` | Project-level instructions loaded into every Claude session — the "constitution" for how Claude behaves in this repo |
-| `INVARIANTS.md` | 16 locked architectural decisions. Claude will not relitigate these; each has an ADR or incident record. |
+| `INVARIANTS.md` | Index of 18 locked architectural decisions — converted domains link to the canonical standards rules; wave-2 entries carry prose stubs marked `→ standard pending`. |
 | `standards/` | Machine-checkable, enforcement-first domain standards (RULE blocks + per-domain REQUIREMENTS index) governed by `pinball-standards-protocol.md`. The canonical home for converted invariants; `/standards-audit` runs them. |
 | `PR-AUDIT.md` | Pre-push self-audit checklist run before every non-trivial PR. Step 0 is a qualitative `/local-review`; Steps 1–12 are mechanical invariant checks. |
 | `settings.json` | Shared permission allowlist — `dotnet build/test/restore` are pre-approved; everything else requires per-session confirmation |
 | `rules/` | 4 auto-loaded rules files: universal engineering discipline, worktree safety, and GitHub-native workflow |
-| `skills/` | 8 project-scoped skills invoked on demand — local-review, commit, PR, pre-commit, and generic dev workflow |
+| `skills/` | 9 project-scoped skills invoked on demand — local-review, commit, PR, pre-commit, and generic dev workflow |
 | `commands/` | 14 slash-commands (plan, spec, ship, debug, and more) |
 | `agents/` | 4 specialist research/analysis agents |
 
@@ -71,7 +71,7 @@ standards are also path-scoped upstream (ADR-0040 Half B) so they no longer load
 
 These files are usually gitignored. They're exposed here deliberately:
 
-- **INVARIANTS.md** is a record of 16 decisions that have been settled and documented. Seeing them tells you what trade-offs were made consciously, not by accident. Each links to its ADR.
+- **INVARIANTS.md** is a record of 18 decisions that have been settled and documented. Seeing them tells you what trade-offs were made consciously, not by accident. Each links to its ADR.
 - **PR-AUDIT.md** is the enforcement surface — the checklist Claude runs against itself before declaring a PR ready. Reading it tells you what this project actually checks, not what it aspires to check.
 
 Both are more useful to a reader than any summary could be.
