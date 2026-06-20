@@ -9,9 +9,9 @@ namespace PinballWizard.Web.Tests.Components.Citations;
 
 // Behavioral tests for CitationGroup.
 //
-// Tests assert that the highest-scoring citation is always visible, that
-// lower-scoring citations are collapsed behind the disclosure button, and that
-// a single-citation group does not show the disclosure at all.
+// Per modern-lcd.md "Many-citations behavior" and FE-09 (citation-as-hero),
+// all citations are rendered full-fidelity with no disclosure toggle.
+// Tests assert: all cards present, no disclosure elements, correct sort order.
 public sealed class CitationGroupTests
 {
     // ──────────────────────────────────────────────────────────────────────
@@ -32,11 +32,11 @@ public sealed class CitationGroupTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // The highest-scoring citation is visible by default (not collapsed)
+    // All citations render as cards — no disclosure, no collapse
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Highest_scoring_citation_in_group_visible_by_default()
+    public async Task All_citations_render_as_cards_with_no_disclosure_button()
     {
         await using var ctx = BuildCtx();
 
@@ -51,53 +51,23 @@ public sealed class CitationGroupTests
             .Add(c => c.Host, "example.com")
             .Add(c => c.Citations, citations));
 
-        // The primary (highest-score) card is always rendered outside the disclosure.
-        // Verify "High Score Doc" title appears in the initial markup.
+        // All three citation titles must be present in the markup.
         Assert.Contains("High Score Doc", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Mid Score Doc",  cut.Markup, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Low Score Doc",  cut.Markup, StringComparison.OrdinalIgnoreCase);
 
-        // The expand button is visible (there are 2 more behind it).
-        var expandBtn = cut.Find("[data-testid='citation-group-expand-button']");
-        Assert.NotNull(expandBtn);
+        // No disclosure elements exist — not the expand button, not the collapse button.
+        Assert.Empty(cut.FindAll("[data-testid='citation-group-expand-button']"));
+        Assert.Empty(cut.FindAll("[data-testid='citation-group-collapse-button']"));
+        Assert.Empty(cut.FindAll("[data-testid='citation-group-disclosure']"));
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Lower-scoring citations are collapsed behind the disclosure
+    // Single-citation group: the one card renders, no disclosure
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Lower_scoring_citations_collapsed_into_more_disclosure()
-    {
-        await using var ctx = BuildCtx();
-
-        var citations = new List<Citation>
-        {
-            MakeCitation("Low Score Doc",  score: 0.40),
-            MakeCitation("High Score Doc", score: 0.92),
-        };
-
-        var cut = ctx.Render<CitationGroup>(p => p
-            .Add(c => c.Host, "example.com")
-            .Add(c => c.Citations, citations));
-
-        // Before expanding: disclosure button present, "Low Score Doc" not visible.
-        var expandBtn = cut.Find("[data-testid='citation-group-expand-button']");
-        Assert.NotNull(expandBtn);
-
-        // Click to expand.
-        await cut.InvokeAsync(() => expandBtn.Click());
-
-        // After expanding: both citations visible (collapse button present).
-        Assert.Contains("Low Score Doc", cut.Markup, StringComparison.OrdinalIgnoreCase);
-        var collapseBtn = cut.Find("[data-testid='citation-group-collapse-button']");
-        Assert.NotNull(collapseBtn);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Single-citation group has no disclosure button
-    // ──────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Group_with_single_citation_does_not_show_disclosure()
+    public async Task Group_with_single_citation_renders_the_card_without_disclosure()
     {
         await using var ctx = BuildCtx();
 
@@ -110,11 +80,30 @@ public sealed class CitationGroupTests
             .Add(c => c.Host, "example.com")
             .Add(c => c.Citations, citations));
 
-        // No expand button when there is only one citation.
-        var expandBtns = cut.FindAll("[data-testid='citation-group-expand-button']");
-        Assert.Empty(expandBtns);
-
-        // The single citation is rendered directly.
         Assert.Contains("Only Doc", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(cut.FindAll("[data-testid='citation-group-expand-button']"));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // SortedCitations orders by RelevanceScore descending (nulls last)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SortedCitations_returns_citations_ordered_by_score_descending()
+    {
+        var citations = new List<Citation>
+        {
+            MakeCitation("Low",  score: 0.30),
+            MakeCitation("High", score: 0.90),
+            MakeCitation("Mid",  score: 0.60),
+            MakeCitation("Null", score: null),
+        };
+
+        var sorted = CitationGroup.SortedCitations(citations);
+
+        Assert.Equal("High", sorted[0].Title);
+        Assert.Equal("Mid",  sorted[1].Title);
+        Assert.Equal("Low",  sorted[2].Title);
+        Assert.Equal("Null", sorted[3].Title);
     }
 }

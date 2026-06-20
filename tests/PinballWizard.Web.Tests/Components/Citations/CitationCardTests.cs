@@ -16,6 +16,11 @@ namespace PinballWizard.Web.Tests.Components.Citations;
 //
 // The external-link security test (rel=noopener noreferrer) is a load-bearing pin
 // per feedback_community_resource_posture.md and the PR self-audit item 9(e).
+//
+// Flipper-button tests (design-system gap #2):
+//   - Right flipper always present; asserts href, rel, target, and label text.
+//   - Left flipper absent when InAnswerAnchor is null; present with correct
+//     href="#<anchor>" when set (wired by gap #3 — inline citation markers).
 public sealed class CitationCardTests
 {
     // ──────────────────────────────────────────────────────────────────────
@@ -131,15 +136,19 @@ public sealed class CitationCardTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // External link security pin: rel="noopener noreferrer" + target="_blank"
+    // Right flipper (VIEW THE ORIGINAL ▶) — security pin + label + href.
+    //
+    // Replaces the old ↗ link test. The data-testid="citation-source-link"
+    // selector is preserved so existing E2E/integration selectors continue
+    // to work unchanged (design-system gap #2).
     //
     // Load-bearing per feedback_community_resource_posture.md and
-    // PR self-audit item 9(e). If this test fails, the link is missing
-    // the opener isolation or referrer suppression — security 🔴.
+    // PR self-audit item 9(e). If the rel assertion fails, opener isolation
+    // or referrer suppression is missing — security 🔴.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task External_link_has_target_blank_and_rel_noopener_noreferrer()
+    public async Task Right_flipper_has_target_blank_and_rel_noopener_noreferrer()
     {
         await using var ctx = BuildCtx();
         var citation = BuildCitation(sourceUrl: "https://sternpinball.com/manuals/test.pdf");
@@ -154,6 +163,83 @@ public sealed class CitationCardTests
         var rel = link.GetAttribute("rel") ?? string.Empty;
         Assert.Contains("noopener", rel, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("noreferrer", rel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Right_flipper_href_matches_citation_source_url()
+    {
+        const string url = "https://sternpinball.com/manuals/test.pdf";
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation(sourceUrl: url);
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var link = cut.Find("[data-testid='citation-source-link']");
+        Assert.Equal(url, link.GetAttribute("href"));
+    }
+
+    [Fact]
+    public async Task Right_flipper_label_contains_VIEW_THE_ORIGINAL()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var link = cut.Find("[data-testid='citation-source-link']");
+        Assert.Contains("VIEW THE ORIGINAL", link.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Left flipper (◀ VIEW IN ANSWER) — conditional on InAnswerAnchor.
+    //
+    // Gap #3 (inline citation markers) will pass the anchor to light up the
+    // pair. Until then InAnswerAnchor is null and the left flipper must stay
+    // hidden. When set, the href must be "#<anchor>".
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Left_flipper_is_absent_when_InAnswerAnchor_is_null()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+        // InAnswerAnchor defaults to null — left flipper must not appear.
+
+        var leftFlippers = cut.FindAll("[data-testid='citation-flipper-in-answer']");
+        Assert.Empty(leftFlippers);
+    }
+
+    [Fact]
+    public async Task Left_flipper_is_present_with_correct_href_when_InAnswerAnchor_is_set()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation)
+            .Add(c => c.InAnswerAnchor, "marker-3"));
+
+        var leftFlipper = cut.Find("[data-testid='citation-flipper-in-answer']");
+        Assert.Equal("#marker-3", leftFlipper.GetAttribute("href"));
+    }
+
+    [Fact]
+    public async Task Left_flipper_label_contains_VIEW_IN_ANSWER()
+    {
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation();
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation)
+            .Add(c => c.InAnswerAnchor, "marker-3"));
+
+        var leftFlipper = cut.Find("[data-testid='citation-flipper-in-answer']");
+        Assert.Contains("VIEW IN ANSWER", leftFlipper.TextContent, StringComparison.OrdinalIgnoreCase);
     }
 
     // ──────────────────────────────────────────────────────────────────────

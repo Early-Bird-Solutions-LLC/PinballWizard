@@ -38,13 +38,16 @@
 @if (Citations is not null && Citations.Count > 0)
 {
     var groups = BuildGroups(Citations);
+    var citedLabel  = Citations.Count == 1 ? "1 cited" : $"{Citations.Count} cited";
+    var sitesLabel  = groups.Count  == 1 ? "1 site"  : $"{groups.Count} sites";
+    var summaryText = $"SOURCES · {citedLabel} from {sitesLabel}";
 
     <div class="citation-strip"
          data-testid="citation-strip"
          aria-label="Sources">
 
         <MudText Typo="Typo.overline" Color="Color.Secondary" Class="citation-strip-label mb-2">
-            Sources
+            @summaryText
         </MudText>
 
         @* Single render of the groups; the layout flips column↔row purely in

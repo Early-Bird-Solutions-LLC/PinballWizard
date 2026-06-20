@@ -9,8 +9,10 @@ namespace PinballWizard.Web.Tests.Components.Citations;
 
 // Behavioral tests for CitationStrip.
 //
-// Tests assert group ordering (highest-max-score group first), graceful empty
-// state (renders nothing), and single-citation groups (no disclosure button).
+// Tests assert: group ordering (highest-max-score first), graceful empty
+// state (renders nothing), grouping logic (same-host citations share a group),
+// and the summary header format "SOURCES · N cited from M sites" with correct
+// singular/plural forms.
 public sealed class CitationStripTests
 {
     // ──────────────────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ public sealed class CitationStripTests
         Assert.Equal(2, groups.Count);
 
         // The group rendered first (index 0) should be opdb.org (max score 0.91 > 0.55).
-        Assert.Equal("opdb.org", groups.ElementAt(0).GetAttribute("data-host"));
+        Assert.Equal("opdb.org",         groups.ElementAt(0).GetAttribute("data-host"));
         Assert.Equal("sternpinball.com", groups.ElementAt(1).GetAttribute("data-host"));
     }
 
@@ -79,32 +81,6 @@ public sealed class CitationStripTests
         // When Citations is empty the strip div is not rendered.
         var strip = cut.FindAll("[data-testid='citation-strip']");
         Assert.Empty(strip);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Single citation per group: no disclosure button rendered
-    // ──────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Group_with_single_citation_does_not_show_disclosure()
-    {
-        await using var ctx = BuildCtx();
-
-        var citations = new List<Citation>
-        {
-            MakeCitation("sternpinball.com", "Stern Manual", score: 0.80),
-        };
-
-        var cut = ctx.Render<CitationStrip>(p => p
-            .Add(c => c.Citations, citations));
-
-        // One group renders.
-        var groups = cut.FindAll("[data-testid='citation-group']");
-        Assert.Single(groups);
-
-        // No expand button — only one citation in the group.
-        var expandBtns = cut.FindAll("[data-testid='citation-group-expand-button']");
-        Assert.Empty(expandBtns);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -128,9 +104,76 @@ public sealed class CitationStripTests
         // Both citations from the same host → one group.
         var groups = cut.FindAll("[data-testid='citation-group']");
         Assert.Single(groups);
+    }
 
-        // Two citations in the group means the expand button appears.
-        var expandBtns = cut.FindAll("[data-testid='citation-group-expand-button']");
-        Assert.Single(expandBtns);
+    // ──────────────────────────────────────────────────────────────────────
+    // Summary header — many citations from multiple hosts
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Summary_header_shows_correct_count_and_site_count_for_multiple()
+    {
+        await using var ctx = BuildCtx();
+
+        // 5 citations across 3 hosts → "SOURCES · 5 cited from 3 sites"
+        var citations = new List<Citation>
+        {
+            MakeCitation("sternpinball.com", "Stern A",  score: 0.80, path: "a"),
+            MakeCitation("sternpinball.com", "Stern B",  score: 0.70, path: "b"),
+            MakeCitation("opdb.org",          "OPDB A",  score: 0.91, path: "a"),
+            MakeCitation("opdb.org",          "OPDB B",  score: 0.60, path: "b"),
+            MakeCitation("pinballbrothers.com","PB A",   score: 0.55, path: "a"),
+        };
+
+        var cut = ctx.Render<CitationStrip>(p => p
+            .Add(c => c.Citations, citations));
+
+        Assert.Contains("5 cited from 3 sites", cut.Markup, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Summary header — singular: 1 citation from 1 host
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Summary_header_uses_singular_form_for_one_citation_one_site()
+    {
+        await using var ctx = BuildCtx();
+
+        var citations = new List<Citation>
+        {
+            MakeCitation("sternpinball.com", "Stern Manual", score: 0.80),
+        };
+
+        var cut = ctx.Render<CitationStrip>(p => p
+            .Add(c => c.Citations, citations));
+
+        Assert.Contains("1 cited from 1 site", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Confirm "sites" (plural) is NOT present — guard the singular form.
+        Assert.DoesNotContain("1 sites", cut.Markup, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Summary header — "SOURCES ·" prefix always present
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Summary_header_always_contains_SOURCES_prefix()
+    {
+        await using var ctx = BuildCtx();
+
+        var citations = new List<Citation>
+        {
+            MakeCitation("opdb.org", "OPDB Record", score: 0.75),
+        };
+
+        var cut = ctx.Render<CitationStrip>(p => p
+            .Add(c => c.Citations, citations));
+
+        Assert.Contains("SOURCES", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // The strip element itself must still carry its aria-label.
+        var strip = cut.Find("[data-testid='citation-strip']");
+        Assert.NotNull(strip);
+        Assert.Equal("Sources", strip.GetAttribute("aria-label"));
     }
 }
