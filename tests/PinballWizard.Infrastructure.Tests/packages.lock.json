@@ -812,7 +812,7 @@
         "type": "Project",
         "dependencies": {
           "AngleSharp": "[1.5.1, )",
-          "Aspire.Microsoft.Azure.Cosmos": "[13.4.5, )",
+          "Aspire.Microsoft.Azure.Cosmos": "[13.4.6, )",
           "Azure.AI.DocumentIntelligence": "[1.0.0, )",
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
@@ -846,9 +846,9 @@
       },
       "Aspire.Microsoft.Azure.Cosmos": {
         "type": "CentralTransitive",
-        "requested": "[13.4.5, )",
-        "resolved": "13.4.5",
-        "contentHash": "smrZ4DtkfFZTIAelxFT0pb1yrrDr1eAo78PpSvP5cQwy/oFV+25r/BtJ90eLBoP3U0tQRa4IOroyoF+vu/6vtw==",
+        "requested": "[13.4.6, )",
+        "resolved": "13.4.6",
+        "contentHash": "Ax44tIGFFXdq7g7uWjrufXUHlRh5ufh5GD4b7t11LDy+rUWInBNf578UsQ0g7AtdhnwMQN7X33OIxHqN37rhfw==",
         "dependencies": {
           "Azure.Core": "1.55.0",
           "Azure.Identity": "1.21.0",
