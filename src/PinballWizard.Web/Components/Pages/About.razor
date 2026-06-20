@@ -12,6 +12,7 @@
  *     in that file's header, and PreRenderedDiagramTests pins SVG <-> source
  *     agreement via an embedded SHA-256)
  *   - Tech stack bullets
+ *   - How this was built (Claude Code as first-class engineering participant)
  *   - GitHub repo link
  *
  * The diagram is static-served, so the page needs no render mode, no
@@ -100,6 +101,51 @@
         </MudListItem>
         <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
             <MudText Typo="Typo.body2">Server-Sent Events (text/event-stream) — streaming answer delivery</MudText>
+        </MudListItem>
+    </MudList>
+
+    @* ── How this was built ───────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4" data-testid="about-claude-heading">
+        How This Was Built
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-2">
+        PinballWizard is built with Claude Code as a first-class engineering participant — not
+        autocomplete, but a peer held to the same discipline: feature branch, local review,
+        mechanical PR audit, conventional commits. Most ADRs were decided <em>with</em> Claude,
+        not just implemented by it.
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-4">
+        The Claude Code configuration is owned in-repo, documented, and CI-guarded — skills,
+        rules, commands, and agents live under <code>.claude/</code>, each carrying a provenance
+        header, validated on every PR.
+    </MudText>
+
+    <MudList T="string" Dense="true" Class="about-claude-list mb-6" data-testid="about-claude-list">
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/claude-code.md"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="How this repo uses Claude Code (opens on GitHub)">
+                How this repo uses Claude Code
+            </MudLink>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0040-fork-claude-config-for-pinballwizard.md"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="ADR-0040: forking the Claude Code config in-repo (opens on GitHub)">
+                ADR-0040 — forking the config in-repo
+            </MudLink>
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/tree/main/.claude"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label=".claude/ configuration directory (opens on GitHub)">
+                .claude/ configuration
+            </MudLink>
         </MudListItem>
     </MudList>
 
