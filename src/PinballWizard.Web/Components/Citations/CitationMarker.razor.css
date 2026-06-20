@@ -1,0 +1,23 @@
+.citation-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.15em;
+    height: 1.15em;
+    padding: 0 0.3em;
+    margin: 0 0.12em;
+    border-radius: 2px; /* machined-edge insert, per modern-lcd.md */
+    font-family: var(--pw-font-mono, monospace);
+    font-size: 0.72em;
+    line-height: 1;
+    color: var(--pw-accent-grounded, #34d96a);
+    border: 1px solid color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 55%, transparent);
+    background: color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 12%, transparent);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 35%, transparent);
+    text-decoration: none;
+    vertical-align: baseline;
+    transition: box-shadow var(--pw-motion-fast, 120ms) ease;
+}
+.citation-marker:hover {
+    box-shadow: 0 0 10px color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 60%, transparent);
+}

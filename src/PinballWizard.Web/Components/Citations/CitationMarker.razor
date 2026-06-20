@@ -1,0 +1,43 @@
+@* CitationMarker — inline pinball-insert citation marker (design gap #3).
+ * Option C (locked, modern-lcd.md): small numbered insert, accent-grounded glow,
+ * hover tooltip "[SOURCE TYPE] Source name", click scrolls to + pulses the card.
+ * Native <a href="#citation-N"> — CSP-safe, no circuit-dependent handler (works in
+ * any render mode). One of the four locked Citation delight surfaces (FE-03/FE-09).
+ *
+ * DOM id is marker-{Number}-{Occurrence} so multiple markers for the same source
+ * (same N, several sentences) keep unique ids; the card's left flipper targets
+ * marker-N-1 (first use). Tooltip is derived from a cascaded ordinal-ordered
+ * citation list so the marker and card share numbering (no positional drift).
+ *@
+@using PinballWizard.Application.Ai
+<a class="citation-marker"
+   id="@($"marker-{Number}-{Occurrence}")"
+   href="@($"#citation-{Number}")"
+   data-testid="citation-marker"
+   data-citation-number="@Number"
+   title="@Tooltip"
+   aria-label="@Tooltip">@Number</a>
+
+@code {
+    [Parameter, EditorRequired] public int Number { get; set; }
+
+    // 1-based occurrence among markers that share this Number (set by the tokenizer).
+    [Parameter] public int Occurrence { get; set; } = 1;
+
+    // Ordinal-ordered citation list (same order the cards are numbered), cascaded by
+    // WizardAnswerStream. Used only to derive the hover tooltip.
+    [CascadingParameter] public IReadOnlyList<Citation>? OrderedCitations { get; set; }
+
+    // "[SOURCE TYPE] Source name". Null when no citation context — marker still
+    // renders its number + anchor (graceful).
+    private string? Tooltip
+    {
+        get
+        {
+            if (OrderedCitations is null || Number < 1 || Number > OrderedCitations.Count)
+                return null;
+            var c = OrderedCitations[Number - 1];
+            return $"[{c.SourceType.ToString().ToUpperInvariant()}] {c.Title}";
+        }
+    }
+}
