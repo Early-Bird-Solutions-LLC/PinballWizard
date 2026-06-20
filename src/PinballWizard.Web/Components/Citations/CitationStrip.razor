@@ -42,9 +42,12 @@
     var sitesLabel  = groups.Count  == 1 ? "1 site"  : $"{groups.Count} sites";
     var summaryText = $"SOURCES · {citedLabel} from {sitesLabel}";
 
-    // Running ordinal counter: threads across groups so every card receives a
-    // unique 1-based citation-{N} id in render order. Task 8 will refactor this
-    // to a shared CitationOrdering.InRenderOrder helper.
+    // Shared ordinal ordering: CitationOrdering.InRenderOrder produces the
+    // same flattened order the cards render in, so card N and marker N agree.
+    var ordered = CitationOrdering.InRenderOrder(Citations);
+    var marked  = MarkedOrdinals();
+
+    // Running offset into the ordered list: each group claims a slice.
     var ordinal = 0;
 
     <div class="citation-strip"
@@ -60,10 +63,24 @@
         <div class="citation-strip-layout">
             @foreach (var group in groups)
             {
+                // Build the set of marked ordinals within this group's slice.
+                var groupSize       = group.Citations.Count;
+                var groupStartOrdinal = ordinal;
+                HashSet<int> groupMarked = [];
+                for (var i = 0; i < groupSize; i++)
+                {
+                    var n = groupStartOrdinal + i + 1;
+                    if (marked.Contains(n))
+                        groupMarked.Add(n);
+                }
+
                 <div class="citation-strip-group">
-                    <CitationGroup Host="@group.Host" Citations="@group.Citations" StartOrdinal="@ordinal" />
+                    <CitationGroup Host="@group.Host"
+                                   Citations="@group.Citations"
+                                   StartOrdinal="@ordinal"
+                                   MarkedOrdinals="@groupMarked" />
                 </div>
-                ordinal += group.Citations.Count;
+                ordinal += groupSize;
             }
         </div>
 
@@ -73,6 +90,20 @@
 @code {
     [Parameter, EditorRequired]
     public IReadOnlyList<Citation> Citations { get; set; } = [];
+
+    /// <summary>
+    /// The full rendered answer text. When provided, CitationStrip scans it
+    /// for <c>[[cite:N]]</c> markers and lights the left flipper on matching cards.
+    /// </summary>
+    [Parameter]
+    public string? AnswerBody { get; set; }
+
+    private static readonly System.Text.RegularExpressions.Regex CiteN =
+        new(@"\[\[cite:(\d+)\]\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private HashSet<int> MarkedOrdinals()
+        => AnswerBody is null ? []
+           : [.. CiteN.Matches(AnswerBody).Select(m => int.Parse(m.Groups[1].Value))];
 
     // Exposed as internal for test access to grouping + ordering logic.
     internal record CitationGroupModel(string Host, IReadOnlyList<Citation> Citations);

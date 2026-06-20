@@ -26,7 +26,10 @@
 
     // Ordinal-ordered citation list (same order the cards are numbered), cascaded by
     // WizardAnswerStream. Used only to derive the hover tooltip.
-    [CascadingParameter] public IReadOnlyList<Citation>? OrderedCitations { get; set; }
+    // Name="OrderedCitations" avoids type-based ambiguity — the CascadingValue in
+    // WizardAnswerStream uses the same name so binding is explicit.
+    [CascadingParameter(Name = "OrderedCitations")]
+    public IReadOnlyList<Citation>? OrderedCitations { get; set; }
 
     // "[SOURCE TYPE] Source name". Null when no citation context — marker still
     // renders its number + anchor (graceful).

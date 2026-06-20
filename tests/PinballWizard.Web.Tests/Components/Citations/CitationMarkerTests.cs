@@ -76,12 +76,14 @@ public sealed class CitationMarkerTests
 
         // Supply a 1-element ordered citation list via cascading parameter.
         // SourceType=Unknown so the formatted tooltip is "[UNKNOWN] Stern Godzilla Manual".
+        // Name="OrderedCitations" matches [CascadingParameter(Name = "OrderedCitations")]
+        // in CitationMarker — required since Task 8 added the explicit Name to disambiguate.
         var orderedCitations = (IReadOnlyList<Citation>)new List<Citation>
         {
             new Citation("Stern Godzilla Manual", "https://example.com/manual.pdf",
                 SourceType: CitationSourceType.Unknown),
         };
-        ctx.Services.AddCascadingValue(_ => orderedCitations);
+        ctx.Services.AddCascadingValue("OrderedCitations", _ => orderedCitations);
 
         var cut = ctx.Render<CitationMarker>(p => p.Add(x => x.Number, 1));
         var el = cut.Find("[data-testid='citation-marker']");

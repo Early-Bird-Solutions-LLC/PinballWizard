@@ -208,4 +208,48 @@ public sealed class CitationStripTests
         Assert.NotNull(strip);
         Assert.Equal("Sources", strip.GetAttribute("aria-label"));
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Task 8: Left flipper shows only for cards whose ordinal appears in body
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Left_flipper_shows_only_for_cards_referenced_in_the_body()
+    {
+        await using var ctx = BuildCtx();
+
+        var citations = new[] { new Citation("A", "https://a.com/1", RelevanceScore: 0.9),
+                                new Citation("B", "https://b.com/1", RelevanceScore: 0.8) };
+        // Body cites only ordinal 1.
+        var cut = ctx.Render<CitationStrip>(p => p
+            .Add(x => x.Citations, citations)
+            .Add(x => x.AnswerBody, "Grounded claim [[cite:1]]."));
+        var inAnswer = cut.FindAll("[data-testid='citation-flipper-in-answer']");
+        Assert.Single(inAnswer); // only card 1 lights its left flipper
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Task 8: CitationOrdering.InRenderOrder produces same order as card ordinals
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void InRenderOrder_matches_card_ordinal_order()
+    {
+        // Three citations: B has highest score → first in render order (card N=1).
+        // A and C share a.com; A has higher score → A is N=2, C is N=3.
+        var citations = new List<Citation>
+        {
+            new("A", "https://a.com/1", RelevanceScore: 0.9),
+            new("B", "https://b.com/1", RelevanceScore: 0.95),
+            new("C", "https://a.com/2", RelevanceScore: 0.7),
+        };
+
+        var ordered = CitationOrdering.InRenderOrder(citations);
+
+        // InRenderOrder must match the card render order: B first, then A, then C.
+        Assert.Equal(3, ordered.Count);
+        Assert.Equal("B", ordered[0].Title);
+        Assert.Equal("A", ordered[1].Title);
+        Assert.Equal("C", ordered[2].Title);
+    }
 }
