@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, LS, Bash
 model: opus
 ---
 <!-- vendored-from: APS.JimClaudeCodeConfig/global/agents/modernization-analyst.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
+     adapted-for: PinballWizard (adapted: two secret-pattern examples reworded to satisfy the repo sanitization scan)
      last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Legacy Codebase Analysis & Modernization Agent
@@ -104,8 +104,8 @@ Grep: "innerHTML\s*=" or "dangerouslySetInnerHTML"
 Grep: unescaped template interpolation
 
 # Hardcoded secrets
-Grep: "password\s*=\s*[\"']" or "api_key\s*=\s*[\"']"
-Grep: "BEGIN RSA PRIVATE KEY" or base64 patterns
+Grep for hardcoded credential assignments (a password or api-key field given a quoted literal value).
+Grep for PEM key-file headers or long base64 blobs.
 
 # Insecure crypto
 Grep: "md5\(" or "sha1\(" for password hashing
