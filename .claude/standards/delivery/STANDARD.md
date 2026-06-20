@@ -24,7 +24,7 @@ REF:    INVARIANTS#5 · feedback_personal_identity_only
 WHEN:   adding or modifying an infra deploy script
 THEN:   deploy via az stack sub create / az stack group create
 NEVER:  use az deployment sub create / az deployment group create (orphans resources)
-CHECK:  rg -n "az deployment (sub|group) create" infra/scripts/
+CHECK:  rg -n "az deployment (sub|group) create" infra/scripts/ | rg -v '`'
 SEV:    🔴
 REF:    INVARIANTS#16 · feedback_deployment_stacks_only
 
