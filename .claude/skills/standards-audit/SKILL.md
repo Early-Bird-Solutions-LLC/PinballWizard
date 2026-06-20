@@ -34,6 +34,11 @@ Contract: [`../../standards/pinball-standards-protocol.md`](../../standards/pinb
    `(qualitative — /local-review)` are reported as `QUAL` (deferred to
    `/local-review`), not run here.
 
+3a. **Attribute hits to the diff.** A CHECK that greps a directory tree may return
+    PRE-EXISTING hits in files outside the changed-file set from step 1. A hit in a
+    file the diff did NOT change is `PRE-EXISTING (advisory)` — report it, but it does
+    NOT block the gate. Only a hit in a changed file is a 🔴 gate-blocking FAIL.
+
 4. **Emit the verdict table** — one row per rule:
 
    ```

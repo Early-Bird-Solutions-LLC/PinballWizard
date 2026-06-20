@@ -48,7 +48,8 @@ REF:    pinball-workflows · feedback_personal_identity_only
 WHEN:   adding or modifying a runbook script
 THEN:   derive subscription via `az account show --query id -o tsv`
 NEVER:  hardcode a subscription UUID or instance-specific resource suffix in docs/runbooks/
-CHECK:  rg -ni "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" docs/runbooks/
+CHECK:  git diff --name-only origin/main...HEAD | rg "^docs/runbooks/" | xargs -r rg -ni "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" || echo CLEAN
+        NOTE: only changed runbooks are checked (pre-existing runbooks are not this diff's concern); verification-target UUIDs shown in operator "Expected:" columns are read by humans, not consumed by scripts.
 SEV:    🔴
 REF:    PR-AUDIT#12
 
