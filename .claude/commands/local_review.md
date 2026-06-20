@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/local_review.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed humanlayer-specific worktree setup; rewired to PinballWizard local-review skill)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Run a structured pre-push code review of the current branch's diff against main
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/local_review.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed humanlayer-specific worktree setup; rewired to PinballWizard local-review skill)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Local Review
 

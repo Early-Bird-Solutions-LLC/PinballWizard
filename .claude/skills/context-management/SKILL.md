@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/context-management/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: context-management
 description: >-
   Analyze and clean up conversation context to free token space
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/context-management/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (verbatim)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Context Management Skill
 

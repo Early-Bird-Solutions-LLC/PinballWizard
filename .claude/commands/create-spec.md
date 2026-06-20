@@ -1,11 +1,10 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create-spec.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed DRS-XXXXX/AB#XXX work item references; spec path uses docs/specs/ instead of thoughts/specs/)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Create a lightweight specification for a feature or change
 model: sonnet
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create-spec.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed DRS-XXXXX/AB#XXX work item references; spec path uses docs/specs/ instead of thoughts/specs/)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Create Specification
 

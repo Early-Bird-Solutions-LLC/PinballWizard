@@ -1,7 +1,3 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/ship.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed Jira/ship.py/work-item-context/APS-Neighborli routing; rewired to gh CLI + /local-review + PR-AUDIT + personal identity; no time tracking)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 # Ship Command - One-Click Git Workflow Automation
 
 **Purpose:** Execute the complete commit → push → PR workflow with enforced requirements.
@@ -131,3 +127,7 @@ Report the full PR URL to the user.
 - No work-item prefix required
 - No time tracking (personal project)
 - No Co-Authored-By trailer
+
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/ship.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed Jira/ship.py/work-item-context/APS-Neighborli routing; rewired to gh CLI + /local-review + PR-AUDIT + personal identity; no time tracking)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->

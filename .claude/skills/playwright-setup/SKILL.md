@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/playwright-setup/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed APS workspace names and ADO pipeline YAML; CI/CD section updated for GitHub Actions + dotnet; APS developer guide link removed)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: playwright-setup
 description: >-
   Set up Playwright E2E test framework with project-specific configuration
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/playwright-setup/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed APS workspace names and ADO pipeline YAML; CI/CD section updated for GitHub Actions + dotnet; APS developer guide link removed)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Playwright Setup Skill
 

@@ -1,7 +1,3 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/pr-only.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed az repos/ADO/AdvantagePaymentServices/beneighborli routing/work-item-context; uses gh CLI only; base branch is main; no work-item linking)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 # PR Only - Create PR for Existing Commits
 
 **Purpose:** Create a PR for commits that are already pushed to remote.
@@ -234,3 +230,7 @@ Please resolve conflicts manually:
 
 **Version:** 1.0 (PinballWizard adaptation)
 **Parent Command:** /ship
+
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/pr-only.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed az repos/ADO/AdvantagePaymentServices/beneighborli routing/work-item-context; uses gh CLI only; base branch is main; no work-item linking)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->

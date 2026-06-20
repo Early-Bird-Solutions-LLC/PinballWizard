@@ -1,7 +1,3 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/quick-commit.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed work-item-context/APS work-item prefix; commit format is type(scope): description; no Co-Authored-By)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 # Quick Commit - Fast Commit with Auto-Message
 
 **Purpose:** Quickly commit changes with auto-generated message, no push or PR.
@@ -111,3 +107,7 @@ Next steps:
 
 **Version:** 1.0 (PinballWizard adaptation)
 **Parent Command:** /ship
+
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/quick-commit.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed work-item-context/APS work-item prefix; commit format is type(scope): description; no Co-Authored-By)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->

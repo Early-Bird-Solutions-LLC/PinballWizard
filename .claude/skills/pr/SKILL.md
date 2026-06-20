@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/smart-pr/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (gh CLI; no ADO/work-item link; APS-PR-REQUIREMENTS sidecar dropped)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: pr
 description: >-
   Create pull requests with proper formatting and verification (GitHub / gh CLI)
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/smart-pr/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (gh CLI; no ADO/work-item link; APS-PR-REQUIREMENTS sidecar dropped)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # PR Skill
 

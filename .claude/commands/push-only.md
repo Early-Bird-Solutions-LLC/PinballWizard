@@ -1,7 +1,3 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/push-only.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed work-item-context/Jira time-tracking/APS-Neighborli routing; rewired to gh CLI + personal identity; no time tracking)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 # Push Only - Commit and Push Without PR
 
 **Purpose:** Commit and push changes with auto-generated message, no PR creation.
@@ -114,3 +110,7 @@ Next steps:
 
 **Version:** 1.0 (PinballWizard adaptation)
 **Parent Command:** /ship
+
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/push-only.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed work-item-context/Jira time-tracking/APS-Neighborli routing; rewired to gh CLI + personal identity; no time tracking)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->

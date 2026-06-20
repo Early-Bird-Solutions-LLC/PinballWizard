@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/ci-preview/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (verbatim)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: ci-preview
 description: >-
   Preview CI checks locally before pushing
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/ci-preview/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (verbatim)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # CI Preview
 

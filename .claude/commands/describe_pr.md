@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/describe_pr.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/thoughts/ path references; uses gh CLI; PR description written inline or to .superpowers/prs/; no work-item linking)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Generate comprehensive PR descriptions following the repository PR template
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/describe_pr.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/thoughts/ path references; uses gh CLI; PR description written inline or to .superpowers/prs/; no work-item linking)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Generate PR Description
 

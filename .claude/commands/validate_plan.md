@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/validate_plan.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed /commit reference; replaced thoughts/shared/plans/ with .superpowers/plans/)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Validate implementation against plan, verify success criteria, identify issues
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/validate_plan.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed /commit reference; replaced thoughts/shared/plans/ with .superpowers/plans/)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Validate Plan
 

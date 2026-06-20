@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/pre-commit-workflow/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (no work-item gate; /local-review + PR-AUDIT path)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: pre-commit-workflow
 description: >-
   Validate branch protection and staged files before commit
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/pre-commit-workflow/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (no work-item gate; /local-review + PR-AUDIT path)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Pre-Commit Workflow Skill
 

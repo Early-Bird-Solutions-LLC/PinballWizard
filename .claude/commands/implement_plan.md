@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/implement_plan.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: updated description field to remove thoughts/shared/plans path reference)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Implement technical plans with phase-by-phase verification
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/implement_plan.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: updated description field to remove thoughts/shared/plans path reference)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Implement Plan
 

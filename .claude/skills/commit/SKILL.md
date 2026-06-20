@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/smart-commit/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (GitHub / personal identity; work-tracker refs + conventions sidecar dropped)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: commit
 description: >-
   Format git commit messages with conventional commit types for PinballWizard (GitHub, personal identity)
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/smart-commit/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (GitHub / personal identity; work-tracker refs + conventions sidecar dropped)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Commit Skill
 

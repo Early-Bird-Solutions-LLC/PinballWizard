@@ -1,11 +1,10 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/research_codebase.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/thoughts/ directory/Linear ticket references; research doc path uses .superpowers/research/; removed hack/spec_metadata.sh)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Document codebase as-is for historical context and research
 model: opus
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/research_codebase.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/thoughts/ directory/Linear ticket references; research doc path uses .superpowers/research/; removed hack/spec_metadata.sh)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Research Codebase
 

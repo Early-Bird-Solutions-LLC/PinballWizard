@@ -1,12 +1,11 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/screenshot/SKILL.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: work-item attachment section updated — this repo uses GitHub Issues, not Jira/Azure DevOps)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 name: screenshot
 description: >-
   Find, read, and analyze screenshots from the configured screenshots directory
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/skills/screenshot/SKILL.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: work-item attachment section updated — this repo uses GitHub Issues, not Jira/Azure DevOps)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Screenshot Skill
 

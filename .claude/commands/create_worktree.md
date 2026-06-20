@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create_worktree.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed humanlayer launch/Linear ticket/hack/create_worktree.sh references; rewired to standard git worktree + gh CLI pattern)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Create worktree and launch implementation session for a plan
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create_worktree.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed humanlayer launch/Linear ticket/hack/create_worktree.sh references; rewired to standard git worktree + gh CLI pattern)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Create Worktree
 

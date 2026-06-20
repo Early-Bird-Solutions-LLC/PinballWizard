@@ -1,10 +1,9 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/debug.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: replaced humanlayer-specific log paths/daemon DB/service names with PinballWizard equivalents: Aspire dashboard, Cosmos emulator, dotnet logs)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Debug issues by investigating logs, Aspire state, and git history
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/debug.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: replaced humanlayer-specific log paths/daemon DB/service names with PinballWizard equivalents: Aspire dashboard, Cosmos emulator, dotnet logs)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Debug
 

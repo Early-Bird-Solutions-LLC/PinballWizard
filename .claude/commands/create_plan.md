@@ -1,11 +1,10 @@
-<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create_plan.md @ 6dfd2cf
-     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/Linear ticket references; plan path uses .superpowers/plans/; removed thoughts/ directory references)
-     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
-
 ---
 description: Create detailed implementation plans through interactive research and iteration
 model: opus
 ---
+<!-- vendored-from: APS.JimClaudeCodeConfig/global/commands/create_plan.md @ 6dfd2cf
+     adapted-for: PinballWizard (adapted: removed humanlayer thoughts sync/Linear ticket references; plan path uses .superpowers/plans/; removed thoughts/ directory references)
+     last-synced: 2026-06-19 — drift: scripts/check_claude_config_drift.py -->
 
 # Implementation Plan
 
