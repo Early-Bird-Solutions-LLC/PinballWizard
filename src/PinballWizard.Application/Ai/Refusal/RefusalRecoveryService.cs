@@ -245,44 +245,80 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
                 SuggestedRephrase: suggestedRephrase);
         }
 
+        // Run the two enrichments INDEPENDENTLY: a failure in one must NOT drop
+        // the other. Previously both shared one try/catch, so a related-machines
+        // lookup failure (e.g. the cross-partition machine-title query throwing
+        // against a degraded Cosmos read path) nulled the ENTIRE RefusalDetail —
+        // silently discarding the community CTAs that had loaded fine. Each lookup
+        // now logs + meters its own failure and degrades to null on its own.
+        var relatedMachinesTask = TryFindRelatedMachinesAsync(normalizedQuestion, category, ct);
+        var communityResourcesTask = TryBuildCommunityResourcesAsync(normalizedQuestion, category, ct);
+
+        await Task.WhenAll(relatedMachinesTask, communityResourcesTask).ConfigureAwait(false);
+
+        // Always return the recovery detail with whatever enrichment succeeded —
+        // even text-only (MissingWhat / SuggestedRephrase) is useful recovery.
+        return new RefusalDetail(
+            Confidence: null,
+            RelatedMachines: await relatedMachinesTask,
+            CommunityResources: await communityResourcesTask,
+            MissingWhat: missingWhat,
+            SuggestedRephrase: suggestedRephrase);
+    }
+
+    // Best-effort related-machines lookup. Degrades to null on failure
+    // (logged at Error + metered) WITHOUT affecting community-resource routing —
+    // the two enrichments are independent. OperationCanceledException propagates.
+    private async Task<IReadOnlyList<RelatedMachine>?> TryFindRelatedMachinesAsync(
+        string normalizedQuestion, RefusalCategory category, CancellationToken ct)
+    {
         try
         {
-            var relatedMachinesTask = FindRelatedMachinesAsync(normalizedQuestion, ct);
-            var communityResourcesTask = BuildCommunityResourcesAsync(category, ct);
-
-            await Task.WhenAll(relatedMachinesTask, communityResourcesTask).ConfigureAwait(false);
-
-            return new RefusalDetail(
-                Confidence: null,
-                RelatedMachines: await relatedMachinesTask,
-                CommunityResources: await communityResourcesTask,
-                MissingWhat: missingWhat,
-                SuggestedRephrase: suggestedRephrase);
+            return await FindRelatedMachinesAsync(normalizedQuestion, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // OBS-01 / invariant #17: degrade visibly — log at Error (not Warning)
-            // so operators know community CTAs are absent. The primary refusal is
-            // never blocked (best-effort posture per the class-level comment), but
-            // this failure is not routine and warrants an alert.
-            var reason = ex switch
-            {
-                FileNotFoundException => "FileNotFoundException",
-                InvalidOperationException => "InvalidOperationException",
-                _ => "other",
-            };
-
-            PinballWizardTelemetry.AiCommunityResourcesLoadErrors.Add(1,
-                new KeyValuePair<string, object?>("reason", reason));
-
+            PinballWizardTelemetry.AiRelatedMachinesLookupErrors.Add(1,
+                new KeyValuePair<string, object?>("reason", ReasonTag(ex)));
             _logger.LogError(ex,
-                "RefusalRecoveryService: community-resource or machine lookup failed for question '{Question}' / category {Category}. " +
-                "Refusal panel will render without community CTAs (pinwiz.ai.community_resources_load_errors_total incremented). " +
-                "Primary refusal is unaffected — this is best-effort enrichment.",
+                "RefusalRecoveryService: related-machines lookup failed for question '{Question}' / category {Category}. " +
+                "Refusal panel renders without related-machine suggestions; community CTAs are UNAFFECTED " +
+                "(pinwiz.ai.related_machines_lookup_errors_total incremented). Primary refusal is unaffected.",
                 normalizedQuestion, category);
             return null;
         }
     }
+
+    // Best-effort community-resource routing. Degrades to null on failure
+    // (logged at Error + metered, OBS-01 / invariant #17) WITHOUT affecting the
+    // related-machines lookup. OperationCanceledException propagates.
+    private async Task<IReadOnlyList<CommunityResource>?> TryBuildCommunityResourcesAsync(
+        string normalizedQuestion, RefusalCategory category, CancellationToken ct)
+    {
+        try
+        {
+            return await BuildCommunityResourcesAsync(category, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            PinballWizardTelemetry.AiCommunityResourcesLoadErrors.Add(1,
+                new KeyValuePair<string, object?>("reason", ReasonTag(ex)));
+            _logger.LogError(ex,
+                "RefusalRecoveryService: community-resource load failed for question '{Question}' / category {Category}. " +
+                "Refusal panel renders without community CTAs; related-machine suggestions are UNAFFECTED " +
+                "(pinwiz.ai.community_resources_load_errors_total incremented). A FileNotFoundException here means " +
+                "community_resources.v1.json is unresolvable — check SeedPathResolver / Dockerfile COPY. Primary refusal is unaffected.",
+                normalizedQuestion, category);
+            return null;
+        }
+    }
+
+    private static string ReasonTag(Exception ex) => ex switch
+    {
+        FileNotFoundException => "FileNotFoundException",
+        InvalidOperationException => "InvalidOperationException",
+        _ => "other",
+    };
 
     private async Task<IReadOnlyList<CommunityResource>?> BuildCommunityResourcesAsync(
         RefusalCategory category,
