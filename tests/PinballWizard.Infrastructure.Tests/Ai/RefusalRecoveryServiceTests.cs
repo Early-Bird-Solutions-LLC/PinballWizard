@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Refusal;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using Xunit;
@@ -218,6 +221,70 @@ public sealed class RefusalRecoveryServiceTests
             CancellationToken.None);
 
         Assert.Null(detail);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 5b. Loader throws → counter incremented + returns null (OBS-01 / invariant #17)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BuildRecoveryAsync_LoaderThrows_IncrementsErrorCounter_AndReturnsNull()
+    {
+        // OBS-01 / invariant #17: when ICommunityResourceLoader throws (e.g.
+        // FileNotFoundException — the seed file is not on the resolved path),
+        // RefusalRecoveryService must:
+        //   (a) increment pinwiz.ai.community_resources_load_errors_total
+        //   (b) return null (best-effort posture; primary refusal is unaffected)
+        // NOT silently swallow the failure at Warning level with no metric
+        // (which would make community-CTA absence look like "no resources for
+        // this category" rather than "infrastructure failure").
+        //
+        // MeterListener pattern per project_meterlistener_test_pattern.md:
+        // ConcurrentBag + Assert.Contains-with-predicate. Force the static
+        // cctor on PinballWizardTelemetry before wiring the listener.
+        _ = PinballWizardTelemetry.AiCommunityResourcesLoadErrors; // ensure instrument exists
+
+        var samples = new ConcurrentBag<(long Value, string? Reason)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.ai.community_resources_load_errors_total")
+                return;
+            string? reason = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "reason") reason = t.Value as string;
+            }
+            samples.Add((value, reason));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiCommunityResourcesLoadErrors);
+
+        // Arrange: the loader throws FileNotFoundException (the scenario when
+        // SeedPathResolver fails to find the seed — e.g. a mis-packaged image).
+        var loader = Substitute.For<ICommunityResourceLoader>();
+        loader.LoadByCategoryAsync(Arg.Any<CommunityResourceCategory>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<CommunityResource>>>(_ =>
+                throw new FileNotFoundException("Simulated missing community_resources.v1.json", "data/seeds/community_resources.v1.json"));
+
+        // The repo is real but irrelevant — the loader throws before any
+        // repo call can succeed.
+        var repo = EmptyRepo();
+        var svc = new RefusalRecoveryService(repo, loader, NullLogger<RefusalRecoveryService>.Instance);
+
+        // Act: OutOfScope triggers community-resource routing; loader throws.
+        var detail = await svc.BuildRecoveryAsync(
+            "where can I buy a machine",
+            RefusalCategory.OutOfScope,
+            CancellationToken.None);
+
+        // Assert (a): null — best-effort posture; primary refusal is unaffected.
+        Assert.Null(detail);
+
+        // Assert (b): the error counter was incremented with the correct reason tag.
+        Assert.Contains(
+            samples,
+            s => s.Value == 1 && s.Reason == "FileNotFoundException");
     }
 
     // ──────────────────────────────────────────────────────────────────────

@@ -474,6 +474,32 @@ public static class PinballWizardTelemetry
         unit: "{occurrence}",
         description: "IngestionSourcePolitenessResolver fell back to global politeness defaults because the Cosmos repository threw during initialization. All hosts will be scraped at the global default rate; per-source overrides are not applied (invariant #17).");
 
+    // ── Community-resource load failure counter (invariant #17 / OBS-01) ────
+    //
+    // Incremented by RefusalRecoveryService whenever ICommunityResourceLoader
+    // throws during BuildRecoveryAsync. When this fires, the refusal panel
+    // renders with no community CTAs — a visible symptom that looks like
+    // "the file resolved but was empty" from the user's perspective, but is
+    // actually an infrastructure failure. Without this counter the failure is
+    // silent: the catch block in BuildRecoveryAsync returns null (best-effort
+    // posture so primary refusals are never blocked) and the only signal is a
+    // single Error log entry.
+    //
+    // A non-zero rate in production means community routing is degraded.
+    // Alert: any increment in a 5-minute window warrants investigation — the
+    // community_resources.v1.json seed is bundled in the container image and
+    // should never be unresolvable in prod. A local non-zero rate signals a
+    // dev environment without the seed file in the expected search path
+    // (SeedPathResolver resolves via AppContext.BaseDirectory walk-up —
+    // verify the file is reachable from the Api's bin output tree).
+    //
+    // Tags:
+    //   reason — short exception class name (FileNotFoundException | InvalidOperationException | other)
+    public static readonly Counter<long> AiCommunityResourcesLoadErrors = Meter.CreateCounter<long>(
+        "pinwiz.ai.community_resources_load_errors_total",
+        unit: "{failure}",
+        description: "RefusalRecoveryService calls where ICommunityResourceLoader threw during BuildRecoveryAsync. When non-zero, community routing CTAs are absent from refusal panels. Tagged with reason (FileNotFoundException | InvalidOperationException | other). A non-zero prod rate means the community_resources.v1.json seed is unresolvable in the container — check SeedPathResolver and Dockerfile COPY (invariant #17 / OBS-01).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
