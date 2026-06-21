@@ -65,6 +65,10 @@
 }
 
 /* ── DMD strip (fake dot-matrix display) ──────────────────────────────── */
+/* DELIBERATE token exception: a dot-matrix display is a fixed physical artifact —
+ * amber-on-near-black regardless of the active theme. These hexes are intentionally
+ * NOT theme tokens; a DMD must read as a DMD under every sibling theme (incl. the
+ * cream Daytime Route). Do not "tokenize" these into --pw-* / --mud-palette-* vars. */
 
 .tilt-dmd-strip {
     background: #111;
