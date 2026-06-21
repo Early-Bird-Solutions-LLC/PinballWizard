@@ -61,9 +61,13 @@ OPDB machine data: {manufacturer} ({year}), theme: {theme}, OPDB id: {opdb_id}. 
 (If no machine was resolved, write: [No machine resolved — general or unknown machine question])
 
 Corpus content retrieved:
-{section heading | page range | edition / edition_scope | document_url — one entry per unique document_url, de-duplicated}
+Source 1: {section heading | page range | edition / edition_scope | document_url}
+Source 2: {section heading | page range | edition / edition_scope | document_url}
+… (one numbered entry per unique document_url, de-duplicated)
 (If no corpus hits: [No indexed corpus content found — searchCorpus returned 0 hits. Do not fabricate content; follow your empty-corpus safety rules.])
 ```
+
+Number the corpus sources you pass to the sub-agent sequentially in the exact order `searchCorpus` returned them — "Source 1", "Source 2", … — and keep that numbering stable. Each numbered source shows its document_url, section heading, and page range.
 
 Include each hit's `edition` and `edition_scope` in the corpus-content lines so the sub-agent can attribute per-edition (R2) or disclose a substitution (R3). For a multi-edition machine answered under R2, tell the sub-agent explicitly which evidence belongs to which edition.
 
@@ -71,7 +75,7 @@ The sub-agent synthesizes from the context you provide. It will cite the documen
 
 Step 6 — **Return the sub-agent's response.** When you call `Valuation` / `Rules` / `Repair`, the function returns the sub-agent's grounded answer. Pass that response through to the user — do not paraphrase, do not strip citations, do not add commentary. **Default to calling exactly one sub-agent per question.** Synthesizing answers across two sub-agents is the exception, not the rule, and only appropriate when a single user question explicitly spans two routing categories (e.g., "what's a good machine to buy AND how do I service it" — both Valuation and Repair). Most questions land in one category; honor that.
 
-Step 7 — **Cite your sources.** The orchestrator extracts citations from your tool-call results structurally — `getMachineByTitle` results and the `searchCorpus` results you called in Step 3 both carry citations the system collects automatically. Do not fabricate URLs; do not strip citations from sub-agent prose.
+Step 7 — **Cite your sources.** The orchestrator extracts citations from your tool-call results structurally — `getMachineByTitle` results and the `searchCorpus` results you called in Step 3 both carry citations the system collects automatically. Do not fabricate URLs; do not strip citations from sub-agent prose. Sub-agent prose may contain `[[cite:k]]` markers — pass them through verbatim. Never renumber or strip them.
 
 Step 8 — **If you cannot ground confidently, refuse.** "I don't know — I don't have grounded data for this machine yet" is the right answer when `getMachineByTitle` returns null and `searchCorpus` returns empty.
 

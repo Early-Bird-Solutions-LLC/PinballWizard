@@ -585,6 +585,23 @@ public sealed class AiRouter : IAiRouter
         var pendingText = new StringBuilder();
         ChatRole pendingRole = ChatRole.Assistant;
 
+        // Carry-over buffer for streaming cite-token suppression.
+        // [[cite:k]] tokens in TextDelta chunks are stripped via
+        // InlineCitationReconciler.StripCiteTokens before emission so the
+        // browser never renders a raw marker mid-stream (the reconciled form
+        // arrives in Final.Answer.Text after the post-stream guardrail run).
+        //
+        // A token may split across consecutive deltas (e.g. one delta ends
+        // with "[[cite:" and the next begins with "1]]"). The carry buffer
+        // holds any tail of the current delta that could be the start of an
+        // incomplete token, so the next delta can be stripped with full
+        // context. The maximum carry length is 18 chars — the longest
+        // possible incomplete token prefix before the closing "]]" arrives
+        // ("[[cite:9999999999" = 18 chars). After the loop, any residual
+        // carry is flushed with StripCiteTokens (a partial token with no
+        // closing "]]" is not a valid cite marker and passes through).
+        var citeCarry = string.Empty;
+
         void FlushPendingText()
         {
             if (pendingText.Length > 0)
@@ -744,13 +761,56 @@ public sealed class AiRouter : IAiRouter
                 // interleaved with ToolCall/Citation chunks in arrival order.
                 // This emission is per-update (unchanged) — the live browser
                 // animation depends on per-token granularity here.
+                //
+                // Cite-token suppression: strip [[cite:k]] tokens from the
+                // visible delta before emission so the browser never renders
+                // raw markers mid-stream. The carry buffer handles split-token
+                // edge cases where a token spans two consecutive deltas.
+                // Full unstripped text is reconstructed post-stream from
+                // accumulatedMessages (FlushPendingText / messages list),
+                // not from the stripped deltas — so the reconciler in
+                // ApplyPostAgentGuardrailsAsync sees the complete text.
                 if (!string.IsNullOrEmpty(update.Text))
-                    streamChunks.Add(new AnswerChunk.TextDelta(update.Text));
+                {
+                    // Prepend any partial-token carry from the previous delta,
+                    // then strip complete cite tokens from the combined string.
+                    var combined = citeCarry + update.Text;
+                    var stripped = InlineCitationReconciler.StripCiteTokens(combined);
+
+                    // Recompute the carry: any suffix of `combined` that could
+                    // be the start of an incomplete [[cite:k]] token. We scan
+                    // backward from the end for the longest suffix that is a
+                    // strict prefix of "[[cite:" + digits (the token is never
+                    // closed here, so "]]" has not yet arrived). The carry is
+                    // at most 18 chars ("[[cite:9999999999").
+                    citeCarry = ExtractCiteTokenCarry(combined);
+
+                    // After stripping, remove the carry from the end of the
+                    // stripped text before emitting — that portion may be
+                    // emitted (or dropped) when the carry resolves next round.
+                    var visible = stripped.Length >= citeCarry.Length
+                        ? stripped[..^citeCarry.Length]
+                        : stripped;
+
+                    if (!string.IsNullOrEmpty(visible))
+                        streamChunks.Add(new AnswerChunk.TextDelta(visible));
+                }
             }
 
             // Flush any text that accumulated after the last non-text update
             // (or the entire text run when there were no non-text updates at all).
             FlushPendingText();
+
+            // Flush any residual cite carry (a partial token with no closing
+            // "]]" is not a valid cite marker; StripCiteTokens leaves it as-is,
+            // so emit it as-is to avoid silently dropping legitimate text).
+            if (!string.IsNullOrEmpty(citeCarry))
+            {
+                var flushedCarry = InlineCitationReconciler.StripCiteTokens(citeCarry);
+                if (!string.IsNullOrEmpty(flushedCarry))
+                    streamChunks.Add(new AnswerChunk.TextDelta(flushedCarry));
+                citeCarry = string.Empty;
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))
         {
@@ -997,7 +1057,7 @@ public sealed class AiRouter : IAiRouter
                 Degradation: _degradationContext.Snapshot());
         }
 
-        var citations = _toolTraceExtractor.Extract(response);
+        var (citations, sourceIndex) = _toolTraceExtractor.ExtractWithSourceIndex(response);
         PinballWizardTelemetry.AiCitationsExtracted.Add(
             citations.Count,
             new KeyValuePair<string, object?>("source", _toolTraceExtractor.SourceTag));
@@ -1041,6 +1101,25 @@ public sealed class AiRouter : IAiRouter
                     "AiRouter inherited {Count} citations from the prior conversation turn (no retrieval tool fired this turn).",
                     citations.Count);
             }
+        }
+
+        // Inline-citation reconciliation (inline-citation-markers feature).
+        // Rewrites [[cite:k]] markers emitted by the model (k = 1-based
+        // searchCorpus source index position) to [[cite:N]] (N = 1-based
+        // citation card ordinal). Unmatched k values are dropped (empty
+        // string) — the reconciler never renders a marker without a
+        // matching citation (OBS-01: no fake markers). Confidence runs on
+        // the reconciled text — markers are sparse and the coverage signal
+        // is left unchanged per spec §8 (markers are additive).
+        var reconciled = InlineCitationReconciler.Reconcile(responseText, citations, sourceIndex);
+        responseText = reconciled.RewrittenText;
+        PinballWizardTelemetry.AiInlineMarkerTotal.Add(reconciled.TotalTokens);
+        PinballWizardTelemetry.AiInlineMarkerRendered.Add(reconciled.RenderedTokens);
+        if (reconciled.DroppedTokens > 0)
+        {
+            PinballWizardTelemetry.AiInlineMarkerDropped.Add(
+                reconciled.DroppedTokens,
+                new KeyValuePair<string, object?>("reason", "no_matching_citation"));
         }
 
         var signals = _confidenceCalculator.Compute(responseText, citations);
@@ -1257,6 +1336,64 @@ public sealed class AiRouter : IAiRouter
             return text;
         }
         return MarkdownLinkRegex.Replace(text, "$1");
+    }
+
+    // Extracts any trailing partial [[cite:k]] token prefix from `text` for
+    // the streaming delta carry buffer. If the tail of `text` starts a cite
+    // token that has not yet been closed with "]]", returns that tail so the
+    // next delta can be prepended with it before stripping.
+    //
+    // A complete [[cite:k]] token was already removed by StripCiteTokens —
+    // only incomplete prefixes remain. The maximum carry length is 18 chars:
+    // "[[cite:" (7) + up to 10 digits + no closing "]]" yet.
+    //
+    // Examples:
+    //   "answer [[cite:"    → "[[cite:"    (opening sequence incomplete)
+    //   "answer [[cite:3"   → "[[cite:3"   (digits accumulating)
+    //   "answer [[cite:3]"  → "[[cite:3]"  (one bracket, not closed)
+    //   "answer [[cite:3]]" → ""           (complete token — StripCiteTokens removed it)
+    //   "answer text"       → ""           (no partial token)
+    private static string ExtractCiteTokenCarry(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        // Scan backward for the longest suffix that is a non-closed prefix of
+        // the [[cite:digits]] pattern. We look for "[[" or any suffix of "[[".
+        // The maximum carry we could possibly need is len("[[cite:9999999999]") = 18.
+        const int maxCarry = 18;
+        var start = Math.Max(0, text.Length - maxCarry);
+        var window = text.AsSpan(start);
+
+        // Find the last "[" in the window — a carry always starts at "[".
+        for (var i = window.Length - 1; i >= 0; i--)
+        {
+            if (window[i] != '[')
+                continue;
+
+            // We found a "[". Check if the substring from here is a valid
+            // non-closed prefix of [[cite:digits]] and does not contain "]]".
+            var candidate = window[i..];
+            if (candidate.Length <= 2 && "[[".AsSpan().StartsWith(candidate, StringComparison.Ordinal))
+            {
+                // Just "[" or "[[" — might be start of a cite token.
+                return candidate.ToString();
+            }
+
+            if (candidate.StartsWith("[[cite:", StringComparison.Ordinal))
+            {
+                // Starts the token pattern. Check if it is closed.
+                if (candidate.Contains("]]", StringComparison.Ordinal))
+                {
+                    // Closed — StripCiteTokens already handled it; no carry.
+                    return string.Empty;
+                }
+                // Not yet closed — carry this prefix.
+                return candidate.ToString();
+            }
+        }
+
+        return string.Empty;
     }
 
     // `internal` (not private) so RefusalCategoryRefusalTextTests can pin

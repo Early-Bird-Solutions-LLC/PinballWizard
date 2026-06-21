@@ -150,3 +150,18 @@
         transform: none;
     }
 }
+
+/* ── Citation card pulse — applied by JS on hash navigation ─────────────── */
+/* Uses :global() because JS adds the class at runtime; scoped CSS
+   would not match a class injected outside of Blazor's render cycle. */
+
+:global(.pw-pulse) {
+    animation: pw-card-pulse 900ms ease-out 1;
+}
+@keyframes pw-card-pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 55%, transparent); }
+    100% { box-shadow: 0 0 0 6px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    :global(.pw-pulse) { animation: none; }
+}

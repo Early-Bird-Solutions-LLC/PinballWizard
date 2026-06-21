@@ -50,14 +50,17 @@
 
 <MudPaper Class="@cardClass"
           Elevation="1"
+          id="@($"citation-{Ordinal}")"
           data-testid="citation-card"
           data-source-type="@Citation.SourceType.ToString()"
           data-relevance-score="@(Citation.RelevanceScore?.ToString("F2") ?? "")">
 
     <MudStack Row="false" Spacing="1" Class="pa-3">
 
-        @* Header row: source-type icon + title + page anchor *@
+        @* Header row: ordinal badge + source-type icon + title + page anchor *@
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+
+            <span class="citation-ordinal" data-testid="citation-ordinal">@Ordinal</span>
 
             <MudIcon Icon="@sourceIcon"
                      Size="Size.Small"
@@ -177,13 +180,28 @@
     public Citation Citation { get; set; } = null!;
 
     /// <summary>
-    /// When set, the left flipper (◀ VIEW IN ANSWER) is rendered and scrolls to
-    /// this element id in the answer body. Left null until gap #3 (inline citation
-    /// markers) ships — at that point the parent component passes the marker anchor
-    /// (e.g. "marker-3") to light up the full flipper pair.
+    /// 1-based render-order ordinal assigned by CitationStrip across all groups.
+    /// Sets the card's DOM id ("citation-{Ordinal}") so inline markers can scroll
+    /// to it, and renders as a visible badge in the header row.
     /// </summary>
     [Parameter]
-    public string? InAnswerAnchor { get; set; }
+    public int Ordinal { get; set; }
+
+    /// <summary>
+    /// When true, the left flipper (◀ VIEW IN ANSWER) is rendered and targets
+    /// the first inline marker for this ordinal ("marker-{Ordinal}-1"). Set to
+    /// true by the parent once Task 6 wires the body marker presence. Defaults
+    /// to false so the flipper stays hidden until inline markers are live.
+    /// </summary>
+    [Parameter]
+    public bool HasInlineMarker { get; set; }
+
+    /// <summary>
+    /// Computed from HasInlineMarker + Ordinal. Non-null only when an inline marker
+    /// exists — controls whether the left flipper renders. The anchor targets the
+    /// first occurrence of this citation's marker in the answer body.
+    /// </summary>
+    private string? InAnswerAnchor => HasInlineMarker ? $"marker-{Ordinal}-1" : null;
 
     // Exposed as internal so tests can call the logic without rendering.
     internal static string? BuildPageAnchor(int? pageStart, int? pageEnd) =>

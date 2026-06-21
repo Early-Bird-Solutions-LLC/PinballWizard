@@ -23,9 +23,13 @@ namespace PinballWizard.Application.Ai;
 // AiRouter.cs:89 is (normalized, promptVersion); leaving the constant
 // at v3 would serve stale Phase-3-style refusals from cache for any
 // normalized question that had hit cache before this PR.
+// Bumped to "v5.2026.06" with inline-citation-markers: Wizard numbers corpus
+// sources ("Source 1", "Source 2", …) in searchCorpus return order and passes
+// [[cite:k]] markers through verbatim; Repair/Rules/Valuation sub-agents emit
+// [[cite:k]] at grounded sentences (RAG-05 prompt-version gate).
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v4.2026.05";
+    public const string CurrentPromptVersion = "v5.2026.06";
 
     private readonly Dictionary<string, string> _prompts;
 
