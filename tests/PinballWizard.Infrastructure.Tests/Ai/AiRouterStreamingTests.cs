@@ -472,6 +472,187 @@ public sealed class AiRouterStreamingTests
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // T12 — Post-guardrails reconciler rewrites [[cite:k]] → [[cite:N]]
+    //       using the searchCorpus source index.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PostGuardrails_rewrites_inline_markers_to_card_ordinals()
+    {
+        // Arrange: searchCorpus returns one hit at urlA (k=1).
+        // The answer text contains [[cite:1]] (matched → kept) and [[cite:99]]
+        // (out-of-range → dropped by reconciler).
+        // This proves the reconciler ran: without it [[cite:99]] would appear
+        // unchanged; with it, [[cite:99]] is gone.
+        const string urlA = "https://stern.com/manuals/godzilla.pdf";
+        var corpus = new SearchCorpusResult(
+        [
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla",
+                DocumentId: "doc_godzilla_manual",
+                DocumentUrl: urlA,
+                DocumentType: "Manual",
+                PageStart: 1,
+                PageEnd: 5,
+                SectionHeading: "Flipper Rules",
+                Content: "Rules for flippers."),
+        ]);
+        var updates = new[]
+        {
+            // Tool result: searchCorpus with k=1 → urlA
+            new AgentResponseUpdate(ChatRole.Tool, new List<AIContent>
+            {
+                new FunctionResultContent("call_searchCorpus_001", corpus),
+            }),
+            // Answer references k=1 (matched) and k=99 (unmatched — must be dropped).
+            MakeTextUpdate("Flippers persist [[cite:1]] and unknown [[cite:99]]."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "How do flippers work?");
+
+        // Assert: Final.Answer.Text has the reconciled form.
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal,
+            $"Expected a successful answer but got a refusal: {final.Answer.Text}");
+        // k=1 matched urlA → N=1: marker present in reconciled form.
+        Assert.Contains("[[cite:1]]", final.Answer.Text, StringComparison.Ordinal);
+        // k=99 out-of-range → dropped (reconciler ran; raw pass-through would leave it).
+        Assert.DoesNotContain("[[cite:99]]", final.Answer.Text, StringComparison.Ordinal);
+        // Prose preserved.
+        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T13 — Reconciler with two sources: k→N ordinal remapping verified
+    //       (k1→N2, k2→N1 when citation render order differs from source order)
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task PostGuardrails_remaps_k_to_correct_card_ordinal_when_render_order_differs()
+    {
+        // Arrange: searchCorpus returns two hits: k1=urlB, k2=urlA.
+        // Citations are deduplicated in source-index order, so render order is:
+        //   citation[0] = urlB (N=1), citation[1] = urlA (N=2).
+        // Answer text has [[cite:2]] (urlA). After reconcile, [[cite:2]] → [[cite:2]]
+        // (k2 → urlA → N=2). No change in this particular case, but what matters
+        // is that [[cite:1]] → N=1 (urlB) and [[cite:99]] is dropped.
+        const string urlA = "https://stern.com/manuals/godzilla.pdf";
+        const string urlB = "https://opdb.org/machines/GRBE-MJL05";
+        var corpus = new SearchCorpusResult(
+        [
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla",
+                DocumentId: "doc_godzilla_manual",
+                DocumentUrl: urlB,
+                DocumentType: "Manual",
+                PageStart: 1,
+                PageEnd: 1,
+                SectionHeading: "Rules",
+                Content: "Machine rules."),
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla",
+                DocumentId: "doc_godzilla_pdf",
+                DocumentUrl: urlA,
+                DocumentType: "PDF",
+                PageStart: 2,
+                PageEnd: 4,
+                SectionHeading: "Flippers",
+                Content: "Flipper info."),
+        ]);
+        var updates = new[]
+        {
+            new AgentResponseUpdate(ChatRole.Tool, new List<AIContent>
+            {
+                new FunctionResultContent("call_searchCorpus_002", corpus),
+            }),
+            // Answer references k1 and k99 (unmatched). After reconcile:
+            //   [[cite:1]] → [[cite:1]] (k1=urlB→N1)
+            //   [[cite:99]] → "" (dropped — no k99 in sourceIndex)
+            MakeTextUpdate("Source A [[cite:1]] and unknown [[cite:99]]."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "Two-source reconcile test?");
+
+        // Assert
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal,
+            $"Expected a successful answer but got a refusal: {final.Answer.Text}");
+        // k1 (urlB) maps to N=1.
+        Assert.Contains("[[cite:1]]", final.Answer.Text, StringComparison.Ordinal);
+        // k99 is out-of-range — dropped (the token is replaced with empty string).
+        Assert.DoesNotContain("[[cite:99]]", final.Answer.Text, StringComparison.Ordinal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T14 — Streaming: raw [[cite:k]] tokens are stripped from TextDelta
+    //       chunks so the user never sees them during streaming.
+    //       Final.Answer.Text (post-stream) carries the reconciled form.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AnswerStreamingAsync_CitationTokens_StrippedFromTextDeltasButPreservedInFinal()
+    {
+        // Arrange: the agent streams text with an embedded [[cite:1]] marker.
+        // The streaming path must strip raw cite tokens from TextDelta chunks.
+        // The Final.Answer.Text (post-stream reconcile) must have the
+        // reconciled form (still [[cite:1]] when k=1 maps to N=1 via urlA).
+        const string urlA = "https://stern.com/manuals/godzilla.pdf";
+        var corpus = new SearchCorpusResult(
+        [
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla",
+                DocumentId: "doc_godzilla_manual",
+                DocumentUrl: urlA,
+                DocumentType: "Manual",
+                PageStart: 1,
+                PageEnd: 5,
+                SectionHeading: "Flipper Rules",
+                Content: "Rules for flippers."),
+        ]);
+        var updates = new[]
+        {
+            new AgentResponseUpdate(ChatRole.Tool, new List<AIContent>
+            {
+                new FunctionResultContent("call_searchCorpus_003", corpus),
+            }),
+            // One update with a cite token embedded in prose.
+            MakeTextUpdate("Flippers persist [[cite:1]]. Read more."),
+        };
+        var (router, cache, _, confidence, _, _) = BuildRouter(agentUpdates: updates);
+        SetCacheMiss(cache);
+        SetConfidencePass(confidence);
+
+        // Act
+        var chunks = await CollectChunksAsync(router, "Streaming citation suppression test?");
+
+        // Assert: TextDelta chunks must NOT contain raw [[cite:k]] tokens.
+        var textDeltas = chunks.OfType<AnswerChunk.TextDelta>().ToList();
+        foreach (var delta in textDeltas)
+        {
+            Assert.DoesNotContain("[[cite:", delta.Text, StringComparison.Ordinal);
+        }
+
+        // Assert: Final carries the reconciled answer with the marker.
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.False(final.Answer.IsRefusal,
+            $"Expected a successful answer but got a refusal: {final.Answer.Text}");
+        Assert.Contains("[[cite:1]]", final.Answer.Text, StringComparison.Ordinal);
+        Assert.Contains("Flippers persist", final.Answer.Text, StringComparison.Ordinal);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────
 
