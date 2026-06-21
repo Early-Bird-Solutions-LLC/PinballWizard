@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Observability;
@@ -18,7 +19,8 @@ internal static class CosmosMetricsHelper
         string operation,
         ILogger logger,
         Func<CancellationToken, Task<(TResult result, double requestCharge)>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? documentId = null)
     {
         var stopwatch = Stopwatch.StartNew();
         try
@@ -32,6 +34,21 @@ internal static class CosmosMetricsHelper
             Emit(containerId, operation, stopwatch.Elapsed, ex.RequestCharge);
             if (ex.StatusCode != HttpStatusCode.NotFound)
                 LogFailureWithDiagnostics(containerId, operation, ex, logger);
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            // A malformed stored document — the Cosmos SDK's serializer
+            // (SystemTextJsonCosmosSerializer.FromStream) threw because the
+            // on-disk JSON doesn't match the target type. No RU is available
+            // from the SDK at this point (the SDK charged for the read before
+            // deserialization), so we emit a dedicated failure counter rather
+            // than the RU/duration instruments. The error is logged with the
+            // document id and container so operators can locate and remediate
+            // the corrupt document without a manual log search.
+            // Per invariant #17 / OBS-01: degrade visibly, never fabricate success.
+            LogDeserializationFailure(containerId, operation, documentId, ex, logger);
+            IncrementDeserFailedCounter(containerId, operation);
             throw;
         }
         // OperationCanceledException propagates — see CosmosRepository<T> for rationale.
@@ -63,5 +80,34 @@ internal static class CosmosMetricsHelper
                 "Cosmos {Operation} on container {Container} failed: {StatusCode}. Diagnostics captured in log scope.",
                 operation, containerId, ex.StatusCode);
         }
+    }
+
+    private static void LogDeserializationFailure(
+        string containerId,
+        string operation,
+        string? documentId,
+        JsonException ex,
+        ILogger logger)
+    {
+        using (logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["pinwiz.container"] = containerId,
+            ["pinwiz.operation"] = operation,
+            ["cosmos.document_id"] = documentId,
+        }))
+        {
+            logger.LogError(
+                ex,
+                "Cosmos {Operation} on container {Container} failed to deserialize document '{DocumentId}': {Message}. Operator action: locate the document by id in the container and re-upsert it with the correct schema (pinwiz.cosmos.deser_failed_total incremented).",
+                operation, containerId, documentId, ex.Message);
+        }
+    }
+
+    private static void IncrementDeserFailedCounter(string containerId, string operation)
+    {
+        PinballWizardTelemetry.CosmosDeserializationFailed.Add(
+            1,
+            new KeyValuePair<string, object?>("container", containerId),
+            new KeyValuePair<string, object?>("operation", operation));
     }
 }

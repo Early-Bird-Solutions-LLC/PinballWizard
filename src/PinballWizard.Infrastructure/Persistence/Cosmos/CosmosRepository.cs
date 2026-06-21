@@ -67,7 +67,8 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
                         cancellationToken: ct).ConfigureAwait(false);
                     return (response.Resource, response.RequestCharge);
                 },
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                documentId: id).ConfigureAwait(false);
         }
         catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -233,12 +234,13 @@ public class CosmosRepository<T> : IRepository<T> where T : class, IEntity
     protected async Task<TResult> ExecuteWithMetricsAsync<TResult>(
         string operation,
         Func<CancellationToken, Task<(TResult result, double requestCharge)>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? documentId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
         ArgumentNullException.ThrowIfNull(action);
 
         return await CosmosMetricsHelper.ExecuteWithMetricsAsync(
-            _container.Id, operation, _logger, action, cancellationToken).ConfigureAwait(false);
+            _container.Id, operation, _logger, action, cancellationToken, documentId).ConfigureAwait(false);
     }
 }
