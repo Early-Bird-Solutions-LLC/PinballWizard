@@ -20,10 +20,10 @@
       "description": "Demonstrates the Repair sub-agent's safety-first diagnostic flow using indexed service bulletins, with the non-fabrication safety invariant visible to prospects."
     },
     {
-      "slug": "tell-me-about-the-wizard",
-      "question": "What can you help me with? Show me what PinballWizard knows about pinball machines.",
+      "slug": "what-is-the-jersey-jack-wonka-machine",
+      "question": "What is the Jersey Jack Wonka pinball machine, and who makes it?",
       "target_sub_agent": "Wizard",
-      "description": "Demonstrates the Wizard orchestrator agent routing, cross-cutting tool usage, and the general Q&A surface — a first-30-seconds showcase entry point."
+      "description": "Demonstrates the Wizard orchestrator answering a general machine-identity question directly via getMachineByTitle, grounded with an OPDB citation — the first-30-seconds showcase entry point. Replaces a capability/meta question that produced no citations and was therefore refused by the citation-required confidence gate (OutOfScope)."
     }
   ]
 }
