@@ -13,21 +13,37 @@
  */
 
 /* Panel border: accent-refusal (#ff3b30) per spec — reads like a pinball
- * callout (TILT, BALL SAVED), not an apology. Box-shadow gives a gentle red
- * glow that matches the border-glow-red token (alpha-60 tint). */
+ * callout (TILT, BALL SAVED), not an apology.
+ *
+ * Border is 2px (vs. the default 1px quiet border) so the red reads as a
+ * deliberate broadcast callout on the near-black background rather than
+ * a faint outline. The outer glow uses a compound shadow: a tight halo
+ * (6px) that anchors the border visually and a wider bloom (20px) that
+ * gives the "backlit panel" feel from the prototype.
+ *
+ * Per modern-lcd.md §"Motion vocabulary": refusal is a static state —
+ * the glow does NOT pulse. prefers-reduced-motion has nothing to collapse
+ * here; the glow is structural, not animated. */
 .refusal-panel {
-    border: 1px solid var(--pw-accent-refusal);
+    border: 2px solid var(--pw-accent-refusal);
     border-radius: 2px;       /* machined edge per modern-lcd.md; 8px+ reads "Material" */
-    box-shadow: 0 0 14px var(--pw-border-glow-red);
+    box-shadow: 0 0 6px var(--pw-border-glow-red),
+                0 0 20px var(--pw-border-glow-red);
     max-width: 720px;
 }
 
 /* Category label — Barlow Condensed via h4 MudText (h4 uses that family
  * per PinballTheme.cs). Text is ALL CAPS in the markup; letter-spacing
  * opens the glyphs for the "broadcast announcement" feel. Color is
- * accent-refusal so it reads as the semantic callout color. */
+ * accent-refusal so it reads as the semantic callout color.
+ *
+ * Spec (modern-lcd.md §"Refusal that directs out"): "~32px+ on desktop"
+ * for the category label as a broadcast callout — same size as prototype
+ * (.cat { font-size: 2rem }). h4 MudText renders Barlow Condensed but at
+ * ~1.5rem; override to 2rem here to hit the spec. */
 ::deep .refusal-category-label {
     color: var(--pw-accent-refusal);
+    font-size: 2rem;           /* ~32px — broadcast callout per spec */
     letter-spacing: 0.04em;
     line-height: 1;
     text-transform: uppercase; /* belt-and-suspenders: markup is already all-caps */

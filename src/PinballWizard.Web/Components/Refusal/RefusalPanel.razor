@@ -41,7 +41,8 @@
         @switch (Category)
         {
             case RefusalCategory.OutOfScope:
-                <OutOfScopeView RelatedMachines="Detail?.RelatedMachines" />
+                <OutOfScopeView RelatedMachines="Detail?.RelatedMachines"
+                                HasCommunityResources="_communityResources.Count > 0" />
                 break;
 
             case RefusalCategory.InsufficientGrounding:
@@ -84,7 +85,10 @@
 
             default:
                 @* Unknown future category: generic fallback so the panel
-                   doesn't crash on a forward-compat enum value. *@
+                   doesn't crash on a forward-compat enum value.
+                   Routing-promise text is conditional on community resources
+                   being present — don't reference "the community below"
+                   when no routing CTAs follow. *@
                 <MudStack Spacing="1">
                     <MudIcon Icon="@Icons.Material.Filled.Info"
                              Color="Color.Secondary"
@@ -92,10 +96,20 @@
                     <MudText Typo="Typo.h4" Class="refusal-category-label" data-testid="refusal-category-label">
                         UNABLE TO ANSWER
                     </MudText>
-                    <MudText Typo="Typo.body1" Color="Color.Default">
-                        I wasn't able to produce a grounded answer for this question.
-                        Try rephrasing or exploring the community resources below.
-                    </MudText>
+                    @if (_communityResources.Count > 0)
+                    {
+                        <MudText Typo="Typo.body1" Color="Color.Default">
+                            I wasn't able to produce a grounded answer for this question.
+                            Try rephrasing or exploring the community resources below.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body1" Color="Color.Default">
+                            I wasn't able to produce a grounded answer for this question.
+                            Try rephrasing your question.
+                        </MudText>
+                    }
                 </MudStack>
                 break;
         }

@@ -4,6 +4,13 @@
  * the Wizard's covered domain. Tone is "let me help you get unstuck" —
  * we explain what we DO cover and surface related machines as pivots.
  *
+ * HasCommunityResources gates the routing-promise in the reason text:
+ * "the community below can help" is only honest when routing CTAs are
+ * actually present. RefusalPanel passes this flag from _communityResources
+ * so the subview never implies a destination that doesn't exist.
+ * Per modern-lcd.md § Posture: "name coverage gaps honestly" and
+ * "refusal text never implies covered venues are better."
+ *
  * ADR-0026 § 4 — per-category subview within RefusalPanel
  * ADR-0026 § 5 — community resources rendered by CommunityResourceCards
  * ADR-0008     — MudBlazor strict
@@ -19,9 +26,18 @@
         <MudText Typo="Typo.h4" Class="refusal-category-label" data-testid="refusal-category-label">
             OUT OF SCOPE
         </MudText>
-        <MudText Typo="Typo.body1" Color="Color.Default">
-            This question is outside the Wizard's current sources. The community below can help.
-        </MudText>
+        @if (HasCommunityResources)
+        {
+            <MudText Typo="Typo.body1" Color="Color.Default" data-testid="out-of-scope-reason">
+                This question is outside the Wizard's current sources. The community below can help.
+            </MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Color="Color.Default" data-testid="out-of-scope-reason">
+                This question is outside the Wizard's current sources.
+            </MudText>
+        }
     </MudStack>
 
     @if (RelatedMachines is not null && RelatedMachines.Count > 0)
@@ -54,4 +70,9 @@
 
 @code {
     [Parameter] public IReadOnlyList<RelatedMachine>? RelatedMachines { get; set; }
+
+    // When true, the reason text includes "The community below can help"
+    // to indicate that routing CTAs follow. Set by RefusalPanel based on
+    // whether Detail.CommunityResources is non-empty.
+    [Parameter] public bool HasCommunityResources { get; set; }
 }
