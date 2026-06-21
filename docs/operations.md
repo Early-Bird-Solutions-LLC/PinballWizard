@@ -123,6 +123,17 @@ dotnet run --project src/PinballWizard.Cli -- --status
 
 ---
 
+## Local Development
+
+For first-time setup and seeding the Cosmos emulator with a functional machine catalog,
+see [`docs/local-development.md`](local-development.md). That guide covers:
+
+- Azure identity isolation (`.azure-local` + `AZURE_CONFIG_DIR`)
+- Starting the AppHost (`start-apphost.ps1`) and locating the Web URL
+- The seed sequence (`--ensure-cosmos-containers`, `--seed-ingestion-sources`, `--seed-featured-machines` / `--source opdb`)
+- The `matchTokens` nested-array contract and silent-refusal symptom
+- Verification checklist
+
 ## Local Eval Configuration
 
 Running `--eval` against the deployed stack requires three endpoints that are **not** in `appsettings.json` (they are deployment-specific and must not be committed). Set them as env vars before invoking the CLI:
