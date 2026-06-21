@@ -171,6 +171,44 @@ fixtures) now pin the runtime JSON casing — the original JsonElement
 tests serialized fixtures PascalCase, which is why they stayed green
 through the outage.
 
+## Follow-up 2026-06-20 — inline-token contract + `ExtractWithSourceIndex` + reconciliation drop rule
+
+The inline citation marker feature extends the ADR-0022 extraction surface
+with three additions:
+
+- **`[[cite:k]]` inline-token contract.** The Wizard prompt (v5.2026.06)
+  instructs the model to emit `[[cite:k]]` tokens (k = 1-based ordinal of
+  the `searchCorpus` source in tool-trace return order) at grounded
+  sentences in its answer prose. Sub-agent prompts (Repair, Rules,
+  Valuation) echo the same `[[cite:k]]` at grounded sentences before
+  returning their text to the Wizard. This is the structural citation
+  mechanism the original ADR considered and deferred as "citation-emitting
+  tool (Alternatives considered)"; the token form avoids tool-call overhead
+  by piggybacking on the prose that the model generates anyway.
+- **`ExtractWithSourceIndex` k→SourceUrl index.** `ToolTraceCitationExtractor`
+  gains a new public surface:
+  `(IReadOnlyList<Citation> Citations, IReadOnlyList<string> SourceIndex) ExtractWithSourceIndex(AgentResponse?)`.
+  `SourceIndex[k-1]` is the `DocumentUrl` of the k-th `searchCorpus` hit
+  in tool-trace order — exactly what the reconciler needs to resolve
+  `[[cite:k]]` → card ordinal N. Only `searchCorpus` hits populate
+  `SourceIndex`; `getMachineByTitle` results and OPDB-regex citations from
+  sub-agent text go into `Citations` only (they are grounding records, not
+  numbered sources the model cites with `[[cite:k]]`). Hits with a blank
+  `DocumentUrl` are skipped (they would produce no citation either); the
+  k-numbering stays consistent with what the model saw.
+- **Reconciliation drop-on-no-match rule (OBS-01 enforcement).**
+  `InlineCitationReconciler.Reconcile` walks the final `AnswerText`,
+  looks up each `[[cite:k]]` token in `SourceIndex` to find the
+  `SourceUrl`, then resolves that URL to the card ordinal N in
+  `WizardAnswer.Citations`. Tokens that fail either lookup (k out of range,
+  URL not in the citation list) are **dropped** — replaced with the empty
+  string — and counted in `AiInlineMarkerDropped`. They are **never
+  rendered** as a bare `[[cite:k]]` and never fabricated as a phantom
+  card (OBS-01: dropped markers are metered, not faked). Only markers
+  that survive the full k→SourceUrl→N chain appear in the rewritten
+  `AnswerText` as `[[cite:N]]`, which `MarkdownTokenizer` then renders
+  as a CSP-safe `CitationMarker` superscript.
+
 ## References
 
 - [ADR-0014](0014-microsoft-foundry-orchestration.md) — Microsoft
@@ -182,6 +220,10 @@ through the outage.
   schema feeds the citation surface
 - [ADR-0023](0023-citation-required-guardrail.md) — pairs with
   this ADR for the structural "every answer cites" invariant
+- [ADR-0026](0026-user-delight-frontend-and-streaming.md) § Follow-up
+  2026-06-20 — the complementary follow-up describing the inline-marker
+  layer from the citation-surface (§8) perspective, including the
+  left-flipper round-trip and the `Final`-only resolution rule
 - [build-spec.md § Phase 4](../build-spec.md) — scope items 4
   (this ADR), 10 (tool-trace extractor implementation), 21
   (`searchCorpus` tool that feeds citations)

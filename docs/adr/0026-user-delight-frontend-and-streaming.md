@@ -408,3 +408,45 @@ follow-on PRs per `thoughts/shared/plans/AB-259-multi-turn-conversation.md`.
   sessions / re-engagement surfaces). The conversation here lives only in
   circuit component state and the request that carries it — a page
   refresh starts fresh. A clarifying note lands in ADR-0027 with the UI PR.
+
+## Follow-up 2026-06-20 — inline citation marker layer (§8 citation surface)
+
+§8's "Explicitly NOT adopted" entry ("Inline citation markers in agent prose
+('[1]', '[2]')") is superseded for the `searchCorpus`-citation case. The
+spec concern was *drift-prone regex post-processing*; the inline-marker
+feature avoids that entirely by having the extractor produce the k→SourceUrl
+index and having the reconciler perform a pure, deterministic rewrite with
+no regex over prose.
+
+The inline-marker layer adds two contracts on top of § 8:
+
+- **`[[cite:N]]` body contract.** `WizardAnswer.AnswerText` may contain
+  `[[cite:N]]` tokens (N = citation card ordinal, 1-based, matching the
+  position of the corresponding `Citation` in `WizardAnswer.Citations`).
+  Tokens are structural, not decorative — only markers that survived
+  `InlineCitationReconciler.Reconcile` appear; unmatched tokens are dropped
+  and never rendered (OBS-01: never present synthetic content as real).
+- **Marker↔card numbering.** The Wizard prompt numbers each returned
+  `searchCorpus` source ("Source 1 … Source N") in tool-trace order and
+  instructs sub-agents to emit `[[cite:k]]` at grounded sentences where k
+  is the 1-based source ordinal. The extractor's `ExtractWithSourceIndex`
+  builds the k→SourceUrl index in that same order. The reconciler maps
+  k→SourceUrl→card ordinal N, so markers in prose always address the
+  displayed citation card.
+- **Markers resolve at `Final`.** The streaming path strips raw `[[cite:k]]`
+  tokens from `TextDelta` chunks (they are not resolved mid-stream — the
+  source index isn't stable until `Final`). The resolved, reconciled text
+  with `[[cite:N]]` tokens appears only in `Final.Answer.AnswerText` and
+  the non-streaming `AnswerAsync` return value.
+- **Left-flipper round-trip.** `CitationMarker` (a `MarkdownTokenizer`
+  insertion, CSP-safe, no `onclick`) renders each `[[cite:N]]` as a
+  superscript badge. Clicking it scrolls to `#citation-N` (the card's
+  anchor). `CitationCard`'s left-flipper button scrolls back to the
+  first marker in the answer body that references that card — closing the
+  navigation loop without a disclosure toggle (FE-09 stays satisfied:
+  cards remain uncollapsed).
+
+The § 8 trade-off matrix entry (row 26) is not edited in place; it reflected
+the design space at ADR write-time. This follow-up supersedes the rejection
+for the structural `[[cite:k]]` form, which `ADR-0022`'s
+`ExtractWithSourceIndex` makes possible without regex over prose.
