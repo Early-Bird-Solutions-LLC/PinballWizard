@@ -6,6 +6,8 @@ applies-to:
   - "src/PinballWizard.Web/**"
   - "src/PinballWizard.Web.Client/**"
   - "**/*.razor"
+  - "docs/ui/design-system/**"
+  - "docs/ui/themes/**"
 ---
 
 # Frontend-Blazor Standard
@@ -63,6 +65,31 @@ CHECK:  rg -n "IsMuted\s*=\s*false|autoplay\b|AutoPlay\s*=\s*true" src/PinballWi
 SEV:    🔴
 REF:    INVARIANTS#14 · ADR-0026 §6 "Explicitly NOT adopted" · SoundControllerTests
 
+**RULE FE-07** (palette-pinned-modern-lcd)
+WHEN:   adding or modifying `PinballTheme.cs`, the daytime-route theme constants, or the `:root` theme tokens in `src/PinballWizard.Web/wwwroot/app.css`
+THEN:   the Modern LCD semantic palette stays pinned to its spec values (amber primary, atomic-green grounded, saturated-red refusal, magenta mode, warm-near-black surface family); a change to any pinned hex updates `PinballThemeContractTests` / `DaytimeRouteThemeContractTests` in the same commit; each accent keeps a non-color signal so the palette degrades safely
+NEVER:  add a sixth semantic accent without deleting one — the palette is closed; adding a role requires a design-authority (`docs/ui/themes/modern-lcd.md`) + ADR change, not a silent new `Color` slot; drift a pinned hex without updating the contract test
+CHECK:  dotnet test --filter "FullyQualifiedName~PinballThemeContractTests|FullyQualifiedName~DaytimeRouteThemeContractTests" --no-build
+SEV:    🔴
+REF:    ADR-0008 · docs/ui/themes/modern-lcd.md · docs/ui/design-system/README.md · PinballThemeContractTests · DaytimeRouteThemeContractTests
+
+**RULE FE-08** (theme-design-system-sync)
+WHEN:   modifying the implemented theme — `PinballTheme.cs`, the daytime-route constants, or the `:root` tokens in `src/PinballWizard.Web/wwwroot/app.css`
+THEN:   re-sync the design-system mirror so `docs/ui/design-system/tokens.css` is updated in the SAME PR; the repo theme is the source of truth and the design-system directory (and its claude.ai/design project) is the mirror
+NEVER:  change a theme token without re-syncing `docs/ui/design-system/tokens.css`; treat the design-system directory as authoritative over the theme code
+CHECK:  if git diff --name-only origin/main...HEAD | rg -q "PinballTheme\.cs$|Web/wwwroot/app\.css$"; then git diff --name-only origin/main...HEAD | rg -q "docs/ui/design-system/tokens\.css$" && echo CLEAN || echo "FAIL: theme changed but design-system tokens.css was not re-synced"; else echo CLEAN; fi
+        NOTE: change-coupling tripwire — a theme-token change requires the mirrored `tokens.css` in the same diff; the exact value match is confirmed in /local-review.
+SEV:    ⚠️
+REF:    docs/ui/design-system/README.md (mirror contract) · ADR-0026 §6
+
+**RULE FE-09** (citation-as-hero-and-cta-parity)
+WHEN:   adding or modifying a citation surface (`CitationStrip`/`CitationCard`/`CitationGroup`), a `RefusalPanel` recovery CTA set, or any component rendering peer community-resource destinations
+THEN:   citation cards render full-fidelity and uncollapsed by default — citation-as-hero makes provenance visible (see `PROV-01`); peer outbound destinations get visually identical CTAs (no elevated "primary" among peers — the visual expression of `COMM-02` no-editorial-ranking)
+NEVER:  collapse or truncate the citation stack behind a "show sources" toggle by default; give one peer destination a visually dominant CTA (size / color / placement) while de-emphasizing the others
+CHECK:  (qualitative — /local-review category 12 + category 13: citation stack uncollapsed/full-fidelity; peer CTAs visually identical)
+SEV:    🔴
+REF:    PROV-01 (provenance sacred) · COMM-02 (no-editorial-ranking) · ADR-0026 §6 · docs/ui/design-system/README.md
+
 ## Definition of Done
 
 - FE-01: every interactive routable page declares `@rendermode InteractiveServer`; error/degraded surfaces stay static with `Href` anchors. Enforced by `RenderModeConventionTests`.
@@ -71,3 +98,6 @@ REF:    INVARIANTS#14 · ADR-0026 §6 "Explicitly NOT adopted" · SoundControlle
 - FE-04: `/api/wizard/ask:stream` is SSE-only with `AnswerChunk`-shaped JSON; `Final` always closes the stream. Enforced by `AnswerChunkContractTests`.
 - FE-05: API errors are RFC 9457 ProblemDetails with `requestId`; `/error` is the pinball-themed tilt page.
 - FE-06: audio defaults to muted; no auto-play. Enforced by `SoundControllerTests`.
+- FE-07: the Modern LCD palette stays pinned to spec (closed 5-accent set); hex drift fails `PinballThemeContractTests`/`DaytimeRouteThemeContractTests`.
+- FE-08: a theme-token change re-syncs `docs/ui/design-system/tokens.css` in the same PR (mirror stays current).
+- FE-09: citation cards full-fidelity & uncollapsed; peer outbound CTAs visually identical (no favoritism).
