@@ -165,15 +165,22 @@
        is cleared and _state transitions to Refusal so this block never renders. *@
     @if (_state is AnswerState.Streaming or AnswerState.CitationsArriving or AnswerState.Complete)
     {
-        <TokenRenderer SpanTexts="_textDeltas"
-                       IsStreaming="_state is AnswerState.Streaming or AnswerState.CitationsArriving" />
+        @* Cascade the ordinal-ordered citation list so CitationMarker components
+           inside the rendered markdown can derive their hover tooltips with the
+           same N as the citation cards (Task 8). Name="OrderedCitations" matches
+           the [CascadingParameter(Name="OrderedCitations")] in CitationMarker. *@
+        <CascadingValue Value="@PinballWizard.Web.Components.Citations.CitationOrdering.InRenderOrder(_citations)"
+                        Name="OrderedCitations">
+            <TokenRenderer SpanTexts="_textDeltas"
+                           IsStreaming="_state is AnswerState.Streaming or AnswerState.CitationsArriving" />
+        </CascadingValue>
     }
 
     @* ── CitationStrip (CitationsArriving / Complete) ─────────────────── *@
     @if (_citations.Count > 0 &&
          _state is AnswerState.CitationsArriving or AnswerState.Complete)
     {
-        <CitationStrip Citations="_citations" />
+        <CitationStrip Citations="_citations" AnswerBody="@string.Join(string.Empty, _textDeltas)" />
     }
 
     @* ── RefusalPanel (Refusal state only — supersedes streamed text) ──── *@

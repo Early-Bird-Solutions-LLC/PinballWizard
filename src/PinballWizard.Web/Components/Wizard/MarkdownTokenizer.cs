@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using PinballWizard.Web.Components.Citations;
 
 namespace PinballWizard.Web.Components.Wizard;
 
@@ -179,13 +180,18 @@ internal static class MarkdownTokenizer
 #pragma warning disable ASP0006
     private static void BuildTree(RenderTreeBuilder builder, List<Block> blocks)
     {
+        // Per-render occurrence counter: tracks how many times each citation number
+        // has been emitted so that multiple [[cite:N]] tokens for the same N get
+        // distinct Occurrence values (1, 2, …) → distinct DOM ids (marker-N-1, …).
+        var occurrences = new Dictionary<int, int>();
+
         foreach (var block in blocks)
         {
             switch (block)
             {
                 case ParagraphBlock p:
                     builder.OpenElement(0, "p");
-                    RenderInline(builder, p.Text);
+                    RenderInline(builder, p.Text, occurrences);
                     builder.CloseElement();
                     break;
 
@@ -194,7 +200,7 @@ internal static class MarkdownTokenizer
                     foreach (var item in ol.Items)
                     {
                         builder.OpenElement(0, "li");
-                        RenderInline(builder, item);
+                        RenderInline(builder, item, occurrences);
                         builder.CloseElement();
                     }
                     builder.CloseElement();
@@ -205,7 +211,7 @@ internal static class MarkdownTokenizer
                     foreach (var item in ul.Items)
                     {
                         builder.OpenElement(0, "li");
-                        RenderInline(builder, item);
+                        RenderInline(builder, item, occurrences);
                         builder.CloseElement();
                     }
                     builder.CloseElement();
@@ -216,7 +222,9 @@ internal static class MarkdownTokenizer
 
     // Renders inline markdown within a block: **bold**, *italic*, \n→<br>.
     // Text content is always passed to AddContent (HTML-encoded by Blazor).
-    private static void RenderInline(RenderTreeBuilder builder, string text)
+    // occurrences is threaded from BuildTree so [[cite:N]] markers across all
+    // lines of a block (and all blocks) share the same per-render counter.
+    private static void RenderInline(RenderTreeBuilder builder, string text, Dictionary<int, int> occurrences)
     {
         // Split by \n to handle intra-paragraph line breaks → <br />.
         var lines = text.Split('\n');
@@ -228,13 +236,15 @@ internal static class MarkdownTokenizer
                 builder.CloseElement();
             }
 
-            RenderInlineSpans(builder, lines[li]);
+            RenderInlineSpans(builder, lines[li], occurrences);
         }
     }
 
-    // Renders bold/italic inline markers within a single line of text.
+    // Renders bold/italic/cite inline markers within a single line of text.
     // Processes the string left-to-right, emitting text runs and wrapped elements.
-    private static void RenderInlineSpans(RenderTreeBuilder builder, string text)
+    // occurrences is threaded from BuildTree so the per-render occurrence counter
+    // for [[cite:N]] is maintained across all calls within a single Render pass.
+    private static void RenderInlineSpans(RenderTreeBuilder builder, string text, Dictionary<int, int> occurrences)
     {
         var pos = 0;
         while (pos < text.Length)
@@ -269,13 +279,35 @@ internal static class MarkdownTokenizer
                 }
             }
 
+            // Try [[cite:N]] inline citation token. Closed registry — currently only
+            // "cite" with an integer payload. Unknown kind / malformed payload falls
+            // through to literal text (fail-safe, CSP-safe, designed to extend).
+            if (pos + 1 < text.Length && text[pos] == '[' && text[pos + 1] == '[')
+            {
+                if (TryMatchInlineToken(text, pos, out var consumed, out var kind, out var payload)
+                    && kind == "cite"
+                    && int.TryParse(payload, out var citeNumber))
+                {
+                    var occ = occurrences.TryGetValue(citeNumber, out var prev) ? prev + 1 : 1;
+                    occurrences[citeNumber] = occ;
+                    builder.OpenComponent<CitationMarker>(0);
+                    builder.AddComponentParameter(0, nameof(CitationMarker.Number), citeNumber);
+                    builder.AddComponentParameter(0, nameof(CitationMarker.Occurrence), occ);
+                    builder.CloseComponent();
+                    pos += consumed;
+                    continue;
+                }
+                // Not a recognized token — fall through; the '[' is appended as literal text.
+            }
+
             // No inline marker — emit one character as plain text. Buffer up
             // consecutive plain chars to reduce RenderTreeBuilder node count.
             var runStart = pos;
             while (pos < text.Length)
             {
-                // Stop buffering at any potential marker.
+                // Stop buffering at any potential marker start character.
                 if (text[pos] == '*') break;
+                if (text[pos] == '[') break;
                 pos++;
             }
 
@@ -285,13 +317,48 @@ internal static class MarkdownTokenizer
             }
             else
             {
-                // Single unmatched '*' — emit it literally and advance.
+                // Single unmatched '*' or '[' — emit it literally and advance.
                 builder.AddContent(0, text[pos].ToString());
                 pos++;
             }
         }
     }
 #pragma warning restore ASP0006
+
+    // Inline-token scanner: [[<kind>:<payload>]]. Returns true when a well-formed
+    // token is found at pos; sets consumed to the full token length (including ]]
+    // so the caller can skip past it). Empty kind, empty payload, or a missing ]]
+    // are all treated as non-tokens so the surrounding '[' characters fall through
+    // to literal text (fail-safe, CSP-safe). Designed to extend — callers filter
+    // by kind ("cite" today; "portal" or others later).
+    private static bool TryMatchInlineToken(
+        string text, int pos, out int consumed, out string kind, out string payload)
+    {
+        consumed = 0;
+        kind = "";
+        payload = "";
+
+        // Need at least "[[x:y]]" = 7 chars; pos+1 is already '[' (caller verified).
+        if (pos + 4 >= text.Length || text[pos] != '[' || text[pos + 1] != '[')
+            return false;
+
+        var close = text.IndexOf("]]", pos + 2, StringComparison.Ordinal);
+        if (close < 0)
+            return false;
+
+        var inner = text.Substring(pos + 2, close - (pos + 2)); // e.g. "cite:2"
+        var colon = inner.IndexOf(':');
+        if (colon <= 0)
+            return false;
+
+        kind = inner[..colon];
+        payload = inner[(colon + 1)..];
+        if (payload.Length == 0)
+            return false;
+
+        consumed = (close + 2) - pos; // include closing ]]
+        return true;
+    }
 
     // Finds the index of the closing single '*' after startIdx.
     // A single '*' close must NOT be immediately preceded by another '*'

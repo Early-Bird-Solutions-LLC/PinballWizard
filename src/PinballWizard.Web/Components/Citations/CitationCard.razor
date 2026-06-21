@@ -5,13 +5,23 @@
  * Visual anatomy:
  *   [SourceType icon]  Machine Title  [page anchor]
  *                      Section heading (italic, when present)
- *                      [FreshnessBadge]  [RelevanceScore %]  [external link button]
+ *                      [FreshnessBadge]  [RelevanceScore %]
+ *                      [◀ VIEW IN ANSWER]  [VIEW THE ORIGINAL ▶]
  *
  * Security baseline: external links carry target="_blank" rel="noopener noreferrer".
  * MudLink does not support rel= (MUD0002 analyzer); external source links are rendered
  * as native <a> elements to preserve the security attribute. The open-in-new icon
  * is rendered as a Unicode glyph inside the <a> so that no MudBlazor child component
  * (which Razor's parser can mis-handle) is nested inside the native element.
+ *
+ * Flipper-button CTA pair (design-system gap #2, modern-lcd.md § Flipper-button CTA pair):
+ *   RIGHT flipper (VIEW THE ORIGINAL ▶) — opens Citation.SourceUrl in a new tab.
+ *     Backlight = accent-grounded (atomic green). This REPLACES the old ↗ link.
+ *     Always rendered (there is always a source URL).
+ *   LEFT flipper (◀ VIEW IN ANSWER) — scrolls to the inline citation marker.
+ *     Backlight = accent-mode (magenta). Depends on gap #3 (inline markers).
+ *     Only rendered when InAnswerAnchor parameter is non-null. Gap #3 will
+ *     pass the anchor (e.g. "marker-3") to light up the pair.
  *
  * Score accent: cards whose normalized match is >= HighMatchPercent receive the
  * "citation-card-high-score" CSS class which renders a subtle amber accent border
@@ -40,14 +50,17 @@
 
 <MudPaper Class="@cardClass"
           Elevation="1"
+          id="@($"citation-{Ordinal}")"
           data-testid="citation-card"
           data-source-type="@Citation.SourceType.ToString()"
           data-relevance-score="@(Citation.RelevanceScore?.ToString("F2") ?? "")">
 
     <MudStack Row="false" Spacing="1" Class="pa-3">
 
-        @* Header row: source-type icon + title + page anchor *@
+        @* Header row: ordinal badge + source-type icon + title + page anchor *@
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
+
+            <span class="citation-ordinal" data-testid="citation-ordinal">@Ordinal</span>
 
             <MudIcon Icon="@sourceIcon"
                      Size="Size.Small"
@@ -82,7 +95,7 @@
             </MudText>
         }
 
-        @* Footer row: freshness badge + relevance score + external link *@
+        @* Footer row: freshness badge + relevance score *@
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-1" Wrap="Wrap.Wrap">
 
             <FreshnessBadge LastScrapedUtc="@Citation.LastScrapedUtc" />
@@ -113,23 +126,51 @@
                 </MudText>
             }
 
-            <div style="flex: 1;" />
+        </MudStack>
+
+        @* Flipper-button CTA pair (design-system gap #2).
+         *
+         * Flex row — left flipper left-aligned, right flipper right-aligned.
+         * Left flipper (◀ VIEW IN ANSWER): only when InAnswerAnchor is provided (gap #3).
+         * Right flipper (VIEW THE ORIGINAL ▶): always present, replaces old ↗ link.
+         *
+         * Both flippers must be native <a> elements: MudButton/MudLink do not support
+         * the rel= attribute (MUD0002 analyzer blocks it). Glyphs inlined as text chars
+         * (&#x25C0; / &#x25B6;) to avoid nesting a Razor component in a native element.
+         *
+         * FE-09 / peer-parity: both buttons use identical size, padding, and radius.
+         * No per-source variation — every card renders the same treatment regardless
+         * of manufacturer or source type.
+         *@
+        <div class="citation-flipper-row">
+
+            @* Left flipper — VIEW IN ANSWER.
+             * Rendered only when InAnswerAnchor is non-null (gap #3 will wire this up).
+             * Until gap #3 ships, no caller passes InAnswerAnchor, so this stays hidden. *@
+            @if (InAnswerAnchor is not null)
+            {
+                <a href="@($"#{InAnswerAnchor}")"
+                   class="flipper flipper--in-answer"
+                   data-testid="citation-flipper-in-answer"
+                   aria-label="Jump to citation marker in answer">&#x25C0; VIEW IN ANSWER</a>
+            }
+
+            <div class="citation-flipper-spacer" />
 
             @*
-                External link — native <a> element preserves rel="noopener noreferrer".
-                MudLink and MudButton do not support the rel= attribute (MUD0002 analyzer
-                blocks it). The open-in-new symbol (↗) is inlined as a text character
-                rather than <MudIcon/> to avoid nesting a Razor component inside a native
-                HTML element (which the Razor HTML parser handles unreliably).
+                Right flipper — VIEW THE ORIGINAL.
+                Native <a> preserves rel="noopener noreferrer" (MUD0002 constraint).
+                Keeps data-testid="citation-source-link" so existing E2E/integration
+                selectors that look for the source link continue to work unchanged.
             *@
             <a href="@Citation.SourceUrl"
                target="_blank"
                rel="noopener noreferrer"
-               class="citation-source-link mud-typography mud-link mud-primary-text mud-link-underline-hover"
+               class="flipper flipper--original"
                data-testid="citation-source-link"
-               aria-label="Open source: @Citation.Title">&#x2197;</a>
+               aria-label="Open source: @Citation.Title">VIEW THE ORIGINAL &#x25B6;</a>
 
-        </MudStack>
+        </div>
 
     </MudStack>
 </MudPaper>
@@ -137,6 +178,30 @@
 @code {
     [Parameter, EditorRequired]
     public Citation Citation { get; set; } = null!;
+
+    /// <summary>
+    /// 1-based render-order ordinal assigned by CitationStrip across all groups.
+    /// Sets the card's DOM id ("citation-{Ordinal}") so inline markers can scroll
+    /// to it, and renders as a visible badge in the header row.
+    /// </summary>
+    [Parameter]
+    public int Ordinal { get; set; }
+
+    /// <summary>
+    /// When true, the left flipper (◀ VIEW IN ANSWER) is rendered and targets
+    /// the first inline marker for this ordinal ("marker-{Ordinal}-1"). Set to
+    /// true by the parent once Task 6 wires the body marker presence. Defaults
+    /// to false so the flipper stays hidden until inline markers are live.
+    /// </summary>
+    [Parameter]
+    public bool HasInlineMarker { get; set; }
+
+    /// <summary>
+    /// Computed from HasInlineMarker + Ordinal. Non-null only when an inline marker
+    /// exists — controls whether the left flipper renders. The anchor targets the
+    /// first occurrence of this citation's marker in the answer body.
+    /// </summary>
+    private string? InAnswerAnchor => HasInlineMarker ? $"marker-{Ordinal}-1" : null;
 
     // Exposed as internal so tests can call the logic without rendering.
     internal static string? BuildPageAnchor(int? pageStart, int? pageEnd) =>
