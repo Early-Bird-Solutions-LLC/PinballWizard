@@ -38,3 +38,18 @@ window.pinwiz.setSound = function (value) {
 window.pinwiz.getSound = function () {
     try { return localStorage.getItem('pinwiz.sound') || 'muted'; } catch (_) { return 'muted'; }
 };
+
+// ── Citation marker pulse ───────────────────────────────────────────────────
+// When the URL hash points at a citation card (#citation-N) or a marker
+// (#marker-N-x), add a one-shot pulse class to the target so the user sees where
+// they landed. CSS gates the animation behind prefers-reduced-motion.
+window.pinwiz._pulseHashTarget = function () {
+    var id = (location.hash || '').slice(1);
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('pw-pulse');
+    void el.offsetWidth;            // restart the animation
+    el.classList.add('pw-pulse');
+};
+window.addEventListener('hashchange', window.pinwiz._pulseHashTarget);
