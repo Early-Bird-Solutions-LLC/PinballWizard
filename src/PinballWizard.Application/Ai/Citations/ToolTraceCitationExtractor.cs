@@ -149,13 +149,25 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     public string SourceTag => "tool_trace";
 
     public IReadOnlyList<Citation> Extract(AgentResponse? response)
+        => ExtractWithSourceIndex(response).Citations;
+
+    // Returns both the deduplicated citation list and the ordered source index
+    // where SourceIndex[k-1] is the SourceUrl of the k-th searchCorpus hit in
+    // tool-trace order. This is the k→SourceUrl table the reconciler needs to
+    // resolve [[cite:k]] markers in the model's answer.
+    //
+    // Only searchCorpus hits populate SourceIndex. getMachineByTitle results and
+    // OPDB-regex citations from sub-agent text go into Citations only — they are
+    // grounding records, not numbered sources the model cites with [[cite:k]].
+    public (IReadOnlyList<Citation> Citations, IReadOnlyList<string> SourceIndex)
+        ExtractWithSourceIndex(AgentResponse? response)
     {
         if (response is null)
         {
-            return [];
+            return ([], []);
         }
 
-        return ExtractFromMessages(response.Messages ?? []);
+        return ExtractFromMessagesWithIndex(response.Messages ?? []);
     }
 
     // Exposed as internal so AiRouter.AnswerStreamingAsync can extract
@@ -166,6 +178,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // this helper is an implementation detail of the streaming pipeline,
     // not a general extension point.
     internal IReadOnlyList<Citation> ExtractFromMessages(IEnumerable<ChatMessage> messages)
+        => ExtractFromMessagesWithIndex(messages).Citations;
+
+    private (IReadOnlyList<Citation> Citations, IReadOnlyList<string> SourceIndex)
+        ExtractFromMessagesWithIndex(IEnumerable<ChatMessage> messages)
     {
         // byUrl maps a citation's SourceUrl to its index in `citations` so a
         // later, RICHER citation can supersede an earlier bare one for the same
@@ -176,6 +192,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // the bare OPDB MachineRecord regardless of which tool fired first.
         var byUrl = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var citations = new List<Citation>();
+        var sourceIndex = new List<string>();
 
         // Null-coalesce both collections: Microsoft.Agents.AI 1.4.0
         // returns non-null in practice, but a malformed trace returning
@@ -191,17 +208,20 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     continue;
                 }
 
-                ExtractFromFunctionResult(functionResult, byUrl, citations);
+                ExtractFromFunctionResult(functionResult, byUrl, citations, sourceIndex);
             }
         }
 
-        return citations.Count == 0 ? [] : citations;
+        return (
+            citations.Count == 0 ? [] : citations,
+            sourceIndex.Count == 0 ? [] : sourceIndex);
     }
 
     private void ExtractFromFunctionResult(
         FunctionResultContent functionResult,
         Dictionary<string, int> byUrl,
-        List<Citation> citations)
+        List<Citation> citations,
+        List<string> sourceIndex)
     {
         var result = functionResult.Result;
         if (result is null)
@@ -218,12 +238,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         if (result is MachineGroundingDto dto)
         {
             AddCitationFromGroundingDto(dto, byUrl, citations);
+            // getMachineByTitle → Citations only, NOT sourceIndex (grounding record,
+            // not a [[cite:k]]-numbered source).
             return;
         }
 
         if (result is SearchCorpusResult corpus)
         {
-            AddCitationsFromCorpusHits(corpus.Hits, byUrl, citations);
+            AddCitationsFromCorpusHits(corpus.Hits, byUrl, citations, sourceIndex);
             return;
         }
 
@@ -232,13 +254,14 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // array; MachineGroundingDto has a top-level "OpdbId" string.
         if (result is JsonElement element)
         {
-            ExtractFromJsonElement(element, functionCallId, byUrl, citations);
+            ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
             return;
         }
 
         // String result: sub-agent text response or an SDK path that
         // serializes to string rather than JsonElement. Extract OPDB URLs
         // via regex — the only structural anchor available in plain text.
+        // These are OPDB identity citations, not corpus hits → Citations only.
         if (result is string text && !string.IsNullOrWhiteSpace(text))
         {
             AddCitationsFromText(text, byUrl, citations);
@@ -249,7 +272,8 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         JsonElement element,
         string functionCallId,
         Dictionary<string, int> byUrl,
-        List<Citation> citations)
+        List<Citation> citations,
+        List<string> sourceIndex)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -260,7 +284,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             {
                 if (TryDeserialize<SearchCorpusResult>(element, functionCallId, _logger) is { } corpusResult)
                 {
-                    AddCitationsFromCorpusHits(corpusResult.Hits, byUrl, citations);
+                    AddCitationsFromCorpusHits(corpusResult.Hits, byUrl, citations, sourceIndex);
                     return;
                 }
                 // Shape probe matched but the payload didn't bind — fall
@@ -271,6 +295,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             else if (TryGetPropertyIgnoreCase(element, "OpdbId", out _))
             {
                 // MachineGroundingDto shape: { "opdbId": "...", "opdbSourceUrl": "...", ... }
+                // getMachineByTitle → Citations only, NOT sourceIndex.
                 if (TryDeserialize<MachineGroundingDto>(element, functionCallId, _logger) is { } dto)
                 {
                     AddCitationFromGroundingDto(dto, byUrl, citations);
@@ -282,7 +307,8 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // Non-object or unrecognized shape — serialize to string and apply
         // OPDB URL regex. Covers JsonValueKind.String (sub-agent text reply
         // serialized as a JSON string), JsonValueKind.Null, and any
-        // unrecognized JSON object shape.
+        // unrecognized JSON object shape. These are OPDB identity citations
+        // → Citations only, NOT sourceIndex.
         var text = element.ToString();
         if (!string.IsNullOrWhiteSpace(text))
         {
@@ -361,10 +387,37 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // Priority: typed C# hit values first (non-null when the typed arm
     // fires, e.g. unit tests); sink values second (non-null on the real
     // JSON path). Either or both may be null for pre-C3 chunks.
+    // Per ADR-0022 § Algorithm step 2: each retrieved chunk is a
+    // citation candidate; multiple chunks from the same DocumentId
+    // collapse via the seenUrls set so the user sees one entry per
+    // source document. The first hit's page range + section heading
+    // wins for the title. Phase 5 may layer union-of-ranges across
+    // collapsed chunks (ADR-0022 § Negative consequence #4); for
+    // Phase 4, single-anchor citations are the contract.
+    //
+    // Two-channel design (fix/citation-metadata-channel, ADR-0035):
+    // Score and LastScrapedUtc are [JsonIgnore] on SearchCorpusHit so
+    // the model never sees retrieval internals. On the real Foundry path,
+    // FunctionResultContent.Result is a JsonElement produced by
+    // AIFunctionFactory.Create serializing the C# return value — and
+    // [JsonIgnore] strips Score + LastScrapedUtc from that JSON, so
+    // hit.Score and hit.LastScrapedUtc arrive as null here. The
+    // _metadataSink (populated by SearchCorpusTool before the agent run)
+    // carries those values out-of-band and is the fallback source.
+    // Priority: typed C# hit values first (non-null when the typed arm
+    // fires, e.g. unit tests); sink values second (non-null on the real
+    // JSON path). Either or both may be null for pre-C3 chunks.
+    //
+    // sourceIndex: every hit's DocumentUrl is appended in tool-trace order,
+    // regardless of dedup. This gives the reconciler the k→SourceUrl table
+    // needed to resolve [[cite:k]] markers in the model's answer prose.
+    // Hits with a blank DocumentUrl are skipped (they'd produce no citation
+    // either) — the k-numbering must stay consistent with what the model saw.
     private void AddCitationsFromCorpusHits(
         IReadOnlyList<SearchCorpusHit> hits,
         Dictionary<string, int> byUrl,
-        List<Citation> citations)
+        List<Citation> citations,
+        List<string> sourceIndex)
     {
         foreach (var hit in hits)
         {
@@ -372,6 +425,10 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             {
                 continue;
             }
+
+            // Append to the k→SourceUrl table for every valid hit, in order.
+            // The reconciler uses SourceIndex[k-1] to resolve [[cite:k]] markers.
+            sourceIndex.Add(hit.DocumentUrl);
 
             // Look up UI metadata from the side channel. On the typed-object
             // path (unit tests) the sink is null or empty and hit.Score /

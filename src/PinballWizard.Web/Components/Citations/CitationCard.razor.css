@@ -1,0 +1,167 @@
+/* CitationCard scoped styles — flipper-button CTA pair (design-system gap #2).
+ *
+ * Spec authority: docs/ui/themes/modern-lcd.md § Flipper-button CTA pair.
+ *   - Rectangular, ~6px radius, 44–56px tall (finger-sized).
+ *   - Inset look: subtle dark inner top shadow (button recessed into cabinet face).
+ *   - Accent backlight at rest, peaks on hover, flares on press.
+ *   - Display-type label, ALL CAPS, condensed (Barlow Condensed via --pw-font-display).
+ *   - ONE allowed motion exception: 1–2px translateY depression on click.
+ *   - prefers-reduced-motion: depression disabled; transitions remain instant.
+ *
+ * Tokens used (all defined in wwwroot/app.css :root):
+ *   --pw-accent-grounded  atomic green  — right flipper (VIEW THE ORIGINAL)
+ *   --pw-accent-mode      magenta       — left flipper  (VIEW IN ANSWER)
+ *   --pw-font-display     Barlow Condensed 700 — flipper label typeface
+ *   --pw-text-primary     off-white     — label text on backlit surface
+ *   --pw-bg-surface       card surface  — button base background
+ *   --pw-bg-surface-hi    hovered panel — hover background lift
+ *   --pw-border-quiet     quiet border  — button border at rest
+ *   --pw-motion-fast      150ms         — transition speed
+ *
+ * FE-09 / peer-parity: left and right flippers share identical base geometry.
+ * The only structural difference between them is backlight color (modifier classes).
+ * No per-source visual variation — every card renders identical treatment.
+ */
+
+/* ── Flipper row container ──────────────────────────────────────────────── */
+
+.citation-flipper-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Spacer pushes left flipper left, right flipper right when both are present.
+   When only the right flipper renders, it sits flush right (spacer consumes all space). */
+.citation-flipper-spacer {
+    flex: 1;
+}
+
+/* ── Base flipper button ─────────────────────────────────────────────────── */
+
+.flipper {
+    /* Geometry — finger-sized, rectangular, ~6px radius per spec */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    min-height: 44px;
+    border-radius: 6px;
+    border: 1px solid var(--pw-border-quiet, #2a282d);
+
+    /* Typography — display-type ALL CAPS condensed (Barlow Condensed 700) */
+    font-family: var(--pw-font-display, "Barlow Condensed", Roboto, sans-serif);
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+
+    /* Inset look: subtle dark inner top shadow — button face recessed below cabinet plane */
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.45),
+        inset 0 1px 2px rgba(0, 0, 0, 0.30);
+
+    /* Transitions: color + shadow + transform for the press depression */
+    transition:
+        background-color var(--pw-motion-fast, 150ms) ease,
+        border-color     var(--pw-motion-fast, 150ms) ease,
+        box-shadow       var(--pw-motion-fast, 150ms) ease,
+        transform        var(--pw-motion-fast, 150ms) ease;
+
+    /* Cursor */
+    cursor: pointer;
+    user-select: none;
+}
+
+.flipper:focus-visible {
+    outline: 2px solid var(--pw-accent-primary, #ff9a1f);
+    outline-offset: 2px;
+}
+
+/* ── Right flipper — VIEW THE ORIGINAL (accent-grounded / atomic green) ── */
+
+.flipper--original {
+    background-color: color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 12%, var(--pw-bg-surface, #161519));
+    border-color: color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 40%, transparent);
+    color: var(--pw-accent-grounded, #34d96a);
+}
+
+.flipper--original:hover {
+    background-color: color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 22%, var(--pw-bg-surface-hi, #1f1d22));
+    border-color: var(--pw-accent-grounded, #34d96a);
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.45),
+        inset 0 1px 2px rgba(0, 0, 0, 0.30),
+        0 0 8px color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 50%, transparent);
+    color: var(--pw-accent-grounded, #34d96a);
+    text-decoration: none;
+}
+
+.flipper--original:active {
+    /* 1–2px depression — the ONE allowed motion exception per spec */
+    transform: translateY(1px);
+    background-color: color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 28%, var(--pw-bg-surface, #161519));
+    box-shadow:
+        inset 0 3px 6px rgba(0, 0, 0, 0.55),
+        inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Left flipper — VIEW IN ANSWER (accent-mode / magenta) ──────────────── */
+
+.flipper--in-answer {
+    background-color: color-mix(in srgb, var(--pw-accent-mode, #e13bd9) 12%, var(--pw-bg-surface, #161519));
+    border-color: color-mix(in srgb, var(--pw-accent-mode, #e13bd9) 40%, transparent);
+    color: var(--pw-accent-mode, #e13bd9);
+}
+
+.flipper--in-answer:hover {
+    background-color: color-mix(in srgb, var(--pw-accent-mode, #e13bd9) 22%, var(--pw-bg-surface-hi, #1f1d22));
+    border-color: var(--pw-accent-mode, #e13bd9);
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.45),
+        inset 0 1px 2px rgba(0, 0, 0, 0.30),
+        0 0 8px color-mix(in srgb, var(--pw-accent-mode, #e13bd9) 50%, transparent);
+    color: var(--pw-accent-mode, #e13bd9);
+    text-decoration: none;
+}
+
+.flipper--in-answer:active {
+    /* 1–2px depression — the ONE allowed motion exception per spec */
+    transform: translateY(1px);
+    background-color: color-mix(in srgb, var(--pw-accent-mode, #e13bd9) 28%, var(--pw-bg-surface, #161519));
+    box-shadow:
+        inset 0 3px 6px rgba(0, 0, 0, 0.55),
+        inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Reduced-motion: suppress the press depression ───────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+    .flipper {
+        transition: none;
+    }
+
+    .flipper--original:active,
+    .flipper--in-answer:active {
+        transform: none;
+    }
+}
+
+/* ── Citation card pulse — applied by JS on hash navigation ─────────────── */
+/* Uses :global() because JS adds the class at runtime; scoped CSS
+   would not match a class injected outside of Blazor's render cycle. */
+
+:global(.pw-pulse) {
+    animation: pw-card-pulse 900ms ease-out 1;
+}
+@keyframes pw-card-pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 55%, transparent); }
+    100% { box-shadow: 0 0 0 6px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+    :global(.pw-pulse) { animation: none; }
+}

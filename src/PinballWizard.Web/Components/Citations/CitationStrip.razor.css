@@ -4,6 +4,16 @@
    answers render a "Sources" header whose cards pop in seconds later.
    960px = MudBlazor's md breakpoint, preserving the previous behavior. */
 
+/* Summary header: "SOURCES · N cited from M sites"
+   Overline typo + secondary color comes from MudText; this tightens the
+   letter-spacing slightly and adds a fractional opacity to read as metadata
+   rather than a section heading. No color override — theme-driven only. */
+.citation-strip-label {
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+    font-size: 0.68rem;
+}
+
 .citation-strip-layout {
     display: flex;
     flex-direction: column;

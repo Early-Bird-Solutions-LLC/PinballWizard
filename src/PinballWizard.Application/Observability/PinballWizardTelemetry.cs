@@ -133,6 +133,21 @@ public static class PinballWizardTelemetry
         unit: "{citation}",
         description: "Citations attached to a Wizard answer. Tagged with source (tool_trace | regex_legacy) per ADR-0022 — during the Phase 4 cutover both extractors run; tool_trace is the primary and regex_legacy runs in parallel for behavioral comparison. The relative counts surface drift before the H3 eval baseline rerun.");
 
+    public static readonly Counter<long> AiInlineMarkerTotal = Meter.CreateCounter<long>(
+        "pinwiz.ai.inline_marker_total",
+        unit: "{marker}",
+        description: "Inline [[cite:k]] tokens the model emitted in an answer, before reconciliation.");
+
+    public static readonly Counter<long> AiInlineMarkerRendered = Meter.CreateCounter<long>(
+        "pinwiz.ai.inline_marker_rendered_total",
+        unit: "{marker}",
+        description: "Inline citation markers that reconciled to a real citation and were rewritten to [[cite:N]].");
+
+    public static readonly Counter<long> AiInlineMarkerDropped = Meter.CreateCounter<long>(
+        "pinwiz.ai.inline_marker_dropped_total",
+        unit: "{marker}",
+        description: "Inline [[cite:k]] tokens dropped because no structural citation matched (tagged with reason). OBS-01: degrade visibly.");
+
     public static readonly Counter<long> AiToolErrors = Meter.CreateCounter<long>(
         "pinwiz.ai.tool_errors_total",
         unit: "{call}",
