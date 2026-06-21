@@ -18,6 +18,11 @@ namespace PinballWizard.Web.Tests.Components.Refusal;
 //   - Asserts no throw + at least one meaningful rendered output specific to that view.
 //
 // Tests follow Method_State_Expectation naming.
+//
+// Spec conformance: modern-lcd.md §"Refusal that directs out"
+// Category labels are ALL CAPS display type (Barlow Condensed via h4 MudText).
+// "refusal-category-label" class + data-testid="refusal-category-label" are
+// the observable contracts pinned here.
 public sealed class RefusalCategoryViewTests
 {
     private static BunitContext BuildCtx()
@@ -44,17 +49,31 @@ public sealed class RefusalCategoryViewTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // InsufficientGroundingView
+    // InsufficientGroundingView — spec: category label is "LOW CONFIDENCE"
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task InsufficientGroundingView_Render_ContainsNotEnoughHeadline()
+    public async Task InsufficientGroundingView_Render_ContainsCategoryLabel()
     {
         await using var ctx = BuildCtx();
         var cut = ctx.Render<InsufficientGroundingView>();
 
-        // Headline text per InsufficientGroundingView.razor.
-        Assert.Contains("Not Enough to Go On", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Per modern-lcd.md §"Per-category framing": InsufficientGrounding
+        // maps to "LOW CONFIDENCE" label. data-testid is the observable contract.
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
+    }
+
+    [Fact]
+    public async Task InsufficientGroundingView_Render_HasRefusalCategoryLabelClass()
+    {
+        await using var ctx = BuildCtx();
+        var cut = ctx.Render<InsufficientGroundingView>();
+
+        // CSS class "refusal-category-label" is required by RefusalPanel.razor.css
+        // for the accent-refusal color treatment.
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("refusal-category-label", label.ClassName ?? string.Empty);
     }
 
     [Fact]
@@ -83,17 +102,17 @@ public sealed class RefusalCategoryViewTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // LowConfidenceView
+    // LowConfidenceView — spec: category label is "LOW CONFIDENCE"
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task LowConfidenceView_Render_ContainsNotConfidentHeadline()
+    public async Task LowConfidenceView_Render_ContainsCategoryLabel()
     {
         await using var ctx = BuildCtx();
         var cut = ctx.Render<LowConfidenceView>();
 
-        // Headline per LowConfidenceView.razor.
-        Assert.Contains("Not Confident Enough to Answer", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
     }
 
     [Fact]
@@ -124,17 +143,17 @@ public sealed class RefusalCategoryViewTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // NoCitationView
+    // NoCitationView — spec: category label is "LOW CONFIDENCE"
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task NoCitationView_Render_ContainsNoDocumentedEvidenceHeadline()
+    public async Task NoCitationView_Render_ContainsCategoryLabel()
     {
         await using var ctx = BuildCtx();
         var cut = ctx.Render<NoCitationView>();
 
-        // Headline per NoCitationView.razor.
-        Assert.Contains("No Documented Evidence", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
     }
 
     [Fact]
@@ -163,17 +182,28 @@ public sealed class RefusalCategoryViewTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // OutOfScopeView
+    // OutOfScopeView — spec: category label is "OUT OF SCOPE"
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task OutOfScopeView_Render_ContainsOutsideMyCoverageHeadline()
+    public async Task OutOfScopeView_Render_ContainsCategoryLabel()
     {
         await using var ctx = BuildCtx();
         var cut = ctx.Render<OutOfScopeView>();
 
-        // Headline per OutOfScopeView.razor.
-        Assert.Contains("Outside My Coverage", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        // Per modern-lcd.md §"Per-category framing": OutOfScope → "OUT OF SCOPE".
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("OUT OF SCOPE", label.TextContent.ToUpperInvariant());
+    }
+
+    [Fact]
+    public async Task OutOfScopeView_Render_HasRefusalCategoryLabelClass()
+    {
+        await using var ctx = BuildCtx();
+        var cut = ctx.Render<OutOfScopeView>();
+
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("refusal-category-label", label.ClassName ?? string.Empty);
     }
 
     [Fact]

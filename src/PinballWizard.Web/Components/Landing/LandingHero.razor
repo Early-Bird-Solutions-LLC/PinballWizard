@@ -16,6 +16,10 @@
  * LandingHero is the landing-surface equivalent and is explicitly in scope
  * per ADR-0026 § Landing surface.
  *
+ * Hero prominence: modern-lcd.md §"Empty/landing state" — "cinematic flourish".
+ * Barlow Condensed display headline (h1), eyebrow tagline, ALL-CAPS brand name.
+ * Prototype reference: docs/ui/prototypes/empty-landing.html.
+ *
  * ADR-0008 — MudBlazor strict for chrome. Hero input is MudTextField.
  * ADR-0026 § Landing surface.
  *@
@@ -24,12 +28,14 @@
 
 <div class="landing-hero" data-testid="landing-hero">
     <div class="landing-hero__brand">
-        <MudText Typo="Typo.h2" Class="landing-hero__title" data-testid="landing-hero-title">
-            &#x25CF; PinballWizard
+        <p class="landing-hero__eyebrow" aria-hidden="true" data-testid="landing-hero-eyebrow">
+            A COMMUNITY-RESOURCE PINBALL WIZARD
+        </p>
+        <MudText Typo="Typo.h1" Class="landing-hero__title" data-testid="landing-hero-title">
+            PINBALLWIZARD
         </MudText>
-        <MudText Typo="Typo.subtitle1" Class="landing-hero__tagline" data-testid="landing-hero-tagline">
-            An AI-powered pinball encyclopedia — rules, valuations, repairs, and machine history,
-            grounded in manufacturer manuals and service bulletins with source-cited answers.
+        <MudText Typo="Typo.body1" Class="landing-hero__tagline" data-testid="landing-hero-tagline">
+            Ask anything about pinball — every answer cites its source and routes you to the community.
         </MudText>
     </div>
 
@@ -37,10 +43,10 @@
         <MudTextField @ref="_inputRef"
                       @bind-Value="QuestionText"
                       @bind-Value:event="oninput"
-                      Placeholder="Ask anything about pinball machines…"
+                      Placeholder="Ask the Wizard…"
                       Variant="Variant.Outlined"
                       Adornment="Adornment.End"
-                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      AdornmentIcon="@Icons.Material.Filled.ArrowForward"
                       AdornmentColor="Color.Primary"
                       AdornmentAriaLabel="Ask"
                       OnAdornmentClick="OnSubmitClick"
