@@ -372,6 +372,25 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents where the reconcile pass detected drift between `rag_index_state` and AI Search. Tagged with `drift_type`: `missing` (AI Search has zero chunks for the document_id — full write loss); `count_mismatch` (AI Search has a different chunk count than recorded — partial write loss). A non-zero rate over multiple deploys is the canonical alert: the indexer isn't durably persisting every chunk, and the gap won't self-heal without an operator-driven re-ingest.");
 
+    // ── Cosmos deserialization failure counter (invariant #17 / OBS-01) ──────
+    // Incremented by `CosmosMetricsHelper` whenever `System.Text.Json`
+    // throws `JsonException` inside a `ReadItemAsync<T>` call — the Cosmos
+    // SDK delegates deserialization to `SystemTextJsonCosmosSerializer.FromStream`,
+    // so a stored document with the wrong JSON shape (e.g. `matchTokens` written
+    // as a flat array instead of `List<List<string>>`) surfaces here.
+    //
+    // A non-zero rate signals a corrupt stored document that must be remediated
+    // (fix the write path, then re-upsert the document). The metric + Error log
+    // together satisfy invariant #17: degrade visibly, never fabricate success.
+    //
+    // Tags:
+    //   container  — the Cosmos container name (e.g. `machine_title_lookups`)
+    //   operation  — the SDK operation that failed (`read` | `query` | ...)
+    public static readonly Counter<long> CosmosDeserializationFailed = Meter.CreateCounter<long>(
+        "pinwiz.cosmos.deser_failed_total",
+        unit: "{failure}",
+        description: "Cosmos point-reads or query pages where System.Text.Json threw JsonException during deserialization (corrupt or schema-mismatched stored document). Tagged with container + operation. A non-zero rate requires operator action: identify the corrupt document from the Error log and re-upsert with the correct shape (invariant #17 / OBS-01).");
+
     // ── Cosmos repository operations (ADR-0025 § 8) ──────────────────────
     // Emitted at the boundary of every `IRepository<T>` SDK call inside
     // `CosmosRepository<T>` (and from `MachineRepository.QueryByTitleAsync`
