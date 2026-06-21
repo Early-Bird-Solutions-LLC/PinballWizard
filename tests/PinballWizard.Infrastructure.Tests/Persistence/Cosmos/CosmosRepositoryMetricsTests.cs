@@ -145,6 +145,68 @@ public sealed class CosmosRepositoryMetricsTests
         Assert.DoesNotContain(capturingLogger.Entries, e => e.Level == LogLevel.Error);
     }
 
+    // ── JsonException (malformed stored document) ──────────────────────────
+    // A machine_title_lookups document stored with matchTokens in the wrong
+    // shape (flat ["a","b"] instead of List<List<string>> = [["a","b"]])
+    // causes System.Text.Json to throw JsonException inside the Cosmos SDK's
+    // ReadItemAsync<T> call (via SystemTextJsonCosmosSerializer.FromStream).
+    // This must NOT masquerade as a null/not-found result — it must be logged
+    // and metered so operators can identify and remediate the corrupt document
+    // (invariant #17 / OBS-01: degrade visibly, never fabricate success).
+
+    [Fact]
+    public async Task GetByIdAsync_JsonException_LogsErrorWithDocIdAndContainer()
+    {
+        var (repo, container, capturingLogger) = NewRepository();
+        container
+            .ReadItemAsync<TestEntity>("bad-doc", new PartitionKey("p"), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new System.Text.Json.JsonException("matchTokens expected array-of-arrays, got flat array"));
+
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() =>
+            repo.GetByIdAsync("bad-doc", "p", CancellationToken.None));
+
+        // Must be logged at Error so operators see the corrupt document
+        // in App Insights / structured log queries (invariant #17).
+        var errorLog = Assert.Single(capturingLogger.Entries, e => e.Level == LogLevel.Error);
+        Assert.Contains("cosmos.document_id", errorLog.Scope.Keys);
+        Assert.Contains("pinwiz.container", errorLog.Scope.Keys);
+        Assert.Equal("bad-doc", errorLog.Scope["cosmos.document_id"]);
+        Assert.Equal(ContainerId, errorLog.Scope["pinwiz.container"]);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_JsonException_IncrementsDeserFailedCounter()
+    {
+        var (repo, container, _) = NewRepository();
+        container
+            .ReadItemAsync<TestEntity>("corrupt", new PartitionKey("p"), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new System.Text.Json.JsonException("type mismatch on matchTokens"));
+
+        using var listener = CollectDeserFailedMetric(out var deserFailed);
+
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() =>
+            repo.GetByIdAsync("corrupt", "p", CancellationToken.None));
+
+        // Must be metered so dashboards can alert on corrupt documents
+        // without a manual log search (invariant #17 / OBS-01).
+        Assert.Contains(deserFailed, s => s.Container == ContainerId && s.Operation == "read" && s.Value == 1L);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_JsonException_DoesNotReturnNull()
+    {
+        // Silent null is the broken behaviour this fix closes. Verify that
+        // a JsonException never masquerades as "not found" (null return).
+        var (repo, container, _) = NewRepository();
+        container
+            .ReadItemAsync<TestEntity>("corrupt2", new PartitionKey("p"), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new System.Text.Json.JsonException("type mismatch"));
+
+        // Must rethrow — not swallow to null — so the caller sees the failure.
+        await Assert.ThrowsAsync<System.Text.Json.JsonException>(() =>
+            repo.GetByIdAsync("corrupt2", "p", CancellationToken.None));
+    }
+
     [Fact]
     public async Task UpsertAsync_Success_EmitsUpsertOperationTag()
     {
@@ -275,6 +337,31 @@ public sealed class CosmosRepositoryMetricsTests
         listener.Start();
         listener.EnableMeasurementEvents(PinballWizardTelemetry.CosmosRuCharge);
         listener.EnableMeasurementEvents(PinballWizardTelemetry.CosmosQueryDurationMs);
+        return listener;
+    }
+
+    private static MeterListener CollectDeserFailedMetric(
+        out ConcurrentBag<(long Value, string? Container, string? Operation)> deserFailed)
+    {
+        var bag = new ConcurrentBag<(long, string?, string?)>();
+        deserFailed = bag;
+
+        var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.cosmos.deser_failed_total")
+                return;
+            string? containerTag = null;
+            string? operationTag = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "container") containerTag = t.Value as string;
+                else if (t.Key == "operation") operationTag = t.Value as string;
+            }
+            bag.Add((value, containerTag, operationTag));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.CosmosDeserializationFailed);
         return listener;
     }
 
