@@ -125,6 +125,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
 | [`docs/runbooks/`](docs/runbooks/) | Operational runbooks (incident response, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation, source-site outage) |
 | [`docs/observability.md`](docs/observability.md) | OTel instrument catalogue — scraper, RAG, AI orchestration, and user-delight instruments |
+| [`docs/local-development.md`](docs/local-development.md) | Seeding the local Cosmos emulator for a fully functional catalog; identity isolation; `matchTokens` data-shape contract |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
 
 ## Project status
