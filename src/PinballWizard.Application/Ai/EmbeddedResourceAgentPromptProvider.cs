@@ -14,10 +14,6 @@ namespace PinballWizard.Application.Ai;
 // content. Bumped to "v3.2026.05" with Phase 4 W1-1 connected-agents
 // wiring (Wizard.md now references Valuation/Rules/Repair as connected
 // sub-agent function tools the LLM dispatches to via tool calls).
-// Bumped to "v5.2026.06" with inline-citation-markers: Wizard numbers corpus
-// sources ("Source 1", "Source 2", …) in searchCorpus return order and passes
-// [[cite:k]] markers through verbatim; Repair/Rules/Valuation sub-agents emit
-// [[cite:k]] at grounded sentences (RAG-05 prompt-version gate).
 // Bumped to "v4.2026.05" with Phase 4 W4-1 searchCorpus tool wiring:
 // all four agents gain searchCorpus(); Repair/Rules retrieve from the
 // AI Search index instead of refusing on Phase-4-RAG-not-yet-shipped;
@@ -27,6 +23,10 @@ namespace PinballWizard.Application.Ai;
 // AiRouter.cs:89 is (normalized, promptVersion); leaving the constant
 // at v3 would serve stale Phase-3-style refusals from cache for any
 // normalized question that had hit cache before this PR.
+// Bumped to "v5.2026.06" with inline-citation-markers: Wizard numbers corpus
+// sources ("Source 1", "Source 2", …) in searchCorpus return order and passes
+// [[cite:k]] markers through verbatim; Repair/Rules/Valuation sub-agents emit
+// [[cite:k]] at grounded sentences (RAG-05 prompt-version gate).
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
     public const string CurrentPromptVersion = "v5.2026.06";

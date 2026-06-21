@@ -21,3 +21,6 @@
 .citation-marker:hover {
     box-shadow: 0 0 10px color-mix(in srgb, var(--pw-accent-grounded, #34d96a) 60%, transparent);
 }
+@media (prefers-reduced-motion: reduce) {
+    .citation-marker { transition: none; }
+}

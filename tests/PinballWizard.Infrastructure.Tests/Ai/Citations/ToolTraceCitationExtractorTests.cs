@@ -1175,6 +1175,34 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void ExtractWithSourceIndex_keeps_duplicate_urls_positional_while_citations_dedupe()
+    {
+        // Two searchCorpus hits share the SAME DocumentUrl but have different
+        // DocumentIds (e.g. two differently-chunked segments from one hosted PDF
+        // that was re-ingested under a second chunk ID). The k→SourceUrl table
+        // (SourceIndex) is positional: both positions reference that URL so the
+        // model's [[cite:1]] and [[cite:2]] both resolve. The Citations list is
+        // deduped by SourceUrl → exactly one Citation for the shared URL.
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://x/shared.pdf",
+                      section: "Section A", pageStart: 1, pageEnd: 3),
+            SampleHit(documentId: "doc_b", documentUrl: "https://x/shared.pdf",
+                      section: "Section B", pageStart: 7, pageEnd: 9),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        // SourceIndex is positional: both hits, same URL, two entries.
+        Assert.Equal(2, sourceIndex.Count);
+        Assert.All(sourceIndex, u => Assert.Equal("https://x/shared.pdf", u));
+
+        // Citations are deduped by SourceUrl: only one entry for the shared URL.
+        Assert.Single(citations);
+        Assert.Equal("https://x/shared.pdf", citations[0].SourceUrl);
+    }
+
+    [Fact]
     public void Extract_delegates_to_ExtractWithSourceIndex_and_returns_identical_citations()
     {
         // Extract(response) must behave identically to ExtractWithSourceIndex(response).Citations.
