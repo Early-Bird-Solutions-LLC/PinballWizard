@@ -500,6 +500,20 @@ public static class PinballWizardTelemetry
         unit: "{failure}",
         description: "RefusalRecoveryService calls where ICommunityResourceLoader threw during BuildRecoveryAsync. When non-zero, community routing CTAs are absent from refusal panels. Tagged with reason (FileNotFoundException | InvalidOperationException | other). A non-zero prod rate means the community_resources.v1.json seed is unresolvable in the container — check SeedPathResolver and Dockerfile COPY (invariant #17 / OBS-01).");
 
+    // Related-machines lookup failures during refusal recovery, metered
+    // SEPARATELY from community-resource failures so the two independent
+    // enrichments are observable on their own. The cross-partition machine-title
+    // query (QueryByTitleAsync) and the community-resource load now degrade
+    // independently — a failure here does NOT drop community CTAs, and it is no
+    // longer mislabeled as a community-resources error.
+    //
+    // Tags:
+    //   reason — short exception class name (FileNotFoundException | InvalidOperationException | other)
+    public static readonly Counter<long> AiRelatedMachinesLookupErrors = Meter.CreateCounter<long>(
+        "pinwiz.ai.related_machines_lookup_errors_total",
+        unit: "{failure}",
+        description: "RefusalRecoveryService calls where the related-machines lookup (IMachineRepository.QueryByTitleAsync, a cross-partition machine-title query) threw during BuildRecoveryAsync. When non-zero, related-machine suggestions are absent from refusal panels; community routing CTAs are UNAFFECTED (the two enrichments degrade independently). Tagged with reason. A non-zero rate means the cross-partition machine-title query is failing — check the machines container + Cosmos read path (invariant #17 / OBS-01).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

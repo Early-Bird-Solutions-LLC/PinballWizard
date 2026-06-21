@@ -202,12 +202,32 @@ public sealed class RefusalRecoveryServiceTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task BuildRecoveryAsync_RepositoryThrows_Swallows_Exception_And_Returns_Null()
+    public async Task BuildRecoveryAsync_RepositoryThrows_DropsRelatedMachines_ButKeepsCommunityResources()
     {
-        // Best-effort guarantee: a repository failure must never surface to
-        // the caller as an exception. The primary refusal is already
-        // constructed; recovery is additive. Returning null means "no
-        // enrichment available" — the caller emits the bare refusal.
+        // Independent degradation: a related-machines lookup failure (the
+        // cross-partition Cosmos machine-title query throwing) must NOT drop the
+        // community resources that loaded fine. Previously the shared try/catch
+        // nulled the ENTIRE RefusalDetail, silently discarding community CTAs.
+        // The failure must never surface as an exception, must be metered on its
+        // OWN counter (not the community-resources one), and the community CTAs
+        // must survive.
+        _ = PinballWizardTelemetry.AiRelatedMachinesLookupErrors; // ensure instrument exists
+        var samples = new ConcurrentBag<(long Value, string? Reason)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.ai.related_machines_lookup_errors_total")
+                return;
+            string? reason = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "reason") reason = t.Value as string;
+            }
+            samples.Add((value, reason));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiRelatedMachinesLookupErrors);
+
         var repo = Substitute.For<IMachineRepository>();
         repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("simulated Cosmos failure"));
@@ -220,7 +240,16 @@ public sealed class RefusalRecoveryServiceTests
             RefusalCategory.NoCitation,
             CancellationToken.None);
 
-        Assert.Null(detail);
+        // The detail SURVIVES — community resources intact, related machines
+        // dropped (the failed lookup degrades to null on its own).
+        Assert.NotNull(detail);
+        Assert.Null(detail!.RelatedMachines);
+        Assert.NotNull(detail.CommunityResources);
+        Assert.NotEmpty(detail.CommunityResources!);
+
+        // The machine-query failure is metered on its OWN counter, not mislabeled
+        // as a community-resources error.
+        Assert.Contains(samples, s => s.Value == 1 && s.Reason == "InvalidOperationException");
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -278,8 +307,12 @@ public sealed class RefusalRecoveryServiceTests
             RefusalCategory.OutOfScope,
             CancellationToken.None);
 
-        // Assert (a): null — best-effort posture; primary refusal is unaffected.
-        Assert.Null(detail);
+        // Assert (a): the detail SURVIVES — independent degradation. The community
+        // resources are dropped (loader threw) but the rest of the recovery
+        // (related-machine lookup, text) is intact; the failure never surfaces as
+        // an exception.
+        Assert.NotNull(detail);
+        Assert.Null(detail!.CommunityResources);
 
         // Assert (b): the error counter was incremented with the correct reason tag.
         Assert.Contains(
