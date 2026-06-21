@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Refusal;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 
 namespace PinballWizard.Application.Ai;
@@ -260,8 +261,24 @@ public sealed class RefusalRecoveryService : IRefusalRecoveryService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex,
-                "RefusalRecoveryService: lookup failed for question '{Question}' / category {Category}. Returning null (best-effort; primary refusal is unaffected).",
+            // OBS-01 / invariant #17: degrade visibly — log at Error (not Warning)
+            // so operators know community CTAs are absent. The primary refusal is
+            // never blocked (best-effort posture per the class-level comment), but
+            // this failure is not routine and warrants an alert.
+            var reason = ex switch
+            {
+                FileNotFoundException => "FileNotFoundException",
+                InvalidOperationException => "InvalidOperationException",
+                _ => "other",
+            };
+
+            PinballWizardTelemetry.AiCommunityResourcesLoadErrors.Add(1,
+                new KeyValuePair<string, object?>("reason", reason));
+
+            _logger.LogError(ex,
+                "RefusalRecoveryService: community-resource or machine lookup failed for question '{Question}' / category {Category}. " +
+                "Refusal panel will render without community CTAs (pinwiz.ai.community_resources_load_errors_total incremented). " +
+                "Primary refusal is unaffected — this is best-effort enrichment.",
                 normalizedQuestion, category);
             return null;
         }

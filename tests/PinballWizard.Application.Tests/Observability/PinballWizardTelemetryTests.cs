@@ -222,6 +222,19 @@ public sealed class PinballWizardTelemetryTests
     }
 
     [Fact]
+    public void AiCommunityResourcesLoadErrorsCounter_HasExpectedNameAndUnit()
+    {
+        // Pins the OTel contract for the community-resources load-failure counter
+        // (invariant #17 / OBS-01). A non-zero rate means refusal panels render
+        // without community CTAs — the operational signal for this failure mode.
+        // Dashboard alert must match this exact name; rename here = rename alert.
+        Assert.Equal(
+            "pinwiz.ai.community_resources_load_errors_total",
+            PinballWizardTelemetry.AiCommunityResourcesLoadErrors.Name);
+        Assert.Equal("{failure}", PinballWizardTelemetry.AiCommunityResourcesLoadErrors.Unit);
+    }
+
+    [Fact]
     public void RecordChangefeedLeaseLag_UpdatesCachedValueObservedByGauge()
     {
         // The gauge callback reads `Interlocked.Read(ref _changefeedLeaseLag)`;
