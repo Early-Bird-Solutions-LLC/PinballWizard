@@ -20,6 +20,11 @@ namespace PinballWizard.Web.Tests.Components.Refusal;
 // Tests assert behavior (the right per-category subview is visible, shared
 // sections render when data is present, transient categories suppress community
 // resources) — not structure (no assertion on MudBlazor internal class names).
+//
+// Spec conformance tests (modern-lcd.md §"Refusal that directs out"):
+// - Panel carries accent-refusal CSS class contract (refusal-panel class)
+// - Category labels carry data-testid="refusal-category-label" (ALL CAPS, display type)
+// - Community routing CTAs render as refusal-route-cta (green puck buttons, peer parity)
 public sealed class RefusalPanelTests
 {
     // ─────────────────────────────────────────────────────────────────────────
@@ -51,11 +56,39 @@ public sealed class RefusalPanelTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Routing: OutOfScope renders OutOfScopeView, NOT InsufficientGroundingView
+    // Spec: panel carries accent-refusal treatment via "refusal-panel" CSS class.
+    // The CSS class maps to border: 1px solid var(--pw-accent-refusal) in
+    // RefusalPanel.razor.css — asserting the class name is the observable contract.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(RefusalCategory.OutOfScope)]
+    [InlineData(RefusalCategory.InsufficientGrounding)]
+    [InlineData(RefusalCategory.LowModelConfidence)]
+    [InlineData(RefusalCategory.NoCitation)]
+    public void RefusalPanel_RecoveryCategory_PanelHasRefusalPanelClass(RefusalCategory category)
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, category)
+            .Add(x => x.Detail, BuildDetail()));
+
+        // The MudPaper element carries Class="refusal-panel ..." which maps to
+        // the accent-refusal RED border in RefusalPanel.razor.css.
+        var panel = cut.Find("[data-testid='refusal-panel']");
+        Assert.Contains("refusal-panel", panel.ClassName ?? string.Empty);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Spec: category label carries data-testid="refusal-category-label" (ALL CAPS)
+    // modern-lcd.md §"Per-category framing" — labels in display type, ALL CAPS.
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void RefusalPanel_OutOfScope_RendersOutOfScopeView_NotInsufficientGroundingView()
+    public void RefusalPanel_OutOfScope_CategoryLabel_IsAllCapsOutOfScope()
     {
         using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
@@ -65,19 +98,12 @@ public sealed class RefusalPanelTests
             .Add(x => x.Category, RefusalCategory.OutOfScope)
             .Add(x => x.Detail, BuildDetail()));
 
-        // OutOfScopeView renders "Outside My Coverage"
-        Assert.Contains("Outside My Coverage", cut.Markup, StringComparison.OrdinalIgnoreCase);
-
-        // InsufficientGroundingView renders "Not Enough to Go On" — must NOT be present
-        Assert.DoesNotContain("Not Enough to Go On", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("OUT OF SCOPE", label.TextContent.ToUpperInvariant());
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Routing: InsufficientGrounding renders InsufficientGroundingView
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Fact]
-    public void RefusalPanel_InsufficientGrounding_RendersInsufficientGroundingView()
+    public void RefusalPanel_InsufficientGrounding_CategoryLabel_IsAllCapsLowConfidence()
     {
         using var ctx = new BunitContext();
         ctx.Services.AddMudServices();
@@ -87,12 +113,141 @@ public sealed class RefusalPanelTests
             .Add(x => x.Category, RefusalCategory.InsufficientGrounding)
             .Add(x => x.Detail, BuildDetail()));
 
-        Assert.Contains("Not Enough to Go On", cut.Markup, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Outside My Coverage", cut.Markup, StringComparison.OrdinalIgnoreCase);
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
+    }
+
+    [Fact]
+    public void RefusalPanel_LowModelConfidence_CategoryLabel_IsAllCapsLowConfidence()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.LowModelConfidence)
+            .Add(x => x.Detail, BuildDetail()));
+
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Behavior: UpstreamThrottled does NOT render CommunityResourceCards
+    // Spec: community routing CTAs render as refusal-route-cta (puck buttons)
+    // modern-lcd.md §"Routing-recommendation CTA spec" — peer parity,
+    // accent-grounded backlight, recessed puck. Observable: data-testid + CSS class.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefusalPanel_WithCommunityResources_RendersRefusalRouteCtas()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var detail = BuildDetail(includeMarketplaceResources: true);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // Routing CTAs must render under data-testid="refusal-routes".
+        cut.Find("[data-testid='refusal-routes']");
+
+        // Each resource renders as a refusal-route-cta element.
+        var ctas = cut.FindAll("[data-testid='refusal-route-cta']");
+        Assert.Equal(3, ctas.Count);
+    }
+
+    [Fact]
+    public void RefusalPanel_WithCommunityResources_AllCtasHaveRefusalRouteCtaClass()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var detail = BuildDetail(includeMarketplaceResources: true);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // All CTAs must carry "refusal-route-cta" — the CSS class that maps
+        // to the accent-grounded puck backlight (peer parity per Posture rule 4).
+        var ctas = cut.FindAll("[data-testid='refusal-route-cta']");
+        foreach (var cta in ctas)
+        {
+            Assert.Contains("refusal-route-cta", cta.ClassName ?? string.Empty);
+        }
+    }
+
+    [Fact]
+    public void RefusalPanel_WithCommunityResources_CtasAreOutboundLinks()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var detail = BuildDetail(includeMarketplaceResources: true);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // Each CTA must be an anchor with target=_blank (community-resource posture:
+        // outbound is a feature). rel=noopener noreferrer is a security requirement.
+        var ctas = cut.FindAll("[data-testid='refusal-route-cta']");
+        foreach (var cta in ctas)
+        {
+            Assert.Equal("_blank", cta.GetAttribute("target"));
+            Assert.Contains("noopener", cta.GetAttribute("rel") ?? string.Empty);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Routing: OutOfScope renders "OUT OF SCOPE" label
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefusalPanel_OutOfScope_RendersOutOfScopeLabel()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, BuildDetail()));
+
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("OUT OF SCOPE", label.TextContent.ToUpperInvariant());
+
+        // Must NOT show "LOW CONFIDENCE" which InsufficientGrounding uses
+        // (they share similar body text; the label distinguishes them).
+        Assert.DoesNotContain("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Routing: InsufficientGrounding renders "LOW CONFIDENCE" label
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefusalPanel_InsufficientGrounding_RendersLowConfidenceLabel()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.InsufficientGrounding)
+            .Add(x => x.Detail, BuildDetail()));
+
+        var label = cut.Find("[data-testid='refusal-category-label']");
+        Assert.Contains("LOW CONFIDENCE", label.TextContent.ToUpperInvariant());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Behavior: UpstreamThrottled does NOT render routing CTAs
     // Rationale: transient rate-limit; routing users away misleads about recoverability
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -110,13 +265,12 @@ public sealed class RefusalPanelTests
             .Add(x => x.Category, RefusalCategory.UpstreamThrottled)
             .Add(x => x.Detail, detail));
 
-        // CommunityResourceCards renders [data-testid='community-resource-cards'].
-        // UpstreamThrottled must not include this element.
-        Assert.Empty(cut.FindAll("[data-testid='community-resource-cards']"));
+        // Routing CTAs must not be present for transient system-state categories.
+        Assert.Empty(cut.FindAll("[data-testid='refusal-routes']"));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Behavior: CostCeilingHit does NOT render CommunityResourceCards
+    // Behavior: CostCeilingHit does NOT render routing CTAs
     // Rationale: operational constraint; per IRefusalRecoveryService, no recovery
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -133,7 +287,7 @@ public sealed class RefusalPanelTests
             .Add(x => x.Category, RefusalCategory.CostCeilingHit)
             .Add(x => x.Detail, detail));
 
-        Assert.Empty(cut.FindAll("[data-testid='community-resource-cards']"));
+        Assert.Empty(cut.FindAll("[data-testid='refusal-routes']"));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

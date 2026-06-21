@@ -13,6 +13,14 @@
 // alpha tints, font families) live as :root custom properties in
 // wwwroot/app.css. This is the chrome-strict / custom-for-delight split
 // from ADR-0026 § 6 expressed at the token layer.
+//
+// IsDarkMode="true" is set in MainLayout — MudBlazor reads PaletteDark when
+// dark mode is active. PaletteDark MUST be explicitly set; without it MudBlazor
+// falls back to its own built-in defaults (Primary ≈ #776be7 indigo/violet),
+// which was the root cause of the magenta-looking submit adornment and other
+// Primary-colored chrome. The Modern LCD theme is dark-only; PaletteDark carries
+// the canonical Modern LCD token values (identical to PaletteLight since this
+// theme has one visual register).
 
 using MudBlazor;
 
@@ -51,6 +59,39 @@ public static class PinballTheme
                 Warning = "#ff9800",
                 Error = "#ff3b30",            // accent-refusal — saturated red (NOT crimson)
                 ErrorContrastText = "#ffffff",
+            },
+            // ── PaletteDark (REQUIRED — IsDarkMode="true" in MainLayout) ──
+            // Without an explicit PaletteDark, MudBlazor falls back to its
+            // built-in defaults (Primary ≈ #776be7 indigo/violet), which was
+            // the root cause of the magenta submit adornment and other
+            // Primary-colored chrome. Modern LCD is dark-only; these values
+            // mirror PaletteLight exactly (single visual register).
+            PaletteDark = new PaletteDark
+            {
+                Primary = "#ff9a1f",          // accent-primary — arcade amber
+                PrimaryContrastText = "#1a1a1a",
+                Secondary = "#9e9e9e",        // steel silver
+                SecondaryContrastText = "#ffffff",
+                Background = "#0c0b0e",       // bg-base — warm near-black
+                Surface = "#161519",          // bg-surface — panel interiors
+                AppbarBackground = "#08070a", // recessed header — slightly darker than bg-base
+                AppbarText = "#f4f1ea",
+                DrawerBackground = "#101015",
+                DrawerText = "#e0dcd5",
+                DrawerIcon = "#ff9a1f",
+                TextPrimary = "#f4f1ea",      // warm off-white (NOT clinical)
+                TextSecondary = "#9a9590",
+                TextDisabled = "#5e5b56",
+                ActionDefault = "#ff9a1f",
+                ActionDisabled = "#3a3a3a",
+                Divider = "#2a282d",          // border-quiet
+                Info = "#2196f3",
+                Success = "#34d96a",          // accent-grounded — atomic green / GI glow
+                Warning = "#ff9800",
+                Error = "#ff3b30",            // accent-refusal — saturated red (NOT crimson)
+                ErrorContrastText = "#ffffff",
+                OverlayDark = "rgba(12, 11, 14, 0.8)",
+                OverlayLight = "rgba(30, 29, 34, 0.6)",
             },
             // ── Typography (Modern LCD spec — Barlow Condensed display, Inter body) ──
             // Display reserved for announcements (headers, panel titles,

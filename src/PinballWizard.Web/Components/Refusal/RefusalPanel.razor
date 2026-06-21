@@ -72,10 +72,10 @@
                     <MudIcon Icon="@Icons.Material.Filled.Block"
                              Color="Color.Error"
                              Size="Size.Medium" />
-                    <MudText Typo="Typo.h6" Class="refusal-category-label">
-                        Content Not Permitted
+                    <MudText Typo="Typo.h4" Class="refusal-category-label" data-testid="refusal-category-label">
+                        OUT OF SCOPE
                     </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    <MudText Typo="Typo.body1" Color="Color.Default">
                         This question was flagged by the content safety system and
                         cannot be processed.
                     </MudText>
@@ -89,10 +89,10 @@
                     <MudIcon Icon="@Icons.Material.Filled.Info"
                              Color="Color.Secondary"
                              Size="Size.Medium" />
-                    <MudText Typo="Typo.h6" Class="refusal-category-label">
-                        Unable to Answer
+                    <MudText Typo="Typo.h4" Class="refusal-category-label" data-testid="refusal-category-label">
+                        UNABLE TO ANSWER
                     </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    <MudText Typo="Typo.body1" Color="Color.Default">
                         I wasn't able to produce a grounded answer for this question.
                         Try rephrasing or exploring the community resources below.
                     </MudText>
@@ -147,14 +147,28 @@
             </MudPaper>
         }
 
-        @* ── Shared: CommunityResourceCards (recovery-eligible categories only) ── *@
+        @* ── Shared: Community routing CTAs (recovery-eligible categories only) ── *@
+        @* Spec: modern-lcd.md §"Routing-recommendation CTA spec" — recessed puck
+           buttons, accent-grounded backlight, peer parity (all identical).
+           Implemented via refusal-route-cta CSS class (defined in RefusalPanel.razor.css). *@
         @if (_showRecoverySections && _communityResources.Count > 0)
         {
             <div data-testid="community-resources-section">
-                <MudText Typo="Typo.subtitle2" Class="mb-2">
-                    Community resources that may help:
-                </MudText>
-                <CommunityResourceCards Resources="_communityResources" />
+                <div class="refusal-routes" data-testid="refusal-routes">
+                    @foreach (var resource in _communityResources)
+                    {
+                        <a class="refusal-route-cta"
+                           href="@resource.Url"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           data-testid="refusal-route-cta"
+                           data-resource-name="@resource.Name"
+                           data-resource-category="@resource.Category"
+                           aria-label="@($"Open {resource.Name}")">
+                            @resource.Name &#x25B6;
+                        </a>
+                    }
+                </div>
             </div>
         }
 

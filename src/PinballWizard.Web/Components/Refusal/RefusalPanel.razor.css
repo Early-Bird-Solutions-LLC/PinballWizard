@@ -1,28 +1,98 @@
 /* Scoped CSS for RefusalPanel — top-level refusal recovery container.
  *
- * Design intent: the panel reads as a helpful sidebar / interstitial,
- * not an error page. Warm-bordered paper with restrained color use.
+ * Design intent: confident broadcast callout per modern-lcd.md §"Refusal that
+ * directs out" — accent-refusal RED border, display-type ALL-CAPS category
+ * label, accent-grounded GREEN puck buttons for routing CTAs (peer parity).
  *
  * Custom CSS is justified (locked delight surface per ADR-0026 § 6 /
  * ADR-0008) — RefusalPanel is in the explicit set.
  *
  * ADR-0026 § 6 — scoped CSS in Components/Refusal/, no global bleed.
+ * Spec authority: docs/ui/themes/modern-lcd.md §"Refusal that directs out"
+ *                 + §"Routing-recommendation CTA spec".
  */
 
-/* Panel border uses a muted amber tint — signals "attention" without
- * the severity of Error red. MudBlazor's Warning token maps to orange
- * in PinballTheme — approachable, on-brand. */
+/* Panel border: accent-refusal (#ff3b30) per spec — reads like a pinball
+ * callout (TILT, BALL SAVED), not an apology. Box-shadow gives a gentle red
+ * glow that matches the border-glow-red token (alpha-60 tint). */
 .refusal-panel {
-    border: 1px solid var(--mud-palette-warning);
-    border-radius: 2px; /* machined edge per modern-lcd.md; 8px+ reads "Material" */
+    border: 1px solid var(--pw-accent-refusal);
+    border-radius: 2px;       /* machined edge per modern-lcd.md; 8px+ reads "Material" */
+    box-shadow: 0 0 14px var(--pw-border-glow-red);
     max-width: 720px;
 }
 
-/* Category label — Barlow Condensed via h6 MudText (h6 uses that family
- * per PinballTheme.cs). Slight letter-spacing for the "announcement" feel
- * without full SHOUTING. */
+/* Category label — Barlow Condensed via h4 MudText (h4 uses that family
+ * per PinballTheme.cs). Text is ALL CAPS in the markup; letter-spacing
+ * opens the glyphs for the "broadcast announcement" feel. Color is
+ * accent-refusal so it reads as the semantic callout color. */
 ::deep .refusal-category-label {
-    letter-spacing: 0.03em;
+    color: var(--pw-accent-refusal);
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-transform: uppercase; /* belt-and-suspenders: markup is already all-caps */
+}
+
+/* ── Routing-recommendation CTA spec (modern-lcd.md §"Routing-recommendation
+   CTA spec") ──────────────────────────────────────────────────────────────
+   Recessed puck, ~38px tall, accent-grounded backlight, peer parity.
+   All .refusal-route-cta within a panel are visually identical —
+   no "primary" elevated above peers (Posture rule 4). */
+.refusal-routes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.refusal-route-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: 6px;           /* more rounded than panels — per spec; flipper-button shape */
+    font-family: var(--pw-font-display);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pw-accent-grounded);
+    border: 1px solid var(--pw-accent-grounded);
+    background: var(--pw-bg-surface-hi);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55),
+                0 0 10px var(--pw-border-glow-green);
+    cursor: pointer;
+    text-decoration: none;
+    transition: box-shadow var(--pw-motion-fast),
+                background var(--pw-motion-fast);
+}
+
+.refusal-route-cta:hover {
+    background: var(--pw-bg-surface);
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55),
+                0 0 18px var(--pw-border-glow-green);
+}
+
+.refusal-route-cta:active {
+    transform: translateY(1px); /* 1px press depression — per spec */
+}
+
+/* Reduced-motion: collapse press depression, keep static backlight state. */
+@media (prefers-reduced-motion: reduce) {
+    .refusal-route-cta:active {
+        transform: none;
+    }
+}
+
+/* Mobile: full-width stacked */
+@media (max-width: 600px) {
+    .refusal-routes {
+        flex-direction: column;
+    }
+
+    .refusal-route-cta {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 /* SuggestedRephrase call-out: contrasting background, left accent border.

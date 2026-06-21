@@ -10,26 +10,28 @@ namespace PinballWizard.Web.Tests.Components.Refusal;
 // LOAD-BEARING plurality and favoritism pin tests for RefusalPanel.
 //
 // These tests are load-bearing per ADR-0026 § 5 + feedback_destination_plurality.md:
-//   - Marketplace category MUST render ≥3 community resource cards.
-//   - Machine-reference category MUST render ≥2 community resource cards.
-//   - Cards MUST be in alphabetical order within category (no favoritism ordering).
+//   - Marketplace category MUST render ≥3 routing CTAs.
+//   - Machine-reference category MUST render ≥2 routing CTAs.
+//   - CTAs MUST be in alphabetical order within category (no favoritism ordering).
 //
-// Each test asserts BEHAVIOR (card count, ordering, absence of favored markup),
-// not structure (no MudBlazor class assertions).
+// Routing CTAs (formerly "community resource cards") now render as recessed
+// puck buttons per modern-lcd.md §"Routing-recommendation CTA spec" — identified
+// by [data-testid='refusal-route-cta'] and data-resource-category attributes.
+// The plurality and ordering invariants remain unchanged; the observable surface
+// has changed from MudCard to anchor puck buttons.
 //
-// Terminology note: "community resource cards" are identified by the
-// [data-testid='community-resource-card'] attribute on each card, and
-// [data-testid='community-resource-cards'] on the grid wrapper.
+// CommunityResourceCards.razor (standalone grid view) is still tested separately
+// for its own alphabetical-order contract (see test below).
 public sealed class RefusalPanelPluralityTests
 {
     // ─────────────────────────────────────────────────────────────────────────
-    // LOAD-BEARING: Marketplace refusal renders ≥3 community resource cards.
+    // LOAD-BEARING: Marketplace refusal renders ≥3 routing CTAs.
     //
     // Spec authority: ADR-0026 § 5 sub-rule (a) + feedback_destination_plurality.md
     // "Marketplace category MUST render ≥3 resource cards."
     //
     // Fixture: 3 marketplace + 2 machine_reference + 1 forums resource.
-    // Assertion: at least 3 cards with data-resource-category="marketplace".
+    // Assertion: at least 3 CTAs with data-resource-category="marketplace".
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -55,31 +57,31 @@ public sealed class RefusalPanelPluralityTests
             .Add(x => x.Category, RefusalCategory.OutOfScope) // recovery-eligible
             .Add(x => x.Detail, detail));
 
-        // CommunityResourceCards wrapper must be present.
-        cut.Find("[data-testid='community-resource-cards']");
+        // Routing CTAs container must be present.
+        cut.Find("[data-testid='refusal-routes']");
 
-        // All resource cards (any category) are tagged [data-testid='community-resource-card'].
-        var allCards = cut.FindAll("[data-testid='community-resource-card']");
+        // All route CTAs are tagged [data-testid='refusal-route-cta'].
+        var allCtas = cut.FindAll("[data-testid='refusal-route-cta']");
 
         // Filter by data-resource-category attribute for marketplace.
-        var marketplaceCards = allCards
+        var marketplaceCtas = allCtas
             .Where(el => el.GetAttribute("data-resource-category") is "marketplace")
             .ToList();
 
         Assert.True(
-            marketplaceCards.Count >= 3,
-            $"Expected ≥3 marketplace cards but got {marketplaceCards.Count}. " +
+            marketplaceCtas.Count >= 3,
+            $"Expected ≥3 marketplace CTAs but got {marketplaceCtas.Count}. " +
             "This is a load-bearing ADR-0026 § 5 plurality invariant.");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // LOAD-BEARING: Machine-reference refusal renders ≥2 resource cards.
+    // LOAD-BEARING: Machine-reference refusal renders ≥2 routing CTAs.
     //
     // Spec authority: ADR-0026 § 5 sub-rule (b) + feedback_destination_plurality.md
     // "Machine-reference MUST render ≥2 cards."
     //
     // Fixture: 3 marketplace + 2 machine_reference + 1 forums resource.
-    // Assertion: at least 2 cards with data-resource-category="machine_reference".
+    // Assertion: at least 2 CTAs with data-resource-category="machine_reference".
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -105,17 +107,17 @@ public sealed class RefusalPanelPluralityTests
             .Add(x => x.Category, RefusalCategory.NoCitation) // recovery-eligible
             .Add(x => x.Detail, detail));
 
-        cut.Find("[data-testid='community-resource-cards']");
+        cut.Find("[data-testid='refusal-routes']");
 
-        var allCards = cut.FindAll("[data-testid='community-resource-card']");
+        var allCtas = cut.FindAll("[data-testid='refusal-route-cta']");
 
-        var machineRefCards = allCards
+        var machineRefCtas = allCtas
             .Where(el => el.GetAttribute("data-resource-category") is "machine_reference")
             .ToList();
 
         Assert.True(
-            machineRefCards.Count >= 2,
-            $"Expected ≥2 machine_reference cards but got {machineRefCards.Count}. " +
+            machineRefCtas.Count >= 2,
+            $"Expected ≥2 machine_reference CTAs but got {machineRefCtas.Count}. " +
             "This is a load-bearing ADR-0026 § 5 plurality invariant.");
     }
 
@@ -131,6 +133,9 @@ public sealed class RefusalPanelPluralityTests
     // The CommunityResourceLoader sorts alphabetically at load time
     // (CommunityResourceLoader.cs ~line 196). The component renders in
     // the order received — this test pins that contract end-to-end.
+    //
+    // NOTE: CommunityResourceCards is tested in isolation here (not via
+    // RefusalPanel) because it remains available as a standalone grid view.
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -140,13 +145,9 @@ public sealed class RefusalPanelPluralityTests
         ctx.Services.AddMudServices();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
 
-        // Insert in reverse alpha order — the component must not re-sort,
-        // so the caller must pass pre-sorted resources. This mirrors what
-        // CommunityResourceLoader provides. We provide them pre-sorted (as
-        // the loader would) and assert the rendered order matches.
+        // Insert in alphabetical order (as CommunityResourceLoader would return).
         var resources = new List<CommunityResource>
         {
-            // Alphabetical order (as CommunityResourceLoader would return):
             new("Alpha Pinball", "https://alpha.example.com", "marketplace", "First alphabetically."),
             new("Beta Pinball", "https://beta.example.com", "marketplace", "Second alphabetically."),
             new("Zeta Pinball", "https://zeta.example.com", "marketplace", "Third alphabetically."),
@@ -167,11 +168,11 @@ public sealed class RefusalPanelPluralityTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // No-favoritism: all resource categories are rendered with equal card count
+    // No-favoritism: all resource categories are rendered with equal CTA count
     // when passed — no single category is capped or boosted.
     //
-    // Fixture: 3 marketplace + 2 machine_reference = 5 total cards.
-    // Assertion: all 5 cards render (no category is secretly filtered).
+    // Fixture: 3 marketplace + 2 machine_reference = 5 total CTAs.
+    // Assertion: all 5 CTAs render (no category is secretly filtered).
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -194,8 +195,8 @@ public sealed class RefusalPanelPluralityTests
             .Add(x => x.Category, RefusalCategory.InsufficientGrounding)
             .Add(x => x.Detail, detail));
 
-        var allCards = cut.FindAll("[data-testid='community-resource-card']");
-        Assert.Equal(5, allCards.Count);
+        var allCtas = cut.FindAll("[data-testid='refusal-route-cta']");
+        Assert.Equal(5, allCtas.Count);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
