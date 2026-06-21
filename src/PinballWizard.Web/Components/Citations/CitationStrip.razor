@@ -42,9 +42,10 @@
     var sitesLabel  = groups.Count  == 1 ? "1 site"  : $"{groups.Count} sites";
     var summaryText = $"SOURCES · {citedLabel} from {sitesLabel}";
 
-    // Shared ordinal ordering: CitationOrdering.InRenderOrder produces the
-    // same flattened order the cards render in, so card N and marker N agree.
-    var ordered = CitationOrdering.InRenderOrder(Citations);
+    // Card ordinals derive from the BuildGroups loop below (running `ordinal`
+    // counter). CitationOrdering.InRenderOrder delegates to BuildGroups and
+    // flattens, so card N and the cascaded tooltip N agree by construction
+    // (InRenderOrder_matches_card_ordinal_order asserts this).
     var marked  = MarkedOrdinals();
 
     // Running offset into the ordered list: each group claims a slice.
