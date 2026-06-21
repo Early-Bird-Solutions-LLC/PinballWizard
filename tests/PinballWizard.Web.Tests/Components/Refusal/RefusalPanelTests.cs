@@ -83,6 +83,51 @@ public sealed class RefusalPanelTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Spec: OutOfScope reason text includes routing-promise ONLY when community
+    // resources are present.
+    //
+    // modern-lcd.md §"Posture": name coverage gaps honestly; never imply a
+    // community destination exists when the routing CTA list is empty.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RefusalPanel_OutOfScope_WithCommunityResources_ReasonTextMentionsCommunity()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var detail = BuildDetail(includeMarketplaceResources: true);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // When community resources ARE present the reason must reference "community".
+        var reason = cut.Find("[data-testid='out-of-scope-reason']");
+        Assert.Contains("community", reason.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RefusalPanel_OutOfScope_WithoutCommunityResources_ReasonTextDoesNotMentionCommunity()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        // Detail with NO community resources — the routing-promise must be absent.
+        var detail = BuildDetail(includeMarketplaceResources: false);
+
+        var cut = ctx.Render<RefusalPanel>(p => p
+            .Add(x => x.Category, RefusalCategory.OutOfScope)
+            .Add(x => x.Detail, detail));
+
+        // Reason text must NOT reference "community below" when no CTAs follow.
+        var reason = cut.Find("[data-testid='out-of-scope-reason']");
+        Assert.DoesNotContain("community below", reason.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Spec: category label carries data-testid="refusal-category-label" (ALL CAPS)
     // modern-lcd.md §"Per-category framing" — labels in display type, ALL CAPS.
     // ─────────────────────────────────────────────────────────────────────────

@@ -242,6 +242,38 @@ public sealed class RefusalCategoryViewTests
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // OutOfScopeView — conditional routing-promise text (Fix 2)
+    //
+    // "The community below can help" is only honest when routing CTAs follow.
+    // HasCommunityResources gates the promise; without it the text should not
+    // reference a destination that doesn't exist.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task OutOfScopeView_HasCommunityResources_True_ReasonMentionsCommunity()
+    {
+        await using var ctx = BuildCtx();
+        var cut = ctx.Render<OutOfScopeView>(p => p
+            .Add(x => x.HasCommunityResources, true));
+
+        var reason = cut.Find("[data-testid='out-of-scope-reason']");
+        Assert.Contains("community", reason.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OutOfScopeView_HasCommunityResources_False_ReasonOmitsCommunityBelow()
+    {
+        await using var ctx = BuildCtx();
+        var cut = ctx.Render<OutOfScopeView>(p => p
+            .Add(x => x.HasCommunityResources, false));
+
+        // When no routing CTAs are present the reason must not promise a
+        // nonexistent "community below" — per modern-lcd.md §Posture: honest framing.
+        var reason = cut.Find("[data-testid='out-of-scope-reason']");
+        Assert.DoesNotContain("community below", reason.TextContent, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // UpstreamThrottledView
     // ─────────────────────────────────────────────────────────────────────────
 
