@@ -1,68 +1,127 @@
+using System.Runtime.CompilerServices;
 using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
+using NSubstitute;
+using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Domain;
 using PinballWizard.Web.Components.Pages.Admin;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
 
-// bUnit smoke tests for AdminSources.razor (/admin/sources).
+// bUnit tests for AdminSources.razor (/admin/sources).
 //
-// Per ADR-0026 PR self-audit item 9(d): every Razor component must have a
-// bUnit smoke test. AdminSources is behind [Authorize]; tests run with
-// AddAuthorization() set to authenticated.
-//
-// The grid binds to an empty list, so the "No sources configured" empty-state
-// is the expected render. Tests assert the grid sentinel and empty-state text
-// are present — this is a behavioral assertion: "grid with empty data shows
-// the empty state" fires the actual empty-state code path.
+// AdminSources is static SSR + [StreamRendering] (ADR-0034 doctrine: no
+// interactive need). It streams IIngestionSourceRepository.StreamAllAsync in
+// OnInitializedAsync; bUnit runs that synchronously, so WaitForAssertion sees
+// the final state. Tests assert the real load path: rows render, the empty-state
+// still fires on no sources, and a throwing repo surfaces the visible error
+// state (Invariant #17), not a silent empty grid.
 public sealed class AdminSourcesTests : AsyncBunitContext
 {
+    private static IngestionSource MakeSource(string id, bool enabled) => new()
+    {
+        Id = id,
+        DisplayName = $"{id} Pinball",
+        ScraperImplKey = id,
+        BaseUrl = $"https://{id}.example.com",
+        Enabled = enabled,
+        Cadence = "weekly",
+        TotalDocumentsDiscovered = 7,
+        TotalRunFailures = 0,
+    };
+
+    private static async IAsyncEnumerable<IngestionSource> Stream(
+        IEnumerable<IngestionSource> items,
+        [EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        foreach (var i in items) yield return i;
+    }
+
+    private static async IAsyncEnumerable<IngestionSource> ThrowingStream(
+        [EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        throw new InvalidOperationException("simulated Cosmos failure");
+#pragma warning disable CS0162 // unreachable — required to make this a valid iterator
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    private void RegisterSources(Func<CancellationToken, IAsyncEnumerable<IngestionSource>> stream)
+    {
+        var repo = Substitute.For<IIngestionSourceRepository>();
+        repo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(callInfo => stream(callInfo.Arg<CancellationToken>()));
+        Services.AddSingleton(repo);
+    }
+
     public AdminSourcesTests()
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization().SetAuthorized("test-admin@example.com");
+    }
+
+    [Fact]
+    public void WithSources_RendersRows()
+    {
+        RegisterSources(ct => Stream([MakeSource("stern", true), MakeSource("jjp", false)], ct));
         _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("stern Pinball", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("jjp Pinball", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Enabled", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Disabled", cut.Markup, StringComparison.Ordinal);
+        });
     }
 
     [Fact]
-    public void AdminSources_Renders_WithoutThrowing()
+    public void EmptyList_RendersNoSourcesConfiguredMessage()
     {
+        RegisterSources(ct => Stream([], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
         var cut = RenderWithPopover<AdminSources>();
 
-        Assert.NotNull(cut.Markup);
+        cut.WaitForAssertion(() =>
+        {
+            var empty = cut.Find("[data-testid='admin-sources-empty']");
+            Assert.Contains("No sources configured", empty.TextContent, StringComparison.Ordinal);
+        });
     }
 
     [Fact]
-    public void AdminSources_Renders_DataGridSentinel()
+    public void LoadFailure_RendersVisibleErrorState()
     {
+        RegisterSources(ThrowingStream);
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
         var cut = RenderWithPopover<AdminSources>();
 
-        // The MudDataGrid wrapper element carries data-testid.
-        var grid = cut.Find("[data-testid='admin-sources-grid']");
-        Assert.NotNull(grid);
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='admin-sources-load-failed']");
+            // Failure must NOT masquerade as the benign empty-state.
+            Assert.Empty(cut.FindAll("[data-testid='admin-sources-empty']"));
+        });
     }
 
     [Fact]
-    public void AdminSources_EmptyList_RendersNoSourcesConfiguredMessage()
+    public void Breadcrumb_ContainsAdminRoot()
     {
+        RegisterSources(ct => Stream([], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
         var cut = RenderWithPopover<AdminSources>();
 
-        // Behavioral assertion: empty-list path renders the "No sources configured"
-        // empty-state content defined in <NoRecordsContent>.
-        var empty = cut.Find("[data-testid='admin-sources-empty']");
-        Assert.Contains("No sources configured", empty.TextContent, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AdminSources_Breadcrumb_ContainsAdminRoot()
-    {
-        var cut = RenderWithPopover<AdminSources>();
-
-        // Breadcrumb trail includes a link back to /admin.
-        var adminLink = cut.Find("a[href='/admin']");
-        Assert.NotNull(adminLink);
+        cut.WaitForAssertion(() => cut.Find("a[href='/admin']"));
     }
 }
