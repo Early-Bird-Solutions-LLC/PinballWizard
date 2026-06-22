@@ -175,7 +175,7 @@ public sealed class AdminDashboardTests : AsyncBunitContext
 
         var sources = Substitute.For<IIngestionSourceRepository>();
         sources.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => ThrowingSourcesStream(CancellationToken.None));
+            .Returns(_ => ThrowingSourcesStream(_.Arg<CancellationToken>()));
         Services.AddSingleton(sources);
 
         var overrides = Substitute.For<ILinkOverrideRepository>();
