@@ -146,6 +146,11 @@ else
     builder.Services.AddControllersWithViews();
 }
 
+// Server-side authorization guard for admin mutation handlers (AdminActionGuard).
+// Registered on both auth paths — admin pages are public-read with gated
+// mutations, and the handlers call this before touching a repository.
+builder.Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
+
 // ── Embedded-resource agent prompts (admin prompt-templates tab) ──────────
 // Parameterless; reads the Application assembly's .md resources. The Web
 // host doesn't run AddAiRouter (no Foundry here — asks go through the Api),
