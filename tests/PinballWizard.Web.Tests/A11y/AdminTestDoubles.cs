@@ -35,6 +35,7 @@ internal static class AdminTestDoubles
         services.AddSingleton(RawDocs());
         services.AddSingleton(Linker());
         services.AddSingleton(Overrides());
+        services.AddSingleton(IngestionSources());
         services.AddSingleton(Settings());
         services.AddSingleton(Prompts());
 
@@ -197,6 +198,41 @@ internal static class AdminTestDoubles
             .Returns(Task.CompletedTask);
         repo.DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
+        return repo;
+    }
+
+    // ── IIngestionSourceRepository ───────────────────────────────────────────
+    private static IIngestionSourceRepository IngestionSources()
+    {
+        var repo = Substitute.For<IIngestionSourceRepository>();
+        var stern = new IngestionSource
+        {
+            Id = "stern",
+            DisplayName = "Stern Pinball",
+            ScraperImplKey = "stern",
+            BaseUrl = "https://sternpinball.com",
+            Enabled = true,
+            Cadence = "weekly",
+            LastRunAt = AsOf,
+            LastSuccessAt = AsOf,
+            TotalDocumentsDiscovered = 12,
+            TotalRunFailures = 0,
+        };
+        var opdb = new IngestionSource
+        {
+            Id = "opdb",
+            DisplayName = "OPDB",
+            ScraperImplKey = "opdb",
+            BaseUrl = "https://opdb.org",
+            Enabled = false,
+            Cadence = "manual",
+            TotalDocumentsDiscovered = 0,
+            TotalRunFailures = 0,
+        };
+        repo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(stern, opdb));
+        repo.StreamEnabledAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(stern));
         return repo;
     }
 
