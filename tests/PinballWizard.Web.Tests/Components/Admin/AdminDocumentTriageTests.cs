@@ -247,6 +247,7 @@ public sealed class AdminDocumentTriageAuthorizedActionTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.NotEmpty(cut.FindAll("[data-testid='triage-action-relink']"));
+        Assert.NotEmpty(cut.FindAll("[data-testid='triage-action-markgeneric']"));
     }
 }
 
