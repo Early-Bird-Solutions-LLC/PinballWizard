@@ -30,15 +30,15 @@ else
 }
 
 @code {
-    /// <summary>True while the count is loading.</summary>
+    // True while the count is loading.
     [Parameter] public bool Loading { get; set; }
 
-    /// <summary>True if the load failed — renders the visible error glyph.</summary>
+    // True if the load failed — renders the visible error glyph.
     [Parameter] public bool Failed { get; set; }
 
-    /// <summary>The resolved count. Null until loaded or on failure.</summary>
+    // The resolved count. Null until loaded or on failure.
     [Parameter] public int? Count { get; set; }
 
-    /// <summary>data-testid stem; the error glyph uses "{TestId}-error".</summary>
+    // data-testid stem; the error glyph uses "{TestId}-error".
     [Parameter, EditorRequired] public string TestId { get; set; } = default!;
 }

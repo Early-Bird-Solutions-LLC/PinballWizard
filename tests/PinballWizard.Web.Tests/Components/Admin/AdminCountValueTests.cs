@@ -41,7 +41,7 @@ public sealed class AdminCountValueTests : AsyncBunitContext
             .Add(x => x.Count, (int?)null));
 
         // Visible error glyph present...
-        cut.Find("[data-testid='c-error']");
+        _ = cut.Find("[data-testid='c-error']");
         // ...and the number sentinel is absent (no silent dash / fabricated 0).
         Assert.Empty(cut.FindAll("[data-testid='c']"));
     }
