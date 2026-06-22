@@ -143,6 +143,16 @@ else
         // infra half).
         options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
     });
+    // AddCascadingAuthenticationState is required on BOTH paths because
+    // AdminLayout.razor renders <AuthorizeView Policy="AdminOnly">, which
+    // throws at render if no cascading Task<AuthenticationState> is available.
+    // On the no-tenant path the AdminOnly policy is permissive
+    // (RequireAssertion(_ => true)) so the AuthorizeView resolves to its
+    // Authorized branch and local-dev admin pages render fully.
+    // AddRazorComponents().AddInteractiveServerComponents() (called above for
+    // all paths) registers ServerAuthenticationStateProvider, so the cascade
+    // provider has a backing store on this path too.
+    builder.Services.AddCascadingAuthenticationState();
     builder.Services.AddControllersWithViews();
 }
 
