@@ -148,48 +148,53 @@
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        // Read 1 — source config (single-partition point read).
         try
         {
-            _source = await SourceRepo.GetByIdAsync(Id, ConfigPartition, cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.LogWarning("Admin source-detail load timed out after 30 s for id '{Id}'.", Id);
-            _loadFailed = true;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Failed to load admin source '{Id}'.", Id);
-            _loadFailed = true;
-        }
-
-        // Read 2 — catalog contribution, only when the source loaded. A null
-        // result is a legitimate "non-manufacturer source"; a throw is a
-        // section-scoped failure that must NOT blank the config/politeness
-        // sections from the independent first read.
-        if (_source is not null)
-        {
+            // Read 1 — source config (single-partition point read).
             try
             {
-                _stats = await CatalogStatsRepo.GetByManufacturerAsync(_source.ScraperImplKey, cts.Token);
+                _source = await SourceRepo.GetByIdAsync(Id, ConfigPartition, cts.Token);
             }
             catch (OperationCanceledException)
             {
-                Logger.LogWarning(
-                    "Admin source-detail catalog read timed out for manufacturer '{Key}'.",
-                    _source.ScraperImplKey);
-                _catalogFailed = true;
+                Logger.LogWarning("Admin source-detail load timed out after 30 s for id '{Id}'.", Id);
+                _loadFailed = true;
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Failed to load catalog stats for manufacturer '{Key}'.",
-                    _source.ScraperImplKey);
-                _catalogFailed = true;
+                Logger.LogError(ex, "Failed to load admin source '{Id}'.", Id);
+                _loadFailed = true;
+            }
+
+            // Read 2 — catalog contribution, only when the source loaded. A null
+            // result is a legitimate "non-manufacturer source"; a throw is a
+            // section-scoped failure that must NOT blank the config/politeness
+            // sections from the independent first read.
+            if (_source is not null)
+            {
+                try
+                {
+                    _stats = await CatalogStatsRepo.GetByManufacturerAsync(_source.ScraperImplKey, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.LogWarning(
+                        "Admin source-detail catalog read timed out for manufacturer '{Key}'.",
+                        _source.ScraperImplKey);
+                    _catalogFailed = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load catalog stats for manufacturer '{Key}'.",
+                        _source.ScraperImplKey);
+                    _catalogFailed = true;
+                }
             }
         }
-
-        _loading = false;
+        finally
+        {
+            _loading = false;
+        }
     }
 
     // Inline label/value row — kept DRY across the three sections.
