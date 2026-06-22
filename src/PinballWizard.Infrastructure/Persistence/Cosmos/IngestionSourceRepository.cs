@@ -70,4 +70,24 @@ public sealed class IngestionSourceRepository : CosmosRepository<IngestionSource
 
         await UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public async Task<bool> SetEnabledAsync(string id, bool enabled, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+
+        var existing = await GetByIdAsync(id, ConfigPartition, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            _logger.LogWarning(
+                "SetEnabledAsync: ingestion source '{SourceId}' not found in Cosmos. " +
+                "Skipping the write-back rather than fabricating success.",
+                id);
+            return false;
+        }
+
+        existing.Enabled = enabled;
+        await UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
 }
