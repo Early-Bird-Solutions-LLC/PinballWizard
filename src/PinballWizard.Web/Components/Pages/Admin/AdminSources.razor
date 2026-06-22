@@ -57,7 +57,13 @@
                  data-testid="admin-sources-grid">
 
         <Columns>
-            <PropertyColumn Property="x => x.Name" Title="Name" />
+            <TemplateColumn Title="Name">
+                <CellTemplate>
+                    <MudLink Href="@($"/admin/sources/{context.Item.Id}")">
+                        @context.Item.Name
+                    </MudLink>
+                </CellTemplate>
+            </TemplateColumn>
             <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
             <TemplateColumn Title="Status">
                 <CellTemplate>
@@ -103,6 +109,7 @@
     // as "—" — this is legitimate "never run" data, distinct from the load-
     // failure MudAlert above.
     private sealed record IngestionSourceRow(
+        string Id,
         string Name,
         string SourceUrl,
         bool Enabled,
@@ -134,6 +141,7 @@
             await foreach (var s in SourceRepo.StreamAllAsync(cts.Token))
             {
                 rows.Add(new IngestionSourceRow(
+                    Id:             s.Id,
                     Name:           s.DisplayName,
                     SourceUrl:      s.BaseUrl,
                     Enabled:        s.Enabled,

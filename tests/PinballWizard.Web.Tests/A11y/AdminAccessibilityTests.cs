@@ -30,6 +30,7 @@ public sealed class AdminAccessibilityTests(AdminAccessibilityTests.AdminPlaywri
     [Theory]
     [InlineData("/admin", "dashboard")]
     [InlineData("/admin/sources", "sources")]
+    [InlineData("/admin/sources/stern", "source detail")]
     [InlineData("/admin/machines", "machine catalog")]
     [InlineData("/admin/machines/mch_godzilla_pro?mfr=stern", "machine detail")]
     [InlineData("/admin/document-triage", "document triage")]

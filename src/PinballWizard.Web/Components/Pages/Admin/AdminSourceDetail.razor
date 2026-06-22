@@ -1,0 +1,205 @@
+@page "/admin/sources/{Id}"
+@layout AdminLayout
+@attribute [StreamRendering]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@attribute [AllowAnonymous]
+@inject IIngestionSourceRepository SourceRepo
+@inject ICatalogStatsReadRepository CatalogStatsRepo
+@inject ILogger<AdminSourceDetail> Logger
+
+@* AdminSourceDetail — /admin/sources/{id} single-source drill-down.
+ *
+ * Static SSR + [StreamRendering] (ADR-0034 doctrine — read-only display, no
+ * interactive need). Two single-partition point-reads (ADR-0036): the source by
+ * id (partition "config"), then the per-manufacturer catalog rollup by
+ * ScraperImplKey. Public-read showcase surface ([AllowAnonymous]); no mutations
+ * (the enable/disable toggle is feature #3). Failures degrade visibly via
+ * MudAlert (Invariant #17) — ISnackbar is deliberately NOT used (needs a circuit).
+ * The catalog read is section-isolated: a catalog hiccup must not blank the
+ * config/politeness sections from the independent first read.
+ *
+ * ADR-0007  — IngestionSource is runtime Cosmos config
+ * ADR-0008  — MudBlazor strict
+ * ADR-0034  — render-mode doctrine (static default)
+ * ADR-0036  — Cosmos read-access (single-partition point-reads)
+ *@
+
+<PageTitle>Source Detail — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading source detail" />
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="source-detail-load-failed">
+            This source could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
+    }
+    else if (_source is null)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="source-not-found">
+            No ingestion source exists with id <code>@Id</code>.
+            <MudLink Href="/admin/sources">Back to all sources</MudLink>
+        </MudAlert>
+    }
+    else
+    {
+        <MudBreadcrumbs Items="Breadcrumbs" Class="pa-0 mb-4" />
+
+        <MudText Typo="Typo.h4" GutterBottom="true">@_source.DisplayName</MudText>
+
+        @* a. Source config + run stats *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-config">
+            <MudText Typo="Typo.h6" GutterBottom="true">Configuration &amp; run stats</MudText>
+            <MudStack Spacing="1">
+                @KeyValue("Scraper key", _source.ScraperImplKey)
+                <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Base URL</MudText>
+                    <MudLink Href="@_source.BaseUrl" Target="_blank" rel="noopener">@_source.BaseUrl</MudLink>
+                </MudStack>
+                <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Status</MudText>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(_source.Enabled ? Color.Success : Color.Default)">
+                        @(_source.Enabled ? "Enabled" : "Disabled")
+                    </MudChip>
+                </MudStack>
+                @KeyValue("Cadence", _source.Cadence)
+                @KeyValue("Last run", _source.LastRunAt?.ToString("u") ?? "—")
+                @KeyValue("Last success", _source.LastSuccessAt?.ToString("u") ?? "—")
+                @KeyValue("Documents discovered", _source.TotalDocumentsDiscovered.ToString())
+                @KeyValue("Run failures", _source.TotalRunFailures.ToString())
+            </MudStack>
+        </MudPaper>
+
+        @* b. Politeness overrides — the polite-by-construction showcase surface.
+         * A null field (or a null PolitenessOverrides) means the global default
+         * applies; that is shown explicitly, not as a blank. *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-politeness">
+            <MudText Typo="Typo.h6" GutterBottom="true">Politeness overrides</MudText>
+            <MudStack Spacing="1">
+                @{ var p = _source.PolitenessOverrides; }
+                @KeyValue("Request delay (ms)", p?.RequestDelayMs?.ToString() ?? GlobalDefault)
+                @KeyValue("robots.txt path", p?.RobotsTxtPath ?? GlobalDefault)
+                @KeyValue("User-Agent suffix", p?.UserAgentSuffix ?? GlobalDefault)
+                @KeyValue("Max 429 streak", p?.Max429Streak?.ToString() ?? GlobalDefault)
+            </MudStack>
+        </MudPaper>
+
+        @* c. Catalog contribution — null stats = not a manufacturer catalog
+         * source (n/a); a thrown read is a section-scoped error (Invariant #17). *@
+        <MudPaper Class="pa-4" Elevation="2" data-testid="source-catalog">
+            <MudText Typo="Typo.h6" GutterBottom="true">Catalog contribution</MudText>
+            @if (_catalogFailed)
+            {
+                <MudAlert Severity="Severity.Error" data-testid="catalog-load-failed">
+                    Catalog contribution could not be loaded.
+                </MudAlert>
+            }
+            else if (_stats is null)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="catalog-na">
+                    Not a manufacturer catalog source — n/a
+                </MudText>
+            }
+            else
+            {
+                <MudStack Spacing="1">
+                    @KeyValue("Machines", _stats.Machines.Count.ToString())
+                    @KeyValue("Total documents", _stats.Machines.Sum(m => m.DocCount).ToString())
+                    @KeyValue("Projection as of", _stats.AsOfUtc.ToString("u"))
+                </MudStack>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string Id { get; set; } = default!;
+
+    // Ingestion-source documents share a single logical partition ("config");
+    // see IngestionSource.PartitionKey. No shared constant is exported, so this
+    // literal mirrors the repository's own ConfigPartition.
+    private const string ConfigPartition = "config";
+    private const string GlobalDefault = "using global default";
+
+    private IngestionSource? _source;
+    private ManufacturerCatalogStats? _stats;
+    private bool _loading = true;
+    private bool _loadFailed;     // source point-read failed/timed out
+    private bool _catalogFailed;  // catalog point-read failed/timed out (section-scoped)
+
+    private List<BreadcrumbItem> Breadcrumbs =>
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Sources", href: "/admin/sources", icon: Icons.Material.Filled.Source),
+        new BreadcrumbItem(_source?.DisplayName ?? Id, href: null, disabled: true),
+    ];
+
+    // Static SSR: OnInitializedAsync runs once. [StreamRendering] streams the
+    // shell (with the loading bar) first, then the populated sections.
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            // Read 1 — source config (single-partition point read).
+            try
+            {
+                _source = await SourceRepo.GetByIdAsync(Id, ConfigPartition, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.LogWarning("Admin source-detail load timed out after 30 s for id '{Id}'.", Id);
+                _loadFailed = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to load admin source '{Id}'.", Id);
+                _loadFailed = true;
+            }
+
+            // Read 2 — catalog contribution, only when the source loaded. A null
+            // result is a legitimate "non-manufacturer source"; a throw is a
+            // section-scoped failure that must NOT blank the config/politeness
+            // sections from the independent first read.
+            if (_source is not null)
+            {
+                try
+                {
+                    _stats = await CatalogStatsRepo.GetByManufacturerAsync(_source.ScraperImplKey, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.LogWarning(
+                        "Admin source-detail catalog read timed out for manufacturer '{Key}'.",
+                        _source.ScraperImplKey);
+                    _catalogFailed = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load catalog stats for manufacturer '{Key}'.",
+                        _source.ScraperImplKey);
+                    _catalogFailed = true;
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // Inline label/value row — kept DRY across the three sections.
+    private RenderFragment KeyValue(string label, string value) =>@<MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.body2" Color="Color.Secondary">@label</MudText>
+        <MudText Typo="Typo.body2">@value</MudText>
+    </MudStack>;
+}
