@@ -138,6 +138,8 @@ public sealed class AdminDashboardTests : AsyncBunitContext
             Assert.Empty(cut.FindAll("[data-testid='admin-machines-count']"));
             // Independent loads are unaffected.
             Assert.Equal("2", cut.Find("[data-testid='admin-sources-count']").TextContent.Trim());
+            // Overrides load is independent of the stats failure.
+            Assert.Equal("1", cut.Find("[data-testid='admin-link-overrides-count']").TextContent.Trim());
         });
     }
 
