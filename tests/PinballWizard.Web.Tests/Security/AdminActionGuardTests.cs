@@ -10,16 +10,28 @@ namespace PinballWizard.Web.Tests.Security;
 // admin mutations. Exercises the real AuthorizationService with the production
 // AdminOnly policy (RequireRole("GlobalAdmin")) so allow/deny is proven against
 // the actual policy, not a mock.
-public sealed class AdminActionGuardTests
+public sealed class AdminActionGuardTests : IDisposable
 {
-    private static AdminActionGuard BuildGuard()
+    private readonly List<ServiceProvider> _providers = [];
+
+    private AdminActionGuard BuildGuard()
     {
         var services = new ServiceCollection();
         services.AddAuthorization(o =>
             o.AddPolicy("AdminOnly", p => p.RequireRole("GlobalAdmin")));
         services.AddLogging();
-        var authz = services.BuildServiceProvider().GetRequiredService<IAuthorizationService>();
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        var authz = provider.GetRequiredService<IAuthorizationService>();
         return new AdminActionGuard(authz);
+    }
+
+    public void Dispose()
+    {
+        foreach (var provider in _providers)
+        {
+            provider.Dispose();
+        }
     }
 
     [Fact]

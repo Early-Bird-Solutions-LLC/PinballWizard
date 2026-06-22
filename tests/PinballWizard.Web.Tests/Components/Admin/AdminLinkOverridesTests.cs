@@ -286,6 +286,7 @@ public sealed class AdminLinkOverridesAnonymousTests : AsyncBunitContext
             Assert.DoesNotContain("Created By", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("admin (local-dev)", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("seed override", cut.Markup, StringComparison.Ordinal);
+            Assert.DoesNotContain("Notes", cut.Markup, StringComparison.Ordinal);
         });
     }
 }

@@ -523,6 +523,14 @@
             return;
         }
 
+        // Prompt fields hold IP and must not be populated for a non-admin. The tab
+        // that renders them is admin-gated; this makes the data flow safe by
+        // construction, not just by render position.
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            return;
+        }
+
         _promptBusy = true;
         try
         {
