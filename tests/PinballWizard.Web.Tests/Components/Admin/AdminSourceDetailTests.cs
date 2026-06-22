@@ -9,20 +9,19 @@ using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Web.Components.Pages.Admin;
+using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
 
 // bUnit tests for AdminSourceDetail.razor (/admin/sources/{id}).
 //
-// Static SSR + [StreamRendering] (ADR-0034): OnInitializedAsync runs two
-// single-partition point-reads (ADR-0036) — the source by id, then the
-// per-manufacturer catalog rollup. bUnit runs that synchronously. The tests
-// assert the real load paths: all three sections render, politeness falls back
-// to "using global default", a non-manufacturer source shows "n/a", an unknown
-// id shows the distinct not-found state, a source-read failure shows the visible
-// load-failed alert (Invariant #17), and a catalog-read failure is isolated to
-// the contribution card while config/politeness still render.
+// Interactive (@rendermode InteractiveServer, ADR-0034 amendment): the load runs in
+// OnAfterRenderAsync (bUnit invokes it on render); the two single-partition point-reads
+// (ADR-0036) and their per-section failure isolation are unchanged from #2. These tests
+// cover the read paths (all three sections, politeness defaults, n/a, not-found,
+// load-failure, catalog isolation). The admin-gated enable/disable toggle is covered by
+// the AdminSourceDetailToggle*/Anonymous contexts below.
 public sealed class AdminSourceDetailTests : AsyncBunitContext
 {
     private const string SternId = "stern";
@@ -95,6 +94,7 @@ public sealed class AdminSourceDetailTests : AsyncBunitContext
                 .Returns(Task.FromResult(stats));
         }
 
+        Services.AddScoped<AdminActionGuard>();
         Services.AddSingleton(sourceRepo);
         Services.AddSingleton(statsRepo);
         Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
@@ -201,5 +201,190 @@ public sealed class AdminSourceDetailTests : AsyncBunitContext
         // Section isolation (Invariant #17): config + politeness still render.
         cut.Find("[data-testid='source-config']");
         cut.Find("[data-testid='source-politeness']");
+    }
+}
+
+// Admin-gated toggle — authorized (AdminOnly policy). MudSwitch renders for admins;
+// triggering its change drives the guarded SetEnabledAsync mutation. The switch's <input>
+// is the only input on the page, so cut.Find("input") targets it; the change is dispatched
+// inside InvokeAsync (the dispatcher-click rule — finding the element outside the dispatcher
+// risks a stale handler id under load).
+public sealed class AdminSourceDetailToggleAuthorizedTests : AsyncBunitContext
+{
+    private const string SternId = "stern";
+    private readonly IIngestionSourceRepository _sourceRepo = Substitute.For<IIngestionSourceRepository>();
+
+    private static IngestionSource Source(bool enabled) => new()
+    {
+        Id = SternId, DisplayName = "Stern Pinball", ScraperImplKey = SternId,
+        BaseUrl = "https://sternpinball.com", Enabled = enabled, Cadence = "weekly",
+    };
+
+    public AdminSourceDetailToggleAuthorizedTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com").SetPolicies("AdminOnly");
+        Services.AddScoped<AdminActionGuard>();
+
+        var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
+        statsRepo.GetByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ManufacturerCatalogStats?>(null));
+        Services.AddSingleton(_sourceRepo);
+        Services.AddSingleton(statsRepo);
+        Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private IRenderedComponent<AdminSourceDetail> RenderDetail()
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminSourceDetail>(1);
+            builder.AddAttribute(2, nameof(AdminSourceDetail.Id), SternId);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminSourceDetail>();
+    }
+
+    [Fact]
+    public async Task Authorized_RendersSwitch_NotChip()
+    {
+        _sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source(enabled: true)));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotEmpty(cut.FindAll("[data-testid='source-enabled-switch']"));
+        Assert.Empty(cut.FindAll("[data-testid='source-enabled-chip']"));
+    }
+
+    [Fact]
+    public async Task ToggleOff_CallsSetEnabledFalse()
+    {
+        _sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source(enabled: true)));
+        _sourceRepo.SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        await cut.InvokeAsync(() => cut.Find("input").Change(false));
+
+        cut.WaitForAssertion(() =>
+            _sourceRepo.Received(1).SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task ToggleOn_FromDisabled_CallsSetEnabledTrue()
+    {
+        _sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source(enabled: false)));
+        _sourceRepo.SetEnabledAsync(SternId, true, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        await cut.InvokeAsync(() => cut.Find("input").Change(true));
+
+        cut.WaitForAssertion(() =>
+            _sourceRepo.Received(1).SetEnabledAsync(SternId, true, Arg.Any<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task SetEnabledReturnsFalse_DoesNotChangeEnabledState()
+    {
+        // Source vanished between load and toggle → honest failure, no state lie.
+        _sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source(enabled: true)));
+        _sourceRepo.SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(false));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        await cut.InvokeAsync(() => cut.Find("input").Change(false));
+
+        // The switch input stays checked (Enabled unchanged) — no fabricated success.
+        // HasAttribute("checked") reads the Blazor-rendered attribute (established pattern
+        // in SettingsTests.cs:82); IsChecked tracks user-interaction state in AngleSharp
+        // and stays false after .Change() even when the component reverts.
+        cut.WaitForAssertion(() =>
+        {
+            _sourceRepo.Received(1).SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>());
+            Assert.True(cut.Find("input").HasAttribute("checked"));
+        });
+    }
+
+    [Fact]
+    public async Task SetEnabledThrows_DoesNotChangeEnabledState_NoUnhandledException()
+    {
+        _sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source(enabled: true)));
+        _sourceRepo.SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("simulated Cosmos failure"));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        await cut.InvokeAsync(() => cut.Find("input").Change(false));
+
+        cut.WaitForAssertion(() =>
+        {
+            _sourceRepo.Received(1).SetEnabledAsync(SternId, false, Arg.Any<CancellationToken>());
+            Assert.True(cut.Find("input").HasAttribute("checked"));
+        });
+    }
+}
+
+// Admin-gated toggle — anonymous. The switch is the UI boundary: a non-admin sees the
+// read-only chip and no switch, so the mutation is unreachable from the UI. (The server
+// boundary — Guard.IsAdminAsync at the top of the handler — is covered by AdminActionGuardTests.)
+public sealed class AdminSourceDetailAnonymousToggleTests : AsyncBunitContext
+{
+    private const string SternId = "stern";
+
+    public AdminSourceDetailAnonymousToggleTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization(); // NOT authorized → _isAdmin false
+        Services.AddScoped<AdminActionGuard>();
+
+        var sourceRepo = Substitute.For<IIngestionSourceRepository>();
+        sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(new IngestionSource
+            {
+                Id = SternId, DisplayName = "Stern Pinball", ScraperImplKey = SternId,
+                BaseUrl = "https://sternpinball.com", Enabled = true, Cadence = "weekly",
+            }));
+        var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
+        statsRepo.GetByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ManufacturerCatalogStats?>(null));
+        Services.AddSingleton(sourceRepo);
+        Services.AddSingleton(statsRepo);
+        Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private IRenderedComponent<AdminSourceDetail> RenderDetail()
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminSourceDetail>(1);
+            builder.AddAttribute(2, nameof(AdminSourceDetail.Id), SternId);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminSourceDetail>();
+    }
+
+    [Fact]
+    public async Task Anonymous_RendersChip_NotSwitch()
+    {
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.NotEmpty(cut.FindAll("[data-testid='source-enabled-chip']"));
+        Assert.Empty(cut.FindAll("[data-testid='source-enabled-switch']"));
     }
 }
