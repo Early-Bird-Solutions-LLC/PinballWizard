@@ -23,6 +23,7 @@
 @inherits LayoutComponentBase
 
 @using PinballWizard.Web.Components.Theming
+@using Microsoft.AspNetCore.Components.Authorization
 
 @* The MudBlazor providers are pinned to InteractiveServer — identical to
  * MainLayout. Admin is per-need render mode (ADR-0034 amendment, 2026-06-17):
@@ -96,6 +97,26 @@
     </MudDrawer>
 
     <MudMainContent>
+        <AuthorizeView Policy="AdminOnly">
+            <NotAuthorized>
+                <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2"
+                          data-testid="admin-readonly-banner">
+                    Read-only view —
+                    <MudLink Href="/MicrosoftIdentity/Account/SignIn" Color="Color.Inherit">
+                        <b>sign in</b>
+                    </MudLink>
+                    to manage.
+                </MudAlert>
+            </NotAuthorized>
+            <Authorized>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="ma-2" Spacing="2">
+                    <MudText Typo="Typo.caption" data-testid="admin-identity">
+                        Signed in as @context.User.Identity?.Name
+                    </MudText>
+                    <MudLink Href="/MicrosoftIdentity/Account/SignOut" Typo="Typo.caption">Sign out</MudLink>
+                </MudStack>
+            </Authorized>
+        </AuthorizeView>
         <TiltErrorBoundary>
             @Body
         </TiltErrorBoundary>
