@@ -241,6 +241,8 @@ internal static class AdminTestDoubles
             .Returns(Task.FromResult<IngestionSource?>(stern));
         repo.GetByIdAsync("opdb", "config", Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IngestionSource?>(opdb));
+        repo.SetEnabledAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
         return repo;
     }
 

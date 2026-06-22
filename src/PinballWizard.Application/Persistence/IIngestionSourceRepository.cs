@@ -33,4 +33,13 @@ public interface IIngestionSourceRepository : IRepository<IngestionSource>
     /// seeded yet (so a run against an unknown source doesn't abort).
     /// </summary>
     Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sets a source's <c>Enabled</c> flag (the scheduled-scraping gate). Point-reads
+    /// the source, flips the flag, and upserts. Returns <c>true</c> when the source
+    /// existed and was updated; <c>false</c> when no source has that id (a logged no-op,
+    /// so a toggle against a vanished source degrades visibly rather than fabricating
+    /// success).
+    /// </summary>
+    Task<bool> SetEnabledAsync(string id, bool enabled, CancellationToken cancellationToken);
 }

@@ -234,6 +234,9 @@ public sealed class IngestionSourcePolitenessResolverTests
 
         public Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken)
             => throw new NotImplementedException();
+
+        public Task<bool> SetEnabledAsync(string id, bool enabled, CancellationToken cancellationToken)
+            => throw new NotImplementedException();
     }
 
     private sealed class ThrowingRepository(Exception toThrow) : IIngestionSourceRepository
@@ -269,6 +272,9 @@ public sealed class IngestionSourcePolitenessResolverTests
             => throw toThrow;
 
         public Task RecordRunResultAsync(string sourceId, IngestionSourceRunResult result, CancellationToken cancellationToken)
+            => throw toThrow;
+
+        public Task<bool> SetEnabledAsync(string id, bool enabled, CancellationToken cancellationToken)
             => throw toThrow;
     }
 }
