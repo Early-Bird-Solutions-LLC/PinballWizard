@@ -75,8 +75,8 @@ as `About` under MainLayout). It is **not** the PR #401 mismatch — that crash 
 
 | Page | Mode | Rationale |
 |---|---|---|
-| `AdminDashboard` (`/admin`) | **static** | link cards only; zero interactivity |
-| `AdminSources` (`/admin/sources`) | **static** | read-only grid, no data transport yet |
+| `AdminDashboard` (`/admin`) | **static** + `[StreamRendering]` | summary counts via static-SSR bounded reads; zero interactivity (see 2026-06-21 design) |
+| `AdminSources` (`/admin/sources`) | **static** + `[StreamRendering]` | read-only grid loaded via static-SSR stream; zero interactivity (see 2026-06-21 design) |
 | `AdminMachineDetail` (`/admin/machines/{OpdbId}`) | **interactive** | sortable linked-docs grid (showcase data rendering) |
 | `AdminMachines` (`/admin/machines`) | **interactive** | sortable/filterable/groupable grid without reloads |
 | `AdminDocumentTriage` | **interactive** | required — Relink / MarkGeneric actions |
@@ -172,7 +172,8 @@ pattern (`PreRenderedDiagramTests`, `LayoutProviderRenderModeTests`):
 
 ## 5. Non-goals / YAGNI
 
-- Not making `AdminDashboard` / `AdminSources` interactive (no interactive need today).
+- Not making `AdminDashboard` / `AdminSources` interactive — they load data via
+  static SSR + `[StreamRendering]` (2026-06-21 design), which needs no circuit.
 - Not making error surfaces interactive (deliberately static for robustness).
 - Not a global-interactivity switch (ADR-0026 §1 rejects that; this stays per-page).
 - No new admin features — render-mode correctness + the existing nav only.

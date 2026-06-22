@@ -1,26 +1,28 @@
 @page "/admin/sources"
 @layout AdminLayout
+@attribute [StreamRendering]
 @using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Persistence
 @attribute [Authorize(Policy = "AdminOnly")]
+@inject IIngestionSourceRepository SourceRepo
+@inject ILogger<AdminSources> Logger
 
-@* AdminSources — /admin/sources ingestion sources list (PR-Q2 Wave 3 skeleton).
+@* AdminSources — /admin/sources ingestion-sources list.
  *
- * Renders a MudDataGrid of ingestion sources. No real data transport yet —
- * the grid binds to an empty list and shows the "No sources configured"
- * empty-state to demonstrate the admin surface. A follow-up PR will wire
- * the IIngestionSourceRepository query here.
- *
- * IngestionSourceRow is a nested record that mirrors the Cosmos
- * ingestion_sources container shape. Columns: Name, Source URL, Status,
- * Last Ingested.
+ * Static SSR + [StreamRendering] (ADR-0034 doctrine — read-only display, no
+ * interactive need): the shell streams immediately and the source rows stream
+ * in when the single-partition StreamAllAsync read completes. No SignalR
+ * circuit. Failure degrades visibly via MudAlert (Invariant #17), not a silent
+ * empty grid — ISnackbar is deliberately NOT used (it needs a circuit).
  *
  * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
- *
- * Auth: protected by the global FallbackPolicy — see AdminDashboard.razor.
+ * Auth: AdminOnly policy (per-page [Authorize], see AdminDashboard.razor).
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/sources)
+ * ADR-0034  — render-mode doctrine (static default)
+ * ADR-0036  — Cosmos read-access (single-partition stream, no cross-partition scan)
  *@
 
 <PageTitle>Ingestion Sources — PinballWizard Admin</PageTitle>
@@ -33,6 +35,19 @@
         Configured scraping sources and their ingestion status.
     </MudText>
 
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading ingestion sources" />
+    }
+
+    @if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="admin-sources-load-failed">
+            Ingestion sources could not be loaded. Please refresh the page or check Cosmos
+            connectivity.
+        </MudAlert>
+    }
+
     <MudDataGrid T="IngestionSourceRow"
                  Items="@_sources"
                  Hover="true"
@@ -44,42 +59,105 @@
         <Columns>
             <PropertyColumn Property="x => x.Name" Title="Name" />
             <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
-            <PropertyColumn Property="x => x.Status" Title="Status" />
-            <PropertyColumn Property="x => x.LastIngested" Title="Last Ingested" />
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string"
+                             Size="Size.Small"
+                             Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
+                        @(context.Item.Enabled ? "Enabled" : "Disabled")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.Cadence" Title="Cadence" />
+            <PropertyColumn Property="x => x.LastRun" Title="Last Run" />
+            <PropertyColumn Property="x => x.LastSuccess" Title="Last Success" />
+            <PropertyColumn Property="x => x.DocsDiscovered" Title="Docs Discovered" />
+            <PropertyColumn Property="x => x.RunFailures" Title="Run Failures" />
         </Columns>
 
         <NoRecordsContent>
-            <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1" data-testid="admin-sources-empty">
-                    No sources configured
-                </MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
-                </MudText>
-            </MudStack>
+            @* Only the genuine empty result shows this — on a load failure the
+             * MudAlert above is the signal, and this is suppressed so a failure
+             * never masquerades as "no sources configured". *@
+            @if (!_loadFailed)
+            {
+                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
+                             Size="Size.Large"
+                             Color="Color.Tertiary" />
+                    <MudText Typo="Typo.body1" data-testid="admin-sources-empty">
+                        No sources configured
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
+                    </MudText>
+                </MudStack>
+            }
         </NoRecordsContent>
 
     </MudDataGrid>
 </MudContainer>
 
 @code {
-    // Placeholder row type — mirrors ingestion_sources Cosmos container shape.
-    // No deps on Infrastructure; real transport arrives in a follow-up PR.
+    // Display projection of IngestionSource. A null LastRun/LastSuccess renders
+    // as "—" — this is legitimate "never run" data, distinct from the load-
+    // failure MudAlert above.
     private sealed record IngestionSourceRow(
         string Name,
         string SourceUrl,
-        string Status,
-        string LastIngested);
+        bool Enabled,
+        string Cadence,
+        string LastRun,
+        string LastSuccess,
+        long DocsDiscovered,
+        long RunFailures);
 
-    // Empty list — grid renders the "No sources configured" empty state.
-    private readonly IEnumerable<IngestionSourceRow> _sources = [];
+    private List<IngestionSourceRow> _sources = [];
+    private bool _loading = true;
+    private bool _loadFailed;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
         new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
         new BreadcrumbItem("Sources", href: "/admin/sources", icon: Icons.Material.Filled.Source),
     ];
+
+    // Static SSR: OnInitializedAsync runs once (no prerender/circuit double-run).
+    // [StreamRendering] streams the shell (with the loading bar) first, then the
+    // populated grid when the read completes.
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var rows = new List<IngestionSourceRow>();
+            await foreach (var s in SourceRepo.StreamAllAsync(cts.Token))
+            {
+                rows.Add(new IngestionSourceRow(
+                    Name:           s.DisplayName,
+                    SourceUrl:      s.BaseUrl,
+                    Enabled:        s.Enabled,
+                    Cadence:        s.Cadence,
+                    LastRun:        s.LastRunAt?.ToString("u") ?? "—",
+                    LastSuccess:    s.LastSuccessAt?.ToString("u") ?? "—",
+                    DocsDiscovered: s.TotalDocumentsDiscovered,
+                    RunFailures:    s.TotalRunFailures));
+            }
+            _sources = rows;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin ingestion-sources load timed out after 30 s.");
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin ingestion sources.");
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
 }
