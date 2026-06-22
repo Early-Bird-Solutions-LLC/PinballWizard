@@ -8,6 +8,7 @@ using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
+using PinballWizard.Web.Security;
 
 namespace PinballWizard.Web.Tests.A11y;
 
@@ -44,6 +45,9 @@ internal static class AdminTestDoubles
 
         // AdminSettings injects IOptions<AiFoundryOptions>; defaults are usable.
         services.AddSingleton<IOptions<AiFoundryOptions>>(Options.Create(new AiFoundryOptions()));
+
+        // AdminDocumentTriage injects AdminActionGuard (Task 3: public-read with gated actions).
+        services.AddScoped<AdminActionGuard>();
 
         return services;
     }
