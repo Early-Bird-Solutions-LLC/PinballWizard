@@ -234,6 +234,8 @@ public sealed class AdminLinkOverridesAuthorizedActionTests : AsyncBunitContext
             Assert.NotEmpty(cut.FindAll("[data-testid='overrides-new-button']"));
             Assert.NotEmpty(cut.FindAll("[data-testid='overrides-delete']"));
             Assert.Contains("Created By", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("admin (local-dev)", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("seed override", cut.Markup, StringComparison.Ordinal);
         });
     }
 }
@@ -283,6 +285,7 @@ public sealed class AdminLinkOverridesAnonymousTests : AsyncBunitContext
             Assert.Empty(cut.FindAll("[data-testid='overrides-delete']"));
             Assert.DoesNotContain("Created By", cut.Markup, StringComparison.Ordinal);
             Assert.DoesNotContain("admin (local-dev)", cut.Markup, StringComparison.Ordinal);
+            Assert.DoesNotContain("seed override", cut.Markup, StringComparison.Ordinal);
         });
     }
 }
