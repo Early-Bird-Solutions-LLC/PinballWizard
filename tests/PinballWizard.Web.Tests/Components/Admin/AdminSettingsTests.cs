@@ -368,6 +368,7 @@ public sealed class AdminSettingsAnonymousTests : AsyncBunitContext
         {
             // value shown read-only
             Assert.NotEmpty(cut.FindAll("[data-testid='confidence-value-readonly']"));
+            Assert.NotEmpty(cut.FindAll("[data-testid='ceiling-value-readonly']"));
             // edit controls + save + reset absent
             Assert.Empty(cut.FindAll("[data-testid='save-button']"));
             Assert.Empty(cut.FindAll("[data-testid='reset-ai.confidence_threshold']"));
