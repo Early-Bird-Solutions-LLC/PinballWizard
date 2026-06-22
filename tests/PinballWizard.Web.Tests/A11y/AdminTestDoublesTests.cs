@@ -40,6 +40,7 @@ public sealed class AdminTestDoublesTests
         Assert.NotNull(sp.GetService<IRawDocumentRepository>());
         Assert.NotNull(sp.GetService<PinballWizard.Application.Linking.IDocumentLinker>());
         Assert.NotNull(sp.GetService<ILinkOverrideRepository>());
+        Assert.NotNull(sp.GetService<IIngestionSourceRepository>());
         Assert.NotNull(sp.GetService<IAdminSettingsRepository>());
         Assert.NotNull(sp.GetService<IAgentPromptOverrideRepository>());
         Assert.NotNull(sp.GetService<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>());
