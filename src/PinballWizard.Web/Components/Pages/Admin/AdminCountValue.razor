@@ -1,0 +1,44 @@
+@* AdminCountValue — renders a single admin-dashboard summary count.
+ *
+ * Three mutually-exclusive states: a loading sentinel, a visible error glyph
+ * (Invariant #17 — never a silent dash / fabricated 0 on failure), or the
+ * number. Uses MudIcon's native Title attribute for the error message so it
+ * needs NO popover provider and renders correctly on a static SSR page.
+ *
+ * Not a @page — RenderModeConventionTests does not scan it; it carries no
+ * circuit-dependent control (no OnClick/@bind/dialog).
+ *
+ * ADR-0008 — MudBlazor strict.
+ *@
+
+@if (Loading)
+{
+    <MudText Typo="Typo.h5" data-testid="@TestId">
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+    </MudText>
+}
+else if (Failed)
+{
+    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+             Color="Color.Error"
+             Title="Failed to load — see logs"
+             data-testid="@($"{TestId}-error")" />
+}
+else
+{
+    <MudText Typo="Typo.h5" data-testid="@TestId">@Count</MudText>
+}
+
+@code {
+    /// <summary>True while the count is loading.</summary>
+    [Parameter] public bool Loading { get; set; }
+
+    /// <summary>True if the load failed — renders the visible error glyph.</summary>
+    [Parameter] public bool Failed { get; set; }
+
+    /// <summary>The resolved count. Null until loaded or on failure.</summary>
+    [Parameter] public int? Count { get; set; }
+
+    /// <summary>data-testid stem; the error glyph uses "{TestId}-error".</summary>
+    [Parameter, EditorRequired] public string TestId { get; set; } = default!;
+}
