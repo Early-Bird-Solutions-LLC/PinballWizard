@@ -71,6 +71,16 @@ public sealed class AdminDashboardTests : AsyncBunitContext
             };
     }
 
+    private static async IAsyncEnumerable<IngestionSource> ThrowingSourcesStream(
+        [EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        throw new InvalidOperationException("simulated Cosmos failure");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
     private void RegisterAll(
         Func<CancellationToken, IAsyncEnumerable<ManufacturerCatalogStats>> statsStream,
         int sourceCount = 2,
@@ -152,5 +162,77 @@ public sealed class AdminDashboardTests : AsyncBunitContext
         var cut = Render<AdminDashboard>();
 
         cut.WaitForAssertion(() => cut.Find("a[href='/admin/machines']"));
+    }
+
+    [Fact]
+    public void SourcesLoadFailure_RendersSourcesErrorSentinel_OthersUnaffected()
+    {
+        // Sources stream throws; stats + overrides are on their happy fakes.
+        var stats = Substitute.For<ICatalogStatsReadRepository>();
+        stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(ci => StatsStream(ci.Arg<CancellationToken>()));
+        Services.AddSingleton(stats);
+
+        var sources = Substitute.For<IIngestionSourceRepository>();
+        sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ThrowingSourcesStream(CancellationToken.None));
+        Services.AddSingleton(sources);
+
+        var overrides = Substitute.For<ILinkOverrideRepository>();
+        overrides.LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns((IReadOnlyDictionary<string, LinkOverrideRecord>)new Dictionary<string, LinkOverrideRecord>
+            {
+                ["p0"] = new LinkOverrideRecord { SourcePattern = "p0", MachineIds = [], CreatedBy = "test", CreatedAt = AsOf },
+            });
+        Services.AddSingleton(overrides);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = Render<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            // Sources card shows error sentinel.
+            cut.Find("[data-testid='admin-sources-count-error']");
+            Assert.Empty(cut.FindAll("[data-testid='admin-sources-count']"));
+            // Independent loads (stats + overrides) are unaffected.
+            Assert.Equal("3", cut.Find("[data-testid='admin-machines-count']").TextContent.Trim());
+            Assert.Equal("1", cut.Find("[data-testid='admin-link-overrides-count']").TextContent.Trim());
+        });
+    }
+
+    [Fact]
+    public void OverridesLoadFailure_RendersOverridesErrorSentinel_OthersUnaffected()
+    {
+        // Overrides LoadAllAsync throws; stats + sources are on their happy fakes.
+        var stats = Substitute.For<ICatalogStatsReadRepository>();
+        stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(ci => StatsStream(ci.Arg<CancellationToken>()));
+        Services.AddSingleton(stats);
+
+        var sources = Substitute.For<IIngestionSourceRepository>();
+        sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(ci => SourcesStream(2, ci.Arg<CancellationToken>()));
+        Services.AddSingleton(sources);
+
+        var overrides = Substitute.For<ILinkOverrideRepository>();
+        overrides.LoadAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<IReadOnlyDictionary<string, LinkOverrideRecord>>(
+                new InvalidOperationException("simulated Cosmos failure")));
+        Services.AddSingleton(overrides);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = Render<AdminDashboard>();
+
+        cut.WaitForAssertion(() =>
+        {
+            // Link Overrides card shows error sentinel.
+            cut.Find("[data-testid='admin-link-overrides-count-error']");
+            Assert.Empty(cut.FindAll("[data-testid='admin-link-overrides-count']"));
+            // Independent loads (stats + sources) are unaffected.
+            Assert.Equal("3", cut.Find("[data-testid='admin-machines-count']").TextContent.Trim());
+            Assert.Equal("2", cut.Find("[data-testid='admin-sources-count']").TextContent.Trim());
+        });
     }
 }
