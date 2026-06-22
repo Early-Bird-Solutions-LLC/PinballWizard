@@ -1,14 +1,16 @@
 @page "/admin/link-overrides"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Logging
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminLinkOverrides — /admin/link-overrides admin-configured document-to-machine mapping view.
  *
- * Renders a MudDataGrid of link overrides loaded from ILinkOverrideRepository.LoadAllAsync.
- * Actions: New Override (create dialog), Delete (confirm dialog per row).
+ * Public-read after the admin showcase split: override rows are visible to everyone;
+ * New Override + Delete actions are gated by _isAdmin (UI) and AdminActionGuard (server).
+ * CreatedBy and Notes columns are redacted for anonymous viewers (operator identity).
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
@@ -22,6 +24,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject ILogger<AdminLinkOverrides> Logger
+@inject PinballWizard.Web.Security.AdminActionGuard Guard
 
 <PageTitle>Link Overrides — PinballWizard Admin</PageTitle>
 
@@ -30,12 +33,16 @@
 
     <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-6">
         <MudText Typo="Typo.h4" Style="flex:1">Link Overrides</MudText>
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   OnClick="OpenCreateDialogAsync">
-            New Override
-        </MudButton>
+        @if (_isAdmin)
+        {
+            <MudButton data-testid="overrides-new-button"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialogAsync">
+                New Override
+            </MudButton>
+        }
     </MudStack>
 
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -65,19 +72,29 @@
         <Columns>
             <PropertyColumn Property="x => x.SourcePattern" Title="Source Pattern" />
             <PropertyColumn Property="x => x.MachineIds" Title="Machine IDs" />
-            <PropertyColumn Property="x => x.CreatedBy" Title="Created By" />
+            @if (_isAdmin)
+            {
+                <PropertyColumn Property="x => x.CreatedBy" Title="Created By" />
+            }
             <PropertyColumn Property="x => x.CreatedAt" Title="Created At" />
-            <PropertyColumn Property="x => x.Notes" Title="Notes" />
-            <TemplateColumn Title="Actions">
-                <CellTemplate>
-                    <MudButton Size="Size.Small"
-                               Variant="Variant.Text"
-                               Color="Color.Error"
-                               OnClick="@(() => DeleteAsync(context.Item))">
-                        Delete
-                    </MudButton>
-                </CellTemplate>
-            </TemplateColumn>
+            @if (_isAdmin)
+            {
+                <PropertyColumn Property="x => x.Notes" Title="Notes" />
+            }
+            @if (_isAdmin)
+            {
+                <TemplateColumn Title="Actions">
+                    <CellTemplate>
+                        <MudButton Size="Size.Small"
+                                   Variant="Variant.Text"
+                                   Color="Color.Error"
+                                   data-testid="overrides-delete"
+                                   OnClick="@(() => DeleteAsync(context.Item))">
+                            Delete
+                        </MudButton>
+                    </CellTemplate>
+                </TemplateColumn>
+            }
         </Columns>
 
         <NoRecordsContent>
@@ -100,35 +117,43 @@
     </MudDataGrid>
 </MudContainer>
 
-@* Create Override dialog *@
-<MudDialog @bind-Visible="_showCreateDialog">
-    <TitleContent>New Link Override</TitleContent>
-    <DialogContent>
-        <MudStack Spacing="3">
-            <MudTextField @bind-Value="_newPattern"
-                          Label="Source Pattern"
-                          HelperText="Format: discovery_url|DocumentType (e.g. https://sternpinball.com/game/foo/|Manual)"
-                          Required="true" />
-            <MudTextField @bind-Value="_newMachineIds"
-                          Label="Machine IDs"
-                          HelperText="Comma-separated OPDB machine IDs. Leave empty to mark as platform-generic." />
-            <MudTextField @bind-Value="_newNotes"
-                          Label="Notes"
-                          Lines="2" />
-        </MudStack>
-    </DialogContent>
-    <DialogActions>
-        <MudButton OnClick="@(() => _showCreateDialog = false)">Cancel</MudButton>
-        <MudButton Color="Color.Primary"
-                   Variant="Variant.Filled"
-                   OnClick="ConfirmCreateAsync"
-                   Disabled="@(string.IsNullOrWhiteSpace(_newPattern) || _createBusy)">
-            Create
-        </MudButton>
-    </DialogActions>
-</MudDialog>
+@* Create Override dialog — gated: only renders for admins *@
+@if (_isAdmin)
+{
+    <MudDialog @bind-Visible="_showCreateDialog">
+        <TitleContent>New Link Override</TitleContent>
+        <DialogContent>
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_newPattern"
+                              Label="Source Pattern"
+                              HelperText="Format: discovery_url|DocumentType (e.g. https://sternpinball.com/game/foo/|Manual)"
+                              Required="true" />
+                <MudTextField @bind-Value="_newMachineIds"
+                              Label="Machine IDs"
+                              HelperText="Comma-separated OPDB machine IDs. Leave empty to mark as platform-generic." />
+                <MudTextField @bind-Value="_newNotes"
+                              Label="Notes"
+                              Lines="2" />
+            </MudStack>
+        </DialogContent>
+        <DialogActions>
+            <MudButton OnClick="@(() => _showCreateDialog = false)">Cancel</MudButton>
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="ConfirmCreateAsync"
+                       Disabled="@(string.IsNullOrWhiteSpace(_newPattern) || _createBusy)">
+                Create
+            </MudButton>
+        </DialogActions>
+    </MudDialog>
+}
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _isAdmin;
+
     private sealed record LinkOverrideRow(
         string SourcePattern,
         string MachineIds,
@@ -166,6 +191,7 @@
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
+            _isAdmin = await Guard.IsAdminAsync(AuthState);
             var all = await OverrideRepo.LoadAllAsync(cts.Token);
             _overrides = all.Values
                 .Select(r => new LinkOverrideRow(
@@ -205,6 +231,11 @@
 
     private async Task ConfirmCreateAsync()
     {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
         if (_createBusy) return;
         _createBusy = true;
         try
@@ -243,6 +274,11 @@
 
     private async Task DeleteAsync(LinkOverrideRow row)
     {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Delete Override",
             $"Remove override for '{row.SourcePattern}'?",

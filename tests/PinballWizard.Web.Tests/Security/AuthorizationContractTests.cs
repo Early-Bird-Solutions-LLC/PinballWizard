@@ -55,6 +55,7 @@ public sealed class AuthorizationContractTests
     [InlineData(typeof(AdminMachines))]
     [InlineData(typeof(AdminMachineDetail))]
     [InlineData(typeof(AdminDocumentTriage))]
+    [InlineData(typeof(AdminLinkOverrides))]
     public void ShowcaseAdminPage_IsAllowAnonymous(Type page)
     {
         Assert.NotNull(page.GetCustomAttribute<AllowAnonymousAttribute>());
