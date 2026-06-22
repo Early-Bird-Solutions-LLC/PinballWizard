@@ -3,7 +3,7 @@
 @attribute [StreamRendering]
 @using Microsoft.AspNetCore.Authorization
 @using PinballWizard.Application.Persistence
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @inject IIngestionSourceRepository SourceRepo
 @inject ILogger<AdminSources> Logger
 
@@ -16,7 +16,7 @@
  * empty grid — ISnackbar is deliberately NOT used (it needs a circuit).
  *
  * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
- * Auth: AdminOnly policy (per-page [Authorize], see AdminDashboard.razor).
+ * Auth: public-read showcase surface ([AllowAnonymous]). Read-only grid; no mutations.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth

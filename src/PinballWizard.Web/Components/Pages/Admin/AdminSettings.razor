@@ -1,10 +1,16 @@
 @page "/admin/settings"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminSettings — /admin/settings runtime-mutable Wizard configuration.
+ *
+ * Public-read showcase: anonymous visitors see the live setting VALUES read-only
+ * (confidence threshold, cost ceiling, max turns, top-K, min score). All edits,
+ * the Save/Reset bar, provenance lines, and the Prompt Templates tab are gated to
+ * AdminOnly via _isAdmin (resolved from AdminActionGuard). Every mutation handler
+ * also guards server-side via AdminActionGuard before acting.
  *
  * PR-B2 of the admin-settings plan. Edits the WellKnownSettings key set
  * through IAdminSettingsRepository; the running Wizard picks changes up
@@ -16,11 +22,12 @@
  * are live: Guardrails, Conversation, and RAG Retrieval edit WellKnownSettings
  * keys through IAdminSettingsRepository; Prompt Templates manages per-agent
  * prompt overrides (PR-B3, the ADR-0018 amendment) — save-inactive-then-activate,
- * layered over the embedded git default.
+ * layered over the embedded git default. Prompt Templates is admin-only.
  *
- * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly).
+ * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly gated per-control).
  *@
 
+@using Microsoft.AspNetCore.Components.Authorization
 @using PinballWizard.Application.Ai.Hosting
 @using PinballWizard.Application.Persistence
 @using PinballWizard.Core.Configuration
@@ -32,6 +39,7 @@
 @inject PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider EmbeddedPrompts
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject PinballWizard.Web.Security.AdminActionGuard Guard
 
 <PageTitle>Settings — PinballWizard Admin</PageTitle>
 
@@ -72,14 +80,21 @@
                             Answers scoring below this composite refuse instead (ADR-0017).
                             Range 0.3–0.95. @DefaultHint(conf)
                         </MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                            <MudSlider T="double" @bind-Value="conf.NumericValue"
-                                       Min="0.3" Max="0.95" Step="0.01"
-                                       Class="flex-grow-1"
-                                       aria-label="Confidence threshold" />
-                            <MudText Typo="Typo.h6" data-testid="confidence-value">@conf.NumericValue.ToString("0.00")</MudText>
-                            @ResetButton(conf)
-                        </MudStack>
+                        @if (_isAdmin)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                                <MudSlider T="double" @bind-Value="conf.NumericValue"
+                                           Min="0.3" Max="0.95" Step="0.01"
+                                           Class="flex-grow-1"
+                                           aria-label="Confidence threshold" />
+                                <MudText Typo="Typo.h6" data-testid="confidence-value">@conf.NumericValue.ToString("0.00")</MudText>
+                                @ResetButton(conf)
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h6" data-testid="confidence-value-readonly">@conf.NumericValue.ToString("0.00")</MudText>
+                        }
                         @ProvenanceLine(conf)
                     </div>
 
@@ -90,14 +105,21 @@
                             An answer whose model spend exceeds this refuses with CostCeilingHit
                             (ADR-0015). Range 1–100¢. @DefaultHint(ceiling)
                         </MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                            <MudNumericField T="double" @bind-Value="ceiling.NumericValue"
-                                             Min="1" Max="100" Step="1"
-                                             Variant="Variant.Outlined" Margin="Margin.Dense"
-                                             aria-label="Per-call cost ceiling in cents"
-                                             data-testid="ceiling-input" />
-                            @ResetButton(ceiling)
-                        </MudStack>
+                        @if (_isAdmin)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                                <MudNumericField T="double" @bind-Value="ceiling.NumericValue"
+                                                 Min="1" Max="100" Step="1"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 aria-label="Per-call cost ceiling in cents"
+                                                 data-testid="ceiling-input" />
+                                @ResetButton(ceiling)
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h6" data-testid="ceiling-value-readonly">@ceiling.NumericValue.ToString("0")</MudText>
+                        }
                         @ProvenanceLine(ceiling)
                     </div>
                 </MudStack>
@@ -113,14 +135,21 @@
                             (oldest trimmed). Range 1–20 — the API rejects longer histories
                             outright, so values above 20 could never take effect. @DefaultHint(turns)
                         </MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                            <MudNumericField T="double" @bind-Value="turns.NumericValue"
-                                             Min="1" Max="20" Step="1"
-                                             Variant="Variant.Outlined" Margin="Margin.Dense"
-                                             aria-label="Max conversation turns"
-                                             data-testid="turns-input" />
-                            @ResetButton(turns)
-                        </MudStack>
+                        @if (_isAdmin)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                                <MudNumericField T="double" @bind-Value="turns.NumericValue"
+                                                 Min="1" Max="20" Step="1"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 aria-label="Max conversation turns"
+                                                 data-testid="turns-input" />
+                                @ResetButton(turns)
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h6" data-testid="turns-value-readonly">@turns.NumericValue.ToString("0")</MudText>
+                        }
                         @ProvenanceLine(turns)
                     </div>
                 </MudStack>
@@ -136,14 +165,21 @@
                             doesn't ask for a specific count (a model-supplied K still wins,
                             clamped). Range 1–20. @DefaultHint(topK)
                         </MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                            <MudNumericField T="double" @bind-Value="topK.NumericValue"
-                                             Min="1" Max="20" Step="1"
-                                             Variant="Variant.Outlined" Margin="Margin.Dense"
-                                             aria-label="Retrieval top-K"
-                                             data-testid="topk-input" />
-                            @ResetButton(topK)
-                        </MudStack>
+                        @if (_isAdmin)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                                <MudNumericField T="double" @bind-Value="topK.NumericValue"
+                                                 Min="1" Max="20" Step="1"
+                                                 Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                 aria-label="Retrieval top-K"
+                                                 data-testid="topk-input" />
+                                @ResetButton(topK)
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h6" data-testid="topk-value-readonly">@topK.NumericValue.ToString("0")</MudText>
+                        }
                         @ProvenanceLine(topK)
                     </div>
 
@@ -155,124 +191,137 @@
                             Higher = stricter grounding, more refusals; lower = more context,
                             weaker citations. Range 0.0–1.0. @DefaultHint(minScore)
                         </MudText>
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                            <MudSlider T="double" @bind-Value="minScore.NumericValue"
-                                       Min="0" Max="1" Step="0.01"
-                                       Class="flex-grow-1"
-                                       aria-label="Minimum relevance score" />
-                            <MudText Typo="Typo.h6" data-testid="minscore-value">@minScore.NumericValue.ToString("0.00")</MudText>
-                            @ResetButton(minScore)
-                        </MudStack>
+                        @if (_isAdmin)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                                <MudSlider T="double" @bind-Value="minScore.NumericValue"
+                                           Min="0" Max="1" Step="0.01"
+                                           Class="flex-grow-1"
+                                           aria-label="Minimum relevance score" />
+                                <MudText Typo="Typo.h6" data-testid="minscore-value">@minScore.NumericValue.ToString("0.00")</MudText>
+                                @ResetButton(minScore)
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.h6" data-testid="minscore-value-readonly">@minScore.NumericValue.ToString("0.00")</MudText>
+                        }
                         @ProvenanceLine(minScore)
                     </div>
                 </MudStack>
             </MudTabPanel>
 
-            <MudTabPanel Text="Prompt Templates" data-testid="tab-prompts">
-                <MudStack Spacing="4">
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Per-agent prompt overrides (ADR-0018 amendment, 2026-06-12). The embedded
-                        git prompt remains the default and version-zero source of truth; an ACTIVE
-                        override replaces it at runtime. New versions save inactive — activating is
-                        the deliberate second step. The Wizard picks changes up within ~2 minutes
-                        (prompt-version drift rebuilds the agents), and changed prompts invalidate
-                        cached answers automatically.
-                    </MudText>
-
-                    <MudSelect T="string" Label="Agent"
-                               Value="_selectedAgent" ValueChanged="OnAgentSelectedAsync"
-                               Variant="Variant.Outlined" Margin="Margin.Dense"
-                               data-testid="prompt-agent-select">
-                        @foreach (var name in PinballWizard.Application.Ai.AgentName.All)
-                        {
-                            <MudSelectItem Value="@name">@name</MudSelectItem>
-                        }
-                    </MudSelect>
-
-                    @if (_selectedAgent is not null)
-                    {
-                        <MudText Typo="Typo.subtitle2" data-testid="prompt-status">
-                            @(_activeOverride is null
-                                ? "Using the embedded default."
-                                : $"Override v{_activeOverride.Version} active — {_activeOverride.UpdatedBy}, {_activeOverride.UpdatedAtUtc:yyyy-MM-dd HH:mm} UTC.")
+            @if (_isAdmin)
+            {
+                <MudTabPanel Text="Prompt Templates" data-testid="tab-prompts">
+                    <MudStack Spacing="4">
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Per-agent prompt overrides (ADR-0018 amendment, 2026-06-12). The embedded
+                            git prompt remains the default and version-zero source of truth; an ACTIVE
+                            override replaces it at runtime. New versions save inactive — activating is
+                            the deliberate second step. The Wizard picks changes up within ~2 minutes
+                            (prompt-version drift rebuilds the agents), and changed prompts invalidate
+                            cached answers automatically.
                         </MudText>
 
-                        <MudTextField T="string" @bind-Value="_promptDraft"
-                                      Variant="Variant.Outlined"
-                                      Lines="16"
-                                      aria-label="Prompt content"
-                                      data-testid="prompt-editor" />
+                        <MudSelect T="string" Label="Agent"
+                                   Value="_selectedAgent" ValueChanged="OnAgentSelectedAsync"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   data-testid="prompt-agent-select">
+                            @foreach (var name in PinballWizard.Application.Ai.AgentName.All)
+                            {
+                                <MudSelectItem Value="@name">@name</MudSelectItem>
+                            }
+                        </MudSelect>
 
-                        <MudStack Row="true" Spacing="2">
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                       OnClick="SaveNewPromptVersionAsync"
-                                       Disabled="@(string.IsNullOrWhiteSpace(_promptDraft) || _promptBusy)"
-                                       data-testid="prompt-save-button">
-                                Save as new version
-                            </MudButton>
-                            <MudButton Variant="Variant.Text" Color="Color.Secondary"
-                                       OnClick="RevertPromptToDefaultAsync"
-                                       Disabled="@(_activeOverride is null || _promptBusy)"
-                                       data-testid="prompt-revert-button">
-                                Revert to embedded default
-                            </MudButton>
-                        </MudStack>
-
-                        <MudExpansionPanels Elevation="0">
-                            <MudExpansionPanel Text="View embedded default" data-testid="prompt-default-panel">
-                                <pre class="prompt-default-view" data-testid="prompt-default-content">@_embeddedDefault</pre>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-
-                        @if (_promptVersions.Count > 0)
+                        @if (_selectedAgent is not null)
                         {
-                            <MudText Typo="Typo.subtitle1">Versions</MudText>
-                            <MudStack Spacing="1" data-testid="prompt-version-list">
-                                @foreach (var v in _promptVersions.OrderByDescending(v => v.Version))
-                                {
-                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2"
-                                              data-testid="@($"prompt-version-{v.Version}")">
-                                        <MudText Typo="Typo.body2" Style="min-width: 3rem">v@(v.Version)</MudText>
-                                        @if (v.IsActive)
-                                        {
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Success"
-                                                     data-testid="@($"prompt-active-chip-{v.Version}")">active</MudChip>
-                                        }
-                                        else
-                                        {
-                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
-                                                       OnClick="@(() => ActivatePromptVersionAsync(v.Version))"
-                                                       Disabled="_promptBusy"
-                                                       data-testid="@($"prompt-activate-{v.Version}")">
-                                                Activate
-                                            </MudButton>
-                                        }
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                            @v.UpdatedBy — @v.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC
-                                        </MudText>
-                                    </MudStack>
-                                }
+                            <MudText Typo="Typo.subtitle2" data-testid="prompt-status">
+                                @(_activeOverride is null
+                                    ? "Using the embedded default."
+                                    : $"Override v{_activeOverride.Version} active — {_activeOverride.UpdatedBy}, {_activeOverride.UpdatedAtUtc:yyyy-MM-dd HH:mm} UTC.")
+                            </MudText>
+
+                            <MudTextField T="string" @bind-Value="_promptDraft"
+                                          Variant="Variant.Outlined"
+                                          Lines="16"
+                                          aria-label="Prompt content"
+                                          data-testid="prompt-editor" />
+
+                            <MudStack Row="true" Spacing="2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                           OnClick="SaveNewPromptVersionAsync"
+                                           Disabled="@(string.IsNullOrWhiteSpace(_promptDraft) || _promptBusy)"
+                                           data-testid="prompt-save-button">
+                                    Save as new version
+                                </MudButton>
+                                <MudButton Variant="Variant.Text" Color="Color.Secondary"
+                                           OnClick="RevertPromptToDefaultAsync"
+                                           Disabled="@(_activeOverride is null || _promptBusy)"
+                                           data-testid="prompt-revert-button">
+                                    Revert to embedded default
+                                </MudButton>
                             </MudStack>
+
+                            <MudExpansionPanels Elevation="0">
+                                <MudExpansionPanel Text="View embedded default" data-testid="prompt-default-panel">
+                                    <pre class="prompt-default-view" data-testid="prompt-default-content">@_embeddedDefault</pre>
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+
+                            @if (_promptVersions.Count > 0)
+                            {
+                                <MudText Typo="Typo.subtitle1">Versions</MudText>
+                                <MudStack Spacing="1" data-testid="prompt-version-list">
+                                    @foreach (var v in _promptVersions.OrderByDescending(v => v.Version))
+                                    {
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2"
+                                                  data-testid="@($"prompt-version-{v.Version}")">
+                                            <MudText Typo="Typo.body2" Style="min-width: 3rem">v@(v.Version)</MudText>
+                                            @if (v.IsActive)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
+                                                         data-testid="@($"prompt-active-chip-{v.Version}")">active</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                                           OnClick="@(() => ActivatePromptVersionAsync(v.Version))"
+                                                           Disabled="_promptBusy"
+                                                           data-testid="@($"prompt-activate-{v.Version}")">
+                                                    Activate
+                                                </MudButton>
+                                            }
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                @v.UpdatedBy — @v.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC
+                                            </MudText>
+                                        </MudStack>
+                                    }
+                                </MudStack>
+                            }
                         }
-                    }
-                </MudStack>
-            </MudTabPanel>
+                    </MudStack>
+                </MudTabPanel>
+            }
         </MudTabs>
 
-        <MudStack Row="true" Spacing="2" Class="mt-6" AlignItems="AlignItems.Center">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       OnClick="SaveAsync"
-                       Disabled="@(!HasDirtyRows || _saving)"
-                       data-testid="save-button">
-                @(_saving ? "Saving…" : "Save changes")
-            </MudButton>
-            @if (HasDirtyRows)
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="dirty-hint">
-                    @DirtyCount unsaved @(DirtyCount == 1 ? "change" : "changes")
-                </MudText>
-            }
-        </MudStack>
+        @if (_isAdmin)
+        {
+            <MudStack Row="true" Spacing="2" Class="mt-6" AlignItems="AlignItems.Center">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="SaveAsync"
+                           Disabled="@(!HasDirtyRows || _saving)"
+                           data-testid="save-button">
+                    @(_saving ? "Saving…" : "Save changes")
+                </MudButton>
+                @if (HasDirtyRows)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="dirty-hint">
+                        @DirtyCount unsaved @(DirtyCount == 1 ? "change" : "changes")
+                    </MudText>
+                }
+            </MudStack>
+        }
     }
 </MudContainer>
 
@@ -291,6 +340,7 @@
 
     private bool _loading = true;
     private bool _saving;
+    private bool _isAdmin;
     private string? _loadError;
 
     private readonly Dictionary<string, SettingRow> _rows = new(StringComparer.Ordinal);
@@ -317,6 +367,8 @@
 
         try
         {
+            _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+
             var stored = (await SettingsRepo.GetAllAsync(CancellationToken.None).ConfigureAwait(true))
                 .ToDictionary(r => r.Key, StringComparer.Ordinal);
 
@@ -343,6 +395,12 @@
 
     private async Task SaveAsync()
     {
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
         _saving = true;
         try
         {
@@ -382,6 +440,12 @@
 
     private async Task ResetAsync(SettingRow row)
     {
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
         var confirmed = await DialogService.ShowMessageBoxAsync(
             "Reset to default?",
             $"Removes the stored override for {row.Key}; the Wizard reverts to the deployed default ({row.DefaultValueString}) within ~2 minutes.",
@@ -427,7 +491,7 @@
 
     private RenderFragment ProvenanceLine(SettingRow row) => __builder =>
     {
-        @if (row.HasOverride)
+        @if (_isAdmin && row.HasOverride)
         {
             <MudText Typo="Typo.caption" Color="Color.Secondary"
                      data-testid="@($"provenance-{row.Key}")">
@@ -459,6 +523,14 @@
             return;
         }
 
+        // Prompt fields hold IP and must not be populated for a non-admin. The tab
+        // that renders them is admin-gated; this makes the data flow safe by
+        // construction, not just by render position.
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            return;
+        }
+
         _promptBusy = true;
         try
         {
@@ -480,6 +552,12 @@
 
     private async Task SaveNewPromptVersionAsync()
     {
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
         if (_selectedAgent is null || string.IsNullOrWhiteSpace(_promptDraft))
         {
             return;
@@ -507,6 +585,12 @@
 
     private async Task ActivatePromptVersionAsync(int version)
     {
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
         if (_selectedAgent is null)
         {
             return;
@@ -540,6 +624,12 @@
 
     private async Task RevertPromptToDefaultAsync()
     {
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+
         if (_selectedAgent is null)
         {
             return;

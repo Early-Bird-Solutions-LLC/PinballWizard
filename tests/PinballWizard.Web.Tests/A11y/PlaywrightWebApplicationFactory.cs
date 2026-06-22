@@ -102,6 +102,12 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         {
             builder.Services.AddAuthorization(o =>
                 o.AddPolicy("AdminOnly", p => p.RequireAssertion(_ => true)));
+            // Required so AdminLayout's <AuthorizeView Policy="AdminOnly"> has a
+            // cascading Task<AuthenticationState> and does not throw during render
+            // (which produces an empty document that axe reports as failing).
+            // AddRazorComponents().AddInteractiveServerComponents() (called above)
+            // registers ServerAuthenticationStateProvider as the backing store.
+            builder.Services.AddCascadingAuthenticationState();
             builder.Services.AddAdminTestDoubles();
         }
         else

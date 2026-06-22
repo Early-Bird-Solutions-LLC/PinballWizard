@@ -15,6 +15,10 @@ namespace PinballWizard.Web.Tests.Components.Layout;
 // an always-open drawer's nav links are plain anchors that work regardless of
 // each page's render mode.
 //
+// AdminLayout now contains AuthorizeView, so all render paths need AddAuthorization().
+// Anonymous baseline (NotAuthorized branch) is the default state used by the
+// structural tests below; banner-specific tests use their own context classes.
+//
 // ADR-0008 (MudBlazor strict), ADR-0034 (admin per-need render mode).
 public sealed class AdminLayoutTests : AsyncBunitContext
 {
@@ -22,6 +26,9 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
+        // AuthorizeView requires IAuthorizationPolicyProvider; anonymous state
+        // is the baseline (structural tests don't care which branch renders).
+        this.AddAuthorization();
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
@@ -86,5 +93,62 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     {
         var cut = RenderWithBody();
         cut.Find("[data-testid='admin-body-sentinel']");
+    }
+
+    // ── Read-only banner — anonymous path (Task 6) ─────────────────────────
+    // Default anonymous state (constructor does not call SetAuthorized) shows
+    // the NotAuthorized banner with a sign-in link.
+
+    [Fact]
+    public void AdminLayout_AnonymousUser_RendersReadOnlyBanner()
+    {
+        var cut = RenderWithBody();
+
+        var banner = cut.Find("[data-testid='admin-readonly-banner']");
+        Assert.Contains("Read-only view", banner.TextContent, StringComparison.Ordinal);
+        cut.Find("a[href='/MicrosoftIdentity/Account/SignIn']");
+    }
+}
+
+// Separate context for the authorized-admin branch so SetAuthorized+SetPolicies
+// are registered before the service provider is locked.
+public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
+{
+    public AdminLayoutAuthorizedTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization()
+            .SetAuthorized("test-admin@example.com")
+            .SetPolicies("AdminOnly");
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    private IRenderedComponent<AdminLayout> RenderWithBody() =>
+        Render<AdminLayout>(parameters => parameters
+            .Add(p => p.Body, builder =>
+            {
+                builder.OpenElement(0, "span");
+                builder.AddAttribute(1, "data-testid", "admin-body-sentinel");
+                builder.AddContent(2, "Body content");
+                builder.CloseElement();
+            }));
+
+    [Fact]
+    public void AdminLayout_AuthorizedAdmin_RendersIdentityAndSignOut()
+    {
+        var cut = RenderWithBody();
+
+        var identity = cut.Find("[data-testid='admin-identity']");
+        Assert.Contains("test-admin@example.com", identity.TextContent, StringComparison.Ordinal);
+        cut.Find("a[href='/MicrosoftIdentity/Account/SignOut']");
+    }
+
+    [Fact]
+    public void AdminLayout_AuthorizedAdmin_DoesNotRenderReadOnlyBanner()
+    {
+        var cut = RenderWithBody();
+
+        Assert.Empty(cut.FindAll("[data-testid='admin-readonly-banner']"));
     }
 }

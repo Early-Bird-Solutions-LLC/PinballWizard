@@ -5,7 +5,7 @@
 @using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
 @using PinballWizard.Core.Domain
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminMachineDetail — /admin/machines/{opdbId} per-game diagnostic view (AB#259).

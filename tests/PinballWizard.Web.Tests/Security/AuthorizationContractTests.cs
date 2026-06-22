@@ -1,5 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components;
 using PinballWizard.Web.Components.Pages;
 using IndexPage = PinballWizard.Web.Components.Pages.Index;
 using PinballWizard.Web.Components.Pages.Admin;
@@ -7,100 +8,62 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.Security;
 
-// Authorization contract tests — pin the route-level authorization structure.
+// Authorization contract tests — pin the route-level authorization structure
+// after the admin showcase split (2026-06-22).
 //
-// PinballWizard uses a FallbackPolicy (RequireAuthenticatedUser) in Program.cs
-// so that any Blazor route without [AllowAnonymous] is automatically protected.
-// Public routes opt out with [AllowAnonymous].
-//
-// PR-B0 (2026-06-11 decision) supersedes the earlier "no redundant
-// [Authorize] on admin pages" pin: admin pages now REQUIRE
-// [Authorize(Policy = "AdminOnly")] (Wizard.Admin Entra app role). The
-// FallbackPolicy only proves authentication; admin surfaces mutate live
-// Wizard behavior and need the role. The attribute is therefore
-// load-bearing, not redundant.
-//
-// These tests use reflection on the component types rather than spinning up a
-// TestServer. This avoids OIDC metadata discovery against the placeholder tenant
-// while still pinning the contract that matters: if someone accidentally adds
-// [AllowAnonymous] to an admin page, forgets the AdminOnly policy on a new
-// admin page, or forgets [AllowAnonymous] on a new public page, these tests
-// catch it immediately.
+// Model: there is NO FallbackPolicy (Program.cs) — a routable page with no auth
+// attribute is PUBLIC by default. The admin area is now a public-read showcase:
+// pages carry [AllowAnonymous] and gate mutations / sensitive content per-control
+// (proven by bUnit anonymous-vs-authorized render tests) plus a server-side
+// AdminActionGuard. Fully-gated admin pages (if any) carry
+// [Authorize(Policy="AdminOnly")]. Every admin page MUST be EXPLICITLY one or the
+// other — never neither (accidental exposure), never both.
 public sealed class AuthorizationContractTests
 {
-    // ── Admin pages must NOT carry [AllowAnonymous] ────────────────────────
-    // Adding [AllowAnonymous] would silently bypass auth for that page
-    // without any compile-time warning.
-
-    [Theory]
-    [InlineData(typeof(AdminDashboard))]
-    [InlineData(typeof(AdminMachines))]
-    [InlineData(typeof(AdminSources))]
-    [InlineData(typeof(AdminDocumentTriage))]
-    [InlineData(typeof(AdminLinkOverrides))]
-    [InlineData(typeof(AdminSettings))]
-    public void AdminPage_DoesNotHaveAllowAnonymous(Type page)
-    {
-        Assert.Null(page.GetCustomAttribute<AllowAnonymousAttribute>());
-    }
-
-    // ── Admin pages MUST require the AdminOnly policy ──────────────────────
-    // Authentication alone (FallbackPolicy) is not authorization for admin
-    // surfaces. Every /admin/* page carries the role-gated policy; a new
-    // admin page without it fails here at authoring time.
-
-    [Theory]
-    [InlineData(typeof(AdminDashboard))]
-    [InlineData(typeof(AdminMachines))]
-    [InlineData(typeof(AdminSources))]
-    [InlineData(typeof(AdminDocumentTriage))]
-    [InlineData(typeof(AdminLinkOverrides))]
-    [InlineData(typeof(AdminSettings))]
-    public void AdminPage_RequiresAdminOnlyPolicy(Type page)
-    {
-        var authorize = page.GetCustomAttribute<AuthorizeAttribute>();
-        Assert.NotNull(authorize);
-        Assert.Equal("AdminOnly", authorize!.Policy);
-    }
-
-    // ── ASSEMBLY SCAN: no admin page can ship without the policy ───────────
-    // Load-bearing since the 2026-06-12 FallbackPolicy removal (the
-    // fallback challenged the anonymous Blazor negotiate and killed every
-    // public circuit; see Program.cs). With no fallback, the per-page
-    // attribute IS the enforcement — and an enumerated [InlineData] list
-    // can't catch a page someone forgets to add to it. This scan closes
-    // that hole: every ROUTABLE component in the Admin pages namespace
-    // must carry [Authorize(Policy = "AdminOnly")], discovered or not.
+    // ── Every routable admin component carries exactly ONE explicit classification ──
     [Fact]
-    public void EveryRoutableAdminComponent_CarriesTheAdminOnlyPolicy()
+    public void EveryRoutableAdminComponent_HasExactlyOneExplicitClassification()
     {
         var adminNamespace = typeof(AdminDashboard).Namespace!;
         var offenders = typeof(AdminDashboard).Assembly.GetTypes()
             .Where(t => t.Namespace == adminNamespace)
-            .Where(t => t.GetCustomAttributes<Microsoft.AspNetCore.Components.RouteAttribute>().Any())
-            .Where(t =>
+            .Where(t => t.GetCustomAttributes<RouteAttribute>().Any())
+            .Select(t => new
             {
-                var authorize = t.GetCustomAttribute<AuthorizeAttribute>();
-                return authorize is null || authorize.Policy != "AdminOnly";
+                t.Name,
+                Anon = t.GetCustomAttribute<AllowAnonymousAttribute>() is not null,
+                Admin = t.GetCustomAttribute<AuthorizeAttribute>() is { Policy: "AdminOnly" },
             })
-            .Select(t => t.Name)
+            .Where(x => x.Anon == x.Admin) // neither (both false) or both (both true)
+            .Select(x => x.Name)
             .ToList();
 
         Assert.True(
             offenders.Count == 0,
-            "Routable admin component(s) without [Authorize(Policy = \"AdminOnly\")] — " +
-            "with no FallbackPolicy these would be PUBLIC: " + string.Join(", ", offenders));
+            "Routable admin component(s) lacking exactly one explicit auth classification " +
+            "([AllowAnonymous] XOR [Authorize(Policy=\"AdminOnly\")]). With no FallbackPolicy, " +
+            "neither = accidentally PUBLIC: " + string.Join(", ", offenders));
     }
 
-    // ── Public pages MUST carry [AllowAnonymous] ──────────────────────────
-    // Without [AllowAnonymous], the FallbackPolicy challenges anonymous
-    // users on what should be public routes. This is the critical invariant:
-    // every public page must explicitly opt out of the FallbackPolicy.
-    //
-    // NotFound (/{**slug} catch-all) is included — if it were missing
-    // [AllowAnonymous], any unrecognised URL for an unauthenticated user
-    // would challenge instead of showing the 404 page.
+    // ── Showcase admin pages are public-read ([AllowAnonymous]) ────────────────
+    // These pages render read-only content to everyone and gate mutations /
+    // sensitive content per-control (bUnit render tests) + AdminActionGuard.
+    // Removing [AllowAnonymous] (re-gating wholesale) fails here.
+    [Theory]
+    [InlineData(typeof(AdminDashboard))]
+    [InlineData(typeof(AdminSources))]
+    [InlineData(typeof(AdminMachines))]
+    [InlineData(typeof(AdminMachineDetail))]
+    [InlineData(typeof(AdminDocumentTriage))]
+    [InlineData(typeof(AdminLinkOverrides))]
+    [InlineData(typeof(AdminSettings))]
+    public void ShowcaseAdminPage_IsAllowAnonymous(Type page)
+    {
+        Assert.NotNull(page.GetCustomAttribute<AllowAnonymousAttribute>());
+        Assert.Null(page.GetCustomAttribute<AuthorizeAttribute>());
+    }
 
+    // ── Public non-admin pages MUST carry [AllowAnonymous] ─────────────────────
     [Theory]
     [InlineData(typeof(IndexPage))]
     [InlineData(typeof(Wizard))]

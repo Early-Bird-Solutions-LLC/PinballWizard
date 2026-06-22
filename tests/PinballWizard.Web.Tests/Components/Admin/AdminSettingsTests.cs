@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using NSubstitute;
+using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Web.Components.Pages.Admin;
@@ -26,7 +27,10 @@ public sealed class AdminSettingsTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        this.AddAuthorization()
+            .SetAuthorized("test-admin@example.com")
+            .SetPolicies("AdminOnly");
+        Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 
         _repo.GetAllAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<AdminSettingRecord>>([]));
@@ -260,7 +264,10 @@ public sealed class AdminSettingsLoadingStateTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        this.AddAuthorization()
+            .SetAuthorized("test-admin@example.com")
+            .SetPolicies("AdminOnly");
+        Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 
         var slowRepo = Substitute.For<IAdminSettingsRepository>();
         slowRepo.GetAllAsync(Arg.Any<CancellationToken>())
@@ -319,5 +326,56 @@ public sealed class AdminSettingsLoadingStateTests : AsyncBunitContext
         });
 
         await Task.CompletedTask;
+    }
+}
+
+// Anonymous-access tests: /admin/settings is [AllowAnonymous] — anonymous visitors
+// see live VALUES read-only but cannot edit settings, see provenance, or access
+// the Prompt Templates tab.
+public sealed class AdminSettingsAnonymousTests : AsyncBunitContext
+{
+    private readonly IAgentPromptOverrideRepository _promptRepo = Substitute.For<IAgentPromptOverrideRepository>();
+
+    public AdminSettingsAnonymousTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization(); // NOT authorized → _isAdmin false
+
+        Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
+
+        var repo = Substitute.For<IAdminSettingsRepository>();
+        repo.GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<AdminSettingRecord>>([]));
+        Services.AddSingleton(repo);
+        Services.AddSingleton(Options.Create(new AiFoundryOptions()));
+
+        _promptRepo.GetActiveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<AgentPromptOverride?>(null));
+        _promptRepo.GetVersionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<AgentPromptOverride>>([]));
+        Services.AddSingleton(_promptRepo);
+        Services.AddSingleton(new PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider());
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public void Anonymous_ShowsValuesReadOnly_HidesEditsAndPromptsAndProvenance()
+    {
+        var cut = RenderWithPopover<AdminSettings>();
+        cut.WaitForAssertion(() =>
+        {
+            // value shown read-only
+            Assert.NotEmpty(cut.FindAll("[data-testid='confidence-value-readonly']"));
+            Assert.NotEmpty(cut.FindAll("[data-testid='ceiling-value-readonly']"));
+            // edit controls + save + reset absent
+            Assert.Empty(cut.FindAll("[data-testid='save-button']"));
+            Assert.Empty(cut.FindAll("[data-testid='reset-ai.confidence_threshold']"));
+            // Prompt Templates tab absent
+            Assert.DoesNotContain("Prompt Templates", cut.Markup, StringComparison.Ordinal);
+            // provenance absent
+            Assert.Empty(cut.FindAll("[data-testid^='provenance-']"));
+        });
     }
 }

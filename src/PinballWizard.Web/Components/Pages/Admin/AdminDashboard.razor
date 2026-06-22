@@ -3,7 +3,7 @@
 @attribute [StreamRendering]
 @using Microsoft.AspNetCore.Authorization
 @using PinballWizard.Application.Persistence
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @inject ICatalogStatsReadRepository Stats
 @inject IIngestionSourceRepository Sources
 @inject ILinkOverrideRepository Overrides

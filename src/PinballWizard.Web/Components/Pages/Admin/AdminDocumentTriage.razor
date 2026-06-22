@@ -1,12 +1,15 @@
 @page "/admin/document-triage"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Logging
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
  *
+ * Public-read after the admin showcase split: triage queue is visible to everyone;
+ * Relink / MarkGeneric actions are gated by _isAdmin (UI) and AdminActionGuard (server).
  * Renders a MudDataGrid of documents with LinkStatus in {Failed, NotInCatalog, PlatformGeneric}.
  * Capped at 200 rows (triage backlog guard). Actions: Re-link (runs IDocumentLinker.LinkAsync
  * for the single record), Mark Generic (stamps PlatformGeneric via UpdateLinkStatusAsync).
@@ -24,6 +27,7 @@
 @inject IDocumentLinker DocumentLinker
 @inject ISnackbar Snackbar
 @inject ILogger<AdminDocumentTriage> Logger
+@inject PinballWizard.Web.Security.AdminActionGuard Guard
 
 <PageTitle>Document Triage — PinballWizard Admin</PageTitle>
 
@@ -56,6 +60,7 @@
                  data-testid="admin-document-triage-grid">
 
         <Columns>
+            <PropertyColumn Property="x => x.DocumentId" Title="Document ID" />
             <PropertyColumn Property="x => x.DocumentType" Title="Document Type" />
             <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
             <PropertyColumn Property="x => x.LinkText" Title="Link Text" />
@@ -77,18 +82,20 @@
                     {
                         <MudProgressCircular Size="Size.Small" Indeterminate="true" />
                     }
-                    else
+                    else if (_isAdmin)
                     {
                         <MudStack Row="true" Spacing="1">
                             <MudButton Size="Size.Small"
                                        Variant="Variant.Text"
                                        Color="Color.Primary"
+                                       data-testid="triage-action-relink"
                                        OnClick="@(() => RelinkAsync(context.Item))">
                                 Re-link
                             </MudButton>
                             <MudButton Size="Size.Small"
                                        Variant="Variant.Text"
                                        Color="Color.Secondary"
+                                       data-testid="triage-action-markgeneric"
                                        OnClick="@(() => MarkGenericAsync(context.Item))">
                                 Mark Generic
                             </MudButton>
@@ -119,6 +126,11 @@
 </MudContainer>
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _isAdmin;
+
     private sealed class DocumentTriageRow
     {
         public required string DocumentId { get; init; }
@@ -156,6 +168,7 @@
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
+            _isAdmin = await Guard.IsAdminAsync(AuthState);
             var statuses = new[] { LinkStatus.Failed, LinkStatus.NotInCatalog, LinkStatus.PlatformGeneric };
             var rows = new List<DocumentTriageRow>();
             await foreach (var doc in RawDocRepo.StreamByStatusAsync(statuses, cts.Token))
@@ -195,6 +208,11 @@
 
     private async Task RelinkAsync(DocumentTriageRow row)
     {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
         row.ActionBusy = true;
         StateHasChanged();
         try
@@ -232,6 +250,11 @@
 
     private async Task MarkGenericAsync(DocumentTriageRow row)
     {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
         row.ActionBusy = true;
         StateHasChanged();
         try

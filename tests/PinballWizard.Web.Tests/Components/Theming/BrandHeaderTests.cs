@@ -23,12 +23,21 @@ public sealed class BrandHeaderTests : AsyncBunitContext
     }
 
     [Fact]
-    public void BrandHeader_RendersExactlyTwoAnchors_BrandAndWhatWeCover()
+    public void BrandHeader_RendersExactlyThreeAnchors_BrandWhatWeCoverAndBehindTheScenes()
     {
         var cut = Render<BrandHeader>();
 
         var anchors = cut.FindAll("a");
-        Assert.Equal(2, anchors.Count);
+        Assert.Equal(3, anchors.Count);
+    }
+
+    [Fact]
+    public void BrandHeader_RendersBehindTheScenesLink()
+    {
+        var cut = Render<BrandHeader>();
+
+        var link = cut.Find("a[href='/admin']");
+        Assert.Contains("Behind the Scenes", link.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]

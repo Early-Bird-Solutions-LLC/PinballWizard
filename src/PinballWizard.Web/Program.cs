@@ -143,8 +143,23 @@ else
         // infra half).
         options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
     });
+    // AddCascadingAuthenticationState is required on BOTH paths because
+    // AdminLayout.razor renders <AuthorizeView Policy="AdminOnly">, which
+    // throws at render if no cascading Task<AuthenticationState> is available.
+    // On the no-tenant path the AdminOnly policy is permissive
+    // (RequireAssertion(_ => true)) so the AuthorizeView resolves to its
+    // Authorized branch and local-dev admin pages render fully.
+    // AddRazorComponents().AddInteractiveServerComponents() (called above for
+    // all paths) registers ServerAuthenticationStateProvider, so the cascade
+    // provider has a backing store on this path too.
+    builder.Services.AddCascadingAuthenticationState();
     builder.Services.AddControllersWithViews();
 }
+
+// Server-side authorization guard for admin mutation handlers (AdminActionGuard).
+// Registered on both auth paths — admin pages are public-read with gated
+// mutations, and the handlers call this before touching a repository.
+builder.Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 
 // ── Embedded-resource agent prompts (admin prompt-templates tab) ──────────
 // Parameterless; reads the Application assembly's .md resources. The Web

@@ -4,7 +4,7 @@
 @using Microsoft.Extensions.Logging
 @using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).

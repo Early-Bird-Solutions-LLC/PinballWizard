@@ -13,7 +13,8 @@
  * surfaces in the prospect-facing chrome).
  *
  * Logo: text-only placeholder. SVG/PNG asset arrives as a follow-up.
- * Authenticated routes (/admin/*) are surfaced only in AdminLayout's drawer.
+ * The read-only admin showcase is surfaced here ('Behind the Scenes' → /admin);
+ * mutations there are gated to signed-in admins.
  *
  * ADR-0008 — MudBlazor strict (uses MudLink + MudButton + MudSpacer)
  * ADR-0026 § 1 — routing inventory
@@ -38,5 +39,12 @@
                Class="nav-link"
                aria-label="What we cover">
         What we cover
+    </MudButton>
+    <MudButton Href="/admin"
+               Variant="Variant.Text"
+               Color="Color.Inherit"
+               Class="nav-link"
+               aria-label="Behind the Scenes — admin showcase">
+        Behind the Scenes
     </MudButton>
 </nav>
