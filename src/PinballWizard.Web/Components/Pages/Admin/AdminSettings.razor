@@ -12,11 +12,11 @@
  * everywhere: stored override → IOptions default; "Reset to default"
  * deletes the override row.
  *
- * Tabs are the sanctioned tabs-over-pages spot (plan Phase 2). Three tabs
- * are live (RAG retrieval activated with its call-time consumers); Prompt
- * Templates remains a deliberate placeholder that says WHY it is empty
- * (Phase 3 with the ADR-0018 amendment) — an honest empty state beats a
- * control that silently does nothing.
+ * Tabs are the sanctioned tabs-over-pages spot (plan Phase 2). All four tabs
+ * are live: Guardrails, Conversation, and RAG Retrieval edit WellKnownSettings
+ * keys through IAdminSettingsRepository; Prompt Templates manages per-agent
+ * prompt overrides (PR-B3, the ADR-0018 amendment) — save-inactive-then-activate,
+ * layered over the embedded git default.
  *
  * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly).
  *@
