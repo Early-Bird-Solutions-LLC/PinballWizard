@@ -211,6 +211,18 @@ If you see "Outside My Coverage" or a generic refusal, work through this checkli
 
 ---
 
+## Known emulator limitation — related-machine suggestions
+
+The Cosmos **vNext-preview emulator** (Postgres-backed) cannot execute a cross-partition query whose `WHERE` clause calls a **function** — both `STRINGEQUALS(c.title, @t, true)` and `LOWER(c.title) = @t` fail with `InternalServerError (500)` / `PGCosmosError … PostgresError(EXX000)`. Cross-partition queries with **exact equality** (e.g. `WHERE c.groupId = @g`) work fine, as do point-reads. This is a preview-emulator gap, not a code bug — the same queries run correctly against deployed Cosmos.
+
+The one query this affects is [`MachineRepository.QueryByTitleAsync`](../src/PinballWizard.Infrastructure/Persistence/Cosmos/MachineRepository.cs) (case-insensitive title match, which forces the function). Its only consumer is the refusal recovery's **related-machine suggestions**, so **on the local emulator, refusals render without the "related machines" hint** — everything else (community routing CTAs, the honest reason/rephrase text, the answer flow, `getMachineByTitle` point-reads) works normally.
+
+This degrades **gracefully and observably**: `RefusalRecoveryService` isolates the failure so it never drops the community CTAs, logs it at `Error`, and meters it on `pinwiz.ai.related_machines_lookup_errors_total`. A non-zero rate **locally** is this known emulator gap; a non-zero rate **in production** signals a real Cosmos read-path problem.
+
+A future "works-everywhere" fix would store a lowercased `titleLower` field and match it by exact equality, or route related-machine matching through the `machine_title_lookups` point-read view (the ADR-0025 PR-5 direction). Neither is required for a functional local demo.
+
+---
+
 ## How the emulator connection is detected
 
 The CLI selects its Cosmos path based on which env vars are present at startup:
