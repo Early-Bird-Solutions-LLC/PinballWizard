@@ -6,6 +6,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
@@ -29,6 +30,8 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
 
     /// <inheritdoc />
     public string Name => "Service Bulletins";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Stern;
 
     /// <summary>Initializes a new <see cref="ServiceBulletinScraper"/>.</summary>
     public ServiceBulletinScraper(

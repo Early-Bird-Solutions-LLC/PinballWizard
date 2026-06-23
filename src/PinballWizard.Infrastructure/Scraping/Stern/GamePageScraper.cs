@@ -7,6 +7,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Scraping.Playwright;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
@@ -30,6 +31,8 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
 
     /// <inheritdoc />
     public string Name => "Game Pages";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Stern;
 
     /// <summary>Initializes a new <see cref="GamePageScraper"/>.</summary>
     public GamePageScraper(

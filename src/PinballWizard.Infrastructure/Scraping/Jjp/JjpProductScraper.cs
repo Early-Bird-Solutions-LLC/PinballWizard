@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Jjp;
@@ -39,6 +40,8 @@ public sealed class JjpProductScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "JJP";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Jjp;
 
     /// <summary>Initializes a new <see cref="JjpProductScraper"/>.</summary>
     public JjpProductScraper(

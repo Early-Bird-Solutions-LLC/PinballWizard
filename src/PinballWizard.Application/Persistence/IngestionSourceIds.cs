@@ -14,4 +14,13 @@ public static class IngestionSourceIds
 {
     public const string Opdb = "opdb";
     public const string PinballMap = "pinballmap";
+    public const string Stern = "stern";
+    public const string Jjp = "jjp";
+    public const string Ap = "ap";
+    public const string ApBulletins = "ap_bulletins";
+    public const string Spooky = "spooky";
+    public const string PinballBrothers = "pinballbrothers";
+    public const string BarrelsOfFun = "barrelsoffun";
+    public const string Multimorphic = "multimorphic";
+    public const string Cgc = "cgc";
 }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Multimorphic;
@@ -30,6 +31,8 @@ public sealed class MultimorphicProductScraper : PoliteScraperBase, ISourceScrap
 
     /// <inheritdoc />
     public string Name => "Multimorphic";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Multimorphic;
 
     /// <summary>Initializes a new <see cref="MultimorphicProductScraper"/>.</summary>
     public MultimorphicProductScraper(

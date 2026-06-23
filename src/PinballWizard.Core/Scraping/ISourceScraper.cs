@@ -11,6 +11,9 @@ public interface ISourceScraper
     /// <summary>Human-readable name for logging.</summary>
     string Name { get; }
 
+    /// <summary>The IngestionSource id this scraper's runs belong to (see IngestionSourceIds).</summary>
+    string SourceId { get; }
+
     /// <summary>
     /// Scrape the source and yield discovered links with provenance metadata.
     /// Does NOT download files — just discovers URLs and captures metadata.

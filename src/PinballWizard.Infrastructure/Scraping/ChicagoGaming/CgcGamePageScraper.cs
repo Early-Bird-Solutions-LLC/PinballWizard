@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.ChicagoGaming;
@@ -39,6 +40,8 @@ public sealed class CgcGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Chicago Gaming";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Cgc;
 
     /// <summary>Initializes a new <see cref="CgcGamePageScraper"/>.</summary>
     public CgcGamePageScraper(

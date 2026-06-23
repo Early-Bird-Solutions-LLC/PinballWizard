@@ -229,13 +229,15 @@ public sealed class ScraperOrchestratorTests : IDisposable
     private sealed class StubScraper : ISourceScraper
     {
         private readonly IReadOnlyList<ScrapedItem> _items;
-        public StubScraper(string name, IEnumerable<ScrapedItem> items)
+        public StubScraper(string name, IEnumerable<ScrapedItem> items, string sourceId = "stern")
         {
             Name = name;
             _items = items.ToList();
+            SourceId = sourceId;
         }
 
         public string Name { get; }
+        public string SourceId { get; }
         public bool WasInvoked { get; private set; }
 
         public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
@@ -253,13 +255,15 @@ public sealed class ScraperOrchestratorTests : IDisposable
     private sealed class ThrowingScraper : ISourceScraper
     {
         private readonly Exception _exception;
-        public ThrowingScraper(string name, Exception exception)
+        public ThrowingScraper(string name, Exception exception, string sourceId = "stern")
         {
             Name = name;
             _exception = exception;
+            SourceId = sourceId;
         }
 
         public string Name { get; }
+        public string SourceId { get; }
 
         public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
