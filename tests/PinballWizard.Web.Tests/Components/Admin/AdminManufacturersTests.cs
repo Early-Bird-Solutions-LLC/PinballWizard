@@ -152,7 +152,8 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         var table = cut.Find("[data-testid='manufacturers-table']");
         Assert.Contains("stern", table.TextContent, StringComparison.Ordinal);   // raw key, not "Stern Pinball"
         Assert.DoesNotContain("Stern Pinball", table.TextContent, StringComparison.Ordinal);
-        Assert.Contains("6", table.TextContent, StringComparison.Ordinal);        // counts survive
+        var cells = table.QuerySelectorAll("tbody tr td");
+        Assert.Equal("6", cells[3].TextContent.Trim());   // catalog documents survive (cell-specific)
     }
 
     [Fact]
