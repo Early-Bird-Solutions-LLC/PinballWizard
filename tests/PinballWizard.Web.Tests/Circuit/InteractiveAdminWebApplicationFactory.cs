@@ -117,6 +117,13 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
         {
             options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
         });
+        // Supplies the cascading Task<AuthenticationState> that AuthorizeView (in
+        // AdminLayout) and [AllowAnonymous]/[Authorize] components require during SSR.
+        // Program.cs registers this on BOTH auth branches (the #477 showcase split);
+        // this self-built circuit host mirrors the no-tenant else-branch and must too,
+        // or every admin page throws "Authorization requires a cascading parameter of
+        // type Task<AuthenticationState>" → 500 → the circuit never goes interactive.
+        builder.Services.AddCascadingAuthenticationState();
         builder.Services.AddControllersWithViews();
 
         // ── Admin-page backends (test doubles, no Cosmos/Foundry) ──────────
