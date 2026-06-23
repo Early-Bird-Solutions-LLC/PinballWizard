@@ -5,11 +5,13 @@
 @using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
 @using PinballWizard.Core.Domain
+@using PinballWizard.Core.Models
 @using PinballWizard.Web.Security
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
 @inject IIngestionSourceRepository SourceRepo
 @inject ICatalogStatsReadRepository CatalogStatsRepo
+@inject IScrapeRunRepository ScrapeRunRepo
 @inject AdminActionGuard Guard
 @inject ISnackbar Snackbar
 @inject ILogger<AdminSourceDetail> Logger
@@ -126,7 +128,7 @@
 
         @* c. Catalog contribution — null stats = not a manufacturer catalog
          * source (n/a); a thrown read is a section-scoped error (Invariant #17). *@
-        <MudPaper Class="pa-4" Elevation="2" data-testid="source-catalog">
+        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-catalog">
             <MudText Typo="Typo.h6" GutterBottom="true">Catalog contribution</MudText>
             @if (_catalogFailed)
             {
@@ -149,6 +151,56 @@
                 </MudStack>
             }
         </MudPaper>
+
+        @* d. Run history — newest-first per-source scrape runs (feature #5a). Section-
+         * isolated: a read failure shows a scoped alert; an empty set is the honest state
+         * for sources not yet instrumented (every ISourceScraper source until 5b). *@
+        <MudPaper Class="pa-4 mt-4" Elevation="2" data-testid="source-run-history">
+            <MudText Typo="Typo.h6" GutterBottom="true">Run history</MudText>
+            @if (_runHistoryFailed)
+            {
+                <MudAlert Severity="Severity.Error" data-testid="run-history-failed">
+                    Run history could not be loaded.
+                </MudAlert>
+            }
+            else if (_runs.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="run-history-empty">
+                    No runs recorded yet.
+                </MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense="true" Hover="true">
+                    <thead>
+                        <tr>
+                            <th>Run (UTC)</th>
+                            <th>Status</th>
+                            <th style="text-align:right">Duration</th>
+                            <th style="text-align:right">Documents</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in _runs)
+                        {
+                            <tr>
+                                <td>@run.RunAt.UtcDateTime.ToString("u")</td>
+                                <td>
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@(run.Succeeded ? Color.Success : Color.Error)">
+                                        @(run.Succeeded ? "Success" : "Failed")
+                                    </MudChip>
+                                </td>
+                                <td style="text-align:right">@($"{run.DurationSeconds:0.0} s")</td>
+                                <td style="text-align:right">@run.DocumentsDiscovered</td>
+                                <td>@(run.ErrorMessage ?? "")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudPaper>
     }
 </MudContainer>
 
@@ -166,6 +218,8 @@
     private bool _loading = true;
     private bool _loadFailed;     // source point-read failed/timed out
     private bool _catalogFailed;  // catalog point-read failed/timed out (section-scoped)
+    private IReadOnlyList<ScrapeRunRecord> _runs = [];
+    private bool _runHistoryFailed;  // run-history read failed (section-scoped)
 
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     private bool _isAdmin;
@@ -233,6 +287,28 @@
                     Logger.LogError(ex, "Failed to load catalog stats for manufacturer '{Key}'.",
                         _source.ScraperImplKey);
                     _catalogFailed = true;
+                }
+
+                // Read 3 — run history (newest 20, single-partition by source id). Section-
+                // isolated: a failure here must NOT blank the config/politeness/catalog sections.
+                try
+                {
+                    var runs = new List<ScrapeRunRecord>();
+                    await foreach (var run in ScrapeRunRepo.StreamBySourceAsync(Id, 20, cts.Token))
+                    {
+                        runs.Add(run);
+                    }
+                    _runs = runs;
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.LogWarning("Admin source-detail run-history read timed out for source '{Id}'.", Id);
+                    _runHistoryFailed = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load run history for source '{Id}'.", Id);
+                    _runHistoryFailed = true;
                 }
             }
         }

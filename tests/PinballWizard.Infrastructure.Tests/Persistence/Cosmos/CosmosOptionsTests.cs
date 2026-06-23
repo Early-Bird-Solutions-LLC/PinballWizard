@@ -127,8 +127,9 @@ public sealed class CosmosOptionsTests
         // AB#259 catalog_stats ADR-0036 Tier-3 projection: adds catalog_stats
         // (per-manufacturer rollup, /manufacturer) + catalog_stats_leases
         // (Change Feed lease container for the second consumer, /id).
+        // Scrape-run history 5a: adds scrape_runs (per-run history, /source_id).
         var options = new CosmosOptions();
-        Assert.Equal(14, options.Containers.Count);
+        Assert.Equal(15, options.Containers.Count);
 
         var settings = Assert.Single(options.Containers, c => c.Name == "admin_settings");
         Assert.Equal("/key", settings.PartitionKeyPath);
@@ -138,6 +139,11 @@ public sealed class CosmosOptionsTests
         Assert.Equal("/agent_name", prompts.PartitionKeyPath);
         Assert.Null(prompts.DefaultTtlSeconds); // version rows are audit records — must not auto-expire
         Assert.Null(prompts.IndexingPolicy);    // default indexing — tiny container, no selective policy needed
+
+        var runs = Assert.Single(options.Containers, c => c.Name == "scrape_runs");
+        Assert.Equal("/source_id", runs.PartitionKeyPath);
+        Assert.Null(runs.DefaultTtlSeconds);    // full run history is the feature's value — no auto-expiry
+        Assert.NotNull(runs.IndexingPolicy);    // selective index (source_id + run_at + succeeded)
     }
 
     [Fact]

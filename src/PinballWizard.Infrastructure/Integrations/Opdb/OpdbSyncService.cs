@@ -8,6 +8,7 @@ using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
+using PinballWizard.Core.Models;
 
 namespace PinballWizard.Infrastructure.Integrations.Opdb;
 
@@ -29,6 +30,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
     private readonly OpdbClient _client;
     private readonly IMachineRepository _machines;
     private readonly IIngestionSourceRepository _ingestionSources;
+    private readonly IScrapeRunRepository _scrapeRuns;
     private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<OpdbSyncService> _logger;
@@ -39,6 +41,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         OpdbClient client,
         IMachineRepository machines,
         IIngestionSourceRepository ingestionSources,
+        IScrapeRunRepository scrapeRuns,
         IMachineTitleLookupRepository titleLookups,
         ILogger<OpdbSyncService> logger,
         IOptions<ScraperSettings>? scraperSettings = null,
@@ -52,6 +55,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
         _client = client;
         _machines = machines;
         _ingestionSources = ingestionSources;
+        _scrapeRuns = scrapeRuns ?? throw new ArgumentNullException(nameof(scrapeRuns));
         _titleLookups = titleLookups;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -505,6 +509,33 @@ public sealed class OpdbSyncService : IOpdbSyncService
                         "ingestion_sources failed; the source's lastRunAt / counters may " +
                         "lag by one run.",
                         failure is null ? string.Empty : " with errors");
+                }
+
+                // Per-run history (feature #5a) — a best-effort SECONDARY write alongside the
+                // accumulator. A failure here must NOT fail the sync (the run already happened
+                // and the accumulator already recorded the outcome); log and swallow.
+                try
+                {
+                    await _scrapeRuns.WriteAsync(
+                        new ScrapeRunRecord
+                        {
+                            SourceId = IngestionSourceIds.Opdb,
+                            RunAt = runStartedAt,
+                            DurationSeconds = stopwatch.Elapsed.TotalSeconds,
+                            Succeeded = failure is null,
+                            DocumentsDiscovered = inserted + updated,
+                            ErrorMessage = failure?.Message,
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Cancellation in flight — skip the history write (mirrors the accumulator).
+                }
+                catch (Exception historyEx)
+                {
+                    _logger.LogWarning(historyEx,
+                        "Failed to write scrape-run history for the OPDB sync; the sync outcome is unaffected.");
                 }
             }
         }

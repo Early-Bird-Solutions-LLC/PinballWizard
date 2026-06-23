@@ -40,6 +40,7 @@ internal static class AdminTestDoubles
         services.AddSingleton(Settings());
         services.AddSingleton(Prompts());
         services.AddSingleton(CorpusStats());
+        services.AddSingleton(ScrapeRuns());
 
         // Concrete singleton — parameterless, loads embedded prompt .md resources.
         services.AddSingleton<EmbeddedResourceAgentPromptProvider>();
@@ -289,6 +290,25 @@ internal static class AdminTestDoubles
                 },
                 AsOf)));
         return reader;
+    }
+
+    // ── IScrapeRunRepository ─────────────────────────────────────────────────
+    private static PinballWizard.Application.Persistence.IScrapeRunRepository ScrapeRuns()
+    {
+        var repo = Substitute.For<PinballWizard.Application.Persistence.IScrapeRunRepository>();
+        repo.StreamBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(
+                new PinballWizard.Core.Models.ScrapeRunRecord
+                {
+                    SourceId = "stern", RunAt = AsOf, DurationSeconds = 12.4,
+                    Succeeded = true, DocumentsDiscovered = 7, ErrorMessage = null,
+                },
+                new PinballWizard.Core.Models.ScrapeRunRecord
+                {
+                    SourceId = "stern", RunAt = AsOf.AddHours(-1), DurationSeconds = 3.1,
+                    Succeeded = false, DocumentsDiscovered = 0, ErrorMessage = "timeout",
+                }));
+        return repo;
     }
 
     // ── async-enumerable helper ──────────────────────────────────────────────

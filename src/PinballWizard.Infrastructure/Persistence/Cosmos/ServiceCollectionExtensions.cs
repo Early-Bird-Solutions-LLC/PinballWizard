@@ -193,6 +193,13 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<CosmosLinkOverrideRepository>>());
         });
 
+        services.AddSingleton<IScrapeRunRepository>(sp =>
+        {
+            var container = ResolveContainer(sp, "scrape_runs");
+            return new CosmosScrapeRunRepository(container,
+                sp.GetRequiredService<ILogger<CosmosScrapeRunRepository>>());
+        });
+
         // Runtime-mutable Wizard settings (admin settings plan, PR-B1).
         // Singleton on purpose: the repository's TTL cache is the per-ask
         // read-amortization layer and must be process-wide.

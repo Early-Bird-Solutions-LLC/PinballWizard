@@ -283,6 +283,21 @@ public sealed class CosmosOptions
             Name = "admin_prompts",
             PartitionKeyPath = "/agent_name",
         },
+        // Per-run scrape history (admin source-detail timeline, feature #5a). Partition
+        // key /source_id so "recent runs for a source" is a single-partition newest-first
+        // read (Tier 1, no cross-partition fan-out). Selective index: source_id (PK),
+        // run_at (sort key), succeeded (status filter). No TTL — runs are low-frequency
+        // (weekly cadence) and full history is the feature's value.
+        new()
+        {
+            Name = "scrape_runs",
+            PartitionKeyPath = "/source_id",
+            IndexingPolicy = new CosmosIndexingPolicyOptions
+            {
+                IncludedPaths = ["/source_id/?", "/run_at/?", "/succeeded/?"],
+                ExcludedPaths = ["/*"],
+            },
+        },
     ];
 
     /// <summary>
