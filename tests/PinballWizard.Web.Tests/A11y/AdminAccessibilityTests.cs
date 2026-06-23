@@ -36,6 +36,7 @@ public sealed class AdminAccessibilityTests(AdminAccessibilityTests.AdminPlaywri
     [InlineData("/admin/document-triage", "document triage")]
     [InlineData("/admin/link-overrides", "link overrides")]
     [InlineData("/admin/settings", "settings")]
+    [InlineData("/admin/corpus", "rag corpus")]
     public async Task AdminPage_HasNoAxeViolations(string path, string description)
     {
         _ = description;

@@ -39,6 +39,7 @@ internal static class AdminTestDoubles
         services.AddSingleton(IngestionSources());
         services.AddSingleton(Settings());
         services.AddSingleton(Prompts());
+        services.AddSingleton(CorpusStats());
 
         // Concrete singleton — parameterless, loads embedded prompt .md resources.
         services.AddSingleton<EmbeddedResourceAgentPromptProvider>();
@@ -272,6 +273,22 @@ internal static class AdminTestDoubles
         repo.GetVersionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((IReadOnlyList<AgentPromptOverride>)[]);
         return repo;
+    }
+
+    // ── IRagCorpusStatsReader ────────────────────────────────────────────────
+    private static PinballWizard.Application.Ai.Retrieval.IRagCorpusStatsReader CorpusStats()
+    {
+        var reader = Substitute.For<PinballWizard.Application.Ai.Retrieval.IRagCorpusStatsReader>();
+        reader.GetCorpusStatsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new PinballWizard.Application.Ai.Retrieval.RagCorpusStats(
+                1234,
+                new List<PinballWizard.Application.Ai.Retrieval.DocTypeChunkCount>
+                {
+                    new("Manual", 900),
+                    new("ServiceBulletin", 334),
+                },
+                AsOf)));
+        return reader;
     }
 
     // ── async-enumerable helper ──────────────────────────────────────────────

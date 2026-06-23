@@ -145,6 +145,30 @@
                 </MudCardActions>
             </MudCard>
         </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2" Class="admin-summary-card">
+                <MudCardContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage"
+                                 Color="Color.Info"
+                                 Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body1">RAG Corpus</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Tertiary">indexed chunk stats</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Href="/admin/corpus"
+                               Variant="Variant.Text"
+                               Color="Color.Info"
+                               Size="Size.Small">
+                        View corpus
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
     </MudGrid>
 </MudContainer>
 

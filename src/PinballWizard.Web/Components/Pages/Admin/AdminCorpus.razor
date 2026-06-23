@@ -1,0 +1,123 @@
+@page "/admin/corpus"
+@layout AdminLayout
+@attribute [StreamRendering]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Ai.Retrieval
+@attribute [AllowAnonymous]
+@inject IRagCorpusStatsReader CorpusReader
+@inject ILogger<AdminCorpus> Logger
+
+@* AdminCorpus — /admin/corpus RAG corpus health.
+ *
+ * Static SSR + [StreamRendering] (ADR-0034 doctrine — read-only display, no
+ * interactive need): the shell streams immediately, then the three stats stream in.
+ * Reads the live Azure AI Search index via IRagCorpusStatsReader (ADR-0021). Failures
+ * degrade visibly via MudAlert (Invariant #17): an unreachable/unconfigured index shows
+ * a distinct error (never zeros); a genuinely empty index shows a distinct empty state;
+ * a null freshness shows "backfill pending". ISnackbar is deliberately NOT used (static).
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0021  — AI Search is the RAG index
+ * ADR-0034  — render-mode doctrine (static default)
+ *@
+
+<PageTitle>RAG Corpus — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">RAG Corpus</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Health of the indexed corpus that powers source-cited answers.
+    </MudText>
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading corpus stats" />
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="corpus-load-failed">
+            RAG corpus stats are currently unavailable. The Azure AI Search index could not
+            be reached — check the service endpoint and credentials.
+        </MudAlert>
+    }
+    else if (_stats!.TotalChunks == 0)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="corpus-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
+            <MudText Typo="Typo.body1">No chunks indexed yet</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                The RAG ingestion pipeline has not indexed any documents into the corpus.
+            </MudText>
+        </MudStack>
+    }
+    else
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" GutterBottom="true">Total indexed chunks</MudText>
+            <MudText Typo="Typo.h4" data-testid="corpus-total">@_stats.TotalChunks.ToString("N0")</MudText>
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Index freshness</MudText>
+                <MudText Typo="Typo.body2" data-testid="corpus-freshness">
+                    @(_stats.MostRecentScrapeUtc is { } f
+                        ? $"{f.UtcDateTime:u} (most recent scrape in index)"
+                        : "backfill pending")
+                </MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-4" Elevation="2" data-testid="corpus-by-type">
+            <MudText Typo="Typo.h6" GutterBottom="true">Indexed chunks by document type</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr><th>Document type</th><th style="text-align:right">Indexed chunks</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var t in _stats.ByDocumentType)
+                    {
+                        <tr>
+                            <td>@t.DocumentType</td>
+                            <td style="text-align:right">@t.ChunkCount.ToString("N0")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private RagCorpusStats? _stats;
+    private bool _loading = true;
+    private bool _loadFailed;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("RAG Corpus", href: "/admin/corpus", icon: Icons.Material.Filled.Storage),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            _stats = await CorpusReader.GetCorpusStatsAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin corpus-stats load timed out after 30 s.");
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load RAG corpus stats.");
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
