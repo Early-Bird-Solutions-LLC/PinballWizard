@@ -46,19 +46,28 @@ public sealed class ScraperOrchestratorTests : IDisposable
         IEnumerable<ISourceScraper> scrapers,
         IRawDocumentRepository? rawDocRepo = null,
         ScraperSettings? settings = null,
-        IScraperReconciliationService? reconciler = null)
+        IScraperReconciliationService? reconciler = null,
+        IScrapeRunRepository? scrapeRuns = null,
+        IIngestionSourceRepository? ingestionSources = null,
+        TimeProvider? timeProvider = null)
     {
         settings ??= new ScraperSettings { DataPath = _tempDir };
         var options = Options.Create(settings);
 
         rawDocRepo ??= Substitute.For<IRawDocumentRepository>();
         reconciler ??= Substitute.For<IScraperReconciliationService>();
+        scrapeRuns ??= Substitute.For<IScrapeRunRepository>();
+        ingestionSources ??= Substitute.For<IIngestionSourceRepository>();
+        timeProvider ??= TimeProvider.System;
 
         return new ScraperOrchestrator(
             scrapers,
             rawDocRepo,
             reconciler,
             options,
+            scrapeRuns,
+            ingestionSources,
+            timeProvider,
             NullLogger<ScraperOrchestrator>.Instance);
     }
 
@@ -202,7 +211,107 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Single(result.Errors);
     }
 
+    // -------- Per-source run aggregation --------
+
+    [Fact]
+    public async Task ScrapeAsync_TwoScrapersSameSource_WritesOneAggregatedRecord()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var ingestionSources = Substitute.For<IIngestionSourceRepository>();
+        var a = new StubScraper("Manuals", [LinkItem(), LinkItem()], sourceId: "stern");      // 2
+        var b = new StubScraper("Game Pages", [LinkItem(), LinkItem(), LinkItem()], sourceId: "stern"); // 3
+        var orch = CreateOrchestrator([a, b], scrapeRuns: scrapeRuns, ingestionSources: ingestionSources);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(
+            Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern" && r.DocumentsDiscovered == 5 && r.Succeeded),
+            Arg.Any<CancellationToken>());
+        await ingestionSources.Received(1).RecordRunResultAsync(
+            "stern",
+            Arg.Is<IngestionSourceRunResult>(x => x.Succeeded && x.DocumentsDiscovered == 5),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_TwoDistinctSources_WritesRecordPerSource()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var stern = new StubScraper("Manuals", [LinkItem()], sourceId: "stern");
+        var jjp = new StubScraper("JJP", [LinkItem()], sourceId: "jjp");
+        var orch = CreateOrchestrator([stern, jjp], scrapeRuns: scrapeRuns);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern"), Arg.Any<CancellationToken>());
+        await scrapeRuns.Received(1).WriteAsync(Arg.Is<ScrapeRunRecord>(r => r.SourceId == "jjp"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_ScraperThrows_SourceRecordFailedWithError()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var failing = new ThrowingScraper("Manuals", new InvalidOperationException("boom"), sourceId: "stern");
+        var orch = CreateOrchestrator([failing], scrapeRuns: scrapeRuns);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(
+            Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern" && !r.Succeeded && r.ErrorMessage != null && r.ErrorMessage.Contains("boom")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_DryRun_WritesNoRunHistory()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var ingestionSources = Substitute.For<IIngestionSourceRepository>();
+        var a = new StubScraper("Manuals", [LinkItem()], sourceId: "stern");
+        var orch = CreateOrchestrator([a], scrapeRuns: scrapeRuns, ingestionSources: ingestionSources);
+
+        await orch.ScrapeAsync(dryRun: true);
+
+        await scrapeRuns.DidNotReceive().WriteAsync(Arg.Any<ScrapeRunRecord>(), Arg.Any<CancellationToken>());
+        await ingestionSources.DidNotReceive().RecordRunResultAsync(Arg.Any<string>(), Arg.Any<IngestionSourceRunResult>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_RunHistoryWriteThrows_DoesNotAbortScrape()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        scrapeRuns.WriteAsync(Arg.Any<ScrapeRunRecord>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("history write failed"));
+        var a = new StubScraper("Manuals", [LinkItem()], sourceId: "stern");
+        var orch = CreateOrchestrator([a], scrapeRuns: scrapeRuns);
+
+        var result = await orch.ScrapeAsync(dryRun: false);  // must not throw
+
+        Assert.NotNull(result);
+        await scrapeRuns.Received(1).WriteAsync(Arg.Any<ScrapeRunRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_RunAt_UsesInjectedTimeProvider()
+    {
+        var fixedNow = new DateTimeOffset(2026, 6, 23, 9, 0, 0, TimeSpan.Zero);
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var a = new StubScraper("Manuals", [LinkItem()], sourceId: "stern");
+        var orch = CreateOrchestrator([a], scrapeRuns: scrapeRuns, timeProvider: new FixedTimeProvider(fixedNow));
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(Arg.Is<ScrapeRunRecord>(r => r.RunAt == fixedNow), Arg.Any<CancellationToken>());
+    }
+
     // -------- Helpers --------
+
+    private static ScrapedItem LinkItem() => new()
+    {
+        Link = new DiscoveredLink { FileUrl = "https://example.com/x.pdf", LinkText = "x" },
+        SourceType = SourceType.ManualsPage,
+        DiscoveryUrl = "https://example.com/list",
+        DiscoveryContext = "list",
+    };
 
     private static ScrapedItem MakeLinkItem(
         string fileUrl,
@@ -275,6 +384,11 @@ public sealed class ScraperOrchestratorTests : IDisposable
             if (_exception is not null) throw _exception;
             yield break;
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
 }
