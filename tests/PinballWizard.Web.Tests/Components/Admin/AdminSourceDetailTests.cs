@@ -8,6 +8,7 @@ using NSubstitute;
 using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
+using PinballWizard.Core.Models;
 using PinballWizard.Web.Components.Pages.Admin;
 using PinballWizard.Web.Security;
 using Xunit;
@@ -94,10 +95,20 @@ public sealed class AdminSourceDetailTests : AsyncBunitContext
                 .Returns(Task.FromResult(stats));
         }
 
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        scrapeRuns.StreamBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRuns());
         Services.AddScoped<AdminActionGuard>();
         Services.AddSingleton(sourceRepo);
         Services.AddSingleton(statsRepo);
+        Services.AddSingleton(scrapeRuns);
         Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private static async IAsyncEnumerable<ScrapeRunRecord> EmptyRuns()
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 
     // MudBlazor 9 requires a MudPopoverProvider sibling for popover-capable
@@ -230,9 +241,19 @@ public sealed class AdminSourceDetailToggleAuthorizedTests : AsyncBunitContext
         var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
         statsRepo.GetByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<ManufacturerCatalogStats?>(null));
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        scrapeRuns.StreamBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRunsToggle());
         Services.AddSingleton(_sourceRepo);
         Services.AddSingleton(statsRepo);
+        Services.AddSingleton(scrapeRuns);
         Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private static async IAsyncEnumerable<ScrapeRunRecord> EmptyRunsToggle()
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 
     private IRenderedComponent<AdminSourceDetail> RenderDetail()
@@ -360,9 +381,19 @@ public sealed class AdminSourceDetailAnonymousToggleTests : AsyncBunitContext
         var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
         statsRepo.GetByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<ManufacturerCatalogStats?>(null));
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        scrapeRuns.StreamBySourceAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRunsAnon());
         Services.AddSingleton(sourceRepo);
         Services.AddSingleton(statsRepo);
+        Services.AddSingleton(scrapeRuns);
         Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private static async IAsyncEnumerable<ScrapeRunRecord> EmptyRunsAnon()
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 
     private IRenderedComponent<AdminSourceDetail> RenderDetail()
@@ -386,5 +417,104 @@ public sealed class AdminSourceDetailAnonymousToggleTests : AsyncBunitContext
 
         Assert.NotEmpty(cut.FindAll("[data-testid='source-enabled-chip']"));
         Assert.Empty(cut.FindAll("[data-testid='source-enabled-switch']"));
+    }
+}
+
+public sealed class AdminSourceDetailRunHistoryTests : AsyncBunitContext
+{
+    private const string SternId = "stern";
+    private readonly IScrapeRunRepository _scrapeRuns = Substitute.For<IScrapeRunRepository>();
+
+    private static IngestionSource Source() => new()
+    {
+        Id = SternId, DisplayName = "Stern Pinball", ScraperImplKey = SternId,
+        BaseUrl = "https://sternpinball.com", Enabled = true, Cadence = "weekly",
+    };
+
+    private static async IAsyncEnumerable<ScrapeRunRecord> Runs(params ScrapeRunRecord[] runs)
+    {
+        await Task.CompletedTask;
+        foreach (var r in runs) yield return r;
+    }
+
+    private static async IAsyncEnumerable<ScrapeRunRecord> Throwing()
+    {
+        await Task.CompletedTask;
+        throw new InvalidOperationException("simulated Cosmos failure");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    public AdminSourceDetailRunHistoryTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        Services.AddScoped<AdminActionGuard>();
+
+        var sourceRepo = Substitute.For<IIngestionSourceRepository>();
+        sourceRepo.GetByIdAsync(SternId, "config", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IngestionSource?>(Source()));
+        var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
+        statsRepo.GetByManufacturerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ManufacturerCatalogStats?>(null));
+        Services.AddSingleton(sourceRepo);
+        Services.AddSingleton(statsRepo);
+        Services.AddSingleton(_scrapeRuns);
+        Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+    }
+
+    private IRenderedComponent<AdminSourceDetail> RenderDetail()
+    {
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminSourceDetail>(1);
+            builder.AddAttribute(2, nameof(AdminSourceDetail.Id), SternId);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminSourceDetail>();
+    }
+
+    [Fact]
+    public async Task WithRuns_RendersTable()
+    {
+        _scrapeRuns.StreamBySourceAsync(SternId, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Runs(
+                new ScrapeRunRecord { SourceId = SternId, RunAt = new DateTimeOffset(2026, 6, 23, 8, 0, 0, TimeSpan.Zero), DurationSeconds = 12.4, Succeeded = true, DocumentsDiscovered = 7 },
+                new ScrapeRunRecord { SourceId = SternId, RunAt = new DateTimeOffset(2026, 6, 22, 8, 0, 0, TimeSpan.Zero), DurationSeconds = 3.1, Succeeded = false, DocumentsDiscovered = 0, ErrorMessage = "timeout" }));
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var section = cut.Find("[data-testid='source-run-history']");
+        Assert.Contains("7", section.TextContent, StringComparison.Ordinal);       // doc count
+        Assert.Contains("timeout", section.TextContent, StringComparison.Ordinal); // error on failed row
+    }
+
+    [Fact]
+    public async Task NoRuns_RendersEmptyState()
+    {
+        _scrapeRuns.StreamBySourceAsync(SternId, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Runs());
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='run-history-empty']");
+    }
+
+    [Fact]
+    public async Task ReadFailure_IsSectionIsolated()
+    {
+        _scrapeRuns.StreamBySourceAsync(SternId, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Throwing());
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='run-history-failed']");
+        // Section isolation (Invariant #17): config + politeness still render.
+        cut.Find("[data-testid='source-config']");
+        cut.Find("[data-testid='source-politeness']");
     }
 }
