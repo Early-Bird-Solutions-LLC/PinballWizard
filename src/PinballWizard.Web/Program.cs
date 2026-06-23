@@ -29,6 +29,7 @@ using MudBlazor.Services;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Catalog;
+using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
@@ -278,6 +279,10 @@ if (foundryWired)
 // mirroring the Cli. Extracted to CosmosWebRegistration so the gate is directly
 // unit-testable (WebCosmosCompositionTests) — see that class + extension for why.
 builder.AddWebCosmosPersistence();
+
+// RAG corpus stats for /admin/corpus — narrow AI Search read-only registration
+// (no Foundry, no ValidateOnStart; degrades visibly if AI Search is unconfigured).
+builder.Services.AddRagCorpusStatsRead(builder.Configuration);
 
 // ── Build + pipeline ───────────────────────────────────────────────────────
 var app = builder.Build();
