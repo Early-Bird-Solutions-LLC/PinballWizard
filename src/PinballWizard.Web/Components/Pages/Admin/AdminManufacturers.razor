@@ -1,0 +1,171 @@
+@page "/admin/manufacturers"
+@layout AdminLayout
+@attribute [StreamRendering]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@attribute [AllowAnonymous]
+@inject ICatalogStatsReadRepository CatalogStats
+@inject IIngestionSourceRepository SourceRepo
+@inject ILogger<AdminManufacturers> Logger
+
+@* AdminManufacturers — /admin/manufacturers catalog-by-brand overview.
+ *
+ * Static SSR + [StreamRendering] (ADR-0034 — read-only display). Two bounded
+ * single-partition reads (ADR-0036, ZERO cross-partition): the per-manufacturer
+ * rollups (StreamAllManufacturersAsync — point-reads) joined by key with the
+ * ingestion sources (StreamAllAsync — one 'config' partition) for DisplayName +
+ * Enabled. Sorted alphabetically (no ranking — favoritism guardrail). Rows link to
+ * the source-detail page. Failures degrade visibly (Invariant #17): a rollup-load
+ * failure shows a MudAlert; an empty set a distinct state; the source enrichment is
+ * best-effort — a failure degrades rows to the raw key, never blanks the page.
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0034  — render-mode doctrine (static default)
+ * ADR-0036  — Cosmos read-access (single-partition / point-reads only)
+ *@
+
+<PageTitle>Manufacturers — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Manufacturers</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Catalog contribution per manufacturer — machines and catalog documents.
+    </MudText>
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading manufacturers" />
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="manufacturers-load-failed">
+            Manufacturer stats could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </MudAlert>
+    }
+    else if (_rows.Count == 0)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="manufacturers-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
+            <MudText Typo="Typo.body1">No manufacturer stats yet</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                The catalog_stats projection has not recorded any manufacturers.
+            </MudText>
+        </MudStack>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true" Hover="true" Elevation="2" data-testid="manufacturers-table">
+            <thead>
+                <tr>
+                    <th>Manufacturer</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Machines</th>
+                    <th style="text-align:right">Catalog documents</th>
+                    <th>As of</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _rows)
+                {
+                    <tr>
+                        <td><MudLink Href="@($"/admin/sources/{r.Key}")">@r.DisplayName</MudLink></td>
+                        <td>
+                            @if (r.Enabled is { } enabled)
+                            {
+                                <MudChip T="string" Size="Size.Small"
+                                         Color="@(enabled ? Color.Success : Color.Default)">
+                                    @(enabled ? "Enabled" : "Disabled")
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                            }
+                        </td>
+                        <td style="text-align:right">@r.Machines</td>
+                        <td style="text-align:right">@r.Documents</td>
+                        <td>@r.AsOf.UtcDateTime.ToString("u")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudContainer>
+
+@code {
+    // Display projection joining the catalog rollup with its ingestion source. Enabled is
+    // null when no source matched the key (best-effort enrichment → "—"); DisplayName falls
+    // back to the raw key in that case.
+    private sealed record ManufacturerRow(
+        string Key, string DisplayName, bool? Enabled, int Machines, int Documents, DateTimeOffset AsOf);
+
+    private List<ManufacturerRow> _rows = [];
+    private bool _loading = true;
+    private bool _loadFailed; // core rollup read failed/timed out → no table
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Manufacturers", href: "/admin/manufacturers", icon: Icons.Material.Filled.Factory),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        // Best-effort enrichment: key → (DisplayName, Enabled). A failure degrades rows to
+        // raw keys; it must NOT fail the page (the rollups are the core data).
+        var sourceLookup = new Dictionary<string, (string DisplayName, bool Enabled)>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            await foreach (var s in SourceRepo.StreamAllAsync(cts.Token))
+            {
+                sourceLookup[s.Id] = (s.DisplayName, s.Enabled);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin manufacturers: ingestion-source enrichment read timed out; rows degrade to keys.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Admin manufacturers: ingestion-source enrichment read failed; rows degrade to keys.");
+        }
+
+        // Core read: the per-manufacturer rollups (bounded point-reads, no cross-partition).
+        try
+        {
+            var rows = new List<ManufacturerRow>();
+            await foreach (var mfr in CatalogStats.StreamAllManufacturersAsync(cts.Token))
+            {
+                var found = sourceLookup.TryGetValue(mfr.Manufacturer, out var src);
+                rows.Add(new ManufacturerRow(
+                    Key:         mfr.Manufacturer,
+                    DisplayName: found ? src.DisplayName : mfr.Manufacturer,
+                    Enabled:     found ? src.Enabled : null,
+                    Machines:    mfr.Machines.Count,
+                    Documents:   mfr.Machines.Sum(m => m.DocCount),
+                    AsOf:        mfr.AsOfUtc));
+            }
+            // Alphabetical by display name — no ranking (feedback_avoid_appearance_of_favoritism).
+            _rows = rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin manufacturers rollup load timed out after 30 s.");
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load manufacturer catalog stats.");
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
