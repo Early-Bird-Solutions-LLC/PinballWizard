@@ -31,7 +31,7 @@ public sealed class AdminCorpusTests : AsyncBunitContext
     private static readonly DateTimeOffset DefaultFresh =
         new(2026, 6, 21, 0, 0, 0, TimeSpan.Zero);
 
-    // fresh: omit (uses DefaultFresh) | pass explicit value | pass DateTimeOffset.MinValue to get null in corpus
+    // fresh: omit (uses DefaultFresh) | pass an explicit value | pass nullFresh: true to get null freshness
     private static RagCorpusStats Stats(
         long total = 12438,
         DateTimeOffset? fresh = default,

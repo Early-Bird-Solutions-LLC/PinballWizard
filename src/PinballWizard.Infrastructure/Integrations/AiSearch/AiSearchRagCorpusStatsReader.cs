@@ -49,6 +49,7 @@ public sealed class AiSearchRagCorpusStatsReader : IRagCorpusStatsReader
         var total = await client.GetDocumentCountAsync(cancellationToken).ConfigureAwait(false);
 
         // 2. Chunks by document type — a faceted count (Size=0 returns no documents).
+        // count:20 — document_type is a small closed set (~6-8 types); 20 is a comfortable ceiling, no truncation.
         var facetResults = await client.SearchAsync<object>(
             "*",
             new SearchOptions { Size = 0, Facets = { $"{AiSearchIndexFields.DocumentType},count:20" } },
