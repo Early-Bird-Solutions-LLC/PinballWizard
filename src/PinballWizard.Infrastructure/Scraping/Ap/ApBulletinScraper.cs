@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Ap;
@@ -16,6 +17,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
     private readonly ApOptions _apOptions;
 
     public string Name => "American Pinball Bulletins";
+    public string SourceId => IngestionSourceIds.ApBulletins;
 
     public ApBulletinScraper(
         HttpClient httpClient,

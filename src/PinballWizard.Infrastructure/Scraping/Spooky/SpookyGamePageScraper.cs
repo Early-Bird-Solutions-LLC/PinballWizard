@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Spooky;
@@ -34,6 +35,8 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Spooky Pinball";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Spooky;
 
     /// <summary>Initializes a new <see cref="SpookyGamePageScraper"/>.</summary>
     public SpookyGamePageScraper(

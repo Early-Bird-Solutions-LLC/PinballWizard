@@ -231,6 +231,10 @@ public sealed class IntegrationTests : IDisposable
         // register substitutes to satisfy the DI graph without a real connection.
         builder.Services.AddSingleton(Substitute.For<IRawDocumentRepository>());
         builder.Services.AddSingleton(Substitute.For<IScraperReconciliationService>());
+        // 5b: ScraperOrchestrator now also writes per-source run history + accumulators.
+        builder.Services.AddSingleton(Substitute.For<IScrapeRunRepository>());
+        builder.Services.AddSingleton(Substitute.For<IIngestionSourceRepository>());
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddTransient<ScraperOrchestrator>();
 
         configureExtras?.Invoke(builder.Services);

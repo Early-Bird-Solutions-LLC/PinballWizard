@@ -215,6 +215,10 @@ public sealed class CliDiIntegrationTests : IDisposable
         // resolves without a live connection — same pattern as IntegrationTests.cs.
         builder.Services.AddSingleton(Substitute.For<IRawDocumentRepository>());
         builder.Services.AddSingleton(Substitute.For<IScraperReconciliationService>());
+        // 5b: ScraperOrchestrator now also writes per-source run history + accumulators.
+        builder.Services.AddSingleton(Substitute.For<IScrapeRunRepository>());
+        builder.Services.AddSingleton(Substitute.For<IIngestionSourceRepository>());
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddTransient<ScraperOrchestrator>();
 
         // Bootstrap data directories that Program.cs creates at startup.

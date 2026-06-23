@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
@@ -28,6 +29,8 @@ public sealed class BofProductScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Barrels of Fun";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.BarrelsOfFun;
 
     /// <summary>Initializes a new <see cref="BofProductScraper"/>.</summary>
     public BofProductScraper(

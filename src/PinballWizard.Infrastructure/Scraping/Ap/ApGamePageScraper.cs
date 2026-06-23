@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Ap;
@@ -36,6 +37,8 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "American Pinball";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Ap;
 
     /// <summary>Initializes a new <see cref="ApGamePageScraper"/>.</summary>
     public ApGamePageScraper(

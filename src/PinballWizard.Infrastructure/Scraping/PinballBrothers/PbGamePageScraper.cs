@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.PinballBrothers;
@@ -31,6 +32,8 @@ public sealed class PbGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Pinball Brothers";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.PinballBrothers;
 
     /// <summary>Initializes a new <see cref="PbGamePageScraper"/>.</summary>
     public PbGamePageScraper(

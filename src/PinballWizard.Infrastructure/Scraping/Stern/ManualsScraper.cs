@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Stern;
@@ -28,6 +29,8 @@ public sealed class ManualsScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Manuals";
+    /// <inheritdoc />
+    public string SourceId => IngestionSourceIds.Stern;
 
     /// <summary>Initializes a new <see cref="ManualsScraper"/>.</summary>
     public ManualsScraper(

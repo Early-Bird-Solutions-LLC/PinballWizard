@@ -16,6 +16,9 @@ public sealed class ScraperOrchestrator
     private readonly IRawDocumentRepository _rawDocRepo;
     private readonly IScraperReconciliationService _reconciler;
     private readonly ScraperSettings _settings;
+    private readonly IScrapeRunRepository _scrapeRuns;
+    private readonly IIngestionSourceRepository _ingestionSources;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<ScraperOrchestrator> _logger;
 
     public ScraperOrchestrator(
@@ -23,12 +26,18 @@ public sealed class ScraperOrchestrator
         IRawDocumentRepository rawDocRepo,
         IScraperReconciliationService reconciler,
         IOptions<ScraperSettings> settings,
+        IScrapeRunRepository scrapeRuns,
+        IIngestionSourceRepository ingestionSources,
+        TimeProvider timeProvider,
         ILogger<ScraperOrchestrator> logger)
     {
         _scrapers = scrapers;
         _rawDocRepo = rawDocRepo;
         _reconciler = reconciler;
         _settings = settings.Value;
+        _scrapeRuns = scrapeRuns;
+        _ingestionSources = ingestionSources;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
@@ -46,75 +55,101 @@ public sealed class ScraperOrchestrator
         var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
         var gameCatalog = new GameCatalog { GeneratedAt = DateTime.UtcNow };
 
-        foreach (var scraper in scrapers)
+        // 5b: group by source so a source's run is ONE aggregated history record +
+        // accumulator. Scrapers in a group run consecutively; the per-scraper
+        // discover→upsert body, politeness gate, write semaphore, and cancellation
+        // drain are unchanged. Politeness is per-host (IPolitenessGate), so grouping
+        // by source does not affect throttling.
+        foreach (var group in scrapers.GroupBy(s => s.SourceId, StringComparer.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("Starting scraper: {Name}", scraper.Name);
+            var sourceId = group.Key;
+            var runStartedAt = _timeProvider.GetUtcNow();
+            var sourceStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var sourceDocCount = 0;
+            var sourceFailed = false;
+            string? firstError = null;
 
-            var pending = new List<Task>();
-
-            try
+            foreach (var scraper in group)
             {
-                await foreach (var item in scraper.ScrapeAsync(cancellationToken))
+                _logger.LogInformation("Starting scraper: {Name}", scraper.Name);
+
+                var pending = new List<Task>();
+
+                try
                 {
-                    if (item.Game is not null)
+                    await foreach (var item in scraper.ScrapeAsync(cancellationToken))
                     {
-                        gameCatalog.Games.Add(item.Game);
+                        if (item.Game is not null)
+                        {
+                            gameCatalog.Games.Add(item.Game);
+                        }
+
+                        if (item.Link is null) continue;
+
+                        var record = BuildDocumentRecord(item);
+                        result.TotalLinks++;
+                        sourceDocCount++;
+
+                        if (dryRun) continue;
+
+                        await semaphore.WaitAsync(cancellationToken);
+                        pending.Add(Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException)
+                            {
+                                _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
+                                result.Errors.Add($"{record.DocumentId}: {ex.Message}");
+                            }
+                            finally
+                            {
+                                semaphore.Release();
+                            }
+                        }, cancellationToken));
                     }
-
-                    if (item.Link is null) continue;
-
-                    var record = BuildDocumentRecord(item);
-                    result.TotalLinks++;
-
-                    if (dryRun) continue;
-
-                    await semaphore.WaitAsync(cancellationToken);
-                    pending.Add(Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException)
-                        {
-                            _logger.LogError(ex, "Failed to upsert {DocumentId} to scraped_documents_raw", record.DocumentId);
-                            result.Errors.Add($"{record.DocumentId}: {ex.Message}");
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    }, cancellationToken));
                 }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Drain in-flight writes before re-throwing so no tasks are abandoned.
-                if (pending.Count > 0)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
-                    catch (Exception drainEx)
+                    if (pending.Count > 0)
                     {
-                        _logger.LogError(drainEx, "Scraper {Name}: in-flight writes faulted during cancellation drain.", scraper.Name);
+                        try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                        catch (Exception drainEx)
+                        {
+                            _logger.LogError(drainEx, "Scraper {Name}: in-flight writes faulted during cancellation drain.", scraper.Name);
+                        }
+                    }
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Scraper {Name} failed", scraper.Name);
+                    result.Errors.Add($"{scraper.Name}: {ex.Message}");
+                    sourceFailed = true;
+                    firstError ??= $"{scraper.Name}: {ex.Message}";
+                }
+                finally
+                {
+                    if (pending.Count > 0)
+                    {
+                        try { await Task.WhenAll(pending).ConfigureAwait(false); }
+                        catch { /* per-task errors already logged inside each Task.Run lambda */ }
                     }
                 }
-                throw;
             }
-            catch (Exception ex)
+
+            sourceStopwatch.Stop();
+
+            // 5b: one aggregated run-history record + accumulator per source. Skipped on
+            // dry-run (no operator-visible run from a discovery-only pass). Best-effort —
+            // see WriteSourceRunAsync.
+            if (!dryRun)
             {
-                _logger.LogError(ex, "Scraper {Name} failed", scraper.Name);
-                result.Errors.Add($"{scraper.Name}: {ex.Message}");
-            }
-            finally
-            {
-                // Always drain pending writes — ensures no tasks are abandoned on normal
-                // completion or on per-scraper exceptions. The OCE path above drains and
-                // re-throws before reaching this block; errors here are already logged.
-                if (pending.Count > 0)
-                {
-                    try { await Task.WhenAll(pending).ConfigureAwait(false); }
-                    catch { /* per-task errors already logged inside each Task.Run lambda */ }
-                }
+                await WriteSourceRunAsync(
+                    sourceId, runStartedAt, sourceStopwatch.Elapsed,
+                    sourceDocCount, sourceFailed, firstError, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -145,6 +180,57 @@ public sealed class ScraperOrchestrator
             result.TotalLinks, gameCatalog.Games.Count, result.Errors.Count);
 
         return result;
+    }
+
+    // 5b: write one source's run history + accumulator. Both best-effort (Invariant #17):
+    // a failure logs at Warning and is swallowed — recording history must never turn a
+    // completed scrape into a failed one. Cancellation in flight skips the write.
+    private async Task WriteSourceRunAsync(
+        string sourceId,
+        DateTimeOffset runStartedAt,
+        TimeSpan duration,
+        int documentsDiscovered,
+        bool failed,
+        string? firstError,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _scrapeRuns.WriteAsync(
+                new ScrapeRunRecord
+                {
+                    SourceId = sourceId,
+                    RunAt = runStartedAt,
+                    DurationSeconds = duration.TotalSeconds,
+                    Succeeded = !failed,
+                    DocumentsDiscovered = documentsDiscovered,
+                    ErrorMessage = firstError,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to write scrape-run history for source '{SourceId}'; the scrape outcome is unaffected.", sourceId);
+        }
+
+        try
+        {
+            await _ingestionSources.RecordRunResultAsync(
+                sourceId,
+                new IngestionSourceRunResult
+                {
+                    RunAt = runStartedAt,
+                    Succeeded = !failed,
+                    DocumentsDiscovered = documentsDiscovered,
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record run-result accumulator for source '{SourceId}'; the scrape outcome is unaffected.", sourceId);
+        }
     }
 
     private static DocumentRecord BuildDocumentRecord(ScrapedItem item)
