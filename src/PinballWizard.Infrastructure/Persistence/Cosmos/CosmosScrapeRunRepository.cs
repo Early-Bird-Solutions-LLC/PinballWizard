@@ -52,6 +52,7 @@ internal sealed class CosmosScrapeRunRepository
         DurationSeconds = r.DurationSeconds,
         Succeeded = r.Succeeded,
         DocumentsDiscovered = r.DocumentsDiscovered,
+        DocumentsNew = r.DocumentsNew,
         ErrorMessage = r.ErrorMessage,
     };
 
@@ -62,6 +63,7 @@ internal sealed class CosmosScrapeRunRepository
         DurationSeconds = c.DurationSeconds,
         Succeeded = c.Succeeded,
         DocumentsDiscovered = c.DocumentsDiscovered,
+        DocumentsNew = c.DocumentsNew,
         ErrorMessage = c.ErrorMessage,
     };
 }
