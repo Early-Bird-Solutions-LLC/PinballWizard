@@ -40,6 +40,14 @@ public enum DocumentType
     /// snake-case index value <c>metadata_card</c>.
     /// </summary>
     MetadataCard,
+
+    /// <summary>
+    /// Synthesized long-form game-overview card built from a Machine's
+    /// OverviewProse + per-edition sections by GameOverviewSynthesizer.
+    /// Per the index contract, projects via .ToString() to "GameOverview";
+    /// the read-side snake_case alias is "game_overview".
+    /// </summary>
+    GameOverview,
 }
 
 /// <summary>

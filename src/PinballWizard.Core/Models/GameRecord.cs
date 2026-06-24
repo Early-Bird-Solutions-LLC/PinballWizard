@@ -31,6 +31,18 @@ public sealed class GameRecord
 
     public List<EditionInfo> Editions { get; set; } = [];
 
+    /// <summary>Game-level descriptive prose scraped from the game page (not edition-specific).</summary>
+    public string? OverviewProse { get; set; }
+
+    /// <summary>YouTube trailer watch URL from the game page embed, if present.</summary>
+    public string? TrailerUrl { get; set; }
+
+    /// <summary>Per-game accessories from the "Stern Shop" section of the game page.</summary>
+    public List<AccessoryInfo> Accessories { get; set; } = [];
+
+    /// <summary>"View All" shop collection URL for this game's accessories.</summary>
+    public string? ShopCollectionUrl { get; set; }
+
     public GameSourceInfo? Source { get; set; }
 
     public static string GenerateId(string slug) => $"game_{slug}";
@@ -45,6 +57,14 @@ public sealed class EditionInfo
     public List<string> UniqueFeatures { get; set; } = [];
     public int? LimitedQuantity { get; set; }
     public List<string> ImageUrls { get; set; } = [];
+}
+
+public sealed class AccessoryInfo
+{
+    public required string Name { get; set; }
+    public string? Price { get; set; }
+    public required string ProductUrl { get; set; }
+    public string? ImageUrl { get; set; }
 }
 
 public sealed class GameSourceInfo

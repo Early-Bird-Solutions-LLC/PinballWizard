@@ -11,15 +11,14 @@ public sealed class RagIngestionOptions
 {
     public const string SectionName = "Rag:Ingestion";
 
-    // Document types accepted by the pipeline. Manuals + service
-    // bulletins for Phase 4. The metadata-card path (W3-1) flows
-    // through a sibling pipeline keyed off `MachineDocument` Change
-    // Feed, NOT this list — `MetadataCard` here would be a category
-    // error. Anything outside this list returns `Skipped_DocumentTypeFiltered`.
+    // Document types accepted by the pipeline. Manuals + service bulletins +
+    // feature matrices (the per-edition feature table — gameplay-relevant).
+    // The metadata-card / game-overview synthesis paths flow through Cli sync
+    // verbs, NOT this list. Anything outside returns Skipped_DocumentTypeFiltered.
     [Required]
     [MinLength(1)]
     public List<DocumentType> AcceptedDocumentTypes { get; set; } =
-        [DocumentType.Manual, DocumentType.ServiceBulletin];
+        [DocumentType.Manual, DocumentType.ServiceBulletin, DocumentType.FeatureMatrix];
 
     // Optional reconciliation pass on worker startup: sample N rows
     // from `rag_index_state` and verify AI Search has matching chunks.

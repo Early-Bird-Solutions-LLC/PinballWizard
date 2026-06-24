@@ -150,6 +150,18 @@ public sealed class SearchCorpusToolTests
         Assert.Equal(expected, SearchCorpusTool.NormalizeDocumentType(input));
     }
 
+    [Theory]
+    [InlineData("game_overview", "GameOverview")]
+    [InlineData("GameOverview", "GameOverview")]
+    public void NormalizeDocumentType_GameOverview_MapsToEnumString(string input, string expected)
+    {
+        // The AI Search index stores document_type as DocumentType enum's
+        // .ToString() (PascalCase). Wizard prompt uses lowercase snake_case
+        // aliases. NormalizeDocumentType bridges the contract so OData
+        // filter eq clauses match the indexed values.
+        Assert.Equal(expected, SearchCorpusTool.NormalizeDocumentType(input));
+    }
+
     [Fact]
     public async Task SearchCorpusAsync_EmptyStringFilters_NormalizeToNull()
     {

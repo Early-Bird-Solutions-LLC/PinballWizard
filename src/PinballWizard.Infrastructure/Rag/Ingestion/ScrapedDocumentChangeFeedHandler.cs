@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
@@ -90,6 +91,8 @@ public sealed class ScrapedDocumentChangeFeedHandler
             _logger.LogDebug(
                 "RAG change-feed handler: skipping document={DocumentId} type={DocumentType} (not in accepted set — no download).",
                 change.DocumentId, documentType);
+            PinballWizardTelemetry.RagIngestionTypeFiltered.Add(
+                1, new KeyValuePair<string, object?>("document_type", documentType.ToString()));
             return IngestionOutcome.Skipped_DocumentTypeFiltered;
         }
 

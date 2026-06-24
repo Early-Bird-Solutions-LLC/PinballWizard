@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Observability;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Ingestion;
@@ -242,7 +243,41 @@ public sealed class RagChangefeedTelemetryTests
     // Test fixture
     // ────────────────────────────────────────────────────────────────
 
-    private static RagSourceDocument NewChange(string documentId, long? lsn = null) => new()
+    [Fact]
+    public async Task ChangeFeedHandler_FiltersUnacceptedType_EmitsTypeFilteredCounter()
+    {
+        var samples = new ConcurrentBag<(long Value, string? Type)>();
+        using var l = new MeterListener();
+        l.SetMeasurementEventCallback<long>((_, value, tags, _) =>
+        {
+            string? type = null;
+            foreach (var t in tags) if (t.Key == "document_type") type = t.Value as string;
+            samples.Add((value, type));
+        });
+        l.Start();
+        l.EnableMeasurementEvents(PinballWizardTelemetry.RagIngestionTypeFiltered);
+
+        // Drive ScrapedDocumentChangeFeedHandler directly — the TestContext's
+        // RecordingHandler sits above the type-filter logic, so we need the
+        // concrete handler under test, not the hosted-service wrapper.
+        var options = Options.Create(new RagIngestionOptions
+        {
+            AcceptedDocumentTypes = [Core.Models.DocumentType.Manual, Core.Models.DocumentType.ServiceBulletin],
+            MaxFailuresPerDocument = 3,
+        });
+        var handler = new ScrapedDocumentChangeFeedHandler(
+            pipeline: Substitute.For<IRagIngestionPipeline>(),
+            bytesSource: Substitute.For<IDocumentBytesSource>(),
+            rawDocumentRepository: Substitute.For<IRawDocumentRepository>(),
+            options: options,
+            logger: NullLogger<ScrapedDocumentChangeFeedHandler>.Instance);
+
+        await handler.HandleAsync(NewChange("doc_1", documentType: "Flyer"), CancellationToken.None);
+
+        Assert.Contains(samples, s => s.Type == "Flyer" && s.Value >= 1);
+    }
+
+    private static RagSourceDocument NewChange(string documentId, long? lsn = null, string? documentType = null) => new()
     {
         Id = documentId,
         DocumentId = documentId,
@@ -250,7 +285,7 @@ public sealed class RagChangefeedTelemetryTests
         MachineId = "GRBN-MQR4P",
         MachineTitle = "Foo Fighters",
         Manufacturer = "Stern Pinball",
-        DocumentType = "Manual",
+        DocumentType = documentType ?? "Manual",
         ContentHash = "hash-default",
         Lsn = lsn,
     };
