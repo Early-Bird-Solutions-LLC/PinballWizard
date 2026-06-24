@@ -121,7 +121,7 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
         "pinwiz.ai.escalations",
         unit: "{question}",
-        description: "User-questions where the Wizard routed to a heavy-tier sub-agent (gpt-4.1) after the initial light-tier (gpt-4o-mini) result fell below the confidence threshold (per ADR-0015).");
+        description: "User-questions where the Wizard routed to a heavy-tier sub-agent (gpt-4.1) after the initial light-tier (gpt-4o) result fell below the confidence threshold (per ADR-0015).");
 
     public static readonly Histogram<double> AiDurationMs = Meter.CreateHistogram<double>(
         "pinwiz.ai.duration_ms",
