@@ -107,6 +107,8 @@ internal static class AdminTestDoubles
         repo.GetByOpdbIdAsync(LeId, Manufacturer, Arg.Any<CancellationToken>()).Returns(le);
         repo.GetSiblingsByGroupIdAsync(GroupId, Arg.Any<CancellationToken>())
             .Returns(_ => Stream(pro, le));
+        repo.StreamByRunIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<Machine>());
         return repo;
     }
 
@@ -169,6 +171,8 @@ internal static class AdminTestDoubles
             Arg.Any<string>(), Arg.Any<LinkStatus>(), Arg.Any<string?>(),
             Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
+        repo.StreamByRunIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<RawDocumentRecord>());
         return repo;
     }
 
