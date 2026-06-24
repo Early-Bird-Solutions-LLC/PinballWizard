@@ -51,6 +51,7 @@ negative) it carries.
 | [0038](0038-origin-ca-cert-for-aca-origin.md) | Cloudflare Origin CA certificate for the ACA origin (retire auto-renewing managed cert) | Accepted |
 | [0039](0039-blob-document-store.md) | Blob-backed document store (`pinwiz-raw`) | Accepted |
 | [0040](0040-fork-claude-config-for-pinballwizard.md) | Fork Claude Code config in-repo for PinballWizard | Accepted |
+| [0041](0041-pr-feedback-triage.md) | Server-side governed (comment-only) PR-feedback triage via Claude Code Action | Accepted |
 
 ## Conventions
 
