@@ -150,36 +150,22 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
                     $"but configuration requires '{containerOptions.PartitionKeyPath}'. Reconcile the drift before starting the app.");
             }
 
-            // Indexing-policy drift is logged (not thrown) per ADR-0025
-            // § 3. A policy mismatch on an existing container does not
-            // misroute writes (unlike partition-key drift) — Cosmos
-            // re-indexes in the background when the policy is
-            // re-applied. We surface drift so an operator running
-            // `--ensure-cosmos-containers` against a container created
-            // before PR #N (this PR) sees the warning and can re-create
-            // or update via Data Explorer.
-            if (containerOptions.IndexingPolicy is { } expected
-                && !IndexingPolicyMatches(existing.Data.Resource?.IndexingPolicy, expected))
-            {
-                _logger.LogWarning(
-                    "Container '{Container}' indexing policy via ARM differs from configuration. Re-apply by recreating the container or by editing the policy via Azure Portal Data Explorer.",
-                    containerOptions.Name);
-            }
+            var indexDrift = containerOptions.IndexingPolicy is { } expected
+                && !IndexingPolicyMatches(existing.Data.Resource?.IndexingPolicy, expected);
+            var ttlDrift = !TtlMatches(existing.Data.Resource?.DefaultTtl, containerOptions.DefaultTtlSeconds);
 
-            // TTL drift on an existing container is also a non-fatal
-            // metadata-only mismatch — re-applying a TTL is a property
-            // edit, not a data layout change. Surfaces operators that
-            // a container created before the TTL decision (e.g.
-            // `rag_dead_letters` provisioned before PR-6's 90-day TTL
-            // landed) needs reconciliation via Data Explorer or recreate.
-            var actualTtl = existing.Data.Resource?.DefaultTtl;
-            if (!TtlMatches(actualTtl, containerOptions.DefaultTtlSeconds))
+            if (indexDrift || ttlDrift)
             {
-                _logger.LogWarning(
-                    "Container '{Container}' default TTL via ARM ({ActualTtl}) differs from configured value ({ExpectedTtl}). Re-apply by recreating the container or by editing default TTL via Data Explorer.",
+                await containers.CreateOrUpdateAsync(
+                    WaitUntil.Completed,
                     containerOptions.Name,
-                    FormatTtl(actualTtl),
-                    FormatTtl(containerOptions.DefaultTtlSeconds));
+                    BuildContainerContent(containerOptions),
+                    cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "Container '{Container}' reconciled via ARM to match configuration ({What}).",
+                    containerOptions.Name,
+                    indexDrift && ttlDrift ? "index policy + default TTL" : indexDrift ? "index policy" : "default TTL");
+                return;
             }
 
             _logger.LogInformation(
@@ -189,6 +175,24 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
             return;
         }
 
+        var content = BuildContainerContent(containerOptions);
+
+        await containers.CreateOrUpdateAsync(
+            WaitUntil.Completed,
+            containerOptions.Name,
+            content,
+            cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Container '{Container}' created via ARM (partition key {PartitionKeyPath}, default TTL {Ttl}, indexing {Indexing}).",
+            containerOptions.Name,
+            containerOptions.PartitionKeyPath,
+            containerOptions.DefaultTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none",
+            containerOptions.IndexingPolicy is null ? "default" : "selective");
+    }
+
+    internal static CosmosDBSqlContainerCreateOrUpdateContent BuildContainerContent(CosmosContainerOptions containerOptions)
+    {
         var resource = new CosmosDBSqlContainerResourceInfo(containerOptions.Name)
         {
             PartitionKey = new CosmosDBContainerPartitionKey
@@ -205,25 +209,9 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
         {
             resource.IndexingPolicy = BuildArmIndexingPolicy(indexingPolicy);
         }
-
-        var content = new CosmosDBSqlContainerCreateOrUpdateContent(
-            // Same placeholder rationale as the database create above —
-            // ARM uses the parent account's region for child resources.
-            AzureLocation.EastUS2,
-            resource);
-
-        await containers.CreateOrUpdateAsync(
-            WaitUntil.Completed,
-            containerOptions.Name,
-            content,
-            cancellationToken).ConfigureAwait(false);
-
-        _logger.LogInformation(
-            "Container '{Container}' created via ARM (partition key {PartitionKeyPath}, default TTL {Ttl}, indexing {Indexing}).",
-            containerOptions.Name,
-            containerOptions.PartitionKeyPath,
-            containerOptions.DefaultTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none",
-            containerOptions.IndexingPolicy is null ? "default" : "selective");
+        // Same placeholder rationale as the database create above —
+        // ARM uses the parent account's region for child resources.
+        return new CosmosDBSqlContainerCreateOrUpdateContent(AzureLocation.EastUS2, resource);
     }
 
     private static CosmosDBIndexingPolicy BuildArmIndexingPolicy(CosmosIndexingPolicyOptions source)
@@ -244,13 +232,10 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
         return policy;
     }
 
-    private static bool TtlMatches(int? actual, int? expected) =>
+    internal static bool TtlMatches(int? actual, int? expected) =>
         actual == expected;
 
-    private static string FormatTtl(int? ttl) =>
-        ttl?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none";
-
-    private static bool IndexingPolicyMatches(CosmosDBIndexingPolicy? actual, CosmosIndexingPolicyOptions expected)
+    internal static bool IndexingPolicyMatches(CosmosDBIndexingPolicy? actual, CosmosIndexingPolicyOptions expected)
     {
         if (actual is null)
         {
