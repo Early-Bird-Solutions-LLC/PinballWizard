@@ -51,10 +51,7 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
         }
     }
 
-    private async Task EnsureContainerAsync(
-        Database database,
-        CosmosContainerOptions containerOptions,
-        CancellationToken cancellationToken)
+    internal static ContainerProperties BuildContainerProperties(CosmosContainerOptions containerOptions)
     {
         var properties = new ContainerProperties(containerOptions.Name, containerOptions.PartitionKeyPath);
         if (containerOptions.DefaultTtlSeconds is { } ttl)
@@ -65,6 +62,15 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
         {
             ApplyIndexingPolicy(properties.IndexingPolicy, indexingPolicy);
         }
+        return properties;
+    }
+
+    private async Task EnsureContainerAsync(
+        Database database,
+        CosmosContainerOptions containerOptions,
+        CancellationToken cancellationToken)
+    {
+        var properties = BuildContainerProperties(containerOptions);
 
         var response = await database.CreateContainerIfNotExistsAsync(
             properties,
@@ -78,36 +84,19 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
                 $"but configuration requires '{containerOptions.PartitionKeyPath}'. Reconcile the drift before starting the app.");
         }
 
-        // Indexing-policy drift is logged (not thrown) per ADR-0025 § 3.
-        // Re-applying a policy is a metadata-only operation and Cosmos
-        // re-indexes existing documents in the background; this differs
-        // from partition-key drift which would silently misroute writes.
-        // We only LogWarning here so the operator is alerted; an
-        // explicit reconcile path (re-running create-or-update) lives
-        // outside the scope of `--ensure-cosmos-containers`.
-        if (containerOptions.IndexingPolicy is { } expectedPolicy
-            && !IndexingPolicyMatches(response.Resource.IndexingPolicy, expectedPolicy))
-        {
-            _logger.LogWarning(
-                "Container '{Container}' indexing policy differs from configuration. Re-apply by deleting and recreating the container, or via Data Explorer. (data-plane provisioner does not auto-replace existing policies.)",
-                containerOptions.Name);
-        }
+        var indexDrift = containerOptions.IndexingPolicy is { } expectedPolicy
+            && !IndexingPolicyMatches(response.Resource.IndexingPolicy, expectedPolicy);
+        var ttlDrift = !TtlMatches(response.Resource.DefaultTimeToLive, containerOptions.DefaultTtlSeconds);
 
-        // TTL drift is logged (not thrown) for the same reason as
-        // indexing-policy drift: re-applying a TTL is a metadata-only
-        // operation. Mismatches surface to operators so a container
-        // created before the TTL decision was added (e.g.,
-        // `rag_dead_letters` provisioned pre-PR-6) can be reconciled
-        // by recreate or by editing the container settings via Data
-        // Explorer. Null-vs-set is a real drift; null-vs-null and
-        // matching-int values are silent matches.
-        if (!TtlMatches(response.Resource.DefaultTimeToLive, containerOptions.DefaultTtlSeconds))
+        if (indexDrift || ttlDrift)
         {
-            _logger.LogWarning(
-                "Container '{Container}' default TTL ({ActualTtl}) differs from configured value ({ExpectedTtl}). Re-apply by recreating the container, or by editing default TTL via Data Explorer.",
+            await database.GetContainer(containerOptions.Name)
+                .ReplaceContainerAsync(properties, cancellationToken: cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Container '{Container}' reconciled via data-plane to match configuration ({What}).",
                 containerOptions.Name,
-                FormatTtl(response.Resource.DefaultTimeToLive),
-                FormatTtl(containerOptions.DefaultTtlSeconds));
+                indexDrift && ttlDrift ? "index policy + default TTL" : indexDrift ? "index policy" : "default TTL");
+            return;
         }
 
         _logger.LogInformation(
@@ -132,13 +121,10 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
         }
     }
 
-    private static bool TtlMatches(int? actual, int? expected) =>
+    internal static bool TtlMatches(int? actual, int? expected) =>
         actual == expected;
 
-    private static string FormatTtl(int? ttl) =>
-        ttl?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none";
-
-    private static bool IndexingPolicyMatches(IndexingPolicy actual, CosmosIndexingPolicyOptions expected)
+    internal static bool IndexingPolicyMatches(IndexingPolicy actual, CosmosIndexingPolicyOptions expected)
     {
         var actualIncluded = actual.IncludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();
         var expectedIncluded = expected.IncludedPaths.OrderBy(p => p, StringComparer.Ordinal).ToArray();

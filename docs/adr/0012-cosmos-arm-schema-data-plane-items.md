@@ -84,3 +84,14 @@ The two RBAC systems are independent. Subscription Owner inheritance covers Azur
 - [PR #60](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/pull/60) — Bicep grants `Cosmos DB Built-in Data Contributor` to the developer principal at account scope
 - [`docs/build-spec.md`](../build-spec.md) Phase 2 § Scope item 1 — the scope entry that specified this ADR
 - [`docs/guardrails.md`](../guardrails.md) § "Locked decisions" — references this ADR as the canonical home for the rule
+
+## Amendment (2026-06-24): ensure reconciles drift in place
+
+`--ensure-cosmos-containers` is now the canonical **reconciler**, not only the creator. When an
+existing container's **index policy** or **default TTL** differs from the declared `CosmosOptions`,
+both provisioners update it in place — `ArmCosmosProvisioner` via `CreateOrUpdateAsync`,
+`DataPlaneCosmosProvisioner` via `Container.ReplaceContainerAsync` — and log at INFO. Index-policy
+updates are non-destructive (Cosmos re-indexes in the background); default-TTL changes are
+forward-only. **Partition key and throughput remain create-only** — a partition-key mismatch on an
+existing container still throws (it is a recreate, out of scope). Closes the drift surfaced in
+issue #494.
