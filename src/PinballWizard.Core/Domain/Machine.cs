@@ -66,6 +66,22 @@ public sealed class Machine : IEntity
     [JsonPropertyName("editions")]
     public List<MachineEdition> Editions { get; set; } = [];
 
+    /// <summary>Scraper-owned: game-level overview prose from the manufacturer game page.</summary>
+    [JsonPropertyName("overviewProse")]
+    public string? OverviewProse { get; set; }
+
+    /// <summary>Scraper-owned: canonical game-page URL the overview prose was scraped from (provenance for the GameOverview doc).</summary>
+    [JsonPropertyName("overviewSourceUrl")]
+    public string? OverviewSourceUrl { get; set; }
+
+    /// <summary>Scraper-owned: YouTube trailer watch URL from the manufacturer game page.</summary>
+    [JsonPropertyName("trailerUrl")]
+    public string? TrailerUrl { get; set; }
+
+    /// <summary>Scraper-owned: per-game accessories from the manufacturer shop section.</summary>
+    [JsonPropertyName("accessories")]
+    public List<MachineAccessory> Accessories { get; set; } = [];
+
     /// <summary>
     /// Edition-qualified OPDB label for this base when it shares a franchise
     /// (GroupId) with sibling bases — e.g. "Pro", "Premium/LE". Derived from the
@@ -159,4 +175,12 @@ public sealed class MachineEdition
     /// </summary>
     [JsonPropertyName("opdbSourceUrl")]
     public string? OpdbSourceUrl { get; set; }
+}
+
+public sealed class MachineAccessory
+{
+    [JsonPropertyName("name")] public required string Name { get; set; }
+    [JsonPropertyName("price")] public string? Price { get; set; }
+    [JsonPropertyName("productUrl")] public required string ProductUrl { get; set; }
+    [JsonPropertyName("imageUrl")] public string? ImageUrl { get; set; }
 }
