@@ -42,6 +42,7 @@ The autonomous-fix mode remains a documented, deliberate **upgrade path** (see O
 A single workflow file: `.github/workflows/pr-feedback-triage.yml`.
 
 ### Triggers
+
 ```yaml
 on:
   pull_request_review:
@@ -51,49 +52,61 @@ on:
   issue_comment:
     types: [created]   # PR conversation comments — where coverage/bot comments land
 ```
+
 This covers the exact #495 feedback shapes: a `pull_request_review` (the code-quality bot) and an `issue_comment` (the coverage bot).
 
 ### Governance via tool-scoping (defense in depth)
+
 The action runs **comment-only**. `allowedTools` grants read + `gh` comment/view/diff/api **only** — no `Edit`/`Write`/`git push`. So the workflow *cannot* push code even by mistake. Permissions block is correspondingly minimal:
+
 ```yaml
 permissions:
   contents: read
   pull-requests: write
   issues: write
 ```
+
 (No `contents: write`, no `id-token: write` — direct API-key auth, comment-only.)
 
 ### What Claude does (the `prompt:` input)
+
 Read the PR's review threads + inline comments + check results; classify each finding **mechanical vs. judgment**; post **one** triage comment containing:
+
 - a hidden marker `<!-- claude-triage -->` (loop-guard anchor),
 - mechanical findings with ready-to-apply patches/diffs,
 - judgment findings with reasoning and an explicit "needs your call",
 - and explicitly: do NOT edit files, do NOT push, do NOT approve/request-changes, post exactly one comment.
 
 ### Loop guard
+
 Job-level `if:` skips:
+
 - when `github.actor` is the action's own commenting identity (e.g. `github-actions[bot]` / the app bot), and
 - when the triggering comment body contains `<!-- claude-triage -->` (its own prior output).
 
 ### Fork / secret safety
+
 ```yaml
 if: github.event.pull_request.head.repo.full_name == github.repository
    # (for issue_comment, gate on the comment being on a same-repo PR)
 ```
+
 Uses the plain `pull_request_review`/`issue_comment` events (NOT `pull_request_target`), so fork PRs don't get the secret.
 
 ### Cost guard
+
 `claude_args: --max-turns 8 --model claude-sonnet-4-6` + the tight `--allowedTools` scope. The workflow no-ops cheaply when there's nothing actionable. Operates within the $300–400/mo envelope; API usage is billed separately (see Prerequisite).
 
 ### Verified config (anchors, confirmed against code.claude.com/docs 2026-06-24)
+
 - Action: `anthropics/claude-code-action@v1` (GA; `@beta` deprecated).
 - Auth: `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}`.
 - Autonomous (no `@claude` mention) runs are enabled by supplying the `prompt:` input.
 - v1 moved `model`/`max_turns`/`allowed_tools` under `claude_args` CLI flags.
 
-## Prerequisite (manual — user action, one-time)
+## Prerequisite — already satisfied
 
-Add an **`ANTHROPIC_API_KEY`** repository secret (Settings → Secrets and variables → Actions). Claude cannot add this; the workflow is inert until it exists. This is API-billed separately from the Claude subscription.
+The **`ANTHROPIC_API_KEY`** repository secret **already exists** in this repo's GitHub Actions secrets (confirmed by the maintainer 2026-06-24), so the workflow is **live on merge** — no setup step gates it. (API usage is billed separately from the Claude subscription; the cost guards above keep it bounded.) The implementation plan should still include a one-line verification that the secret is present before relying on it.
 
 ## Documentation deliverables (part of the product)
 
