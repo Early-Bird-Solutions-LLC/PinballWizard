@@ -130,6 +130,12 @@
         {
             Logger.LogWarning("Admin manufacturers: ingestion-source enrichment read timed out; rows degrade to keys.");
         }
+        // Deliberate broad boundary catch (Invariant #17 — honest failure): this is a
+        // customer-facing page that must never white-screen. The full exception is logged,
+        // so the failure degrades VISIBLY, it is not masked. Narrowing to specific types
+        // would let an unanticipated exception crash the page — the exact failure #17
+        // prevents. CodeQL cs/catch-of-all-exceptions is dismissed-with-justification here,
+        // not narrowed (see docs/ai-development-model.md § fix-or-justify).
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Admin manufacturers: ingestion-source enrichment read failed; rows degrade to keys.");
@@ -158,6 +164,11 @@
             Logger.LogWarning("Admin manufacturers rollup load timed out after 30 s.");
             _loadFailed = true;
         }
+        // Deliberate broad boundary catch (Invariant #17 — honest failure): the full
+        // exception is logged and the page shows a visible failure alert rather than
+        // white-screening. Narrowing would let an unanticipated exception type crash a
+        // customer-facing page. CodeQL cs/catch-of-all-exceptions is dismissed-with-
+        // justification here, not narrowed (see docs/ai-development-model.md § fix-or-justify).
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load manufacturer catalog stats.");
