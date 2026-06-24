@@ -108,3 +108,30 @@ Cli → ServiceDefaults.
   round-trip) belong in `PinballWizard.Infrastructure.IntegrationTests`
   when that project is created; they should not be mixed into the unit
   `.Tests` project.
+
+## 2026-06-24 amendment — category tags are the live boundary; separate `.IntegrationTests` / `.E2ETests` projects are not yet created
+
+The §1 suffix table (`.IntegrationTests`, `.E2ETests`) is the naming to use *if
+and when* a dedicated project is split out. In practice no such project exists:
+integration and end-to-end tests live as `[Trait("Category", "<…>")]`-tagged
+suites **inside the per-layer `.Tests` projects**, and CI selects them by
+category (`--filter "Category=E2E"`, `Category!=…` exclusions), not by project.
+Concretely as of this amendment:
+
+- **End-to-end** tests are `[Trait("Category", "E2E")]` in
+  `tests/PinballWizard.Web.Tests/E2E/` (`WizardE2ETests`), driving a real
+  browser → the live Web/Api → live Azure. They are run by the scheduled canary
+  (`canary.yml`) and the post-deploy gate (`deploy.yml`), and excluded from the
+  default CI filter. **This corrects §2's pointer to the `A11y/` tests as "the
+  canonical E2E example":** the A11y suite is `[Trait("Category", "Accessibility")]`
+  (browser-driven axe checks), a *separate* category from `E2E`; the canonical
+  E2E suite is `WizardE2ETests`.
+- **Integration** tests (live Cosmos emulator / Azure) live within the relevant
+  per-layer `.Tests` project, category-tagged — not in a separate
+  `.IntegrationTests` project.
+
+The `.IntegrationTests` / `.E2ETests` names remain the convention to adopt the
+day a suite is large or slow enough to warrant its own project (matching the
+"when that project is created" language above); until then, **category tags are
+the unit-vs-integration-vs-E2E boundary.** The one-project-per-production-project
+unit-test mapping in §3 is unchanged and accurate.
