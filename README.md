@@ -129,6 +129,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/local-development.md`](docs/local-development.md) | Seeding the local Cosmos emulator for a fully functional catalog; identity isolation; `matchTokens` data-shape contract |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
 | [`docs/ai-development-model.md`](docs/ai-development-model.md) | How this app is built — the AI-authored, human-governed operating model and the layered review process that makes AI-written code verifiable |
+| [`docs/learning-from-failure.md`](docs/learning-from-failure.md) | How incidents become permanent guarantees — the failure→memory→mechanical-guardrail loop, a registry of real conversions, and case studies |
 
 ## Project status
 
