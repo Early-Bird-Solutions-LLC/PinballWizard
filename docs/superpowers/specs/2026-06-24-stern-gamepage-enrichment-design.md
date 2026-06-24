@@ -62,29 +62,52 @@ All extraction stays on the existing path: Playwright-rendered DOM → AngleShar
 `PoliteScraperBase`/`IPolitenessGate`. No JSON API exists on the game page (verified — it is
 WordPress/Vue with server-rendered HTML). All surfaces are public and robots-clean.
 
-### A. Per-edition descriptive content → game-overview RAG document
+### A. Descriptive content → two channels (edition deltas + game-overview document)
 
 **The edition-preservation requirement is first-class:** the Wizard must be able to answer
 "what's different about the LE." We MUST NOT collapse editions into a lossy blob.
 
-- Walk the **Pro / Premium / LE edition tabs** on the game page. Capture each edition's prose
-  into its own `EditionInfo.Description` and `EditionInfo.UniqueFeatures` (these fields already
-  exist on `EditionInfo` and are currently under-populated — `GameRecord.cs`).
-- Synthesize **one game-overview document per game** (not per edition — avoids near-duplicate
-  chunks that hurt retrieval precision). The document contains the shared description once, plus
-  a **clearly-labeled section per edition** preserving every edition-specific difference and
-  attributing it to its edition. Capture the full descriptive block (no fragile marketing-filter
-  heuristics; the answer model ignores marketing prose at query time).
-- Mechanism follows the existing **`MetadataCardSynthesizer`** inline-text pattern (synthesized
-  content with no file download), keeping Clean Architecture intact. Introduce a new
-  `DocumentType.GameOverview` projecting to a snake-case index value (per ADR-0021 convention).
-- **Provenance (sacred):** the document's canonical source is the game page URL
-  (`sternpinball.com/game/{slug}/`); deterministic ID per ADR-0002/0004; `Source`,
-  `DiscoveryUrl`, `DiscoveryContext`, `GameSlug` all populated.
+Codebase grounding changed the mechanism from the original sketch. `GameRecord` is **transient**
+(not persisted to Cosmos); during scraping it is reconciled onto the persisted `Machine` record
+(`ScraperReconciliationService`). Two facts make most of the edition work nearly free:
 
-**Acceptance:** a synthesized game-overview doc for a multi-edition game contains each
-edition's distinct features, attributed; a test fixture with genuinely different Pro vs LE
-content asserts both survive into the synthesized text (behavior, not structure).
+- The reconciler's `MapEdition` **already copies** `EditionInfo.Description` + `UniqueFeatures`
+  onto `Machine.Editions` (ScraperReconciliationService.cs ~217-225).
+- `MetadataCardSynthesizer.AppendEdition` **already emits** each edition's `Description` +
+  `UniqueFeatures` into the synthesized metadata card.
+
+So this splits into **two channels**:
+
+**A1 — Per-edition deltas (reuse existing path).** The scraper populates each edition's
+`EditionInfo.Description` + `UniqueFeatures` (currently under-populated). These flow through the
+**existing** reconciler → MetadataCard → index path with *no* new doc type. This is the
+edition-difference preservation, attributed per edition, and serves the user's emphasis directly.
+
+**A2 — Long-form game-overview prose (new GameOverview document).** The shared multi-paragraph
+descriptive prose does **not** fit the metadata card's single ~150-token chunk budget, so it
+becomes a separate, properly-chunked document:
+
+- New `Machine.OverviewProse` field carries the game-level descriptive text (populated by the
+  scraper, persisted by the reconciler).
+- A new `GameOverviewSynthesizer` (sibling to `MetadataCardSynthesizer`) builds the document text
+  from `Machine.OverviewProse` plus a clearly-labeled per-edition section (so editions are
+  preserved here too, not just in the card). Chunked via the normal `HybridChunker`, not forced
+  to one chunk.
+- New `DocumentType.GameOverview` (its `.ToString()` is the index `document_type` value, matching
+  how `MetadataCard` is written today — there is NO snake-case conversion at write time;
+  `SearchCorpusTool.NormalizeDocumentType` maps the read-side alias). Indexed via the existing
+  `IRagIndexer.UpsertAsync` from a new `--sync-game-overviews` Cli verb mirroring
+  `--sync-metadata-cards` (streams `IMachineRepository`).
+- Capture the full descriptive block (no fragile marketing-filter heuristics; the answer model
+  ignores marketing prose at query time).
+- **Provenance (sacred):** the document's canonical source is the game page URL
+  (`sternpinball.com/game/{slug}/`); `ChunkRequest.DocumentUrl` = that URL; `DocumentId` =
+  `overview_{machine.Id}`; full attribution preserved.
+
+**Acceptance:** (A1) a fixture game with genuinely different Pro vs LE `Description`/`UniqueFeatures`
+produces a metadata card containing both, attributed. (A2) the `GameOverviewSynthesizer` over a
+machine with `OverviewProse` + an LE-only edition note produces text containing both the shared
+prose and the LE-specific note under an edition label (behavior, not structure).
 
 ### B. Feature Matrix PDF → RAG ingestion
 
@@ -132,15 +155,17 @@ spot that made the Godzilla coverage gap invisible.
 ## Data model changes (summary)
 
 | Change | Location |
-|---|---|
-| Populate `EditionInfo.Description` + `UniqueFeatures` per edition | scraper → `GameRecord` |
-| New `DocumentType.GameOverview` (+ snake-case index projection) | `Core/Models/Enums.cs` |
-| New `GameRecord.TrailerUrl` | `Core/Models/GameRecord.cs` |
-| New `GameRecord.Accessories` (+ `AccessoryInfo`) + shop collection URL | `Core/Models/GameRecord.cs` |
-| `FeatureMatrix` classification branch | `Application/ScraperOrchestrator.cs` |
+| --- | --- |
+| Scraper populates per-edition `EditionInfo.Description` + `UniqueFeatures` (reconciler `MapEdition` already maps these → no reconciler change for the deltas; flows into existing MetadataCard) | `GamePageScraper` extraction |
+| New `GameRecord.OverviewProse`, `TrailerUrl`, `Accessories` (+ `AccessoryInfo`), shop collection URL | `Core/Models/GameRecord.cs` |
+| New `Machine.OverviewProse`, `TrailerUrl`, `Accessories` (+ `MachineAccessory`) | `Core/Domain/Machine.cs` |
+| `ApplyScraperFields` copies the new `OverviewProse`/`TrailerUrl`/`Accessories` onto `Machine` | `Application/Sync/ScraperReconciliationService.cs` |
+| New `DocumentType.GameOverview` (written to index via `.ToString()`; read-side alias added) | `Core/Models/Enums.cs` + `Ai/Tools/SearchCorpusTool.cs` `NormalizeDocumentType` |
+| New `GameOverviewSynthesizer` (sibling to `MetadataCardSynthesizer`, chunked via `HybridChunker`) | `Application/Rag/...` |
+| New `--sync-game-overviews` Cli verb mirroring `--sync-metadata-cards` (streams `IMachineRepository`) | `Cli/Program.cs` |
+| `FeatureMatrix` classification branch | `Application/ScraperOrchestrator.cs` `ClassifyDocumentType` |
 | `FeatureMatrix` added to accepted types | `Core/Configuration/RagIngestionOptions.cs` |
-| `GameOverview` synthesizer (MetadataCard-pattern) | `Application/Rag/MetadataCards/` (or sibling) |
-| `Skipped_DocumentTypeFiltered` → metered counter | change-feed handler + ingestion pipeline |
+| New `RagIngestionTypeFiltered` counter + increments at both filter sites | `Application/Observability/PinballWizardTelemetry.cs` + `ScrapedDocumentChangeFeedHandler.cs` + `ScrapedDocumentIngestionPipeline.cs` |
 
 ## Cross-cutting requirements
 
