@@ -110,6 +110,7 @@ Capabilities verifiable directly in this repository:
 - **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)); OpenTelemetry throughout; Application Insights workbook (7 tiles); 5 metric alert rules; 6 operational runbooks; H-chain operator procedures
 - **Polite integration with external systems** — `robots.txt` honored unconditionally; machine-consumer metadata (OG / JSON-LD / sitemap) preferred over DOM scraping; identifying User-Agents; `IPolitenessGate` enforced at every outbound HTTP call
 - **Cost discipline** — $300–$400/month steady-state cap with cost-per-feature attribution; per-call LLM cost ceiling (ADR-0015)
+- **Disciplined AI-authored delivery** — AI writes nearly all the code under a human-governed process (spec → plan → TDD → first-party `/local-review` + `/standards-audit` → CI gates → independent CodeQL/code-quality safety net → whole-branch senior review → human merge); see [`docs/ai-development-model.md`](docs/ai-development-model.md)
 
 ## Documentation map
 
@@ -127,6 +128,8 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/observability.md`](docs/observability.md) | OTel instrument catalogue — scraper, RAG, AI orchestration, and user-delight instruments |
 | [`docs/local-development.md`](docs/local-development.md) | Seeding the local Cosmos emulator for a fully functional catalog; identity isolation; `matchTokens` data-shape contract |
 | [`CLAUDE.md`](CLAUDE.md) | Per-session context for Claude Code — locked invariants, PR self-audit protocol, showcase obligations |
+| [`docs/ai-development-model.md`](docs/ai-development-model.md) | How this app is built — the AI-authored, human-governed operating model and the layered review process that makes AI-written code verifiable |
+| [`docs/learning-from-failure.md`](docs/learning-from-failure.md) | How incidents become permanent guarantees — the failure→memory→mechanical-guardrail loop, a registry of real conversions, and case studies |
 
 ## Project status
 
