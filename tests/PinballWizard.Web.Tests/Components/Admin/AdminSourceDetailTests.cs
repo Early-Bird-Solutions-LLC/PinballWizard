@@ -517,4 +517,26 @@ public sealed class AdminSourceDetailRunHistoryTests : AsyncBunitContext
         cut.Find("[data-testid='source-config']");
         cut.Find("[data-testid='source-politeness']");
     }
+
+    [Fact]
+    public async Task RunHistory_ShowsProcessedAndNewColumns()
+    {
+        _scrapeRuns.StreamBySourceAsync(SternId, Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Runs(new ScrapeRunRecord
+            {
+                SourceId = SternId, RunAt = DateTimeOffset.UtcNow, DurationSeconds = 1,
+                Succeeded = true, DocumentsDiscovered = 200, DocumentsNew = 3,
+            }));
+
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("Processed", cut.Markup);
+            Assert.Contains("New", cut.Markup);
+            Assert.Contains("200", cut.Markup);
+            Assert.Contains("3", cut.Markup);
+        });
+    }
 }
