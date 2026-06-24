@@ -18,7 +18,7 @@ public sealed class AdminActionGuardTests : IDisposable
     {
         var services = new ServiceCollection();
         services.AddAuthorization(o =>
-            o.AddPolicy("AdminOnly", p => p.RequireRole("GlobalAdmin")));
+            o.AddPolicy(AuthorizationPolicies.AdminOnly, p => p.RequireRole("GlobalAdmin")));
         services.AddLogging();
         var provider = services.BuildServiceProvider();
         _providers.Add(provider);

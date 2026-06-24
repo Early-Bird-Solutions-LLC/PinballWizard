@@ -12,6 +12,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.A11y;
@@ -101,7 +102,7 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         if (_adminMode)
         {
             builder.Services.AddAuthorization(o =>
-                o.AddPolicy("AdminOnly", p => p.RequireAssertion(_ => true)));
+                o.AddPolicy(AuthorizationPolicies.AdminOnly, p => p.RequireAssertion(_ => true)));
             // Required so AdminLayout's <AuthorizeView Policy="AdminOnly"> has a
             // cascading Task<AuthenticationState> and does not throw during render
             // (which produces an empty document that axe reports as failing).

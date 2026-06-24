@@ -39,6 +39,7 @@ using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 using PinballWizard.Web.Hosting;
+using PinballWizard.Web.Security;
 using PinballWizard.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -117,7 +118,7 @@ if (isAuthConfigured)
     // cannot ship open.
     builder.Services.AddAuthorization(options =>
     {
-        options.AddPolicy("AdminOnly", policy => policy.RequireRole("GlobalAdmin"));
+        options.AddPolicy(AuthorizationPolicies.AdminOnly, policy => policy.RequireRole("GlobalAdmin"));
     });
 
     // Cascades Task<AuthenticationState> to components — /admin/settings
@@ -142,7 +143,7 @@ else
         // requirement applies wherever a real tenant is configured — which
         // includes the deployed app once AzureAd:TenantId lands (PR-B0
         // infra half).
-        options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
+        options.AddPolicy(AuthorizationPolicies.AdminOnly, policy => policy.RequireAssertion(_ => true));
     });
     // AddCascadingAuthenticationState is required on BOTH paths because
     // AdminLayout.razor renders <AuthorizeView Policy="AdminOnly">, which
