@@ -833,6 +833,27 @@ public sealed class CosmosRawDocumentRepositoryTests
     }
 
     // ────────────────────────────────────────────────────────────────
+    // StreamByRunIdAsync
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamByRunIdAsync_QueriesByRunId_CrossPartition()
+    {
+        QueryDefinition? captured = null;
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Do<QueryDefinition>(q => captured = q),
+                Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[]]));
+
+        await foreach (var _ in _repository.StreamByRunIdAsync("stern_20260624031712000Z", CancellationToken.None)) { }
+
+        Assert.NotNull(captured);
+        Assert.Contains("c.run_id = @runId", captured!.QueryText);
+        Assert.Contains(captured.GetQueryParameters(), p => p.Name == "@runId" && (string)p.Value == "stern_20260624031712000Z");
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // MapToDomain — null nested-object fallbacks (via GetAsync)
     // ────────────────────────────────────────────────────────────────
 

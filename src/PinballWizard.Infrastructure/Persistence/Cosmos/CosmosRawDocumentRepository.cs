@@ -261,6 +261,21 @@ internal sealed class CosmosRawDocumentRepository
         }
     }
 
+    // IRawDocumentRepository.StreamByRunIdAsync
+    public async IAsyncEnumerable<RawDocumentRecord> StreamByRunIdAsync(
+        string runId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+
+        var parameters = new Dictionary<string, object> { ["runId"] = runId };
+        await foreach (var cosmos in StreamCrossPartitionAsync(
+            "SELECT * FROM c WHERE c.run_id = @runId", parameters, cancellationToken).ConfigureAwait(false))
+        {
+            yield return MapToDomain(cosmos);
+        }
+    }
+
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
     private static RawDocumentCosmosRecord MapToCosmosRecord(DocumentRecord record)

@@ -61,7 +61,8 @@ public sealed class CrossPartitionQueryAllowListTests
         ["CosmosRawDocumentRepository.cs"] =
             "StreamCrossPartitionAsync in StreamByStatusAsync (linker IN-clause batch), " +
             "StreamAllAsync (admin full-scan), and StreamBySourcePatternAsync (linker " +
-            "CONTAINS pattern match); all are back-office / batch paths.",
+            "CONTAINS pattern match); all are back-office / batch paths, " +
+            "and StreamByRunIdAsync (per-run drill-down, back-office admin path).",
 
         // StreamCrossPartitionAsync — GetAllDocumentsAsync reads ~6 curated docs
         // for the landing page strip. Bounded to ~6 entries; ADR-0025 § 6 notes

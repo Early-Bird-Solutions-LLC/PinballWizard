@@ -53,4 +53,7 @@ public interface IRawDocumentRepository
     IAsyncEnumerable<RawDocumentRecord> StreamBySourcePatternAsync(
         string sourcePattern,
         CancellationToken cancellationToken);
+
+    // Stream all raw documents for a given scrape run_id — back-office admin drill-down.
+    IAsyncEnumerable<RawDocumentRecord> StreamByRunIdAsync(string runId, CancellationToken cancellationToken);
 }
