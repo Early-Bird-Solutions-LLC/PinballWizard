@@ -1,0 +1,87 @@
+name: PR Feedback Triage
+
+# Server-side, governed (comment-only) triage of PR review feedback.
+# Runs Claude on GitHub's runners to classify each finding mechanical-vs-judgment
+# and post ONE structured comment. It NEVER pushes code (tool-scoped + read-only
+# contents). See docs/adr/0041-pr-feedback-triage.md.
+#
+# NOTE: pull_request_review / issue_comment workflows run the copy of THIS file
+# on the default branch — so changes take effect after merge, not from a PR branch.
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+
+# One in-flight triage per PR; newer events supersede stale runs.
+concurrency:
+  group: pr-triage-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read          # base checkout only — never write, never push
+  pull-requests: write    # post the triage comment
+  issues: write           # PR conversation comments use the issues API
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    # Guards (all must hold):
+    #  - issue_comment also fires on plain issues — require a PR association
+    #  - loop guard: never react to our own triage comment (marker)
+    #  - fork/secret safety on review events: same-repo head only
+    if: >-
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request != null) &&
+      !contains(github.event.comment.body, '<!-- claude-triage -->') &&
+      (github.event_name == 'issue_comment' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      # Base ref only (no ref:) — untrusted PR head code is NEVER checked out or run,
+      # which is the real mitigation that makes comment-only safe even for fork PRs.
+      - name: Checkout base
+        uses: actions/checkout@v4
+
+      - name: Triage PR feedback (comment only)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+
+            A review event fired on this pull request. Your job is TRIAGE ONLY —
+            you must NOT edit files, push commits, approve, or request changes.
+
+            Steps:
+            1. Read the PR's review threads, inline review comments, and check
+               results. Use: `gh pr view <PR> --comments`, `gh pr diff <PR>`,
+               and `gh api repos/${{ github.repository }}/pulls/<PR>/comments`
+               and `.../reviews`. Read only the NEW, unaddressed feedback.
+            2. If there is no new actionable feedback (e.g. the only new comment is
+               your own prior triage, a coverage badge, or chit-chat), do NOTHING —
+               post no comment and exit. Cheap no-op.
+            3. Otherwise classify each finding:
+               - MECHANICAL: style/lint/format, missing-test, simple rename,
+                 obvious local fix.
+               - JUDGMENT: design/architecture/security/behavioral trade-off.
+            4. Post EXACTLY ONE comment via `gh pr comment <PR> --body <...>`.
+               The comment MUST begin with the literal marker on its own line:
+               <!-- claude-triage -->
+               Then two sections:
+               - "### Mechanical (ready-to-apply)" — each item with a concrete
+                 patch/diff or precise instruction a human can apply under their
+                 own identity.
+               - "### Needs your judgment" — each item with the reviewer's point
+                 and your reasoning, ending "→ your call".
+               If a section is empty, write "_None._" under it.
+
+            Constraints: post at most one comment; never modify code; never push;
+            never approve or request changes. If you cannot read the feedback,
+            say so honestly in the comment rather than guessing.
+          claude_args: |
+            --max-turns 8
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(gh pr comment:*)"
