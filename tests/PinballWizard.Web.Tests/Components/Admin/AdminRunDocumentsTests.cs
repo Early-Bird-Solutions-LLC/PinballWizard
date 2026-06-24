@@ -145,10 +145,52 @@ public sealed class AdminRunDocumentsTests : AsyncBunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid='run-docs-failed']"));
     }
 
+    [Fact]
+    public void LoadCancelled_IsTreatedAsBenign_NoErrorAlert()
+    {
+        var raw = Substitute.For<IRawDocumentRepository>();
+        raw.StreamByRunIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CancellingDocs());
+        Services.AddSingleton(raw);
+        Services.AddSingleton(Substitute.For<IMachineRepository>());
+
+        var cut = RenderRunDocs("stern", "stern_x");
+        // Cancellation is benign — no error alert should appear.
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("data-testid=\"run-docs-failed\"", cut.Markup));
+    }
+
+    [Fact]
+    public void Dispose_DoesNotThrow()
+    {
+        var raw = Substitute.For<IRawDocumentRepository>();
+        raw.StreamByRunIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Docs());
+        Services.AddSingleton(raw);
+        Services.AddSingleton(Substitute.For<IMachineRepository>());
+
+        var cut = RenderRunDocs("stern", "stern_x");
+        cut.WaitForAssertion(() => Assert.Contains("re-confirmed existing", cut.Markup));
+
+        // IDisposable is implemented by the component — dispose via the instance directly.
+        // The component becomes disposable via @implements IDisposable.
+        var ex = Record.Exception(() => ((IDisposable)cut.Instance).Dispose());
+        Assert.Null(ex);
+    }
+
     private static async IAsyncEnumerable<RawDocumentRecord> ThrowingDocs()
     {
         await Task.CompletedTask;
         throw new InvalidOperationException("simulated Cosmos failure");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
+    private static async IAsyncEnumerable<RawDocumentRecord> CancellingDocs()
+    {
+        await Task.CompletedTask;
+        throw new OperationCanceledException("simulated navigation-away cancellation");
 #pragma warning disable CS0162
         yield break;
 #pragma warning restore CS0162
