@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components;
 using PinballWizard.Web.Components.Pages;
 using IndexPage = PinballWizard.Web.Components.Pages.Index;
 using PinballWizard.Web.Components.Pages.Admin;
+using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Security;
@@ -32,7 +33,7 @@ public sealed class AuthorizationContractTests
             {
                 t.Name,
                 Anon = t.GetCustomAttribute<AllowAnonymousAttribute>() is not null,
-                Admin = t.GetCustomAttribute<AuthorizeAttribute>() is { Policy: "AdminOnly" },
+                Admin = t.GetCustomAttribute<AuthorizeAttribute>() is { } authz && authz.Policy == AuthorizationPolicies.AdminOnly,
             })
             .Where(x => x.Anon == x.Admin) // neither (both false) or both (both true)
             .Select(x => x.Name)
@@ -41,7 +42,7 @@ public sealed class AuthorizationContractTests
         Assert.True(
             offenders.Count == 0,
             "Routable admin component(s) lacking exactly one explicit auth classification " +
-            "([AllowAnonymous] XOR [Authorize(Policy=\"AdminOnly\")]). With no FallbackPolicy, " +
+            $"([AllowAnonymous] XOR [Authorize(Policy=\"{AuthorizationPolicies.AdminOnly}\")]). With no FallbackPolicy, " +
             "neither = accidentally PUBLIC: " + string.Join(", ", offenders));
     }
 

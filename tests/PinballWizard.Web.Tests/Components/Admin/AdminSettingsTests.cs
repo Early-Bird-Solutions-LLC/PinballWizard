@@ -8,6 +8,7 @@ using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Web.Components.Pages.Admin;
+using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
@@ -29,7 +30,7 @@ public sealed class AdminSettingsTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 
         _repo.GetAllAsync(Arg.Any<CancellationToken>())
@@ -266,7 +267,7 @@ public sealed class AdminSettingsLoadingStateTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 
         var slowRepo = Substitute.For<IAdminSettingsRepository>();

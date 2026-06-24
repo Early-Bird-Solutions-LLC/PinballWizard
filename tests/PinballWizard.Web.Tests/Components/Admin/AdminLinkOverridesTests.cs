@@ -29,7 +29,7 @@ public sealed class AdminLinkOverridesTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         // Register mocks BEFORE GetRequiredService — bUnit locks the service
@@ -109,7 +109,7 @@ public sealed class AdminLinkOverridesLoadingStateTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         var slowRepo = Substitute.For<ILinkOverrideRepository>();
@@ -158,7 +158,7 @@ public sealed class AdminLinkOverridesLoadFailureTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         var failRepo = Substitute.For<ILinkOverrideRepository>();
@@ -204,7 +204,7 @@ public sealed class AdminLinkOverridesAuthorizedActionTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();

@@ -227,7 +227,7 @@ public sealed class AdminDocumentTriageAuthorizedActionTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         var rawRepo = Substitute.For<IRawDocumentRepository>();

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
 using PinballWizard.Web.Components.Layout;
+using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Layout;
@@ -120,7 +121,7 @@ public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com")
-            .SetPolicies("AdminOnly");
+            .SetPolicies(AuthorizationPolicies.AdminOnly);
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 

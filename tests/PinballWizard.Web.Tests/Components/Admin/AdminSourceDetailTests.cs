@@ -235,7 +235,7 @@ public sealed class AdminSourceDetailToggleAuthorizedTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        this.AddAuthorization().SetAuthorized("test-admin@example.com").SetPolicies("AdminOnly");
+        this.AddAuthorization().SetAuthorized("test-admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         Services.AddScoped<AdminActionGuard>();
 
         var statsRepo = Substitute.For<ICatalogStatsReadRepository>();

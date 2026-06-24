@@ -10,6 +10,7 @@ using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 using PinballWizard.Web.Services;
+using PinballWizard.Web.Security;
 using PinballWizard.Web.Tests.A11y;
 using Xunit;
 
@@ -115,7 +116,7 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
         builder.Services.AddAuthentication();
         builder.Services.AddAuthorization(options =>
         {
-            options.AddPolicy("AdminOnly", policy => policy.RequireAssertion(_ => true));
+            options.AddPolicy(AuthorizationPolicies.AdminOnly, policy => policy.RequireAssertion(_ => true));
         });
         // Supplies the cascading Task<AuthenticationState> that AuthorizeView (in
         // AdminLayout) and [AllowAnonymous]/[Authorize] components require during SSR.

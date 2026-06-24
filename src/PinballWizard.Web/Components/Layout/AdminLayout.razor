@@ -24,6 +24,7 @@
 
 @using PinballWizard.Web.Components.Theming
 @using Microsoft.AspNetCore.Components.Authorization
+@using PinballWizard.Web.Security
 
 @* The MudBlazor providers are pinned to InteractiveServer — identical to
  * MainLayout. Admin is per-need render mode (ADR-0034 amendment, 2026-06-17):
@@ -97,7 +98,7 @@
     </MudDrawer>
 
     <MudMainContent>
-        <AuthorizeView Policy="AdminOnly">
+        <AuthorizeView Policy="@AuthorizationPolicies.AdminOnly">
             <NotAuthorized>
                 <MudAlert Severity="Severity.Info" Dense="true" Class="ma-2"
                           data-testid="admin-readonly-banner">

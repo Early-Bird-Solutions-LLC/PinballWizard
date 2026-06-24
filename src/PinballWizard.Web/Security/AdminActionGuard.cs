@@ -14,7 +14,7 @@ public sealed class AdminActionGuard(IAuthorizationService authorizationService)
     private static readonly ClaimsPrincipal Anonymous = new(new ClaimsIdentity());
 
     public async Task<bool> IsAdminAsync(ClaimsPrincipal user) =>
-        (await authorizationService.AuthorizeAsync(user, "AdminOnly")).Succeeded;
+        (await authorizationService.AuthorizeAsync(user, AuthorizationPolicies.AdminOnly)).Succeeded;
 
     public async Task<bool> IsAdminAsync(Task<AuthenticationState>? authState)
     {
