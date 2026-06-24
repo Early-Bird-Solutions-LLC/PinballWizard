@@ -169,6 +169,30 @@
                 </MudCardActions>
             </MudCard>
         </MudItem>
+
+        <MudItem xs="12" sm="4">
+            <MudCard Elevation="2" Class="admin-summary-card">
+                <MudCardContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Factory"
+                                 Color="Color.Primary"
+                                 Size="Size.Large" />
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.body1">Manufacturers</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Tertiary">catalog by brand</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Href="/admin/manufacturers"
+                               Variant="Variant.Text"
+                               Color="Color.Primary"
+                               Size="Size.Small">
+                        View manufacturers
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
     </MudGrid>
 </MudContainer>
 
