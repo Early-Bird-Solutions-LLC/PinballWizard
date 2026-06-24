@@ -24,7 +24,7 @@ real total, not just the Azure bill.
 | **Azure** | ACA Web App (Blazor + API, min=1 live) | ~$35/mo | **$35.00** |
 | **Azure** | ACA Jobs (scraper + indexer, schedule-triggered) | <$1/mo | **$1.00** |
 | **Azure** | Cosmos DB Serverless | $25–100/mo variable | **$25–100** |
-| **Azure** | Azure OpenAI completions (gpt-4o-mini + gpt-4.1 ~20%) | $10–40/mo variable | **$10–40** |
+| **Azure** | Azure OpenAI completions (gpt-4o + gpt-4.1 ~20%) | $10–40/mo variable | **$10–40** |
 | **Azure** | Azure OpenAI embeddings | ~$0.50/mo incremental | **$0.50** |
 | **Azure** | Container Registry Basic | $5/mo | **$5.00** |
 | **Azure** | Storage (blobs + downloads) | $2–5/mo | **$2–5** |
