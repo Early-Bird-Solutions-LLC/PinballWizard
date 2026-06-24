@@ -76,7 +76,9 @@ Some controls are not a single stage — they run through the whole process:
   A reviewer can trace *why* a subsystem is the way it is without reverse-engineering it.
 - **Memory.** Institutional knowledge — past incidents, hard-won gotchas, project
   constraints — persists across sessions, so the AI does not relearn (or repeat) the same
-  mistakes. This is how an AI-authored project accumulates judgment over time.
+  mistakes. This is how an AI-authored project accumulates judgment over time. See
+  [`learning-from-failure.md`](learning-from-failure.md) for how specific incidents became
+  permanent mechanical guardrails.
 - **Provenance.** Every captured item traces back to its source URL (see the provenance
   model in [`../CLAUDE.md`](../CLAUDE.md)); the same fidelity that powers RAG citations also
   makes the data auditable.
