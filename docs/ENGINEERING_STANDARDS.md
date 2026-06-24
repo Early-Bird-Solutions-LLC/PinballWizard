@@ -297,6 +297,14 @@ Use `Microsoft.Extensions.Http.Resilience` (Polly v8). Every named `HttpClient` 
 - **Unit tests** cover all logic that has branches, transforms, or invariants. Pure functions, parsers, the `DocumentRecord` ID hashing, the `FileOrganizer` URL-to-path mapping, the `CatalogBuilder` deduplication and cross-referencing, change-detection diffing.
 - **Integration tests** cover the seam between code and the outside world using fixtures: HTML fixtures from sternpinball.com (saved offline, never live), a `WireMock.Net` server for HTTP, a temp directory for file I/O. Playwright tests use saved HTML fixtures via `page.SetContentAsync`.
 - **Live smoke tests** are a separate marked category (`[Trait("Category", "Live")]`) excluded from CI by default. They hit the real site and verify a single document is discoverable end-to-end. Run manually before a release.
+- **End-to-end (E2E) tests** are a separate marked category (`[Trait("Category", "E2E")]`), excluded from the default CI filter. They drive a real browser (Playwright) → the live Web app → Api → live Azure (Cosmos / AI Search / Foundry), proving behaviors no in-process test can see. They run in two modes — against an already-deployed target (`E2E__BaseUrl` set) or a locally-spun Aspire stack — and are executed by the 6-hourly scheduled canary ([`canary.yml`](../.github/workflows/canary.yml)), the post-deploy gate ([`deploy.yml`](../.github/workflows/deploy.yml)), and locally before changes to the answer path, render modes, or hosting config. The suite ([`WizardE2ETests.cs`](../tests/PinballWizard.Web.Tests/E2E/WizardE2ETests.cs)):
+
+| E2E test | Asserts | Guards against |
+| --- | --- | --- |
+| `Landing_SeedQuestionCard_IsClickable_AndNavigatesToWizard` | the Blazor circuit becomes interactive — clicking a seed-question card navigates to the Wizard | the 2026-06-10 inert-circuit regression (page prerenders but the circuit never becomes interactive) |
+| `AskFlow_GodzillaQuestion_ReturnsCitedAnswer` | a single ask returns an answer carrying a clickable citation | a broken citation chain across the camelCase tool-trace seam |
+| `AskFlow_RepeatedQuestion_CachedAnswerStillRendersCitations` | a cache-hit replay still renders its citations | cache-path citation loss (PR #365) |
+| `AskFlow_FollowUp_CarriesConversationContext` | a pronoun-only follow-up ("who designed it") is answered from conversation history | multi-turn context not surviving the wire |
 
 ### 7.2 What we don't test
 

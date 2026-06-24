@@ -84,6 +84,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 - **bUnit component tests (Phase 5)**: [`tests/PinballWizard.Web.Tests/Components/`](../tests/PinballWizard.Web.Tests/Components/) — component-level unit tests for every interactive Razor component using bUnit 2.x. 29 test files covering the delight surfaces (`WizardAnswerStream`, `RefusalPanel`, `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`) and admin components. Required for any component beyond static markup; any new interactive component must add a bUnit smoke test in the same PR per PR self-audit item 9d.
 - **Lighthouse CI (Phase 5)**: [`.github/workflows/lighthouse.yml`](../.github/workflows/lighthouse.yml) — runs on every PR touching Blazor/Web files. Thresholds enforced via `.lighthouserc.json`: Performance ≥70 (warn), Accessibility ≥90 (error), Best-Practices ≥90 (error), SEO ≥90 (warn). Failing threshold = failing CI job. Complements the axe-core accessibility gate in `Code quality § Currently in place`.
+- **End-to-end (E2E) suite**: [`tests/PinballWizard.Web.Tests/E2E/WizardE2ETests.cs`](../tests/PinballWizard.Web.Tests/E2E/WizardE2ETests.cs) — four browser-driven (Playwright) tests against the live deployed app, run by the 6-hourly scheduled canary + the post-deploy gate; CI-excluded (they need a live stack). Full per-test inventory in [`ENGINEERING_STANDARDS.md` § 7.1 — What we test](ENGINEERING_STANDARDS.md#71-what-we-test).
 
 ### Discipline (currently cultural; mutation testing will validate mechanically from Phase 3)
 
