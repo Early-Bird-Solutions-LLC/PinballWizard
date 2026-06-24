@@ -302,6 +302,11 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a single Cosmos Change Feed batch handled by the W3-2 RagIngestionWorker — measured at the hosted-service `HandleChangesAsync` boundary so it captures total per-batch time including dead-letter lookups, handler invocations, and upsert calls. Operators chart p50/p95 to detect ingestion slowdowns before they become lease-lag spikes. Tagged with `batch_size_bucket` (`1`, `2-10`, `11-50`, `51+`) so dashboards can attribute latency growth to batch-size shifts vs. per-document slowdown.");
 
+    public static readonly Counter<long> RagIngestionTypeFiltered = Meter.CreateCounter<long>(
+        "pinwiz.rag.ingestion_type_filtered_total",
+        unit: "{document}",
+        description: "Documents skipped before download because their document_type is not in the RAG accepted-types set. Tagged with document_type. A persistent nonzero rate for a type you EXPECT to ingest means a classification or accept-list gap — the silent-drop class that hid the Domain-2 gameplay gap.");
+
     public static readonly Counter<long> RagChangefeedDeadLetterTotal = Meter.CreateCounter<long>(
         "pinwiz.rag.changefeed_dead_letter_total",
         unit: "{document}",

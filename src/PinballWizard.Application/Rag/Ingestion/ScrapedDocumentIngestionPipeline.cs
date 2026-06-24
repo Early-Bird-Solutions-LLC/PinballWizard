@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Rag.Indexing;
@@ -82,6 +83,8 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
             _logger.LogDebug(
                 "RAG ingestion skipped — document {DocumentId} is type {DocumentType}, not in accepted set.",
                 change.DocumentId, change.DocumentType);
+            PinballWizardTelemetry.RagIngestionTypeFiltered.Add(
+                1, new KeyValuePair<string, object?>("document_type", change.DocumentType.ToString()));
             return IngestionOutcome.Skipped_DocumentTypeFiltered;
         }
 
