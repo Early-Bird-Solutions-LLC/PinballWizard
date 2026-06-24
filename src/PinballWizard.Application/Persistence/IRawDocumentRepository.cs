@@ -2,6 +2,10 @@ using PinballWizard.Core.Models;
 
 namespace PinballWizard.Application.Persistence;
 
+public enum UpsertOutcome { Created, Updated }
+
+public readonly record struct RawDocumentUpsertResult(RawDocumentRecord Record, UpsertOutcome Outcome);
+
 // Read/write abstraction for the `scraped_documents_raw` Cosmos container.
 //
 // Each record represents a unique file URL (partition key: document_id).
@@ -15,7 +19,9 @@ public interface IRawDocumentRepository
     //   - adds new cross-references from record.CrossReferences
     //   - updates content_hash if hash has changed
     // If new: inserts with link_status = Pending.
-    Task<RawDocumentRecord> UpsertRawAsync(DocumentRecord record, CancellationToken cancellationToken);
+    // Returns Created on first insert; Updated on re-discovery.
+    // run_id is write-once: set on insert, never overwritten on update.
+    Task<RawDocumentUpsertResult> UpsertRawAsync(DocumentRecord record, CancellationToken cancellationToken);
 
     // Stream all records where LinkStatus is in the given set.
     IAsyncEnumerable<RawDocumentRecord> StreamByStatusAsync(

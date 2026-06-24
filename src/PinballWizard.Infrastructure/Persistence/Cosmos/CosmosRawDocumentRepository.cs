@@ -22,7 +22,7 @@ internal sealed class CosmosRawDocumentRepository
     }
 
     // IRawDocumentRepository.UpsertRawAsync
-    public async Task<RawDocumentRecord> UpsertRawAsync(
+    public async Task<RawDocumentUpsertResult> UpsertRawAsync(
         DocumentRecord record,
         CancellationToken cancellationToken)
     {
@@ -36,6 +36,8 @@ internal sealed class CosmosRawDocumentRepository
         {
             // Preserve all linker-managed state; update only what the
             // scraper owns: timeline.last_checked_at and cross-references.
+            // run_id is write-once: the original value on `existing` is kept;
+            // record.RunId (from the current run) is intentionally NOT copied here.
             existing.Timeline ??= new RawTimelineInfo
             {
                 FirstDiscoveredAt = record.Timeline.FirstDiscoveredAt,
@@ -79,14 +81,15 @@ internal sealed class CosmosRawDocumentRepository
             }
 
             cosmos = existing;
+            await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
+            return new RawDocumentUpsertResult(MapToDomain(cosmos), UpsertOutcome.Updated);
         }
         else
         {
-            cosmos = MapToCosmosRecord(record);
+            cosmos = MapToCosmosRecord(record);     // record.RunId flows through (Task 3 map)
+            await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
+            return new RawDocumentUpsertResult(MapToDomain(cosmos), UpsertOutcome.Created);
         }
-
-        await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
-        return MapToDomain(cosmos);
     }
 
     // IRawDocumentRepository.StreamByStatusAsync

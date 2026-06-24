@@ -168,8 +168,8 @@ public sealed class ScraperOrchestratorTests : IDisposable
     public async Task ScrapeAsync_WithRawDocRepo_UpsertsEachLink()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
-        // UpsertRawAsync returns Task<RawDocumentRecord>; the orchestrator does not
-        // use the return value, so the default (null!) substitute return is fine.
+        // UpsertRawAsync returns Task<RawDocumentUpsertResult>; the orchestrator does not
+        // use the return value, so the default (default(RawDocumentUpsertResult)) substitute return is fine.
 
         var scraper = new StubScraper("Manuals", [
             MakeLinkItem(
