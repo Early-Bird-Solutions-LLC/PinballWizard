@@ -62,6 +62,25 @@ public sealed class ArmCosmosProvisionerTests
     }
 
     [Fact]
+    public void IndexingPolicyMatches_TrueWhenActualHasCosmosSystemEtagExclusion()
+    {
+        // Cosmos auto-adds /\"_etag\"/? to ExcludedPaths; the configured expected
+        // list only contains "/*". The match must still return true.
+        var actual = new CosmosDBIndexingPolicy();
+        actual.IncludedPaths.Add(new CosmosDBIncludedPath { Path = "/document_id/?" });
+        actual.IncludedPaths.Add(new CosmosDBIncludedPath { Path = "/run_id/?" });
+        actual.ExcludedPaths.Add(new CosmosDBExcludedPath { Path = "/*" });
+        actual.ExcludedPaths.Add(new CosmosDBExcludedPath { Path = "/\"_etag\"/?" });
+        var expected = new CosmosIndexingPolicyOptions
+        {
+            IncludedPaths = ["/document_id/?", "/run_id/?"],
+            ExcludedPaths = ["/*"],
+        };
+
+        Assert.True(ArmCosmosProvisioner.IndexingPolicyMatches(actual, expected));
+    }
+
+    [Fact]
     public void TtlMatches_TrueOnlyOnExactNullableEquality()
     {
         Assert.True(ArmCosmosProvisioner.TtlMatches(null, null));
