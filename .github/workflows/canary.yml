@@ -114,8 +114,6 @@ jobs:
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "Still failing. $body"
           else
-            gh issue create --title "$title" --label bug \
-              --body "The 6-hourly E2E canary failed against the live site. $body
-
-Triage: check the run's TRX artifact; the four tests cover circuit interactivity, cited asks, cache-hit replay, and multi-turn follow-up. Close this issue when a run goes green."
+            alarm_body=$(printf 'The 6-hourly E2E canary failed against the live site. %s\n\nTriage: check the TRX artifact; the four tests cover circuit interactivity, cited asks, cache-hit replay, and multi-turn follow-up. Close this issue when a run goes green.' "$body")
+            gh issue create --title "$title" --label bug --body "$alarm_body"
           fi
