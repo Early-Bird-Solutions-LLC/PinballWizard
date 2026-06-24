@@ -325,6 +325,7 @@ internal sealed class CosmosRawDocumentRepository
                     DiscoveredAt = x.DiscoveredAt,
                 })
                 .ToList(),
+            RunId = record.RunId,
         };
     }
 
@@ -432,6 +433,7 @@ internal sealed class CosmosRawDocumentRepository
                     DiscoveredAt = x.DiscoveredAt,
                 })
                 .ToList(),
+            RunId = cosmos.RunId,
         };
     }
 

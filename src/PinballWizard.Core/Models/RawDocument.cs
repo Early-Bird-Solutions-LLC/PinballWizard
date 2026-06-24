@@ -35,6 +35,8 @@ public sealed class RawDocumentRecord
 
     public string? ContentHash { get; init; }
 
+    public string? RunId { get; set; }
+
     // Linker-managed fields below
 
     public LinkStatus LinkStatus { get; set; } = LinkStatus.Pending;

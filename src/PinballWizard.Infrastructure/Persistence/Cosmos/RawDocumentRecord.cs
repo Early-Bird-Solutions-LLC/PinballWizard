@@ -74,6 +74,9 @@ internal sealed class RawDocumentCosmosRecord : IEntity
 
     [JsonPropertyName("cross_references")]
     public List<RawCrossRef> CrossReferences { get; set; } = [];
+
+    [JsonPropertyName("run_id")]
+    public string? RunId { get; set; }
 }
 
 internal sealed class RawSourceInfo

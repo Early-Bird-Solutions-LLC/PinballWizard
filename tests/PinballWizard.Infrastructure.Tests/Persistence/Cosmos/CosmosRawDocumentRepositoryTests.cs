@@ -105,6 +105,24 @@ public sealed class CosmosRawDocumentRepositoryTests
     // ────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task UpsertRawAsync_NewDocument_PersistsRunId()
+    {
+        var record = MakeDocumentRecord("doc_runid");
+        SetupGetByIdNotFound(record.DocumentId);
+        record.RunId = "stern_20260624031712000Z";
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.UpsertRawAsync(record, CancellationToken.None);
+
+        Assert.Equal("stern_20260624031712000Z", captured!.RunId);
+    }
+
+    [Fact]
     public async Task UpsertRawAsync_ExistingDocument_PreservesLinkerManagedFields()
     {
         const string docId = "doc_existing";
