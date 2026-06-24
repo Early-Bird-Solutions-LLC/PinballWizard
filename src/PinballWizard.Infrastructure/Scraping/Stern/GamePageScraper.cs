@@ -179,7 +179,7 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
                     game.Slug);
             }
 
-            return new GameRecord
+            var record = new GameRecord
             {
                 GameId = GameRecord.GenerateId(game.Slug),
                 Title = title,
@@ -195,6 +195,7 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
                     ScrapedAt = DateTime.UtcNow
                 }
             };
+            return ApplyPageContent(record, doc);
         }
         catch (Exception ex) when (ex is PlaywrightException or InvalidOperationException
                                       or NullReferenceException or FormatException
@@ -311,6 +312,17 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
         }
 
         return false;
+    }
+
+    // Pure mapping of rendered-page content onto the GameRecord. internal for
+    // unit testing without driving Playwright (see GamePageScraperContentTests).
+    internal static GameRecord ApplyPageContent(GameRecord record, AngleSharp.Dom.IDocument doc)
+    {
+        record.OverviewProse = GamePageContentExtractor.ExtractOverviewProse(doc);
+        record.TrailerUrl = GamePageContentExtractor.ExtractTrailerUrl(doc);
+        record.Accessories = GamePageContentExtractor.ExtractAccessories(doc);
+        record.ShopCollectionUrl = GamePageContentExtractor.ExtractShopCollectionUrl(doc);
+        return record;
     }
 
     // Class-with-settable-properties (not a positional record) because
