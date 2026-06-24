@@ -24,7 +24,7 @@ real total, not just the Azure bill.
 | **Azure** | ACA Web App (Blazor + API, min=1 live) | ~$35/mo | **$35.00** |
 | **Azure** | ACA Jobs (scraper + indexer, schedule-triggered) | <$1/mo | **$1.00** |
 | **Azure** | Cosmos DB Serverless | $25–100/mo variable | **$25–100** |
-| **Azure** | Azure OpenAI completions (gpt-4o-mini + gpt-4.1 ~20%) | $10–40/mo variable | **$10–40** |
+| **Azure** | Azure OpenAI completions (gpt-4o + gpt-4.1 ~20%) | $10–40/mo variable | **$10–40** |
 | **Azure** | Azure OpenAI embeddings | ~$0.50/mo incremental | **$0.50** |
 | **Azure** | Container Registry Basic | $5/mo | **$5.00** |
 | **Azure** | Storage (blobs + downloads) | $2–5/mo | **$2–5** |
@@ -101,6 +101,40 @@ within the $400/mo cap.
    grows past the free-tier threshold, cost impact must be assessed before it happens.
 
 ---
+
+## Development-process economics
+
+The tables above price one axis — **cost-to-run**: the Azure + Cloudflare bill to operate
+pinwiz.ai, held under the $400/mo hard cap ($300 alert; ~$195–370/mo steady state). This
+section names the other axis — **cost-to-build**: what it costs to author and maintain the app
+when AI writes nearly all the code. They are different axes and are not conflated below.
+
+**Why AI-authored delivery is cost-disciplined.**
+
+- **Review economics.** The layered review (first-party `/local-review` + `/standards-audit`,
+  then the independent CodeQL / code-quality safety net) is designed to catch issues *before* a
+  human-reviewer round-trip, and far before a production incident. The cost gradient is real and
+  directional — a pre-PR automated check is cheaper than a reviewer round-trip, which is cheaper
+  than a prod incident and the guardrail work it triggers — even though the absolute per-review
+  dollar cost for this repo is not separately metered (see the honest gap below).
+- **Model-tier discipline.** Mechanical work runs on cheaper models; design, planning, and
+  whole-branch review reserve the strongest model. This is the *build* tooling's discipline —
+  distinct from the application's *runtime* model routing (next paragraph).
+- **Compounding via memory + guardrails.** Each incident is converted into a mechanical guard
+  (see [`learning-from-failure.md`](learning-from-failure.md)), so a class of bug is paid for
+  once rather than every time it would recur — a cost lever specific to a project with
+  institutional memory.
+
+**The honest gap.** Dev-process token/$ spend is **not** currently metered per feature or per
+session, so this document states no per-feature build-cost figure. It could be captured as a
+future lever — per-session token accounting rolled up per PR — at which point real numbers would
+replace this qualitative account. Until then, the build-axis claim is structural, not numeric.
+
+**Cost-to-run cross-link (different axis).** The application's runtime AI spend is governed
+separately by [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md): per-agent model routing
+(`gpt-4o` default, `gpt-4.1` on the ~15–20% escalation path), a per-call cost ceiling, and
+an in-process semantic cache — all inside the $400/mo cap priced above. Those are cost-to-run
+figures; they are not build cost.
 
 ## Deferred / future cost levers
 
