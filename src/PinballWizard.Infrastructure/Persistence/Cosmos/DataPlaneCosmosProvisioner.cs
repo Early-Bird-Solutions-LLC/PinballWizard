@@ -124,9 +124,6 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
     internal static bool TtlMatches(int? actual, int? expected) =>
         actual == expected;
 
-    private static string FormatTtl(int? ttl) =>
-        ttl?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none";
-
     internal static bool IndexingPolicyMatches(IndexingPolicy actual, CosmosIndexingPolicyOptions expected)
     {
         var actualIncluded = actual.IncludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();

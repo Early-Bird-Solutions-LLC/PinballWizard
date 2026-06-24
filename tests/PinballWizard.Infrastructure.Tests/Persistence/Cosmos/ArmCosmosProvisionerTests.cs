@@ -31,6 +31,22 @@ public sealed class ArmCosmosProvisionerTests
     }
 
     [Fact]
+    public void IndexingPolicyMatches_TrueWhenPathsMatch()
+    {
+        var actual = new CosmosDBIndexingPolicy();
+        actual.IncludedPaths.Add(new CosmosDBIncludedPath { Path = "/document_id/?" });
+        actual.IncludedPaths.Add(new CosmosDBIncludedPath { Path = "/run_id/?" });
+        actual.ExcludedPaths.Add(new CosmosDBExcludedPath { Path = "/*" });
+        var expected = new CosmosIndexingPolicyOptions
+        {
+            IncludedPaths = ["/document_id/?", "/run_id/?"],
+            ExcludedPaths = ["/*"],
+        };
+
+        Assert.True(ArmCosmosProvisioner.IndexingPolicyMatches(actual, expected));
+    }
+
+    [Fact]
     public void IndexingPolicyMatches_FalseWhenIncludedPathsDiffer()
     {
         var actual = new CosmosDBIndexingPolicy();
