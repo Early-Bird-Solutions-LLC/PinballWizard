@@ -235,6 +235,12 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
     internal static bool TtlMatches(int? actual, int? expected) =>
         actual == expected;
 
+    // Cosmos automatically injects this system-managed path into ExcludedPaths on every
+    // container. It is never present in our CosmosIndexingPolicyOptions configuration,
+    // so a naive set-equality check would always report drift. Strip it from the actual
+    // set before comparing so the drift check remains idempotent.
+    private const string CosmosSystemEtagExcludedPath = "/\"_etag\"/?";
+
     internal static bool IndexingPolicyMatches(CosmosDBIndexingPolicy? actual, CosmosIndexingPolicyOptions expected)
     {
         if (actual is null)
@@ -243,7 +249,9 @@ public sealed class ArmCosmosProvisioner : ICosmosProvisioner
         }
         var actualIncluded = actual.IncludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();
         var expectedIncluded = expected.IncludedPaths.OrderBy(p => p, StringComparer.Ordinal).ToArray();
-        var actualExcluded = actual.ExcludedPaths.Select(p => p.Path).OrderBy(p => p, StringComparer.Ordinal).ToArray();
+        var actualExcluded = actual.ExcludedPaths.Select(p => p.Path)
+            .Where(p => p != CosmosSystemEtagExcludedPath)
+            .OrderBy(p => p, StringComparer.Ordinal).ToArray();
         var expectedExcluded = expected.ExcludedPaths.OrderBy(p => p, StringComparer.Ordinal).ToArray();
         return actualIncluded.SequenceEqual(expectedIncluded, StringComparer.Ordinal)
             && actualExcluded.SequenceEqual(expectedExcluded, StringComparer.Ordinal);

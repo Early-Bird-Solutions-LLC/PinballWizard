@@ -57,6 +57,25 @@ public sealed class DataPlaneCosmosProvisionerTests
             Arg.Any<ContainerProperties>(), Arg.Any<ContainerRequestOptions>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public void IndexingPolicyMatches_TrueWhenActualHasCosmosSystemEtagExclusion()
+    {
+        // Cosmos auto-adds /\"_etag\"/? to ExcludedPaths; the configured expected
+        // list only contains "/*". The match must still return true.
+        var actual = new IndexingPolicy();
+        actual.IncludedPaths.Add(new IncludedPath { Path = "/document_id/?" });
+        actual.IncludedPaths.Add(new IncludedPath { Path = "/run_id/?" });
+        actual.ExcludedPaths.Add(new ExcludedPath { Path = "/*" });
+        actual.ExcludedPaths.Add(new ExcludedPath { Path = "/\"_etag\"/?" });
+        var expected = new CosmosIndexingPolicyOptions
+        {
+            IncludedPaths = ["/document_id/?", "/run_id/?"],
+            ExcludedPaths = ["/*"],
+        };
+
+        Assert.True(DataPlaneCosmosProvisioner.IndexingPolicyMatches(actual, expected));
+    }
+
     private static CosmosContainerOptions ScrapedDocsOpts() => new()
     {
         Name = "scraped_documents_raw",
