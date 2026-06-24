@@ -86,6 +86,11 @@ public sealed class CosmosOptions
     /// </summary>
     public IReadOnlyList<CosmosContainerOptions> Containers { get; init; } =
     [
+        // Default indexing (IndexingPolicy = null) is intentional: all paths — including
+        // run_id — stay indexed. A selective IndexingPolicy here would silently drop run_id
+        // indexing, breaking the StreamByRunIdAsync query that drives the admin run-drilldown
+        // view (AdminRunDocuments). Do NOT add a selective policy unless you also add run_id
+        // to the explicit IncludedPaths.
         new() { Name = "machines", PartitionKeyPath = "/manufacturer" },
         new() { Name = "ingestion_sources", PartitionKeyPath = "/partitionKey" },
         // Title→OPDB-ID materialized view per ADR-0025 § 4. The Wizard's

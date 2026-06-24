@@ -51,6 +51,8 @@ else
             {
                 await foreach (var d in RawDocs.StreamByRunIdAsync(RunId, CancellationToken.None))
                 {
+                    // Source.FileUrl is the as-scraped provenance URL (the direct link to the
+                    // file or page as discovered by the scraper), not a resolved download URL.
                     _items.Add($"{d.Source.FileUrl} · {d.DocumentType}");
                 }
             }

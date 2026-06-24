@@ -331,6 +331,8 @@ public sealed class ScraperOrchestratorTests : IDisposable
         Assert.Equal(1, written.DocumentsNew);          // only the Created one
     }
 
+    // Minimal domain record for test wiring — adapts a DocumentRecord into the
+    // RawDocumentRecord shape returned by UpsertRawAsync stubs in this file.
     private static RawDocumentRecord MapDomain(DocumentRecord record) => new()
     {
         DocumentId = record.DocumentId,
