@@ -79,15 +79,23 @@ public static class GamePageContentExtractor
 
     /// <summary>
     /// Joins descriptive <c>&lt;p&gt;</c> blocks from the page into overview prose.
+    /// Scopes to <c>&lt;main&gt;</c> when present so cookie-consent banners, nav, and footer
+    /// newsletter copy don't pollute the game-overview prose. Falls back to the whole
+    /// document when there is no <c>&lt;main&gt;</c> (other manufacturers / test fixtures).
     /// Short fragments (under 40 characters) — nav labels, captions — are skipped.
     /// Returns null when no qualifying paragraphs are found.
     /// </summary>
     public static string? ExtractOverviewProse(IDocument doc)
     {
-        // Descriptive paragraphs live in the game content/edition area. Join the
-        // non-trivial <p> blocks; the answer model tolerates incidental marketing.
+        // Scope to <main> when present so cookie-consent banners, nav, and footer
+        // newsletter copy don't pollute the game-overview prose. Fall back to the
+        // whole document when there's no <main> (other manufacturers / test fixtures).
+        // The answer model tolerates incidental marketing inside <main>; we only
+        // exclude non-content chrome, never real game prose.
+        IParentNode scope = doc.QuerySelector("main") ?? (IParentNode)doc;
+
         var sb = new StringBuilder();
-        foreach (var p in doc.QuerySelectorAll("p"))
+        foreach (var p in scope.QuerySelectorAll("p"))
         {
             var t = p.TextContent?.Trim();
             if (string.IsNullOrEmpty(t) || t.Length < 40) continue;   // skip nav/labels/short fragments

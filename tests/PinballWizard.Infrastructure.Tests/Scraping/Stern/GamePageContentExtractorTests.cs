@@ -56,4 +56,24 @@ public sealed class GamePageContentExtractorTests
         Assert.Contains("catch Pokémon", prose, StringComparison.Ordinal);
         Assert.Contains("electromagnet", prose, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ExtractOverviewProse_ScopesToMain_ExcludesCookieAndNavBoilerplate()
+    {
+        var html = """
+        <html><body>
+          <div class="cookie-banner"><p>With your consent, we and other third-party service providers may store cookies on your browser to personalize your experience.</p></div>
+          <main>
+            <p>Today, Stern Pinball revealed Pokémon by Stern Pinball, bringing the thrill of catching and battling Pokémon to the silverball arena.</p>
+            <p>Premium and Limited Edition games include an interactive electromagnet that adds chaos to the battle arena.</p>
+          </main>
+          <footer><p>Sign up for Pokémon by Stern Pinball updates and never miss a new release announcement from us.</p></footer>
+        </body></html>
+        """;
+        var prose = GamePageContentExtractor.ExtractOverviewProse(Parse(html));
+        Assert.Contains("catching and battling Pokémon", prose, StringComparison.Ordinal);   // game prose kept
+        Assert.Contains("interactive electromagnet", prose, StringComparison.Ordinal);       // edition delta kept
+        Assert.DoesNotContain("consent", prose, StringComparison.Ordinal);                   // cookie text excluded
+        Assert.DoesNotContain("Sign up", prose, StringComparison.Ordinal);                   // footer excluded
+    }
 }
