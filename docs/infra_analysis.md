@@ -46,7 +46,7 @@ Cloudflare terminates TLS at the edge and forwards clean traffic to Azure. Cloud
 
 | Resource | Service | Notes |
 | --- | --- | --- |
-| AI Models | Azure OpenAI | `gpt-4o-mini` default, `gpt-4.1` escalation for hard queries; Vision LLM for OCR score photos |
+| AI Models | Azure OpenAI | `gpt-4o` default, `gpt-4.1` escalation for hard queries; Vision LLM for OCR score photos |
 | Embeddings | Azure OpenAI | `text-embedding-3-large` (3072-dim) |
 | Search | Azure AI Search **Basic** ($74/mo) | Hybrid search + semantic ranker. The vector index. |
 | **Document DB** | **Azure Cosmos DB Serverless** (NoSQL API) | Users, scores, passport, ingestion sources whitelist, raw ingestion documents (transcripts, forum sentiment). Source for the Change Feed. |
@@ -106,7 +106,7 @@ graph TB
     Embed(Azure OpenAI<br/>text-embedding-3-large)
     Search[(Azure AI Search Basic<br/>index: pinball_chunks)]
     Api(pinball-api ACA App)
-    Completion(Azure OpenAI<br/>gpt-4o-mini default<br/>gpt-4.1 escalation)
+    Completion(Azure OpenAI<br/>gpt-4o default<br/>gpt-4.1 escalation)
     UI[Razor UI<br/>attributed response + citations]
 
     Scraper -->|writes| Raw
@@ -163,7 +163,7 @@ graph TB
     Threshold{semantic_score >= 0.6?}
     Refusal([No-answer response<br/>+ sternpinball.com search link])
     Provenance[ProvenanceMapper<br/>document_id to full attribution]
-    Completion(CompletionService<br/>gpt-4o-mini default<br/>gpt-4.1 escalation)
+    Completion(CompletionService<br/>gpt-4o default<br/>gpt-4.1 escalation)
     Answer([Answer + citations<br/>clickable source links])
 
     User --> Api
@@ -285,7 +285,7 @@ And separately upload `catalog.json` + `games.json` to the same container.
 
 - Hybrid retrieval: vector similarity + BM25 + AI Search semantic ranker (Basic tier includes it)
 - Threshold gate: top semantic_score < 0.6 → return "no answer found" with sternpinball.com search link (no hallucination)
-- RAG prompt with denormalized provenance from the chunk row → completion router (`gpt-4o-mini` default, `gpt-4.1` for hard queries)
+- RAG prompt with denormalized provenance from the chunk row → completion router (`gpt-4o` default, `gpt-4.1` for hard queries)
 
 ### Step 6: UI — Blazor Web App + MudBlazor
 
@@ -320,7 +320,7 @@ And separately upload `catalog.json` + `games.json` to the same container.
 | Container Registry | Basic | $5 |
 | Storage Account (catalog blobs + downloads + score photo SAS) | Standard LRS | $2-5 |
 | Azure OpenAI: embeddings | `text-embedding-3-large`, SHA-gated re-embed | ~$5 one-time + ~$0.50/mo incremental |
-| Azure OpenAI: completions | `gpt-4o-mini` default + `gpt-4.1` router (~15-20% of queries) | $10-40 variable |
+| Azure OpenAI: completions | `gpt-4o` default + `gpt-4.1` router (~15-20% of queries) | $10-40 variable |
 | Azure OpenAI: Vision LLM | OCR for score photos | $5-50 variable |
 | Application Insights | 1GB/mo cap | $2-5 |
 | Log Analytics | 1GB/mo cap | $2-3 |

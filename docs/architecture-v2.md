@@ -344,7 +344,7 @@ The Azure resources catalogued in `infra_analysis.md` remain valid. Additions an
 
 - **More Cosmos containers** — structured records, media metadata, user profiles, conversation state. Cosmos serverless (per `infra_analysis.md`) absorbs the additional containers without a SKU bump; the per-RU cost is the only meaningful storage-side cost change. Schema CRUD via ARM, item CRUD via the data-plane SDK per ADR-0012.
 - **In-memory LRU first; Redis only on measured demand** — for live data caching. Cosmos with a TTL container is the persistence-side fallback; in-memory is the latency-side optimization. Add Redis only if measured latency demands it.
-- **No separate Anthropic API account.** Microsoft Foundry's MaaS catalog reaches Claude (and Cohere, etc.) through the same Azure-hosted, AAD-authed endpoint that already serves `gpt-4o-mini` / `gpt-4.1`. Selecting Claude for one or more agents is an `AiFoundryOptions.AgentModels[<agent>]` config change plus a deployment add (per ADR-0015) — see CLAUDE.md § Phase 2 Preview for the model-agnostic reconciliation.
+- **No separate Anthropic API account.** Microsoft Foundry's MaaS catalog reaches Claude (and Cohere, etc.) through the same Azure-hosted, AAD-authed endpoint that already serves `gpt-4o` / `gpt-4.1`. Selecting Claude for one or more agents is an `AiFoundryOptions.AgentModels[<agent>]` config change plus a deployment add (per ADR-0015) — see CLAUDE.md § Phase 2 Preview for the model-agnostic reconciliation.
 - **No new resource group** — runs in the existing personal Earlybird Azure subscription (per `infra_analysis.md`).
 
 **Cost impact:** Token usage per query rises noticeably under the agent model — multi-tool reasoning is more tokens than pure RAG. Worth budgeting for. Infrastructure cost is essentially flat. The per-call cost ceiling per ADR-0015 absorbs the worst case before it becomes a runaway.
@@ -369,7 +369,7 @@ Aligns with `knowledge-sources.md` §8 but adds the agent transition explicitly:
 
 Explicit non-goals (so reviewers see we considered them):
 
-- **Not building our own LLM.** Foundry serves the model — currently `gpt-4o-mini` + `gpt-4.1`, with Claude / Cohere / etc. reachable through the MaaS catalog when a per-agent benchmark justifies the swap (per ADR-0015 + CLAUDE.md § Phase 2 Preview).
+- **Not building our own LLM.** Foundry serves the model — currently `gpt-4o` + `gpt-4.1`, with Claude / Cohere / etc. reachable through the MaaS catalog when a per-agent benchmark justifies the swap (per ADR-0015 + CLAUDE.md § Phase 2 Preview).
 - **Not running our own vector DB at scale.** Azure AI Search Basic (managed service) handles our volume per ADR-0021. Standard SKU upgrade is gated on corpus growth approaching the 2 GB cap; pgvector / Postgres aren't in the picture.
 - **Not building a tournament platform.** We read from IFPA, Match Play, Brackelope.
 - **Not building a marketplace.** We read existing listings.

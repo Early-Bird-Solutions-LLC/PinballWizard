@@ -98,7 +98,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 | Gate | Phase | Notes |
 | --- | --- | --- |
-| Retrieval / answer-quality evaluation harness | 3 | Held-out set of pinball questions with known correct citations + expected answer themes. Scored continuously; results trended in `eval/` directory. Routing-decision tests (gpt-4o-mini vs gpt-4.1) validated. Threshold-driven refusal validated. |
+| Retrieval / answer-quality evaluation harness | 3 | Held-out set of pinball questions with known correct citations + expected answer themes. Scored continuously; results trended in `eval/` directory. Routing-decision tests (gpt-4o vs gpt-4.1) validated. Threshold-driven refusal validated. |
 | Citation-accuracy eval set | 4 | Specifically: % of Wizard answers that include a clickable, valid citation pointing at a real source URL in the catalog. v1 target: ≥ 95%. Lower threshold = the "I don't know" path needs strengthening, not the citation pipeline. |
 | Load / latency regression tests (k6) | 5+ | k6 or similar for Wizard p95 latency under realistic query load. Complements Lighthouse CI (already in place). Target: Wizard p95 < 2s end-to-end. |
 

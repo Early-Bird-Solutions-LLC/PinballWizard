@@ -26,7 +26,7 @@ The architecture-in-depth layers are:
 
 - **Edge**: Cloudflare Pro — WAF, Bot Fight Mode, DDoS mitigation, rate limiting, TLS termination
 - **Compute**: Azure Container Apps (Web project + Api project as separate ACA revisions; no direct internet exposure to internal services)
-- **AI**: Azure Foundry (Microsoft Agent Framework), gpt-4o-mini default / gpt-4.1 for Repair/escalation, function tools limited to `getMachineByTitle` and `searchCorpus`
+- **AI**: Azure Foundry (Microsoft Agent Framework), gpt-4o default / gpt-4.1 for Repair/escalation, function tools limited to `getMachineByTitle` and `searchCorpus`
 - **Data**: Azure Cosmos DB (catalog read-only on user path), Azure AI Search (vector index, read-only on user path)
 - **Auth**: Entra External ID (OpenID Connect) for `/admin`; `[AllowAnonymous]` on all public routes
 
