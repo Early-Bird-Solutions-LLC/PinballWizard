@@ -277,6 +277,14 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
+    public void Defaults_ScrapedDocumentsRaw_IndexesRunId()
+    {
+        var c = Assert.Single(new CosmosOptions().Containers, x => x.Name == "scraped_documents_raw");
+        Assert.NotNull(c.IndexingPolicy);
+        Assert.Contains("/run_id/?", c.IndexingPolicy!.IncludedPaths);
+    }
+
+    [Fact]
     public void Defaults_Phase1Containers_HaveNoTtl()
     {
         // `machines` and `ingestion_sources` are durable catalogs —

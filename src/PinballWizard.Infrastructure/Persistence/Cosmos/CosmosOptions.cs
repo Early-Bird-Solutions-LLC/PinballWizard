@@ -230,7 +230,7 @@ public sealed class CosmosOptions
             PartitionKeyPath = "/document_id",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?"],
+                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?", "/run_id/?"],
                 ExcludedPaths = ["/*"],
             },
         },
