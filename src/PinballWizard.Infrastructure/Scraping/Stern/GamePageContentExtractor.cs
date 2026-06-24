@@ -15,11 +15,9 @@ public static class GamePageContentExtractor
         @"(?:youtube\.com/(?:embed/|watch\?v=)|youtu\.be/)([A-Za-z0-9_-]{6,})",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    /// <summary>
-    /// Finds the first YouTube embed/link in the page and returns the canonical
-    /// watch URL <c>https://www.youtube.com/watch?v=&lt;id&gt;</c>.
-    /// Returns null if no YouTube URL is found.
-    /// </summary>
+    // Finds the first YouTube embed/link in the page and returns the canonical
+    // watch URL https://www.youtube.com/watch?v=<id>.
+    // Returns null if no YouTube URL is found.
     public static string? ExtractTrailerUrl(IDocument doc)
     {
         foreach (var el in doc.QuerySelectorAll("iframe[src], a[href]"))
@@ -32,10 +30,8 @@ public static class GamePageContentExtractor
         return null;
     }
 
-    /// <summary>
-    /// Finds the first <c>shop.sternpinball.com/collections/</c> link on the page.
-    /// Returns null if none is present.
-    /// </summary>
+    // Finds the first shop.sternpinball.com/collections/ link on the page.
+    // Returns null if none is present.
     public static string? ExtractShopCollectionUrl(IDocument doc)
     {
         foreach (var a in doc.QuerySelectorAll("a[href]"))
@@ -47,11 +43,9 @@ public static class GamePageContentExtractor
         return null;
     }
 
-    /// <summary>
-    /// Collects accessories from the Stern Shop section of the game page — each
-    /// <c>shop.sternpinball.com/products/</c> anchor with a name span is one item.
-    /// Deduplicates by URL. Returns an empty list when the section is absent.
-    /// </summary>
+    // Collects accessories from the Stern Shop section of the game page — each
+    // shop.sternpinball.com/products/ anchor with a name span is one item.
+    // Deduplicates by URL. Returns an empty list when the section is absent.
     public static List<AccessoryInfo> ExtractAccessories(IDocument doc)
     {
         var items = new List<AccessoryInfo>();
@@ -77,14 +71,12 @@ public static class GamePageContentExtractor
         return items;
     }
 
-    /// <summary>
-    /// Joins descriptive <c>&lt;p&gt;</c> blocks from the page into overview prose.
-    /// Scopes to <c>&lt;main&gt;</c> when present so cookie-consent banners, nav, and footer
-    /// newsletter copy don't pollute the game-overview prose. Falls back to the whole
-    /// document when there is no <c>&lt;main&gt;</c> (other manufacturers / test fixtures).
-    /// Short fragments (under 40 characters) — nav labels, captions — are skipped.
-    /// Returns null when no qualifying paragraphs are found.
-    /// </summary>
+    // Joins descriptive <p> blocks from the page into overview prose.
+    // Scopes to <main> when present so cookie-consent banners, nav, and footer
+    // newsletter copy don't pollute the game-overview prose. Falls back to the whole
+    // document when there is no <main> (other manufacturers / test fixtures).
+    // Short fragments (under 40 characters) — nav labels, captions — are skipped.
+    // Returns null when no qualifying paragraphs are found.
     public static string? ExtractOverviewProse(IDocument doc)
     {
         // Scope to <main> when present so cookie-consent banners, nav, and footer
