@@ -82,6 +82,14 @@ Some controls are not a single stage — they run through the whole process:
 - **Provenance.** Every captured item traces back to its source URL (see the provenance
   model in [`../CLAUDE.md`](../CLAUDE.md)); the same fidelity that powers RAG citations also
   makes the data auditable.
+- **Automated review-feedback triage.** When review or bot feedback lands on a PR, a
+  server-side GitHub Action (`.github/workflows/pr-feedback-triage.yml`) triages it within
+  minutes and posts one structured comment that classifies each finding as **mechanical vs.
+  judgment** — the post-open counterpart to the pre-open `/local-review` + `/standards-audit`
+  gate. It is governed by construction: comment-only and tool-scoped so it cannot push code,
+  keeping a human accountable for every merge decision. Because it is version-controlled, it
+  is non-optional and independent of any developer being online. See [ADR-0041](adr/0041-pr-feedback-triage.md)
+  for the rationale and the deferred autonomous-mode upgrade path.
 
 ## Verification & evidence
 
