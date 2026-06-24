@@ -146,3 +146,16 @@ thoughts/
 # Local workflow gate state — machine/worktree-specific SHA markers written by
 # the track-gates hook. Never commit; each checkout has its own (ref: PR self-audit).
 .claude-gates/
+
+# Python bytecode cache from the repo's helper scripts under scripts/ (config-guard,
+# frontmatter checks, etc.). Generated on every test run; never source.
+__pycache__/
+*.pyc
+
+# Accessibility test scratch output (Playwright/axe TRX + artifacts).
+.tmp-a11y/
+
+# Stray Windows executables (installers, tools) accidentally dropped in the repo
+# tree. Real build-output .exe lives under bin/ (already ignored above); source
+# never tracks an .exe. Guards against accidentally committing a large binary.
+*.exe
