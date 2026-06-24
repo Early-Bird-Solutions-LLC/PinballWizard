@@ -83,6 +83,34 @@ Some controls are not a single stage — they run through the whole process:
   model in [`../CLAUDE.md`](../CLAUDE.md)); the same fidelity that powers RAG citations also
   makes the data auditable.
 
+## Verification & evidence
+
+The most common failure mode of an AI contributor is not a syntax error — it is a confident,
+plausible-sounding claim that something works when it has not been checked. The countermeasure
+is a single discipline: **a claim is not accepted until its command output is shown.** Evidence
+before assertions, every time.
+
+Three standing rules make this concrete:
+
+- **Verify before completion.** "Done", "fixed", and "passing" are claims that require running
+  the check and reading the output first — not predictions. A green build is shown, not asserted.
+- **No masking fallbacks.** Failures degrade visibly and are logged; synthetic or placeholder
+  output is never presented as real (Invariant #17). A fallback that hides the underlying
+  failure is a bug, not resilience.
+- **No guessing.** A configuration value, API parameter, or flag is verified from source or
+  current docs — never recalled from memory and hoped to be right. See
+  [`.claude/rules/no-guessing.md`](../.claude/rules/no-guessing.md).
+
+In practice this looks like: running the full CI-equivalent test suite before claiming it is
+green (not a filtered subset that can miss a cross-file contract test); confirming a dismissed
+code-scanning alert actually reports `dismissed` via the API rather than assuming the change
+took; and running a scripted link-integrity check over a doc before committing it. None of these
+is exotic — the point is that they are *run*, and their output is what backs the claim.
+
+This is a discipline, not a guarantee: it is reinforced by the mechanical gates (CI,
+`/standards-audit`) and is the reason the merge decision stays human. A person ratifies the
+evidence; the AI does not get to grade its own claim of success.
+
 ## When a tool disagrees with a decision
 
 The interesting case is not when the tools are silent — it is when an automated finding
@@ -111,6 +139,28 @@ answered with the same rationale, and the code comments were sharpened to make t
 obvious to the next reader. The paper trail is the point. **Reasoned dismissal with a
 documented justification is a stronger quality signal than a suspiciously empty board** — it
 shows the tools are engaged with judgment, not appeased or ignored.
+
+## Who decides what
+
+The previous sections describe *how* work is governed; this one says *who* holds each decision,
+concretely. The "human-governed" claim is only as good as its specifics — so here they are. The
+prose that follows ("What the human still owns") is the narrative complement: this table is the
+audit.
+
+| Decision | AI proposes | AI decides | Human decides |
+| --- | --- | --- | --- |
+| Feature intent & scope (what to build, what's out) | | | ✓ |
+| Architecture & ADRs | ✓ drafts | | ✓ ratifies |
+| Implementation within an approved spec/plan | | ✓ | |
+| Test design & coverage | ✓ | ✓ within behavior-not-structure | spot-checks |
+| Dependency version bumps | ✓ | ✓ minor/patch via Renovate auto-merge | ✓ majors |
+| Dismissing an automated-review finding | ✓ writes the justification | | ✓ ratifies via merge |
+| Converting an incident into a guardrail | ✓ | ✓ adds the test/rule | ✓ ratifies via merge |
+| Merge to `main` | | | ✓ only |
+| Production deploy | ✓ prepares | | ✓ |
+
+The pattern: AI does the proposing and the bounded, reversible deciding; the human owns the
+irreversible and the load-bearing — intent, architecture, and every merge to `main`.
 
 ## What the human still owns
 
