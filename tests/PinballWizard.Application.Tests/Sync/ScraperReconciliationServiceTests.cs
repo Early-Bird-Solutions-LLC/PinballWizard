@@ -401,6 +401,43 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(expected, ScraperReconciliationService.NormalizeFranchiseTitle(input));
     }
 
+    // ── Game-page content fields (overview / trailer / accessories) ─────
+
+    [Fact]
+    public async Task ReconcileAsync_CopiesOverviewTrailerAndAccessories_OntoMatchedMachine()
+    {
+        var existing = MakeMachine("GweeP-MW95j", "stern", "Godzilla");
+        existing.ManufacturerSlugs["stern"] = "godzilla";
+        StubPartition("stern", existing);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_godzilla",
+            Title = "Godzilla",
+            Slug = "godzilla",
+            GamePageUrl = "https://sternpinball.com/game/godzilla/",
+            OverviewProse = "Battle Godzilla across the city.",
+            TrailerUrl = "https://www.youtube.com/watch?v=abc123",
+            Accessories =
+            {
+                new AccessoryInfo
+                {
+                    Name = "Topper",
+                    Price = "$1,299.99",
+                    ProductUrl = "https://shop.sternpinball.com/products/godzilla-topper",
+                },
+            },
+        });
+
+        await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal("Battle Godzilla across the city.", existing.OverviewProse);
+        Assert.Equal("https://sternpinball.com/game/godzilla/", existing.OverviewSourceUrl);
+        Assert.Equal("https://www.youtube.com/watch?v=abc123", existing.TrailerUrl);
+        Assert.Equal("Topper", existing.Accessories.Single().Name);
+        await _repo.Received(1).UpsertAsync(existing, Arg.Any<CancellationToken>());
+    }
+
     // ── Constructor null-checks ──────────────────────────────────────────
 
     [Fact]
