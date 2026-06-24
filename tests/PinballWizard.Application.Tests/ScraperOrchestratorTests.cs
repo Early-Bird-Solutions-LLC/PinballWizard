@@ -303,6 +303,43 @@ public sealed class ScraperOrchestratorTests : IDisposable
         await scrapeRuns.Received(1).WriteAsync(Arg.Is<ScrapeRunRecord>(r => r.RunAt == fixedNow), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ScrapeAsync_TalliesDocumentsNew_FromCreatedOutcomesOnly()
+    {
+        // Two scraped items: repo returns Created for the first, Updated for the second.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        rawRepo.UpsertRawAsync(Arg.Any<DocumentRecord>(), Arg.Any<CancellationToken>())
+            .Returns(
+                ci => new RawDocumentUpsertResult(MapDomain(ci.Arg<DocumentRecord>()), UpsertOutcome.Created),
+                ci => new RawDocumentUpsertResult(MapDomain(ci.Arg<DocumentRecord>()), UpsertOutcome.Updated));
+
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        ScrapeRunRecord? written = null;
+        scrapeRuns.WriteAsync(Arg.Do<ScrapeRunRecord>(r => written = r), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var scraper = new StubScraper("Manuals", [
+            MakeLinkItem("https://example.com/a.pdf", "Manuals Page", SourceType.ManualsPage),
+            MakeLinkItem("https://example.com/b.pdf", "Manuals Page", SourceType.ManualsPage)
+        ], sourceId: "stern");
+
+        var orch = CreateOrchestrator([scraper], rawDocRepo: rawRepo, scrapeRuns: scrapeRuns);
+        await orch.ScrapeAsync(dryRun: false);
+
+        Assert.NotNull(written);
+        Assert.Equal(2, written!.DocumentsDiscovered); // all touched
+        Assert.Equal(1, written.DocumentsNew);          // only the Created one
+    }
+
+    private static RawDocumentRecord MapDomain(DocumentRecord record) => new()
+    {
+        DocumentId = record.DocumentId,
+        DocumentUrl = record.Source.FileUrl,
+        DocumentType = DocumentType.Other,
+        Source = record.Source,
+        Timeline = record.Timeline,
+    };
+
     // -------- Helpers --------
 
     private static ScrapedItem LinkItem() => new()
