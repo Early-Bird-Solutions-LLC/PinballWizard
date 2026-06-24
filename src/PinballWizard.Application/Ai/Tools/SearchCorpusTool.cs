@@ -397,6 +397,7 @@ public sealed class SearchCorpusTool
             "manual" => "Manual",
             "service_bulletin" => "ServiceBulletin",
             "metadata_card" => "MetadataCard",
+            "game_overview" => "GameOverview",
             _ => value.Trim(),
         };
     }

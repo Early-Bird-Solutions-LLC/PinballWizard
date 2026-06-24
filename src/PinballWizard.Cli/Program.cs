@@ -31,6 +31,7 @@ using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Application.Rag.MetadataCards;
+using PinballWizard.Application.Rag.GameOverviews;
 using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using PinballWizard.Infrastructure.Rag.Ingestion;
@@ -122,6 +123,11 @@ var syncMetadataCardsOption = new Option<bool>("--sync-metadata-cards")
     Description = "Synthesize metadata_card chunks from the Cosmos machines container and upsert them into AI Search. One card per machine record — covers title, manufacturer, year, designers, themes, editions, and MSRP. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
 };
 
+var syncGameOverviewsOption = new Option<bool>("--sync-game-overviews")
+{
+    Description = "Synthesize and index GameOverview documents from each Machine's scraped game-page OverviewProse + per-edition content. Mirrors --sync-metadata-cards. No-op for machines without overview content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
+};
+
 var linkDocumentsOption = new Option<bool>("--link-documents")
 {
     Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
@@ -172,6 +178,7 @@ rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
+rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
@@ -196,6 +203,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var eval = parseResult.GetValue(evalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
+    var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
@@ -425,6 +433,95 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine($"--sync-metadata-cards complete: upserted={upserted} failed={failed}");
+        if (failed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
+    // Handle --sync-game-overviews (Phase 4.5 W4b — synthesize GameOverview chunks
+    // from each Machine's OverviewProse + per-edition scraped content and upsert
+    // into AI Search). Mirrors --sync-metadata-cards; gated on the same three
+    // backend services. Skips machines with no overview content. Idempotent:
+    // re-running overwrites in-place (chunk_id hash is stable for the same
+    // machine + document key).
+    if (syncGameOverviews)
+    {
+        var machineRepo = host.Services.GetService<IMachineRepository>();
+        var synthesizer = host.Services.GetService<IGameOverviewSynthesizer>();
+        var indexer = host.Services.GetService<IRagIndexer>();
+
+        if (machineRepo is null || synthesizer is null || indexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-game-overviews requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Synthesizing game overview documents from Cosmos machines...");
+
+        var upserted = 0;
+        var skipped = 0;
+        var failed = 0;
+        var indexerOptions = new RagIndexerOptions();
+
+        string[] allManufacturers =
+        [
+            ScraperManufacturerKey.Stern,
+            ScraperManufacturerKey.Jjp,
+            ScraperManufacturerKey.AmericanPinball,
+            ScraperManufacturerKey.Spooky,
+            ScraperManufacturerKey.PinballBrothers,
+            ScraperManufacturerKey.BarrelsOfFun,
+            ScraperManufacturerKey.ChicagoGaming,
+            ScraperManufacturerKey.Multimorphic,
+        ];
+
+        foreach (var manufacturer in allManufacturers)
+        {
+            await foreach (var machine in machineRepo.StreamByManufacturerAsync(manufacturer, cancellationToken))
+            {
+                var chunks = synthesizer.Synthesize(machine);
+                if (chunks.Count == 0 || string.IsNullOrWhiteSpace(machine.OverviewSourceUrl))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var chunkRequest = new ChunkRequest(
+                    MachineId: machine.Id,
+                    MachineTitle: machine.Title,
+                    Manufacturer: machine.ManufacturerDisplayName,
+                    DocumentId: $"overview_{machine.Id}",
+                    DocumentUrl: machine.OverviewSourceUrl,
+                    DocumentType: DocumentType.GameOverview,
+                    LastScrapedUtc: machine.LastSeenAt == default ? null : machine.LastSeenAt);
+
+                try
+                {
+                    var result = await indexer.UpsertAsync(chunkRequest, chunks, indexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                            Console.Error.WriteLine($"  AI Search rejected chunk '{failure.ChunkId}' for {machine.Title} ({machine.Id}): HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        failed++;
+                    }
+                    else
+                    {
+                        upserted++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index game overview for {machine.Title} ({machine.Id}): {ex.Message}");
+                    failed++;
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-game-overviews complete: upserted={upserted} skipped(no-content)={skipped} failed={failed}");
         if (failed > 0)
             Environment.ExitCode = 1;
         return;
@@ -862,6 +959,7 @@ static IHost CreateHost(string[] args)
         builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
         builder.Services.AddRagBackfillService(builder.Configuration);
         builder.Services.AddMetadataCardSynthesizer();
+        builder.Services.AddGameOverviewSynthesizer();
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)

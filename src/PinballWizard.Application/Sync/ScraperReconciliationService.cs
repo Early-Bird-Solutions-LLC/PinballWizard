@@ -211,6 +211,16 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         // on OPDB).
         machine.Editions = game.Editions.Select(MapEdition).ToList();
 
+        // Overview prose + its provenance URL, trailer, and accessories are
+        // scraper-owned game-page content (the manufacturer page is fresher
+        // and richer than OPDB for these). Replace wholesale.
+        machine.OverviewProse = game.OverviewProse;
+        machine.OverviewSourceUrl = string.IsNullOrWhiteSpace(game.OverviewProse) ? null : game.GamePageUrl;
+        machine.TrailerUrl = game.TrailerUrl;
+        machine.Accessories = game.Accessories
+            .Select(a => new MachineAccessory { Name = a.Name, Price = a.Price, ProductUrl = a.ProductUrl, ImageUrl = a.ImageUrl })
+            .ToList();
+
         machine.LastSeenAt = now;
     }
 

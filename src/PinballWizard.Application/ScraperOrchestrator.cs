@@ -300,11 +300,13 @@ public sealed class ScraperOrchestrator
         };
     }
 
-    private static DocumentType ClassifyDocumentType(DiscoveredLink link, string context)
+    internal static DocumentType ClassifyDocumentType(DiscoveredLink link, string context)
     {
         var url = link.FileUrl.ToLowerInvariant();
         var text = (link.LinkText ?? "").ToLowerInvariant();
         var ctx = context.ToLowerInvariant();
+
+        if (text.Contains("feature matrix")) return DocumentType.FeatureMatrix;
 
         if (ctx.Contains("service bulletin")) return DocumentType.ServiceBulletin;
         if (ctx.Contains("game code")) return DocumentType.Firmware;
