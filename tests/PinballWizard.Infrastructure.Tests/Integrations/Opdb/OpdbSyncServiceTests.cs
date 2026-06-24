@@ -1273,6 +1273,41 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _scrapeRuns.Received(1).WriteAsync(Arg.Any<ScrapeRunRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncAsync_StampsRunId_OnNewlyInsertedMachine()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        Machine? upserted = null;
+        _repository.UpsertAsync(Arg.Do<Machine>(m => upserted = m), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Machine>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.NotNull(upserted!.RunId);
+        Assert.StartsWith("opdb_", upserted.RunId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_RunRecord_DocumentsNew_EqualsInsertedCount()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        ScrapeRunRecord? run = null;
+        _scrapeRuns.WriteAsync(Arg.Do<ScrapeRunRecord>(r => run = r), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, run!.DocumentsNew);
+    }
+
     private static string GroupJson(string segment, string name) =>
         JsonSerializer.Serialize(new
         {
