@@ -44,7 +44,8 @@ public sealed class CrossPartitionQueryAllowListTests
         ["MachineRepository.cs"] =
             "StreamCrossPartitionAsync (StreamAllAsync) + direct GetItemQueryIterator<Machine> " +
             "(QueryByTitleAsync MaxItemCount=1, GetSiblingsByGroupIdAsync SELECT TOP 50 MaxItemCount=10); " +
-            "bounded equality matches, metered; direct-iterator routing is tracked cleanup.",
+            "bounded equality matches, metered; direct-iterator routing is tracked cleanup; " +
+            "StreamByRunIdAsync (run_id equality match, bounded by run cardinality)",
 
         // Direct-iterator GetItemQueryIterator<string> — projects only machine_id
         // (not SELECT *) to enumerate fan-out rows for one document_id across
@@ -61,7 +62,8 @@ public sealed class CrossPartitionQueryAllowListTests
         ["CosmosRawDocumentRepository.cs"] =
             "StreamCrossPartitionAsync in StreamByStatusAsync (linker IN-clause batch), " +
             "StreamAllAsync (admin full-scan), and StreamBySourcePatternAsync (linker " +
-            "CONTAINS pattern match); all are back-office / batch paths.",
+            "CONTAINS pattern match); all are back-office / batch paths, " +
+            "and StreamByRunIdAsync (per-run drill-down, back-office admin path).",
 
         // StreamCrossPartitionAsync — GetAllDocumentsAsync reads ~6 curated docs
         // for the landing page strip. Bounded to ~6 entries; ADR-0025 § 6 notes

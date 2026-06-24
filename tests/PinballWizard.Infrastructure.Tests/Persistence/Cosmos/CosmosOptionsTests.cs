@@ -277,6 +277,23 @@ public sealed class CosmosOptionsTests
     }
 
     [Fact]
+    public void Defaults_Machines_HasNullIndexingPolicy()
+    {
+        // Default indexing (null) keeps all paths — including run_id — indexed.
+        // A selective policy here would silently drop run_id indexing and break
+        // the StreamByRunIdAsync query backing the admin run-drilldown view.
+        Assert.Null(new CosmosOptions().Containers.Single(c => c.Name == "machines").IndexingPolicy);
+    }
+
+    [Fact]
+    public void Defaults_ScrapedDocumentsRaw_IndexesRunId()
+    {
+        var c = Assert.Single(new CosmosOptions().Containers, x => x.Name == "scraped_documents_raw");
+        Assert.NotNull(c.IndexingPolicy);
+        Assert.Contains("/run_id/?", c.IndexingPolicy!.IncludedPaths);
+    }
+
+    [Fact]
     public void Defaults_Phase1Containers_HaveNoTtl()
     {
         // `machines` and `ingestion_sources` are durable catalogs —

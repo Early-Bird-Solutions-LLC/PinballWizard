@@ -10,5 +10,6 @@ public sealed record ScrapeRunRecord
     public required double DurationSeconds { get; init; }
     public required bool Succeeded { get; init; }
     public required int DocumentsDiscovered { get; init; }
+    public int DocumentsNew { get; init; }
     public string? ErrorMessage { get; init; }
 }

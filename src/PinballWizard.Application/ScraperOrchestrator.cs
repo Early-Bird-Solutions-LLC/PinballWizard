@@ -66,6 +66,7 @@ public sealed class ScraperOrchestrator
             var runStartedAt = _timeProvider.GetUtcNow();
             var sourceStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var sourceDocCount = 0;
+            var sourceNewCount = 0;
             var sourceFailed = false;
             string? firstError = null;
 
@@ -87,6 +88,7 @@ public sealed class ScraperOrchestrator
                         if (item.Link is null) continue;
 
                         var record = BuildDocumentRecord(item);
+                        record.RunId = ScrapeRunId.For(sourceId, runStartedAt);
                         result.TotalLinks++;
                         sourceDocCount++;
 
@@ -97,7 +99,11 @@ public sealed class ScraperOrchestrator
                         {
                             try
                             {
-                                await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                                var upsert = await _rawDocRepo.UpsertRawAsync(record, cancellationToken);
+                                if (upsert.Outcome == UpsertOutcome.Created)
+                                {
+                                    System.Threading.Interlocked.Increment(ref sourceNewCount);
+                                }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException)
                             {
@@ -149,7 +155,7 @@ public sealed class ScraperOrchestrator
             {
                 await WriteSourceRunAsync(
                     sourceId, runStartedAt, sourceStopwatch.Elapsed,
-                    sourceDocCount, sourceFailed, firstError, cancellationToken).ConfigureAwait(false);
+                    sourceDocCount, sourceNewCount, sourceFailed, firstError, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -190,6 +196,7 @@ public sealed class ScraperOrchestrator
         DateTimeOffset runStartedAt,
         TimeSpan duration,
         int documentsDiscovered,
+        int documentsNew,
         bool failed,
         string? firstError,
         CancellationToken cancellationToken)
@@ -204,6 +211,7 @@ public sealed class ScraperOrchestrator
                     DurationSeconds = duration.TotalSeconds,
                     Succeeded = !failed,
                     DocumentsDiscovered = documentsDiscovered,
+                    DocumentsNew = documentsNew,
                     ErrorMessage = firstError,
                 },
                 cancellationToken).ConfigureAwait(false);
