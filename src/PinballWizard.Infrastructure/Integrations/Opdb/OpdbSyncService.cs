@@ -184,6 +184,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                     var existing = await _machines.GetByOpdbIdAsync(mapped.Id, mapped.PartitionKey, ct).ConfigureAwait(false);
                     if (existing is null)
                     {
+                        mapped.RunId = ScrapeRunId.For(IngestionSourceIds.Opdb, runStartedAt);
                         if (!isDryRun)
                         {
                             await _machines.UpsertAsync(mapped, ct).ConfigureAwait(false);
@@ -524,6 +525,7 @@ public sealed class OpdbSyncService : IOpdbSyncService
                             DurationSeconds = stopwatch.Elapsed.TotalSeconds,
                             Succeeded = failure is null,
                             DocumentsDiscovered = inserted + updated,
+                            DocumentsNew = inserted,
                             ErrorMessage = failure?.Message,
                         },
                         cancellationToken).ConfigureAwait(false);

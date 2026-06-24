@@ -70,6 +70,27 @@ public sealed class CosmosScrapeRunRepositoryTests
     }
 
     [Fact]
+    public async Task WriteAsync_PersistsDocumentsNew()
+    {
+        ScrapeRunCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<ScrapeRunCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey?>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.Arg<ScrapeRunCosmosRecord>()));
+
+        await _repository.WriteAsync(
+            new ScrapeRunRecord
+            {
+                SourceId = "stern", RunAt = DateTimeOffset.UtcNow, DurationSeconds = 1.0,
+                Succeeded = true, DocumentsDiscovered = 10, DocumentsNew = 3,
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal(3, captured!.DocumentsNew);
+    }
+
+    [Fact]
     public async Task WriteAsync_NullRecord_Throws()
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() =>

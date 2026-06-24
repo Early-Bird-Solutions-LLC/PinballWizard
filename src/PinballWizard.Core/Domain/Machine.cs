@@ -100,6 +100,9 @@ public sealed class Machine : IEntity
     [JsonPropertyName("lastSeenAt")]
     public DateTimeOffset LastSeenAt { get; set; }
 
+    [JsonPropertyName("run_id")]
+    public string? RunId { get; set; }
+
     /// <summary>Cosmos system-managed _etag, populated on read for optimistic concurrency.</summary>
     [JsonPropertyName("_etag")]
     public string? ETag { get; set; }

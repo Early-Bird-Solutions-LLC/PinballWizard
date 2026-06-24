@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -36,7 +37,7 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.Pending, result.LinkStatus);
+        Assert.Equal(LinkStatus.Pending, result.Record.LinkStatus);
     }
 
     [Fact]
@@ -48,8 +49,8 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
 
-        Assert.Equal("https://example.com/discover", result.Source.DiscoveryUrl);
-        Assert.Equal("https://example.com/file.pdf", result.Source.FileUrl);
+        Assert.Equal("https://example.com/discover", result.Record.Source.DiscoveryUrl);
+        Assert.Equal("https://example.com/file.pdf", result.Record.Source.FileUrl);
     }
 
     [Fact]
@@ -100,9 +101,63 @@ public sealed class CosmosRawDocumentRepositoryTests
             .ReadItemAsync<RawDocumentCosmosRecord>(default!, default, default, default);
     }
 
+    [Fact]
+    public async Task UpsertRawAsync_NewDocument_ReturnsCreated()
+    {
+        var record = MakeDocumentRecord("doc_outcome_new");
+        record.RunId = "run_A";
+        SetupGetByIdNotFound(record.DocumentId);
+        SetupUpsert(MakeCosmosRecord(record.DocumentId));
+
+        var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
+
+        Assert.Equal(UpsertOutcome.Created, result.Outcome);
+    }
+
+    [Fact]
+    public async Task UpsertRawAsync_ExistingDocument_ReturnsUpdated_AndPreservesOriginalRunId()
+    {
+        const string docId = "doc_outcome_existing";
+        var existing = MakeCosmosRecord(docId);
+        existing.RunId = "run_A";
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        var incoming = MakeDocumentRecord(docId);
+        incoming.RunId = "run_B";
+
+        var result = await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.Equal(UpsertOutcome.Updated, result.Outcome);
+        Assert.Equal("run_A", captured!.RunId);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // UpsertRawAsync — existing document (update path)
     // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpsertRawAsync_NewDocument_PersistsRunId()
+    {
+        var record = MakeDocumentRecord("doc_runid");
+        SetupGetByIdNotFound(record.DocumentId);
+        record.RunId = "stern_20260624031712000Z";
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.UpsertRawAsync(record, CancellationToken.None);
+
+        Assert.Equal("stern_20260624031712000Z", captured!.RunId);
+    }
 
     [Fact]
     public async Task UpsertRawAsync_ExistingDocument_PreservesLinkerManagedFields()
@@ -119,10 +174,10 @@ public sealed class CosmosRawDocumentRepositoryTests
         var record = MakeDocumentRecord(docId);
         var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.Linked, result.LinkStatus);
-        Assert.Equal("filename_slug", result.ResolutionStrategy);
-        Assert.Contains("mch_123", result.LinkedMachineIds);
-        Assert.Equal("ovr_1", result.OverrideId);
+        Assert.Equal(LinkStatus.Linked, result.Record.LinkStatus);
+        Assert.Equal("filename_slug", result.Record.ResolutionStrategy);
+        Assert.Contains("mch_123", result.Record.LinkedMachineIds);
+        Assert.Equal("ovr_1", result.Record.OverrideId);
     }
 
     [Fact]
@@ -194,9 +249,9 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
 
-        Assert.Equal(2, result.CrossReferences.Count);
-        Assert.Contains(result.CrossReferences, x => x.AlsoFoundAt == "https://a.com/file.pdf");
-        Assert.Contains(result.CrossReferences, x => x.AlsoFoundAt == "https://b.com/file.pdf");
+        Assert.Equal(2, result.Record.CrossReferences.Count);
+        Assert.Contains(result.Record.CrossReferences, x => x.AlsoFoundAt == "https://a.com/file.pdf");
+        Assert.Contains(result.Record.CrossReferences, x => x.AlsoFoundAt == "https://b.com/file.pdf");
     }
 
     [Fact]
@@ -220,7 +275,7 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         var result = await _repository.UpsertRawAsync(record, CancellationToken.None);
 
-        Assert.Single(result.CrossReferences);
+        Assert.Single(result.Record.CrossReferences);
     }
 
     [Fact]
@@ -775,6 +830,27 @@ public sealed class CosmosRawDocumentRepositoryTests
             results.Add(item);
 
         Assert.Equal(3, results.Count);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // StreamByRunIdAsync
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamByRunIdAsync_QueriesByRunId_CrossPartition()
+    {
+        QueryDefinition? captured = null;
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Do<QueryDefinition>(q => captured = q),
+                Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[]]));
+
+        await foreach (var _ in _repository.StreamByRunIdAsync("stern_20260624031712000Z", CancellationToken.None)) { }
+
+        Assert.NotNull(captured);
+        Assert.Contains("c.run_id = @runId", captured!.QueryText);
+        Assert.Contains(captured.GetQueryParameters(), p => p.Name == "@runId" && (string)p.Value == "stern_20260624031712000Z");
     }
 
     // ────────────────────────────────────────────────────────────────

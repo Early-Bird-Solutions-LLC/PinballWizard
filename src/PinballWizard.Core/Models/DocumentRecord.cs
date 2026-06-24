@@ -23,6 +23,7 @@ public sealed class DocumentRecord
     public HttpMetadata? Http { get; set; }
     public required TimelineInfo Timeline { get; set; }
     public List<CrossReference> CrossReferences { get; set; } = [];
+    public string? RunId { get; set; }
 
     /// <summary>
     /// Generates a deterministic document ID from a canonical file URL.

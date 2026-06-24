@@ -27,6 +27,9 @@ internal sealed class ScrapeRunCosmosRecord : IEntity
     [JsonPropertyName("documents_discovered")]
     public int DocumentsDiscovered { get; set; }
 
+    [JsonPropertyName("documents_new")]
+    public int DocumentsNew { get; set; }
+
     [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 

@@ -1,0 +1,67 @@
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@inject IRawDocumentRepository RawDocs
+@inject IMachineRepository Machines
+@inject ILogger<AdminRunDocuments> Logger
+
+@if (_failed)
+{
+    <MudAlert Severity="Severity.Error" data-testid="run-docs-failed">Items could not be loaded.</MudAlert>
+}
+else if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+}
+else if (_items.Count == 0)
+{
+    <MudText Typo="Typo.body2" Color="Color.Secondary" data-testid="run-docs-empty">
+        This run captured no new items — it re-confirmed existing ones.
+    </MudText>
+}
+else
+{
+    <MudList T="string" Dense="true" data-testid="run-docs-list">
+        @foreach (var line in _items)
+        {
+            <MudListItem T="string">@line</MudListItem>
+        }
+    </MudList>
+}
+
+@code {
+    [Parameter] public string SourceId { get; set; } = "";
+    [Parameter] public string RunId { get; set; } = "";
+
+    private readonly List<string> _items = [];
+    private bool _loading = true;
+    private bool _failed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (SourceId == IngestionSourceIds.Opdb)
+            {
+                await foreach (var m in Machines.StreamByRunIdAsync(RunId, CancellationToken.None))
+                {
+                    _items.Add($"{m.Title} · {m.ManufacturerDisplayName}{(m.Year is { } y ? $" · {y}" : "")}");
+                }
+            }
+            else
+            {
+                await foreach (var d in RawDocs.StreamByRunIdAsync(RunId, CancellationToken.None))
+                {
+                    // Source.FileUrl is the as-scraped provenance URL (the direct link to the
+                    // file or page as discovered by the scraper), not a resolved download URL.
+                    _items.Add($"{d.Source.FileUrl} · {d.DocumentType}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load run documents for run '{RunId}'.", RunId);
+            _failed = true;
+        }
+        finally { _loading = false; }
+    }
+}

@@ -48,4 +48,10 @@ public interface IMachineRepository : IRepository<Machine>
     // may span manufacturers (unusual but possible), and the groupId
     // field is not the partition key.
     IAsyncEnumerable<Machine> GetSiblingsByGroupIdAsync(string groupId, CancellationToken cancellationToken);
+
+    // Cross-partition run_id equality match — returns every machine record
+    // written during the given scraper run. Used by the admin run drill-down
+    // view. Bounded by run cardinality (one OPDB sync touches all ~2,400
+    // machines at most; individual scraper runs are a fraction of that).
+    IAsyncEnumerable<Machine> StreamByRunIdAsync(string runId, CancellationToken cancellationToken);
 }

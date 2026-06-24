@@ -96,6 +96,13 @@ public sealed class MachineRepository : CosmosRepository<Machine>, IMachineRepos
     }
 
     /// <inheritdoc />
+    public IAsyncEnumerable<Machine> StreamByRunIdAsync(string runId, CancellationToken cancellationToken) =>
+        StreamCrossPartitionAsync(
+            "SELECT * FROM c WHERE c.run_id = @runId",
+            new Dictionary<string, object> { ["runId"] = runId },
+            cancellationToken);
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<Machine> GetSiblingsByGroupIdAsync(
         string groupId,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)

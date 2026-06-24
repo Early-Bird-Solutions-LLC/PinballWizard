@@ -1273,6 +1273,80 @@ public sealed class OpdbSyncServiceTests : IDisposable
         await _scrapeRuns.Received(1).WriteAsync(Arg.Any<ScrapeRunRecord>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SyncAsync_ExistingMachine_PreservesOriginalRunId()
+    {
+        // Write-once on the UPDATE path: RunId is stamped once on first insert and
+        // must NOT be overwritten on subsequent syncs. This mirrors the document-side
+        // UpsertRawAsync_ExistingDocument_ReturnsUpdated_AndPreservesOriginalRunId test.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+
+        // Seed an existing machine that was stamped on an earlier run.
+        var existing = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball, Inc.",
+            Title = "Old Title",
+            RunId = "opdb_run_A",  // stamped by a prior run
+            FirstSeenAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            LastSeenAt = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+        _repository.GetByOpdbIdAsync("GRBN-MQR4P", "stern", Arg.Any<CancellationToken>()).Returns(existing);
+
+        // Capture the machine passed to UpsertAsync after the update/merge branch runs.
+        Machine? upserted = null;
+        _repository.UpsertAsync(Arg.Do<Machine>(m => upserted = m), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Machine>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(0, result.Inserted);
+        Assert.Equal(1, result.Updated);
+
+        // The load-bearing assertion: the original RunId from the prior run is preserved,
+        // NOT overwritten with the current run's id.
+        Assert.NotNull(upserted);
+        Assert.Equal("opdb_run_A", upserted!.RunId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_StampsRunId_OnNewlyInsertedMachine()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        Machine? upserted = null;
+        _repository.UpsertAsync(Arg.Do<Machine>(m => upserted = m), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<Machine>());
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.NotNull(upserted!.RunId);
+        Assert.StartsWith("opdb_", upserted.RunId);
+    }
+
+    [Fact]
+    public async Task SyncAsync_RunRecord_DocumentsNew_EqualsInsertedCount()
+    {
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("GRBN-MQR4P", manufacturer: "Stern Pinball, Inc.", name: "Stranger Things (Pro)", commonName: "Stranger Things")));
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((Machine?)null);
+
+        ScrapeRunRecord? run = null;
+        _scrapeRuns.WriteAsync(Arg.Do<ScrapeRunRecord>(r => run = r), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.Equal(1, run!.DocumentsNew);
+    }
+
     private static string GroupJson(string segment, string name) =>
         JsonSerializer.Serialize(new
         {

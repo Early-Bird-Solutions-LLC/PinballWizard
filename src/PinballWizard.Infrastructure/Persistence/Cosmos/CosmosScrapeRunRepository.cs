@@ -41,9 +41,8 @@ internal sealed class CosmosScrapeRunRepository
         }
     }
 
-    // Deterministic id: same source can't run twice in one millisecond (runs are serial).
     private static string DeriveId(string sourceId, DateTimeOffset runAt) =>
-        $"{sourceId}_{runAt.UtcDateTime:yyyyMMddHHmmssfff}Z";
+        PinballWizard.Core.Models.ScrapeRunId.For(sourceId, runAt);
 
     private static ScrapeRunCosmosRecord ToCosmos(ScrapeRunRecord r) => new()
     {
@@ -53,6 +52,7 @@ internal sealed class CosmosScrapeRunRepository
         DurationSeconds = r.DurationSeconds,
         Succeeded = r.Succeeded,
         DocumentsDiscovered = r.DocumentsDiscovered,
+        DocumentsNew = r.DocumentsNew,
         ErrorMessage = r.ErrorMessage,
     };
 
@@ -63,6 +63,7 @@ internal sealed class CosmosScrapeRunRepository
         DurationSeconds = c.DurationSeconds,
         Succeeded = c.Succeeded,
         DocumentsDiscovered = c.DocumentsDiscovered,
+        DocumentsNew = c.DocumentsNew,
         ErrorMessage = c.ErrorMessage,
     };
 }
