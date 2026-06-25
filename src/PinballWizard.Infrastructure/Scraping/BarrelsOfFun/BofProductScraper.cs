@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -90,7 +90,7 @@ public sealed class BofProductScraper : PoliteScraperBase, ISourceScraper
         try
         {
             var html = await GetStringPolitelyAsync(_httpClient, productUrl, cancellationToken).ConfigureAwait(false);
-            return BofProductExtractor.Extract(html, productUrl);
+            return BofProductExtractor.Extract(html, productUrl, Logger);
         }
         catch (PolitenessException)
         {

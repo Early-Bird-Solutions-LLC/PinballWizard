@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace PinballWizard.Application.Observability;
@@ -478,6 +478,28 @@ public static class PinballWizardTelemetry
         "pinwiz.scraper.politeness_fallback_active",
         unit: "{occurrence}",
         description: "IngestionSourcePolitenessResolver fell back to global politeness defaults because the Cosmos repository threw during initialization. All hosts will be scraped at the global default rate; per-source overrides are not applied (invariant #17).");
+    // ── Storefront JSON-LD missing degradation counter (invariant #17) ──────
+    //
+    // Incremented by the three storefront extractors (JJP, BoF, Multimorphic)
+    // each time JsonLdProductParser.FindFirstProduct returns null and the
+    // extractor falls back to Open Graph / H1 signals. When JSON-LD is absent
+    // the extractor produces a name-only GameRecord with empty Editions and no
+    // price/status — structured fields are silently missing without this signal.
+    //
+    // BoF and Multimorphic sites have dropped JSON-LD; a non-zero rate on those
+    // sources during normal runs means the scraper is degraded and the
+    // structured-field pipeline is hollow. A non-zero rate on JJP is unexpected
+    // and likely signals a Shopify theme regression.
+    //
+    // Tags:
+    //   source — the scraper/source name matching ISourceScraper.Name
+    //              (JJP | BoF | Multimorphic)
+    //   url    — the product page URL where JSON-LD was absent
+    public static readonly Counter<long> ScraperJsonLdMissing = Meter.CreateCounter<long>(
+        "pinwiz.scraper.jsonld_missing_total",
+        unit: "{page}",
+        description: "Storefront product page where JsonLdProductParser.FindFirstProduct returned null and the extractor fell back to Open Graph / H1. Structured fields (editions, price, status) will be absent from the resulting GameRecord. Tagged with source (JJP | BoF | Multimorphic) and url. Non-zero rate on BoF/Multimorphic indicates those sites have dropped JSON-LD; non-zero on JJP signals an unexpected Shopify theme regression. Paired with a LogWarning at the point of degradation (invariant #17 / OBS-01).");
+
 
     // ── Community-resource load failure counter (invariant #17 / OBS-01) ────
     //

@@ -18,7 +18,7 @@ public sealed class RagIngestionOptions
     [Required]
     [MinLength(1)]
     public List<DocumentType> AcceptedDocumentTypes { get; set; } =
-        [DocumentType.Manual, DocumentType.ServiceBulletin, DocumentType.FeatureMatrix];
+        [DocumentType.Manual, DocumentType.ServiceBulletin, DocumentType.FeatureMatrix, DocumentType.Rulesheet];
 
     // Optional reconciliation pass on worker startup: sample N rows
     // from `rag_index_state` and verify AI Search has matching chunks.

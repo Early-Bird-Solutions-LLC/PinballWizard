@@ -29,6 +29,19 @@ public enum DocumentType
     Flyer,
     SpecSheet,
     FeatureMatrix,
+
+    /// <summary>
+    /// A standalone gameplay-rules sheet (e.g. "Rules PDF", "Spooky Rules",
+    /// "Rulesheet"). Distinct from <c>Manual</c>, which is a comprehensive
+    /// operator/owner guide that may contain rules as one chapter alongside
+    /// schematics, maintenance, and parts information. A Rulesheet is
+    /// rules-only; a Manual can contain a <see cref="ContentCategory.Rules"/>
+    /// chapter but is not classified as Rulesheet. Per ADR-0042 this value
+    /// is added to <c>RagIngestionOptions.AcceptedDocumentTypes</c> so
+    /// gameplay-mechanic questions can be answered from corpus.
+    /// </summary>
+    Rulesheet,
+
     Readme,
     Other,
 

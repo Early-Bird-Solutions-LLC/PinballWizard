@@ -1,6 +1,7 @@
-using AngleSharp.Dom;
+﻿using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
+using Microsoft.Extensions.Logging;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Scraping.JsonLd;
 using PinballWizard.Infrastructure.Scraping.OpenGraph;
@@ -30,7 +31,7 @@ public static class BofProductExtractor
     /// Returns null if the page is missing the required signals
     /// (no slug, no title, or no JSON-LD product / og:title fallback).
     /// </summary>
-    public static GameRecord? Extract(string html, Uri productUrl)
+    public static GameRecord? Extract(string html, Uri productUrl, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(productUrl);
@@ -41,6 +42,11 @@ public static class BofProductExtractor
         if (string.IsNullOrWhiteSpace(slug)) return null;
 
         var product = JsonLdProductParser.FindFirstProduct(doc);
+        if (product is null && logger is not null)
+        {
+            JsonLdProductParser.WarnJsonLdMissing(logger, productUrl, "BoF");
+        }
+
         var title = product?.Name
             ?? OpenGraphExtractor.GetMetaContent(doc, "og:title")
             ?? doc.QuerySelector("h1")?.TextContent?.Trim();

@@ -1,4 +1,9 @@
+﻿using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Observability;
 using PinballWizard.Infrastructure.Scraping.Jjp;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Scraping.Jjp;
@@ -171,6 +176,67 @@ public sealed class JjpProductExtractorTests
     public void ExtractSlug_NullArg_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => JjpProductExtractor.ExtractSlug(null!));
+    }
+
+    // ── Invariant #17: JSON-LD missing degradation visibility ────────────────
+    // When JSON-LD is absent the extractor must still return a record via OG
+    // fallback AND emit both a LogWarning and pinwiz.scraper.jsonld_missing_total
+    // so the degradation is visible in logs and on the dashboard.
+
+    [Fact]
+    public void Extract_NoJsonLd_WithLogger_LogsWarning()
+    {
+        const string html = """
+            <html><head>
+              <meta property="og:title" content="Wonka" />
+            </head></html>
+            """;
+        var logger = new CapturingLogger();
+
+        var record = JjpProductExtractor.Extract(html, new Uri("https://jerseyjackpinball.com/products/wonka"), logger);
+
+        // Behavior: OG-fallback record still returned
+        Assert.NotNull(record);
+        Assert.Equal("Wonka", record!.Title);
+        Assert.Empty(record.Editions);
+
+        // Invariant #17: degradation must be logged at Warning
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("JSON-LD"));
+    }
+
+    [Fact]
+    public void Extract_NoJsonLd_WithLogger_IncrementsJsonLdMissingCounter()
+    {
+        const string html = """
+            <html><head>
+              <meta property="og:title" content="Wonka" />
+            </head></html>
+            """;
+        var logger = new CapturingLogger();
+        var productUrl = new Uri("https://jerseyjackpinball.com/products/wonka");
+
+        // Collect pinwiz.scraper.jsonld_missing_total observations — parallel-tolerant
+        // ConcurrentBag pattern (project-standard from project_meterlistener_test_pattern.md).
+        var bag = new ConcurrentBag<(long Value, string? Source, string? Url)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.scraper.jsonld_missing_total") return;
+            string? source = null; string? url = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "source") source = t.Value as string;
+                else if (t.Key == "url") url = t.Value as string;
+            }
+            bag.Add((value, source, url));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.ScraperJsonLdMissing);
+
+        JjpProductExtractor.Extract(html, productUrl, logger);
+
+        // Invariant #17: counter must fire with source=JJP tag
+        Assert.Contains(bag, s => s.Source == "JJP" && s.Value == 1L);
     }
 
     [Theory]

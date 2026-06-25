@@ -1156,6 +1156,62 @@ public sealed class MachineGroundingToolTests
         repo.Received(1).QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task GetMachineByTitleAsync_LongQueryWhoseSuffixMatchesShortManufacturerPrefixRow_ReturnsNull()
+    {
+        // Regression: "Pokemon by Stern Pinball" (4 tokens) normalizes to
+        // ["pokemon", "by", "stern", "pinball"]. With strip=2 the retry key
+        // was "stern pinball" — which IS a real lookup row written by OPDB
+        // sync phase (e) for a machine literally titled "Pinball" by Stern.
+        // The tool incorrectly resolved to that machine instead of returning
+        // null (no Pokemon machine exists in the catalog).
+        //
+        // The fix: limit prefix-strip retries to 1 so only the immediate
+        // leading token is peeled off. "by stern pinball" (strip=1) is not
+        // a real row, so the tool correctly falls back to the cross-partition
+        // query, which finds nothing, and returns null.
+        //
+        // Fixture: a lookup row keyed "stern pinball" (manufacturer-prefix row
+        // for Stern's machine titled "Pinball"), exactly as OPDB sync phase (e)
+        // writes for every machine by a manufacturer whose token matches "pinball"
+        // (americanpinball, pinballbrothers) or for a machine literally titled
+        // "Pinball" by any manufacturer.
+        var sternPinballLookup = new MachineTitleLookup
+        {
+            Id = "stern pinball",
+            PartitionKey = "stern pinball",
+        };
+        sternPinballLookup.UpsertEntry("GRBN-PNBL", "stern", ["stern"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        // The original key "pokemon by stern pinball" → miss.
+        lookups.GetByTitleAsync("pokemon by stern pinball", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        // Strip 1: "by stern pinball" → miss.
+        lookups.GetByTitleAsync("by stern pinball", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        // Strip 2 (BUG path): "stern pinball" → would hit; the fix prevents this strip from firing.
+        lookups.GetByTitleAsync("stern pinball", Arg.Any<CancellationToken>())
+            .Returns(sternPinballLookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        // Cross-partition fallback: no Pokemon machine in the catalog.
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable<Machine>());
+        // The "Pinball" machine must never be point-read via the false strip-2 hit.
+        repo.GetByOpdbIdAsync("GRBN-PNBL", "stern", Arg.Any<CancellationToken>())
+            .Returns(BuildMachine("GRBN-PNBL", "stern", "Stern Pinball", "Pinball", 1988));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Pokemon by Stern Pinball", CancellationToken.None);
+
+        // Must return null — there is no Pokemon machine. The "Pinball" machine
+        // must NOT be returned due to the strip-2 false match.
+        Assert.Null(result);
+        // The "stern pinball" row must never be consulted — strip=2 is disallowed.
+        await repo.DidNotReceive().GetByOpdbIdAsync("GRBN-PNBL", "stern", Arg.Any<CancellationToken>());
+    }
+
     // ── Cross-group title collision tests (ADR-0029 follow-up 2026-06-10) ─
 
     [Fact]
