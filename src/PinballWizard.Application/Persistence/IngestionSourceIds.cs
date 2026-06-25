@@ -21,6 +21,7 @@ public static class IngestionSourceIds
     public const string Spooky = "spooky";
     public const string SpookySupport = "spooky_support";
     public const string PinballBrothers = "pinballbrothers";
+    public const string PinballBrothersDocuments = "pb_docs";
     public const string BarrelsOfFun = "barrelsoffun";
     public const string Multimorphic = "multimorphic";
     public const string Cgc = "cgc";

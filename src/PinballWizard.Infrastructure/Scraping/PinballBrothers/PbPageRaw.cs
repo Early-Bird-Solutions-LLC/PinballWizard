@@ -39,6 +39,14 @@ public sealed class PbPageRaw
     /// <summary>Page title (rendered HTML; may contain entities).</summary>
     [JsonPropertyName("title")]
     public PbRenderedField Title { get; init; } = new();
+
+    /// <summary>
+    /// Full page content (rendered HTML + raw shortcode markup).
+    /// Only populated when <c>content</c> is included in the WP REST
+    /// <c>_fields</c> projection; defaults to empty when absent.
+    /// </summary>
+    [JsonPropertyName("content")]
+    public PbRenderedField Content { get; init; } = new();
 }
 
 /// <summary>
