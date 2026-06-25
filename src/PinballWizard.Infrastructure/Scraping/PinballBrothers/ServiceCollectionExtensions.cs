@@ -43,6 +43,13 @@ public static class ServiceCollectionExtensions
         services.AddTransient<PbGamePageScraper>();
         services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<PbGamePageScraper>());
 
+        // Document scraper: discovers per-game PDF rulesheets / manuals from
+        // the content.rendered field of each game page via WP REST. Reuses
+        // the same PbWpPagesClient and PinballBrothersOptions as the game-page
+        // scraper; the two scrapers share one HttpClient registration.
+        services.AddTransient<PbGamePageDocumentScraper>();
+        services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<PbGamePageDocumentScraper>());
+
         return services;
     }
 }

@@ -375,6 +375,7 @@ public sealed class ScraperOrchestrator
         ["spooky"] = "Spooky Pinball",
         ["spooky_support"] = "Spooky Pinball Support",
         ["pinballbrothers"] = "Pinball Brothers",
+        ["pb_docs"] = "Pinball Brothers Documents",
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
         ["multimorphic"] = "Multimorphic",
