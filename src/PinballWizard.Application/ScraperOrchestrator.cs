@@ -320,10 +320,26 @@ public sealed class ScraperOrchestrator
         if (text.Contains("flyer") || text.Contains("feature")) return DocumentType.Flyer;
         if (text.Contains("spec")) return DocumentType.SpecSheet;
 
+        // ADR-0042: "rules" / "rulesheet" / "rule sheet" in link text → Rulesheet.
+        // Checked AFTER the "manual" branch so a doc whose link text is
+        // "Rules Manual" or "Owner's Manual & Rules" has already returned Manual
+        // above. We only catch standalone rules PDFs (e.g. "Spooky Rules",
+        // "Game Rules PDF") that would otherwise fall to Other.
+        if (text.Contains("rulesheet") || text.Contains("rule sheet") ||
+            (text.Contains("rules") && !text.Contains("manual")))
+            return DocumentType.Rulesheet;
+
         if (url.Contains("manual")) return DocumentType.Manual;
         if (url.Contains("schematic")) return DocumentType.Schematic;
         if (url.Contains("sb") && url.Contains(".pdf")) return DocumentType.ServiceBulletin;
         if (url.EndsWith(".zip") || url.EndsWith(".spk")) return DocumentType.Firmware;
+
+        // ADR-0042: "rules" / "rulesheet" in URL (without "manual" in URL or
+        // already-matched text). Catches file names like
+        // "spooky-beetlejuice-rules.pdf" when link text is absent or generic.
+        if ((url.Contains("rules") || url.Contains("rulesheet")) &&
+            !url.Contains("manual"))
+            return DocumentType.Rulesheet;
 
         return DocumentType.Other;
     }

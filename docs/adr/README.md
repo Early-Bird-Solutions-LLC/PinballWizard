@@ -52,6 +52,7 @@ negative) it carries.
 | [0039](0039-blob-document-store.md) | Blob-backed document store (`pinwiz-raw`) | Accepted |
 | [0040](0040-fork-claude-config-for-pinballwizard.md) | Fork Claude Code config in-repo for PinballWizard | Accepted |
 | [0041](0041-pr-feedback-triage.md) | Server-side governed (comment-only) PR-feedback triage via Claude Code Action | Accepted |
+| [0042](0042-rulesheet-document-type.md) | Rulesheet document type and RAG allow-list widening | Accepted |
 
 ## Conventions
 
