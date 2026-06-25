@@ -213,6 +213,7 @@ public sealed class ScraperOrchestrator
                     DocumentsDiscovered = documentsDiscovered,
                     DocumentsNew = documentsNew,
                     ErrorMessage = firstError,
+                    Trigger = _settings.Trigger,
                 },
                 cancellationToken).ConfigureAwait(false);
         }

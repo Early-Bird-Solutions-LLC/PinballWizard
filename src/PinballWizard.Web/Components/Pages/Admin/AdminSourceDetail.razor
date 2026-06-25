@@ -180,6 +180,7 @@
                             <th style="text-align:right">Duration</th>
                             <th style="text-align:right">Processed</th>
                             <th style="text-align:right">New</th>
+                            <th>Trigger</th>
                             <th>Error</th>
                         </tr>
                     </thead>
@@ -202,11 +203,12 @@
                                 <td style="text-align:right">@($"{run.DurationSeconds:0.0} s")</td>
                                 <td style="text-align:right">@run.DocumentsDiscovered</td>
                                 <td style="text-align:right">@run.DocumentsNew</td>
+                                <td>@(run.Trigger ?? "manual")</td>
                                 <td>@(run.ErrorMessage ?? "")</td>
                             </tr>
                             @if (_expanded.Contains(RunKey(run)))
                             {
-                                <tr><td colspan="7">
+                                <tr><td colspan="8">
                                     <AdminRunDocuments SourceId="@Id" RunId="@RunKey(run)" />
                                 </td></tr>
                             }

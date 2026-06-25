@@ -79,6 +79,9 @@ param linkerCronExpression string = '0 2 * * *'
 @description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. OPDB changes slowly so weekly is the steady-state cadence; on-demand syncs run via `az containerapp job start` or the local CLI. Has no effect when deployPhase2=false.')
 param opdbSyncCronExpression string = '0 3 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Runs --refresh-game-overviews which scrapes Stern game pages then syncs overviews to AI Search. Has no effect when deployPhase2=false or deployAiSearch=false.')
+param sternRefreshCronExpression string = '0 10 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -2127,6 +2130,96 @@ resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sql
 }
 
 // -----------------------------------------------------------------------------
+// Stern overview-refresh ACA Job (weekly Stern game-page scrape + sync)
+// -----------------------------------------------------------------------------
+// Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
+// Runs --refresh-game-overviews which scrapes Stern game pages then syncs
+// overviews to AI Search. Needs AI Search + Foundry, so gated on both
+// deployPhase2 && deployAiSearch (matches searchService / foundry gate at :409 / :505).
+// Three RBAC assignments mirror the ragIndexer pattern: Cosmos data contributor
+// (data-plane CRUD), Search Index Data Contributor (index upserts), and Cognitive
+// Services OpenAI User (Foundry embedding inference).
+
+module sternRefreshJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
+  name: 'stern-refresh-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-stern-refresh-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: sternRefreshCronExpression
+    replicaTimeout: 7200
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--refresh-game-overviews' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the Stern refresh job's system-assigned MI.
+// Identical pattern to opdbSyncJobCosmosDataContrib — the Stern refresh writes
+// scraped items through the repository (data-plane CRUD). Gated on deployPhase2 &&
+// deployAiSearch to match the module gate above (no orphan role assignment).
+resource sternRefreshJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'stern-refresh-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: sternRefreshJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// AI Search: Search Index Data CONTRIBUTOR (8ebe5a00-...) — the Stern refresh job
+// upserts the AI Search index as part of --refresh-game-overviews, so it needs
+// Contributor (not the Reader role the serving UAMI carries). Shape mirrors
+// ragIndexerSearchContrib (:1240). Gated on deployPhase2 && deployAiSearch.
+resource sternRefreshJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'stern-refresh-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: sternRefreshJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Foundry: Cognitive Services OpenAI User (5e0bd9bd-...) for embedding inference
+// during the overview-sync phase. Shape mirrors ragIndexerFoundryOpenAiUser (:1250)
+// and acaIdentityFoundryOpenAiUser (:322). Gated on deployPhase2 && deployAiSearch.
+resource sternRefreshJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, 'stern-refresh-job-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: sternRefreshJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2191,6 +2284,9 @@ output linkerJobPrincipalId string = linkerJob.?outputs.linkerJobPrincipalId ?? 
 
 output opdbSyncJobName string = opdbSyncJob.?outputs.opdbSyncJobName ?? ''
 output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
+
+output sternRefreshJobName string = sternRefreshJob.?outputs.jobName ?? ''
+output sternRefreshJobPrincipalId string = sternRefreshJob.?outputs.jobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:

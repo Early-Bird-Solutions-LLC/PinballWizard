@@ -33,6 +33,9 @@ internal sealed class ScrapeRunCosmosRecord : IEntity
     [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 
+    [JsonPropertyName("trigger")]
+    public string? Trigger { get; set; }
+
     [JsonPropertyName("_etag")]
     public string? ETag { get; set; }
 }
