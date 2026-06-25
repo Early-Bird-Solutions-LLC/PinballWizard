@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Catalog;
+using PinballWizard.Application.Jobs;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
@@ -41,6 +42,7 @@ internal static class AdminTestDoubles
         services.AddSingleton(Prompts());
         services.AddSingleton(CorpusStats());
         services.AddSingleton(ScrapeRuns());
+        services.AddSingleton(Jobs());
 
         // Concrete singleton — parameterless, loads embedded prompt .md resources.
         services.AddSingleton<EmbeddedResourceAgentPromptProvider>();
@@ -313,6 +315,40 @@ internal static class AdminTestDoubles
                     Succeeded = false, DocumentsDiscovered = 0, ErrorMessage = "timeout",
                 }));
         return repo;
+    }
+
+    // ── IJobAdminService ─────────────────────────────────────────────────────
+    public static IJobAdminService Jobs()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<JobStatus>>(
+            [
+                new JobStatus(
+                    JobName: "pinwiz-job-linker-buutj",
+                    DisplayName: "Linker",
+                    CronExpression: "0 2 * * *",
+                    TriggerType: "Schedule",
+                    LatestExecutionStatus: "Succeeded",
+                    LatestExecutionStartTime: AsOf),
+                new JobStatus(
+                    JobName: "pinwiz-job-opdb-buutj",
+                    DisplayName: "Opdb",
+                    CronExpression: "0 3 * * 0",
+                    TriggerType: "Schedule",
+                    LatestExecutionStatus: "Succeeded",
+                    LatestExecutionStartTime: AsOf.AddDays(-7)),
+                new JobStatus(
+                    JobName: "pinwiz-job-stern-refresh-buutj",
+                    DisplayName: "Stern Refresh",
+                    CronExpression: "0 10 * * 0",
+                    TriggerType: "Schedule",
+                    LatestExecutionStatus: "Unknown",
+                    LatestExecutionStartTime: null),
+            ]));
+        svc.StartJobAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        return svc;
     }
 
     // ── async-enumerable helper ──────────────────────────────────────────────

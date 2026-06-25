@@ -39,6 +39,10 @@
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <!-- Azure.ResourceManager.AppContainers 1.5.0 — ARM control-plane SDK for
+         Microsoft.App/jobs (list, read executions, trigger). GA stable.
+         Source: https://www.nuget.org/packages/Azure.ResourceManager.AppContainers -->
+    <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
     <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.4.1" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
     <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.61.0" />
