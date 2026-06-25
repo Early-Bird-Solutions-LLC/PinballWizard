@@ -36,6 +36,15 @@
     "politenessOverrides": null
   },
   {
+    "id": "spooky_support",
+    "displayName": "Spooky Pinball Support",
+    "scraperImplKey": "spooky_support",
+    "baseUrl": "https://www.spookypinball.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null
+  },
+  {
     "id": "pinballbrothers",
     "displayName": "Pinball Brothers",
     "scraperImplKey": "pinballbrothers",

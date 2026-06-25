@@ -213,7 +213,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(15, seeds!.Count);
+        Assert.Equal(16, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
@@ -225,7 +225,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         // NoSource/Deferred; ap_bulletins enabled=true with ApBulletinScraper wired).
         var expectedIds = new[]
         {
-            "stern", "jjp", "ap", "spooky", "pinballbrothers",
+            "stern", "jjp", "ap", "spooky", "spooky_support", "pinballbrothers",
             "barrelsoffun", "multimorphic", "cgc", "opdb", "pinballmap",
             "jjp_bulletins", "ap_bulletins", "spooky_bulletins", "cgc_bulletins", "pb_bulletins",
         };

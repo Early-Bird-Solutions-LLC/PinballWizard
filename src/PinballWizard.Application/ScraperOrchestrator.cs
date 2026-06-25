@@ -373,6 +373,7 @@ public sealed class ScraperOrchestrator
         ["ap"] = "American Pinball",
         ["ap_bulletins"] = "American Pinball Bulletins",
         ["spooky"] = "Spooky Pinball",
+        ["spooky_support"] = "Spooky Pinball Support",
         ["pinballbrothers"] = "Pinball Brothers",
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
