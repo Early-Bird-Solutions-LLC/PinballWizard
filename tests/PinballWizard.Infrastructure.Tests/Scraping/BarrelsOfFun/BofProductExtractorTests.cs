@@ -1,4 +1,9 @@
+﻿using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Observability;
 using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
+using PinballWizard.Infrastructure.Tests.Scraping._TestInfra;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Scraping.BarrelsOfFun;
@@ -229,5 +234,63 @@ public sealed class BofProductExtractorTests
     public void ExtractSlug_NullArg_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => BofProductExtractor.ExtractSlug(null!));
+    }
+
+    // ── Invariant #17: JSON-LD missing degradation visibility ────────────────
+    // BoF has dropped JSON-LD. When absent the extractor must still return a
+    // record via OG fallback AND emit both a LogWarning and the counter so the
+    // degradation is visible in logs and on the dashboard.
+
+    [Fact]
+    public void Extract_NoJsonLd_WithLogger_LogsWarning()
+    {
+        const string html = """
+            <html><head>
+              <meta property="og:title" content="Jim Henson's Labyrinth" />
+            </head></html>
+            """;
+        var logger = new CapturingLogger();
+
+        var record = BofProductExtractor.Extract(html, SampleUrl, logger);
+
+        // Behavior: OG-fallback record still returned
+        Assert.NotNull(record);
+        Assert.Equal("Jim Henson's Labyrinth", record!.Title);
+        Assert.Empty(record.Editions);
+
+        // Invariant #17: degradation must be logged at Warning
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("JSON-LD"));
+    }
+
+    [Fact]
+    public void Extract_NoJsonLd_WithLogger_IncrementsJsonLdMissingCounter()
+    {
+        const string html = """
+            <html><head>
+              <meta property="og:title" content="Jim Henson's Labyrinth" />
+            </head></html>
+            """;
+        var logger = new CapturingLogger();
+
+        var bag = new ConcurrentBag<(long Value, string? Source, string? Url)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.scraper.jsonld_missing_total") return;
+            string? source = null; string? url = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "source") source = t.Value as string;
+                else if (t.Key == "url") url = t.Value as string;
+            }
+            bag.Add((value, source, url));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.ScraperJsonLdMissing);
+
+        BofProductExtractor.Extract(html, SampleUrl, logger);
+
+        // Invariant #17: counter must fire with source=BoF tag
+        Assert.Contains(bag, s => s.Source == "BoF" && s.Value == 1L);
     }
 }
