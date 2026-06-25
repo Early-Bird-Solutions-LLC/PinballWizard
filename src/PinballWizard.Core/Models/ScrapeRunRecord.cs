@@ -12,4 +12,6 @@ public sealed record ScrapeRunRecord
     public required int DocumentsDiscovered { get; init; }
     public int DocumentsNew { get; init; }
     public string? ErrorMessage { get; init; }
+    // How the run was invoked ("scheduled" from an ACA job; null = manual/ad-hoc).
+    public string? Trigger { get; init; }
 }

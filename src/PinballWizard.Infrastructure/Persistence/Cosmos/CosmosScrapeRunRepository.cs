@@ -54,6 +54,7 @@ internal sealed class CosmosScrapeRunRepository
         DocumentsDiscovered = r.DocumentsDiscovered,
         DocumentsNew = r.DocumentsNew,
         ErrorMessage = r.ErrorMessage,
+        Trigger = r.Trigger,
     };
 
     private static ScrapeRunRecord ToDomain(ScrapeRunCosmosRecord c) => new()
@@ -65,5 +66,6 @@ internal sealed class CosmosScrapeRunRepository
         DocumentsDiscovered = c.DocumentsDiscovered,
         DocumentsNew = c.DocumentsNew,
         ErrorMessage = c.ErrorMessage,
+        Trigger = c.Trigger,
     };
 }

@@ -34,6 +34,9 @@ public sealed class ScraperSettings
     /// <summary>Initial delay (in milliseconds) before the first retry; doubles per subsequent attempt.</summary>
     public int InitialRetryDelayMs { get; set; } = 1000;
 
+    // How this run was invoked (e.g. "scheduled" from an ACA job). Null = manual.
+    public string? Trigger { get; set; }
+
     // Derived paths
     public string DownloadsPath => Path.Combine(DataPath, "downloads");
     public string MetadataPath => Path.Combine(DataPath, "metadata");

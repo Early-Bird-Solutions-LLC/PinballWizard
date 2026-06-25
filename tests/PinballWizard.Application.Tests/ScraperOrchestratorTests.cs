@@ -304,6 +304,21 @@ public sealed class ScraperOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ScrapeAsync_WithTriggerInSettings_StampsTriggerOnRunRecord()
+    {
+        var scrapeRuns = Substitute.For<IScrapeRunRepository>();
+        var settings = new ScraperSettings { DataPath = _tempDir, Trigger = "scheduled" };
+        var scraper = new StubScraper("Manuals", [LinkItem()], sourceId: "stern");
+        var orch = CreateOrchestrator([scraper], settings: settings, scrapeRuns: scrapeRuns);
+
+        await orch.ScrapeAsync(dryRun: false);
+
+        await scrapeRuns.Received(1).WriteAsync(
+            Arg.Is<ScrapeRunRecord>(r => r.SourceId == "stern" && r.Trigger == "scheduled"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ScrapeAsync_TalliesDocumentsNew_FromCreatedOutcomesOnly()
     {
         // Two scraped items: repo returns Created for the first, Updated for the second.
