@@ -128,6 +128,11 @@ var syncGameOverviewsOption = new Option<bool>("--sync-game-overviews")
     Description = "Synthesize and index GameOverview documents from each Machine's scraped game-page OverviewProse + per-edition content. Mirrors --sync-metadata-cards. No-op for machines without overview content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
+var refreshGameOverviewsOption = new Option<bool>("--refresh-game-overviews")
+{
+    Description = "Atomic Stern game-page refresh: scrape the game-page source, reconcile onto Machine records, then synthesize and index GameOverview docs. Equivalent to --source games followed by --sync-game-overviews, in one polite pass. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
+};
+
 var linkDocumentsOption = new Option<bool>("--link-documents")
 {
     Description = "Run the document-to-machine linker: processes all pending, failed, and not_in_catalog records in scraped_documents_raw through the 5-tier algorithm (override → xref slug → filename → page 1 → page 2) and fan-outs resolved documents into scraped_documents. Idempotent: already-terminal records (Linked, ManuallyLinked, PlatformGeneric) are skipped. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
@@ -179,6 +184,7 @@ rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
+rootCommand.Options.Add(refreshGameOverviewsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
 rootCommand.Options.Add(downloadDocumentsOption);
@@ -204,6 +210,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
+    var refreshGameOverviews = parseResult.GetValue(refreshGameOverviewsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
     var downloadDocuments = parseResult.GetValue(downloadDocumentsOption);
@@ -438,13 +445,12 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
-    // Handle --sync-game-overviews (Phase 4.5 W4b — synthesize GameOverview chunks
-    // from each Machine's OverviewProse + per-edition scraped content and upsert
-    // into AI Search). Mirrors --sync-metadata-cards; gated on the same three
-    // backend services. Skips machines with no overview content. Idempotent:
-    // re-running overwrites in-place (chunk_id hash is stable for the same
-    // machine + document key).
-    if (syncGameOverviews)
+    // Shared local function for the game-overview synthesis + index loop.
+    // Called by both --sync-game-overviews and --refresh-game-overviews so the
+    // loop body is not duplicated. Returns 0 on success, 1 if any chunk failed,
+    // 2 if a required service is missing. Captures host + cancellationToken from
+    // the enclosing action scope.
+    async Task<int> RunGameOverviewSyncAsync()
     {
         var machineRepo = host.Services.GetService<IMachineRepository>();
         var synthesizer = host.Services.GetService<IGameOverviewSynthesizer>();
@@ -455,8 +461,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Console.Error.WriteLine(
                 "--sync-game-overviews requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
                 "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
-            Environment.ExitCode = 2;
-            return;
+            return 2;
         }
 
         Console.WriteLine("Synthesizing game overview documents from Cosmos machines...");
@@ -522,8 +527,37 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine($"--sync-game-overviews complete: upserted={upserted} skipped(no-content)={skipped} failed={failed}");
-        if (failed > 0)
-            Environment.ExitCode = 1;
+        return failed > 0 ? 1 : 0;
+    }
+
+    // Handle --sync-game-overviews (Phase 4.5 W4b — synthesize GameOverview chunks
+    // from each Machine's OverviewProse + per-edition scraped content and upsert
+    // into AI Search). Mirrors --sync-metadata-cards; gated on the same three
+    // backend services. Skips machines with no overview content. Idempotent:
+    // re-running overwrites in-place (chunk_id hash is stable for the same
+    // machine + document key).
+    if (syncGameOverviews)
+    {
+        Environment.ExitCode = await RunGameOverviewSyncAsync();
+        return;
+    }
+
+    // Handle --refresh-game-overviews (atomic Stern game-page scrape + overview
+    // sync in one pass). Scrapes the "games" source (Stern game pages, reconciling
+    // Machine records), then calls RunGameOverviewSyncAsync to synthesize and index
+    // GameOverview chunks. Equivalent to `--source games` then `--sync-game-overviews`
+    // without re-launching the process. --dry-run runs the scrape but skips the sync.
+    if (refreshGameOverviews)
+    {
+        var refreshScrapeResult = await orchestrator.ScrapeAsync("games", dryRun, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine($"--refresh-game-overviews: scrape done ({refreshScrapeResult.TotalLinks} links discovered). Syncing overviews...");
+        if (dryRun)
+        {
+            Console.WriteLine("--refresh-game-overviews: --dry-run, skipping overview sync.");
+            return;
+        }
+        Environment.ExitCode = await RunGameOverviewSyncAsync();
         return;
     }
 
