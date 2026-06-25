@@ -19,6 +19,7 @@ public static class IngestionSourceIds
     public const string Ap = "ap";
     public const string ApBulletins = "ap_bulletins";
     public const string Spooky = "spooky";
+    public const string SpookySupport = "spooky_support";
     public const string PinballBrothers = "pinballbrothers";
     public const string BarrelsOfFun = "barrelsoffun";
     public const string Multimorphic = "multimorphic";

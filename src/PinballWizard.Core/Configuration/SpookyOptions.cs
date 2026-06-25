@@ -57,4 +57,15 @@ public sealed class SpookyOptions
     /// </summary>
     [Range(1, 1000)]
     public int MaxPagesToFetch { get; set; } = 50;
+
+    /// <summary>
+    /// WordPress page id of the "Game Support" hub page (slug: game-support).
+    /// Child pages of this hub are the per-game support pages that host
+    /// rule/manual/chart PDFs in wp-content/uploads.  Verified 2026-06-25
+    /// via WP REST: https://www.spookypinball.com/wp-json/wp/v2/pages?slug=game-support
+    /// returns id=476 which is the parent of halloween (1450), ultraman (1467),
+    /// hwn-um-manual (1456), and hwn-um-update-process (1453).
+    /// </summary>
+    [Range(1, int.MaxValue)]
+    public int GameSupportParentPageId { get; set; } = 476;
 }

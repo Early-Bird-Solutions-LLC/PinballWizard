@@ -43,6 +43,22 @@ public static class ServiceCollectionExtensions
         services.AddTransient<SpookyGamePageScraper>();
         services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<SpookyGamePageScraper>());
 
+        // Support-page scraper: discovers per-game rule/manual/chart PDFs from
+        // the Game Support hub's child pages via WP REST. Uses the same
+        // politeness options and SpookyOptions as the game-page scraper.
+        services.AddHttpClient<SpookySupportPageScraper>((sp, client) =>
+        {
+            var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
+            var spooky = sp.GetRequiredService<IOptions<SpookyOptions>>().Value;
+            client.BaseAddress = new Uri(spooky.BaseUrl);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
+        services.AddTransient<SpookySupportPageScraper>();
+        services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<SpookySupportPageScraper>());
+
         return services;
     }
 }
