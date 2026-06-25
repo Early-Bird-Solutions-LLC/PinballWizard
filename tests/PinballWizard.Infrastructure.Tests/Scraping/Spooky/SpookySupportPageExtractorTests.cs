@@ -1,4 +1,4 @@
-using PinballWizard.Infrastructure.Scraping.Spooky;
+﻿using PinballWizard.Infrastructure.Scraping.Spooky;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
@@ -11,7 +11,11 @@ namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
 /// (4) duplicate hrefs are deduped,
 /// (5) link text is preserved as-is for document-type classification,
 /// (6) pages with no PDF links return an empty list (graceful empty),
-/// (7) the DeriveGameSlug mapping for hwn-um-* shared pages.
+/// (7) the DeriveGameSlug mapping for hwn-um-* shared pages,
+/// (8) PDFs in WPBakery shortcode attributes (&#8221;/&#8220; entity-encoded
+///     smart-quote delimiters) are discovered and absolutized — root cause of
+///     the 0-PDF bug fixed in this PR.  These are hardware/service docs
+///     (Manual/Other), NOT Rulesheet.
 /// </summary>
 /// <remarks>
 /// Fixtures derived from the 2026-06-25 recon of
@@ -20,6 +24,8 @@ namespace PinballWizard.Infrastructure.Tests.Scraping.Spooky;
 ///   /wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf
 ///   /wp-content/uploads/2023/09/Coil-Chart2.pdf
 ///   /wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf
+/// All three are hardware/service docs (switch positions, coil chart, board
+/// layout) — correct classification is Manual/Other, not Rulesheet.
 /// </remarks>
 public sealed class SpookySupportPageExtractorTests
 {
@@ -27,7 +33,7 @@ public sealed class SpookySupportPageExtractorTests
     private const string PageUrl = BaseUrl + "/game-support/hwn-um-manual/";
     private const string GameSlug = "halloween";
 
-    // ── ExtractPdfLinks ──────────────────────────────────────────────────────
+    // ── ExtractPdfLinks — anchor-href path (existing behavior) ───────────────
 
     [Fact]
     public void ExtractPdfLinks_RelativeWpContentPdfHref_IsDiscoveredAndAbsolutized()
@@ -180,6 +186,124 @@ public sealed class SpookySupportPageExtractorTests
             SpookySupportPageExtractor.ExtractPdfLinks("<p/>", "  ", GameSlug));
         Assert.ThrowsAny<ArgumentException>(() =>
             SpookySupportPageExtractor.ExtractPdfLinks("<p/>", PageUrl, "  "));
+    }
+
+    // ── ExtractPdfLinks — WPBakery shortcode path (bug-fix coverage) ─────────
+    // Root cause: hwn-um-manual page (WP id 1456) carries its three PDFs in
+    // WPBakery shortcode attributes, NOT <a href> anchors.  The encoded format:
+    //   url=&#8221;/wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf&#8221;
+    // &#8221; is the HTML entity for " (RIGHT DOUBLE QUOTATION MARK, U+201D).
+    // These are hardware/service docs (switch-positions, coil chart, board
+    // layout) — classification is Manual/Other, NOT Rulesheet.
+
+    [Fact]
+    public void ExtractPdfLinks_WpBakeryShortcodeWithEntityEncodedSmartQuotes_DiscoversPdf()
+    {
+        // Exact format from hwn-um-manual page content.rendered (verbatim entity encoding).
+        // &#8221; = " (right smart double quote, U+201D) — closing delimiter.
+        // &#8220; = " (left smart double quote, U+201C) — opening delimiter.
+        const string content =
+            "url=&#8221;/wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf&#8221; url_new";
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Single(links);
+        Assert.Equal(
+            "https://www.spookypinball.com/wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf",
+            links[0].FileUrl);
+        Assert.Equal(GameSlug, links[0].GameSlug);
+        Assert.Equal("Spooky Pinball Support Page", links[0].DiscoveryContext);
+    }
+
+    [Fact]
+    public void ExtractPdfLinks_WpBakeryShortcodeThreePdfs_DiscoverAllThreeWithFullProvenance()
+    {
+        // Verbatim fixture from content.rendered on WP page id 1456
+        // (https://www.spookypinball.com/game-support/hwn-um-manual/).
+        // Three hardware/service PDFs: switch-positions, coil chart, board layout.
+        // These are Manual/Other classification — NOT Rulesheet gameplay docs.
+        const string content = """
+            url=&#8221;/wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf&#8221; url_new
+            url=&#8221;/wp-content/uploads/2023/09/Coil-Chart2.pdf&#8221; url_new
+            url=&#8221;/wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf&#8221; url_new
+            """;
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Equal(3, links.Count);
+        Assert.Contains(links, l =>
+            l.FileUrl == "https://www.spookypinball.com/wp-content/uploads/2023/09/H78_UM-Switch-Positions_Colors.pdf");
+        Assert.Contains(links, l =>
+            l.FileUrl == "https://www.spookypinball.com/wp-content/uploads/2023/09/Coil-Chart2.pdf");
+        Assert.Contains(links, l =>
+            l.FileUrl == "https://www.spookypinball.com/wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf");
+
+        // Every link carries full provenance.
+        Assert.All(links, l => Assert.Equal(GameSlug, l.GameSlug));
+        Assert.All(links, l => Assert.Equal("Spooky Pinball Support Page", l.DiscoveryContext));
+        // No link text from shortcode attributes (no human-readable text available).
+        Assert.All(links, l => Assert.Null(l.LinkText));
+    }
+
+    [Fact]
+    public void ExtractPdfLinks_ShortcodeRelativeUrl_IsAbsolutizedToSpookypinballCom()
+    {
+        // Relative paths in shortcode attributes must be absolutized the same
+        // way as anchor hrefs — against https://www.spookypinball.com.
+        const string content =
+            "url=&#8221;/wp-content/uploads/2024/03/beetlejuice-rules.pdf&#8221;";
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Single(links);
+        Assert.StartsWith("https://www.spookypinball.com/", links[0].FileUrl);
+        Assert.Equal(
+            "https://www.spookypinball.com/wp-content/uploads/2024/03/beetlejuice-rules.pdf",
+            links[0].FileUrl);
+    }
+
+    [Fact]
+    public void ExtractPdfLinks_ShortcodeAndAnchorSamePdf_DeduplicatedToSingleResult()
+    {
+        // If a PDF appears both as an anchor href AND in a shortcode attribute
+        // (e.g. page has both rendered HTML and raw shortcode in content.rendered),
+        // it must be deduped to a single DiscoveredLink.
+        const string content = """
+            <a href="/wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf">Board Layout</a>
+            url=&#8221;/wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf&#8221; url_new
+            """;
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Single(links);
+        Assert.Equal(
+            "https://www.spookypinball.com/wp-content/uploads/2023/09/Pinotaur-Board-layout-1.pdf",
+            links[0].FileUrl);
+    }
+
+    [Fact]
+    public void ExtractPdfLinks_ShortcodeWithNoUploadsPdf_ReturnsEmpty()
+    {
+        // Shortcode content that contains no wp-content/uploads PDF paths must
+        // not harvest anything — graceful empty, no exception.
+        const string content =
+            "url=&#8221;https://spookypinball.s3.amazonaws.com/halloween/code.pkg&#8221;";
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Empty(links);
+    }
+
+    [Fact]
+    public void ExtractPdfLinks_ShortcodeExternalPdf_IsExcluded()
+    {
+        // A PDF URL for a different domain in a shortcode attribute must be rejected.
+        const string content =
+            "url=&#8221;https://example.com/wp-content/uploads/2023/09/some.pdf&#8221;";
+
+        var links = SpookySupportPageExtractor.ExtractPdfLinks(content, PageUrl, GameSlug);
+
+        Assert.Empty(links);
     }
 
     // ── DeriveGameSlug ───────────────────────────────────────────────────────
