@@ -2027,14 +2027,15 @@ resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022
 // -----------------------------------------------------------------------------
 // Linker ACA Job (document-to-machine linking nightly batch)
 // -----------------------------------------------------------------------------
-// Calls deploy/linker-job/linker-job.bicep, which is a self-contained ACA Job
-// definition. The calling module (this file) owns the ACA environment + UAMI
-// and is responsible for granting the job's system-assigned MI Cosmos access.
+// Uses the reusable scheduled-cli-job module (PR #503). The calling module
+// (this file) owns the ACA environment + UAMI and is responsible for granting
+// the job's system-assigned MI Cosmos access.
 // Gated on deployPhase2 — the ACA environment is a Phase 2 resource.
 
-module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) {
+module linkerJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
   name: 'linker-job-${environment}'
   params: {
+    jobName: 'pinwiz-job-linker-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
     location: location
     tags: tags
     // The CLI image (pinwiz-cli:<sha>) is the real linker code. Until PR #397
@@ -2042,17 +2043,35 @@ module linkerJob '../../deploy/linker-job/linker-job.bicep' = if (deployPhase2) 
     // never ran in production. Threading cliImageTag here resurrects the job;
     // the ACR pull is authenticated via the UAMI (containerRegistryLoginServer).
     containerImage: cliImageTag
-    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
-    cosmosResourceId: cosmosAccount.id
+    containerAppsEnvironmentId: acaEnvironment.id
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
-    containerAppsEnvironmentId: acaEnvironment.id
     cronExpression: linkerCronExpression
-    // Blob endpoint for the --download-and-link verb (Task 5). The acaIdentity
-    // UAMI carries Storage Blob Data Contributor on the storage account
-    // (acaIdentityStorageAccountBlobContributor), so DefaultAzureCredential
-    // resolves blob auth for the job's system-assigned MI at runtime.
-    storageBlobEndpoint: storage.?properties.primaryEndpoints.blob ?? ''
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--download-and-link' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        // The CLI's host builder creates data/log dirs under DataPath
+        // (default 'data' → /app/data) on startup, before any command runs.
+        // /app is not writable by the non-root job user, so the job dies with
+        // "Access to the path '/app/data' is denied" before doing any work.
+        // Point DataPath at a writable ephemeral location.
+        name: 'Scraper__DataPath'
+        value: '/tmp/pinwiz'
+      }
+      {
+        // Blob storage endpoint for BlobDocumentStoreRegistration (Task 5).
+        // The acaIdentity UAMI carries Storage Blob Data Contributor on the
+        // storage account (acaIdentityStorageAccountBlobContributor), so
+        // DefaultAzureCredential resolves blob auth at runtime. Empty string
+        // disables blob-backed download (falls back to local-filesystem).
+        // Double-underscore maps to Storage:BlobEndpoint in IConfiguration.
+        name: 'Storage__BlobEndpoint'
+        value: storage.?properties.primaryEndpoints.blob ?? ''
+      }
+    ]
   }
 }
 
@@ -2065,7 +2084,7 @@ resource linkerJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRo
   name: guid(cosmosAccount.id, 'linker-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
-    principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    principalId: linkerJob.?outputs.jobPrincipalId ?? ''
     scope: cosmosAccount.id
   }
 }
@@ -2081,7 +2100,7 @@ resource linkerJobStorageBlobContrib 'Microsoft.Authorization/roleAssignments@20
   name: guid(storage.id, linkerJob.?name ?? 'linker-job-${environment}', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-    principalId: linkerJob.?outputs.linkerJobPrincipalId ?? ''
+    principalId: linkerJob.?outputs.jobPrincipalId ?? ''
     principalType: 'ServicePrincipal'
   }
 }
@@ -2089,30 +2108,62 @@ resource linkerJobStorageBlobContrib 'Microsoft.Authorization/roleAssignments@20
 // -----------------------------------------------------------------------------
 // OPDB sync ACA Job (weekly OPDB catalog sync batch)
 // -----------------------------------------------------------------------------
-// Calls deploy/opdb-sync-job/opdb-sync-job.bicep. Same shape as the linker job
-// (self-contained ACA Job; this module owns the environment + UAMI and grants
-// the system-assigned MI Cosmos access) but adds a Key Vault secret reference
-// for the OPDB API token. The token value is provisioned to Key Vault out of
-// band (az keyvault secret set --name Opdb-ApiToken ...) and never appears in
-// Bicep or params — the UAMI (Key Vault Secrets User) resolves it at run time.
+// Uses the reusable scheduled-cli-job module (PR #503). Same shape as the
+// linker job but adds a Key Vault secret reference for the OPDB API token.
+// The token is provisioned to Key Vault out of band (az keyvault secret set
+// --name Opdb-ApiToken ...) and never appears in Bicep or params — the UAMI
+// (Key Vault Secrets User) resolves it at run time via the ACA secrets block.
 // Gated on deployPhase2 — the ACA environment + Key Vault are Phase 2 resources.
 
-module opdbSyncJob '../../deploy/opdb-sync-job/opdb-sync-job.bicep' = if (deployPhase2) {
+module opdbSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
   name: 'opdb-sync-job-${environment}'
   params: {
+    jobName: 'pinwiz-job-opdb-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
     location: location
     tags: tags
     containerImage: cliImageTag
-    cosmosEndpoint: cosmosAccount.properties.documentEndpoint
-    cosmosResourceId: cosmosAccount.id
+    containerAppsEnvironmentId: acaEnvironment.id
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
-    containerAppsEnvironmentId: acaEnvironment.id
-    // Key Vault secret URI for the OPDB API token. Same construction as the
-    // Wizard app's AzureAd-ClientSecret reference (line ~1788). The secret is
-    // created manually before the first run (see PR #397 operator steps).
-    opdbApiTokenSecretUri: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Opdb-ApiToken'
     cronExpression: opdbSyncCronExpression
+    // 6 hours — a full OPDB catalog pass routes every request through the
+    // politeness gate (PoliteScraperBase — locked invariant,
+    // feedback_polite_scraping.md), so a complete sync legitimately runs for
+    // hours at the per-origin throttle. 6 hours bounds runaway execution while
+    // comfortably accommodating the deliberately-polite pass.
+    replicaTimeout: 21600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'opdb' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Opdb__BaseUrl', value: 'https://opdb.org/api/' }
+      {
+        // OPDB API token sourced from Key Vault via the ACA secrets block below.
+        // The token value never appears in Bicep, params, or source — resolved
+        // at run time by the UAMI (Key Vault Secrets User, acaIdentityKvSecretsUser).
+        name: 'Opdb__ApiToken'
+        secretRef: 'opdb-api-token'
+      }
+      {
+        // The CLI's host builder creates data/log dirs under DataPath
+        // (default 'data' → /app/data) on startup, before any command runs.
+        // /app is not writable by the non-root job user, so the job dies with
+        // "Access to the path '/app/data' is denied" before doing any work.
+        // Point DataPath at a writable ephemeral location.
+        name: 'Scraper__DataPath'
+        value: '/tmp/pinwiz'
+      }
+    ]
+    // OPDB API token: Key Vault secret resolved at run time by the UAMI.
+    // Same construction as the Wizard app's AzureAd-ClientSecret reference.
+    // The secret is created manually before the first run (see PR #397 operator steps).
+    secrets: [
+      {
+        name: 'opdb-api-token'
+        keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Opdb-ApiToken'
+        identity: acaIdentity.id
+      }
+    ]
   }
 }
 
@@ -2124,7 +2175,7 @@ resource opdbSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sql
   name: guid(cosmosAccount.id, 'opdb-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
-    principalId: opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
+    principalId: opdbSyncJob.?outputs.jobPrincipalId ?? ''
     scope: cosmosAccount.id
   }
 }
@@ -2279,11 +2330,11 @@ output acaEnvironmentName string = acaEnvironment.?name ?? ''
 output ragIndexerContainerAppName string = ragIndexerApp.?name ?? ''
 output ragIndexerPrincipalId string = ragIndexerApp.?identity.principalId ?? ''
 
-output linkerJobName string = linkerJob.?outputs.linkerJobName ?? ''
-output linkerJobPrincipalId string = linkerJob.?outputs.linkerJobPrincipalId ?? ''
+output linkerJobName string = linkerJob.?outputs.jobName ?? ''
+output linkerJobPrincipalId string = linkerJob.?outputs.jobPrincipalId ?? ''
 
-output opdbSyncJobName string = opdbSyncJob.?outputs.opdbSyncJobName ?? ''
-output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.opdbSyncJobPrincipalId ?? ''
+output opdbSyncJobName string = opdbSyncJob.?outputs.jobName ?? ''
+output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.jobPrincipalId ?? ''
 
 output sternRefreshJobName string = sternRefreshJob.?outputs.jobName ?? ''
 output sternRefreshJobPrincipalId string = sternRefreshJob.?outputs.jobPrincipalId ?? ''
