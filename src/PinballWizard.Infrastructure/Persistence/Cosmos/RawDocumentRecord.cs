@@ -28,7 +28,7 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     public required string DocumentUrl { get; init; }
 
     [JsonPropertyName("document_type")]
-    public required string DocumentType { get; init; }
+    public required string DocumentType { get; set; }
 
     [JsonPropertyName("content_hash")]
     public string? ContentHash { get; set; }
@@ -109,7 +109,7 @@ internal sealed class RawSourceInfo
 internal sealed class RawClassificationInfo
 {
     [JsonPropertyName("document_type")]
-    public required string DocumentType { get; init; }
+    public required string DocumentType { get; set; }
 
     [JsonPropertyName("file_format")]
     public required string FileFormat { get; init; }

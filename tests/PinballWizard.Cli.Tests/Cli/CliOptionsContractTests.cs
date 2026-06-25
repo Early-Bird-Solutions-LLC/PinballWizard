@@ -40,6 +40,9 @@ public sealed class CliOptionsContractTests
         "--force-redownload",
         "--migrate-download-paths",
         "--rebuild-catalog-stats",
+        "--sync-game-overviews",
+        "--refresh-game-overviews",
+        "--reclassify-documents",
     };
 
     [Fact]
@@ -132,6 +135,9 @@ public sealed class CliOptionsContractTests
         root.Options.Add(new Option<bool>("--force-redownload"));
         root.Options.Add(new Option<bool>("--migrate-download-paths"));
         root.Options.Add(new Option<bool>("--rebuild-catalog-stats"));
+        root.Options.Add(new Option<bool>("--sync-game-overviews"));
+        root.Options.Add(new Option<bool>("--refresh-game-overviews"));
+        root.Options.Add(new Option<bool>("--reclassify-documents"));
 
         return root;
     }

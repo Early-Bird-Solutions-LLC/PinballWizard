@@ -541,6 +541,45 @@ public static class PinballWizardTelemetry
         unit: "{failure}",
         description: "RefusalRecoveryService calls where the related-machines lookup (IMachineRepository.QueryByTitleAsync, a cross-partition machine-title query) threw during BuildRecoveryAsync. When non-zero, related-machine suggestions are absent from refusal panels; community routing CTAs are UNAFFECTED (the two enrichments degrade independently). Tagged with reason. A non-zero rate means the cross-partition machine-title query is failing — check the machines container + Cosmos read path (invariant #17 / OBS-01).");
 
+    // ── Document reclassification instrumentation (--reclassify-documents) ──
+    // Emitted by DocumentReclassifier.RunAsync for the CLI maintenance verb
+    // that re-runs ClassifyDocumentType over stored scraped_documents_raw
+    // records and writes back any changed document_type.
+    //
+    // pinwiz.reclassify.scanned — every record streamed (regardless of outcome).
+    // pinwiz.reclassify.changed — records whose classification changed and were
+    //   written back. Tagged with old_type and new_type so dashboards can see
+    //   which transitions occurred (e.g. Other → Rulesheet).
+    // pinwiz.reclassify.unchanged — records whose classification was already
+    //   correct; no write issued (idempotent path).
+    // pinwiz.reclassify.failed — per-document failures caught without aborting
+    //   the run (invariant #17 degrade-visibly posture).
+
+    public static readonly Counter<long> ReclassifyScanned = Meter.CreateCounter<long>(
+        "pinwiz.reclassify.scanned",
+        unit: "{document}",
+        description: "Documents streamed from scraped_documents_raw by --reclassify-documents. Includes all outcomes (changed, unchanged, failed). Use to track run completeness at corpus scale.");
+
+    public static readonly Counter<long> ReclassifyChanged = Meter.CreateCounter<long>(
+        "pinwiz.reclassify.changed",
+        unit: "{document}",
+        description: "Documents whose document_type changed and were written back by --reclassify-documents. Tagged with old_type and new_type (e.g. Other → Rulesheet). A non-zero count on the Other→Rulesheet transition after PR #507 means Domain 2 activation is working as expected.");
+
+    public static readonly Counter<long> ReclassifyUnchanged = Meter.CreateCounter<long>(
+        "pinwiz.reclassify.unchanged",
+        unit: "{document}",
+        description: "Documents whose ClassifyDocumentType result matched the stored document_type — no write issued. A high unchanged count on re-runs confirms the operation is idempotent.");
+
+    public static readonly Counter<long> ReclassifyFailed = Meter.CreateCounter<long>(
+        "pinwiz.reclassify.failed",
+        unit: "{document}",
+        description: "Per-document errors during --reclassify-documents caught and logged without aborting the run (invariant #17 degrade-visibly). Non-zero rate means some documents were not reclassified; check Error logs for document IDs and exception types.");
+
+    public static readonly Histogram<double> ReclassifyDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.reclassify.duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a complete --reclassify-documents run in milliseconds. Useful for capacity planning at corpus scale.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

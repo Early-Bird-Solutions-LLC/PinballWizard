@@ -56,4 +56,14 @@ public interface IRawDocumentRepository
 
     // Stream all raw documents for a given scrape run_id — back-office admin drill-down.
     IAsyncEnumerable<RawDocumentRecord> StreamByRunIdAsync(string runId, CancellationToken cancellationToken);
+
+    // Overwrite ONLY the document_type field on an existing record, leaving
+    // all provenance (Source, Classification.FileFormat, Timeline, File,
+    // CrossReferences, link_status, linker metadata) untouched.
+    // Throws InvalidOperationException if the document does not exist.
+    // Used by --reclassify-documents to fix classification without re-scraping.
+    Task UpdateDocumentTypeAsync(
+        string documentId,
+        DocumentType newType,
+        CancellationToken cancellationToken);
 }
