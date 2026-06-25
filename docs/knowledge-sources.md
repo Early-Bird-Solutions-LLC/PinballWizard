@@ -96,6 +96,12 @@ This category is structurally different from everything above — see §5.
 | Marco Specialties, Pinball Life, Pinball Resource, PinballPro | Parts catalogs with part numbers and compatibility data | Useful reference; respect catalog ToS, link rather than republish |
 | Mezel Mods, Tilt Graphics, PinGraffix, others | Aftermarket mod catalogs | Same |
 
+### 3.7 The gameplay-rules (Domain 2) sourcing ceiling
+
+Domain 2 (§2, row 2) splits into two tiers with very different availability. *Overview / feature / edition* content is now indexed (Stern game-page enrichment, PR #495). *Wizard-mode rule depth* — the mode-completion graph behind "what do I finish to reach Godzilla's wizard mode" — has **no polite, public, login-free manufacturer source**. This was confirmed empirically on 2026-06-25: a reclassification pass over the live corpus (567 documents) produced **zero** `Rulesheet` promotions. Manufacturers publish manuals and hardware charts (indexed as `Manual`); the rule-depth that exists publicly lives in **community-authored** rulesheets, and Stern's own per-game rulesheets sit behind the **Insider Connected** login wall (rejected on posture grounds — a login is a deliberate access-control signal, §7).
+
+This is a sourcing ceiling, not a pipeline gap: `DocumentType.Rulesheet` is already in the RAG allow-list and would index rule content the moment a source supplies it. Consistent with the community-resource posture (§7 and `feedback_community_resource_posture`), the Wizard's correct expression for this gap is to **route users outward** to community rulesheet sites via the refusal panel rather than ingest community labor. Ingesting any community rulesheet is gated on written permission plus a governing ADR — see the decision brief at [`docs/superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md`](superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md). The one polite public manufacturer lead under evaluation is Pinball Brothers' per-game `/documents/` PDFs (§3.1).
+
 ---
 
 ## 4. Acquisition Strategies
