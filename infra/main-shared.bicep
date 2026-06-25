@@ -87,6 +87,9 @@ param linkerCronExpression string = '0 2 * * *'
 @description('Cron schedule expression (UTC) for the weekly OPDB sync ACA Job. Default is 3 am Sunday. Has no effect when deployPhase2=false.')
 param opdbSyncCronExpression string = '0 3 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Has no effect when deployPhase2=false or deployAiSearch=false.')
+param sternRefreshCronExpression string = '0 10 * * 0'
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -139,6 +142,7 @@ module shared 'modules/shared.bicep' = {
     cliImageTag: cliImageTag
     linkerCronExpression: linkerCronExpression
     opdbSyncCronExpression: opdbSyncCronExpression
+    sternRefreshCronExpression: sternRefreshCronExpression
   }
 }
 
@@ -186,6 +190,13 @@ output linkerJobPrincipalId string = shared.outputs.linkerJobPrincipalId
 // confirms the Cosmos sqlRoleAssignment propagated.
 output opdbSyncJobName string = shared.outputs.opdbSyncJobName
 output opdbSyncJobPrincipalId string = shared.outputs.opdbSyncJobPrincipalId
+
+// Stern overview-refresh ACA Job (weekly Stern game-page scrape + AI Search sync).
+// sternRefreshJobPrincipalId is the post-deploy validation handle:
+//   az role assignment list --scope <searchServiceId> --assignee <sternRefreshJobPrincipalId>
+// confirms Search Index Data Contributor propagated.
+output sternRefreshJobName string = shared.outputs.sternRefreshJobName
+output sternRefreshJobPrincipalId string = shared.outputs.sternRefreshJobPrincipalId
 
 // Foundry (ADR-0014). foundryProjectEndpoint is the canonical value
 // operators export as $env:AiFoundry__ProjectEndpoint for the
