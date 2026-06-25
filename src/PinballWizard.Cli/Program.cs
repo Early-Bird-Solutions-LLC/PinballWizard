@@ -459,7 +459,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         if (machineRepo is null || synthesizer is null || indexer is null)
         {
             Console.Error.WriteLine(
-                "--sync-game-overviews requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Game overview sync requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
                 "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
             return 2;
         }
@@ -526,7 +526,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-game-overviews complete: upserted={upserted} skipped(no-content)={skipped} failed={failed}");
+        Console.WriteLine($"Game overview sync complete: upserted={upserted} skipped(no-content)={skipped} failed={failed}");
         return failed > 0 ? 1 : 0;
     }
 

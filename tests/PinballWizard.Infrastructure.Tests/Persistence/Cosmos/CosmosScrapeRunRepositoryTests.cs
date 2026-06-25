@@ -91,6 +91,42 @@ public sealed class CosmosScrapeRunRepositoryTests
     }
 
     [Fact]
+    public async Task WriteAsync_PersistsTrigger()
+    {
+        ScrapeRunCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<ScrapeRunCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey?>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.Arg<ScrapeRunCosmosRecord>()));
+
+        await _repository.WriteAsync(
+            new ScrapeRunRecord
+            {
+                SourceId = "stern", RunAt = new DateTimeOffset(2026, 6, 25, 10, 0, 0, TimeSpan.Zero),
+                DurationSeconds = 1.0, Succeeded = true, DocumentsDiscovered = 10, Trigger = "scheduled",
+            },
+            CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("scheduled", captured!.Trigger);
+    }
+
+    [Fact]
+    public async Task StreamBySourceAsync_MapsTriggerToDomain()
+    {
+        _container
+            .GetItemQueryIterator<ScrapeRunCosmosRecord>(
+                Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<ScrapeRunCosmosRecord>([[CosmosRow("stern", trigger: "scheduled")]]));
+
+        var results = new List<ScrapeRunRecord>();
+        await foreach (var r in _repository.StreamBySourceAsync("stern", 20, CancellationToken.None))
+            results.Add(r);
+
+        Assert.Equal("scheduled", Assert.Single(results).Trigger);
+    }
+
+    [Fact]
     public async Task WriteAsync_NullRecord_Throws()
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() =>
@@ -130,7 +166,7 @@ public sealed class CosmosScrapeRunRepositoryTests
         });
     }
 
-    private static ScrapeRunCosmosRecord CosmosRow(string sourceId) => new()
+    private static ScrapeRunCosmosRecord CosmosRow(string sourceId, string? trigger = null) => new()
     {
         Id = $"{sourceId}_20260623083015123Z",
         PartitionKey = sourceId,
@@ -138,6 +174,7 @@ public sealed class CosmosScrapeRunRepositoryTests
         DurationSeconds = 12.5,
         Succeeded = true,
         DocumentsDiscovered = 42,
+        Trigger = trigger,
     };
 
     private static ItemResponse<ScrapeRunCosmosRecord> MakeItemResponse(ScrapeRunCosmosRecord r)
