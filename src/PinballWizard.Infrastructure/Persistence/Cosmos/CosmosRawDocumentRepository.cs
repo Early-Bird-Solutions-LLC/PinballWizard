@@ -276,6 +276,36 @@ internal sealed class CosmosRawDocumentRepository
         }
     }
 
+    // IRawDocumentRepository.UpdateDocumentTypeAsync
+    // Overwrites ONLY the document_type (and the nested classification.document_type
+    // mirror field) on an existing record. All provenance, linker metadata, timeline,
+    // file, and cross-reference fields are preserved as-is. Used by the
+    // --reclassify-documents verb to fix stored types without re-scraping.
+    public async Task UpdateDocumentTypeAsync(
+        string documentId,
+        DocumentType newType,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"UpdateDocumentTypeAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        existing.DocumentType = newType.ToString();
+        if (existing.Classification is not null)
+        {
+            existing.Classification.DocumentType = newType.ToString();
+        }
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
     private static RawDocumentCosmosRecord MapToCosmosRecord(DocumentRecord record)

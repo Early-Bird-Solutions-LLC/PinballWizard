@@ -14,6 +14,7 @@ using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Landing;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
@@ -168,6 +169,11 @@ var rebuildCatalogStatsOption = new Option<bool>("--rebuild-catalog-stats")
     Description = "Recomputes every per-manufacturer catalog_stats rollup from scratch: streams all machines, reads each machine's scraped_documents (single-partition), aggregates doc counts and type distribution, and upserts the authoritative per-manufacturer rollup document. This is the rebuildable-projection backstop (ADR-0031/ADR-0036) — also the only path that sets authoritative identity fields (EditionLabel, GroupId, Year, IsOpdbOnly) on each MachineStatEntry from the live Machine record. Idempotent. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var reclassifyDocumentsOption = new Option<bool>("--reclassify-documents")
+{
+    Description = "Re-run ClassifyDocumentType over every record in scraped_documents_raw using the stored Source fields (LinkText, FileUrl, DiscoveryContext) and write back ONLY the records whose classification changed. Idempotent: a second run is a no-op. Makes no external HTTP calls — operates entirely on already-stored Cosmos data (polite-by-construction). Use after a classification rule change (e.g. PR #507 added Rulesheet) to fix existing Other-typed records without a full re-scrape. After this, run --relink-all to fan updated types into scraped_documents so the RAG ingestion worker picks them up. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -192,6 +198,7 @@ rootCommand.Options.Add(downloadAndLinkOption);
 rootCommand.Options.Add(forceRedownloadOption);
 rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
+rootCommand.Options.Add(reclassifyDocumentsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -218,6 +225,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var forceRedownload = parseResult.GetValue(forceRedownloadOption);
     var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
+    var reclassifyDocuments  = parseResult.GetValue(reclassifyDocumentsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -830,6 +838,17 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --reclassify-documents (in-place classification fix for stored
+    // scraped_documents_raw records; no HTTP calls; ADR-0042 follow-up).
+    // Resolves IDocumentReclassifier from DI; the service is only registered
+    // when AddCosmosPersistence was wired. Mirrors the --rebuild-catalog-stats
+    // exit-code-2 remediation pattern.
+    if (reclassifyDocuments)
+    {
+        await ReclassifyDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
     // Default behavior: scrape (discover + upsert to Cosmos).
     var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
 
@@ -933,6 +952,12 @@ static IHost CreateHost(string[] args)
         // available inside this cosmosWired gate. GetService<ICatalogStatsRebuildService>()
         // in the handler returns null (→ exit code 2) when Cosmos is not configured.
         builder.Services.AddCatalogStatsRebuild();
+
+        // Document reclassifier (--reclassify-documents). Depends only on
+        // IRawDocumentRepository (registered by AddCosmosPersistence above).
+        // GetService<IDocumentReclassifier>() in the handler returns null
+        // (→ exit code 2) when Cosmos is not configured.
+        builder.Services.AddTransient<IDocumentReclassifier, DocumentReclassifier>();
     }
 
     // OPDB integration — gated on Opdb:BaseUrl. Sync writes to IMachineRepository,
