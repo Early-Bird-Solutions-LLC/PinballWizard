@@ -54,6 +54,18 @@
     "politenessOverrides": null
   },
   {
+    "id": "pb_docs",
+    "displayName": "Pinball Brothers — Per-Game Documents",
+    "scraperImplKey": "pb_docs",
+    "baseUrl": "https://pinballbrothers.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null,
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Pinball Brothers game pages embed per-game PDF rulesheets in nectar_btn shortcode url= attributes within content.rendered. ABBA Pinball has ABBA_Quick_Rule_Sheet.pdf (confirmed rulesheet; link text 'Rulesheet', URL path /games/abba/documents/). robots.txt: Disallow /wp-admin/ only; no Crawl-delay; no restrictions on /games/ or /wp-json/. PbGamePageDocumentScraper extracts from WP REST pages?_fields=…,content. Predator/Queen/Alien pages have no documents as of 2026-06-25.",
+    "discoveryDate": "2026-06-25"
+  },
+  {
     "id": "barrelsoffun",
     "displayName": "Barrels of Fun",
     "scraperImplKey": "barrelsoffun",
