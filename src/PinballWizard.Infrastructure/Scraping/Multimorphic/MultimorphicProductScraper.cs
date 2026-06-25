@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Models;
@@ -92,7 +92,7 @@ public sealed class MultimorphicProductScraper : PoliteScraperBase, ISourceScrap
         try
         {
             var html = await GetStringPolitelyAsync(_httpClient, productUrl, cancellationToken).ConfigureAwait(false);
-            return MultimorphicProductExtractor.Extract(html, productUrl);
+            return MultimorphicProductExtractor.Extract(html, productUrl, Logger);
         }
         catch (PolitenessException)
         {
