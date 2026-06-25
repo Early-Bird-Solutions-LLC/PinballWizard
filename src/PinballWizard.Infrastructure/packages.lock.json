@@ -70,6 +70,16 @@
           "Azure.Core": "1.53.0"
         }
       },
+      "Azure.ResourceManager.AppContainers": {
+        "type": "Direct",
+        "requested": "[1.5.0, )",
+        "resolved": "1.5.0",
+        "contentHash": "hl/Rsbso/SLJnefb618sSWuLYGM8ENraFsC2GypdPEh5x4hMf5NTgaTa5WTRt6d9bNkZki/eoWWTqS0DsQ1msA==",
+        "dependencies": {
+          "Azure.Core": "1.49.0",
+          "Azure.ResourceManager": "1.13.2"
+        }
+      },
       "Azure.ResourceManager.CosmosDB": {
         "type": "Direct",
         "requested": "[1.4.1, )",

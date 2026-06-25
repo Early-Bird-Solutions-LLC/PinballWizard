@@ -65,6 +65,13 @@
          the production identity holding `Cosmos DB Operator` at account scope.
          The data-plane SDK (Microsoft.Azure.Cosmos) below remains the canonical
          path for runtime item CRUD. -->
+    <PackageReference Include="Azure.ResourceManager.AppContainers" />
+    <!-- Azure.ResourceManager.AppContainers is the ARM control-plane SDK for
+         Microsoft.App/jobs — used by ArmJobAdminService to list ACA Jobs,
+         read their latest execution status and cron schedule, and trigger
+         job runs from the /admin/jobs page. Verified from:
+         https://www.nuget.org/packages/Azure.ResourceManager.AppContainers
+         (1.5.0 is the current GA stable). -->
     <PackageReference Include="Azure.ResourceManager.CosmosDB" />
     <PackageReference Include="Microsoft.Azure.Cosmos" />
     <!-- Aspire Cosmos client integration. Powers the shared CosmosHostRegistration

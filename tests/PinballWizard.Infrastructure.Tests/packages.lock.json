@@ -817,6 +817,7 @@
           "Azure.AI.OpenAI": "[2.1.0, )",
           "Azure.AI.Projects": "[2.0.1, )",
           "Azure.Identity": "[1.21.0, )",
+          "Azure.ResourceManager.AppContainers": "[1.5.0, )",
           "Azure.ResourceManager.CosmosDB": "[1.4.1, )",
           "Azure.Search.Documents": "[12.0.0, )",
           "Azure.Storage.Blobs": "[12.26.0, )",
@@ -919,6 +920,16 @@
         "contentHash": "GeFv8sGwRKvDKwI2WFy8r0mhmlxEVZg24Sit2NogTjiSO8RVjllWM65OT6e1sKjOvG8V74y7hAbaELUUPjZQSw==",
         "dependencies": {
           "Azure.Core": "1.53.0"
+        }
+      },
+      "Azure.ResourceManager.AppContainers": {
+        "type": "CentralTransitive",
+        "requested": "[1.5.0, )",
+        "resolved": "1.5.0",
+        "contentHash": "hl/Rsbso/SLJnefb618sSWuLYGM8ENraFsC2GypdPEh5x4hMf5NTgaTa5WTRt6d9bNkZki/eoWWTqS0DsQ1msA==",
+        "dependencies": {
+          "Azure.Core": "1.49.0",
+          "Azure.ResourceManager": "1.13.2"
         }
       },
       "Azure.ResourceManager.CosmosDB": {

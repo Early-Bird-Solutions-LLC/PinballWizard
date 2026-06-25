@@ -1,0 +1,281 @@
+@page "/admin/jobs"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@* AdminJobs — /admin/jobs live view of scheduled Container Apps Jobs + run-now.
+ *
+ * Reads job status directly from Azure ARM (not a static manifest) via
+ * IJobAdminService, so the dashboard reflects the real deployment state.
+ * The service is only registered when Cosmos:AccountResourceId is present
+ * (deployed Azure path); local dev without live Azure shows the ARM-unavailable
+ * state — never synthetic/placeholder data per Invariant #17.
+ *
+ * RBAC required (operator deploy): acaIdentity UAMI must hold
+ * "Container Apps Jobs Operator" (b9a307c4-5aa3-4b52-ba60-2b17c136cd7b) at
+ * the resource-group scope. Wired in shared.bicep under deployPhase2.
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth (AdminOnly policy)
+ * ADR-0026  § 1 — render-mode doctrine (InteractiveServer for action page)
+ * Invariant #17 — degrade visibly; never fabricate job data
+ *@
+
+@using Microsoft.Extensions.DependencyInjection
+@using PinballWizard.Application.Jobs
+@using PinballWizard.Web.Security
+
+@inject IServiceProvider ServiceProvider
+@inject ISnackbar Snackbar
+@inject ILogger<AdminJobs> Logger
+
+<PageTitle>Jobs — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    <MudText Typo="Typo.h4" GutterBottom="true">Scheduled Jobs</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Live view of Container Apps Jobs scheduled in this environment.
+        Use <strong>Run now</strong> to trigger a manual execution.
+    </MudText>
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading job status from Azure ARM" />
+    }
+    else if (_serviceUnavailable)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="jobs-service-unavailable">
+            Job status is only available when running against live Azure. Configure
+            <code>Cosmos:AccountResourceId</code> to enable ARM connectivity.
+        </MudAlert>
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="jobs-arm-error">
+            Job status could not be loaded from Azure ARM.
+            Check that the app's identity has the <em>Container Apps Jobs Operator</em>
+            role on the resource group, and that <code>Cosmos:AccountResourceId</code>
+            is correctly set.
+        </MudAlert>
+    }
+    else if (_jobs.Count == 0)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="jobs-empty">
+            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
+            <MudText Typo="Typo.body1">No Container Apps Jobs found in this resource group.</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Jobs are deployed in Phase 2. Deploy with <code>deployPhase2 = true</code>.
+            </MudText>
+        </MudStack>
+    }
+    else
+    {
+        <MudPaper Elevation="2">
+            <MudTable T="JobStatus"
+                      Items="@_jobs"
+                      Hover="true"
+                      Dense="true"
+                      data-testid="jobs-table">
+                <HeaderContent>
+                    <MudTh>Job</MudTh>
+                    <MudTh>Schedule (cron)</MudTh>
+                    <MudTh>Trigger type</MudTh>
+                    <MudTh>Latest run</MudTh>
+                    <MudTh>Started (UTC)</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Job">
+                        <MudText Typo="Typo.body2" data-testid="job-name">
+                            @context.DisplayName
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.JobName</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Schedule (cron)">
+                        <code>@(context.CronExpression ?? "—")</code>
+                    </MudTd>
+                    <MudTd DataLabel="Trigger type">@context.TriggerType</MudTd>
+                    <MudTd DataLabel="Latest run">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@StatusColor(context.LatestExecutionStatus)"
+                                 data-testid="job-status">
+                            @context.LatestExecutionStatus
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Started (UTC)">
+                        @if (context.LatestExecutionStartTime is { } t)
+                        {
+                            <span>@t.UtcDateTime.ToString("u")</span>
+                        }
+                        else
+                        {
+                            <span>—</span>
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       aria-label="Run job now"
+                                       data-testid="run-now-button"
+                                       Disabled="@(_startBusy)"
+                                       OnClick="@(() => OpenConfirmDialogAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+</MudContainer>
+
+@* Run-now confirmation panel — rendered inline to remain testable via bUnit
+   (MudDialog routes content through MudPopoverProvider, which bUnit cannot
+   reach from the component under test). The inline approach gives the same
+   UX with MudPaper + MudStack and is equally accessible. *@
+@if (_showConfirmDialog && _pendingJob is not null)
+{
+    <MudPaper Elevation="4" Class="pa-4 mt-4" data-testid="confirm-dialog-panel">
+        <MudText Typo="Typo.h6" GutterBottom="true">Run job now?</MudText>
+        <MudText>
+            Trigger a manual execution of
+            <strong>@_pendingJob.DisplayName</strong>
+            (<code>@_pendingJob.JobName</code>)?
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2 mb-4">
+            This starts the job immediately outside its scheduled window.
+            The job will run with its configured container image and settings.
+        </MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudButton OnClick="@(() => _showConfirmDialog = false)"
+                       data-testid="confirm-cancel">
+                Cancel
+            </MudButton>
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="ConfirmStartJobAsync"
+                       Disabled="@_startBusy"
+                       data-testid="confirm-run">
+                Run now
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    // Resolved via GetService (optional) so the page degrades gracefully when
+    // IJobAdminService is not registered (local dev without live Azure).
+    private IJobAdminService? JobService => ServiceProvider.GetService<IJobAdminService>();
+
+    private List<JobStatus> _jobs = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _serviceUnavailable;
+    private bool _showConfirmDialog;
+    private bool _startBusy;
+    private JobStatus? _pendingJob;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
+    ];
+
+    // OnAfterRenderAsync so the loading shell reaches the client immediately
+    // rather than blocking the prerender pass on the ARM round-trip.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
+    {
+        if (JobService is null)
+        {
+            _serviceUnavailable = true;
+            _loading = false;
+            StateHasChanged();
+            return;
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            _jobs = (await JobService.ListJobsAsync(cts.Token).ConfigureAwait(true)).ToList();
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Logger.LogError(ex, "ARM error loading job list for /admin/jobs.");
+            _loadFailed = true;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("/admin/jobs job-list load timed out after 30 s.");
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error loading job list for /admin/jobs.");
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenConfirmDialogAsync(JobStatus job)
+    {
+        _pendingJob = job;
+        _showConfirmDialog = true;
+    }
+
+    private async Task ConfirmStartJobAsync()
+    {
+        if (_pendingJob is null || JobService is null || _startBusy) return;
+        _startBusy = true;
+        _showConfirmDialog = false;
+        try
+        {
+            await JobService.StartJobAsync(_pendingJob.JobName, CancellationToken.None)
+                .ConfigureAwait(true);
+            Snackbar.Add(
+                $"Job '{_pendingJob.DisplayName}' triggered successfully. " +
+                "Refresh in a moment to see the updated run status.",
+                Severity.Success);
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Logger.LogError(ex, "ARM error triggering job {JobName}.", _pendingJob.JobName);
+            Snackbar.Add($"Failed to start '{_pendingJob.DisplayName}': {ex.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error triggering job {JobName}.", _pendingJob.JobName);
+            Snackbar.Add($"Unexpected error starting '{_pendingJob.DisplayName}'.", Severity.Error);
+        }
+        finally
+        {
+            _startBusy = false;
+            _pendingJob = null;
+        }
+    }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "Succeeded" => Color.Success,
+        "Running" or "Processing" => Color.Info,
+        "Failed" => Color.Error,
+        "Stopped" or "Degraded" => Color.Warning,
+        _ => Color.Default,
+    };
+}

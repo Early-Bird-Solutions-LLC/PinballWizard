@@ -405,6 +405,37 @@ resource acaIdentityKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-
   }
 }
 
+// Container Apps Jobs Operator — grants the shared UAMI (acaIdentity) permission
+// to read and start/stop Microsoft.App/jobs in this resource group.
+//
+// Built-in role: "Container Apps Jobs Operator"
+// Role definition ID: b9a307c4-5aa3-4b52-ba60-2b17c136cd7b
+// Source: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/containers
+//   (see "Container Apps Jobs Operator")
+// Actions: Microsoft.App/jobs/*/read, Microsoft.App/jobs/*/action (includes start/stop)
+// DataActions: Microsoft.App/jobs/exec/action, Microsoft.App/jobs/logstream/action
+//
+// NOTE — known GitHub issue #1303 (reported 2024-10-03, closed as Backlog):
+// the Azure Portal "Run now" UI button may stay grayed out even with this role.
+// Programmatic ARM REST API calls from the web app's managed identity ARE
+// authorized correctly — the Portal issue is a surface-side check, not an
+// ARM authorization regression. The /admin/jobs page calls the ARM API directly
+// and is unaffected by the Portal UI behavior.
+//
+// Scoped to resourceGroup() (not a specific job) so the wizard can list + start
+// any job without per-job re-assignment as new jobs are added.
+resource acaIdentityJobsOperator 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: resourceGroup()
+  name: guid(resourceGroup().id, '${namePrefix}-aca-id-${environment}', 'b9a307c4-5aa3-4b52-ba60-2b17c136cd7b')
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b9a307c4-5aa3-4b52-ba60-2b17c136cd7b')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Azure AI Search (Basic)
 // -----------------------------------------------------------------------------
