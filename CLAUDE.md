@@ -56,12 +56,12 @@ ADRs live in [`docs/adr/`](docs/adr/) — index in [`docs/adr/README.md`](docs/a
 | American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |
-| Barrels of Fun | `shop.kollectfun.com` | WooCommerce + JSON-LD | `BofProductScraper` |
-| Multimorphic | `multimorphic.com` | WP-REST + JSON-LD | `MultimorphicProductScraper` |
+| Barrels of Fun | `shop.kollectfun.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `BofProductScraper` |
+| Multimorphic | `multimorphic.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `MultimorphicProductScraper` |
 | Chicago Gaming (CGC) | `chicago-gaming.com/coinop/` | Custom Nginx HTML | `CgcGamePageScraper` |
 | OPDB (canonical machine catalog) | `opdb.org/api/` | API; not a web scraper | `OpdbSyncService`, special-cased — writes `IMachineRepository` not `ScrapedItems` |
 
-Three storefronts (JJP / BoF / Multimorphic) share `JsonLdProductParser` + `OpenGraphExtractor` in `Infrastructure/Scraping/JsonLd/` and `Infrastructure/Scraping/OpenGraph/`. Drift across siblings is the silent failure mode — see PR self-audit § sibling-diff below.
+JJP uses `JsonLdProductParser` + `OpenGraphExtractor` in `Infrastructure/Scraping/JsonLd/` and `Infrastructure/Scraping/OpenGraph/`. BoF and Multimorphic moved to the WooCommerce Store API (shared `WooCommerceStoreApiClient` + `WooCommerceProductMapper` in `Infrastructure/Scraping/WooCommerce/`).
 
 ### Polite-by-construction scraping (LOCKED — see `feedback_polite_scraping.md`)
 

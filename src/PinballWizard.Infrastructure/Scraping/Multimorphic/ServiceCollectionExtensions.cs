@@ -3,22 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
+using PinballWizard.Infrastructure.Scraping.WooCommerce;
 
 namespace PinballWizard.Infrastructure.Scraping.Multimorphic;
 
-/// <summary>
-/// DI registration helpers for the Multimorphic scraper.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the Multimorphic scraper:
-    /// <list type="bullet">
-    ///   <item>Binds <see cref="MultimorphicOptions"/> from configuration section <c>Multimorphic</c> with validation.</item>
-    ///   <item>Registers typed <see cref="HttpClient"/>s for <see cref="MultimorphicSitemapClient"/> and <see cref="MultimorphicProductScraper"/> with the polite User-Agent.</item>
-    ///   <item>Bridges the typed-client registration into the <see cref="ISourceScraper"/> enumerable.</item>
-    /// </list>
-    /// </summary>
     public static IServiceCollection AddMultimorphicScraping(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -30,13 +20,11 @@ public static class ServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
-        services.AddHttpClient<MultimorphicSitemapClient>((sp, client) =>
+        services.AddHttpClient<WooCommerceStoreApiClient>((sp, client) =>
         {
             var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
-            var mm = sp.GetRequiredService<IOptions<MultimorphicOptions>>().Value;
-            client.BaseAddress = new Uri(mm.BaseUrl);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
-            client.DefaultRequestHeaders.Accept.ParseAdd("application/xml");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
@@ -46,7 +34,7 @@ public static class ServiceCollectionExtensions
             var mm = sp.GetRequiredService<IOptions<MultimorphicOptions>>().Value;
             client.BaseAddress = new Uri(mm.BaseUrl);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
-            client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
             client.Timeout = TimeSpan.FromSeconds(60);
         });
 
