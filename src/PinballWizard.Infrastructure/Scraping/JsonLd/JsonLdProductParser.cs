@@ -1,7 +1,9 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
+using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Observability;
 
 namespace PinballWizard.Infrastructure.Scraping.JsonLd;
 
@@ -199,4 +201,30 @@ public static class JsonLdProductParser
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    /// <summary>
+    /// Emits the invariant-#17 visibility signals when no JSON-LD product is found
+    /// on a storefront product page: a <see cref="LogLevel.Warning"/> log and an
+    /// increment of <c>pinwiz.scraper.jsonld_missing_total</c> tagged with the
+    /// source name and the product URL. Call this after <see cref="FindFirstProduct"/>
+    /// returns null when a logger is available. The record is still returned via the
+    /// OG / H1 fallback — this method provides the observable signal for the
+    /// degradation, not a change in behavior.
+    /// </summary>
+    public static void WarnJsonLdMissing(ILogger logger, Uri productUrl, string source)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(productUrl);
+        ArgumentNullException.ThrowIfNull(source);
+
+        logger.LogWarning(
+            "No JSON-LD product found on {Url} for {Source}; falling back to OpenGraph/h1 — structured fields (editions/price/status) will be absent.",
+            productUrl,
+            source);
+
+        PinballWizardTelemetry.ScraperJsonLdMissing.Add(
+            1,
+            new KeyValuePair<string, object?>("source", source),
+            new KeyValuePair<string, object?>("url", productUrl.ToString()));
+    }
 }

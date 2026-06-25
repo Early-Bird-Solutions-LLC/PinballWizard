@@ -1,6 +1,7 @@
-using AngleSharp.Dom;
+﻿using AngleSharp.Dom;
 using AngleSharp.Html.Dom;
 using AngleSharp.Html.Parser;
+using Microsoft.Extensions.Logging;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Scraping.JsonLd;
 using PinballWizard.Infrastructure.Scraping.OpenGraph;
@@ -36,7 +37,7 @@ public static class JjpProductExtractor
     /// </summary>
     /// <param name="html">Rendered HTML of a JJP product page.</param>
     /// <param name="productUrl">Absolute URL of the product page.</param>
-    public static GameRecord? Extract(string html, Uri productUrl)
+    public static GameRecord? Extract(string html, Uri productUrl, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(productUrl);
@@ -47,6 +48,11 @@ public static class JjpProductExtractor
         if (string.IsNullOrWhiteSpace(slug)) return null;
 
         var product = JsonLdProductParser.FindFirstProduct(doc);
+        if (product is null && logger is not null)
+        {
+            JsonLdProductParser.WarnJsonLdMissing(logger, productUrl, "JJP");
+        }
+
         var title = product?.Name
             ?? OpenGraphExtractor.GetMetaContent(doc, "og:title")
             ?? doc.QuerySelector("h1")?.TextContent?.Trim();

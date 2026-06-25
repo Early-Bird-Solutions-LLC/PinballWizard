@@ -1,4 +1,4 @@
-# PinballWizard — Project Context for Claude Code
+﻿# PinballWizard — Project Context for Claude Code
 
 ## What This Is
 
@@ -52,7 +52,7 @@ ADRs live in [`docs/adr/`](docs/adr/) — index in [`docs/adr/README.md`](docs/a
 | Stern (manuals) | `sternpinball.com/manuals/` | Static HTML (AngleSharp) | `ManualsScraper` |
 | Stern (game pages) | `sternpinball.com/game/{slug}/` | Vue.js (Playwright) | `GamePageScraper`, 3 tabs per game |
 | Stern (bulletins) | `sternpinball.com/support/service-bulletins/` | Vue.js (Playwright) | `ServiceBulletinScraper` |
-| Jersey Jack (JJP) | `jerseyjackpinball.com/collections/...` | WP-REST + JSON-LD | `JjpProductScraper` |
+| Jersey Jack (JJP) | `jerseyjackpinball.com/products/...` | Shopify sitemap + JSON-LD | `JjpProductScraper` |
 | American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |
