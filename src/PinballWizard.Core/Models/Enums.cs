@@ -13,6 +13,7 @@ public enum SourceType
     SpookyPinballGamePage,
     SpookyPinballSupportPage,
     PinballBrothersGamePage,
+    PinballBrothersDocumentPage,
     BarrelsOfFunProductPage,
     ChicagoGamingGamePage,
     MultimorphicProductPage,

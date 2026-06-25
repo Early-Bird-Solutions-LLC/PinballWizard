@@ -45,12 +45,29 @@ public sealed class PbWpPagesClient : PoliteScraperBase
     /// the subset that pass the slug-suffix game filter.
     /// </summary>
     public async Task<List<PbPageRaw>> DiscoverGamePagesAsync(CancellationToken cancellationToken)
+        => await DiscoverPagesInternalAsync(includeContent: false, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Enumerates Pinball Brothers' WP pages (paginated) — same slug-suffix
+    /// filtering as <see cref="DiscoverGamePagesAsync"/> — but also requests
+    /// the <c>content</c> field so that the document scraper can extract PDF
+    /// links from each game page's rendered markup.
+    /// </summary>
+    /// <remarks>
+    /// Kept as a separate method (rather than a bool parameter) to keep the
+    /// game-page scraper's existing tests compiling without modification; the
+    /// WP REST response is slightly larger with content included.
+    /// </remarks>
+    public async Task<List<PbPageRaw>> DiscoverGamePagesWithContentAsync(CancellationToken cancellationToken)
+        => await DiscoverPagesInternalAsync(includeContent: true, cancellationToken).ConfigureAwait(false);
+
+    private async Task<List<PbPageRaw>> DiscoverPagesInternalAsync(bool includeContent, CancellationToken cancellationToken)
     {
         var allPages = new List<PbPageRaw>();
         int page = 1;
         while (true)
         {
-            var url = BuildPagesUrl(page);
+            var url = BuildPagesUrl(page, includeContent);
             Logger.LogInformation("Pinball Brothers: reading WP pages {Url}", url);
 
             var body = await GetStringPolitelyAsync(_httpClient, url, cancellationToken).ConfigureAwait(false);
@@ -120,10 +137,12 @@ public sealed class PbWpPagesClient : PoliteScraperBase
         return result;
     }
 
-    private Uri BuildPagesUrl(int page)
+    private Uri BuildPagesUrl(int page, bool includeContent = false)
     {
         var baseUri = new Uri(_options.BaseUrl);
-        var fields = "id,slug,link,parent,modified,title";
+        var fields = includeContent
+            ? "id,slug,link,parent,modified,title,content"
+            : "id,slug,link,parent,modified,title";
         var path = _options.PagesEndpointPath
             + $"?per_page={_options.PageSize}&page={page}&_fields={fields}";
         return new Uri(baseUri, path);
