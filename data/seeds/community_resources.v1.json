@@ -12,7 +12,7 @@
       "category": "forums",
       "name": "Tilt Forums",
       "url": "https://tiltforums.com",
-      "description": "Community forum focused on pinball discussion, rules breakdowns, and repair guides across a wide range of titles.",
+      "description": "Community forum with in-depth rules breakdowns, strategy discussions, and repair guides across a wide range of titles. Content is licensed CC-BY-NC-SA (NonCommercial) — route outward only; never ingest.",
       "covers_question_types": ["rules", "repair", "general"]
     },
     {
@@ -28,6 +28,13 @@
       "url": "https://opdb.org",
       "description": "The Open Pinball Database — a community-maintained registry of pinball machines with canonical identifiers, manufacturer records, and edition data. Used by operators and collectors as a reference catalog.",
       "covers_question_types": ["machine_reference", "valuation"]
+    },
+    {
+      "category": "machine_reference",
+      "name": "Kineticist",
+      "url": "https://kineticist.com",
+      "description": "Structured per-game rules and strategy guides covering mode objectives, scoring, and wizard-mode paths across a curated library of titles. AI-friendly; partnership pending. Route outward only; ingestion is a separate future ADR-gated decision.",
+      "covers_question_types": ["rules", "strategy", "general"]
     },
     {
       "category": "machine_reference",
