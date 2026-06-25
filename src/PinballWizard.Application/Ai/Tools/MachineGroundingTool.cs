@@ -165,11 +165,21 @@ public sealed class MachineGroundingTool
             // combinatorial write amplification would be large (N mfr × M editions).
             // So "stern godzilla premium" is a 404 on the first point-read.
             //
-            // Recovery: strip the leading whitespace-delimited token and retry, up to
-            // 2 times, stopping on the first hit. The remainder must have ≥ 2 tokens
-            // after stripping so we avoid degenerate single-word collisions
+            // Recovery: strip the leading whitespace-delimited token and retry
+            // exactly once, stopping on the first hit. The remainder must have ≥ 2
+            // tokens after stripping so we avoid degenerate single-word collisions
             // (e.g. "godzilla premium" → "premium" must NOT be tried).
-            // Each retry is one ~5ms point-read, at most 2, only on misses.
+            // One retry is one ~5ms point-read, only on misses.
+            //
+            // WHY exactly 1 strip (not 2): OPDB sync phase (e) writes
+            // manufacturer-prefix rows keyed "{singleMfrToken} {Title}" for every
+            // machine. Allowing strip=2 means a longer query like "Pokemon by Stern
+            // Pinball" (4 tokens) can strip two leading tokens and land on "stern
+            // pinball" — a real phase-(e) row for Stern's machine titled "Pinball"
+            // — causing a false match and wrong grounding. Limiting to 1 strip
+            // ensures only the immediate leading manufacturer token is peeled off,
+            // which is the sole intended use case ("Stern Godzilla Premium" →
+            // strip "Stern" → "godzilla premium" hits the edition-lookup row).
             //
             // Scoring after a retry hit uses tokens from the ORIGINAL full title so
             // "stern" still scores manufacturer matchTokens correctly — the stripped
@@ -183,7 +193,7 @@ public sealed class MachineGroundingTool
                 var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
                     .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-                for (var strip = 1; strip <= 2 && lookup is null; strip++)
+                for (var strip = 1; strip <= 1 && lookup is null; strip++)
                 {
                     var remaining = normalizedTokens.Length - strip;
                     if (remaining < 2)
