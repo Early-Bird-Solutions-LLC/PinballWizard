@@ -192,4 +192,40 @@ public sealed class LandingHeroTests
 
         Assert.Equal("How does Godzilla wizard mode work?", submitted);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8. Question input updates the binding immediately (regression guard)
+    //
+    // The input previously used `@bind-Value:event="oninput"` on a MudTextField
+    // — a MudBlazor COMPONENT, not a native <input>. The `:event` binding
+    // directive only applies to native elements; on a component it made Blazor
+    // hand the value binder a ChangeEventArgs where a string was expected,
+    // throwing `ArgumentException: Object of type 'ChangeEventArgs' cannot be
+    // converted to type 'System.String'` on the first keystroke — terminating
+    // the live circuit so no answer ever rendered (caught only by a live
+    // browser walk-through, never by a static render).
+    //
+    // The correct MudBlazor way to update Value on each keystroke is
+    // `Immediate="true"`. We assert that parameter here (the same way tests #3
+    // and #6 pin AutoFocus / AdornmentColor) because bUnit cannot drive the real
+    // oninput → ValueChanged binding chain through MudTextField's internals — so
+    // a behavioral keystroke test would be a false negative. Pinning Immediate
+    // catches any regression that drops the fix or restores the `:event` form.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void LandingHero_QuestionInput_UpdatesImmediately()
+    {
+        using var ctx = new BunitContext();
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var cut = ctx.Render<LandingHero>();
+
+        var mudTf = cut.FindComponent<MudTextField<string>>();
+        Assert.True(mudTf.Instance.Immediate,
+            "Question input must use Immediate=\"true\" so the bound value updates on each "
+            + "keystroke. The previous @bind-Value:event=\"oninput\" form crashed the circuit "
+            + "(ChangeEventArgs cannot convert to String) — never restore it.");
+    }
 }
