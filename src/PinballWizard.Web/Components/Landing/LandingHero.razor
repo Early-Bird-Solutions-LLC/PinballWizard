@@ -42,7 +42,7 @@
     <div class="landing-hero__input-row" data-testid="landing-hero-input">
         <MudTextField @ref="_inputRef"
                       @bind-Value="QuestionText"
-                      @bind-Value:event="oninput"
+                      Immediate="true"
                       Placeholder="Ask the Wizard…"
                       Variant="Variant.Outlined"
                       Adornment="Adornment.End"
