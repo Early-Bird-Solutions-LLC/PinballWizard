@@ -54,6 +54,18 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
     [GeneratedRegex(@"https://www\.kineticist\.com/news/[a-z0-9\-]+", RegexOptions.IgnoreCase)]
     private static partial Regex CanonicalUrlRegex();
 
+    // The structured "## Related" block at the end of every tutorial emits the
+    // subject game as "- Game: [Name](/games/pinball/{slug})". This {slug} is the
+    // EXACT Kineticist game slug (e.g. "acdc", "game-of-thrones", "pokemon-2026")
+    // — the reliable join key. The article URL stem is NOT (it is editorial:
+    // "ac-dc", "got"), and inline body links can point at *other* games (the
+    // Transformers tutorial narrates a "John Wick" mentorship), so we read this
+    // structured line rather than the first link or a derived stem.
+    [GeneratedRegex(
+        @"^\s*-\s*Game:\s*\[[^\]]+\]\((?:https?://[^)]*?)?/games/pinball/([a-z0-9\-]+)\)",
+        RegexOptions.IgnoreCase | RegexOptions.Multiline)]
+    private static partial Regex RelatedGameLinkRegex();
+
     /// <summary>Initializes a new <see cref="KineticistTutorialsClient"/>.</summary>
     public KineticistTutorialsClient(
         HttpClient http,
@@ -176,6 +188,22 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
         return idx > 0 ? articleSlug[..idx] : articleSlug;
     }
 
+    /// <summary>
+    /// Extracts the canonical Kineticist game slug from the article's
+    /// "## Related" → "- Game: [Name](/games/pinball/{slug})" line — the exact
+    /// join key to the Kineticist games API. Returns <see langword="null"/> when
+    /// the article carries no such line (callers fall back to
+    /// <see cref="DeriveGameSlug"/>). Uses the last match so an inline body
+    /// mention never shadows the structured Related entry.
+    /// </summary>
+    internal static string? ExtractCanonicalGameSlug(string markdown)
+    {
+        ArgumentNullException.ThrowIfNull(markdown);
+
+        var matches = RelatedGameLinkRegex().Matches(markdown);
+        return matches.Count > 0 ? matches[^1].Groups[1].Value : null;
+    }
+
     // Parses the first H1 heading from Markdown as the article title.
     private static string? ParseTitle(string markdown)
     {
@@ -215,7 +243,15 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
         var canonicalMatch = CanonicalUrlRegex().Match(markdown);
         var canonicalUrl = canonicalMatch.Success ? canonicalMatch.Value : articleUrl;
 
-        var gameSlug = DeriveGameSlug(slug);
+        // Prefer the exact slug the article links to in its "## Related" block;
+        // fall back to the editorial-stem derivation only when it is absent.
+        var canonicalSlug = ExtractCanonicalGameSlug(markdown);
+        if (canonicalSlug is null)
+        {
+            Logger.LogDebug(
+                "Kineticist: article '{Slug}' has no '## Related - Game' link; falling back to derived game slug.", slug);
+        }
+        var gameSlug = canonicalSlug ?? DeriveGameSlug(slug);
 
         return new KineticistTutorialArticle
         {
