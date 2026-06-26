@@ -231,6 +231,7 @@ public sealed class TwipNewsletterClientTests
         // Politeness: failed request still went through gate.
         Assert.Single(gate.Acquired);
         Assert.Single(gate.Reported);
+        Assert.Equal(1, gate.LeasesDisposed);
     }
 
     [Fact]

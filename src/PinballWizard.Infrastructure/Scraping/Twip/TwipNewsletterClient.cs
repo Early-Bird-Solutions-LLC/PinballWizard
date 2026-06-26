@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
 using System.Xml.Linq;
 using AngleSharp;
@@ -11,17 +10,14 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Twip;
 
-/// <summary>
-/// HTTP client for the TWIP (This Week in Pinball) newsletter hosted at
-/// twip.kineticist.com. Discovers articles via the sitemap and fetches
-/// each article page for JSON-LD metadata + body text extraction.
-/// </summary>
-/// <remarks>
-/// robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths.
-/// No API key required — content is publicly accessible.
-/// Per ADR-0043, Colin Alsheimer / Kineticist granted explicit permission.
-/// All requests route through <see cref="PoliteScraperBase"/> (LOCKED invariant).
-/// </remarks>
+// HTTP client for the TWIP (This Week in Pinball) newsletter hosted at
+// twip.kineticist.com. Discovers articles via the sitemap and fetches
+// each article page for JSON-LD metadata + body text extraction.
+//
+// robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths.
+// No API key required — content is publicly accessible.
+// Per ADR-0043, Colin Alsheimer / Kineticist granted explicit permission.
+// All requests route through PoliteScraperBase (LOCKED invariant).
 public sealed class TwipNewsletterClient : PoliteScraperBase
 {
     private readonly HttpClient _http;
@@ -43,11 +39,6 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
         _options = options.Value;
     }
 
-    /// <summary>
-    /// Discovers TWIP article slugs from the sitemap, optionally filtering
-    /// by publish date. Returns slugs ordered newest-first, capped at
-    /// <see cref="TwipOptions.MaxArticlesToFetch"/>.
-    /// </summary>
     public async Task<IReadOnlyList<string>> DiscoverArticleSlugsAsync(
         DateTimeOffset? since, CancellationToken cancellationToken)
     {
@@ -92,11 +83,6 @@ public sealed class TwipNewsletterClient : PoliteScraperBase
         return entries;
     }
 
-    /// <summary>
-    /// Fetches a single TWIP article page and extracts its content via AngleSharp.
-    /// Returns <see langword="null"/> on HTTP failure or missing Article JSON-LD
-    /// (logged as a warning; caller skips nulls).
-    /// </summary>
     public async Task<TwipNewsletterArticle?> FetchArticleAsync(
         string slug, CancellationToken cancellationToken)
     {
