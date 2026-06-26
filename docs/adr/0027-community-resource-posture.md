@@ -344,3 +344,27 @@ The boundary stands: any future "resume your conversation," cross-visit
 history, or server-side conversation store IS the § 10 surface and
 requires amending this ADR first (the anonymous TTL'd Cosmos design
 sketched in architecture-v2 § 8 included).
+
+## Amendment 2026-06-25 — outbound-contribution transparency is permitted (see ADR-0044)
+
+[ADR-0044](0044-outbound-contribution-transparency-and-privacy-preserving-uniques.md)
+amends §§ 1, 4, and 10 of this ADR with a guard-railed carve-out. The
+short version of the bright line it draws:
+
+- **What §§ 1/4/10 still forbid:** engagement-capture surfaces — counters
+  of *our* content's popularity ("trending questions," "popular machines,"
+  "most-asked"), a "popular resources" dashboard, per-user click-streams,
+  and any count-based ranking that elevates one venue over its peers.
+- **What ADR-0044 now permits:** a *public* surface showing, per community
+  destination, the **aggregate** traffic we route **out** to it — total
+  clicks plus an approximate distinct-daily-visitor count. This is an
+  *outbound-contribution* metric (the inverse of engagement capture) and
+  belongs to the same family as § 4 coverage transparency.
+
+The permission is load-bearing-guarded: alphabetical ordering (never by
+count), no superlative/ranking language, identical visual treatment per
+venue (inherits § 2), aggregate-only, and a privacy-preserving uniques
+method (daily-rotating salted hash → HyperLogLog) that stores no IP, no
+cookie, and no per-user row. The favoritism feedback-loop concern from
+§ 10 is honored because counts never determine order. See ADR-0044 for the
+full reasoning, the privacy design, and the rejected alternatives.

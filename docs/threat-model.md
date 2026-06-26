@@ -323,6 +323,7 @@ No unmitigated Sev-High findings. The only Medium finding is the Wizard endpoint
 | R-06 | Scraper | OTel log retention (90 days) may not cover dispute window | Low | Revisit if manufacturer outreach yields a dispute after 90 days; bump retention if needed |
 | R-07 | Wizard | Absence of CSP on API responses means injected script (if ever possible) has no sandbox | Low | Include in the same hardening PR as R-03 |
 | R-08 | Admin | Entra External ID app-registration config (redirect URIs, implicit flow) is operator-managed, not code-verified | Low | Add an `appsettings` validation on startup that warns if `AzureAd:ClientId` is empty before admin routes are active |
+| R-09 | Static pages | Public outbound-contribution page (ADR-0044, issue #518) counts distinct visitors via a daily-rotating salted hash of the (transient, never-stored) client IP + UA → HyperLogLog sketch. Privacy guarantee depends on: (a) the raw IP/UA never being logged or persisted, (b) the daily salt rotating at 00:00 UTC and never stored alongside the sketch, (c) only the sketch — not the hashes — being persisted. A live-salt leak combined with stored hash inputs would weaken anonymity, but we persist only the sketch, so there is nothing reversible to correlate against. | Low | At implementation (issue #518): unit-test the hash-and-discard path (assert no IP/UA reaches any sink); document the salt lifecycle + rotation in the operational runbook; keep the salt out of logs and traces. |
 
 ---
 

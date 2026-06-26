@@ -2,7 +2,7 @@
 status: Active
 phase: Phase-5
 owner: Jim
-last-reviewed: 2026-05-16
+last-reviewed: 2026-06-25
 supersedes: ""
 ---
 
@@ -323,6 +323,37 @@ The community-resource posture has limits, enumerated to prevent scope creep:
 - New manufacturer scraper added in Phase 1 → corresponding manufacturer entry added here in the same PR.
 - New community resource considered for ingestion → entry here covers both the linking contract and the politeness terms.
 - Quarterly review: walk the directory, check for sites that have moved, gone defunct, or changed terms. The Wizard's outbound directory ages; treat it like the catalog.
+
+## Outbound-contribution transparency (ADR-0044)
+
+We measure and **publicly** display how much traffic we route *out* to each community
+destination — both **total clicks** and an approximate **distinct-daily-visitor** count.
+This is the inverse of an engagement metric: it quantifies the traffic we *give away* to the
+community, which is the most direct expression of the outbound-routing posture. It is
+governed by [ADR-0044](adr/0044-outbound-contribution-transparency-and-privacy-preserving-uniques.md),
+which amends ADR-0027 §§ 1/4/10 with a guard-railed carve-out.
+
+The guardrails that keep this inside the avoid-favoritism posture (§ Avoiding the appearance
+of favoritism above):
+
+- **Alphabetical within category, never ordered by count.** Counts are shown *on* each card;
+  they never determine order. (Ranking venues by clicks would re-create the favoritism
+  feedback loop ADR-0027 § 10 rejects.)
+- **No superlative / ranking language** — no "popular," "trending," "hottest," "top," "#1."
+  The figure is stated plainly.
+- **Identical visual treatment per venue** — no elevated card for the highest-count
+  destination.
+- **Aggregate-only, no per-user anything.** "Distinct user" is defined as **distinct daily
+  visitor**, computed via a daily-rotating salted hash → HyperLogLog sketch — **no login, no
+  cookie, no `localStorage` id, no stored IP, no per-user row**. The client IP is touched
+  only transiently in-memory to derive the daily hash, then discarded; the salt rotates at
+  00:00 UTC, so days cannot be linked. See ADR-0044 § 3 for the full method and
+  [`threat-model.md`](threat-model.md) for the salt lifecycle.
+
+Implementation is tracked in GitHub issue #518. The per-destination aggregate is a Tier-3
+change-feed projection per ADR-0036 (same shape as `catalog_stats`); the instrument
+(`pinwiz.ai.community_outbound_clicks_total`) is recorded in
+[`observability.md`](observability.md).
 
 ## Open questions
 
