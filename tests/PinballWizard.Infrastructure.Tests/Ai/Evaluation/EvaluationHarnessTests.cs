@@ -86,6 +86,42 @@ public sealed class EvaluationHarnessTests
     }
 
     [Fact]
+    public async Task RunAsync_RulesAnswerWithNoCorpusChunk_SetsGroundingIntegrity0()
+    {
+        // Harness wiring test for issue #532: a Rules answer backed only by a
+        // MachineRecord citation (no CorpusChunk) must score 0.0 on
+        // grounding_integrity — not null (which would exclude the row from the
+        // aggregate and hide the gap from the eval summary).
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-gi-001","question":"How do I play Iron Maiden?","expected_sub_agent":"Rules","expected_citation_set":["GRBN-MQR4P"],"acceptable_refusal":false}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "Iron Maiden features...",
+                Citations: new List<Citation>
+                {
+                    new("Iron Maiden", "https://opdb.org/machines/GRBN-MQR4P",
+                        MachineId: "GRBN-MQR4P",
+                        SourceType: CitationSourceType.MachineRecord),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.8,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0.0, result.Questions[0].Scores.GroundingIntegrity);
+        Assert.Equal(1, result.Aggregate.GroundingIntegrityCount);
+        Assert.Equal(0.0, result.Aggregate.GroundingIntegrityMean);
+    }
+
+    [Fact]
     public async Task RunAsync_RequiredRefusalQuestion_RefusedCorrectly_AllScoresPerfect()
     {
         using var fixture = new HarnessFixture();
@@ -507,6 +543,7 @@ public sealed class EvaluationHarnessTests
                 new RefusalCorrectnessEvaluator(),
                 new AnsweredAllEditionsEvaluator(),
                 new HonestSubstitutionEvaluator(),
+                new GroundingIntegrityEvaluator(),
                 evalOptions,
                 NullLogger<EvaluationHarness>.Instance);
         }

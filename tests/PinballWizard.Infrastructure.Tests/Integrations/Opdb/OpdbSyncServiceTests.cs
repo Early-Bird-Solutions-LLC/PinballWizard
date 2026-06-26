@@ -1216,6 +1216,84 @@ public sealed class OpdbSyncServiceTests : IDisposable
         }
     }
 
+    // ── Phase (f) subtitle-superset collision registration ───────────────────
+
+    [Fact]
+    public async Task SyncAsync_PhaseF_RegistersSupersetCollisionIntoShorterTitleLookupRow()
+    {
+        // "Iron Maiden" (1981, group IMwi) and "Iron Maiden: Legacy of the Beast"
+        // (2018, group IMst) share a title prefix but live in DIFFERENT OPDB groups.
+        // Without phase (f), getMachineByTitle("Iron Maiden") returns only the 1981
+        // game — the agent silently grounds the wrong machine when the user means
+        // the Stern 2018 title and omits the subtitle (root cause of issue #532).
+        //
+        // Phase (f) must add the longer game's OPDB entry into the shorter title's
+        // lookup row so getMachineByTitle surfaces both in TitleCollisions and the
+        // agent asks for clarification instead of guessing.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("IMwi-M1001", manufacturer: "Williams", name: "Iron Maiden", commonName: "Iron Maiden"),
+            MachineJson("IMst-M2001", manufacturer: "Stern Pinball, Inc.", name: "Iron Maiden: Legacy of the Beast (Pro)", commonName: "Iron Maiden: Legacy of the Beast")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        // Pre-build the lookup rows that phases (c-e) would write. Phase (f) reads
+        // them back via GetByTitleAsync — returning them here simulates that the
+        // earlier phases have already persisted these rows to Cosmos.
+        var longerRow = new MachineTitleLookup { Id = "iron maiden: legacy of the beast", PartitionKey = "iron maiden: legacy of the beast" };
+        longerRow.UpsertEntry("IMst-M2001", "stern", ["stern"]);
+
+        var shorterRow = new MachineTitleLookup { Id = "iron maiden", PartitionKey = "iron maiden" };
+        shorterRow.UpsertEntry("IMwi-M1001", "williams", ["williams"]);
+
+        _titleLookups.GetByTitleAsync("Iron Maiden: Legacy of the Beast", Arg.Any<CancellationToken>())
+            .Returns(longerRow);
+        _titleLookups.GetByTitleAsync("Iron Maiden", Arg.Any<CancellationToken>())
+            .Returns(shorterRow);
+        // All other GetByTitleAsync calls return null (phases (d-e) edition/manufacturer
+        // rows start from scratch — the test is scoped to the phase (f) assertion).
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+        await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        // Load-bearing assertion: phase (f) added the longer game's OPDB entry into
+        // the shorter title's lookup row. getMachineByTitle("Iron Maiden") now returns
+        // both games in TitleCollisions — the ask-to-clarify rule fires.
+        Assert.Contains("IMst-M2001", shorterRow.OpdbIds);
+        Assert.Contains("IMwi-M1001", shorterRow.OpdbIds); // shorter game still present
+
+        // The enriched row must have been written back to the lookup store.
+        await _titleLookups.Received().UpsertAsync(
+            Arg.Is<MachineTitleLookup>(l => l.Id == "iron maiden"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SyncAsync_PhaseF_MissingLongerLookupRow_SkipsPairGracefully()
+    {
+        // If the longer title's lookup row is absent (the longer game was never
+        // synced, or the row was evicted), phase (f) must skip that collision
+        // pair and keep running — not throw or fail the sync.
+        _handler.SetResponseFor("/api/export", JsonArray(
+            MachineJson("IMwi-M1001", manufacturer: "Williams", name: "Iron Maiden", commonName: "Iron Maiden"),
+            MachineJson("IMst-M2001", manufacturer: "Stern Pinball, Inc.", name: "Iron Maiden: Legacy of the Beast (Pro)", commonName: "Iron Maiden: Legacy of the Beast")));
+
+        _repository.GetByOpdbIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        // All lookup reads return null — simulates a gap where the longer row
+        // was never written (or was deleted).
+        _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var sync = new OpdbSyncService(_client, _repository, _ingestionSources, _scrapeRuns, _titleLookups, NullLogger<OpdbSyncService>.Instance, scraperSettings: null, _time);
+
+        // Must not throw — phase (f) logs a warning and continues.
+        var result = await sync.SyncAsync(OpdbSyncMode.Apply, CancellationToken.None);
+
+        Assert.NotNull(result);
+    }
+
     // ── Scrape-run history (feature #5a) ────────────────────────────────────
 
     [Fact]

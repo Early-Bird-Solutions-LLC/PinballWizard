@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Sync;
@@ -434,6 +435,89 @@ public sealed class OpdbSyncService : IOpdbSyncService
                                 "for machine {MachineId}; row absent until next sync " +
                                 "(cross-partition fallback still resolves queries).",
                                 mfrToken, baseMachine.Title, baseMachine.Id);
+                        }
+                    }
+                }
+            }
+
+            // Phase (f): subtitle-superset collision registration.
+            // For each pair (shorter-game X, longer-game "X: Subtitle") that belong to
+            // DIFFERENT OPDB groups, add the longer machine's entries into the shorter
+            // game's lookup row. This causes getMachineByTitle("Iron Maiden") to return
+            // "Iron Maiden: Legacy of the Beast" in TitleCollisions — the existing
+            // ask-to-clarify rule then fires and the agent never silently grounds the
+            // wrong machine. Zero extra runtime query cost: the registration is baked
+            // into the lookup row on the read path (one point-read either way; per
+            // ADR-0025 § 4 no new cross-partition query is introduced at query time).
+            //
+            // Runs AFTER phase (e) so all lookup rows exist before we read them here.
+            // Sequential by design (same lost-update-race protection as phases c/d/e).
+            if (!isDryRun)
+            {
+                var supersetProfiles = editionTokenBases.Values
+                    .Where(m => !string.IsNullOrWhiteSpace(m.Title) && !string.IsNullOrWhiteSpace(m.GroupId))
+                    .Select(m => (m.Title!, (string?)m.GroupId))
+                    .ToList();
+
+                var supersetCollisions = TitleSupersetCollisionDetector.Detect(supersetProfiles);
+
+                if (supersetCollisions.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "OPDB sync phase (f): registering {Count} title-superset collision pair(s) into lookup rows.",
+                        supersetCollisions.Count);
+
+                    var supersetNow = _timeProvider.GetUtcNow();
+                    foreach (var collision in supersetCollisions)
+                    {
+                        try
+                        {
+                            // Read the longer game's lookup row to get its machine entries.
+                            var longerRow = await _titleLookups.GetByTitleAsync(collision.LongerTitle, cancellationToken).ConfigureAwait(false);
+                            if (longerRow is null || longerRow.OpdbIds.Count == 0)
+                            {
+                                _logger.LogWarning(
+                                    "OPDB sync phase (f): no lookup row found for longer title '{LongerTitle}' (GroupId {LongerGroupId}); pair skipped.",
+                                    collision.LongerTitle, collision.LongerGroupId);
+                                continue;
+                            }
+
+                            // Read-modify-write the shorter game's lookup row.
+                            var shorterRow = await _titleLookups.GetByTitleAsync(collision.ShorterTitle, cancellationToken).ConfigureAwait(false);
+                            if (shorterRow is null)
+                            {
+                                _logger.LogWarning(
+                                    "OPDB sync phase (f): no lookup row found for shorter title '{ShorterTitle}' (GroupId {ShorterGroupId}); pair skipped.",
+                                    collision.ShorterTitle, collision.ShorterGroupId);
+                                continue;
+                            }
+
+                            // Add each longer-game machine entry; UpsertEntry is idempotent.
+                            for (var i = 0; i < longerRow.OpdbIds.Count; i++)
+                            {
+                                var mfr = longerRow.Manufacturers[i];
+                                IReadOnlyList<string> matchTokens = longerRow.MatchTokens?[i]
+                                    ?? OpdbMachineMapper.GetMatchTokens(mfr);
+                                shorterRow.UpsertEntry(longerRow.OpdbIds[i], mfr, matchTokens);
+                            }
+
+                            shorterRow.LastSyncedUtc = supersetNow;
+                            await _titleLookups.UpsertAsync(shorterRow, cancellationToken).ConfigureAwait(false);
+
+                            _logger.LogDebug(
+                                "OPDB sync phase (f): registered '{LongerTitle}' ({LongerGroupId}) into lookup row for '{ShorterTitle}'.",
+                                collision.LongerTitle, collision.LongerGroupId, collision.ShorterTitle);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                ex,
+                                "OPDB sync phase (f): failed to register superset collision '{ShorterTitle}' ← '{LongerTitle}'; pair skipped. Will retry on next sync.",
+                                collision.ShorterTitle, collision.LongerTitle);
                         }
                     }
                 }

@@ -103,6 +103,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<AnsweredAllEditionsEvaluator>();
         services.TryAddSingleton<HonestSubstitutionEvaluator>();
 
+        // Grounding-integrity evaluator (issue #532): Rules/Repair answers
+        // must carry ≥1 corpus chunk citation — not only a MachineRecord.
+        services.TryAddSingleton<GroundingIntegrityEvaluator>();
+
         return services;
     }
 }

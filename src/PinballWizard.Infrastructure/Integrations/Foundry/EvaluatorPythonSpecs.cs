@@ -2,9 +2,10 @@ using PinballWizard.Application.Ai.Evaluation.Evaluators;
 
 namespace PinballWizard.Infrastructure.Integrations.Foundry;
 
-// Canonical Python equivalents of the seven custom code-based evaluators
+// Canonical Python equivalents of the eight custom code-based evaluators
 // per ADR-0016 (the original four + the AB#259 edition-aware additions:
-// answered_all_editions and honest_substitution). Foundry's evaluator
+// answered_all_editions and honest_substitution + the issue #532 addition:
+// grounding_integrity). Foundry's evaluator
 // runtime executes Python; the .NET
 // classes in PinballWizard.Application.Ai.Evaluation.Evaluators are the
 // in-process Phase 3 implementation; these snippets are the spec for
@@ -27,6 +28,7 @@ internal static class EvaluatorPythonSpecs
         yield return $"{evaluatorNamespace}.{RefusalCorrectnessEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{AnsweredAllEditionsEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{HonestSubstitutionEvaluator.EvaluatorName}";
+        yield return $"{evaluatorNamespace}.{GroundingIntegrityEvaluator.EvaluatorName}";
     }
 
     public const string CitationPrecisionPython = """
@@ -118,6 +120,24 @@ def evaluate(answer_text, predicted, required_editions, **_):
     // Mirrors HonestSubstitutionEvaluator. NOTE: C# throws on a blank
     // named_edition (the harness guards it upstream); the Foundry runtime
     // has no upstream guard, so this returns 0.0 — behaviorally equivalent.
+    // Grounding-integrity (issue #532): Rules/Repair answers must carry ≥1
+    // CorpusChunk citation — not only a MachineRecord. None on refusals and
+    // non-Rules/Repair rows (metric undefined). Mirrors
+    // GroundingIntegrityEvaluator; the harness handles the conditional in
+    // C# but the Python spec must be self-contained for Foundry registration.
+    public const string GroundingIntegrityPython = """
+def evaluate(citations, predicted_sub_agent, predicted_refusal=False, **_):
+    if bool(predicted_refusal):
+        return {"score": None}
+    sub = (predicted_sub_agent or "").strip().lower()
+    if sub not in ("rules", "repair"):
+        return {"score": None}
+    for c in (citations or []):
+        if (c.get("source_type") or "") == "CorpusChunk":
+            return {"score": 1.0}
+    return {"score": 0.0}
+""";
+
     public const string HonestSubstitutionPython = """
 import re
 
