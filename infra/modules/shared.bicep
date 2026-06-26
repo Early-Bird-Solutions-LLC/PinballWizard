@@ -82,6 +82,9 @@ param opdbSyncCronExpression string = '0 3 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Stern overview-refresh ACA Job. Default is 10 am Sunday (after OPDB sync). Runs --refresh-game-overviews which scrapes Stern game pages then syncs overviews to AI Search. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param sternRefreshCronExpression string = '0 10 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh at 10 am, so the OPDB-synced machine catalog used for title linking is current). Runs --sync-kineticist-tutorials which fetches published gameplay tutorials via the .md endpoint and indexes them as Rulesheet docs in AI Search (ADR-0043 Tier C2). Has no effect when deployPhase2=false or deployAiSearch=false.')
+param kineticistSyncCronExpression string = '0 11 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -2302,6 +2305,101 @@ resource sternRefreshJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022
 }
 
 // -----------------------------------------------------------------------------
+// Kineticist tutorials-sync ACA Job (weekly gameplay-tutorial ingest)
+// -----------------------------------------------------------------------------
+// Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
+// Runs --sync-kineticist-tutorials which fetches Kineticist's published gameplay
+// tutorials via the .md endpoint and indexes them as Rulesheet documents in AI
+// Search (ADR-0043 Tier C2 — interim ingest under granted permission). Machine
+// linking uses the OPDB-keyed title lookup in Cosmos; unresolvable slugs are
+// skipped + logged (visible degradation). Needs AI Search + Foundry, so gated on
+// deployPhase2 && deployAiSearch (matches the sternRefreshJob gate above). Three
+// RBAC assignments mirror sternRefreshJob: Cosmos data contributor (title-lookup
+// reads), Search Index Data Contributor (Rulesheet chunk upserts), and Cognitive
+// Services OpenAI User (Foundry embedding inference).
+
+module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
+  name: 'kineticist-sync-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-kineticist-sync-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: kineticistSyncCronExpression
+    // 1 hour — the tutorial catalogue is ~50 articles fetched through the
+    // politeness gate (PoliteScraperBase — locked invariant) plus per-chunk
+    // embedding inference. A full pass runs in minutes today; 3600 bounds a
+    // runaway without constraining catalogue growth.
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--sync-kineticist-tutorials' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the Kineticist sync job's system-assigned MI.
+// Identical pattern to sternRefreshJobCosmosDataContrib — the sync reads the machine
+// title-lookup rows through the repository (data-plane access). Gated on deployPhase2
+// && deployAiSearch to match the module gate above (no orphan role assignment).
+resource kineticistSyncJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'kineticist-sync-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: kineticistSyncJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// AI Search: Search Index Data CONTRIBUTOR (8ebe5a00-...) — the Kineticist sync
+// upserts Rulesheet chunks into the index, so it needs Contributor (not the Reader
+// role the serving UAMI carries). Shape mirrors sternRefreshJobSearchContrib.
+resource kineticistSyncJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'kineticist-sync-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: kineticistSyncJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Foundry: Cognitive Services OpenAI User (5e0bd9bd-...) for embedding inference
+// during the Rulesheet chunk-indexing phase. Shape mirrors sternRefreshJobOpenAiUser.
+resource kineticistSyncJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, 'kineticist-sync-job-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: kineticistSyncJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2369,6 +2467,9 @@ output opdbSyncJobPrincipalId string = opdbSyncJob.?outputs.jobPrincipalId ?? ''
 
 output sternRefreshJobName string = sternRefreshJob.?outputs.jobName ?? ''
 output sternRefreshJobPrincipalId string = sternRefreshJob.?outputs.jobPrincipalId ?? ''
+
+output kineticistSyncJobName string = kineticistSyncJob.?outputs.jobName ?? ''
+output kineticistSyncJobPrincipalId string = kineticistSyncJob.?outputs.jobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
