@@ -47,6 +47,7 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
+using PinballWizard.Infrastructure.Scraping.Twip;
 using PinballWizard.ServiceDefaults;
 using Polly;
 using Polly.Retry;
@@ -135,6 +136,16 @@ var syncKineticistTutorialsOption = new Option<bool>("--sync-kineticist-tutorial
     Description = "Fetch and index all Kineticist pinball tutorial articles as Rulesheet documents in AI Search (ADR-0043 / Domain-2). Each article is fetched as clean Markdown via the .md URL suffix — no PDF extraction. Machine linking uses IMachineTitleLookupRepository; unresolvable slugs are logged and skipped. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
+var syncTwipNewsletterOption = new Option<bool>("--sync-twip-newsletter")
+{
+    Description = "Fetch and index recent TWIP (This Week in Pinball) newsletter issues as NewsDigest documents in AI Search. Discovers articles from twip.kineticist.com/sitemap.xml, extracts content via AngleSharp (JSON-LD + body), and synthesizes chunks for indexing. Idempotent: safe to re-run. Use --twip-since to control the lookback window. Requires Cosmos, AI Search, and AI Foundry to be configured. ADR-0043.",
+};
+
+var twipSinceOption = new Option<string?>("--twip-since")
+{
+    Description = "ISO-8601 date (e.g. 2026-06-01). Limits --sync-twip-newsletter to articles published on or after this date. Defaults to Twip:DefaultLookbackDays (14) days ago. Accepts date portion only.",
+};
+
 var refreshGameOverviewsOption = new Option<bool>("--refresh-game-overviews")
 {
     Description = "Atomic Stern game-page refresh: scrape the game-page source, reconcile onto Machine records, then synthesize and index GameOverview docs. Equivalent to --source games followed by --sync-game-overviews, in one polite pass. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
@@ -202,6 +213,8 @@ rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(syncKineticistTutorialsOption);
+rootCommand.Options.Add(syncTwipNewsletterOption);
+rootCommand.Options.Add(twipSinceOption);
 rootCommand.Options.Add(refreshGameOverviewsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
@@ -231,6 +244,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
     var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
+    var syncTwipNewsletter = parseResult.GetValue(syncTwipNewsletterOption);
+    var twipSince = parseResult.GetValue(twipSinceOption);
     var refreshGameOverviews = parseResult.GetValue(refreshGameOverviewsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
@@ -1081,6 +1096,113 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Environment.ExitCode = 1;
         return;
     }
+
+    // Handle --sync-twip-newsletter (Domain-2 — index TWIP newsletter issues as
+    // NewsDigest docs in AI Search, ADR-0043). Discovers articles from the TWIP
+    // sitemap (twip.kineticist.com/sitemap.xml) filtered by --twip-since date.
+    // Uses synthetic machine_id="pinball_news" (no per-machine lookup needed).
+    // Idempotent: chunk_id hash is stable for the same article URL, so re-runs
+    // overwrite in place.
+    if (syncTwipNewsletter)
+    {
+        var twipClient = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Twip.TwipNewsletterClient>();
+        var twipSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Twip.TwipNewsletterSynthesizer>();
+        var twipIndexer = host.Services.GetService<IRagIndexer>();
+
+        if (twipClient is null || twipSynthesizer is null || twipIndexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-twip-newsletter requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        // Parse --twip-since date.
+        DateTimeOffset? since = null;
+        if (twipSince is not null)
+        {
+            if (!DateTimeOffset.TryParse(twipSince, out var parsedSince))
+            {
+                Console.Error.WriteLine(
+                    $"--twip-since '{twipSince}' is not a valid ISO-8601 date. Expected format: YYYY-MM-DD.");
+                Environment.ExitCode = 2;
+                return;
+            }
+            since = parsedSince;
+        }
+
+        Console.WriteLine("Discovering TWIP newsletter articles from sitemap...");
+
+        var twipSlugs = await twipClient.DiscoverArticleSlugsAsync(since, cancellationToken);
+        Console.WriteLine($"Found {twipSlugs.Count} article slug(s). Fetching and indexing...");
+
+        var twipIndexed = 0;
+        var twipSkippedParse = 0;
+        var twipSkippedContent = 0;
+        var twipFailed = 0;
+        var twipIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
+
+        foreach (var slug in twipSlugs)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            var article = await twipClient.FetchArticleAsync(slug, cancellationToken);
+            if (article is null)
+            {
+                twipSkippedParse++;
+                continue;
+            }
+
+            var documentId = $"twip_{slug}";
+            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                MachineId: "pinball_news",
+                MachineTitle: "Pinball News",
+                Manufacturer: "Kineticist",
+                DocumentId: documentId,
+                DocumentUrl: article.CanonicalUrl,
+                DocumentType: PinballWizard.Core.Models.DocumentType.NewsDigest,
+                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+
+            var chunks = twipSynthesizer.Synthesize(article, chunkRequest);
+            if (chunks.Count == 0)
+            {
+                twipSkippedContent++;
+                continue;
+            }
+
+            try
+            {
+                var result = await twipIndexer.UpsertAsync(chunkRequest, chunks, twipIndexerOptions, cancellationToken);
+                if (result.Failures.Count > 0)
+                {
+                    foreach (var failure in result.Failures)
+                    {
+                        Console.Error.WriteLine(
+                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                    }
+                    twipFailed++;
+                }
+                else
+                {
+                    Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → {chunks.Count} chunk(s)");
+                    twipIndexed++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"  Failed to index '{article.Title}': {ex.Message}");
+                twipFailed++;
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-twip-newsletter complete: discovered={twipSlugs.Count} indexed={twipIndexed} skipped_parse={twipSkippedParse} skipped_content={twipSkippedContent} failed={twipFailed}");
+        if (twipFailed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
     // Handle --reclassify-documents (in-place classification fix for stored
     // scraped_documents_raw records; no HTTP calls; ADR-0042 follow-up).
     // Resolves IDocumentReclassifier from DI; the service is only registered
@@ -1269,6 +1391,13 @@ static IHost CreateHost(string[] args)
         // Inside the RAG gate because KineticistTutorialsSynthesizer depends on
         // IChunker, which AddHybridChunker() registers (line above).
         builder.Services.AddKineticistScraping(builder.Configuration);
+
+        // TWIP newsletter client + synthesizer (Domain-2 — ADR-0043). Fetches
+        // newsletter articles via AngleSharp HTML parse and synthesizes NewsDigest
+        // chunks for AI Search indexing via --sync-twip-newsletter CLI verb.
+        // Inside the RAG gate because TwipNewsletterSynthesizer depends on
+        // IChunker, which AddHybridChunker() registers (line above).
+        builder.Services.AddTwipScraping(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)

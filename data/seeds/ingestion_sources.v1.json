@@ -184,7 +184,21 @@
     "cadence": "weekly",
     "politenessOverrides": null,
     "discoveryStatus": "Active",
-    "discoveryNotes": "Kineticist founder Noah Crable granted explicit written permission (ADR-0043 / PR #520) to index published gameplay tutorials. Appending .md to any article URL returns clean Markdown with title, author, date, category, and canonical URL inline. Category listing at /news/category/pinball-tutorial. robots.txt ai-train=yes, ai-input=yes; /news/ allowed for all crawlers including ClaudeBot. ~50 tutorials across 2 pages as of 2026-06-25. Ingested via --sync-kineticist-tutorials CLI verb (synthesis path, not change-feed).",
+    "discoveryNotes": "Kineticist founder Colin Alsheimer granted explicit written permission (ADR-0043 / PR #520) to index published gameplay tutorials. Appending .md to any article URL returns clean Markdown with title, author, date, category, and canonical URL inline. Category listing at /news/category/pinball-tutorial. robots.txt ai-train=yes, ai-input=yes; /news/ allowed for all crawlers including ClaudeBot. ~50 tutorials across 2 pages as of 2026-06-25. Ingested via --sync-kineticist-tutorials CLI verb (synthesis path, not change-feed).",
     "discoveryDate": "2026-06-25"
+  },
+  {
+    "id": "twip",
+    "displayName": "This Week in Pinball (TWIP)",
+    "scraperImplKey": "twip",
+    "baseUrl": "https://twip.kineticist.com",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": {
+      "requestDelayMs": 2000
+    },
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Colin Alsheimer / Kineticist granted explicit permission to index TWIP newsletter content per ADR-0043 (June 2026). robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths. No API key required — content is publicly accessible.",
+    "discoveryDate": "2026-06-26"
   }
 ]

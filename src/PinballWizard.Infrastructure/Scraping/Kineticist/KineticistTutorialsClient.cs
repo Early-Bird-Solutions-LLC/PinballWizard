@@ -174,7 +174,7 @@ public sealed partial class KineticistTutorialsClient : PoliteScraperBase
         ArgumentException.ThrowIfNullOrWhiteSpace(articleSlug);
 
         // Strip in order of specificity (longest suffix first).
-        string[] suffixes = ["-pinball-tutorial", "-tutorial", "-pinball-rules", "-rules", "-guide"];
+        string[] suffixes = ["-pinball-tutorial", "-tutorial", "-pinball-rules", "-rules", "-guide", "-strategy"];
         foreach (var suffix in suffixes)
         {
             if (articleSlug.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
