@@ -213,7 +213,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(18, seeds!.Count);
+        Assert.Equal(19, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
@@ -224,6 +224,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         // Phase 4.5 W3b adds 5 bulletin discovery entries (enabled=false for
         // NoSource/Deferred; ap_bulletins enabled=true with ApBulletinScraper wired).
         // "pb_docs" adds Pinball Brothers per-game document PDFs (rulesheet-class).
+        // "twip" adds This Week in Pinball newsletter indexing (ADR-0043, Domain-2).
         var expectedIds = new[]
         {
             "stern", "jjp", "ap", "spooky", "spooky_support", "pinballbrothers",
@@ -231,6 +232,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
             "jjp_bulletins", "ap_bulletins", "spooky_bulletins", "cgc_bulletins", "pb_bulletins",
             "pb_docs",
             "kineticist_tutorials",
+            "twip",
         };
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
