@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Integrations.Kineticist;
-using PinballWizard.Infrastructure.Scraping.Polite;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Integrations.Kineticist;
@@ -21,21 +20,9 @@ public sealed class KineticistApiClientTests : IDisposable
     private readonly StubHandler _handler = new();
     private readonly HttpClient _httpClient;
     private readonly KineticistApiClient _client;
-    private readonly RobotsTxtCache _robotsCache;
 
     public KineticistApiClientTests()
     {
-        var politenessOptions = Options.Create(new PolitenessOptions
-        {
-            UserAgent = "PinballWizard-Tests/1.0",
-            RequestDelayMs = 1,
-            RespectRobotsTxt = false,
-        });
-        _robotsCache = new RobotsTxtCache(
-            new HttpClient(new StubHandler()), politenessOptions, NullLogger<RobotsTxtCache>.Instance);
-        var resolver = new DefaultPerSourcePolitenessResolver(politenessOptions);
-        var gate = new PolitenessGate(_robotsCache, resolver, NullLogger<PolitenessGate>.Instance);
-
         _httpClient = new HttpClient(_handler);
         var options = Options.Create(new KineticistOptions
         {
@@ -43,7 +30,7 @@ public sealed class KineticistApiClientTests : IDisposable
             ApiKey = "ki_live_test",
         });
 
-        _client = new KineticistApiClient(_httpClient, gate, politenessOptions, options, NullLogger<KineticistApiClient>.Instance);
+        _client = new KineticistApiClient(_httpClient, options, NullLogger<KineticistApiClient>.Instance);
     }
 
     public void Dispose()
