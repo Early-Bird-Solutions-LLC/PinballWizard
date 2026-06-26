@@ -122,6 +122,7 @@ public sealed class KineticistTutorialsClientTests
     [InlineData("how-to-play-dracula-pinball-tutorial", "how-to-play-dracula")]
     [InlineData("eight-ball-deluxe-rules", "eight-ball-deluxe")]
     [InlineData("foo-fighters-pinball-tutorial", "foo-fighters")]
+    [InlineData("godzilla-strategy", "godzilla")]
     public void DeriveGameSlug_KnownSuffixes_StripsCorrectly(string articleSlug, string expectedGameSlug)
     {
         var result = KineticistTutorialsClient.DeriveGameSlug(articleSlug);
@@ -229,6 +230,31 @@ public sealed class KineticistTutorialsClientTests
         // Politeness invariants hold even on the empty-page early-exit path.
         Assert.Equal(gate.Acquired.Count, gate.Reported.Count);
         Assert.Equal(gate.Acquired.Count, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task DiscoverTutorialSlugsAsync_AuthorAndTagLinks_Excluded()
+    {
+        const string pageWithAuthorLink = """
+            <html><body>
+            <a href="/news/transformers-pinball-tutorial">Transformers</a>
+            <a href="/news/author/colin-alsheimer">Colin Alsheimer</a>
+            <a href="/news/tag/rules">Rules tag</a>
+            </body></html>
+            """;
+
+        var (client, _, _) = BuildClient(h =>
+        {
+            h.MapHtml($"{BaseUrl}/news/category/pinball-tutorial", pageWithAuthorLink);
+            h.Map($"{BaseUrl}/news/category/pinball-tutorial?page=2",
+                _ => new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+        });
+
+        var slugs = await client.DiscoverTutorialSlugsAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(slugs, s => s.Contains("colin-alsheimer"));
+        Assert.DoesNotContain(slugs, s => s.Contains("rules"));
+        Assert.Contains("transformers-pinball-tutorial", slugs);
     }
 
     [Fact]

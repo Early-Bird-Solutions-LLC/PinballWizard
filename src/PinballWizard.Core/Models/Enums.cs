@@ -63,6 +63,11 @@ public enum DocumentType
     /// the read-side snake_case alias is "game_overview".
     /// </summary>
     GameOverview,
+
+    // A weekly pinball news digest (TWIP — This Week in Pinball by Kineticist).
+    // Indexed with synthetic machine_id "pinball_news"; not PDF-derived.
+    // Per ADR-0043, access granted by Colin Alsheimer / Kineticist.
+    NewsDigest,
 }
 
 /// <summary>

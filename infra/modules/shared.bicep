@@ -85,6 +85,9 @@ param sternRefreshCronExpression string = '0 10 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh at 10 am, so the OPDB-synced machine catalog used for title linking is current). Runs --sync-kineticist-tutorials which fetches published gameplay tutorials via the .md endpoint and indexes them as Rulesheet docs in AI Search (ADR-0043 Tier C2). Has no effect when deployPhase2=false or deployAiSearch=false.')
 param kineticistSyncCronExpression string = '0 11 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
+param twipNewsletterCronExpression string = '0 8 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -2413,6 +2416,96 @@ resource kineticistSyncJobOpenAiUser 'Microsoft.Authorization/roleAssignments@20
 }
 
 // -----------------------------------------------------------------------------
+// TWIP newsletter sync ACA Job (weekly Sunday 8am UTC)
+// -----------------------------------------------------------------------------
+// Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
+// Runs --sync-twip-newsletter which fetches TWIP articles from the sitemap
+// (twip.kineticist.com/sitemap.xml), parses HTML via AngleSharp, and indexes
+// NewsDigest chunks in AI Search.
+// TWIP is public (no secrets), so unlike opdbSyncJob there is no Key Vault
+// secret reference. Gated on deployPhase2 && deployAiSearch (AI Search + Foundry
+// required for IRagIndexer; Cosmos required for IChunker's DI gate in the CLI).
+// Three RBAC assignments mirror the sternRefreshJob pattern.
+
+module twipNewsletterJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
+  name: 'twip-newsletter-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-twip-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: twipNewsletterCronExpression
+    // 1 hour — 500 articles × ~5s polite delay = well under 1 hour.
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--sync-twip-newsletter' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the TWIP newsletter job's managed identity.
+// Even though TWIP doesn't write to Cosmos, the CLI's DI gate (cosmosWired) requires
+// a live Cosmos connection to register IChunker. The Cosmos data-plane RBAC is needed
+// so DefaultAzureCredential can authenticate to Cosmos at startup.
+resource twipJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'twip-newsletter-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// Search Index Data Contributor for the TWIP newsletter job.
+// IRagIndexer.UpsertAsync writes to AI Search; this role grants the write permission.
+resource twipJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'twip-newsletter-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Cognitive Services OpenAI User for the TWIP newsletter job.
+// TwipNewsletterSynthesizer → IChunker → HybridChunker calls the Foundry embedder
+// to compute token counts. This role grants inference access.
+resource twipJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, 'twip-newsletter-job-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2483,6 +2576,9 @@ output sternRefreshJobPrincipalId string = sternRefreshJob.?outputs.jobPrincipal
 
 output kineticistSyncJobName string = kineticistSyncJob.?outputs.jobName ?? ''
 output kineticistSyncJobPrincipalId string = kineticistSyncJob.?outputs.jobPrincipalId ?? ''
+
+output twipNewsletterJobName string = twipNewsletterJob.?outputs.jobName ?? ''
+output twipNewsletterJobPrincipalId string = twipNewsletterJob.?outputs.jobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
