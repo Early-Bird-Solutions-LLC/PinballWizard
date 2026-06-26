@@ -3,10 +3,12 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using NSubstitute;
 using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using PinballWizard.Web.Components.Pages.Admin;
@@ -103,6 +105,7 @@ public sealed class AdminSourceDetailTests : AsyncBunitContext
         Services.AddSingleton(statsRepo);
         Services.AddSingleton(scrapeRuns);
         Services.AddSingleton<ILogger<AdminSourceDetail>>(NullLogger<AdminSourceDetail>.Instance);
+        Services.AddSingleton(Options.Create(new PolitenessOptions()));
     }
 
     private static async IAsyncEnumerable<ScrapeRunRecord> EmptyRuns()
@@ -153,9 +156,11 @@ public sealed class AdminSourceDetailTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var panel = cut.Find("[data-testid='source-politeness']");
-        // Four overridable fields all fall back to the same sentinel phrase.
-        var count = panel.TextContent.Split("using global default").Length - 1;
-        Assert.Equal(4, count);
+        // Each null field shows the actual global default value + "(default)" suffix.
+        Assert.Contains("2000 (default)", panel.TextContent, StringComparison.Ordinal);
+        Assert.Contains("/robots.txt (default)", panel.TextContent, StringComparison.Ordinal);
+        Assert.Contains("none (default)", panel.TextContent, StringComparison.Ordinal);
+        Assert.Contains("3 (default)", panel.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
