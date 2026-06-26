@@ -386,6 +386,12 @@ public sealed class ScraperOrchestrator
         // recognises "opdb" as a known source name; FilterScrapers will return
         // an empty list for it, which is correct (orchestrator path is bypassed).
         ["opdb"] = "OPDB",
+        // Kineticist tutorials flow through the --sync-kineticist-tutorials CLI verb
+        // (synthesis path, like MetadataCard / GameOverview) rather than through
+        // ISourceScraper. The alias entry here ensures SourceAliasContractTests does
+        // not reject any future ISourceScraper that might wrap the client, and makes
+        // "kineticist_tutorials" a known name in the canonical set.
+        ["kineticist_tutorials"] = "Kineticist Tutorials",
     };
 
     /// <summary>

@@ -174,4 +174,17 @@
     "discoveryNotes": "Service bulletins exist at pinballbrothers.freshdesk.com/support/solutions (General > Service Bulletins folder, 4 confirmed notices). Freshdesk REST API available at {subdomain}.freshdesk.com/api/v2/solutions/folders/{id}/articles returns JSON but requires API key even for public portals. Deferred pending API key acquisition.",
     "discoveryDate": "2026-05-26"
   }
+  ,
+  {
+    "id": "kineticist_tutorials",
+    "displayName": "Kineticist — Pinball Tutorials",
+    "scraperImplKey": "kineticist_tutorials",
+    "baseUrl": "https://www.kineticist.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null,
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Kineticist founder Noah Crable granted explicit written permission (ADR-0043 / PR #520) to index published gameplay tutorials. Appending .md to any article URL returns clean Markdown with title, author, date, category, and canonical URL inline. Category listing at /news/category/pinball-tutorial. robots.txt ai-train=yes, ai-input=yes; /news/ allowed for all crawlers including ClaudeBot. ~50 tutorials across 2 pages as of 2026-06-25. Ingested via --sync-kineticist-tutorials CLI verb (synthesis path, not change-feed).",
+    "discoveryDate": "2026-06-25"
+  }
 ]

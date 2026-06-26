@@ -25,4 +25,5 @@ public static class IngestionSourceIds
     public const string BarrelsOfFun = "barrelsoffun";
     public const string Multimorphic = "multimorphic";
     public const string Cgc = "cgc";
+    public const string Kineticist = "kineticist_tutorials";
 }
