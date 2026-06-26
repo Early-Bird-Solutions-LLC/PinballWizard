@@ -131,6 +131,8 @@ public sealed class SearchCorpusToolTests
     }
 
     [Theory]
+    [InlineData("rulesheet", "Rulesheet")]
+    [InlineData("RULESHEET", "Rulesheet")]
     [InlineData("manual", "Manual")]
     [InlineData("service_bulletin", "ServiceBulletin")]
     [InlineData("metadata_card", "MetadataCard")]
