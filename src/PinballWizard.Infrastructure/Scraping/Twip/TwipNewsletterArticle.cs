@@ -1,9 +1,7 @@
 namespace PinballWizard.Infrastructure.Scraping.Twip;
 
-/// <summary>
-/// A parsed TWIP newsletter article ready for synthesis and RAG indexing.
-/// Produced by <see cref="TwipNewsletterClient.FetchArticleAsync"/>.
-/// </summary>
+// A parsed TWIP newsletter article ready for synthesis and RAG indexing.
+// Produced by TwipNewsletterClient.FetchArticleAsync.
 public sealed record TwipNewsletterArticle
 {
     public required string Slug { get; init; }

@@ -64,11 +64,9 @@ public enum DocumentType
     /// </summary>
     GameOverview,
 
-    /// <summary>
-    /// A weekly pinball news digest (TWIP — This Week in Pinball by Kineticist).
-    /// Indexed with synthetic machine_id "pinball_news"; not PDF-derived.
-    /// Per ADR-0043, access granted by Colin Alsheimer / Kineticist.
-    /// </summary>
+    // A weekly pinball news digest (TWIP — This Week in Pinball by Kineticist).
+    // Indexed with synthetic machine_id "pinball_news"; not PDF-derived.
+    // Per ADR-0043, access granted by Colin Alsheimer / Kineticist.
     NewsDigest,
 }
 
