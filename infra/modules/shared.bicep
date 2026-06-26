@@ -1959,7 +1959,20 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
               name: 'DataProtection__KeyVaultKeyUri'
               value: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/keys/pinwiz-dataprotection'
             }
-          ], empty(azureAdClientId) ? [] : [
+          ], deployAiSearch ? [
+            {
+              // /admin/corpus reads AI Search corpus stats (chunk counts + index
+              // health). Presence of AiSearch__Endpoint enables
+              // AiSearchRagCorpusStatsReader in the Web app's Program.cs.
+              // Gated on deployAiSearch to match the Search service resource.
+              name: 'AiSearch__Endpoint'
+              value: 'https://${searchService.?name ?? ''}.search.windows.net'
+            }
+            {
+              name: 'AiSearch__IndexName'
+              value: 'pinwiz-rag-v1'
+            }
+          ] : [], empty(azureAdClientId) ? [] : [
             {
               // Entra OIDC sign-in (PR-B0 infra half). Presence of
               // AzureAd__TenantId activates the auth branch in the Web
