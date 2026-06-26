@@ -45,7 +45,8 @@ public sealed record EvalScores(
     [property: JsonPropertyName("subagent_accuracy")] double SubagentAccuracy,
     [property: JsonPropertyName("refusal_correctness")] double? RefusalCorrectness,
     [property: JsonPropertyName("answered_all_editions")] double? AnsweredAllEditions = null,
-    [property: JsonPropertyName("honest_substitution")] double? HonestSubstitution = null);
+    [property: JsonPropertyName("honest_substitution")] double? HonestSubstitution = null,
+    [property: JsonPropertyName("grounding_integrity")] double? GroundingIntegrity = null);
 
 // Per-metric means are computed only over rows where the metric is
 // defined (non-null score); the *_count fields carry the denominator so
@@ -66,7 +67,9 @@ public sealed record EvalAggregate(
     [property: JsonPropertyName("answered_all_editions_mean")] double? AnsweredAllEditionsMean = null,
     [property: JsonPropertyName("answered_all_editions_count")] int AnsweredAllEditionsCount = 0,
     [property: JsonPropertyName("honest_substitution_mean")] double? HonestSubstitutionMean = null,
-    [property: JsonPropertyName("honest_substitution_count")] int HonestSubstitutionCount = 0);
+    [property: JsonPropertyName("honest_substitution_count")] int HonestSubstitutionCount = 0,
+    [property: JsonPropertyName("grounding_integrity_mean")] double? GroundingIntegrityMean = null,
+    [property: JsonPropertyName("grounding_integrity_count")] int GroundingIntegrityCount = 0);
 
 public sealed record EvalRunResult(
     [property: JsonPropertyName("evaluation_id")] string EvaluationId,

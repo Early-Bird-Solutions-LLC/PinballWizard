@@ -27,9 +27,13 @@ namespace PinballWizard.Application.Ai;
 // sources ("Source 1", "Source 2", …) in searchCorpus return order and passes
 // [[cite:k]] markers through verbatim; Repair/Rules/Valuation sub-agents emit
 // [[cite:k]] at grounded sentences (RAG-05 prompt-version gate).
+// Bumped to "v6.2026.06" (#532): Wizard.md adds TitleCollisions superset-class
+// disambiguation rules (qualified→definitive resolution, "Iron Maiden" ambiguity
+// handling) and citation-provenance rule (corpus chunk required for Rules/Repair
+// answers, not just getMachineByTitle identity record).
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v5.2026.06";
+    public const string CurrentPromptVersion = "v6.2026.06";
 
     private readonly Dictionary<string, string> _prompts;
 

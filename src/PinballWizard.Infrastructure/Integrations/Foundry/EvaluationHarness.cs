@@ -71,6 +71,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
     private readonly RefusalCorrectnessEvaluator _refusalEvaluator;
     private readonly AnsweredAllEditionsEvaluator _answeredAllEditionsEvaluator;
     private readonly HonestSubstitutionEvaluator _honestSubstitutionEvaluator;
+    private readonly GroundingIntegrityEvaluator _groundingIntegrityEvaluator;
     private readonly EvalHarnessOptions _evalOptions;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<EvaluationHarness> _logger;
@@ -85,6 +86,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         RefusalCorrectnessEvaluator refusalEvaluator,
         AnsweredAllEditionsEvaluator answeredAllEditionsEvaluator,
         HonestSubstitutionEvaluator honestSubstitutionEvaluator,
+        GroundingIntegrityEvaluator groundingIntegrityEvaluator,
         IOptions<EvalHarnessOptions> evalOptions,
         ILogger<EvaluationHarness> logger,
         TimeProvider? timeProvider = null)
@@ -98,6 +100,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         ArgumentNullException.ThrowIfNull(refusalEvaluator);
         ArgumentNullException.ThrowIfNull(answeredAllEditionsEvaluator);
         ArgumentNullException.ThrowIfNull(honestSubstitutionEvaluator);
+        ArgumentNullException.ThrowIfNull(groundingIntegrityEvaluator);
         ArgumentNullException.ThrowIfNull(evalOptions);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -110,6 +113,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         _refusalEvaluator = refusalEvaluator;
         _answeredAllEditionsEvaluator = answeredAllEditionsEvaluator;
         _honestSubstitutionEvaluator = honestSubstitutionEvaluator;
+        _groundingIntegrityEvaluator = groundingIntegrityEvaluator;
         _evalOptions = evalOptions.Value;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -218,7 +222,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         PinballWizardTelemetry.EvalRuns.Add(1);
         _logger.LogInformation(
             "EvaluationHarness completed {Count} questions ({Errors} errors) in {Elapsed:N1}s; results written to {Path}. " +
-            "citation_precision={Precision:F3} citation_recall={Recall:F3} citation_coverage={Coverage:F3} subagent_accuracy={Subagent:F3} refusal_correctness={Refusal:F3}",
+            "citation_precision={Precision:F3} citation_recall={Recall:F3} citation_coverage={Coverage:F3} subagent_accuracy={Subagent:F3} refusal_correctness={Refusal:F3} grounding_integrity={GroundingIntegrity:F3}",
             aggregate.QuestionCount,
             aggregate.ErrorCount,
             (completedAt - startedAt).TotalSeconds,
@@ -227,7 +231,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
             aggregate.CitationRecallMean,
             aggregate.CitationCoverageMean,
             aggregate.SubagentAccuracyMean,
-            aggregate.RefusalCorrectnessMean);
+            aggregate.RefusalCorrectnessMean,
+            aggregate.GroundingIntegrityMean);
 
         return runResult;
     }
@@ -374,6 +379,18 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 : _honestSubstitutionEvaluator.Compute(answerText, predictedCitations, namedEdition);
         }
 
+        // Grounding-integrity: Rules/Repair answers must carry ≥1 CorpusChunk
+        // citation — not only a MachineRecord identity entry. Null on refusals,
+        // Valuation answers, and error rows (metric undefined there; excluded
+        // from the aggregate denominator per the nullable-metric convention).
+        double? groundingIntegrity = null;
+        if (!predictedRefusal && answer is not null
+            && (string.Equals(predictedSubAgent, "Rules", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(predictedSubAgent, "Repair", StringComparison.OrdinalIgnoreCase)))
+        {
+            groundingIntegrity = _groundingIntegrityEvaluator.Compute(answer.Citations);
+        }
+
         var scores = new EvalScores(
             CitationPrecision: citationPrecision,
             CitationRecall: citationRecall,
@@ -387,7 +404,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
             SubagentAccuracy: _subagentEvaluator.Compute(predictedSubAgent, question.ExpectedSubAgent, question.AcceptableSubAgents),
             RefusalCorrectness: _refusalEvaluator.Compute(predictedRefusal, question.AcceptableRefusal, question.RefusalRequired),
             AnsweredAllEditions: answeredAllEditions,
-            HonestSubstitution: honestSubstitution);
+            HonestSubstitution: honestSubstitution,
+            GroundingIntegrity: groundingIntegrity);
 
         return new EvalQuestionResult(
             Id: question.Id,
@@ -469,6 +487,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
         var answeredAllEditionsCount = 0;
         double honestSubstitutionSum = 0;
         var honestSubstitutionCount = 0;
+        double groundingIntegritySum = 0;
+        var groundingIntegrityCount = 0;
 
         foreach (var r in results)
         {
@@ -503,6 +523,11 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 honestSubstitutionSum += hs;
                 honestSubstitutionCount++;
             }
+            if (r.Scores.GroundingIntegrity is { } gi)
+            {
+                groundingIntegritySum += gi;
+                groundingIntegrityCount++;
+            }
             if (!string.IsNullOrEmpty(r.Error))
             {
                 errorCount++;
@@ -529,7 +554,11 @@ public sealed class EvaluationHarness : IEvaluationHarness
             HonestSubstitutionMean: honestSubstitutionCount > 0
                 ? honestSubstitutionSum / honestSubstitutionCount
                 : null,
-            HonestSubstitutionCount: honestSubstitutionCount);
+            HonestSubstitutionCount: honestSubstitutionCount,
+            GroundingIntegrityMean: groundingIntegrityCount > 0
+                ? groundingIntegritySum / groundingIntegrityCount
+                : null,
+            GroundingIntegrityCount: groundingIntegrityCount);
     }
 
     private string BuildResultsPath(DateTimeOffset startedAt)
