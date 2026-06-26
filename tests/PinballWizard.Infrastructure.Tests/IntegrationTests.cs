@@ -76,13 +76,14 @@ public sealed class IntegrationTests : IDisposable
 
         var scrapers = host.Services.GetRequiredService<IEnumerable<ISourceScraper>>().ToList();
 
-        // Six sources: Manuals, Game Pages, Service Bulletins, JJP, AP Game Pages, AP Bulletins.
-        // Phase 4.5 W3b added ApBulletinScraper. If anyone removes a registration, this catches it.
-        Assert.Equal(6, scrapers.Count);
+        // Seven sources: Manuals, Game Pages, Service Bulletins, JJP, JJP Support Docs,
+        // AP Game Pages, AP Bulletins. If anyone removes a registration, this catches it.
+        Assert.Equal(7, scrapers.Count);
         Assert.Contains(scrapers, s => s is ManualsScraper);
         Assert.Contains(scrapers, s => s is GamePageScraper);
         Assert.Contains(scrapers, s => s is ServiceBulletinScraper);
         Assert.Contains(scrapers, s => s is JjpProductScraper);
+        Assert.Contains(scrapers, s => s is JjpSupportDocScraper);
         Assert.Contains(scrapers, s => s is ApGamePageScraper);
         Assert.Contains(scrapers, s => s is ApBulletinScraper);
     }
