@@ -84,6 +84,7 @@
                       Items="@_jobs"
                       Hover="true"
                       Dense="true"
+                      RowsPerPage="25"
                       data-testid="jobs-table">
                 <HeaderContent>
                     <MudTh>Job</MudTh>
@@ -132,6 +133,9 @@
                                        OnClick="@(() => OpenConfirmDialogAsync(context))" />
                     </MudTd>
                 </RowTemplate>
+                <PagerContent>
+                    <MudTablePager />
+                </PagerContent>
             </MudTable>
         </MudPaper>
     }

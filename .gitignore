@@ -159,3 +159,9 @@ __pycache__/
 # tree. Real build-output .exe lives under bin/ (already ignored above); source
 # never tracks an .exe. Guards against accidentally committing a large binary.
 *.exe
+
+# Third-party SDK archives dropped into the repo root for local analysis
+# (e.g. P3_SDK_V0.9.zip — Multimorphic P3 platform SDK, used for offline doc
+# review and future RAG ingestion, never committed). Source tracks the ADR /
+# ingest plan; not the binary artifact itself.
+*.zip
