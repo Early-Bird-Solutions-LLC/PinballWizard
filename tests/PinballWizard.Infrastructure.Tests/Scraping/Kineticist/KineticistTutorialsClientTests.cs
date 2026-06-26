@@ -52,7 +52,11 @@ public sealed class KineticistTutorialsClientTests
         """;
 
     // Real .md body for Transformers (representative of the actual Kineticist format
-    // probed 2026-06-25): H1 title, "by [Author](/author/...) · Date · [Category]", blockquote, body.
+    // probed 2026-06-25): H1 title, "by [Author](/author/...) · Date · [Category]",
+    // blockquote, body, and the closing "## Related - Game:" block. Deliberately
+    // includes the real-article trap: an inline narrative link to a DIFFERENT game
+    // (John Wick) that appears BEFORE the subject — the canonical slug must come
+    // from the structured "- Game:" line, not the first body link.
     private const string TransformersMdBody = """
         # Autobots, Transform and Roll Out!
 
@@ -62,7 +66,7 @@ public sealed class KineticistTutorialsClientTests
 
         ## About Transformers: More Than Meets the Eye
 
-        The Autobots and Decepticons have waged war across the galaxy for eons.
+        After being mentored by Gomez on [John Wick](https://www.kineticist.com/games/pinball/john-wick-2024) in 2024, the designer brought that pace to [Transformers: More Than Meets the Eye](/games/pinball/transformers-more-than-meets-the-eye).
 
         - **Manufacturer:** Stern
         - **Release Year:** 2026
@@ -79,6 +83,10 @@ public sealed class KineticistTutorialsClientTests
 
         Focus on Autobot Run or Prime Target first, then qualify Transformers Multiball.
 
+        ## Related
+        - Game: [Transformers: More Than Meets the Eye](/games/pinball/transformers-more-than-meets-the-eye)
+
+        ---
         https://www.kineticist.com/news/transformers-pinball-tutorial
         """;
 
@@ -126,6 +134,57 @@ public sealed class KineticistTutorialsClientTests
         // Edge case: slug doesn't match any known suffix pattern — returned as-is.
         var result = KineticistTutorialsClient.DeriveGameSlug("some-slug-without-suffix");
         Assert.Equal("some-slug-without-suffix", result);
+    }
+
+    // ── ExtractCanonicalGameSlug ────────────────────────────────────────────────
+
+    [Fact]
+    public void ExtractCanonicalGameSlug_RelatedGameLink_ReturnsExactSlug()
+    {
+        // The structured "- Game:" line carries the exact Kineticist slug, which
+        // differs from both the article stem and any inline mention.
+        const string md = """
+            # Choose Your House: How to Play Stern's Game of Thrones Pinball
+
+            Body text mentioning other games.
+
+            ## Related
+            - Game: [Game of Thrones](/games/pinball/game-of-thrones)
+
+            https://www.kineticist.com/news/got-pinball-tutorial
+            """;
+
+        Assert.Equal("game-of-thrones", KineticistTutorialsClient.ExtractCanonicalGameSlug(md));
+    }
+
+    [Fact]
+    public void ExtractCanonicalGameSlug_AbsoluteUrl_ReturnsSlug()
+    {
+        // The "- Game:" href may be absolute (https://www.kineticist.com/...) too.
+        const string md = "## Related\n- Game: [Pokémon](https://www.kineticist.com/games/pinball/pokemon-2026)";
+        Assert.Equal("pokemon-2026", KineticistTutorialsClient.ExtractCanonicalGameSlug(md));
+    }
+
+    [Fact]
+    public void ExtractCanonicalGameSlug_InlineLinkToDifferentGame_IgnoredInFavorOfRelatedLine()
+    {
+        // Real Transformers case: an inline body link to John Wick precedes the
+        // subject. Only the structured "- Game:" line is read.
+        const string md = """
+            Mentored on [John Wick](https://www.kineticist.com/games/pinball/john-wick-2024) first.
+
+            ## Related
+            - Game: [Transformers](/games/pinball/transformers-more-than-meets-the-eye)
+            """;
+
+        Assert.Equal("transformers-more-than-meets-the-eye", KineticistTutorialsClient.ExtractCanonicalGameSlug(md));
+    }
+
+    [Fact]
+    public void ExtractCanonicalGameSlug_NoRelatedBlock_ReturnsNull()
+    {
+        const string md = "# A Tutorial\n\nBody with no Related block.\n\nhttps://www.kineticist.com/news/x";
+        Assert.Null(KineticistTutorialsClient.ExtractCanonicalGameSlug(md));
     }
 
     // ── DiscoverTutorialSlugsAsync ──────────────────────────────────────────────
@@ -210,8 +269,10 @@ public sealed class KineticistTutorialsClientTests
         // Canonical URL: the bare URL at the end of the .md body.
         Assert.Equal("https://www.kineticist.com/news/transformers-pinball-tutorial", article.CanonicalUrl);
 
-        // GameSlug: derived by stripping "-pinball-tutorial" suffix.
-        Assert.Equal("transformers", article.GameSlug);
+        // GameSlug: the EXACT slug from the "## Related - Game:" link — not the
+        // editorial stem ("transformers") and not the inline John Wick link that
+        // appears earlier in the body. This is what makes the OPDB join reliable.
+        Assert.Equal("transformers-more-than-meets-the-eye", article.GameSlug);
 
         // Content: non-empty and contains meaningful body text.
         Assert.False(string.IsNullOrWhiteSpace(article.MarkdownContent));
@@ -244,6 +305,8 @@ public sealed class KineticistTutorialsClientTests
         Assert.NotNull(article);
         Assert.Equal("Rock Monster: Learn to Play Williams Monster Bash Pinball", article!.Title);
         Assert.Equal("James McFatter", article.Author);
+        // This fixture has no "## Related - Game:" block, so GameSlug falls back
+        // to the editorial-stem derivation (covers the fallback path).
         Assert.Equal("monster-bash", article.GameSlug);
         Assert.Equal("https://www.kineticist.com/news/monster-bash-pinball-tutorial", article.CanonicalUrl);
         Assert.Equal(2025, article.PublishedAt?.Year);
