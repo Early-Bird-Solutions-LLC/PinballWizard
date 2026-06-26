@@ -4,11 +4,14 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
+@using Microsoft.Extensions.Options
+@using PinballWizard.Core.Configuration
 @using PinballWizard.Core.Domain
 @using PinballWizard.Core.Models
 @using PinballWizard.Web.Security
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inject IOptions<PolitenessOptions> PolitenessOpts
 @inject IIngestionSourceRepository SourceRepo
 @inject ICatalogStatsReadRepository CatalogStatsRepo
 @inject IScrapeRunRepository ScrapeRunRepo
@@ -118,11 +121,11 @@
         <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-politeness">
             <MudText Typo="Typo.h6" GutterBottom="true">Politeness overrides</MudText>
             <MudStack Spacing="1">
-                @{ var p = _source.PolitenessOverrides; }
-                @KeyValue("Request delay (ms)", p?.RequestDelayMs?.ToString() ?? GlobalDefault)
-                @KeyValue("robots.txt path", p?.RobotsTxtPath ?? GlobalDefault)
-                @KeyValue("User-Agent suffix", p?.UserAgentSuffix ?? GlobalDefault)
-                @KeyValue("Max 429 streak", p?.Max429Streak?.ToString() ?? GlobalDefault)
+                @{ var p = _source.PolitenessOverrides; var po = PolitenessOpts.Value; }
+                @KeyValue("Request delay (ms)", p?.RequestDelayMs?.ToString() ?? $"{po.RequestDelayMs} (default)")
+                @KeyValue("robots.txt path",    p?.RobotsTxtPath               ?? $"{po.RobotsTxtPath} (default)")
+                @KeyValue("User-Agent suffix",  p?.UserAgentSuffix             ?? "none (default)")
+                @KeyValue("Max 429 streak",     p?.Max429Streak?.ToString()    ?? $"{po.Max429Streak} (default)")
             </MudStack>
         </MudPaper>
 
@@ -227,7 +230,6 @@
     // see IngestionSource.PartitionKey. No shared constant is exported, so this
     // literal mirrors the repository's own ConfigPartition.
     private const string ConfigPartition = "config";
-    private const string GlobalDefault = "using global default";
 
     private IngestionSource? _source;
     private ManufacturerCatalogStats? _stats;
