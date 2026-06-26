@@ -54,6 +54,7 @@
                  Striped="true"
                  Dense="true"
                  Elevation="2"
+                 RowsPerPage="25"
                  data-testid="admin-sources-grid">
 
         <Columns>
@@ -100,6 +101,10 @@
                 </MudStack>
             }
         </NoRecordsContent>
+
+        <PagerContent>
+            <MudDataGridPager T="IngestionSourceRow" />
+        </PagerContent>
 
     </MudDataGrid>
 </MudContainer>

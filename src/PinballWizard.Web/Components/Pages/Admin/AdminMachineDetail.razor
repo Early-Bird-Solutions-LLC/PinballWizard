@@ -181,6 +181,7 @@
                          Hover="true"
                          Striped="true"
                          Elevation="2"
+                         RowsPerPage="25"
                          Class="mb-4"
                          data-testid="detail-docs-grid">
                 <Columns>
@@ -228,6 +229,11 @@
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
+
+                <PagerContent>
+                    <MudDataGridPager T="MachineDocumentLink" />
+                </PagerContent>
+
             </MudDataGrid>
         }
 

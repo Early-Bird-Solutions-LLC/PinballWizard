@@ -67,6 +67,7 @@
                  Striped="true"
                  Dense="true"
                  Elevation="2"
+                 RowsPerPage="25"
                  data-testid="admin-link-overrides-grid">
 
         <Columns>
@@ -113,6 +114,10 @@
                 </MudStack>
             }
         </NoRecordsContent>
+
+        <PagerContent>
+            <MudDataGridPager T="LinkOverrideRow" />
+        </PagerContent>
 
     </MudDataGrid>
 </MudContainer>

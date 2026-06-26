@@ -57,6 +57,7 @@
                  Striped="true"
                  Dense="true"
                  Elevation="2"
+                 RowsPerPage="25"
                  data-testid="admin-document-triage-grid">
 
         <Columns>
@@ -121,6 +122,10 @@
                 </MudStack>
             }
         </NoRecordsContent>
+
+        <PagerContent>
+            <MudDataGridPager T="DocumentTriageRow" />
+        </PagerContent>
 
     </MudDataGrid>
 </MudContainer>

@@ -93,6 +93,7 @@
                  Elevation="2"
                  Groupable="true"
                  GroupExpanded="true"
+                 RowsPerPage="50"
                  RowClick="@OnRowClick"
                  data-testid="admin-machines-grid">
 
@@ -192,6 +193,10 @@
                 </MudStack>
             }
         </NoRecordsContent>
+
+        <PagerContent>
+            <MudDataGridPager T="MachineCatalogRow" />
+        </PagerContent>
 
     </MudDataGrid>
 </MudContainer>
