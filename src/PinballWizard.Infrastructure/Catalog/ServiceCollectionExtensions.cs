@@ -17,24 +17,6 @@ namespace PinballWizard.Infrastructure.Catalog;
 
 public static class ServiceCollectionExtensions
 {
-    // Canonical manufacturer partition-key strings. These are the normalized
-    // keys written by OpdbMachineMapper.NormalizeManufacturerKey — the same
-    // values the change-feed handler will encounter as change.Manufacturer.
-    // Derived from ManufacturerMatchTokens in OpdbMachineMapper.cs; update
-    // both together if a new manufacturer is added to the scraper fleet.
-    private static readonly IReadOnlyList<string> KnownManufacturers =
-    [
-        "stern",
-        "jjp",
-        "americanpinball",
-        "spooky",
-        "multimorphic",
-        "cgc",
-        "haggis",
-        "pinballbrothers",
-        "dutch",
-        "barrelsoffun",
-    ];
 
     // Wires the catalog_stats change-feed projection consumer into DI.
     // Call this in the worker host AFTER AddCosmosChangeFeedRagIngestion,
@@ -134,7 +116,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICatalogStatsReadRepository>(sp =>
             new CosmosCatalogStatsRepository(
                 ResolveContainer(sp, "catalog_stats"),
-                KnownManufacturers,
                 sp.GetRequiredService<ILogger<CosmosRepository<CatalogStatsCosmosRecord>>>()));
 
         services.AddSingleton<IMachineDocumentReadRepository>(sp =>
