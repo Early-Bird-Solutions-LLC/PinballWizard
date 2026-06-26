@@ -5,7 +5,6 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
-using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Integrations.Kineticist;
 
@@ -29,11 +28,15 @@ public interface IKineticistApiClient
 /// </summary>
 /// <remarks>
 /// <para>
-/// Like every other outbound integration in this repo (e.g. <c>OpdbClient</c>),
-/// all requests route through <see cref="PoliteScraperBase"/> / the politeness
-/// gate (LOCKED invariant) — this also keeps us comfortably inside Kineticist's
-/// published rate tiers (free 1k/day). Authenticates with the
-/// <c>ki_live_</c> bearer key from <see cref="KineticistOptions.ApiKey"/>.
+/// <b>Not a scraper — does NOT route through the politeness gate.</b> Unlike the
+/// <c>.md</c> tutorial scraper (<see cref="Scraping.Kineticist.KineticistTutorialsClient"/>,
+/// which hits <c>/news/</c> — robots-allowed — and stays polite-by-construction),
+/// this is authenticated use of Kineticist's partner API under the operator's
+/// explicit grant + <c>ki_live_</c> bearer key (ADR-0043). Kineticist's
+/// robots.txt <c>Disallow: /api/</c> targets unauthenticated crawlers; honoring
+/// it here would contradict the partner's deliberate decision to expose the API
+/// for keyed access. We stay courteous via the few-calls-per-run volume (well
+/// inside the free 1k/day tier) and a polite User-Agent.
 /// </para>
 /// <para>
 /// Verified against the live API 2026-06-26: <c>GET /games/{slug}</c> returns
@@ -41,10 +44,11 @@ public interface IKineticistApiClient
 /// <c>GET /games?q={terms}</c> returns <c>{ data: [{ name, slug }, …] }</c>.
 /// </para>
 /// </remarks>
-public sealed class KineticistApiClient : PoliteScraperBase, IKineticistApiClient
+public sealed class KineticistApiClient : IKineticistApiClient
 {
     private readonly HttpClient _http;
     private readonly KineticistOptions _options;
+    private readonly ILogger<KineticistApiClient> _logger;
     private readonly Uri _apiBase;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -56,16 +60,15 @@ public sealed class KineticistApiClient : PoliteScraperBase, IKineticistApiClien
     /// <summary>Initializes a new <see cref="KineticistApiClient"/>.</summary>
     public KineticistApiClient(
         HttpClient http,
-        IPolitenessGate politeness,
-        IOptions<PolitenessOptions> politenessOptions,
         IOptions<KineticistOptions> options,
         ILogger<KineticistApiClient> logger)
-        : base(politeness, politenessOptions.Value, logger)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
         _http = http;
         _options = options.Value;
+        _logger = logger;
         // Normalize to a directory base so relative "games/{slug}" resolves
         // under "…/api/v1/" rather than replacing the last path segment.
         _apiBase = new Uri(_options.ApiBaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
@@ -84,7 +87,7 @@ public sealed class KineticistApiClient : PoliteScraperBase, IKineticistApiClien
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuth(request);
 
-        using var response = await SendPolitelyAsync(_http, request, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return null;
@@ -110,7 +113,7 @@ public sealed class KineticistApiClient : PoliteScraperBase, IKineticistApiClien
 
         if (editionOpdbIds.Length == 0)
         {
-            Logger.LogDebug(
+            _logger.LogDebug(
                 "Kineticist API: game '{Slug}' resolved but carries no edition OPDB ids; cannot link.", data.Slug);
             return null;
         }
@@ -132,7 +135,7 @@ public sealed class KineticistApiClient : PoliteScraperBase, IKineticistApiClien
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApplyAuth(request);
 
-        using var response = await SendPolitelyAsync(_http, request, cancellationToken).ConfigureAwait(false);
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var body = await response.Content
