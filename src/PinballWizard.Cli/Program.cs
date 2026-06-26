@@ -859,6 +859,12 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var kineticistSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Kineticist.KineticistTutorialsSynthesizer>();
         var titleLookups = host.Services.GetService<IMachineTitleLookupRepository>();
         var kineticistIndexer = host.Services.GetService<IRagIndexer>();
+        // ADR-0043 Tier A: OPDB-keyed linking via the Kineticist API. Optional
+        // (registered only when an API key is configured); when absent the
+        // legacy title-lookup path below is used.
+        var kineticistResolver = host.Services.GetService<PinballWizard.Infrastructure.Integrations.Kineticist.IKineticistGameResolver>();
+        var machineRepo = host.Services.GetService<IMachineRepository>();
+        var kineticistOptions = host.Services.GetService<Microsoft.Extensions.Options.IOptions<PinballWizard.Core.Configuration.KineticistOptions>>();
 
         if (kineticistClient is null || kineticistSynthesizer is null || titleLookups is null || kineticistIndexer is null)
         {
@@ -875,6 +881,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine($"Found {kineticistSlugs.Count} tutorial slug(s). Fetching and indexing...");
 
         var kineticistIndexed = 0;
+        var kineticistEditionsLinked = 0;
         var kineticistSkippedNoMachine = 0;
         var kineticistSkippedNoContent = 0;
         var kineticistFailed = 0;
@@ -891,68 +898,133 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            // Machine lookup: game slug ("transformers") -> replace hyphens with spaces
-            // for MachineTitleLookup.GetByTitleAsync which normalizes to lower-with-spaces.
-            var lookupTitle = article.GameSlug.Replace('-', ' ');
-            var lookup = await titleLookups.GetByTitleAsync(lookupTitle, cancellationToken);
+            // Resolve the tutorial's target machine(s). Primary path (ADR-0043
+            // Tier A): the Kineticist API maps the game to its OPDB-keyed
+            // editions, which join to our catalog by OPDB id — no fuzzy title
+            // matching. We link the rulesheet to EVERY edition we carry, since
+            // gameplay is edition-agnostic. Fallback when no API key is
+            // configured: the legacy single-machine title-lookup.
+            var targets = new List<(string MachineId, string Title, string Manufacturer)>();
 
-            if (lookup is null || lookup.OpdbIds.Count == 0)
-            {
-                Console.Error.WriteLine(
-                    $"  Kineticist: no machine found for slug '{article.GameSlug}' (title '{lookupTitle}'); article '{article.Title}' skipped.");
-                kineticistSkippedNoMachine++;
-                continue;
-            }
-
-            var machineId = lookup.OpdbIds[0];
-            var machineManufacturer = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Unknown";
-
-            // Stable document ID so re-runs are idempotent (chunk_id derives from this).
-            var documentId = $"kineticist_{slug}";
-
-            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
-                MachineId: machineId,
-                MachineTitle: lookupTitle,
-                Manufacturer: machineManufacturer,
-                DocumentId: documentId,
-                DocumentUrl: article.CanonicalUrl,
-                DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
-
-            var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
-            if (chunks.Count == 0)
-            {
-                kineticistSkippedNoContent++;
-                continue;
-            }
-
+            // Link resolution touches the network (Kineticist API) and Cosmos.
+            // Isolate per-tutorial: a transient API 5xx or repo error must skip
+            // this one tutorial, not abort the whole run (degrade visibly).
             try
             {
-                var result = await kineticistIndexer.UpsertAsync(chunkRequest, chunks, kineticistIndexerOptions, cancellationToken);
-                if (result.Failures.Count > 0)
+                if (kineticistResolver is not null && machineRepo is not null
+                    && !string.IsNullOrWhiteSpace(kineticistOptions?.Value.ApiKey))
                 {
-                    foreach (var failure in result.Failures)
+                    var match = await kineticistResolver.ResolveAsync(article.GameSlug, article.Title, cancellationToken);
+                    if (match is not null)
                     {
-                        Console.Error.WriteLine(
-                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        var groupIds = match.EditionOpdbIds
+                            .Select(id => id.Split('-', 2)[0])
+                            .Where(g => !string.IsNullOrWhiteSpace(g))
+                            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var groupId in groupIds)
+                        {
+                            await foreach (var machine in machineRepo.GetSiblingsByGroupIdAsync(groupId, cancellationToken))
+                            {
+                                if (seen.Add(machine.Id))
+                                {
+                                    targets.Add((machine.Id, machine.Title, machine.ManufacturerDisplayName));
+                                }
+                            }
+                        }
                     }
-                    kineticistFailed++;
                 }
                 else
                 {
-                    Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
-                    kineticistIndexed++;
+                    // Legacy fallback (no API key): title-lookup → first OPDB id only.
+                    var lookupTitle = article.GameSlug.Replace('-', ' ');
+                    var lookup = await titleLookups.GetByTitleAsync(lookupTitle, cancellationToken);
+                    if (lookup is not null && lookup.OpdbIds.Count > 0)
+                    {
+                        var manu = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Unknown";
+                        targets.Add((lookup.OpdbIds[0], lookupTitle, manu));
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Console.Error.WriteLine($"  Failed to index '{article.Title}': {ex.Message}");
+                Console.Error.WriteLine(
+                    $"  Kineticist: link resolution failed for slug '{article.GameSlug}' ('{article.Title}'): {ex.Message}");
                 kineticistFailed++;
+                continue;
+            }
+
+            if (targets.Count == 0)
+            {
+                Console.Error.WriteLine(
+                    $"  Kineticist: no machine in catalog for slug '{article.GameSlug}'; article '{article.Title}' skipped.");
+                kineticistSkippedNoMachine++;
+                continue;
+            }
+
+            var articleIndexed = false;
+            var articleHadContent = false;
+            foreach (var (machineId, machineTitle, machineManufacturer) in targets)
+            {
+                // Per-edition stable doc id: idempotent re-runs, and editions of
+                // the same game don't collide on the same chunk id.
+                var documentId = $"kineticist_{slug}_{machineId}";
+
+                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                    MachineId: machineId,
+                    MachineTitle: machineTitle,
+                    Manufacturer: machineManufacturer,
+                    DocumentId: documentId,
+                    DocumentUrl: article.CanonicalUrl,
+                    DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
+                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+
+                var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
+                if (chunks.Count == 0)
+                {
+                    continue;
+                }
+                articleHadContent = true;
+
+                try
+                {
+                    var result = await kineticistIndexer.UpsertAsync(chunkRequest, chunks, kineticistIndexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                        {
+                            Console.Error.WriteLine(
+                                $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}' → {machineId}: HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        }
+                        kineticistFailed++;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
+                        articleIndexed = true;
+                        kineticistEditionsLinked++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index '{article.Title}' → {machineId}: {ex.Message}");
+                    kineticistFailed++;
+                }
+            }
+
+            if (articleIndexed)
+            {
+                kineticistIndexed++;
+            }
+            else if (!articleHadContent)
+            {
+                kineticistSkippedNoContent++;
             }
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed}");
+        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed}");
         if (kineticistFailed > 0)
             Environment.ExitCode = 1;
         return;

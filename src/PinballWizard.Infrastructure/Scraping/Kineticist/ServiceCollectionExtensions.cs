@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Integrations.Kineticist;
 using PinballWizard.Infrastructure.Scraping.Polite;
 
 namespace PinballWizard.Infrastructure.Scraping.Kineticist;
@@ -41,6 +42,23 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddTransient<KineticistTutorialsSynthesizer>();
+
+        // ADR-0043 Tier A — OPDB-keyed API linking. The typed client routes
+        // through the politeness gate like every other integration; auth is
+        // applied per-request from KineticistOptions.ApiKey. The resolver is
+        // registered unconditionally (it is cheap and stateless); the tutorials
+        // sync only invokes it when an API key is configured, otherwise it falls
+        // back to title-lookup linking.
+        services.AddHttpClient<KineticistApiClient>((sp, client) =>
+        {
+            var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+
+        services.AddTransient<IKineticistApiClient>(sp => sp.GetRequiredService<KineticistApiClient>());
+        services.AddTransient<IKineticistGameResolver, KineticistGameResolver>();
 
         return services;
     }
