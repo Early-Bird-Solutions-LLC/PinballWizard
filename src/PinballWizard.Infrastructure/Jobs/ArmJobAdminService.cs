@@ -122,18 +122,14 @@ internal sealed class ArmJobAdminService : IJobAdminService
         }
     }
 
-    private async Task<ResourceGroupResource> GetResourceGroupAsync(CancellationToken cancellationToken)
+    private Task<ResourceGroupResource> GetResourceGroupAsync(CancellationToken cancellationToken)
     {
-        var subscription = await _armClient
-            .GetSubscriptions()
-            .GetAsync(_subscriptionId, cancellationToken)
-            .ConfigureAwait(false);
-
-        var rg = await subscription.Value
-            .GetResourceGroupAsync(_resourceGroupName, cancellationToken)
-            .ConfigureAwait(false);
-
-        return rg.Value;
+        // Construct the resource group reference from its known ID without making a GET call.
+        // GetAsync would require Microsoft.Resources/subscriptions/resourcegroups/read, which
+        // the "Container Apps Jobs Operator" role does not include. GetResourceGroupResource()
+        // returns a reference synchronously; the actual ARM call happens when listing jobs.
+        var rgId = ResourceGroupResource.CreateResourceIdentifier(_subscriptionId, _resourceGroupName);
+        return Task.FromResult(_armClient.GetResourceGroupResource(rgId));
     }
 
     private static async Task<JobStatus> MapJobStatusAsync(
