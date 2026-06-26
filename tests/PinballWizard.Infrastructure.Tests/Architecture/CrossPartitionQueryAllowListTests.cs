@@ -96,6 +96,19 @@ public sealed class CrossPartitionQueryAllowListTests
             "Direct GetItemQueryIterator<IndexStateDocument> in ReconcileAsync; startup-only " +
             "reconcile bounded by SELECT TOP @sampleSize ORDER BY recorded_utc DESC; not a " +
             "CosmosRepository subclass (direct Container injection); Tier 2.",
+
+        // StreamCrossPartitionAsync — StreamAllManufacturersAsync enumerates all
+        // catalog_stats documents (one per manufacturer) for the /admin/manufacturers
+        // page. Required for dynamic discovery: OPDB carries defunct manufacturers
+        // (Williams, Bally, Gottlieb, etc.) that have no ISourceScraper and never
+        // appear in the change-feed — a hardcoded list would silently omit them.
+        // Bounded: ~30-50 entries (one per distinct manufacturer in the OPDB catalog).
+        // Admin-only path, not user-facing. SELECT * is necessary to retrieve the
+        // full per-manufacturer stats record (machine list + doc counts).
+        ["CosmosCatalogStatsRepository.cs"] =
+            "StreamCrossPartitionAsync in StreamAllManufacturersAsync; admin-only /manufacturers " +
+            "page; bounded ~30-50 docs (one per OPDB manufacturer); dynamic discovery needed " +
+            "for defunct manufacturers (Williams, Bally, Gottlieb, etc.) that have no scraper.",
     };
 
     [Fact]

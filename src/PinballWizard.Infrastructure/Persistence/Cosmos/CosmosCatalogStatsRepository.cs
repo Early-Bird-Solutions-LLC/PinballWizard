@@ -5,33 +5,26 @@ using PinballWizard.Application.Persistence;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
-// Tier 1 read repository for the `catalog_stats` container.
+// Tier 1 / Tier 2 read repository for the `catalog_stats` container.
 //
-// Implements ICatalogStatsReadRepository by extending CosmosRepository<CatalogStatsCosmosRecord>.
-// The container has partition key path /manufacturer and id == manufacturer, so every read is a
-// pure point-lookup (GetByIdAsync — Tier 1 per ADR-0036). No cross-partition query is needed
-// because the DI layer supplies the complete manufacturer list, which the repo iterates to drive
-// one point-read per manufacturer.
+// GetByManufacturerAsync — Tier 1 point-read (id == manufacturer == partition key).
 //
-// StreamAllManufacturersAsync intentionally does NOT issue a cross-partition query. Issuing
-// "SELECT * FROM c" across all manufacturer partitions would require an allow-list entry in
-// CrossPartitionQueryAllowListTests. Instead, the injected IReadOnlyList<string> manufacturers
-// enumerates the known partition keys, and each is a separate point-read. The list is bounded
-// (~8-9 entries for the current manufacturer set) and its contents are authoritative because the
-// change-feed handler writes exactly one document per manufacturer in the list.
+// StreamAllManufacturersAsync — Tier 2 cross-partition scan via StreamCrossPartitionAsync.
+// Justified: catalog_stats is a small container (one document per active or historically-seen
+// manufacturer, bounded by the size of the OPDB catalog's distinct manufacturer set — expected
+// ~30-50 entries). The scan is admin-only, not on any user-facing hot path. Dynamic discovery
+// is required because OPDB carries defunct manufacturers (Williams, Bally, Gottlieb, etc.) that
+// have no ISourceScraper and therefore never appear in the change-feed — the only way to
+// surface them is to let catalog_stats enumerate itself rather than relying on a hardcoded list.
+// Allow-list entry: CrossPartitionQueryAllowListTests.CosmosCatalogStatsRepository.
 internal sealed class CosmosCatalogStatsRepository
     : CosmosRepository<CatalogStatsCosmosRecord>, ICatalogStatsReadRepository
 {
-    private readonly IReadOnlyList<string> _manufacturers;
-
     public CosmosCatalogStatsRepository(
         Container container,
-        IReadOnlyList<string> manufacturers,
         ILogger<CosmosRepository<CatalogStatsCosmosRecord>> logger)
         : base(container, logger)
     {
-        ArgumentNullException.ThrowIfNull(manufacturers);
-        _manufacturers = manufacturers;
     }
 
     /// <inheritdoc/>
@@ -41,7 +34,6 @@ internal sealed class CosmosCatalogStatsRepository
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manufacturer);
 
-        // Point read: id == manufacturer == partition key — one logical partition, one item.
         var rec = await GetByIdAsync(manufacturer, manufacturer, cancellationToken).ConfigureAwait(false);
         return rec is null ? null : Map(rec);
     }
@@ -50,12 +42,14 @@ internal sealed class CosmosCatalogStatsRepository
     public async IAsyncEnumerable<ManufacturerCatalogStats> StreamAllManufacturersAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // One point-read per known manufacturer — no cross-partition query (ADR-0036 Tier 1).
-        foreach (var manufacturer in _manufacturers)
+        // Cross-partition scan — one doc per manufacturer (bounded ~30-50 entries).
+        // See class-level comment for justification. Allow-listed in CrossPartitionQueryAllowListTests.
+        await foreach (var rec in StreamCrossPartitionAsync(
+            "SELECT * FROM c",
+            parameters: null,
+            cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            var rec = await GetByIdAsync(manufacturer, manufacturer, cancellationToken).ConfigureAwait(false);
-            if (rec is not null)
-                yield return Map(rec);
+            yield return Map(rec);
         }
     }
 

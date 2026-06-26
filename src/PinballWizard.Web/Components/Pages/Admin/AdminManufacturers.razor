@@ -11,18 +11,20 @@
 
 @* AdminManufacturers — /admin/manufacturers catalog-by-brand overview.
  *
- * Static SSR + [StreamRendering] (ADR-0034 — read-only display). Two bounded
- * single-partition reads (ADR-0036, ZERO cross-partition): the per-manufacturer
- * rollups (StreamAllManufacturersAsync — point-reads) joined by key with the
- * ingestion sources (StreamAllAsync — one 'config' partition) for DisplayName +
- * Enabled. Sorted alphabetically (no ranking — favoritism guardrail). Rows link to
- * the source-detail page. Failures degrade visibly (Invariant #17): a rollup-load
- * failure shows a MudAlert; an empty set a distinct state; the source enrichment is
- * best-effort — a failure degrades rows to the raw key, never blanks the page.
+ * Static SSR + [StreamRendering] (ADR-0034 — read-only display). One Tier-2
+ * cross-partition scan (StreamAllManufacturersAsync — SELECT * FROM c on
+ * catalog_stats, ~30-50 docs) joined by key with one single-partition read
+ * (SourceRepo.StreamAllAsync — the 'config' partition) for DisplayName + Enabled.
+ * The cross-partition scan is necessary to surface defunct manufacturers (Williams,
+ * Bally, Gottlieb, etc.) that have OPDB machines but no ISourceScraper and would
+ * be silently omitted by any hardcoded list. Justified in CrossPartitionQueryAllowListTests.
+ * Sorted alphabetically (no ranking — favoritism guardrail). Rows link to the
+ * source-detail page. Failures degrade visibly (Invariant #17): a rollup-load failure
+ * shows a MudAlert; an empty set a distinct state; source enrichment is best-effort.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0034  — render-mode doctrine (static default)
- * ADR-0036  — Cosmos read-access (single-partition / point-reads only)
+ * ADR-0036  — Cosmos read-access (cross-partition Tier 2, allow-listed)
  *@
 
 <PageTitle>Manufacturers — PinballWizard Admin</PageTitle>
