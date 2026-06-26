@@ -15,7 +15,7 @@ namespace PinballWizard.Infrastructure.Scraping.Kineticist;
 /// </summary>
 /// <remarks>
 /// <para>
-/// All requests route through <see cref="IPolitenessGate"/> (LOCKED invariant).
+/// All requests route through <see cref="PoliteScraperBase"/> (LOCKED invariant).
 /// The robots.txt (verified 2026-06-25) allows <c>/news/</c> for all crawlers
 /// and lists <c>ai-train=yes</c>. No crawl-delay is specified; politeness
 /// defaults apply.
@@ -28,12 +28,10 @@ namespace PinballWizard.Infrastructure.Scraping.Kineticist;
 /// title, author, date, category, canonical URL, and article body.
 /// </para>
 /// </remarks>
-public sealed partial class KineticistTutorialsClient
+public sealed partial class KineticistTutorialsClient : PoliteScraperBase
 {
     private readonly HttpClient _http;
-    private readonly IPolitenessGate _politeness;
     private readonly KineticistOptions _options;
-    private readonly ILogger<KineticistTutorialsClient> _logger;
 
     // Matches article links in the category listing HTML.
     // Captures the slug from hrefs like /news/transformers-pinball-tutorial
@@ -56,20 +54,19 @@ public sealed partial class KineticistTutorialsClient
     [GeneratedRegex(@"https://www\.kineticist\.com/news/[a-z0-9\-]+", RegexOptions.IgnoreCase)]
     private static partial Regex CanonicalUrlRegex();
 
+    /// <summary>Initializes a new <see cref="KineticistTutorialsClient"/>.</summary>
     public KineticistTutorialsClient(
         HttpClient http,
         IPolitenessGate politeness,
+        IOptions<PolitenessOptions> politenessOptions,
         IOptions<KineticistOptions> options,
         ILogger<KineticistTutorialsClient> logger)
+        : base(politeness, politenessOptions.Value, logger)
     {
         ArgumentNullException.ThrowIfNull(http);
-        ArgumentNullException.ThrowIfNull(politeness);
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(logger);
         _http = http;
-        _politeness = politeness;
         _options = options.Value;
-        _logger = logger;
     }
 
     /// <summary>
@@ -89,12 +86,12 @@ public sealed partial class KineticistTutorialsClient
             string html;
             try
             {
-                html = await GetStringPolitelyAsync(new Uri(url), cancellationToken).ConfigureAwait(false);
+                html = await GetStringPolitelyAsync(_http, new Uri(url), cancellationToken).ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
             {
                 // Past the last page — pagination exhausted.
-                _logger.LogDebug("Kineticist discovery: page {Page} returned 404; pagination exhausted at {Count} articles.", page, slugs.Count);
+                Logger.LogDebug("Kineticist discovery: page {Page} returned 404; pagination exhausted at {Count} articles.", page, slugs.Count);
                 break;
             }
 
@@ -108,17 +105,17 @@ public sealed partial class KineticistTutorialsClient
                 }
             }
 
-            _logger.LogDebug("Kineticist discovery: page {Page} yielded {New} new slugs (total {Total}).", page, matchCount, slugs.Count);
+            Logger.LogDebug("Kineticist discovery: page {Page} yielded {New} new slugs (total {Total}).", page, matchCount, slugs.Count);
 
             // If no new slugs found on this page, pagination is done.
             if (matchCount == 0)
             {
-                _logger.LogDebug("Kineticist discovery: page {Page} had no new slugs; stopping pagination.", page);
+                Logger.LogDebug("Kineticist discovery: page {Page} had no new slugs; stopping pagination.", page);
                 break;
             }
         }
 
-        _logger.LogInformation("Kineticist discovery: found {Count} total tutorial slugs.", slugs.Count);
+        Logger.LogInformation("Kineticist discovery: found {Count} total tutorial slugs.", slugs.Count);
         return [.. slugs];
     }
 
@@ -137,11 +134,11 @@ public sealed partial class KineticistTutorialsClient
         string markdown;
         try
         {
-            markdown = await GetStringPolitelyAsync(new Uri(mdUrl), cancellationToken).ConfigureAwait(false);
+            markdown = await GetStringPolitelyAsync(_http, new Uri(mdUrl), cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex,
+            Logger.LogWarning(ex,
                 "Kineticist: failed to fetch article Markdown for slug '{Slug}' at {Url}; skipping.",
                 slug, mdUrl);
             return null;
@@ -149,7 +146,7 @@ public sealed partial class KineticistTutorialsClient
 
         if (string.IsNullOrWhiteSpace(markdown))
         {
-            _logger.LogWarning("Kineticist: empty Markdown returned for slug '{Slug}' at {Url}; skipping.", slug, mdUrl);
+            Logger.LogWarning("Kineticist: empty Markdown returned for slug '{Slug}' at {Url}; skipping.", slug, mdUrl);
             return null;
         }
 
@@ -196,7 +193,7 @@ public sealed partial class KineticistTutorialsClient
         var title = ParseTitle(markdown);
         if (string.IsNullOrWhiteSpace(title))
         {
-            _logger.LogWarning(
+            Logger.LogWarning(
                 "Kineticist: could not extract title from Markdown for slug '{Slug}'; skipping.", slug);
             return null;
         }
@@ -229,20 +226,5 @@ public sealed partial class KineticistTutorialsClient
             MarkdownContent = markdown,
             PublishedAt = publishedAt,
         };
-    }
-
-    private async Task<string> GetStringPolitelyAsync(Uri url, CancellationToken cancellationToken)
-    {
-        await using var lease = await _politeness.AcquireForRequestAsync(url, cancellationToken)
-            .ConfigureAwait(false);
-
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
-        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-
-        await _politeness.ReportResponseAsync(url, response.StatusCode, response.Headers.RetryAfter?.Delta, cancellationToken)
-            .ConfigureAwait(false);
-
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
     }
 }

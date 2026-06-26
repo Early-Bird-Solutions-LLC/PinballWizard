@@ -309,6 +309,7 @@ public sealed class KineticistTutorialsClientTests
         var client = new KineticistTutorialsClient(
             httpClient,
             gate,
+            Options.Create(new PolitenessOptions()),
             options,
             NullLogger<KineticistTutorialsClient>.Instance);
 
