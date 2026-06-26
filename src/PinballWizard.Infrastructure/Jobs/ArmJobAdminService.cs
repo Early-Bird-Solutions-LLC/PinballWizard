@@ -144,15 +144,16 @@ internal sealed class ArmJobAdminService : IJobAdminService
             var config = job.Data.Configuration;
             var cron = config?.ScheduleTriggerConfig?.CronExpression;
             var triggerType = config?.TriggerType.ToString() ?? "Unknown";
-            var imageTag = job.Data.Template?.Containers?.FirstOrDefault()?.Image;
 
             var executions = new List<JobExecution>();
             var hasMore = false;
             var fetched = 0;
+            ContainerAppJobExecutionData? firstExecData = null;
 
             await foreach (var exec in job.GetContainerAppJobExecutions()
                 .GetAllAsync(filter: null, cancellationToken).ConfigureAwait(false))
             {
+                firstExecData ??= exec.Data;
                 if (fetched < count)
                 {
                     executions.Add(new JobExecution(
@@ -168,6 +169,8 @@ internal sealed class ArmJobAdminService : IJobAdminService
                     break;
                 }
             }
+
+            var imageTag = firstExecData?.Template?.Containers?.FirstOrDefault()?.Image;
 
             _logger.LogDebug(
                 "Fetched detail for ACA job {JobName}: {ExecutionCount} executions, hasMore={HasMore}.",
