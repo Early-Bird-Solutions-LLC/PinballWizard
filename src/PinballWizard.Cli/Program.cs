@@ -180,6 +180,11 @@ var reclassifyDocumentsOption = new Option<bool>("--reclassify-documents")
     Description = "Re-run ClassifyDocumentType over every record in scraped_documents_raw using the stored Source fields (LinkText, FileUrl, DiscoveryContext) and write back ONLY the records whose classification changed. Idempotent: a second run is a no-op. Makes no external HTTP calls — operates entirely on already-stored Cosmos data (polite-by-construction). Use after a classification rule change (e.g. PR #507 added Rulesheet) to fix existing Other-typed records without a full re-scrape. After this, run --relink-all to fan updated types into scraped_documents so the RAG ingestion worker picks them up. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var auditCatalogOption = new Option<bool>("--audit-catalog")
+{
+    Description = "Proactive catalog-quality audit. Streams all machines and reports title-superset collisions — games whose title is BOTH an exact game and a subtitle-prefix of a different OPDB group (e.g. 'Iron Maiden' 1981 vs 'Iron Maiden: Legacy of the Beast' 2018). These are the catalog shape behind the #532 mis-grounding class; surfacing them lets us add eval coverage per collision before a prospect finds the gap. Read-only (no external HTTP, no writes). Exit code 0 = no collisions, 3 = collisions found (so CI/cron can alert). Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -206,6 +211,7 @@ rootCommand.Options.Add(forceRedownloadOption);
 rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
 rootCommand.Options.Add(reclassifyDocumentsOption);
+rootCommand.Options.Add(auditCatalogOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -234,6 +240,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var migrateDownloadPaths = parseResult.GetValue(migrateDownloadPathsOption);
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
     var reclassifyDocuments  = parseResult.GetValue(reclassifyDocumentsOption);
+    var auditCatalog         = parseResult.GetValue(auditCatalogOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -843,6 +850,51 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         var (manufacturers, machines) = await rebuilder.RebuildAsync(cancellationToken);
         Console.WriteLine($"Rebuilt catalog_stats: {manufacturers} manufacturers, {machines} machines.");
+        return;
+    }
+
+    // Handle --audit-catalog (proactive title-superset collision audit; #532
+    // follow-up). Streams all machines and reports games whose title is an exact
+    // game AND a subtitle-prefix of a different OPDB group — the catalog shape an
+    // agent can mis-ground by dropping the subtitle. Read-only; exit code 3 when
+    // collisions are found so CI/cron can alert.
+    if (auditCatalog)
+    {
+        var auditRepo = host.Services.GetService<IMachineRepository>();
+        if (auditRepo is null)
+        {
+            Console.Error.WriteLine(
+                "--audit-catalog requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var titlesAndGroups = new List<(string Title, string? GroupId)>();
+        await foreach (var machine in auditRepo.StreamAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            titlesAndGroups.Add((machine.Title, machine.GroupId));
+        }
+
+        var collisions = PinballWizard.Application.Catalog.TitleSupersetCollisionDetector.Detect(titlesAndGroups);
+        Console.WriteLine(
+            $"Catalog audit: scanned {titlesAndGroups.Count} machines; found {collisions.Count} title-superset collision(s).");
+
+        if (collisions.Count > 0)
+        {
+            Console.WriteLine(
+                "These titles are each an exact game AND a subtitle-prefix of a different game (a #532 mis-grounding risk —");
+            Console.WriteLine(
+                "ensure each has an eval question pinning the correct edition with franchise_wide_ok=false):");
+            foreach (var c in collisions)
+            {
+                Console.WriteLine(
+                    $"  '{c.ShorterTitle}' [{c.ShorterGroupId}]  ==>  '{c.LongerTitle}' [{c.LongerGroupId}]");
+            }
+            // Non-zero exit so a scheduled run / CI step surfaces the gap.
+            Environment.ExitCode = 3;
+        }
+
         return;
     }
 
