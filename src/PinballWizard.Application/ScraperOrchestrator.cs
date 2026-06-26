@@ -370,6 +370,7 @@ public sealed class ScraperOrchestrator
         ["games"] = "Game Pages",
         ["bulletins"] = "Service Bulletins",
         ["jjp"] = "JJP",
+        ["jjp_support"] = "JJP Support",
         ["ap"] = "American Pinball",
         ["ap_bulletins"] = "American Pinball Bulletins",
         ["spooky"] = "Spooky Pinball",

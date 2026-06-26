@@ -27,4 +27,5 @@ public static class IngestionSourceIds
     public const string Cgc = "cgc";
     public const string Kineticist = "kineticist_tutorials";
     public const string Twip = "twip";
+    public const string JjpSupportDocs = "jjp_support";
 }

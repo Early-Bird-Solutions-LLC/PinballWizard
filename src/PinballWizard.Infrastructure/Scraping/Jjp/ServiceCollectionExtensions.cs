@@ -52,8 +52,20 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(60);
         });
 
-        // Bridge the typed-client registration into the ISourceScraper enumerable.
+        services.AddHttpClient<JjpSupportDocScraper>((sp, client) =>
+        {
+            var politeness = sp.GetRequiredService<IOptions<PolitenessOptions>>().Value;
+            var jjp = sp.GetRequiredService<IOptions<JjpOptions>>().Value;
+
+            client.BaseAddress = new Uri(jjp.BaseUrl);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(politeness.UserAgent);
+            client.DefaultRequestHeaders.Accept.ParseAdd("text/html");
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+
+        // Bridge the typed-client registrations into the ISourceScraper enumerable.
         services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<JjpProductScraper>());
+        services.AddTransient<ISourceScraper>(sp => sp.GetRequiredService<JjpSupportDocScraper>());
 
         return services;
     }

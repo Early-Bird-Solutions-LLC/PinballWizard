@@ -56,7 +56,7 @@ using Polly.Retry;
 
 var sourceOption = new Option<string?>("--source", "-s")
 {
-    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, opdb, all. " +
+    Description = "Which source(s) to scrape: manuals, games, bulletins, jjp, jjp_support, ap, spooky, pinballbrothers, barrelsoffun, cgc, multimorphic, opdb, all. " +
                   "NOTE: 'all' runs every ISourceScraper but does NOT include 'opdb' — OPDB writes to IMachineRepository instead of yielding ScrapedItems and is special-cased; run --source opdb explicitly to sync the OPDB catalog.",
     DefaultValueFactory = _ => "all"
 };

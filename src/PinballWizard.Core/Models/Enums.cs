@@ -17,6 +17,7 @@ public enum SourceType
     BarrelsOfFunProductPage,
     ChicagoGamingGamePage,
     MultimorphicProductPage,
+    JjpSupportPage,
 }
 
 /// <summary>
