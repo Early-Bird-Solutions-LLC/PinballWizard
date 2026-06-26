@@ -455,7 +455,7 @@ resource searchService 'Microsoft.Search/searchServices@2024-03-01-preview' = if
     partitionCount: 1
     hostingMode: 'default'
     publicNetworkAccess: 'enabled'
-    semanticSearch: 'free' // included with Basic tier
+    semanticSearch: 'standard' // billable semantic ranker — free tier caps at 1,000 queries/month (402 wall); 'standard' bills the overage (~$1 per additional 1,000) so RAG citations don't hard-fail mid-month. Same Basic SKU, not a tier upgrade.
     authOptions: {
       aadOrApiKey: {
         aadAuthFailureMode: 'http401WithBearerChallenge'
