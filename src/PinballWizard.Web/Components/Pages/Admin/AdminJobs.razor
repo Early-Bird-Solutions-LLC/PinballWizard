@@ -61,6 +61,10 @@
             Check that the app's identity has the <em>Container Apps Jobs Operator</em>
             role on the resource group, and that <code>Cosmos:AccountResourceId</code>
             is correctly set.
+            @if (_loadErrorDetail is not null)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1"><strong>Detail:</strong> @_loadErrorDetail</MudText>
+            }
         </MudAlert>
     }
     else if (_jobs.Count == 0)
@@ -177,6 +181,7 @@
     private List<JobStatus> _jobs = [];
     private bool _loading = true;
     private bool _loadFailed;
+    private string? _loadErrorDetail;
     private bool _serviceUnavailable;
     private bool _showConfirmDialog;
     private bool _startBusy;
@@ -215,16 +220,19 @@
         {
             Logger.LogError(ex, "ARM error loading job list for /admin/jobs.");
             _loadFailed = true;
+            _loadErrorDetail = ex.Message;
         }
         catch (OperationCanceledException)
         {
             Logger.LogWarning("/admin/jobs job-list load timed out after 30 s.");
             _loadFailed = true;
+            _loadErrorDetail = "Request timed out after 30 s.";
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error loading job list for /admin/jobs.");
             _loadFailed = true;
+            _loadErrorDetail = ex.Message;
         }
         finally
         {
