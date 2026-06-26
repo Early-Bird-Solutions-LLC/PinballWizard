@@ -46,6 +46,7 @@ using PinballWizard.Infrastructure.Scraping.PinballBrothers;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
+using PinballWizard.Infrastructure.Scraping.Kineticist;
 using PinballWizard.ServiceDefaults;
 using Polly;
 using Polly.Retry;
@@ -129,6 +130,11 @@ var syncGameOverviewsOption = new Option<bool>("--sync-game-overviews")
     Description = "Synthesize and index GameOverview documents from each Machine's scraped game-page OverviewProse + per-edition content. Mirrors --sync-metadata-cards. No-op for machines without overview content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
+var syncKineticistTutorialsOption = new Option<bool>("--sync-kineticist-tutorials")
+{
+    Description = "Fetch and index all Kineticist pinball tutorial articles as Rulesheet documents in AI Search (ADR-0043 / Domain-2). Each article is fetched as clean Markdown via the .md URL suffix — no PDF extraction. Machine linking uses IMachineTitleLookupRepository; unresolvable slugs are logged and skipped. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
+};
+
 var refreshGameOverviewsOption = new Option<bool>("--refresh-game-overviews")
 {
     Description = "Atomic Stern game-page refresh: scrape the game-page source, reconcile onto Machine records, then synthesize and index GameOverview docs. Equivalent to --source games followed by --sync-game-overviews, in one polite pass. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
@@ -190,6 +196,7 @@ rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
+rootCommand.Options.Add(syncKineticistTutorialsOption);
 rootCommand.Options.Add(refreshGameOverviewsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
@@ -217,6 +224,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
+    var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
     var refreshGameOverviews = parseResult.GetValue(refreshGameOverviewsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
@@ -838,6 +846,117 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --sync-kineticist-tutorials (Domain-2 — index Kineticist gameplay
+    // tutorials as Rulesheet docs in AI Search, ADR-0043). Mirrors
+    // --sync-metadata-cards / --sync-game-overviews. Each tutorial is fetched as
+    // clean Markdown via the .md URL suffix; machine linking uses
+    // IMachineTitleLookupRepository; unresolvable slugs are logged + skipped
+    // (visible degradation, not silent). Idempotent: chunk_id hash is stable for
+    // the same article URL, so re-runs overwrite in place.
+    if (syncKineticistTutorials)
+    {
+        var kineticistClient = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Kineticist.KineticistTutorialsClient>();
+        var kineticistSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.Kineticist.KineticistTutorialsSynthesizer>();
+        var titleLookups = host.Services.GetService<IMachineTitleLookupRepository>();
+        var kineticistIndexer = host.Services.GetService<IRagIndexer>();
+
+        if (kineticistClient is null || kineticistSynthesizer is null || titleLookups is null || kineticistIndexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-kineticist-tutorials requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Discovering Kineticist tutorial articles...");
+
+        var kineticistSlugs = await kineticistClient.DiscoverTutorialSlugsAsync(cancellationToken);
+        Console.WriteLine($"Found {kineticistSlugs.Count} tutorial slug(s). Fetching and indexing...");
+
+        var kineticistIndexed = 0;
+        var kineticistSkippedNoMachine = 0;
+        var kineticistSkippedNoContent = 0;
+        var kineticistFailed = 0;
+        var kineticistIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
+
+        foreach (var slug in kineticistSlugs)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            var article = await kineticistClient.FetchArticleAsync(slug, cancellationToken);
+            if (article is null)
+            {
+                kineticistSkippedNoContent++;
+                continue;
+            }
+
+            // Machine lookup: game slug ("transformers") -> replace hyphens with spaces
+            // for MachineTitleLookup.GetByTitleAsync which normalizes to lower-with-spaces.
+            var lookupTitle = article.GameSlug.Replace('-', ' ');
+            var lookup = await titleLookups.GetByTitleAsync(lookupTitle, cancellationToken);
+
+            if (lookup is null || lookup.OpdbIds.Count == 0)
+            {
+                Console.Error.WriteLine(
+                    $"  Kineticist: no machine found for slug '{article.GameSlug}' (title '{lookupTitle}'); article '{article.Title}' skipped.");
+                kineticistSkippedNoMachine++;
+                continue;
+            }
+
+            var machineId = lookup.OpdbIds[0];
+            var machineManufacturer = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Unknown";
+
+            // Stable document ID so re-runs are idempotent (chunk_id derives from this).
+            var documentId = $"kineticist_{slug}";
+
+            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                MachineId: machineId,
+                MachineTitle: lookupTitle,
+                Manufacturer: machineManufacturer,
+                DocumentId: documentId,
+                DocumentUrl: article.CanonicalUrl,
+                DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
+                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+
+            var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
+            if (chunks.Count == 0)
+            {
+                kineticistSkippedNoContent++;
+                continue;
+            }
+
+            try
+            {
+                var result = await kineticistIndexer.UpsertAsync(chunkRequest, chunks, kineticistIndexerOptions, cancellationToken);
+                if (result.Failures.Count > 0)
+                {
+                    foreach (var failure in result.Failures)
+                    {
+                        Console.Error.WriteLine(
+                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                    }
+                    kineticistFailed++;
+                }
+                else
+                {
+                    Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
+                    kineticistIndexed++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"  Failed to index '{article.Title}': {ex.Message}");
+                kineticistFailed++;
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed}");
+        if (kineticistFailed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
     // Handle --reclassify-documents (in-place classification fix for stored
     // scraped_documents_raw records; no HTTP calls; ADR-0042 follow-up).
     // Resolves IDocumentReclassifier from DI; the service is only registered
@@ -1019,6 +1138,13 @@ static IHost CreateHost(string[] args)
         builder.Services.AddRagBackfillService(builder.Configuration);
         builder.Services.AddMetadataCardSynthesizer();
         builder.Services.AddGameOverviewSynthesizer();
+
+        // Kineticist tutorials client + synthesizer (Domain-2 — ADR-0043). Fetches
+        // gameplay tutorials via the .md URL suffix and synthesizes Rulesheet chunks
+        // for AI Search indexing via --sync-kineticist-tutorials CLI verb.
+        // Inside the RAG gate because KineticistTutorialsSynthesizer depends on
+        // IChunker, which AddHybridChunker() registers (line above).
+        builder.Services.AddKineticistScraping(builder.Configuration);
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
@@ -1094,6 +1220,7 @@ static IHost CreateHost(string[] args)
     // product schema; deliberately excludes 3rd-party kits which belong to
     // their respective studios per OPDB attribution).
     builder.Services.AddMultimorphicScraping(builder.Configuration);
+
 
     // TimeProvider is required by ScraperReconciliationService. Registered here so
     // the reconciler works in Phase 1/2 environments where the RAG pipeline (which
