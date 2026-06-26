@@ -167,11 +167,13 @@ public sealed class SearchCorpusToolContractTests
     [Fact]
     public void JsonSchema_DocumentTypeParameter_DescriptionListsAllowedValues()
     {
-        // The model picks documentType from a tight enum: 'manual',
-        // 'service_bulletin', 'metadata_card'. Drift in the listed
+        // The model picks documentType from a tight enum: 'rulesheet',
+        // 'manual', 'service_bulletin', 'metadata_card'. Drift in the listed
         // values would let the model pass a value that filters out
         // every chunk in the index (since the field is exact-match
-        // OData filtered).
+        // OData filtered). 'rulesheet' is the gameplay-strategy type the
+        // Kineticist tutorials index under (ADR-0042/0043); omitting it from
+        // the description is what made that content unreachable before.
         var fn = CreateAIFunction();
         var schema = fn.JsonSchema;
         var docType = schema.GetProperty("properties").GetProperty("documentType");
@@ -179,6 +181,7 @@ public sealed class SearchCorpusToolContractTests
         Assert.True(docType.TryGetProperty("description", out var desc));
         var descText = desc.GetString();
         Assert.NotNull(descText);
+        Assert.Contains("rulesheet", descText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("manual", descText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("service_bulletin", descText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("metadata_card", descText, StringComparison.OrdinalIgnoreCase);

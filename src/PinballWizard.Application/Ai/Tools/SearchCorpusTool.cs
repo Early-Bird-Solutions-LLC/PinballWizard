@@ -99,7 +99,7 @@ public sealed class SearchCorpusTool
     public async Task<SearchCorpusResult> SearchCorpusAsync(
         [Description("The natural-language question or query to search the corpus with. Pass the user's question through unchanged unless you need to scope it to a specific machine or document type.")] string query,
         [Description("Optional: constrain results to a specific machine by OPDB ID (for example: 'GRBNN-MQERZ'). Use this when the user has already identified the machine via getMachineByTitle and you want manual/bulletin chunks for that specific machine.")] string? machineId = null,
-        [Description("Optional: constrain to a document type. Allowed values: 'manual', 'service_bulletin', 'metadata_card'. Omit for unfiltered.")] string? documentType = null,
+        [Description("Optional: constrain to a document type. Allowed values: 'rulesheet', 'manual', 'service_bulletin', 'metadata_card'. 'rulesheet' is community/partner gameplay-strategy content (mode trees, wizard-mode paths, scoring) — prefer it for gameplay/rules questions. Omit for unfiltered.")] string? documentType = null,
         [Description("Optional: maximum number of chunks to return. Default 8; max 20.")] int? topK = null,
         CancellationToken cancellationToken = default)
     {
@@ -394,6 +394,7 @@ public sealed class SearchCorpusTool
 
         return value.Trim().ToLowerInvariant() switch
         {
+            "rulesheet" => "Rulesheet",
             "manual" => "Manual",
             "service_bulletin" => "ServiceBulletin",
             "metadata_card" => "MetadataCard",
