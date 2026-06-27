@@ -1,4 +1,3 @@
-// src/PinballWizard.Application/Jobs/JobDetail.cs
 namespace PinballWizard.Application.Jobs;
 
 public sealed record JobDetail(

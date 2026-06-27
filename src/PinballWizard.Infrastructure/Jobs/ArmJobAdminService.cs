@@ -165,6 +165,7 @@ internal sealed class ArmJobAdminService : IJobAdminService
                 }
                 else
                 {
+                    // fetched == count: a (count+1)th item exists in the enumerable; HasMore = true
                     hasMore = true;
                     break;
                 }
