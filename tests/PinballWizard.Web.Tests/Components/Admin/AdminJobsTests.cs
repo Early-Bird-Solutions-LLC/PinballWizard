@@ -277,4 +277,24 @@ public sealed class AdminJobsTests : AsyncBunitContext
         // Raw expressions should NOT appear as standalone text
         Assert.DoesNotContain(">0 2 * * *<", cut.Markup, StringComparison.Ordinal);
     }
+
+    // ── Null cron expression shows em dash, not blank ─────────────────────────
+
+    [Fact]
+    public async Task CronColumn_NullExpression_ShowsEmDash()
+    {
+        var jobs = new List<JobStatus>
+        {
+            SeedJobs[0] with { CronExpression = null, TriggerType = "Manual" },
+        };
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<JobStatus>>(jobs));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // A manual-trigger job with no cron expression must show "—", not a blank cell.
+        Assert.Contains("—", cut.Markup, StringComparison.Ordinal);
+    }
 }

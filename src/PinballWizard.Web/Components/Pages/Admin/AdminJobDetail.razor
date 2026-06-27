@@ -99,7 +99,7 @@
                             <MudText Typo="Typo.body2" Color="Color.Secondary">Latest status</MudText>
                             <MudChip T="string"
                                      Size="Size.Small"
-                                     Color="@StatusColor(_detail.LatestExecutionStatus)"
+                                     Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
                                      data-testid="latest-status">
                                 @_detail.LatestExecutionStatus
                             </MudChip>
@@ -139,7 +139,7 @@
                     <MudTd DataLabel="Status">
                         <MudChip T="string"
                                  Size="Size.Small"
-                                 Color="@StatusColor(context.Status)"
+                                 Color="@JobStatusColor.For(context.Status)"
                                  data-testid="execution-status">
                             @context.Status
                         </MudChip>
@@ -368,12 +368,4 @@
         return $"{d.Seconds}s";
     }
 
-    private static Color StatusColor(string status) => status switch
-    {
-        "Succeeded" => Color.Success,
-        "Running" or "Processing" => Color.Info,
-        "Failed" => Color.Error,
-        "Stopped" or "Degraded" => Color.Warning,
-        _ => Color.Default,
-    };
 }

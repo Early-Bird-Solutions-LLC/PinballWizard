@@ -105,13 +105,13 @@
                         <MudText Typo="Typo.caption" Color="Color.Secondary">@context.JobName</MudText>
                     </MudTd>
                     <MudTd DataLabel="Schedule (cron)">
-                        @CronExpressionFormatter.Format(context.CronExpression)
+                        @(CronExpressionFormatter.Format(context.CronExpression) is { Length: > 0 } fmt ? fmt : "—")
                     </MudTd>
                     <MudTd DataLabel="Trigger type">@context.TriggerType</MudTd>
                     <MudTd DataLabel="Latest run">
                         <MudChip T="string"
                                  Size="Size.Small"
-                                 Color="@StatusColor(context.LatestExecutionStatus)"
+                                 Color="@JobStatusColor.For(context.LatestExecutionStatus)"
                                  data-testid="job-status">
                             @context.LatestExecutionStatus
                         </MudChip>
@@ -293,12 +293,4 @@
         }
     }
 
-    private static Color StatusColor(string status) => status switch
-    {
-        "Succeeded" => Color.Success,
-        "Running" or "Processing" => Color.Info,
-        "Failed" => Color.Error,
-        "Stopped" or "Degraded" => Color.Warning,
-        _ => Color.Default,
-    };
 }
