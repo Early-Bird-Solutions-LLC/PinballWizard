@@ -34,10 +34,10 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="corpus-load-failed">
+        <AppErrorAlert data-testid="corpus-load-failed">
             RAG corpus stats are currently unavailable. The Azure AI Search index could not
             be reached — check the service endpoint and credentials.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_stats!.TotalChunks == 0)
     {

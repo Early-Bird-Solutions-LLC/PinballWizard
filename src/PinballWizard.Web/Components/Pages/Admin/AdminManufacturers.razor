@@ -48,9 +48,9 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="manufacturers-load-failed">
+        <AppErrorAlert data-testid="manufacturers-load-failed">
             Manufacturer stats could not be loaded. Please refresh the page or check Cosmos connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_rows.Count == 0)
     {

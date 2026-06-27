@@ -60,10 +60,10 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="job-detail-arm-error">
+        <AppErrorAlert data-testid="job-detail-arm-error">
             Job details could not be loaded from Azure ARM. Check that the app's identity has
             the <em>Container Apps Jobs Operator</em> role on the resource group.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_detail is not null)
     {

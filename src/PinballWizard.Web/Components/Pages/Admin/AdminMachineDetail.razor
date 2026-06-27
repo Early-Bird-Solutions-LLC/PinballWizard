@@ -58,10 +58,10 @@
     @* ── Cosmos load failure ──────────────────────────────────────────────────── *@
     @if (!_loading && _loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="detail-load-failed">
+        <AppErrorAlert data-testid="detail-load-failed">
             Machine details could not be loaded. Please refresh the page or check Cosmos
             connectivity. If the problem persists, verify the Cosmos account is reachable.
-        </MudAlert>
+        </AppErrorAlert>
     }
 
     @* ── No manufacturer supplied ─────────────────────────────────────────────── *@

@@ -54,7 +54,7 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="jobs-arm-error">
+        <AppErrorAlert data-testid="jobs-arm-error">
             Job status could not be loaded from Azure ARM.
             Check that the app's identity has the <em>Container Apps Jobs Operator</em>
             role on the resource group, and that <code>Cosmos:AccountResourceId</code>
@@ -63,7 +63,7 @@
             {
                 <MudText Typo="Typo.body2" Class="mt-1"><strong>Detail:</strong> @_loadErrorDetail</MudText>
             }
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_jobs.Count == 0)
     {

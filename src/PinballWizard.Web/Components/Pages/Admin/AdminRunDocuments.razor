@@ -7,7 +7,7 @@
 
 @if (_failed)
 {
-    <MudAlert Severity="Severity.Error" data-testid="run-docs-failed">Items could not be loaded.</MudAlert>
+    <AppErrorAlert data-testid="run-docs-failed">Items could not be loaded.</AppErrorAlert>
 }
 else if (_loading)
 {

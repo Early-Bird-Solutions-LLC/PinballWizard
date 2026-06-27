@@ -75,11 +75,11 @@
 
     @if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="catalog-load-failed">
+        <AppErrorAlert data-testid="catalog-load-failed">
             The machine catalog could not be loaded. Please refresh the page or check Cosmos
             connectivity. If the problem persists, verify the catalog stats container is
             populated by running <code>--build-catalog</code>.
-        </MudAlert>
+        </AppErrorAlert>
     }
 
     <AppDataGrid T="MachineCatalogRow"
