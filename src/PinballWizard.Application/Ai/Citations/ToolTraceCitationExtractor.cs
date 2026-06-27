@@ -249,9 +249,18 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             return;
         }
 
+        // getMarketValue typed arm (ADR-0045). MarketValueDto is not a [[cite:k]]
+        // source — it goes to Citations only, like getMachineByTitle.
+        if (result is MarketValueDto mvDto)
+        {
+            AddCitationFromMarketValueDto(mvDto, byUrl, citations);
+            return;
+        }
+
         // JsonElement arm (real Foundry path via AIFunctionFactory.Create).
         // Dispatch on JSON shape: SearchCorpusResult has a top-level "Hits"
-        // array; MachineGroundingDto has a top-level "OpdbId" string.
+        // array; MachineGroundingDto has a top-level "OpdbId" string;
+        // MarketValueDto has a top-level "AttributionUrl" string.
         if (result is JsonElement element)
         {
             ExtractFromJsonElement(element, functionCallId, byUrl, citations, sourceIndex);
@@ -302,6 +311,16 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                     return;
                 }
             }
+            else if (TryGetPropertyIgnoreCase(element, "AttributionUrl", out _))
+            {
+                // MarketValueDto shape: { "attributionUrl": "...", "attributionText": "...", ... }
+                // getMarketValue → Citations only, NOT sourceIndex (like getMachineByTitle).
+                if (TryDeserialize<MarketValueDto>(element, functionCallId, _logger) is { } mvDto)
+                {
+                    AddCitationFromMarketValueDto(mvDto, byUrl, citations);
+                    return;
+                }
+            }
         }
 
         // Non-object or unrecognized shape — serialize to string and apply
@@ -347,6 +366,29 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
 
         byUrl[candidate.SourceUrl] = citations.Count;
         citations.Add(candidate);
+    }
+
+    // ADR-0045: getMarketValue → one Citation per result, carrying the
+    // Silverball Labs attribution URL and a title that names both Silverball
+    // and PinballPrices. Goes to Citations only, not sourceIndex (not a
+    // [[cite:k]]-numbered corpus hit).
+    private static void AddCitationFromMarketValueDto(
+        MarketValueDto dto,
+        Dictionary<string, int> byUrl,
+        List<Citation> citations)
+    {
+        if (string.IsNullOrWhiteSpace(dto.AttributionUrl))
+        {
+            return;
+        }
+
+        var machine = string.IsNullOrWhiteSpace(dto.MachineTitle) ? "pinball machine" : dto.MachineTitle;
+        AddOrUpgrade(byUrl, citations, new Citation(
+            Title: $"Market value · {machine} — Silverball Labs / PinballPrices.com",
+            SourceUrl: dto.AttributionUrl,
+            MachineId: null,
+            DocumentChunkId: null,
+            SourceType: CitationSourceType.MarketValue));
     }
 
     private static void AddCitationFromGroundingDto(
