@@ -31,9 +31,15 @@ namespace PinballWizard.Application.Ai;
 // disambiguation rules (qualified→definitive resolution, "Iron Maiden" ambiguity
 // handling) and citation-provenance rule (corpus chunk required for Rules/Repair
 // answers, not just getMachineByTitle identity record).
+// Bumped to "v7.2026.06" (Stream B): Wizard.md adds getMarketValue tool + Step 3.75
+// orchestration (call getMarketValue before Valuation dispatch, pass result inline
+// as <market_value> block). Valuation.md replaces "ships in a later phase" disclaimer
+// with live-pricing instructions: byCondition table, trendDirection prose, mandatory
+// Silverball Labs + PinballPrices.com attribution, no-financial-advice framing, and
+// graceful no-data path routing outward. Pairs with ADR-0045.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v6.2026.06";
+    public const string CurrentPromptVersion = "v7.2026.06";
 
     private readonly Dictionary<string, string> _prompts;
 
