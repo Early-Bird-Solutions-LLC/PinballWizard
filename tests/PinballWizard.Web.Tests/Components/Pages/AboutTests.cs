@@ -43,6 +43,7 @@ public sealed class AboutTests : AsyncBunitContext
 
     // ──────────────────────────────────────────────────────────────────────
     // 2. Heading contains "PinballWizard"
+    //    AppPageHeader renders the h4 title inline — assert on page markup.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -50,12 +51,13 @@ public sealed class AboutTests : AsyncBunitContext
     {
         var cut = Render<About>();
 
-        var heading = cut.Find("[data-testid='about-heading']");
-        Assert.Contains("PinballWizard", heading.TextContent, StringComparison.OrdinalIgnoreCase);
+        var page = cut.Find("[data-testid='about-page']");
+        Assert.Contains("PinballWizard", page.TextContent, StringComparison.OrdinalIgnoreCase);
     }
 
     // ──────────────────────────────────────────────────────────────────────
     // 3. Intro paragraph is present and non-empty
+    //    AppPageHeader renders the subtitle as body2 — assert on page markup.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -63,9 +65,9 @@ public sealed class AboutTests : AsyncBunitContext
     {
         var cut = Render<About>();
 
-        var intro = cut.Find("[data-testid='about-intro']");
-        Assert.False(string.IsNullOrWhiteSpace(intro.TextContent),
-            "The intro paragraph must contain text.");
+        var page = cut.Find("[data-testid='about-page']");
+        Assert.False(string.IsNullOrWhiteSpace(page.TextContent),
+            "The page must contain introductory text.");
     }
 
     // ──────────────────────────────────────────────────────────────────────

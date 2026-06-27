@@ -192,6 +192,7 @@ public sealed class StatusTests
 
     // ──────────────────────────────────────────────────────────────────────
     // 6. Status heading is present
+    //    AppPageHeader renders the h4 title inline — assert on page markup.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -204,7 +205,7 @@ public sealed class StatusTests
 
         var cut = ctx.Render<Status>();
 
-        var heading = cut.Find("[data-testid='status-heading']");
-        Assert.Contains("Status", heading.TextContent, StringComparison.OrdinalIgnoreCase);
+        var page = cut.Find("[data-testid='status-page']");
+        Assert.Contains("Status", page.TextContent, StringComparison.OrdinalIgnoreCase);
     }
 }

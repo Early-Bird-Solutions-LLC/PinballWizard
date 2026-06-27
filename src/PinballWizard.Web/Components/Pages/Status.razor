@@ -35,13 +35,8 @@
 <MudContainer MaxWidth="MaxWidth.Medium" Class="status-page" data-testid="status-page">
 
     @* ── Page header ──────────────────────────────────────────────────────── *@
-    <MudText Typo="Typo.h4" Class="status-heading mt-6 mb-1" data-testid="status-heading">
-        System Status
-    </MudText>
-
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Live health of the Azure backing services powering PinballWizard.
-    </MudText>
+    <AppPageHeader Title="System Status"
+                   Subtitle="Live health of the Azure backing services powering PinballWizard." />
 
     @* ── Status cards grid ────────────────────────────────────────────────── *@
     <MudGrid Spacing="3" Class="status-cards-grid" data-testid="status-cards-grid">
