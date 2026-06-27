@@ -42,8 +42,8 @@ if (-not $CosmosAccountEndpoint -or -not $CosmosAccountResourceId -or
     if (-not $AiFoundryProjectEndpoint) { $AiFoundryProjectEndpoint = $envMap['AiFoundry__ProjectEndpoint'] }
 }
 
-if (-not $CosmosAccountEndpoint -or -not $AiSearchEndpoint -or -not $AiFoundryProjectEndpoint) {
-    throw 'Could not resolve live-stack endpoints. Pass -CosmosAccountEndpoint / -AiSearchEndpoint / -AiFoundryProjectEndpoint explicitly.'
+if (-not $CosmosAccountEndpoint -or -not $CosmosAccountResourceId -or -not $AiSearchEndpoint -or -not $AiSearchIndexName -or -not $AiFoundryProjectEndpoint) {
+    throw 'Could not resolve live-stack endpoints. Pass -CosmosAccountEndpoint / -CosmosAccountResourceId / -AiSearchEndpoint / -AiSearchIndexName / -AiFoundryProjectEndpoint explicitly.'
 }
 
 Write-Host "  Cosmos:       $CosmosAccountEndpoint" -ForegroundColor DarkGray

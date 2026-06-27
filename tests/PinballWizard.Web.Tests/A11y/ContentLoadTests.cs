@@ -37,7 +37,7 @@ public sealed class ContentLoadTests(PlaywrightWebApplicationFactory factory)
     [InlineData("/status", "status-page",  "status page renders")]
     [InlineData("/error",  "tilt-heading", "error page renders")]
     [InlineData("/tilt",   "tilt-heading", "tilt page renders")]
-    public async Task PublicPage_KeyContentElement_IsPresent(string path, string testId, string description)
+    public async Task ContentLoad_PublicRoute_RendersRequiredTestId(string path, string testId, string description)
     {
         _ = description;
 

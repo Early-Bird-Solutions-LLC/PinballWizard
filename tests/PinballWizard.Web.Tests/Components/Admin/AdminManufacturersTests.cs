@@ -178,6 +178,24 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task PagingAt25_RendersOnlyFirstPageWhenMoreThan25Manufacturers()
+    {
+        // 26 distinct manufacturers — page 1 should show exactly 25 rows; pager footer must render.
+        var machines = Enumerable.Range(1, 26)
+            .Select(i => M($"mfr{i:D2}", $"Manufacturer {i:D2}"))
+            .ToArray();
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(machines));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var rows = cut.FindAll("[data-testid='manufacturers-table'] tbody tr");
+        Assert.Equal(25, rows.Count);
+        cut.Find(".mud-table-pagination");
+    }
+
+    [Fact]
     public async Task MultipleManufacturers_GroupsMachinesCorrectly()
     {
         _machines.StreamAllAsync(Arg.Any<CancellationToken>())
