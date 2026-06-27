@@ -17,35 +17,47 @@ param(
     [string]$ResourceGroup = 'rg-pinwiz-shared-dev',
     [string]$ApiAppName = 'pinwiz-ca-api-dev',
     [string]$CosmosAccountEndpoint = '',
+    [string]$CosmosAccountResourceId = '',
     [string]$AiSearchEndpoint = '',
+    [string]$AiSearchIndexName = '',
     [string]$AiFoundryProjectEndpoint = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..' '..')
 
-if (-not $CosmosAccountEndpoint -or -not $AiSearchEndpoint -or -not $AiFoundryProjectEndpoint) {
+if (-not $CosmosAccountEndpoint -or -not $CosmosAccountResourceId -or
+    -not $AiSearchEndpoint -or -not $AiSearchIndexName -or
+    -not $AiFoundryProjectEndpoint) {
     Write-Host "Discovering live-stack endpoints from $ApiAppName..." -ForegroundColor DarkGray
     $envJson = az containerapp show -n $ApiAppName -g $ResourceGroup `
         --query "properties.template.containers[0].env" -o json | ConvertFrom-Json
     $envMap = @{}
     foreach ($e in $envJson) { $envMap[$e.name] = $e.value }
 
-    if (-not $CosmosAccountEndpoint)      { $CosmosAccountEndpoint      = $envMap['Cosmos__AccountEndpoint'] }
-    if (-not $AiSearchEndpoint)           { $AiSearchEndpoint           = $envMap['AiSearch__Endpoint'] }
-    if (-not $AiFoundryProjectEndpoint)   { $AiFoundryProjectEndpoint   = $envMap['AiFoundry__ProjectEndpoint'] }
+    if (-not $CosmosAccountEndpoint)    { $CosmosAccountEndpoint    = $envMap['Cosmos__AccountEndpoint'] }
+    if (-not $CosmosAccountResourceId)  { $CosmosAccountResourceId  = $envMap['Cosmos__AccountResourceId'] }
+    if (-not $AiSearchEndpoint)         { $AiSearchEndpoint         = $envMap['AiSearch__Endpoint'] }
+    if (-not $AiSearchIndexName)        { $AiSearchIndexName        = $envMap['AiSearch__IndexName'] }
+    if (-not $AiFoundryProjectEndpoint) { $AiFoundryProjectEndpoint = $envMap['AiFoundry__ProjectEndpoint'] }
 }
 
 if (-not $CosmosAccountEndpoint -or -not $AiSearchEndpoint -or -not $AiFoundryProjectEndpoint) {
     throw 'Could not resolve live-stack endpoints. Pass -CosmosAccountEndpoint / -AiSearchEndpoint / -AiFoundryProjectEndpoint explicitly.'
 }
 
-Write-Host "  Cosmos:  $CosmosAccountEndpoint" -ForegroundColor DarkGray
-Write-Host "  Search:  $AiSearchEndpoint" -ForegroundColor DarkGray
-Write-Host "  Foundry: $AiFoundryProjectEndpoint" -ForegroundColor DarkGray
+Write-Host "  Cosmos:       $CosmosAccountEndpoint" -ForegroundColor DarkGray
+Write-Host "  Cosmos ResId: $CosmosAccountResourceId" -ForegroundColor DarkGray
+Write-Host "  Search:       $AiSearchEndpoint ($AiSearchIndexName)" -ForegroundColor DarkGray
+Write-Host "  Foundry:      $AiFoundryProjectEndpoint" -ForegroundColor DarkGray
 
-$env:Cosmos__AccountEndpoint = $CosmosAccountEndpoint
-$env:AiSearch__Endpoint = $AiSearchEndpoint
+# The web app needs Cosmos + AiSearch directly (for admin pages) as well as the
+# Api (for the ask flow). AiFoundry is passed to the Api only; LiveStackFixture
+# strips it from the web process to avoid triggering the gated Foundry DI branch.
+$env:Cosmos__AccountEndpoint    = $CosmosAccountEndpoint
+$env:Cosmos__AccountResourceId  = $CosmosAccountResourceId
+$env:AiSearch__Endpoint         = $AiSearchEndpoint
+$env:AiSearch__IndexName        = $AiSearchIndexName
 $env:AiFoundry__ProjectEndpoint = $AiFoundryProjectEndpoint
 
 # Build once so the fixture's `dotnet run` calls are up-to-date checks,

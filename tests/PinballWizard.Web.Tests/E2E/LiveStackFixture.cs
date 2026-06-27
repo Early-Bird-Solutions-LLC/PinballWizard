@@ -72,13 +72,18 @@ public sealed class LiveStackFixture : IAsyncLifetime
                 ["ASPNETCORE_ENVIRONMENT"] = "Development",
             });
 
-        // Web: NO Azure env (production parity — the deployed Web app has
-        // no Foundry/Cosmos wiring; the ask flow proxies to the Api via
-        // service discovery). The live-stack vars are explicitly STRIPPED:
-        // child processes inherit the test runner's environment, and an
-        // inherited AiFoundry__ProjectEndpoint flips the Web app's gated
-        // Foundry DI branch, which then fails ValidateOnBuild on services
-        // only the Api registers (IMachineRepository et al.).
+        // Web: the deployed Web app has Cosmos + AI Search env vars (for admin
+        // pages) but NOT AiFoundry (the ask flow proxies to the Api via service
+        // discovery). Strip ONLY AiFoundry: its presence flips a gated DI branch
+        // that tries to register Foundry services the Web app doesn't own
+        // (IMachineRepository et al.) and fails ValidateOnBuild.
+        //
+        // Cosmos and AiSearch must be KEPT (inherited from the caller's env):
+        // admin pages inject ICatalogStatsReadRepository (gated on Cosmos) and
+        // IRagCorpusStatsReader (gated on AiSearch) via @inject, not GetService.
+        // A missing service throws at DI-injection time — before TiltErrorBoundary
+        // can catch it — which causes the global exception handler to redirect to
+        // /error, hiding the entire admin layout from the E2E nav assertions.
         _web = StartApp(
             repoRoot,
             "src/PinballWizard.Web",
@@ -92,9 +97,6 @@ public sealed class LiveStackFixture : IAsyncLifetime
             },
             stripEnv:
             [
-                "Cosmos__AccountEndpoint",
-                "Cosmos__AccountResourceId",
-                "AiSearch__Endpoint",
                 "AiFoundry__ProjectEndpoint",
             ]);
 
