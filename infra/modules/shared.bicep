@@ -1346,6 +1346,18 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
           identity: acaIdentity.?id ?? ''
         }
       ]
+      // Silverball Labs API key: Key Vault secret resolved at run time by
+      // the UAMI (Key Vault Secrets User, acaIdentityKvSecretsUser).
+      // The key value never appears in Bicep, params, or source — set
+      // out of band: az keyvault secret set --name silverball-api-key
+      // --value sbl_live_… (see PR operator steps for this stream).
+      secrets: [
+        {
+          name: 'silverball-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+      ]
     }
     template: {
       containers: [
@@ -1417,6 +1429,13 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
             {
               name: 'Rag__CrossEncoder__ModelEndpoint'
               value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
+            }
+            {
+              // Silverball Labs live pricing API key sourced from Key Vault via
+              // the ACA secrets block above. The key value never appears in Bicep,
+              // params, or source — resolved at run time by the UAMI.
+              name: 'SilverballLabs__ApiKey'
+              secretRef: 'silverball-api-key'
             }
           ]
         }
@@ -1886,15 +1905,25 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
       // The OIDC client secret never appears in Bicep or params — the ACA
       // secret resolves it from Key Vault at runtime via the UAMI (which
       // carries Key Vault Secrets User, see acaIdentityKvSecretsUser).
-      // Empty azureAdClientId (the default) omits the secret entirely so
-      // a deploy without the Entra registration keeps working unchanged.
-      secrets: empty(azureAdClientId) ? [] : [
+      // The Silverball Labs API key is always present (non-conditional) so
+      // the concat base includes it unconditionally; the AzureAd block is
+      // appended only when azureAdClientId is set (same gate as before).
+      secrets: concat([
+        {
+          // Silverball Labs live pricing API key (Stream C). Never appears
+          // in Bicep, params, or source — set out of band via:
+          //   az keyvault secret set --name silverball-api-key --value sbl_live_…
+          name: 'silverball-api-key'
+          keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/silverball-api-key'
+          identity: acaIdentity.?id ?? ''
+        }
+      ], empty(azureAdClientId) ? [] : [
         {
           name: 'azuread-client-secret'
           keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/AzureAd-ClientSecret'
           identity: acaIdentity.?id ?? ''
         }
-      ]
+      ])
     }
     template: {
       containers: [
@@ -1961,6 +1990,13 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
             {
               name: 'DataProtection__KeyVaultKeyUri'
               value: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/keys/pinwiz-dataprotection'
+            }
+            {
+              // Silverball Labs live pricing API key sourced from Key Vault via
+              // the ACA secrets block above. The key value never appears in Bicep,
+              // params, or source — resolved at run time by the UAMI.
+              name: 'SilverballLabs__ApiKey'
+              secretRef: 'silverball-api-key'
             }
           ], deployAiSearch ? [
             {
