@@ -303,6 +303,36 @@ public sealed class IndexPageTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 9. FeaturedMachines fallback preserved when API returns null list
+    //    Scenario: Cosmos container is empty; LandingService maps empty list
+    //    to null. Index.razor must NOT overwrite the compiled-in fallback.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Index_WhenFeaturedMachinesNullInResponse_PreservesFallbackMachines()
+    {
+        await using var ctx = new BunitContext();
+
+        // Response is non-null (endpoint up) but FeaturedMachines is null
+        // (empty Cosmos container — LandingService maps count==0 to null).
+        var response = new LandingResponse(
+            SeedQuestions: BuildLandingResponse().SeedQuestions,
+            FeaturedMachines: null,
+            SystemStatus: new SystemStatus(CosmosHealthy: true, FoundryHealthy: true, AiSearchHealthy: true));
+
+        RegisterIndexServices(ctx, BuildClient(response));
+
+        var cut = RenderIndexWithPopover(ctx);
+        await cut.InvokeAsync(async () => await Task.Yield());
+        cut.Render();
+
+        // Strip must receive the compiled-in fallback (6 machines), not null.
+        var strip = cut.FindComponent<FeaturedMachinesStrip>();
+        Assert.NotNull(strip.Instance.Machines);
+        Assert.Equal(6, strip.Instance.Machines!.Count);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 8. OTel counter incremented when client returns null
     //    (Issue #366 — pinwiz.web.landing_fallback_total must fire)
     //    Pattern: MeterListener + ConcurrentBag (parallel-tolerant per
