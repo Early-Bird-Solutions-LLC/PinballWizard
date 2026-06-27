@@ -163,15 +163,10 @@
 
         @if (_docs.Count == 0)
         {
-            <MudStack AlignItems="AlignItems.Center" Class="py-6" Spacing="2" data-testid="detail-no-docs">
-                <MudIcon Icon="@Icons.Material.Outlined.FolderOff"
-                         Size="Size.Large"
-                         Color="Color.Tertiary" />
-                <MudText Typo="Typo.body1">No documents linked to this machine</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Run the scraper for this manufacturer, then re-link to populate.
-                </MudText>
-            </MudStack>
+            <AppEmptyState Heading="No documents linked to this machine"
+                           Detail="Run the scraper for this manufacturer, then re-link to populate."
+                           Icon="@Icons.Material.Outlined.FolderOff"
+                           data-testid="detail-no-docs" />
         }
         else
         {
