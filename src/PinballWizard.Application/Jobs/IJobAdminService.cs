@@ -21,4 +21,10 @@ public interface IJobAdminService
     // Corresponds to POST .../Microsoft.App/jobs/{jobName}/start.
     // On ARM failure, throws ArmJobAdminException.
     Task StartJobAsync(string jobName, CancellationToken cancellationToken);
+
+    // Return detailed info for a single job including the last `count` executions.
+    // HasMore is true when more executions exist beyond what was fetched.
+    // On ARM failure, throws ArmJobAdminException.
+    // Throws ArmJobAdminException { IsNotFound = true } when jobName is not found.
+    Task<JobDetail> GetJobDetailAsync(string jobName, int count, CancellationToken cancellationToken);
 }

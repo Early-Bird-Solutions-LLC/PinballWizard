@@ -122,6 +122,90 @@ internal sealed class ArmJobAdminService : IJobAdminService
         }
     }
 
+    public async Task<JobDetail> GetJobDetailAsync(string jobName, int count, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        try
+        {
+            var rg = await GetResourceGroupAsync(cancellationToken).ConfigureAwait(false);
+
+            ContainerAppJobResource job;
+            try
+            {
+                var response = await rg.GetContainerAppJobAsync(jobName, cancellationToken).ConfigureAwait(false);
+                job = response.Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                throw new ArmJobAdminException($"Job '{jobName}' not found.", ex, isNotFound: true);
+            }
+
+            var config = job.Data.Configuration;
+            var cron = config?.ScheduleTriggerConfig?.CronExpression;
+            var triggerType = config?.TriggerType.ToString() ?? "Unknown";
+
+            var executions = new List<JobExecution>();
+            var hasMore = false;
+            var fetched = 0;
+            ContainerAppJobExecutionData? firstExecData = null;
+
+            await foreach (var exec in job.GetContainerAppJobExecutions()
+                .GetAllAsync(filter: null, cancellationToken).ConfigureAwait(false))
+            {
+                firstExecData ??= exec.Data;
+                if (fetched < count)
+                {
+                    executions.Add(new JobExecution(
+                        ExecutionName: exec.Data.Name,
+                        Status:        exec.Data.Status?.ToString() ?? "Unknown",
+                        StartOn:       exec.Data.StartOn,
+                        EndOn:         exec.Data.EndOn));
+                    fetched++;
+                }
+                else
+                {
+                    // fetched == count: a (count+1)th item exists in the enumerable; HasMore = true
+                    hasMore = true;
+                    break;
+                }
+            }
+
+            var imageTag = firstExecData?.Template?.Containers?.FirstOrDefault()?.Image;
+
+            _logger.LogDebug(
+                "Fetched detail for ACA job {JobName}: {ExecutionCount} executions, hasMore={HasMore}.",
+                jobName, executions.Count, hasMore);
+
+            return new JobDetail(
+                JobName:               job.Data.Name,
+                DisplayName:           DeriveDisplayName(job.Data.Name),
+                CronExpression:        cron,
+                TriggerType:           triggerType,
+                LatestExecutionStatus: executions.FirstOrDefault()?.Status ?? "Unknown",
+                ImageTag:              imageTag,
+                Executions:            executions,
+                HasMore:               hasMore);
+        }
+        catch (ArmJobAdminException)
+        {
+            throw;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex,
+                "ARM request failed while getting detail for job {JobName}: {Status} {Code}.",
+                jobName, ex.Status, ex.ErrorCode);
+            throw new ArmJobAdminException(
+                $"Could not get detail for job '{jobName}': {ex.ErrorCode ?? ex.Message} (HTTP {ex.Status})", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Unexpected error getting detail for ACA job {JobName}.", jobName);
+            throw new ArmJobAdminException($"Unexpected error getting detail for job '{jobName}'.", ex);
+        }
+    }
+
     private Task<ResourceGroupResource> GetResourceGroupAsync(CancellationToken cancellationToken)
     {
         // Construct the resource group reference from its known ID without making a GET call.

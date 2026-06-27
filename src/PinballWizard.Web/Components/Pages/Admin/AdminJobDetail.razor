@@ -1,0 +1,372 @@
+@page "/admin/jobs/{JobName}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@* AdminJobDetail — /admin/jobs/{JobName} detail view for a single Container Apps Job.
+ *
+ * Shows the job's schedule, image tag, latest status, and paginated execution history
+ * with local-time timestamps (resolved via JS interop, UTC fallback). Includes an
+ * inline Run Now confirm panel (same pattern as AdminJobs — MudDialog routes through
+ * MudPopoverProvider, which bUnit cannot reach; inline MudPaper is testable and
+ * equally accessible).
+ *
+ * IJobAdminService is resolved via GetService (nullable) so the page degrades
+ * gracefully when the service is not registered (local dev without live Azure) —
+ * never synthetic/placeholder data per Invariant #17.
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth (AdminOnly policy)
+ * ADR-0026  § 1 — render-mode doctrine (InteractiveServer for action page)
+ * Invariant #17 — degrade visibly; never fabricate job data
+ *@
+
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.JSInterop
+@using PinballWizard.Application.Jobs
+@using PinballWizard.Web.Components.Shared
+@using PinballWizard.Web.Security
+
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+@inject ILogger<AdminJobDetail> Logger
+
+<PageTitle>@(_detail?.DisplayName ?? JobName) — Jobs — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading job details from Azure ARM" />
+    }
+    else if (_serviceUnavailable)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="job-detail-service-unavailable">
+            Job details are only available when running against live Azure. Configure
+            <code>Cosmos:AccountResourceId</code> to enable ARM connectivity.
+        </MudAlert>
+    }
+    else if (_notFound)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="job-detail-not-found">
+            Job '<code>@JobName</code>' was not found in this resource group.
+            <MudLink Href="/admin/jobs" Class="ml-2">Back to Jobs</MudLink>
+        </MudAlert>
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="job-detail-arm-error">
+            Job details could not be loaded from Azure ARM. Check that the app's identity has
+            the <em>Container Apps Jobs Operator</em> role on the resource group.
+        </MudAlert>
+    }
+    else if (_detail is not null)
+    {
+        <MudPaper Elevation="2" Class="pa-6 mb-6" data-testid="job-detail-header">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                <div>
+                    <MudText Typo="Typo.h5" GutterBottom="true">@_detail.DisplayName</MudText>
+                    <MudGrid Spacing="1">
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Schedule</MudText>
+                            <MudText Typo="Typo.body1">
+                                @CronExpressionFormatter.Format(_detail.CronExpression)
+                                @if (_detail.CronExpression is not null)
+                                {
+                                    <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                                        (@_detail.CronExpression)
+                                    </MudText>
+                                }
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Image</MudText>
+                            @if (_detail.ImageTag is not null)
+                            {
+                                <code data-testid="image-tag">@_detail.ImageTag</code>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body1">—</MudText>
+                            }
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Latest status</MudText>
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
+                                     data-testid="latest-status">
+                                @_detail.LatestExecutionStatus
+                            </MudChip>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                               Color="Color.Primary"
+                               Size="Size.Large"
+                               aria-label="Run job now"
+                               data-testid="run-now-button"
+                               Disabled="@_startBusy"
+                               OnClick="@OpenRunNowConfirm" />
+            </MudStack>
+        </MudPaper>
+
+        <MudText Typo="Typo.h6" Class="mb-3">Execution History</MudText>
+        <MudPaper Elevation="2">
+            <MudTable T="JobExecution"
+                      Items="@_detail.Executions"
+                      Hover="true"
+                      Dense="true"
+                      data-testid="execution-table">
+                <HeaderContent>
+                    <MudTh>Execution</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Started (@_tzLabel)</MudTh>
+                    <MudTh>Ended (@_tzLabel)</MudTh>
+                    <MudTh>Duration</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Execution">
+                        <MudTooltip Text="@context.ExecutionName">
+                            <code>@AbbreviateExecutionName(context.ExecutionName)</code>
+                        </MudTooltip>
+                    </MudTd>
+                    <MudTd DataLabel="Status">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@JobStatusColor.For(context.Status)"
+                                 data-testid="execution-status">
+                            @context.Status
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Started">@FormatLocalTime(context.StartOn)</MudTd>
+                    <MudTd DataLabel="Ended">@FormatLocalTime(context.EndOn)</MudTd>
+                    <MudTd DataLabel="Duration">@FormatDuration(context.StartOn, context.EndOn)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        @if (_detail.HasMore)
+        {
+            <MudStack AlignItems="AlignItems.Center" Class="mt-4">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           OnClick="LoadMoreAsync"
+                           Disabled="@_loadingMore"
+                           data-testid="load-more-button">
+                    @if (_loadingMore)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Load more
+                </MudButton>
+            </MudStack>
+        }
+    }
+</MudContainer>
+
+@* Run-now confirmation panel — rendered inline to remain testable via bUnit
+   (MudDialog routes content through MudPopoverProvider, which bUnit cannot
+   reach from the component under test). The inline approach gives the same
+   UX with MudPaper + MudStack and is equally accessible. *@
+@if (_showRunNowConfirm && _detail is not null)
+{
+    <MudPaper Elevation="4" Class="pa-4 mt-4" data-testid="confirm-dialog-panel">
+        <MudText Typo="Typo.h6" GutterBottom="true">Run job now?</MudText>
+        <MudText>
+            Trigger a manual execution of <strong>@_detail.DisplayName</strong>
+            (<code>@_detail.JobName</code>)?
+        </MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2 mb-4">
+            This starts the job immediately outside its scheduled window.
+        </MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudButton OnClick="@(() => _showRunNowConfirm = false)"
+                       data-testid="confirm-cancel">
+                Cancel
+            </MudButton>
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="ConfirmStartJobAsync"
+                       Disabled="@_startBusy"
+                       data-testid="confirm-run">
+                Run now
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public string JobName { get; set; } = "";
+
+    private IJobAdminService? JobService => ServiceProvider.GetService<IJobAdminService>();
+
+    private JobDetail? _detail;
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _serviceUnavailable;
+    private bool _notFound;
+    private bool _loadingMore;
+    private bool _showRunNowConfirm;
+    private bool _startBusy;
+    private int _historyCount = 10;
+    private TimeZoneInfo? _timeZoneInfo;
+    private string _tzLabel = "UTC";
+
+    private List<BreadcrumbItem> Breadcrumbs =>
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
+        new BreadcrumbItem(_detail?.DisplayName ?? JobName, href: null, disabled: true),
+    ];
+
+    // OnAfterRenderAsync so the loading shell reaches the client immediately
+    // rather than blocking the prerender pass on the ARM round-trip.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await ResolveTimezoneAsync();
+        await LoadAsync(_historyCount);
+    }
+
+    private async Task ResolveTimezoneAsync()
+    {
+        try
+        {
+            var ianaId = await JS.InvokeAsync<string>(
+                "eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
+            if (!string.IsNullOrWhiteSpace(ianaId))
+            {
+                _timeZoneInfo = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
+                _tzLabel = ianaId;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not resolve user timezone; using UTC.");
+        }
+    }
+
+    private async Task LoadAsync(int count)
+    {
+        if (JobService is null)
+        {
+            _serviceUnavailable = true;
+            _loading = false;
+            StateHasChanged();
+            return;
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            _detail = await JobService
+                .GetJobDetailAsync(JobName, count, cts.Token)
+                .ConfigureAwait(true);
+        }
+        catch (ArmJobAdminException ex) when (ex.IsNotFound)
+        {
+            Logger.LogWarning(ex, "Job {JobName} not found.", JobName);
+            _notFound = true;
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Logger.LogError(ex, "ARM error loading job detail for {JobName}.", JobName);
+            _loadFailed = true;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Job detail load for {JobName} timed out.", JobName);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error loading job detail for {JobName}.", JobName);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loadingMore = true;
+        _historyCount += 10;
+        StateHasChanged();
+        try
+        {
+            await LoadAsync(_historyCount);
+        }
+        finally
+        {
+            _loadingMore = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenRunNowConfirm() => _showRunNowConfirm = true;
+
+    private async Task ConfirmStartJobAsync()
+    {
+        if (_detail is null || JobService is null || _startBusy) return;
+        _startBusy = true;
+        _showRunNowConfirm = false;
+        try
+        {
+            await JobService.StartJobAsync(_detail.JobName, CancellationToken.None)
+                .ConfigureAwait(true);
+            Snackbar.Add(
+                $"Job '{_detail.DisplayName}' triggered successfully. " +
+                "Refresh in a moment to see the updated run status.",
+                Severity.Success);
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Logger.LogError(ex, "ARM error triggering job {JobName}.", _detail.JobName);
+            Snackbar.Add($"Failed to start '{_detail.DisplayName}': {ex.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error triggering job {JobName}.", _detail.JobName);
+            Snackbar.Add($"Unexpected error starting '{_detail.DisplayName}'.", Severity.Error);
+        }
+        finally
+        {
+            _startBusy = false;
+        }
+    }
+
+    private string AbbreviateExecutionName(string fullName)
+    {
+        const string sep = "--";
+        var idx = fullName.LastIndexOf(sep, StringComparison.Ordinal);
+        return idx >= 0 ? fullName[(idx + sep.Length)..] : fullName;
+    }
+
+    private string FormatLocalTime(DateTimeOffset? utcTime)
+    {
+        if (utcTime is null) return "—";
+        if (_timeZoneInfo is null)
+            return utcTime.Value.UtcDateTime.ToString("MMM d, yyyy h:mm tt") + " UTC";
+        var local = TimeZoneInfo.ConvertTime(utcTime.Value, _timeZoneInfo);
+        return local.ToString("MMM d, yyyy h:mm tt zzz");
+    }
+
+    private static string FormatDuration(DateTimeOffset? startOn, DateTimeOffset? endOn)
+    {
+        if (startOn is null || endOn is null) return "—";
+        var d = endOn.Value - startOn.Value;
+        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}h {d.Minutes}m";
+        if (d.TotalMinutes >= 1) return $"{d.Minutes}m {d.Seconds}s";
+        return $"{d.Seconds}s";
+    }
+
+}
