@@ -87,6 +87,7 @@ public static class ServiceCollectionExtensions
             var handler = new CatalogStatsChangeFeedHandler(
                 scrapedDocsRepo,
                 ResolveContainer(sp, "catalog_stats"),
+                sp.GetRequiredService<IMachineRepository>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<CatalogStatsChangeFeedHandler>>());
 

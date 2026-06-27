@@ -1,0 +1,20 @@
+@namespace PinballWizard.Web.Components.Shared
+
+<MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" @attributes="AdditionalAttributes">
+    <MudIcon Icon="@Icon" Size="Size.Large" Color="Color.Tertiary" />
+    <MudText Typo="Typo.body1">@Heading</MudText>
+    @if (Detail is not null)
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary">@Detail</MudText>
+    }
+    @DetailContent
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public string Heading { get; set; } = null!;
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public string Icon { get; set; } = Icons.Material.Outlined.Inbox;
+    [Parameter] public RenderFragment? DetailContent { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+}

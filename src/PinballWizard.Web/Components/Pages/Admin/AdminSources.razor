@@ -28,12 +28,9 @@
 <PageTitle>Ingestion Sources — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Ingestion Sources</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Configured scraping sources and their ingestion status.
-    </MudText>
+    <AppPageHeader Title="Ingestion Sources"
+                   Subtitle="Configured scraping sources and their ingestion status."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {
@@ -48,13 +45,8 @@
         </MudAlert>
     }
 
-    <MudDataGrid T="IngestionSourceRow"
+    <AppDataGrid T="IngestionSourceRow"
                  Items="@_sources"
-                 Hover="true"
-                 Striped="true"
-                 Dense="true"
-                 Elevation="2"
-                 RowsPerPage="25"
                  data-testid="admin-sources-grid">
 
         <Columns>
@@ -65,7 +57,11 @@
                     </MudLink>
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
+            <TemplateColumn Title="Source URL">
+                <CellTemplate>
+                    <MudLink Href="@context.Item.SourceUrl" Target="_blank">@context.Item.SourceUrl</MudLink>
+                </CellTemplate>
+            </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
                     <MudChip T="string"
@@ -102,11 +98,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="IngestionSourceRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {

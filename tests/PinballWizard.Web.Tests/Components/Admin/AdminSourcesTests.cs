@@ -136,4 +136,16 @@ public sealed class AdminSourcesTests : AsyncBunitContext
         cut.WaitForAssertion(() =>
             cut.Find("a[href='/admin/sources/stern']"));
     }
+
+    [Fact]
+    public void SourceUrl_RendersAsLink()
+    {
+        RegisterSources(ct => Stream([MakeSource("stern", true)], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+            cut.Find("a[href='https://stern.example.com']"));
+    }
 }

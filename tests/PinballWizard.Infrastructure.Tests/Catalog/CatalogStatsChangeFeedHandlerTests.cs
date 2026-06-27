@@ -3,6 +3,8 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Persistence;
+using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Rag.Ingestion;
@@ -37,6 +39,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
     // Container is abstract — NSubstitute can proxy it.
     private readonly Container _scrapedDocsContainer = Substitute.For<Container>();
     private readonly Container _catalogStatsContainer = Substitute.For<Container>();
+    private readonly IMachineRepository _machineRepo = Substitute.For<IMachineRepository>();
     private readonly TimeProvider _clock = TimeProvider.System;
 
     private CatalogStatsChangeFeedHandler CreateSut()
@@ -48,6 +51,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         return new CatalogStatsChangeFeedHandler(
             repo,
             _catalogStatsContainer,
+            _machineRepo,
             _clock,
             NullLogger<CatalogStatsChangeFeedHandler>.Instance);
     }
@@ -183,6 +187,87 @@ public sealed class CatalogStatsChangeFeedHandlerTests
     }
 
     // -------------------------------------------------------------------------
+    // ComputeMachineEntryAsync — machine found → identity fields populated.
+    // The machine repo point-read makes the handler self-correcting without
+    // requiring a prior --rebuild-catalog-stats run.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ComputeMachineEntryAsync_MachineFound_PopulatesIdentityFields()
+    {
+        // Arrange
+        var doc1 = MakeScrapedDoc(MachineId, "Manual", "Godzilla Pro");
+
+        _scrapedDocsContainer
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
+                Arg.Any<QueryDefinition>(),
+                Arg.Any<string>(),
+                Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[doc1]]));
+
+        var machine = new Machine
+        {
+            Id                   = MachineId,
+            PartitionKey         = Manufacturer,
+            ManufacturerDisplayName = "Stern Pinball",
+            Title                = "Godzilla",
+            Year                 = 2021,
+            EditionLabel         = "Pro",
+            GroupId              = "GweeP",
+            ManufacturerSlugs    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                { ["stern"] = "godzilla" },
+        };
+
+        _machineRepo
+            .GetByIdAsync(MachineId, Manufacturer, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(machine));
+
+        var change = MakeChange(MachineId, Manufacturer, "Godzilla Pro");
+        var sut = CreateSut();
+
+        // Act
+        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+
+        // Assert — title and identity fields populated from machine record
+        Assert.Equal("Godzilla", entry.Title);  // machine.Title beats last-scraped-doc title
+        Assert.Equal(2021,    entry.Year);
+        Assert.Equal("Pro",   entry.EditionLabel);
+        Assert.Equal("GweeP", entry.GroupId);
+        Assert.False(entry.IsOpdbOnly); // ManufacturerSlugs is non-empty
+    }
+
+    // -------------------------------------------------------------------------
+    // ComputeMachineEntryAsync — machine not found → identity fields null (graceful).
+    // MergeEntry carries forward any previously-stored values as a secondary
+    // source; this test confirms the degrade-visibly path is non-fatal.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ComputeMachineEntryAsync_MachineNotFound_IdentityFieldsNull()
+    {
+        _scrapedDocsContainer
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
+                Arg.Any<QueryDefinition>(),
+                Arg.Any<string>(),
+                Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[]]));
+
+        _machineRepo
+            .GetByIdAsync(MachineId, Manufacturer, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(null));
+
+        var change = MakeChange(MachineId, Manufacturer, null);
+        var sut = CreateSut();
+
+        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+
+        Assert.Null(entry.Year);
+        Assert.Null(entry.EditionLabel);
+        Assert.Null(entry.GroupId);
+        Assert.False(entry.IsOpdbOnly);
+    }
+
+    // -------------------------------------------------------------------------
     // MergeEntry — pure in-memory logic; no Container mocking needed.
     // -------------------------------------------------------------------------
 
@@ -267,9 +352,11 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         Assert.Equal(2, doc.Machines[0].DocCount);
         Assert.Equal(asOf, doc.AsOfUtc);
 
-        // Identity fields are owned by --rebuild-catalog-stats, NOT the change-feed handler.
-        // The handler must never fabricate them from the change payload — they stay null/default
-        // until the rebuild service enriches them from OPDB (ADR-0036 ownership contract).
+        // MergeEntry itself does not populate identity fields — it only carries forward
+        // values that were already on the entry (from the machine repo read in
+        // ComputeMachineEntryAsync) or from a previously-stored rollup entry.
+        // This test uses a bare entry with null identity fields to verify MergeEntry
+        // does not fabricate them from nowhere.
         Assert.Null(doc.Machines[0].EditionLabel);
         Assert.Null(doc.Machines[0].GroupId);
         Assert.Null(doc.Machines[0].Year);

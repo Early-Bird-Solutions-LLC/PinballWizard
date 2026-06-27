@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Rag.Ingestion;
@@ -26,22 +27,26 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
 
     private readonly CosmosRepository<ScrapedDocumentTypeProjection> _scrapedDocs;
     private readonly Container _catalogStats;
+    private readonly IMachineRepository _machineRepo;
     private readonly TimeProvider _clock;
     private readonly ILogger<CatalogStatsChangeFeedHandler> _logger;
 
     public CatalogStatsChangeFeedHandler(
         CosmosRepository<ScrapedDocumentTypeProjection> scrapedDocs,
         Container catalogStats,
+        IMachineRepository machineRepo,
         TimeProvider clock,
         ILogger<CatalogStatsChangeFeedHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(scrapedDocs);
         ArgumentNullException.ThrowIfNull(catalogStats);
+        ArgumentNullException.ThrowIfNull(machineRepo);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(logger);
 
         _scrapedDocs = scrapedDocs;
         _catalogStats = catalogStats;
+        _machineRepo = machineRepo;
         _clock = clock;
         _logger = logger;
     }
@@ -113,18 +118,43 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
 
         var hasManual = docTypeCounts.ContainsKey("Manual");
 
-        return new MachineStatEntry
+        var entry = new MachineStatEntry
         {
             MachineId = machineId,
             Title = lastTitle ?? machineId,
             DocCount = docCount,
             DocTypeCounts = docTypeCounts,
             HasManual = hasManual,
-            // Identity fields (EditionLabel, GroupId, Year, IsOpdbOnly) are
-            // left at default here. UpsertEntryWithRetryAsync carries forward
-            // any values already stored from the Task-6 rebuild service, which
-            // is the authoritative source for identity enrichment.
         };
+
+        // Enrich identity fields directly from the machine record so that
+        // Year/EditionLabel/GroupId/IsOpdbOnly are populated without requiring
+        // a prior --rebuild-catalog-stats run. MergeEntry will also carry
+        // forward any previously-stored values as a fallback, but this read
+        // makes the change-feed handler self-correcting on first write.
+        var machine = await _machineRepo
+            .GetByIdAsync(machineId, change.Manufacturer, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (machine is not null)
+        {
+            // Prefer the machine record's canonical title over the last-scraped-doc
+            // title — matches rebuild service behavior (CatalogStatsRebuildService.BuildRollups).
+            entry.Title        = machine.Title;
+            entry.Year         = machine.Year;
+            entry.EditionLabel = machine.EditionLabel;
+            entry.GroupId      = machine.GroupId;
+            entry.IsOpdbOnly   = machine.ManufacturerSlugs.Count == 0;
+        }
+        else
+        {
+            _logger.LogDebug(
+                "catalog-stats handler: machine not found for MachineId={MachineId}; " +
+                "identity fields will be carried forward from existing entry or left null",
+                machineId);
+        }
+
+        return entry;
     }
 
     // Pure merge: finds the existing entry for entry.MachineId (if any),

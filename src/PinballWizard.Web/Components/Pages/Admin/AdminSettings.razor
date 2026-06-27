@@ -44,16 +44,9 @@
 <PageTitle>Settings — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
-        <MudText Typo="Typo.h4" Style="flex:1">Wizard Settings</MudText>
-    </MudStack>
-
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-        Runtime configuration. Changes apply to live asks within two minutes — no restart.
-        Reset returns a setting to its deployed default.
-    </MudText>
+    <AppPageHeader Title="Wizard Settings"
+                   Subtitle="Runtime configuration. Changes apply to live asks within two minutes — no restart. Reset returns a setting to its deployed default."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {

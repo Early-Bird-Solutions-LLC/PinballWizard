@@ -8,7 +8,7 @@
 
 @* AdminManufacturers — /admin/manufacturers catalog-by-brand overview.
  *
- * Interactive page (@rendermode InteractiveServer) — MudTableSortLabel requires a
+ * Interactive page (@rendermode InteractiveServer) — MudDataGrid sorting requires a
  * live Blazor circuit. Data loads once in OnInitializedAsync.
  *
  * Two reads: (1) IMachineRepository.StreamAllAsync (cross-partition, already in the
@@ -20,8 +20,8 @@
  * the machine records, so rows never degrade to the raw key.
  *
  * Sorted alphabetically by default (no ranking — favoritism guardrail). User can
- * re-sort by Manufacturer, Status, or Machines via MudTableSortLabel. Paged via
- * MudTablePager (25 / 50 / 100 rows). Rows with an ingestion source link to the
+ * re-sort by Manufacturer, Status, or Machines via AppDataGrid TemplateColumn sort.
+ * Paged via AppDataGrid (RowsPerPage=25). Rows with an ingestion source link to the
  * source-detail page; OPDB-only rows render plain text. Failures degrade visibly
  * (Invariant #17): machine-load failure shows a MudAlert; empty set a distinct
  * empty state; source enrichment failure leaves Enabled = "—".
@@ -38,12 +38,9 @@
 <PageTitle>Manufacturers — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Manufacturers</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Catalog contribution per manufacturer — machines and catalog documents.
-    </MudText>
+    <AppPageHeader Title="Manufacturers"
+                   Subtitle="Catalog contribution per manufacturer — machines and catalog documents."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {
@@ -67,58 +64,48 @@
     }
     else
     {
-        <MudTable T="ManufacturerRow" Items="_rows" Dense="true" Hover="true" Elevation="2"
-                  RowsPerPage="25" data-testid="manufacturers-table">
-            <HeaderContent>
-                <MudTh>
-                    <MudTableSortLabel T="ManufacturerRow"
-                                       InitialDirection="SortDirection.Ascending"
-                                       SortBy="@(r => r.DisplayName)">
-                        Manufacturer
-                    </MudTableSortLabel>
-                </MudTh>
-                <MudTh>
-                    <MudTableSortLabel T="ManufacturerRow"
-                                       SortBy="@(r => (object)(r.Enabled switch { true => 0, false => 1, _ => 2 }))">
-                        Status
-                    </MudTableSortLabel>
-                </MudTh>
-                <MudTh Style="text-align:right">
-                    <MudTableSortLabel T="ManufacturerRow" SortBy="@(r => (object)r.Machines)">
-                        Machines
-                    </MudTableSortLabel>
-                </MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Manufacturer">
-                    @if (context.HasSource)
-                    {
-                        <MudLink Href="@($"/admin/sources/{context.Key}")">@context.DisplayName</MudLink>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2">@context.DisplayName</MudText>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Status">
-                    @if (context.Enabled is { } enabled)
-                    {
-                        <MudChip T="string" Size="Size.Small"
-                                 Color="@(enabled ? Color.Success : Color.Default)">
-                            @(enabled ? "Enabled" : "Disabled")
-                        </MudChip>
-                    }
-                    else
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Machines" Style="text-align:right">@context.Machines</MudTd>
-            </RowTemplate>
-            <PagerContent>
-                <MudTablePager PageSizeOptions="new int[]{25, 50, 100}" />
-            </PagerContent>
-        </MudTable>
+        <AppDataGrid T="ManufacturerRow" Items="@_rows" data-testid="manufacturers-table">
+            <Columns>
+                <TemplateColumn Title="Manufacturer" Sortable="true"
+                                SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
+                                InitialDirection="SortDirection.Ascending">
+                    <CellTemplate>
+                        @if (context.Item.HasSource)
+                        {
+                            <MudLink Href="@($"/admin/sources/{context.Item.Key}")">@context.Item.DisplayName</MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@context.Item.DisplayName</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Sortable="true"
+                                SortBy="@(new Func<ManufacturerRow, object>(r => r.Enabled switch { true => 0, false => 1, _ => 2 }))">
+                    <CellTemplate>
+                        @if (context.Item.Enabled is { } enabled)
+                        {
+                            <AppStatusChip Color="@(enabled ? Color.Success : Color.Default)">
+                                @(enabled ? "Enabled" : "Disabled")
+                            </AppStatusChip>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Machines" Sortable="true"
+                                SortBy="@(new Func<ManufacturerRow, object>(r => r.Machines))">
+                    <HeaderTemplate>
+                        <MudText Style="text-align:right;width:100%">Machines</MudText>
+                    </HeaderTemplate>
+                    <CellTemplate>
+                        <MudText Style="text-align:right;display:block">@context.Item.Machines</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </AppDataGrid>
     }
 </MudContainer>
 

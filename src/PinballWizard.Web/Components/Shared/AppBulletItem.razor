@@ -1,0 +1,10 @@
+@namespace PinballWizard.Web.Components.Shared
+
+<MudListItem T="string" Icon="@Icon">
+    @ChildContent
+</MudListItem>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = null!;
+    [Parameter] public string Icon { get; set; } = Icons.Material.Filled.Circle;
+}

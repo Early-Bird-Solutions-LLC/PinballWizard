@@ -1,7 +1,7 @@
 using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
-using PinballWizard.Web.Components.Pages.Admin;
+using PinballWizard.Web.Components.Shared;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;

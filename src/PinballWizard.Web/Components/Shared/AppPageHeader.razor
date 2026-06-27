@@ -1,0 +1,30 @@
+@namespace PinballWizard.Web.Components.Shared
+
+@if (Breadcrumbs is not null)
+{
+    <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
+}
+
+@if (Actions is not null)
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center">
+        <MudText Typo="Typo.h4" GutterBottom="@(Subtitle is null)" Style="flex:1">@Title</MudText>
+        @Actions
+    </MudStack>
+}
+else
+{
+    <MudText Typo="Typo.h4" GutterBottom="@(Subtitle is null)">@Title</MudText>
+}
+
+@if (Subtitle is not null)
+{
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">@Subtitle</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = null!;
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public IReadOnlyList<BreadcrumbItem>? Breadcrumbs { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+}
