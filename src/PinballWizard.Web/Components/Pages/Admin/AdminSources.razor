@@ -28,12 +28,9 @@
 <PageTitle>Ingestion Sources — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Ingestion Sources</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Configured scraping sources and their ingestion status.
-    </MudText>
+    <AppPageHeader Title="Ingestion Sources"
+                   Subtitle="Configured scraping sources and their ingestion status."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {
