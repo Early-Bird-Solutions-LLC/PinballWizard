@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MudBlazor.Services;
 using NSubstitute;
-using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Web.Components.Pages.Admin;
@@ -12,15 +11,18 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
 
-// bUnit tests for AdminManufacturers.razor (/admin/manufacturers). Static SSR +
-// [StreamRendering]: OnInitializedAsync reads the per-manufacturer rollups
-// (StreamAllManufacturersAsync — point-reads) and enriches with ingestion-source
-// name/status (StreamAllAsync — single 'config' partition), joined by key, sorted
-// alphabetically. Honest states: rollup-fail alert, distinct empty, and best-effort
-// enrichment that degrades a row to the raw key (Invariant #17).
+// bUnit tests for AdminManufacturers.razor (/admin/manufacturers). Interactive
+// (rendermode InteractiveServer): OnInitializedAsync streams all machines from
+// IMachineRepository (cross-partition, ADR-0036 allow-listed) and groups by
+// manufacturer partition key, then enriches rows with Enabled status from
+// IIngestionSourceRepository (best-effort, single 'config' partition).
+// ManufacturerDisplayName comes from the machine records so rows never degrade
+// to the raw key. Honest states: machine-load-fail alert, distinct empty, and
+// source-enrichment failure that leaves Enabled = "—" while counts + display
+// names survive (Invariant #17).
 public sealed class AdminManufacturersTests : AsyncBunitContext
 {
-    private readonly ICatalogStatsReadRepository _stats = Substitute.For<ICatalogStatsReadRepository>();
+    private readonly IMachineRepository _machines = Substitute.For<IMachineRepository>();
     private readonly IIngestionSourceRepository _sources = Substitute.For<IIngestionSourceRepository>();
 
     public AdminManufacturersTests()
@@ -28,20 +30,20 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization().SetAuthorized("test-admin@example.com");
-        Services.AddSingleton(_stats);
+        Services.AddSingleton(_machines);
         Services.AddSingleton(_sources);
         Services.AddSingleton<ILogger<AdminManufacturers>>(NullLogger<AdminManufacturers>.Instance);
     }
 
-    private static readonly DateTimeOffset AsOf = new(2026, 6, 23, 12, 0, 0, TimeSpan.Zero);
-
-    private static ManufacturerCatalogStats Rollup(string key, int machineCount, int docsEach = 3) => new(
-        Manufacturer: key,
-        AsOfUtc: AsOf,
-        Machines: Enumerable.Range(0, machineCount).Select(i => new MachineDocStats(
-            MachineId: $"{key}_m{i}", Title: "T", EditionLabel: null, GroupId: null, Year: 2021,
-            IsOpdbOnly: false, DocCount: docsEach,
-            DocTypeCounts: new Dictionary<string, int>(), HasManual: true)).ToList());
+    private static Machine M(string key, string displayName) => new()
+    {
+        Id                      = $"{key}-opdb-id",
+        PartitionKey            = key,
+        ManufacturerDisplayName = displayName,
+        Title                   = "Test Machine",
+        FirstSeenAt             = DateTimeOffset.MinValue,
+        LastSeenAt              = DateTimeOffset.MinValue,
+    };
 
     private static IngestionSource Source(string id, string displayName, bool enabled) => new()
     {
@@ -77,30 +79,30 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task Populated_RendersRowWithNameStatusCountsAndLink()
+    public async Task Populated_RendersRowWithNameStatusCountAndSourceLink()
     {
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(Rollup("stern", 2, docsEach: 3)));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(Source("stern", "Stern Pinball", enabled: true)));
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("stern", "Stern Pinball")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(Source("stern", "Stern Pinball", enabled: true)));
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Cell-specific (not a whole-table substring — "2"/"6" would otherwise collide with the date).
         var cells = cut.Find("[data-testid='manufacturers-table'] tbody tr").QuerySelectorAll("td");
         Assert.Contains("Stern Pinball", cells[0].TextContent, StringComparison.Ordinal);
         Assert.Contains("Enabled", cells[1].TextContent, StringComparison.Ordinal);
-        Assert.Equal("2", cells[2].TextContent.Trim());   // machines
-        Assert.Equal("6", cells[3].TextContent.Trim());   // catalog documents = 2 * 3
+        Assert.Equal("2", cells[2].TextContent.Trim());
         cut.Find("a[href='/admin/sources/stern']");
     }
 
     [Fact]
     public async Task Sorted_AlphabeticallyByDisplayName()
     {
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(Rollup("stern", 1), Rollup("jjp", 1)));  // emit Stern first
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("jjp", "Jersey Jack Pinball")));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(Source("stern", "Stern Pinball", true), Source("jjp", "Jersey Jack Pinball", true)));
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -114,7 +116,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     [Fact]
     public async Task Empty_RendersDistinctEmptyState()
     {
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<ManufacturerCatalogStats>());
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<Machine>());
         _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
@@ -125,9 +127,9 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task RollupLoadFailure_RendersVisibleAlertNoTable()
+    public async Task MachineLoadFailure_RendersVisibleAlertNoTable()
     {
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>()).Returns(_ => Throwing<ManufacturerCatalogStats>());
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Throwing<Machine>());
         _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
@@ -139,33 +141,63 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task EnrichmentFailure_DegradesRowToKey_CountsStillRender()
+    public async Task SourceEnrichmentFailure_DisplayNameFromMachine_EnabledShowsDash()
     {
-        // Sources read throws → best-effort: the row still renders with the raw key + neutral status,
-        // and the real machine/doc counts survive (Invariant #17 — core data not blanked).
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(Rollup("stern", 2, docsEach: 3)));
+        // Source read throws → display name still comes from machine record (no raw-key
+        // degradation), Enabled shows "—", machine count survives (Invariant #17).
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("stern", "Stern Pinball")));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Throwing<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var table = cut.Find("[data-testid='manufacturers-table']");
-        Assert.Contains("stern", table.TextContent, StringComparison.Ordinal);   // raw key, not "Stern Pinball"
-        Assert.DoesNotContain("Stern Pinball", table.TextContent, StringComparison.Ordinal);
+        Assert.Contains("Stern Pinball", table.TextContent, StringComparison.Ordinal);
         var cells = table.QuerySelectorAll("tbody tr td");
-        Assert.Equal("6", cells[3].TextContent.Trim());   // catalog documents survive (cell-specific)
+        Assert.Equal("2", cells[2].TextContent.Trim());
+        Assert.DoesNotContain("Enabled", cells[1].TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task MissingSourceForKey_DegradesThatRowToKey()
+    public async Task NoSourceForKey_PlainTextDisplayName_NoSourceLink()
     {
-        // Rollup exists but no matching ingestion source → that row degrades to the key.
-        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(Rollup("ghostmfr", 1)));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(Source("stern", "Stern Pinball", true)));
+        // Machine exists but no matching ingestion source → display name from machine,
+        // status "—", no source link (OPDB-only manufacturer).
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("williams", "Williams")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(Source("stern", "Stern Pinball", true)));
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        Assert.Contains("ghostmfr", cut.Find("[data-testid='manufacturers-table']").TextContent, StringComparison.Ordinal);
+        var table = cut.Find("[data-testid='manufacturers-table']");
+        Assert.Contains("Williams", table.TextContent, StringComparison.Ordinal);
+        Assert.Empty(cut.FindAll("a[href='/admin/sources/williams']"));
+    }
+
+    [Fact]
+    public async Task MultipleManufacturers_GroupsMachinesCorrectly()
+    {
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(
+                M("stern", "Stern Pinball"), M("stern", "Stern Pinball"), M("stern", "Stern Pinball"),
+                M("jjp", "Jersey Jack Pinball")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var rows = cut.FindAll("[data-testid='manufacturers-table'] tbody tr");
+        Assert.Equal(2, rows.Count);
+
+        var sternCells = rows.First(r => r.TextContent.Contains("Stern Pinball", StringComparison.Ordinal))
+            .QuerySelectorAll("td");
+        Assert.Equal("3", sternCells[2].TextContent.Trim());
+
+        var jjpCells = rows.First(r => r.TextContent.Contains("Jersey Jack", StringComparison.Ordinal))
+            .QuerySelectorAll("td");
+        Assert.Equal("1", jjpCells[2].TextContent.Trim());
     }
 }
