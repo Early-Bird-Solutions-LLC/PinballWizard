@@ -24,12 +24,9 @@
 <PageTitle>RAG Corpus — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">RAG Corpus</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Health of the indexed corpus that powers source-cited answers.
-    </MudText>
+    <AppPageHeader Title="RAG Corpus"
+                   Subtitle="Health of the indexed corpus that powers source-cited answers."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {
@@ -69,20 +66,17 @@
 
         <MudPaper Class="pa-4" Elevation="2" data-testid="corpus-by-type">
             <MudText Typo="Typo.h6" GutterBottom="true">Indexed chunks by document type</MudText>
-            <MudSimpleTable Dense="true" Hover="true">
-                <thead>
-                    <tr><th>Document type</th><th style="text-align:right">Indexed chunks</th></tr>
-                </thead>
-                <tbody>
-                    @foreach (var t in _stats.ByDocumentType)
-                    {
-                        <tr>
-                            <td>@t.DocumentType</td>
-                            <td style="text-align:right">@t.ChunkCount.ToString("N0")</td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
+            <AppDataGrid T="DocTypeChunkCount" Items="@_stats.ByDocumentType" ShowPager="false"
+                         data-testid="corpus-table">
+                <Columns>
+                    <PropertyColumn Property="r => r.DocumentType" Title="Document type" />
+                    <TemplateColumn Title="Indexed chunks">
+                        <CellTemplate>
+                            <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.ChunkCount.ToString("N0")</MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </AppDataGrid>
         </MudPaper>
     }
 </MudContainer>

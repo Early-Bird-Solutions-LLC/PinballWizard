@@ -29,12 +29,9 @@
 <PageTitle>Dashboard — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Admin Dashboard</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        System overview — counts and status for the ingestion pipeline.
-    </MudText>
+    <AppPageHeader Title="Admin Dashboard"
+                   Subtitle="System overview — counts and status for the ingestion pipeline."
+                   Breadcrumbs="@_breadcrumbs" />
 
     <MudGrid Spacing="3">
         <MudItem xs="12" sm="4">

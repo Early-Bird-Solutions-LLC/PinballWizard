@@ -1,0 +1,33 @@
+@namespace PinballWizard.Web.Components.Shared
+@typeparam T
+@attribute [CascadingTypeParameter(nameof(T))]
+
+<MudDataGrid T="T"
+             Items="@Items"
+             Hover="true"
+             Striped="true"
+             Dense="true"
+             Elevation="2"
+             RowsPerPage="@RowsPerPage"
+             PagerContent="@_pagerContent"
+             @attributes="AdditionalAttributes">
+    <Columns>
+        @Columns
+    </Columns>
+    <NoRecordsContent>
+        @NoRecordsContent
+    </NoRecordsContent>
+</MudDataGrid>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<T> Items { get; set; } = [];
+    [Parameter, EditorRequired] public RenderFragment Columns { get; set; } = null!;
+    [Parameter] public int RowsPerPage { get; set; } = 25;
+    [Parameter] public bool ShowPager { get; set; } = true;
+    [Parameter] public RenderFragment? NoRecordsContent { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private RenderFragment? _pagerContent =>
+        ShowPager ? (RenderFragment)(b => { b.OpenComponent<MudDataGridPager<T>>(0); b.CloseComponent(); }) : null;
+}

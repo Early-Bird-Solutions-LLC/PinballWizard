@@ -117,39 +117,43 @@
         </MudPaper>
 
         <MudText Typo="Typo.h6" Class="mb-3">Execution History</MudText>
-        <MudPaper Elevation="2">
-            <MudTable T="JobExecution"
-                      Items="@_detail.Executions"
-                      Hover="true"
-                      Dense="true"
-                      data-testid="execution-table">
-                <HeaderContent>
-                    <MudTh>Execution</MudTh>
-                    <MudTh>Status</MudTh>
-                    <MudTh>Started (@_tzLabel)</MudTh>
-                    <MudTh>Ended (@_tzLabel)</MudTh>
-                    <MudTh>Duration</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Execution">
-                        <MudTooltip Text="@context.ExecutionName">
-                            <code>@AbbreviateExecutionName(context.ExecutionName)</code>
+        <AppDataGrid T="JobExecution"
+                     Items="@_detail.Executions"
+                     ShowPager="false"
+                     data-testid="execution-table">
+            <Columns>
+                <TemplateColumn Title="Execution">
+                    <CellTemplate>
+                        <MudTooltip Text="@context.Item.ExecutionName">
+                            <code>@AbbreviateExecutionName(context.Item.ExecutionName)</code>
                         </MudTooltip>
-                    </MudTd>
-                    <MudTd DataLabel="Status">
-                        <MudChip T="string"
-                                 Size="Size.Small"
-                                 Color="@JobStatusColor.For(context.Status)"
-                                 data-testid="execution-status">
-                            @context.Status
-                        </MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Started">@FormatLocalTime(context.StartOn)</MudTd>
-                    <MudTd DataLabel="Ended">@FormatLocalTime(context.EndOn)</MudTd>
-                    <MudTd DataLabel="Duration">@FormatDuration(context.StartOn, context.EndOn)</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudPaper>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Status">
+                    <CellTemplate>
+                        <AppStatusChip Color="@JobStatusColor.For(context.Item.Status)"
+                                       data-testid="execution-status">
+                            @context.Item.Status
+                        </AppStatusChip>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="@($"Started ({_tzLabel})")">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.StartOn)</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="@($"Ended ({_tzLabel})")">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.EndOn)</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Duration">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">@FormatDuration(context.Item.StartOn, context.Item.EndOn)</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </AppDataGrid>
 
         @if (_detail.HasMore)
         {

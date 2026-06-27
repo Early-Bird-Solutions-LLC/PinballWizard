@@ -1,0 +1,12 @@
+@namespace PinballWizard.Web.Components.Shared
+
+<MudList T="string" Dense="true" Class="@Class" @attributes="AdditionalAttributes">
+    @ChildContent
+</MudList>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = null!;
+    [Parameter] public string? Class { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object>? AdditionalAttributes { get; set; }
+}

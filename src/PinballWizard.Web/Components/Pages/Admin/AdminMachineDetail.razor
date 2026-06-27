@@ -175,13 +175,9 @@
         }
         else
         {
-            <MudDataGrid T="MachineDocumentLink"
+            <AppDataGrid T="MachineDocumentLink"
                          Items="@_docs"
-                         Dense="true"
-                         Hover="true"
-                         Striped="true"
-                         Elevation="2"
-                         RowsPerPage="25"
+                         ShowPager="false"
                          Class="mb-4"
                          data-testid="detail-docs-grid">
                 <Columns>
@@ -198,12 +194,9 @@
                         <CellTemplate>
                             @if (!string.IsNullOrWhiteSpace(context.Item.LinkStatus))
                             {
-                                <MudChip T="string"
-                                         Size="Size.Small"
-                                         Color="@LinkStatusColor(context.Item.LinkStatus)"
-                                         Variant="Variant.Filled">
+                                <AppStatusChip Color="@LinkStatusColor(context.Item.LinkStatus)">
                                     @context.Item.LinkStatus
-                                </MudChip>
+                                </AppStatusChip>
                             }
                         </CellTemplate>
                     </TemplateColumn>
@@ -229,12 +222,7 @@
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
-
-                <PagerContent>
-                    <MudDataGridPager T="MachineDocumentLink" />
-                </PagerContent>
-
-            </MudDataGrid>
+            </AppDataGrid>
         }
 
         @* ── Actions ────────────────────────────────────────────────────────────── *@
