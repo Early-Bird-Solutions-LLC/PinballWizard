@@ -174,50 +174,53 @@
             }
             else
             {
-                <MudSimpleTable Dense="true" Hover="true">
-                    <thead>
-                        <tr>
-                            <th></th>
-                            <th>Run (UTC)</th>
-                            <th>Status</th>
-                            <th style="text-align:right">Duration</th>
-                            <th style="text-align:right">Processed</th>
-                            <th style="text-align:right">New</th>
-                            <th>Trigger</th>
-                            <th>Error</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var run in _runs)
-                        {
-                            <tr>
-                                <td>
-                                    <MudIconButton Size="Size.Small" aria-label="Toggle run documents"
-                                                   Icon="@(_expanded.Contains(RunKey(run)) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-                                                   OnClick="@(() => ToggleRun(run))" />
-                                </td>
-                                <td>@run.RunAt.UtcDateTime.ToString("u")</td>
-                                <td>
-                                    <MudChip T="string" Size="Size.Small"
-                                             Color="@(run.Succeeded ? Color.Success : Color.Error)">
-                                        @(run.Succeeded ? "Success" : "Failed")
-                                    </MudChip>
-                                </td>
-                                <td style="text-align:right">@($"{run.DurationSeconds:0.0} s")</td>
-                                <td style="text-align:right">@run.DocumentsDiscovered</td>
-                                <td style="text-align:right">@run.DocumentsNew</td>
-                                <td>@(run.Trigger ?? "manual")</td>
-                                <td>@(run.ErrorMessage ?? "")</td>
-                            </tr>
-                            @if (_expanded.Contains(RunKey(run)))
-                            {
-                                <tr><td colspan="8">
-                                    <AdminRunDocuments SourceId="@Id" RunId="@RunKey(run)" />
-                                </td></tr>
-                            }
-                        }
-                    </tbody>
-                </MudSimpleTable>
+                <MudDataGrid T="ScrapeRunRecord" Items="@_runs"
+                             Dense="true" Hover="true" Striped="true" Elevation="2"
+                             data-testid="run-history-table">
+                    <Columns>
+                        <HierarchyColumn T="ScrapeRunRecord" />
+                        <TemplateColumn Title="Run (UTC)">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2">@context.Item.RunAt.UtcDateTime.ToString("u")</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Status">
+                            <CellTemplate>
+                                <AppStatusChip Color="@(context.Item.Succeeded ? Color.Success : Color.Error)">
+                                    @(context.Item.Succeeded ? "Success" : "Failed")
+                                </AppStatusChip>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Duration">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2" Style="text-align:right">@($"{context.Item.DurationSeconds:0.0} s")</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Processed">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.DocumentsDiscovered</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="New">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.DocumentsNew</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Trigger">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2">@(context.Item.Trigger ?? "manual")</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Error">
+                            <CellTemplate>
+                                <MudText Typo="Typo.body2">@(context.Item.ErrorMessage ?? "")</MudText>
+                            </CellTemplate>
+                        </TemplateColumn>
+                    </Columns>
+                    <ChildRowContent>
+                        <AdminRunDocuments SourceId="@Id" RunId="@RunKey(context.Item)" />
+                    </ChildRowContent>
+                </MudDataGrid>
             }
         </MudPaper>
     }
@@ -390,14 +393,8 @@
         }
     }
 
-    // Per-run expand state. Keyed by ScrapeRunId.For so the expanded set survives re-renders.
-    private readonly HashSet<string> _expanded = [];
+    // Run key used as the RunId passed to AdminRunDocuments (the child row).
     private string RunKey(ScrapeRunRecord run) => ScrapeRunId.For(run.SourceId, run.RunAt);
-    private void ToggleRun(ScrapeRunRecord run)
-    {
-        var key = RunKey(run);
-        if (!_expanded.Remove(key)) _expanded.Add(key);
-    }
 
     // Inline label/value row — kept DRY across the three sections.
     private RenderFragment KeyValue(string label, string value) =>@<MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">

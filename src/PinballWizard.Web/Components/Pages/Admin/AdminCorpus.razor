@@ -69,20 +69,17 @@
 
         <MudPaper Class="pa-4" Elevation="2" data-testid="corpus-by-type">
             <MudText Typo="Typo.h6" GutterBottom="true">Indexed chunks by document type</MudText>
-            <MudSimpleTable Dense="true" Hover="true">
-                <thead>
-                    <tr><th>Document type</th><th style="text-align:right">Indexed chunks</th></tr>
-                </thead>
-                <tbody>
-                    @foreach (var t in _stats.ByDocumentType)
-                    {
-                        <tr>
-                            <td>@t.DocumentType</td>
-                            <td style="text-align:right">@t.ChunkCount.ToString("N0")</td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
+            <AppDataGrid T="DocTypeChunkCount" Items="@_stats.ByDocumentType" ShowPager="false"
+                         data-testid="corpus-table">
+                <Columns>
+                    <PropertyColumn Property="r => r.DocumentType" Title="Document type" />
+                    <TemplateColumn Title="Indexed chunks">
+                        <CellTemplate>
+                            <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.ChunkCount.ToString("N0")</MudText>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+            </AppDataGrid>
         </MudPaper>
     }
 </MudContainer>
