@@ -2,7 +2,7 @@
 status: Active
 phase: Phase-5
 owner: Jim
-last-reviewed: 2026-05-16
+last-reviewed: 2026-06-27
 supersedes: ""
 ---
 
@@ -59,6 +59,15 @@ If you want to think about it for a while and respond later, that's also fine. T
 ## How to respond
 
 Just reply to the email Jim sent. Anything from "yes, here are my conditions" to "no, link-only is fine" to "I have questions — can you explain X?" gets a real answer.
+
+## Resolved partnerships (as of 2026-06-27)
+
+Two outreach targets responded positively in May 2026 and are now active data partners:
+
+- **Ted "Doc" Finlay — PinballPrices.com**: replied to the 2026-05-08 outreach, shared his full sales dataset (13,202 records, 1,499 unique titles, $56.2M in recorded sales), and agreed to resend updates on request. Terms: prominent attribution on every value surfaced. Authorization: 2026-05-15.
+- **Will Oetting — Silverball Labs**: co-founder of *This Week in Pinball* / TWIPY; runs silverballlabs.com which continuously ingests Ted's data plus additional sources. Provided a live REST API and partner key. Jim subscribed as a Pro member. Authorization: 2026-05-15.
+
+These are **data-partner integrations**, not route-outward community resources. See [ADR-0045](adr/0045-silverball-labs-pricing-integration.md) for the decided integration. The worked example in this document ("what's a Godzilla Premium worth?") reflects what the system now does: the `attribution` object travels in every Silverball Labs API response and credits both Silverball Labs and PinballPrices.com, satisfying both attribution obligations in a single call.
 
 ## More context
 

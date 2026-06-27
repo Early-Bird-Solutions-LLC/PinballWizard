@@ -1,6 +1,6 @@
 # Kineticist integration — design
 
-**Status:** Proposed — partnership conversation in progress (Colin Alsheimer receptive; consolidated ask sent 2026-06-25).
+**Status:** Superseded by ADR-0043 (Accepted, 2026-06-25). This design doc is the pre-decision artifact; the decided integration is recorded in [docs/adr/0043-kineticist-integration.md](../../adr/0043-kineticist-integration.md).
 **Date:** 2026-06-25
 
 > Per [`docs/adr/README.md`](../../adr/README.md), an ADR records a *decided* thing in past/present

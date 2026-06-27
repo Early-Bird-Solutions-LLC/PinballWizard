@@ -1225,6 +1225,126 @@ public sealed class ToolTraceCitationExtractorTests
         }
     }
 
+    // ── getMarketValue (ADR-0045) — typed + JSON arms ──────────────────────
+    // MarketValueDto carries AttributionUrl as the distinctive probe field.
+    // Results go to Citations only (not SourceIndex), like getMachineByTitle.
+
+    [Fact]
+    public void Extract_MarketValueDto_AsTyped_ProducesCitation()
+    {
+        // Typed arm: real SDK path in unit tests.
+        var dto = SampleMarketValueDto("MM5K-MRKPL");
+        var response = BuildAgentResponseWithToolResult("getMarketValue", dto);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://silverballlabs.com/market/MM5K-MRKPL", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MarketValue, citation.SourceType);
+        Assert.Null(citation.MachineId);         // no OPDB ID in market-value citations
+        Assert.Null(citation.DocumentChunkId);
+        Assert.Contains("Medieval Madness", citation.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Extract_MarketValueDto_AsTyped_EmptyAttributionUrl_NoCitation()
+    {
+        // Defensive: no attribution URL → nothing to link → no citation.
+        var dto = SampleMarketValueDto("ignored") with { AttributionUrl = "" };
+        var response = BuildAgentResponseWithToolResult("getMarketValue", dto);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_MarketValueDto_AsTyped_NullResult_NoCitation()
+    {
+        // Tool returned null (Silverball not configured or no data).
+        var response = BuildAgentResponseWithToolResult("getMarketValue", null);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void Extract_MarketValueDto_AsCamelCaseJsonElement_ProducesCitation()
+    {
+        // JSON arm (live Foundry path): AIFunctionFactory serializes with
+        // JsonSerializerDefaults.Web (camelCase). The extractor probes for
+        // "attributionUrl" to recognize the MarketValueDto shape.
+        var dto = SampleMarketValueDto("MM5K-MRKPL");
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getMarketValue", element);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal("https://silverballlabs.com/market/MM5K-MRKPL", citation.SourceUrl);
+        Assert.Equal(CitationSourceType.MarketValue, citation.SourceType);
+    }
+
+    [Fact]
+    public void Extract_MarketValueDto_AsJsonElement_EmptyAttributionUrl_NoCitation()
+    {
+        // The JSON probe finds "attributionUrl" but its value is empty →
+        // AddCitationFromMarketValueDto should skip it.
+        var dto = SampleMarketValueDto("ignored") with { AttributionUrl = "" };
+        var element = JsonSerializer.SerializeToElement(dto, LiveCamelCaseJson);
+        var response = BuildAgentResponseWithToolResult("getMarketValue", element);
+
+        Assert.Empty(Extractor.Extract(response));
+    }
+
+    [Fact]
+    public void ExtractWithSourceIndex_MarketValueDto_NotInSourceIndex()
+    {
+        // MarketValueDto → Citations only, NOT SourceIndex (same rule as
+        // getMachineByTitle — it's not a [[cite:k]]-numbered corpus source).
+        var dto = SampleMarketValueDto("MM5K-MRKPL");
+        var response = BuildAgentResponseWithToolResult("getMarketValue", dto);
+
+        var (citations, sourceIndex) = new ToolTraceCitationExtractor().ExtractWithSourceIndex(response);
+
+        Assert.Single(citations);
+        Assert.Empty(sourceIndex);
+    }
+
+    [Fact]
+    public void Extract_GetMarketValue_AndSearchCorpus_Both_Surface()
+    {
+        // End-to-end shape: Wizard called getMarketValue AND searchCorpus
+        // for the same machine. Both produce citations from different channels.
+        var mvDto = SampleMarketValueDto("MM5K-MRKPL");
+        var corpus = new SearchCorpusResult([
+            SampleHit(documentId: "doc_a", documentUrl: "https://example/manual.pdf",
+                      machineId: "MM5K-MRKPL"),
+        ]);
+
+        var response = BuildAgentResponse(
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_mv", mvDto)]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call_sc", corpus)]));
+
+        var citations = Extractor.Extract(response);
+
+        Assert.Equal(2, citations.Count);
+        Assert.Contains(citations, c =>
+            c.SourceUrl == "https://silverballlabs.com/market/MM5K-MRKPL" &&
+            c.SourceType == CitationSourceType.MarketValue);
+        Assert.Contains(citations, c =>
+            c.SourceUrl == "https://example/manual.pdf" &&
+            c.SourceType == CitationSourceType.CorpusChunk);
+    }
+
+    private static MarketValueDto SampleMarketValueDto(string opdbId) =>
+        new(MachineTitle: "Medieval Madness",
+            MedianPrice: 5500m,
+            AvgPrice: 5600m,
+            Min: 4500m,
+            Max: 7000m,
+            ByCondition: [new MarketValueConditionDto("excellent", 5500m, 15)],
+            TrendDirection: "stable",
+            PriceSummary: "Steady around $5,500.",
+            LastSaleDate: "2026-06-01",
+            AttributionUrl: $"https://silverballlabs.com/market/{opdbId}",
+            AttributionText: "Powered by Silverball Labs");
+
     // Simple capturing logger for Warning-log assertions.
     private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
     {

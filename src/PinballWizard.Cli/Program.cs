@@ -25,6 +25,7 @@ using PinballWizard.Infrastructure.Downloading;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.Opdb;
+using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
@@ -1345,6 +1346,16 @@ static IHost CreateHost(string[] args)
     if (pinballMapWired)
     {
         builder.Services.AddPinballMapIntegration(builder.Configuration);
+    }
+
+    // Silverball Labs live-pricing integration — gated on API key presence (ADR-0045).
+    // Absent key = IMarketValueProvider not registered; MarketValueTool degrades gracefully
+    // (returns null, Wizard tells user live pricing is unavailable). Independent of Cosmos
+    // and Foundry — the client is a plain typed HttpClient.
+    var silverballWired = !string.IsNullOrWhiteSpace(builder.Configuration[SilverballLabsOptions.ApiKeyKey]);
+    if (silverballWired)
+    {
+        builder.Services.AddSilverballLabsIntegration(builder.Configuration);
     }
 
     // Azure AI Foundry integration — gated on AiFoundry:ProjectEndpoint

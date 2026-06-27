@@ -39,7 +39,8 @@ public sealed class BrandFooterTests : AsyncBunitContext
 
         var coverage = cut.Find(".footer-coverage").TextContent;
         // Copy locked from docs/ui/screens/empty-landing.md § Section 4.
-        Assert.Contains("first-party data on 8 active manufacturers and OPDB", coverage);
+        // Updated when Kineticist (ADR-0043) and Silverball Labs (ADR-0045) were named.
+        Assert.Contains("first-party data on 8 active manufacturers, OPDB, Kineticist, and Silverball Labs", coverage);
         Assert.Contains("Everything else routes to community resources", coverage);
     }
 
