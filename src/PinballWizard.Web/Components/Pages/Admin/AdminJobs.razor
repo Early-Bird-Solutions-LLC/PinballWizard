@@ -81,68 +81,62 @@
     }
     else
     {
-        <MudPaper Elevation="2">
-            <MudTable T="JobStatus"
-                      Items="@_jobs"
-                      Hover="true"
-                      Dense="true"
-                      RowsPerPage="25"
-                      OnRowClick="@HandleRowClick"
-                      data-testid="jobs-table">
-                <HeaderContent>
-                    <MudTh>Job</MudTh>
-                    <MudTh>Schedule (cron)</MudTh>
-                    <MudTh>Trigger type</MudTh>
-                    <MudTh>Latest run</MudTh>
-                    <MudTh>Started (UTC)</MudTh>
-                    <MudTh></MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Job">
-                        <MudText Typo="Typo.body2" data-testid="job-name">
-                            @context.DisplayName
+        <AppDataGrid T="JobStatus" Items="@_jobs"
+                     RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<JobStatus>>(this, HandleRowClick))"
+                     data-testid="jobs-table">
+            <Columns>
+                <TemplateColumn Title="Job">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" data-testid="job-name">@context.Item.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Item.JobName</MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Schedule (cron)">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">
+                            @(CronExpressionFormatter.Format(context.Item.CronExpression) is { Length: > 0 } fmt ? fmt : "—")
                         </MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.JobName</MudText>
-                    </MudTd>
-                    <MudTd DataLabel="Schedule (cron)">
-                        @(CronExpressionFormatter.Format(context.CronExpression) is { Length: > 0 } fmt ? fmt : "—")
-                    </MudTd>
-                    <MudTd DataLabel="Trigger type">@context.TriggerType</MudTd>
-                    <MudTd DataLabel="Latest run">
-                        <MudChip T="string"
-                                 Size="Size.Small"
-                                 Color="@JobStatusColor.For(context.LatestExecutionStatus)"
-                                 data-testid="job-status">
-                            @context.LatestExecutionStatus
-                        </MudChip>
-                    </MudTd>
-                    <MudTd DataLabel="Started (UTC)">
-                        @if (context.LatestExecutionStartTime is { } t)
-                        {
-                            <span>@t.UtcDateTime.ToString("u")</span>
-                        }
-                        else
-                        {
-                            <span>—</span>
-                        }
-                    </MudTd>
-                    <MudTd>
-                        <span @onclick:stopPropagation="true">
+                    </CellTemplate>
+                </TemplateColumn>
+                <PropertyColumn Property="j => j.TriggerType" Title="Trigger type" />
+                <TemplateColumn Title="Latest run">
+                    <CellTemplate>
+                        <AppStatusChip Color="@JobStatusColor.For(context.Item.LatestExecutionStatus)"
+                                       data-testid="job-status">
+                            @context.Item.LatestExecutionStatus
+                        </AppStatusChip>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Started (UTC)">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2">
+                            @if (context.Item.LatestExecutionStartTime is { } t)
+                            {
+                                @t.UtcDateTime.ToString("u")
+                            }
+                            else
+                            {
+                                @("—")
+                            }
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="">
+                    <CellTemplate>
+                        @* stopPropagation prevents the row-click navigation firing when the button is clicked *@
+                        <MudStack @onclick:stopPropagation="true">
                             <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                            Color="Color.Primary"
                                            Size="Size.Small"
                                            aria-label="Run job now"
                                            data-testid="run-now-button"
                                            Disabled="@(_startBusy)"
-                                           OnClick="@(() => OpenConfirmDialogAsync(context))" />
-                        </span>
-                    </MudTd>
-                </RowTemplate>
-                <PagerContent>
-                    <MudTablePager />
-                </PagerContent>
-            </MudTable>
-        </MudPaper>
+                                           OnClick="@(() => OpenConfirmDialogAsync(context.Item))" />
+                        </MudStack>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </AppDataGrid>
     }
 </MudContainer>
 
@@ -250,7 +244,7 @@
         }
     }
 
-    private void HandleRowClick(TableRowClickEventArgs<JobStatus> args)
+    private void HandleRowClick(DataGridRowClickEventArgs<JobStatus> args)
     {
         if (args.Item is null) return;
         Navigation.NavigateTo($"/admin/jobs/{args.Item.JobName}");
