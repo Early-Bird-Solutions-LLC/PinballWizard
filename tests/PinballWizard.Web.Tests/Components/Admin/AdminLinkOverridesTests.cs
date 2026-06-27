@@ -140,10 +140,9 @@ public sealed class AdminLinkOverridesLoadingStateTests : AsyncBunitContext
         Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
 
         _dataGate.SetResult(new Dictionary<string, LinkOverrideRecord>());
-        cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
-
-        await Task.CompletedTask;
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
     }
 }
 
