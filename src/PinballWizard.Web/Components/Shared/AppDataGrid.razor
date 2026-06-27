@@ -1,7 +1,8 @@
 @namespace PinballWizard.Web.Components.Shared
-@typeparam TItem
+@typeparam T
+@attribute [CascadingTypeParameter(nameof(T))]
 
-<MudDataGrid T="TItem"
+<MudDataGrid T="T"
              Items="@Items"
              Hover="true"
              Striped="true"
@@ -19,7 +20,7 @@
 </MudDataGrid>
 
 @code {
-    [Parameter, EditorRequired] public IEnumerable<TItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public IEnumerable<T> Items { get; set; } = [];
     [Parameter, EditorRequired] public RenderFragment Columns { get; set; } = null!;
     [Parameter] public int RowsPerPage { get; set; } = 25;
     [Parameter] public bool ShowPager { get; set; } = true;
@@ -28,5 +29,5 @@
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
 
     private RenderFragment? _pagerContent =>
-        ShowPager ? (RenderFragment)(b => { b.OpenComponent<MudDataGridPager<TItem>>(0); b.CloseComponent(); }) : null;
+        ShowPager ? (RenderFragment)(b => { b.OpenComponent<MudDataGridPager<T>>(0); b.CloseComponent(); }) : null;
 }

@@ -61,13 +61,8 @@
         </MudAlert>
     }
 
-    <MudDataGrid T="LinkOverrideRow"
+    <AppDataGrid T="LinkOverrideRow"
                  Items="@_overrides"
-                 Hover="true"
-                 Striped="true"
-                 Dense="true"
-                 Elevation="2"
-                 RowsPerPage="25"
                  data-testid="admin-link-overrides-grid">
 
         <Columns>
@@ -115,11 +110,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="LinkOverrideRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @* Create Override dialog — gated: only renders for admins *@

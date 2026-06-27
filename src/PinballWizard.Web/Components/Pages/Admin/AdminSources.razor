@@ -48,13 +48,8 @@
         </MudAlert>
     }
 
-    <MudDataGrid T="IngestionSourceRow"
+    <AppDataGrid T="IngestionSourceRow"
                  Items="@_sources"
-                 Hover="true"
-                 Striped="true"
-                 Dense="true"
-                 Elevation="2"
-                 RowsPerPage="25"
                  data-testid="admin-sources-grid">
 
         <Columns>
@@ -106,11 +101,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="IngestionSourceRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {

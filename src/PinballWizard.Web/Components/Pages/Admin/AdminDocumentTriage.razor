@@ -51,13 +51,8 @@
         </MudAlert>
     }
 
-    <MudDataGrid T="DocumentTriageRow"
+    <AppDataGrid T="DocumentTriageRow"
                  Items="@_documents"
-                 Hover="true"
-                 Striped="true"
-                 Dense="true"
-                 Elevation="2"
-                 RowsPerPage="25"
                  data-testid="admin-document-triage-grid">
 
         <Columns>
@@ -123,11 +118,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="DocumentTriageRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {

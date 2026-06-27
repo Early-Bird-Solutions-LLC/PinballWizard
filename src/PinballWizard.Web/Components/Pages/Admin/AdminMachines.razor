@@ -85,16 +85,12 @@
         </MudAlert>
     }
 
-    <MudDataGrid T="MachineCatalogRow"
+    <AppDataGrid T="MachineCatalogRow"
                  Items="@_machines"
-                 Hover="true"
-                 Striped="true"
-                 Dense="true"
-                 Elevation="2"
-                 Groupable="true"
-                 GroupExpanded="true"
                  RowsPerPage="50"
-                 RowClick="@OnRowClick"
+                 Groupable="@true"
+                 GroupExpanded="@true"
+                 RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
                  data-testid="admin-machines-grid">
 
         <Columns>
@@ -194,11 +190,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="MachineCatalogRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {
