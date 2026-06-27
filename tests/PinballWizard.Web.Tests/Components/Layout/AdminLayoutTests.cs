@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
 using PinballWizard.Web.Components.Layout;
-using PinballWizard.Web.Security;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Layout;
@@ -96,23 +95,22 @@ public sealed class AdminLayoutTests : AsyncBunitContext
         cut.Find("[data-testid='admin-body-sentinel']");
     }
 
-    // ── Read-only banner — anonymous path (Task 6) ─────────────────────────
-    // Default anonymous state (constructor does not call SetAuthorized) shows
-    // the NotAuthorized banner with a sign-in link.
+    // ── Anonymous path — identity block must not appear ────────────────────
+    // Unauthenticated users are redirected by [Authorize] on each page before
+    // the layout renders in practice; the AuthorizeView here is a belt-and-
+    // suspenders guard that hides the identity line when auth state is absent.
 
     [Fact]
-    public void AdminLayout_AnonymousUser_RendersReadOnlyBanner()
+    public void AdminLayout_AnonymousUser_DoesNotRenderIdentityBlock()
     {
         var cut = RenderWithBody();
 
-        var banner = cut.Find("[data-testid='admin-readonly-banner']");
-        Assert.Contains("Read-only view", banner.TextContent, StringComparison.Ordinal);
-        cut.Find("a[href='/MicrosoftIdentity/Account/SignIn']");
+        Assert.Empty(cut.FindAll("[data-testid='admin-identity']"));
     }
 }
 
-// Separate context for the authorized-admin branch so SetAuthorized+SetPolicies
-// are registered before the service provider is locked.
+// Separate context for the authorized-admin branch so SetAuthorized is
+// registered before the service provider is locked.
 public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
 {
     public AdminLayoutAuthorizedTests()
@@ -120,8 +118,7 @@ public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
-            .SetAuthorized("test-admin@example.com")
-            .SetPolicies(AuthorizationPolicies.AdminOnly);
+            .SetAuthorized("test-admin@example.com");
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
@@ -146,10 +143,10 @@ public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
     }
 
     [Fact]
-    public void AdminLayout_AuthorizedAdmin_DoesNotRenderReadOnlyBanner()
+    public void AdminLayout_AuthorizedAdmin_DoesNotRenderSignInLink()
     {
         var cut = RenderWithBody();
 
-        Assert.Empty(cut.FindAll("[data-testid='admin-readonly-banner']"));
+        Assert.Empty(cut.FindAll("a[href='/MicrosoftIdentity/Account/SignIn']"));
     }
 }
