@@ -26,11 +26,13 @@
 
 @using Microsoft.Extensions.DependencyInjection
 @using PinballWizard.Application.Jobs
+@using PinballWizard.Web.Components.Shared
 @using PinballWizard.Web.Security
 
 @inject IServiceProvider ServiceProvider
 @inject ISnackbar Snackbar
 @inject ILogger<AdminJobs> Logger
+@inject NavigationManager Navigation
 
 <PageTitle>Jobs — PinballWizard Admin</PageTitle>
 
@@ -85,6 +87,7 @@
                       Hover="true"
                       Dense="true"
                       RowsPerPage="25"
+                      OnRowClick="@HandleRowClick"
                       data-testid="jobs-table">
                 <HeaderContent>
                     <MudTh>Job</MudTh>
@@ -102,7 +105,7 @@
                         <MudText Typo="Typo.caption" Color="Color.Secondary">@context.JobName</MudText>
                     </MudTd>
                     <MudTd DataLabel="Schedule (cron)">
-                        <code>@(context.CronExpression ?? "—")</code>
+                        @CronExpressionFormatter.Format(context.CronExpression)
                     </MudTd>
                     <MudTd DataLabel="Trigger type">@context.TriggerType</MudTd>
                     <MudTd DataLabel="Latest run">
@@ -124,13 +127,15 @@
                         }
                     </MudTd>
                     <MudTd>
-                        <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
-                                       Color="Color.Primary"
-                                       Size="Size.Small"
-                                       aria-label="Run job now"
-                                       data-testid="run-now-button"
-                                       Disabled="@(_startBusy)"
-                                       OnClick="@(() => OpenConfirmDialogAsync(context))" />
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
+                                           Color="Color.Primary"
+                                           Size="Size.Small"
+                                           aria-label="Run job now"
+                                           data-testid="run-now-button"
+                                           Disabled="@(_startBusy)"
+                                           OnClick="@(() => OpenConfirmDialogAsync(context))" />
+                        </span>
                     </MudTd>
                 </RowTemplate>
                 <PagerContent>
@@ -243,6 +248,12 @@
             _loading = false;
             StateHasChanged();
         }
+    }
+
+    private void HandleRowClick(TableRowClickEventArgs<JobStatus> args)
+    {
+        if (args.Item is null) return;
+        Navigation.NavigateTo($"/admin/jobs/{args.Item.JobName}");
     }
 
     private void OpenConfirmDialogAsync(JobStatus job)

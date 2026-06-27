@@ -1,4 +1,6 @@
 using Bunit;
+using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -211,5 +213,68 @@ public sealed class AdminJobsTests : AsyncBunitContext
 
         await svc.DidNotReceive().StartJobAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── Row click navigates to detail page ───────────────────────────────────
+
+    [Fact]
+    public async Task RowClick_NavigatesToJobDetailPage()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<JobStatus>>(SeedJobs));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Click the first body row (skip the header row at index 0).
+        var rows = cut.FindAll("tr");
+        var firstDataRow = rows.Skip(1).First();
+        await cut.InvokeAsync(() => firstDataRow.Click());
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        Assert.EndsWith($"/admin/jobs/{SeedJobs[0].JobName}", nav.Uri);
+    }
+
+    // ── Run Now button stopPropagation — click does NOT navigate ─────────────
+
+    [Fact]
+    public async Task RunNowButton_Click_DoesNotNavigate()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<JobStatus>>(SeedJobs));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        var initialUri = nav.Uri;
+
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='run-now-button']").Click());
+
+        // Navigation must NOT have occurred — we're still on the jobs list page.
+        Assert.Equal(initialUri, nav.Uri);
+    }
+
+    // ── Cron column shows human-readable text, not raw expression ─────────────
+
+    [Fact]
+    public async Task CronColumn_ShowsHumanReadableExpression()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<JobStatus>>(SeedJobs));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // "0 2 * * *" → "Daily at 2:00 AM UTC"
+        Assert.Contains("Daily at 2:00 AM UTC", cut.Markup, StringComparison.Ordinal);
+        // "0 3 * * 0" → "Sundays at 3:00 AM UTC"
+        Assert.Contains("Sundays at 3:00 AM UTC", cut.Markup, StringComparison.Ordinal);
+        // Raw expressions should NOT appear as standalone text
+        Assert.DoesNotContain(">0 2 * * *<", cut.Markup, StringComparison.Ordinal);
     }
 }
