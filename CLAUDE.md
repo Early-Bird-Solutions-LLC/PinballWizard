@@ -45,6 +45,22 @@ tests/                               ← seven per-layer test projects (ADR-0030
 
 ADRs live in [`docs/adr/`](docs/adr/) — index in [`docs/adr/README.md`](docs/adr/README.md); don't hardcode the numeric range here, it drifts. The slnx is `PinballWizard.slnx`.
 
+### Shared Blazor component library (see [ADR-0046](docs/adr/0046-shared-blazor-component-library.md))
+
+Repeated MudBlazor patterns across admin and public pages are extracted into `Components/Shared/`. **Always use these wrappers — never inline the raw MudBlazor equivalents:**
+
+| Component | Wraps | Key baked-in defaults |
+| --- | --- | --- |
+| `AppDataGrid<TItem>` | `MudDataGrid` | `Hover Striped Dense Elevation=2 RowsPerPage=25`; optional `ShowPager=false` for embedded tables |
+| `AppPageHeader` | breadcrumbs + h4 + body2 | Standard heading/subtitle/breadcrumb block |
+| `AppEmptyState` | `MudStack` + icon + text | Centred empty-state with Inbox icon default |
+| `AppErrorAlert` | `MudAlert Severity.Error` | `Class="mb-4"` |
+| `AppStatusChip` | `MudChip T="string"` | `Size.Small Variant.Filled`; caller sets `Color` |
+| `AppBulletList` / `AppBulletItem` | `MudList Dense` + `MudListItem` | Circle icon, body2 text |
+| `AppSummaryCard` | `MudCard Elevation=2` | Admin dashboard card pattern |
+
+`MudTable` and `MudSimpleTable` are banned from the page layer — use `AppDataGrid`. All call sites pass extra props (Groupable, RowClick, data-testid, etc.) via attribute splatting.
+
 ### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
 
 | Manufacturer | Source URL | Pattern | Notes |

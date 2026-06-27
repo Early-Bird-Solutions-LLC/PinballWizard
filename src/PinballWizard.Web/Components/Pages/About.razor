@@ -189,9 +189,63 @@
         </MudListItem>
     </MudList>
 
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
         Everything else routes to authoritative community resources — Pinside, IFPA, Pinball Map,
         and manufacturer sites — rather than attempting to answer from incomplete data.
+    </MudText>
+
+    @* ── Data partners ────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-2">
+        Data Partners
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-2">
+        PinballWizard is built on direct partnerships with community operators. Every integration
+        started with a direct ask to the person who built the resource — and every answer credits
+        its source:
+    </MudText>
+
+    <MudList T="string" Dense="true" Class="about-data-partners-list mb-2" data-testid="about-data-partners-list">
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://opdb.org"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="OPDB — Open Pinball Database (opens in new tab)">
+                OPDB — Open Pinball Database
+            </MudLink>
+            — canonical machine catalog; the join key every other integration pivots on
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://kineticist.com"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="Kineticist (opens in new tab)">
+                Kineticist
+            </MudLink>
+            — gameplay-rules depth and catalog enrichment; partnership with founder Colin Alsheimer
+            (API access + interim rules-guide permission, June 2026)
+        </MudListItem>
+        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+            <MudLink Href="https://silverballlabs.com"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="Silverball Labs (opens in new tab)">
+                Silverball Labs
+            </MudLink>
+            — live market pricing; partnership with co-founder Will Oetting (May 2026);
+            origin sales dataset from
+            <MudLink Href="https://pinballprices.com"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="PinballPrices.com (opens in new tab)">
+                PinballPrices.com
+            </MudLink>
+            (Ted "Doc" Finlay)
+        </MudListItem>
+    </MudList>
+
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Attribution is required and present on every answer that draws from a partner's data.
     </MudText>
 
     @* ── GitHub link ──────────────────────────────────────────────────────── *@

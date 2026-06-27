@@ -40,6 +40,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
     private readonly IAgentPromptProvider _promptProvider;
     private readonly MachineGroundingTool _machineGroundingTool;
     private readonly SearchCorpusTool _searchCorpusTool;
+    private readonly MarketValueTool _marketValueTool;
     private readonly ILogger<FoundryAgentFactory> _logger;
     private readonly Lock _initLock;
     private Dictionary<string, AIAgent>? _agents;
@@ -59,18 +60,21 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         IAgentPromptProvider promptProvider,
         MachineGroundingTool machineGroundingTool,
         SearchCorpusTool searchCorpusTool,
+        MarketValueTool marketValueTool,
         ILogger<FoundryAgentFactory> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(promptProvider);
         ArgumentNullException.ThrowIfNull(machineGroundingTool);
         ArgumentNullException.ThrowIfNull(searchCorpusTool);
+        ArgumentNullException.ThrowIfNull(marketValueTool);
         ArgumentNullException.ThrowIfNull(logger);
 
         _options = options.Value;
         _promptProvider = promptProvider;
         _machineGroundingTool = machineGroundingTool;
         _searchCorpusTool = searchCorpusTool;
+        _marketValueTool = marketValueTool;
         _logger = logger;
         _initLock = new Lock();
     }
@@ -176,6 +180,11 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // invocations across agents are safe.
         var getMachineByTitle = AIFunctionFactory.Create(_machineGroundingTool.GetMachineByTitleAsync);
         var searchCorpus = AIFunctionFactory.Create(_searchCorpusTool.SearchCorpusAsync);
+        // getMarketValue: Wizard-only (same observable-FunctionResultContent reasoning
+        // as searchCorpus — see two-pass construction comment above). Gracefully
+        // returns null when Silverball Labs is not configured; the Wizard prompt
+        // handles the null result with an honest "unavailable" answer.
+        var getMarketValue = AIFunctionFactory.Create(_marketValueTool.GetMarketValueAsync);
 
         // Two-pass construction (Phase 4 W1-1, revised fix/wizard-citation-extraction):
         //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
@@ -196,10 +205,11 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         //            table in Wizard.md.
         AITool[] subAgentTools = [getMachineByTitle];
         var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
-        var wizardTools = new List<AITool>(subAgentNames.Length + 2)
+        var wizardTools = new List<AITool>(subAgentNames.Length + 3)
         {
             getMachineByTitle,
             searchCorpus,
+            getMarketValue,
         };
 
         foreach (var name in subAgentNames)

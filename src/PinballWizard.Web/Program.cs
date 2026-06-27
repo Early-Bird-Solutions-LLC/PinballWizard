@@ -31,6 +31,7 @@ using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
+using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Jobs;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
@@ -274,6 +275,14 @@ if (foundryWired)
 {
     builder.Services.AddAzureFoundryIntegration(builder.Configuration);
     builder.Services.AddHostedService<WizardAgentWarmupHostedService>();
+}
+
+// Silverball Labs live-pricing integration — gated on API key presence (ADR-0045).
+// Absent key = IMarketValueProvider not registered; MarketValueTool degrades gracefully
+// (returns null, Wizard tells user live pricing is unavailable).
+if (!string.IsNullOrWhiteSpace(builder.Configuration[SilverballLabsOptions.ApiKeyKey]))
+{
+    builder.Services.AddSilverballLabsIntegration(builder.Configuration);
 }
 
 // ── Cosmos persistence + catalog read ─────────────────────────────────────────

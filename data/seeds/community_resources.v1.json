@@ -33,7 +33,7 @@
       "category": "machine_reference",
       "name": "Kineticist",
       "url": "https://kineticist.com",
-      "description": "Structured per-game rules and strategy guides covering mode objectives, scoring, and wizard-mode paths across a curated library of titles. AI-friendly; partnership pending. Route outward only; ingestion is a separate future ADR-gated decision.",
+      "description": "Structured per-game rules and strategy guides covering mode objectives, scoring, and wizard-mode paths across a curated library of titles. AI-friendly (robots.txt ai-train=yes). Partnership confirmed — ADR-0043 (Accepted, 2026-06-25); founder Colin Alsheimer granted API access and interim tutorial-indexing permission. Route outward only in this seed; data-partner integration is governed by ADR-0043.",
       "covers_question_types": ["rules", "strategy", "general"]
     },
     {

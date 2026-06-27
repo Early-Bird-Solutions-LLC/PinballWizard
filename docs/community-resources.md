@@ -180,30 +180,38 @@ These entity types are intentionally *not* routed in the first version of the co
 - **Modes / features within games** (e.g., "Mechazilla Multiball"). These are typically grounded in the manual or bulletin, so they live as citations not portals. Body-text isn't enriched with sub-entity links — that's tooltip-clutter territory.
 - **Firmware / code versions** (e.g., "Stern code v1.04"). Useful but secondary; the manufacturer's code-update page is the primary destination, but inline-linking every code reference adds noise. Defer; revisit if user feedback asks for it.
 
-## v1 pricing strategy — first-party MSRP + aggregator-link-only
+## v1 pricing strategy — first-party MSRP + live partner API for secondary-market
 
-The Wizard's pricing-question handling is a deliberate hybrid: first-party data where we genuinely have it, link-only routing for everything else, and explicit transparency about which is which.
+> **Updated 2026-06-27:** The secondary-market slice of this strategy is superseded by
+> [ADR-0045](adr/0045-silverball-labs-pricing-integration.md). Silverball Labs (Will Oetting)
+> and PinballPrices.com (Ted "Doc" Finlay) are now authorized data partners; secondary-market
+> pricing is served by the `getMarketValue` live tool rather than the link-only plural set.
+> The route-outward posture (ADR-0027) is **unchanged** — Silverball Labs is a data-partner
+> integration, not a community-resource destination, so it is not listed in the directory below.
+> The plural-set link destinations remain in the directory for direct-linking contexts.
+
+The Wizard's pricing-question handling is a deliberate hybrid: first-party data where we genuinely have it, explicit transparency about what is which.
 
 **What we have first-party:** manufacturer MSRPs scraped via the existing manufacturer scrapers (Stern, JJP, AP, Spooky, PB, BoF, Multimorphic, CGC). New-machine list pricing only — MSRP is the authoritative price *at release*, not current secondary-market value.
 
-**What we don't have first-party (link-only via plural-set routing):** secondary-market pricing, auction realized prices, current asking prices. The marketplace plural set — Barnebys, eBay sold-listings, Liveauctioneers, Mr. Pinball Classifieds, PinballPrice, PinballPrices, PinballValue, Pinpedia, Pinside `/market` (alphabetical) — handles these.
+**What we now have via live tool (ADR-0045):** secondary-market pricing, via `getMarketValue`
+calling the Silverball Labs API at query time. OPDB-keyed; dual attribution (Silverball Labs +
+PinballPrices.com) in every answer; `byCondition` breakdown and `priceSummary` as the
+preferred surfaces; no financial-advice framing; no bulk republication.
+
+**Fallback (when `SilverballLabs:ApiKey` is absent or `trendDirection = "insufficient_data"`):**
+the marketplace plural set — Barnebys, eBay sold-listings, Liveauctioneers, Mr. Pinball
+Classifieds, PinballPrice, PinballPrices, PinballValue, Pinpedia, Pinside `/market`
+(alphabetical) — handles these via link-only routing, same as before.
 
 **How this surfaces in the Wizard:**
 
-- *"What's a Godzilla Premium worth?"* → MSRP-with-attribution if we have it from the manufacturer scrape, plus the plural-set routing recommendation: "for current secondary-market pricing, see [aggregators in alphabetical order]."
-- *"What's a 1993 Twilight Zone worth?"* → no MSRP (Bally is defunct), so 100% routing to the plural set.
-- *"Where can I buy a [machine]?"* → manufacturer page if active (new-purchase route) + the plural-set routing recommendation (secondary-purchase route).
+- *"What's a Godzilla Premium worth?"* → MSRP-with-attribution from the manufacturer scrape (if active), plus secondary-market data from the Silverball Labs live tool (dual attribution), plus the plural-set routing recommendation for browsing.
+- *"What's a 1993 Twilight Zone worth?"* → no MSRP (Bally is defunct), so secondary-market data from the live tool, plus plural-set routing.
+- *"Where can I buy a [machine]?"* → manufacturer page if active (new-purchase route) + plural-set routing recommendation (secondary-purchase route).
 
-**Why this is the v1 lock:**
+**Phase 5+ candidates (still not in scope):**
 
-- **No new infrastructure required.** MSRPs already scraped; pricing routing already in the matrix.
-- **Honest about what we have.** No pretense of a first-party pricing data layer; coverage transparency principle satisfied.
-- **Plurality-respecting.** Surfaces multiple aggregators alphabetically, never picking a default.
-- **Outreach-independent.** Works regardless of how the pricing-aggregator outreach (`memory/project_pricing_outreach_2026_05_08.md`) lands. A "yes" response from any operator promotes their data from link-only to first-party-with-attribution; a "no" or no-response keeps things as they are.
-
-**Phase 5+ candidates (not v1):**
-
-- Ingestion pipelines for any operator who grants explicit permission via the pricing-aggregator outreach.
 - eBay Browse API for *active listings* (NOT sold — sold is partner-only per the eBay row in § Destination directory).
 - Manufacturer dealer-network pricing if any of the manufacturers expose it.
 

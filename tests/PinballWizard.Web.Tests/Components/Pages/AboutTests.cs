@@ -152,4 +152,41 @@ public sealed class AboutTests : AsyncBunitContext
         Assert.Contains("Stern Pinball", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("OPDB", text, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8. Data Partners section credits all three sourced-data partners
+    //    Behavioral: names OPDB, Kineticist, Silverball Labs, and
+    //    PinballPrices.com (ADR-0043, ADR-0045).
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void About_DataPartners_CreditsAllPartners()
+    {
+        var cut = Render<About>();
+
+        var text = cut.Find("[data-testid='about-data-partners-list']").TextContent;
+        Assert.Contains("OPDB", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Kineticist", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Silverball Labs", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("PinballPrices", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void About_DataPartners_ContainsLinksToPartnerSites()
+    {
+        // Every partner must have a clickable outbound link — ADR-0027
+        // community-resource posture (route outward, never capture).
+        var cut = Render<About>();
+
+        var partnerList = cut.Find("[data-testid='about-data-partners-list']");
+        var hrefs = partnerList
+            .QuerySelectorAll("a[href]")
+            .Select(a => a.GetAttribute("href") ?? "")
+            .ToList();
+
+        Assert.Contains(hrefs, h => h.Contains("opdb.org", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(hrefs, h => h.Contains("kineticist.com", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(hrefs, h => h.Contains("silverballlabs.com", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(hrefs, h => h.Contains("pinballprices.com", StringComparison.OrdinalIgnoreCase));
+    }
 }
