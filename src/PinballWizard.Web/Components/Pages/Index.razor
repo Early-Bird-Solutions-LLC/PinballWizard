@@ -141,9 +141,9 @@
 
         if (landing is not null)
         {
-            _seedQuestions = landing.SeedQuestions;
-            _featuredMachines = landing.FeaturedMachines;
-            _status = landing.SystemStatus;
+            _seedQuestions    = landing.SeedQuestions    ?? _seedQuestions;
+            _featuredMachines = landing.FeaturedMachines ?? _featuredMachines;
+            _status           = landing.SystemStatus;
         }
         else
         {
