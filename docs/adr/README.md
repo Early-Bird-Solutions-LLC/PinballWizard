@@ -55,6 +55,7 @@ negative) it carries.
 | [0042](0042-rulesheet-document-type.md) | Rulesheet document type and RAG allow-list widening | Accepted |
 | [0043](0043-kineticist-integration.md) | Kineticist integration for gameplay-rules depth and catalog enrichment | Accepted |
 | [0044](0044-outbound-contribution-transparency-and-privacy-preserving-uniques.md) | Outbound-contribution transparency + privacy-preserving distinct-visitor counting (amends 0027) | Accepted |
+| [0045](0045-silverball-labs-pricing-integration.md) | Silverball Labs live-pricing integration (supersedes v1 link-only strategy for secondary-market values) | Accepted |
 
 ## Conventions
 

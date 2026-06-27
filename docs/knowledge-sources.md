@@ -96,6 +96,21 @@ This category is structurally different from everything above — see §5.
 | Marco Specialties, Pinball Life, Pinball Resource, PinballPro | Parts catalogs with part numbers and compatibility data | Useful reference; respect catalog ToS, link rather than republish |
 | Mezel Mods, Tilt Graphics, PinGraffix, others | Aftermarket mod catalogs | Same |
 
+### 3.8 Live pricing data — authorized partners (Domain 9)
+
+Domain 9 (Market & ownership) secondary-market pricing is now covered by two authorized
+partners, integrated as a live tool rather than embedded content (see §5 and ADR-0045):
+
+| Source | Role | Terms | Status |
+|---|---|---|---|
+| **PinballPrices.com** (Ted "Doc" Finlay) | Origin dataset: 13,202 sales records, 1,499 unique titles, $56.2M in recorded sales | Attribution required on every value surfaced; updates shared on request | **Authorized 2026-05-15** |
+| **Silverball Labs** (Will Oetting) | Live REST API; continuously ingests PinballPrices.com data plus additional sources, updated every couple of days; OPDB-keyed; `attribution` object in every response payload credits both sources | Partner key; Pro subscription; `marketInsight` (AI-generated prose) excluded from surfacing — only concrete sourced numbers | **Authorized 2026-05-15** |
+
+Silverball Labs is the integration point: it is the superset, it has the typed API, and its
+response payload satisfies both attribution obligations in a single call. See
+[ADR-0045](adr/0045-silverball-labs-pricing-integration.md) and the design doc
+[`docs/superpowers/specs/2026-06-27-silverball-labs-pricing-integration-design.md`](superpowers/specs/2026-06-27-silverball-labs-pricing-integration-design.md).
+
 ### 3.7 The gameplay-rules (Domain 2) sourcing ceiling
 
 Domain 2 (§2, row 2) splits into two tiers with very different availability. *Overview / feature / edition* content is now indexed (Stern game-page enrichment, PR #495). *Wizard-mode rule depth* — the mode-completion graph behind "what do I finish to reach Godzilla's wizard mode" — has **no polite, public, login-free manufacturer source**. This was confirmed empirically on 2026-06-25: a reclassification pass over the live corpus (567 documents) produced **zero** `Rulesheet` promotions. Manufacturers publish manuals and hardware charts (indexed as `Manual`); the rule-depth that exists publicly lives in **community-authored** rulesheets, and Stern's own per-game rulesheets sit behind the **Insider Connected** login wall (rejected on posture grounds — a login is a deliberate access-control signal, §7).
@@ -148,6 +163,11 @@ This argues for a hybrid architecture:
 | Live | IFPA rankings, in-progress tournaments, current pricing | Tool calls at query time — no embedding |
 
 The Wizard becomes a **tool-using agent** for the live slice rather than a pure retriever. Asked "How is Raymond Davidson doing at INDISC right now?", the agent calls the Match Play API rather than searching a stale index. Asked "Who is Raymond Davidson?", it retrieves embedded biographical content from the corpus.
+
+**Current pricing is now implemented as a live tool** (`getMarketValue`, ADR-0045): the
+`Valuation` sub-agent calls the Silverball Labs API at query time rather than querying a
+stale price index. OPDB id is the join key; dual attribution (Silverball Labs +
+PinballPrices.com) travels in every response payload.
 
 This pivot deserves its own ADR when Phase 2 begins. Tentatively: **ADR 00XX — Hybrid retrieval and tool-use for time-sensitive queries.**
 
