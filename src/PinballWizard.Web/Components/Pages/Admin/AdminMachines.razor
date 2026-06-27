@@ -158,13 +158,10 @@
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)
                     {
-                        <MudChip T="string"
-                                 Size="Size.Small"
-                                 Color="@HealthFlagColor(flag)"
-                                 Variant="Variant.Filled"
-                                 Class="mr-1">
+                        <AppStatusChip Color="@HealthFlagColor(flag)"
+                                       Class="mr-1">
                             @flag.ToString()
-                        </MudChip>
+                        </AppStatusChip>
                     }
                 </CellTemplate>
             </TemplateColumn>

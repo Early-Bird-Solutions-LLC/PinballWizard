@@ -64,11 +64,9 @@
             </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
-                    <MudChip T="string"
-                             Size="Size.Small"
-                             Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
+                    <AppStatusChip Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
                         @(context.Item.Enabled ? "Enabled" : "Disabled")
-                    </MudChip>
+                    </AppStatusChip>
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.Cadence" Title="Cadence" />

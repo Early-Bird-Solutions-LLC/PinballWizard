@@ -59,12 +59,9 @@
             <PropertyColumn Property="x => x.LinkText" Title="Link Text" />
             <TemplateColumn Title="Status">
                 <CellTemplate>
-                    <MudChip T="string"
-                             Size="Size.Small"
-                             Color="@StatusColor(context.Item.Status)"
-                             Variant="Variant.Filled">
+                    <AppStatusChip Color="@StatusColor(context.Item.Status)">
                         @context.Item.Status
-                    </MudChip>
+                    </AppStatusChip>
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.FailureReason" Title="Failure Reason" />

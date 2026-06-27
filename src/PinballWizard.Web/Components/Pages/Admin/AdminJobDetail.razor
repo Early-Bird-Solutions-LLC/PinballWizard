@@ -97,12 +97,10 @@
                         </MudItem>
                         <MudItem xs="12">
                             <MudText Typo="Typo.body2" Color="Color.Secondary">Latest status</MudText>
-                            <MudChip T="string"
-                                     Size="Size.Small"
-                                     Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
-                                     data-testid="latest-status">
+                            <AppStatusChip Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
+                                           data-testid="latest-status">
                                 @_detail.LatestExecutionStatus
-                            </MudChip>
+                            </AppStatusChip>
                         </MudItem>
                     </MudGrid>
                 </div>

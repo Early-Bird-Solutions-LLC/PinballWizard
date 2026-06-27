@@ -273,8 +273,8 @@
                                             <MudText Typo="Typo.body2" Style="min-width: 3rem">v@(v.Version)</MudText>
                                             @if (v.IsActive)
                                             {
-                                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
-                                                         data-testid="@($"prompt-active-chip-{v.Version}")">active</MudChip>
+                                                <AppStatusChip Color="Color.Success"
+                                                               data-testid="@($"prompt-active-chip-{v.Version}")">active</AppStatusChip>
                                             }
                                             else
                                             {

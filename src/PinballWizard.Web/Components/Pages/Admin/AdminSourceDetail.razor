@@ -99,11 +99,10 @@
                     }
                     else
                     {
-                        <MudChip T="string" Size="Size.Small"
-                                 Color="@(_source.Enabled ? Color.Success : Color.Default)"
-                                 data-testid="source-enabled-chip">
+                        <AppStatusChip Color="@(_source.Enabled ? Color.Success : Color.Default)"
+                                       data-testid="source-enabled-chip">
                             @(_source.Enabled ? "Enabled" : "Disabled")
-                        </MudChip>
+                        </AppStatusChip>
                     }
                 </MudStack>
                 @KeyValue("Cadence", _source.Cadence)

@@ -102,13 +102,10 @@
         </MudStack>
 
         <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-2" AlignItems="AlignItems.Center">
-            <MudChip T="string"
-                     Size="Size.Small"
-                     Color="@HealthFlagColor(_healthFlags)"
-                     Variant="Variant.Filled"
-                     data-testid="detail-health-chip">
+            <AppStatusChip Color="@HealthFlagColor(_healthFlags)"
+                           data-testid="detail-health-chip">
                 @HealthLabel(_healthFlags)
-            </MudChip>
+            </AppStatusChip>
             <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.ManufacturerDisplayName</MudText>
             @if (_machine.Year.HasValue)
             {
@@ -146,12 +143,9 @@
                             <MudText Typo="Typo.subtitle2">
                                 @(sib.EditionLabel ?? sib.Title)
                             </MudText>
-                            <MudChip T="string"
-                                     Size="Size.Small"
-                                     Color="@(isEmpty ? Color.Error : Color.Success)"
-                                     Variant="Variant.Filled">
+                            <AppStatusChip Color="@(isEmpty ? Color.Error : Color.Success)">
                                 @sib.DocCount doc@(sib.DocCount == 1 ? "" : "s")
-                            </MudChip>
+                            </AppStatusChip>
                         </MudStack>
                     </MudPaper>
                 }
