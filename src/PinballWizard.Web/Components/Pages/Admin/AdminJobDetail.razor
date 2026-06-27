@@ -238,8 +238,7 @@
     {
         try
         {
-            var ianaId = await JS.InvokeAsync<string>(
-                "eval", "Intl.DateTimeFormat().resolvedOptions().timeZone");
+            var ianaId = await JS.InvokeAsync<string>("pinwiz.getTimezone");
             if (!string.IsNullOrWhiteSpace(ianaId))
             {
                 _timeZoneInfo = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
