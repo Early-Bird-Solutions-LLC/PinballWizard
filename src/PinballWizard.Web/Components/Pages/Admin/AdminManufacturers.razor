@@ -38,12 +38,9 @@
 <PageTitle>Manufacturers — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Manufacturers</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Catalog contribution per manufacturer — machines and catalog documents.
-    </MudText>
+    <AppPageHeader Title="Manufacturers"
+                   Subtitle="Catalog contribution per manufacturer — machines and catalog documents."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {

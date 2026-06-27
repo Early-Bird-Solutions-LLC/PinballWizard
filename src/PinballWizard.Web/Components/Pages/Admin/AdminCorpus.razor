@@ -24,12 +24,9 @@
 <PageTitle>RAG Corpus — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">RAG Corpus</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Health of the indexed corpus that powers source-cited answers.
-    </MudText>
+    <AppPageHeader Title="RAG Corpus"
+                   Subtitle="Health of the indexed corpus that powers source-cited answers."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {

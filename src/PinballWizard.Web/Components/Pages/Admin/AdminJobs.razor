@@ -37,13 +37,9 @@
 <PageTitle>Jobs — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Scheduled Jobs</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Live view of Container Apps Jobs scheduled in this environment.
-        Use <strong>Run now</strong> to trigger a manual execution.
-    </MudText>
+    <AppPageHeader Title="Scheduled Jobs"
+                   Subtitle="Live view of Container Apps Jobs scheduled in this environment. Use Run now to trigger a manual execution."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {

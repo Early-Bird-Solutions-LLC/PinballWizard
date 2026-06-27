@@ -41,12 +41,9 @@
 <PageTitle>Machine Catalog — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Machine Catalog</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-        All pinball machines indexed across manufacturers and OPDB.
-    </MudText>
+    <AppPageHeader Title="Machine Catalog"
+                   Subtitle="All pinball machines indexed across manufacturers and OPDB."
+                   Breadcrumbs="@_breadcrumbs" />
 
     <MudStack Row="true" Spacing="1" Class="mb-4" data-testid="groupby-selector">
         @foreach (var axis in _axes)

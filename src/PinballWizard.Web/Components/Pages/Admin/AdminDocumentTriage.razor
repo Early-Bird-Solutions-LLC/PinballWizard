@@ -32,12 +32,9 @@
 <PageTitle>Document Triage — PinballWizard Admin</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
-
-    <MudText Typo="Typo.h4" GutterBottom="true">Document Triage</MudText>
-    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
-        Unlinked, failed, and platform-generic documents awaiting resolution.
-    </MudText>
+    <AppPageHeader Title="Document Triage"
+                   Subtitle="Unlinked, failed, and platform-generic documents awaiting resolution."
+                   Breadcrumbs="@_breadcrumbs" />
 
     @if (_loading)
     {

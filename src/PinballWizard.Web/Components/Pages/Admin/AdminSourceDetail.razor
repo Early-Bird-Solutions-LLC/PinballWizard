@@ -59,9 +59,8 @@
     }
     else
     {
-        <MudBreadcrumbs Items="Breadcrumbs" Class="pa-0 mb-4" />
-
-        <MudText Typo="Typo.h4" GutterBottom="true">@_source.DisplayName</MudText>
+        <AppPageHeader Title="@_source.DisplayName"
+                       Breadcrumbs="@Breadcrumbs" />
 
         @* a. Source config + run stats *@
         <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-config">
