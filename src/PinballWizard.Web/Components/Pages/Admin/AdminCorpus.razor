@@ -41,13 +41,9 @@
     }
     else if (_stats!.TotalChunks == 0)
     {
-        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="corpus-empty">
-            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
-            <MudText Typo="Typo.body1">No chunks indexed yet</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
-                The RAG ingestion pipeline has not indexed any documents into the corpus.
-            </MudText>
-        </MudStack>
+        <AppEmptyState Heading="No chunks indexed yet"
+                       Detail="The RAG ingestion pipeline has not indexed any documents into the corpus."
+                       data-testid="corpus-empty" />
     }
     else
     {

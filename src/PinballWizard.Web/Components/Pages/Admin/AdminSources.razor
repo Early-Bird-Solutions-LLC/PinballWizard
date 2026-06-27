@@ -84,17 +84,14 @@
              * never masquerades as "no sources configured". *@
             @if (!_loadFailed)
             {
-                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                             Size="Size.Large"
-                             Color="Color.Tertiary" />
-                    <MudText Typo="Typo.body1" data-testid="admin-sources-empty">
-                        No sources configured
-                    </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
-                    </MudText>
-                </MudStack>
+                <AppEmptyState Heading="No sources configured"
+                               data-testid="admin-sources-empty">
+                    <DetailContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
+                        </MudText>
+                    </DetailContent>
+                </AppEmptyState>
             }
         </NoRecordsContent>
 

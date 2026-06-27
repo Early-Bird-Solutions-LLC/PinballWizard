@@ -67,13 +67,14 @@
     }
     else if (_jobs.Count == 0)
     {
-        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="jobs-empty">
-            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
-            <MudText Typo="Typo.body1">No Container Apps Jobs found in this resource group.</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
-                Jobs are deployed in Phase 2. Deploy with <code>deployPhase2 = true</code>.
-            </MudText>
-        </MudStack>
+        <AppEmptyState Heading="No Container Apps Jobs found in this resource group."
+                       data-testid="jobs-empty">
+            <DetailContent>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Jobs are deployed in Phase 2. Deploy with <code>deployPhase2 = true</code>.
+                </MudText>
+            </DetailContent>
+        </AppEmptyState>
     }
     else
     {

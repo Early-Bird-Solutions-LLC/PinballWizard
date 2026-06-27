@@ -173,17 +173,14 @@
         <NoRecordsContent>
             @if (!_loadFailed)
             {
-                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                             Size="Size.Large"
-                             Color="Color.Tertiary" />
-                    <MudText Typo="Typo.body1" data-testid="admin-machines-empty">
-                        No machines in catalog
-                    </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
-                    </MudText>
-                </MudStack>
+                <AppEmptyState Heading="No machines in catalog"
+                               data-testid="admin-machines-empty">
+                    <DetailContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Run <code>--source opdb</code> then <code>--build-catalog</code> to populate.
+                        </MudText>
+                    </DetailContent>
+                </AppEmptyState>
             }
         </NoRecordsContent>
 
