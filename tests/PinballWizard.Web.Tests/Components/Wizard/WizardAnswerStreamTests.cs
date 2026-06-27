@@ -747,8 +747,12 @@ public sealed class WizardAnswerStreamTests
             () => cut.Find("[data-testid='new-question-button']"),
             timeout: TimeSpan.FromSeconds(3));
         await cut.InvokeAsync(() => cut.Find("[data-testid='new-question-button']").Click());
-        cut.Find("[data-testid='conversation-thread']");
-
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='conversation-thread']"),
+            timeout: TimeSpan.FromSeconds(3));
+        cut.WaitForAssertion(
+            () => cut.Find("[data-testid='new-conversation-button']"),
+            timeout: TimeSpan.FromSeconds(3));
         await cut.InvokeAsync(() => cut.Find("[data-testid='new-conversation-button']").Click());
 
         Assert.Empty(cut.FindAll("[data-testid='conversation-thread']"));
