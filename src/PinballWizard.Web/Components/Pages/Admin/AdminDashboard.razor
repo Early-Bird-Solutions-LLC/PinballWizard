@@ -35,160 +35,90 @@
 
     <MudGrid Spacing="3">
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.SportsBaseball"
-                                 Color="Color.Primary"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <AdminCountValue TestId="admin-machines-count"
-                                             Loading="_loadingStats"
-                                             Failed="_statsFailed"
-                                             Count="_machinesCount" />
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Machines</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/machines"
-                               Variant="Variant.Text"
-                               Color="Color.Primary"
-                               Size="Size.Small">
-                        View catalog
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.SportsBaseball"
+                            IconColor="Color.Primary"
+                            Label="Machines"
+                            ActionHref="/admin/machines"
+                            ActionLabel="View catalog">
+                <Content>
+                    <AdminCountValue TestId="admin-machines-count"
+                                     Loading="_loadingStats"
+                                     Failed="_statsFailed"
+                                     Count="_machinesCount" />
+                </Content>
+            </AppSummaryCard>
         </MudItem>
 
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.Source"
-                                 Color="Color.Secondary"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <AdminCountValue TestId="admin-sources-count"
-                                             Loading="_loadingSources"
-                                             Failed="_sourcesFailed"
-                                             Count="_sourcesCount" />
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Ingestion Sources</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/sources"
-                               Variant="Variant.Text"
-                               Color="Color.Secondary"
-                               Size="Size.Small">
-                        View sources
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.Source"
+                            IconColor="Color.Secondary"
+                            Label="Ingestion Sources"
+                            ActionHref="/admin/sources"
+                            ActionLabel="View sources">
+                <Content>
+                    <AdminCountValue TestId="admin-sources-count"
+                                     Loading="_loadingSources"
+                                     Failed="_sourcesFailed"
+                                     Count="_sourcesCount" />
+                </Content>
+            </AppSummaryCard>
         </MudItem>
 
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.Article"
-                                 Color="Color.Tertiary"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <AdminCountValue TestId="admin-documents-count"
-                                             Loading="_loadingStats"
-                                             Failed="_statsFailed"
-                                             Count="_documentsCount" />
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Documents</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Tertiary">linked into catalog</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/document-triage"
-                               Variant="Variant.Text"
-                               Color="Color.Tertiary"
-                               Size="Size.Small">
-                        Triage unlinked
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.Article"
+                            IconColor="Color.Tertiary"
+                            Label="Documents"
+                            Caption="linked into catalog"
+                            ActionHref="/admin/document-triage"
+                            ActionLabel="Triage unlinked">
+                <Content>
+                    <AdminCountValue TestId="admin-documents-count"
+                                     Loading="_loadingStats"
+                                     Failed="_statsFailed"
+                                     Count="_documentsCount" />
+                </Content>
+            </AppSummaryCard>
         </MudItem>
 
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.LinkOff"
-                                 Color="Color.Warning"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <AdminCountValue TestId="admin-link-overrides-count"
-                                             Loading="_loadingOverrides"
-                                             Failed="_overridesFailed"
-                                             Count="_overridesCount" />
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Link Overrides</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/link-overrides"
-                               Variant="Variant.Text"
-                               Color="Color.Warning"
-                               Size="Size.Small">
-                        View overrides
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.LinkOff"
+                            IconColor="Color.Warning"
+                            Label="Link Overrides"
+                            ActionHref="/admin/link-overrides"
+                            ActionLabel="View overrides">
+                <Content>
+                    <AdminCountValue TestId="admin-link-overrides-count"
+                                     Loading="_loadingOverrides"
+                                     Failed="_overridesFailed"
+                                     Count="_overridesCount" />
+                </Content>
+            </AppSummaryCard>
         </MudItem>
 
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.Storage"
-                                 Color="Color.Info"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <MudText Typo="Typo.body1">RAG Corpus</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Tertiary">indexed chunk stats</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/corpus"
-                               Variant="Variant.Text"
-                               Color="Color.Info"
-                               Size="Size.Small">
-                        View corpus
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.Storage"
+                            IconColor="Color.Info"
+                            Label="RAG Corpus"
+                            Caption="indexed chunk stats"
+                            ActionHref="/admin/corpus"
+                            ActionLabel="View corpus">
+                <Content>
+                    <MudText Typo="Typo.body1">RAG Corpus</MudText>
+                </Content>
+            </AppSummaryCard>
         </MudItem>
 
         <MudItem xs="12" sm="4">
-            <MudCard Elevation="2" Class="admin-summary-card">
-                <MudCardContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudIcon Icon="@Icons.Material.Filled.Factory"
-                                 Color="Color.Primary"
-                                 Size="Size.Large" />
-                        <MudStack Spacing="0">
-                            <MudText Typo="Typo.body1">Manufacturers</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Tertiary">catalog by brand</MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-                <MudCardActions>
-                    <MudButton Href="/admin/manufacturers"
-                               Variant="Variant.Text"
-                               Color="Color.Primary"
-                               Size="Size.Small">
-                        View manufacturers
-                    </MudButton>
-                </MudCardActions>
-            </MudCard>
+            <AppSummaryCard Icon="@Icons.Material.Filled.Factory"
+                            IconColor="Color.Primary"
+                            Label="Manufacturers"
+                            Caption="catalog by brand"
+                            ActionHref="/admin/manufacturers"
+                            ActionLabel="View manufacturers">
+                <Content>
+                    <MudText Typo="Typo.body1">Manufacturers</MudText>
+                </Content>
+            </AppSummaryCard>
         </MudItem>
     </MudGrid>
 </MudContainer>
