@@ -44,6 +44,15 @@ window.pinwiz.getSound = function () {
     try { return localStorage.getItem('pinwiz.sound') || 'muted'; } catch (_) { return 'muted'; }
 };
 
+// ── Timezone ──────────────────────────────────────────────────────────────
+// Returns the browser's IANA timezone ID (e.g. "America/New_York").
+// Called by AdminJobDetail via JS interop to display local timestamps.
+// Using a named function avoids the 'unsafe-eval' CSP dependency that
+// window.eval() would require.
+window.pinwiz.getTimezone = function () {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return ''; }
+};
+
 // ── Citation marker pulse ───────────────────────────────────────────────────
 // When the URL hash points at a citation card (#citation-N) or a marker
 // (#marker-N-x), add a one-shot pulse class to the target so the user sees where
