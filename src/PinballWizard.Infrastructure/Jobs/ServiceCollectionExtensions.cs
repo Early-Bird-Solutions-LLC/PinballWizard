@@ -8,24 +8,16 @@ using PinballWizard.Infrastructure.Persistence.Cosmos;
 
 namespace PinballWizard.Infrastructure.Jobs;
 
-/// <summary>
-/// DI registration for the ARM-backed jobs admin service.
-/// </summary>
+// DI registration for the ARM-backed jobs admin service.
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers <see cref="IJobAdminService"/> when both <c>Azure:SubscriptionId</c>
-    /// and <c>Azure:ResourceGroup</c> are configured, OR when <c>Cosmos:AccountResourceId</c>
-    /// is set (from which subscription + resource group are parsed).
-    ///
-    /// When neither source is available (local dev without live Azure), the method
-    /// returns <c>false</c> and no service is registered — the Web page degrades
-    /// visibly per Invariant #17.
-    ///
-    /// Auth: uses the shared <see cref="TokenCredential"/> singleton (DefaultAzureCredential)
-    /// already registered by <c>AddCosmosPersistence</c> — same as ArmCosmosProvisioner.
-    /// </summary>
-    /// <returns><c>true</c> if the service was registered; <c>false</c> if configuration is absent.</returns>
+    // Registers IJobAdminService.
+    // Auth: uses the shared TokenCredential singleton (DefaultAzureCredential) already registered
+    // by AddCosmosPersistence — same as ArmCosmosProvisioner.
+    // Sub + RG are parsed from Cosmos:AccountResourceId to avoid requiring two additional
+    // config values for information already present.
+    // Returns false and registers nothing when Cosmos:AccountResourceId is absent (local dev
+    // without live Azure) — Web page degrades visibly per Invariant #17.
     public static bool AddJobAdminService(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -48,8 +40,8 @@ public static class ServiceCollectionExtensions
 
             if (string.IsNullOrWhiteSpace(subscriptionId) || string.IsNullOrWhiteSpace(resourceGroupName))
             {
-                // This branch should not be hit at runtime — AddJobAdminService checks
-                // cosmos AccountResourceId before registering — but guard defensively.
+                // Belt-and-suspenders: Program.cs only calls AddJobAdminService when
+                // Cosmos:AccountResourceId is set, so this branch should never fire at runtime.
                 throw new InvalidOperationException(
                     "IJobAdminService was registered but could not resolve SubscriptionId / ResourceGroup " +
                     "from Cosmos:AccountResourceId. Ensure AddJobAdminService is only called when " +
