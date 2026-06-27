@@ -291,11 +291,44 @@ else {
 # auto-discovery reads from the linker job. The job name carries a uniqueString
 # suffix (pinwiz-job-linker-<5char>), so match by prefix rather than exact name.
 # Both jobs share the same cliImageTag, so the linker job is a sufficient probe.
+#
+# IMPORTANT: after a fresh bootstrap all jobs show the placeholder image.
+# In that case we fall back to querying ACR for the most recent SHA tag — the
+# placeholder must NEVER reach Bicep as $CliImageTag or ARM will attempt to pull
+# it from Docker Hub and fail with UNAUTHORIZED.
 if ([string]::IsNullOrEmpty($CliImageTag)) {
     $discovered = az containerapp job list -g $rg `
         --query "[?starts_with(name, 'pinwiz-job-linker')].template.containers[0].image | [0]" -o tsv 2>$null
-    $CliImageTag = if ($discovered) { $discovered } else { $placeholderImage }
-    Write-Host "  cliImageTag:        $CliImageTag (auto-discovered from running linker ACA Job)" -ForegroundColor DarkGray
+
+    if ($discovered -and $discovered -ne $placeholderImage) {
+        $CliImageTag = $discovered
+        Write-Host "  cliImageTag:        $CliImageTag (auto-discovered from running linker ACA Job)" -ForegroundColor DarkGray
+    }
+    else {
+        # Job is on the placeholder — query ACR for the latest real SHA tag.
+        Write-Host "  cliImageTag:        Linker job is on the placeholder; querying ACR for latest tag..." -ForegroundColor Yellow
+        $acrName = az acr list -g $rg --query '[0].name' -o tsv 2>$null
+        if ($acrName) {
+            $latestTag = az acr repository show-tags -n $acrName --repository 'pinwiz-cli' `
+                --orderby time_desc --top 5 -o tsv 2>$null |
+                Where-Object { $_ -ne 'latest' } |
+                Select-Object -First 1
+            if ($latestTag) {
+                $CliImageTag = "$acrName.azurecr.io/pinwiz-cli:$latestTag"
+                Write-Host "  cliImageTag:        $CliImageTag (ACR fallback — most recent SHA tag)" -ForegroundColor Yellow
+            }
+            else {
+                Write-Error "Could not resolve CLI image from ACR '$acrName'. Pass -CliImageTag explicitly:"
+                Write-Error "  Deploy-SharedResources.ps1 -Environment $Environment -CliImageTag '<registry>/<repo>:<sha>'"
+                throw 'Cannot determine cliImageTag.'
+            }
+        }
+        else {
+            Write-Error "Could not find an ACR in resource group '$rg'. Pass -CliImageTag explicitly:"
+            Write-Error "  Deploy-SharedResources.ps1 -Environment $Environment -CliImageTag '<registry>/<repo>:<sha>'"
+            throw 'Cannot determine cliImageTag.'
+        }
+    }
 }
 else {
     Write-Host "  cliImageTag:        $CliImageTag (caller-supplied)" -ForegroundColor DarkGray
