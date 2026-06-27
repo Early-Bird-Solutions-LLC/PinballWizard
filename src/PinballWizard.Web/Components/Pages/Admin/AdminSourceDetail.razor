@@ -172,6 +172,7 @@
             }
             else
             {
+                @* AppDataGrid not used: ChildRowContent requires typed RenderFragment<CellContext<T>> which cannot splat through AdditionalAttributes — ADR-0046 documented exception *@
                 <MudDataGrid T="ScrapeRunRecord" Items="@_runs"
                              Dense="true" Hover="true" Striped="true" Elevation="2"
                              data-testid="run-history-table">
