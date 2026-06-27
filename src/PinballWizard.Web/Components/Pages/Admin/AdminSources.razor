@@ -65,7 +65,11 @@
                     </MudLink>
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
+            <TemplateColumn Title="Source URL">
+                <CellTemplate>
+                    <MudLink Href="@context.Item.SourceUrl" Target="_blank">@context.Item.SourceUrl</MudLink>
+                </CellTemplate>
+            </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
                     <MudChip T="string"
