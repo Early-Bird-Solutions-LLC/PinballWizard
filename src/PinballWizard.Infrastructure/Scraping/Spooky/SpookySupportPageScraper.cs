@@ -49,7 +49,6 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
     /// <inheritdoc />
     public string Name => "Spooky Pinball Support";
 
-    /// <inheritdoc />
     public string Manufacturer => "Spooky";
 
     /// <inheritdoc />

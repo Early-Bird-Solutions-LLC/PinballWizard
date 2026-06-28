@@ -51,7 +51,6 @@ public sealed class JjpSupportDocScraper : PoliteScraperBase, ISourceScraper
     /// <inheritdoc />
     public string Name => "JJP Support";
 
-    /// <inheritdoc />
     public string Manufacturer => "Jersey Jack";
 
     /// <inheritdoc />

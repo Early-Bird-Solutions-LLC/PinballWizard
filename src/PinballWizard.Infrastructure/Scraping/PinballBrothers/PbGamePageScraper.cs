@@ -32,7 +32,6 @@ public sealed class PbGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Pinball Brothers";
-    /// <inheritdoc />
     public string Manufacturer => "Pinball Brothers";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.PinballBrothers;

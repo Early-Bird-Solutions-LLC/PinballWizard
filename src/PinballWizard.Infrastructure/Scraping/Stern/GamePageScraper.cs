@@ -31,7 +31,6 @@ public sealed class GamePageScraper : PolitePlaywrightScraperBase, ISourceScrape
 
     /// <inheritdoc />
     public string Name => "Game Pages";
-    /// <inheritdoc />
     public string Manufacturer => "Stern";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Stern;

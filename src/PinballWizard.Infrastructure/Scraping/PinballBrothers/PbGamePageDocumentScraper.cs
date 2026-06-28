@@ -58,7 +58,6 @@ public sealed class PbGamePageDocumentScraper : PoliteScraperBase, ISourceScrape
     /// <inheritdoc />
     public string Name => "Pinball Brothers Documents";
 
-    /// <inheritdoc />
     public string Manufacturer => "Pinball Brothers";
 
     /// <inheritdoc />
