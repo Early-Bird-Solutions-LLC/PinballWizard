@@ -1,0 +1,13 @@
+/* About page scoped styles. */
+
+.about-partners-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+@media (max-width: 640px) {
+    .about-partners-grid {
+        grid-template-columns: 1fr;
+    }
+}

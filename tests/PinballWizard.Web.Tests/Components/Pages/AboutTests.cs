@@ -176,8 +176,9 @@ public sealed class AboutTests : AsyncBunitContext
     [Fact]
     public void About_DataPartners_ContainsLinksToPartnerSites()
     {
-        // Every partner must have a clickable outbound link — ADR-0027
-        // community-resource posture (route outward, never capture).
+        // Each partner card is a whole-card <a> link (ADR-0027: route outward).
+        // PinballPrices.com is credited as attribution text inside the
+        // Silverball Labs card description (not a separate standalone link).
         var cut = Render<About>();
 
         var partnerList = cut.Find("[data-testid='about-data-partners-list']");
@@ -189,6 +190,20 @@ public sealed class AboutTests : AsyncBunitContext
         Assert.Contains(hrefs, h => h.Contains("opdb.org", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(hrefs, h => h.Contains("kineticist.com", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(hrefs, h => h.Contains("silverballlabs.com", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(hrefs, h => h.Contains("pinballprices.com", StringComparison.OrdinalIgnoreCase));
+
+        // PinballPrices.com credited as text in the Silverball Labs card description.
+        var text = partnerList.TextContent;
+        Assert.Contains("PinballPrices", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void About_DataPartners_RendersThreeCards()
+    {
+        // The partner section renders exactly 3 DataPartnerCard components
+        // (OPDB / Kineticist / Silverball Labs) — contract test for the grid count.
+        var cut = Render<About>();
+
+        var cards = cut.FindAll("[data-testid^='data-partner-card-']").ToList();
+        Assert.Equal(3, cards.Count);
     }
 }

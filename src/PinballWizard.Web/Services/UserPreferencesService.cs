@@ -18,6 +18,7 @@ public static class ThemeNames
     public const string DaytimeRoute = "daytime-route";
     public const string DmdClassic = "dmd-classic";
     public const string ModernLcd = "modern-lcd";
+    public const string Paper = "paper";
 }
 
 public static class PreferenceKeys

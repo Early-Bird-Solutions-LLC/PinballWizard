@@ -31,6 +31,7 @@
 @attribute [AllowAnonymous]
 
 @using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Shared
 
 <PageTitle>PinballWizard — About</PageTitle>
 
@@ -187,54 +188,34 @@
     </MudText>
 
     @* ── Data partners ────────────────────────────────────────────────────── *@
-    <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-2">
+    <MudText id="data-partners" Typo="Typo.h5" Class="about-section-heading mb-2 mt-2">
         Data Partners
     </MudText>
 
-    <MudText Typo="Typo.body1" Class="mb-2">
+    <MudText Typo="Typo.body1" Class="mb-4">
         PinballWizard is built on direct partnerships with community operators. Every integration
         started with a direct ask to the person who built the resource — and every answer credits
         its source:
     </MudText>
 
-    <AppBulletList Class="about-data-partners-list mb-2" data-testid="about-data-partners-list">
-        <AppBulletItem>
-            <MudLink Href="https://opdb.org"
-                     Target="_blank"
-                     rel="noopener noreferrer"
-                     aria-label="OPDB — Open Pinball Database (opens in new tab)">
-                OPDB — Open Pinball Database
-            </MudLink>
-            — canonical machine catalog; the join key every other integration pivots on
-        </AppBulletItem>
-        <AppBulletItem>
-            <MudLink Href="https://kineticist.com"
-                     Target="_blank"
-                     rel="noopener noreferrer"
-                     aria-label="Kineticist (opens in new tab)">
-                Kineticist
-            </MudLink>
-            — gameplay-rules depth and catalog enrichment; partnership with founder Colin Alsheimer
-            (API access + interim rules-guide permission, June 2026)
-        </AppBulletItem>
-        <AppBulletItem>
-            <MudLink Href="https://silverballlabs.com"
-                     Target="_blank"
-                     rel="noopener noreferrer"
-                     aria-label="Silverball Labs (opens in new tab)">
-                Silverball Labs
-            </MudLink>
-            — live market pricing; partnership with co-founder Will Oetting (May 2026);
-            origin sales dataset from
-            <MudLink Href="https://pinballprices.com"
-                     Target="_blank"
-                     rel="noopener noreferrer"
-                     aria-label="PinballPrices.com (opens in new tab)">
-                PinballPrices.com
-            </MudLink>
-            (Ted "Doc" Finlay)
-        </AppBulletItem>
-    </AppBulletList>
+    @* Three partner cards — same component as Landing, roomier (Compact=false). *@
+    <div class="about-partners-grid mb-2" data-testid="about-data-partners-list">
+        <DataPartnerCard Role="Catalog"
+                         Name="OPDB"
+                         Href="https://opdb.org"
+                         Description="Open Pinball Database — the canonical machine catalog every integration pivots on."
+                         StatusText="Canonical · active" />
+        <DataPartnerCard Role="Rules"
+                         Name="Kineticist"
+                         Href="https://kineticist.com"
+                         Description="Gameplay-rules depth and catalog enrichment via API access and rules-guide permission (Colin Alsheimer, Jun 2026)."
+                         StatusText="API + rules · Jun 2026" />
+        <DataPartnerCard Role="Pricing"
+                         Name="Silverball Labs"
+                         Href="https://silverballlabs.com"
+                         Description="Live market pricing from Will Oetting (May 2026), drawn from the origin sales dataset at PinballPrices.com (Ted &#x22;Doc&#x22; Finlay)."
+                         StatusText="Live pricing · May 2026" />
+    </div>
 
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
         Attribution is required and present on every answer that draws from a partner's data.
