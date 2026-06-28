@@ -31,6 +31,13 @@
   --pw-border-glow-magenta: #e13bd999;
   --pw-border-glow-red: #ff3b3099;
 
+  /* Additive tokens — tertiary text, faint borders, secondary surface, grounded panel */
+  --pw-text-tertiary:  #c9c4bb;
+  --pw-text-faint:     #6b6660;
+  --pw-border-faint:   #232128;
+  --pw-bg-surface-2:   #131216;
+  --pw-panel-grounded: #11261a;
+
   /* Type — display reserved for announcements; Inter body; mono is the one DMD nod */
   --pw-font-display: "Barlow Condensed", Roboto, sans-serif;
   --pw-font-body: Inter, Roboto, sans-serif;
@@ -62,4 +69,66 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--pw-text-secondary);
+}
+
+/* ── Paper sibling theme ──────────────────────────────────────────────── */
+/* Editorial light: warm cream base, amber accent, citation green, warm-brick
+   refusal. CSS-variable-only — delight surfaces pick up --pw-* tokens
+   automatically. Spec authority: design_handoff_pinwiz_themes/README.md. */
+html.theme-paper {
+  --pw-bg-base:           #F4F1EA;
+  --pw-bg-surface:        #FAF8F2;
+  --pw-bg-surface-hi:     #EDE8DC;
+  --pw-text-primary:      #0F1A2C;
+  --pw-text-secondary:    #4A5568;
+  --pw-accent-primary:    #B8763E;
+  --pw-accent-grounded:   #1F6F54;
+  --pw-accent-refusal:    #A23B2E;
+  --pw-accent-mode:       #8C5829;
+  --pw-border-quiet:      #D8D2C2;
+  --pw-border-glow-amber:   #B8763E40;
+  --pw-border-glow-green:   #1F6F5440;
+  --pw-border-glow-magenta: #8C582940;
+  --pw-border-glow-red:     #A23B2E40;
+  --pw-text-tertiary:     #3A4252;
+  --pw-text-faint:        #8A8578;
+  --pw-border-faint:      #ECE6DA;
+  --pw-bg-surface-2:      #EFEADE;
+  --pw-panel-grounded:    #F1F6F2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-paper { transition: none; }
+}
+
+/* ── Additive-token overrides for pre-Paper sibling themes ──────────── */
+/* Paper already includes these inline above; these blocks patch the four
+   dark themes that existed before the additive tokens were introduced. */
+html.theme-daytime-route {
+  --pw-text-tertiary:  #3a3228;
+  --pw-text-faint:     #8a7e68;
+  --pw-border-faint:   #ece2cf;
+  --pw-bg-surface-2:   #ebe2cf;
+  --pw-panel-grounded: #e4efe6;
+}
+html.theme-backbox {
+  --pw-text-tertiary:  #cfd6e6;
+  --pw-text-faint:     #6a7596;
+  --pw-border-faint:   #1a2238;
+  --pw-bg-surface-2:   #0f1730;
+  --pw-panel-grounded: #0c2420;
+}
+html.theme-cabinet {
+  --pw-text-tertiary:  #d8cabb;
+  --pw-text-faint:     #9a8a72;
+  --pw-border-faint:   #33281c;
+  --pw-bg-surface-2:   #241a12;
+  --pw-panel-grounded: #1a2a1c;
+}
+html.theme-dmd-classic {
+  --pw-text-tertiary:  #f4d090;
+  --pw-text-faint:     #a07050;
+  --pw-border-faint:   #1a0f00;
+  --pw-bg-surface-2:   #0a0500;
+  --pw-panel-grounded: #0a1a08;
 }
