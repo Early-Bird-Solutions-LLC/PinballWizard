@@ -46,18 +46,28 @@
         Architecture
     </MudText>
 
-    <MudText Typo="Typo.body1" Class="mb-4">
+    <MudText Typo="Typo.body1" Class="mb-3">
         Built on Clean Architecture with .NET 10 and .NET Aspire, the system separates
         domain logic (Core), orchestration (Application), and infrastructure concerns
-        (scrapers, Cosmos DB, Azure AI Search). Azure AI Foundry provides the orchestration
-        layer for multi-agent reasoning, with OpenTelemetry wiring structured traces and
-        metrics end-to-end from the browser to the Azure Monitor workspace.
+        (scrapers, Cosmos DB, Azure AI Search) across four layers. Polite scrapers harvest
+        first-party manufacturer documents into Cosmos DB; a Change-Feed-driven RAG Ingestion
+        Worker chunks and embeds them into an Azure AI Search vector index. Azure AI Foundry
+        orchestrates multi-agent reasoning (Wizard, Repair, Grounding, and Search agents) over
+        those tools — every answer carries a clickable citation that deep-links to the source
+        document in the browseable corpus.
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-4">
+        OpenTelemetry wires structured traces, metrics, and logs end-to-end from the browser
+        to the Azure Monitor workspace. An admin panel at <code>/admin</code> surfaces
+        run-history, corpus statistics, ingestion monitoring, and per-manufacturer source detail
+        — the same observability posture a production engagement would demand.
     </MudText>
 
     @* ── Architecture diagram ─────────────────────────────────────────────── *@
     <div class="about-diagram mb-6" data-testid="about-diagram">
         <MudImage Src="img/about-architecture.svg"
-                  Alt="Architecture diagram: Public Web (Blazor Web App) connects over HTTPS server-sent events to the API layer, which calls the Application layer (IAiRouter, Azure AI Foundry), which calls Infrastructure (10 scrapers, Cosmos DB, AI Search), backed by Azure services."
+                  Alt="Architecture diagram showing four layers: Public Interface (Blazor Web App and Admin Panel) connects over HTTPS and SSE to the API and Application Layer (ASP.NET Core streaming endpoint and Azure AI Foundry with Microsoft Agent Framework). The AI Foundry calls tools against the Data Layer (Cosmos DB Serverless, AI Search Basic, Azure OpenAI). The offline Data Ingestion layer (10 polite scrapers, OPDB sync, and RAG Ingestion Worker) feeds Cosmos via scrapers and pumps AI Search via Change Feed."
                   Fluid="true"
                   data-testid="about-diagram-svg" />
     </div>
@@ -69,31 +79,34 @@
 
     <AppBulletList Class="about-tech-list mb-6" data-testid="about-tech-list">
         <AppBulletItem>
-            <MudText Typo="Typo.body2">.NET 10 / C# 14</MudText>
+            <MudText Typo="Typo.body2">.NET 10 / C# 14 — Clean Architecture (Core · Application · Infrastructure · Presentation)</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">Blazor Web App (auto-render mode)</MudText>
+            <MudText Typo="Typo.body2">Blazor Web App + MudBlazor — public pages, document corpus browser, admin panel</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">.NET Aspire 13 — local orchestration + service defaults</MudText>
+            <MudText Typo="Typo.body2">.NET Aspire 13 — local orchestration with Cosmos + Azurite emulators</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">Azure AI Foundry (Microsoft Agent Framework, multi-agent orchestration)</MudText>
+            <MudText Typo="Typo.body2">Azure AI Foundry + Microsoft Agent Framework — multi-agent orchestration (Wizard · Repair · Grounding · Search)</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">Azure Cosmos DB Serverless — machine catalog + session state</MudText>
+            <MudText Typo="Typo.body2">Azure OpenAI — gpt-4o reasoning + text-embedding-3-small for RAG</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">Azure AI Search Basic — RAG retrieval over indexed manuals and bulletins</MudText>
+            <MudText Typo="Typo.body2">Azure Cosmos DB Serverless — machines · documents · catalog stats (Change-Feed-driven)</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">MudBlazor — UI component library (strict mode)</MudText>
+            <MudText Typo="Typo.body2">Azure AI Search Basic — vector + BM25 retrieval over the indexed document corpus</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">OpenTelemetry — structured traces, metrics, and logs</MudText>
+            <MudText Typo="Typo.body2">Azure Container Apps — Web, API, and RAG Ingestion Worker</MudText>
         </AppBulletItem>
         <AppBulletItem>
-            <MudText Typo="Typo.body2">Server-Sent Events (text/event-stream) — streaming answer delivery</MudText>
+            <MudText Typo="Typo.body2">OpenTelemetry — structured traces, metrics, and logs to Azure Monitor</MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">Server-Sent Events (text/event-stream) — streaming answer delivery with citation deep-links</MudText>
         </AppBulletItem>
     </AppBulletList>
 
@@ -149,7 +162,12 @@
 
     <MudText Typo="Typo.body1" Class="mb-2">
         PinballWizard has first-party data (manuals, service bulletins, game pages, machine specs)
-        on 8 active manufacturers and OPDB:
+        on 8 active manufacturers and OPDB. The full document corpus is browseable at
+        <MudLink Href="/documents" aria-label="Browse the document corpus">
+            /documents
+        </MudLink>
+        — filter by manufacturer, game, or document type, and follow each citation back to
+        its source file:
     </MudText>
 
     <AppBulletList Class="about-manufacturer-list mb-2" data-testid="about-manufacturer-list">
