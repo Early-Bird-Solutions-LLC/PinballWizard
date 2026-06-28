@@ -1,8 +1,8 @@
 name: Claude Code
 
 # Triggers Claude Code on @claude mentions in issue comments, PR review
-# comments, PR reviews, and new issues. Authenticates with the
-# ANTHROPIC_API_KEY repository secret.
+# comments, PR reviews, and new issues. Authenticates via GitHub OIDC →
+# Anthropic Workload Identity Federation (no static API key stored).
 
 on:
   issue_comment:
@@ -40,7 +40,40 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Fetch GitHub OIDC token
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken('https://api.anthropic.com');
+            core.setSecret(token);
+            core.exportVariable('GHA_OIDC_TOKEN', token);
+
+      - name: Exchange for Anthropic access token
+        env:
+          FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg grant_type "urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --arg assertion "$GHA_OIDC_TOKEN" \
+            --arg federation_rule_id "$FEDERATION_RULE_ID" \
+            --arg organization_id "$ORGANIZATION_ID" \
+            --arg service_account_id "$SERVICE_ACCOUNT_ID" \
+            --arg workspace_id "$WORKSPACE_ID" \
+            '$ARGS.named')
+          ACCESS_TOKEN=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD" | jq -r .access_token)
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "::error::Anthropic WIF token exchange failed"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "ANTHROPIC_ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ env.ANTHROPIC_ACCESS_TOKEN }}
