@@ -158,17 +158,43 @@
             <div class="citation-flipper-spacer" />
 
             @*
-                Right flipper — VIEW THE ORIGINAL.
-                Native <a> preserves rel="noopener noreferrer" (MUD0002 constraint).
-                Keeps data-testid="citation-source-link" so existing E2E/integration
-                selectors that look for the source link continue to work unchanged.
+                Right flipper — primary CTA.
+                When Citation.DocumentChunkId is non-null (corpus chunk), the primary
+                link navigates to the internal /documents/{id} detail page (Blazor
+                navigation — no target/_blank/rel). A compact secondary link below it
+                opens the raw file in a new tab.
+                When DocumentChunkId is null (machine record / curated link), the
+                original behaviour is preserved: a single external "VIEW THE ORIGINAL"
+                link opening Citation.SourceUrl in a new tab.
+                Native <a> preserves rel="noopener noreferrer" on external links
+                (MUD0002 constraint). data-testid="citation-source-link" is kept on
+                the primary link in both branches so E2E/integration selectors continue
+                to work unchanged.
             *@
-            <a href="@Citation.SourceUrl"
-               target="_blank"
-               rel="noopener noreferrer"
-               class="flipper flipper--original"
-               data-testid="citation-source-link"
-               aria-label="Open source: @Citation.Title">VIEW THE ORIGINAL &#x25B6;</a>
+            @if (Citation.DocumentChunkId is not null)
+            {
+                <div class="citation-document-link-group">
+                    <a href="/documents/@Citation.DocumentChunkId"
+                       class="flipper flipper--original"
+                       data-testid="citation-source-link"
+                       aria-label="View document: @Citation.Title">VIEW DOCUMENT &#x25B6;</a>
+                    <a href="@Citation.SourceUrl"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="citation-file-link"
+                       data-testid="citation-file-link"
+                       aria-label="Open raw file: @Citation.Title">open file &#x2197;</a>
+                </div>
+            }
+            else
+            {
+                <a href="@Citation.SourceUrl"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="flipper flipper--original"
+                   data-testid="citation-source-link"
+                   aria-label="Open source: @Citation.Title">VIEW THE ORIGINAL &#x25B6;</a>
+            }
 
         </div>
 

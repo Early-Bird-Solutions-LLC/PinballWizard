@@ -35,10 +35,12 @@ public sealed class CitationCardTests
         string? sectionHeading = null,
         CitationSourceType sourceType = CitationSourceType.CorpusChunk,
         DateTimeOffset? lastScrapedUtc = null,
-        double? relevanceScore = null) =>
+        double? relevanceScore = null,
+        string? documentChunkId = null) =>
         new(title, sourceUrl, PageStart: pageStart, PageEnd: pageEnd,
             SectionHeading: sectionHeading, SourceType: sourceType,
-            LastScrapedUtc: lastScrapedUtc, RelevanceScore: relevanceScore);
+            LastScrapedUtc: lastScrapedUtc, RelevanceScore: relevanceScore,
+            DocumentChunkId: documentChunkId);
 
     private static BunitContext BuildCtx()
     {
@@ -342,5 +344,75 @@ public sealed class CitationCardTests
 
         var scoreEls = cut.FindAll("[data-testid='citation-relevance-score']");
         Assert.Empty(scoreEls);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // DocumentChunkId deep-links: corpus-chunk citations navigate internally
+    // to /documents/{id}; non-corpus citations keep the original external link.
+    //
+    // When DocumentChunkId is set:
+    //   - Primary link (data-testid="citation-source-link") → /documents/{id},
+    //     no target/_blank, no rel (internal Blazor navigation).
+    //   - Secondary link (data-testid="citation-file-link") → SourceUrl, new tab.
+    // When DocumentChunkId is null:
+    //   - Single primary link → SourceUrl, target="_blank", rel=noopener noreferrer.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CorpusChunkCitation_PrimaryLink_GoesToDocumentPage()
+    {
+        const string chunkId = "doc_abc123def456";
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation(documentChunkId: chunkId);
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var link = cut.Find("[data-testid='citation-source-link']");
+        Assert.Equal($"/documents/{chunkId}", link.GetAttribute("href"));
+        // Internal Blazor navigation — must not open a new tab.
+        Assert.Null(link.GetAttribute("target"));
+        Assert.Null(link.GetAttribute("rel"));
+    }
+
+    [Fact]
+    public async Task CorpusChunkCitation_SecondaryFileLink_GoesToSourceUrl()
+    {
+        const string sourceUrl = "https://sternpinball.com/manuals/test.pdf";
+        await using var ctx = BuildCtx();
+        var citation = BuildCitation(
+            sourceUrl: sourceUrl,
+            documentChunkId: "doc_abc123def456");
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var fileLink = cut.Find("[data-testid='citation-file-link']");
+        Assert.Equal(sourceUrl, fileLink.GetAttribute("href"));
+        // External link — must carry security attributes.
+        Assert.Equal("_blank", fileLink.GetAttribute("target"));
+        var rel = fileLink.GetAttribute("rel") ?? string.Empty;
+        Assert.Contains("noopener", rel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("noreferrer", rel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NonCorpusCitation_PrimaryLink_GoesToSourceUrl()
+    {
+        const string sourceUrl = "https://sternpinball.com/manuals/test.pdf";
+        await using var ctx = BuildCtx();
+        // documentChunkId defaults to null → non-corpus path.
+        var citation = BuildCitation(sourceUrl: sourceUrl);
+
+        var cut = ctx.Render<CitationCard>(p => p
+            .Add(c => c.Citation, citation));
+
+        var link = cut.Find("[data-testid='citation-source-link']");
+        Assert.Equal(sourceUrl, link.GetAttribute("href"));
+        // Non-corpus primary link is external — security attributes required.
+        Assert.Equal("_blank", link.GetAttribute("target"));
+        var rel = link.GetAttribute("rel") ?? string.Empty;
+        Assert.Contains("noopener", rel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("noreferrer", rel, StringComparison.OrdinalIgnoreCase);
     }
 }
