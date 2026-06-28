@@ -151,6 +151,38 @@
     }
 }
 
+/* ── Document deep-link group — corpus-chunk citation right-flipper area ─── */
+/*
+ * When Citation.DocumentChunkId is set, the right-flipper area renders two
+ * elements stacked vertically: the primary "VIEW DOCUMENT" flipper button, and
+ * below it a compact secondary "open file ↗" link to the raw source URL.
+ * The group is a flex column so the two elements sit directly under each other,
+ * right-aligned with the flipper.
+ */
+
+.citation-document-link-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+/* Secondary raw-file link — compact, muted, right-aligned. */
+.citation-file-link {
+    font-size: 0.7rem;
+    color: var(--pw-text-secondary, #888);
+    text-decoration: none;
+    opacity: 0.75;
+    transition: opacity var(--pw-motion-fast, 150ms) ease;
+    white-space: nowrap;
+}
+
+.citation-file-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+    color: var(--pw-text-primary, #e8e5ed);
+}
+
 /* ── Citation card pulse — applied by JS on hash navigation ─────────────── */
 /* Uses :global() because JS adds the class at runtime; scoped CSS
    would not match a class injected outside of Blazor's render cycle. */
