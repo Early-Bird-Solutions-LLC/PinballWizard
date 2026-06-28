@@ -311,6 +311,7 @@ internal sealed class CosmosRawDocumentRepository
     public async IAsyncEnumerable<DocumentListItem> StreamDocumentsAsync(
         string? game,
         string? manufacturer,
+        string? type,
         bool includeAdminFields,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -323,12 +324,14 @@ internal sealed class CosmosRawDocumentRepository
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
             "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
             "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
+            "  AND (@type = '' OR LOWER(c.classification.document_type) = LOWER(@type)) " +
             "ORDER BY c.timeline.first_discovered_at DESC";
 
         var parameters = new Dictionary<string, object>
         {
             ["game"] = game ?? "",
             ["manufacturer"] = manufacturer ?? "",
+            ["type"] = type ?? "",
         };
 
         await foreach (var raw in StreamCrossPartitionAsync(query, parameters, cancellationToken).ConfigureAwait(false))

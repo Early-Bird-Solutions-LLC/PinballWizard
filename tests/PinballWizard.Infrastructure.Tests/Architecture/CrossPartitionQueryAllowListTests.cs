@@ -67,8 +67,9 @@ public sealed class CrossPartitionQueryAllowListTests
             "StreamCrossPartitionAsync in StreamByStatusAsync (linker IN-clause batch), " +
             "StreamAllAsync (admin full-scan), StreamBySourcePatternAsync (linker " +
             "CONTAINS pattern match), StreamByRunIdAsync (per-run drill-down, back-office admin path), " +
-            "and StreamDocumentsAsync (/documents browse page; game CONTAINS + manufacturer equality filter; " +
-            "ORDER BY timeline.first_discovered_at DESC; index-backed sort; p95 < 2s at ≤10K docs).",
+            "and StreamDocumentsAsync (/documents browse page; game CONTAINS + manufacturer equality + " +
+            "document_type equality filters; ORDER BY timeline.first_discovered_at DESC; " +
+            "index-backed sort; p95 < 2s at ≤10K docs).",
 
         // StreamCrossPartitionAsync — GetAllDocumentsAsync reads ~6 curated docs
         // for the landing page strip. Bounded to ~6 entries; ADR-0025 § 6 notes

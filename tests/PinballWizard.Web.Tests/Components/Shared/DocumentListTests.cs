@@ -56,7 +56,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     public async Task ShowsDocumentsFromRepository()
     {
         var item = MakeItem();
-        _repo.StreamDocumentsAsync(null, null, false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([item]));
 
         var nav = Services.GetRequiredService<BunitNavigationManager>();
@@ -71,7 +71,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     [Fact]
     public async Task EmptyCorpus_ShowsEmptyState()
     {
-        _repo.StreamDocumentsAsync(null, null, false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([]));
 
         var cut = RenderWithPopover<Documents>();
@@ -83,7 +83,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     [Fact]
     public async Task WithFilters_NoResults_ShowsFilteredEmptyState()
     {
-        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([]));
 
         var nav = Services.GetRequiredService<BunitNavigationManager>();
@@ -98,7 +98,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     [Fact]
     public async Task GameQueryParam_InitializesGameFilter()
     {
-        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([]));
 
         // Render DocumentList directly with Game param — tests the behavioral
@@ -116,7 +116,7 @@ public sealed class DocumentListTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         // Verify the repository was called with the game filter forwarded — not just displayed.
-        _repo.Received(1).StreamDocumentsAsync("Godzilla", Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
+        _repo.Received(1).StreamDocumentsAsync("Godzilla", Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
 
         // MudTextField splats UserAttributes to the inner <input> element,
         // so data-testid lands on the input directly — not on a wrapper div.
@@ -127,7 +127,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     [Fact]
     public async Task AdminColumns_HiddenOnPublicPage()
     {
-        _repo.StreamDocumentsAsync(null, null, false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([MakeItem()]));
 
         var cut = RenderWithPopover<Documents>();
@@ -141,7 +141,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     public async Task AdminPage_ShowsAdminColumns()
     {
         var item = MakeItem() with { LinkStatus = "linked" };
-        _repo.StreamDocumentsAsync(null, null, true, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(null, null, null, true, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([item]));
 
         var cut = RenderWithPopover<PinballWizard.Web.Components.Pages.Admin.AdminDocuments>();
@@ -153,7 +153,7 @@ public sealed class DocumentListTests : AsyncBunitContext
     [Fact]
     public async Task RepositoryError_ShowsErrorAlert()
     {
-        _repo.StreamDocumentsAsync(null, null, false, Arg.Any<CancellationToken>())
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
              .Returns<IAsyncEnumerable<DocumentListItem>>(_ =>
                  throw new InvalidOperationException("Cosmos down"));
 
@@ -161,5 +161,58 @@ public sealed class DocumentListTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         cut.Find("[data-testid='doc-list-load-error']");
+    }
+
+    [Fact]
+    public async Task TypeQueryParam_PassesTypeFilterToRepository()
+    {
+        // Arrange: two items — one Manual, one ServiceBulletin.
+        // With ?type=Manual the repository is called with type="Manual".
+        var manualItem = MakeItem("doc_man", "Godzilla", "Stern");
+        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), "Manual", false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([manualItem]));
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo("/documents?type=Manual");
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Repository received the type arg forwarded from the query param.
+        _repo.Received(1).StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), "Manual", false, Arg.Any<CancellationToken>());
+
+        // The matching document is rendered.
+        Assert.Contains("Godzilla Manual", cut.Markup);
+    }
+
+    [Fact]
+    public async Task TypeFilterChipStrip_RendersUserFacingDocumentTypes()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([]));
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Strip renders user-facing types and excludes internal artefacts.
+        var chipSetMarkup = cut.Find("[data-testid='doc-list-type-filter']").InnerHtml;
+        Assert.Contains("Manual", chipSetMarkup);
+        Assert.Contains("Rulesheet", chipSetMarkup);
+        Assert.DoesNotContain("MetadataCard", chipSetMarkup);
+    }
+
+    [Fact]
+    public async Task TypeFilter_WithNoResults_ShowsFilteredEmptyState()
+    {
+        _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([]));
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo("/documents?type=Schematic");
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='doc-list-empty-filtered']");
     }
 }

@@ -10,9 +10,10 @@
 
 <AppPageHeader Title="Documents"
                Subtitle="Full corpus with triage status and failure reasons." />
-<DocumentList IsAdmin="true" Game="@Game" Manufacturer="@Manufacturer" />
+<DocumentList IsAdmin="true" Game="@Game" Manufacturer="@Manufacturer" Type="@Type" />
 
 @code {
     [SupplyParameterFromQuery(Name = "game")] public string? Game { get; set; }
     [SupplyParameterFromQuery(Name = "manufacturer")] public string? Manufacturer { get; set; }
+    [SupplyParameterFromQuery(Name = "type")] public string? Type { get; set; }
 }
