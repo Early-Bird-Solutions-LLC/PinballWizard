@@ -46,9 +46,28 @@ if ($sblKey) {
 # ── Azure AI Foundry + AI Search (live, rg-pinwiz-shared-dev / buutj) ─────
 # Absent = Foundry/Router not registered; Wizard returns 503; corpus stats
 # page shows "unavailable". Set both to get a fully functional Wizard.
+# Values from Deploy-SharedResources.ps1 outputs (sub b1f33f17, suffix buutj).
 $env:AiFoundry__ProjectEndpoint        = "https://pinwiz-foundry-dev-buutj.services.ai.azure.com/api/projects/pinwiz-wizard"
 $env:AiFoundry__EmbeddingDeploymentName = "text-embedding-3-large"
 $env:AiSearch__Endpoint                = "https://pinwiz-search-dev-buutj.search.windows.net"
 $env:AiSearch__IndexName               = "pinwiz-rag-v1"
 
-aspire run --apphost src\PinballWizard.AppHost
+# ── Launch + browser auto-open ─────────────────────────────────────────────
+# Pipe aspire run output through so we can detect the Aspire dashboard URL
+# (printed once on startup) and open it automatically. The pipe preserves all
+# output in the terminal; Start-Process fires exactly once on the first match.
+$browserOpened = $false
+aspire run --apphost src\PinballWizard.AppHost | ForEach-Object {
+    Write-Host $_
+    if (-not $browserOpened -and
+        ($_ -match 'dashboard' -or $_ -match 'login') -and
+        $_ -match '(https?://localhost:\d+\S*)') {
+        $browserOpened = $true
+        $url = $Matches[1].TrimEnd('.')
+        Write-Host "[start-apphost] Opening browser → $url" -ForegroundColor Cyan
+        Start-Process $url
+    }
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[start-apphost] aspire run exited with code $LASTEXITCODE"
+}
