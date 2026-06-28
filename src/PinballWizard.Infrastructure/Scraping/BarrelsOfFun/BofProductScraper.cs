@@ -15,6 +15,7 @@ public sealed class BofProductScraper : PoliteScraperBase, ISourceScraper
     private readonly BarrelsOfFunOptions _options;
 
     public string Name => "Barrels of Fun";
+    public string Manufacturer => "Barrels of Fun";
     public string SourceId => IngestionSourceIds.BarrelsOfFun;
 
     public BofProductScraper(

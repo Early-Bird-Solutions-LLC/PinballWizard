@@ -52,6 +52,9 @@ public sealed class JjpSupportDocScraper : PoliteScraperBase, ISourceScraper
     public string Name => "JJP Support";
 
     /// <inheritdoc />
+    public string Manufacturer => "Jersey Jack";
+
+    /// <inheritdoc />
     public string SourceId => IngestionSourceIds.JjpSupportDocs;
 
     /// <summary>Initializes a new <see cref="JjpSupportDocScraper"/>.</summary>

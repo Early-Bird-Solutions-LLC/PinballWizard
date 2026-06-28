@@ -50,6 +50,9 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
     public string Name => "Spooky Pinball Support";
 
     /// <inheritdoc />
+    public string Manufacturer => "Spooky";
+
+    /// <inheritdoc />
     public string SourceId => IngestionSourceIds.SpookySupport;
 
     /// <summary>Initializes a new <see cref="SpookySupportPageScraper"/>.</summary>

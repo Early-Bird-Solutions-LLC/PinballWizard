@@ -36,6 +36,8 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
     /// <inheritdoc />
     public string Name => "Spooky Pinball";
     /// <inheritdoc />
+    public string Manufacturer => "Spooky";
+    /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Spooky;
 
     /// <summary>Initializes a new <see cref="SpookyGamePageScraper"/>.</summary>

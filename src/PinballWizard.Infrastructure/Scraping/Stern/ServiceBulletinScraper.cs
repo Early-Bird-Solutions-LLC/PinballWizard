@@ -31,6 +31,8 @@ public sealed class ServiceBulletinScraper : PolitePlaywrightScraperBase, ISourc
     /// <inheritdoc />
     public string Name => "Service Bulletins";
     /// <inheritdoc />
+    public string Manufacturer => "Stern";
+    /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Stern;
 
     /// <summary>Initializes a new <see cref="ServiceBulletinScraper"/>.</summary>
