@@ -53,9 +53,9 @@
 
     @if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="overrides-load-failed">
+        <AppErrorAlert data-testid="overrides-load-failed">
             Link overrides could not be loaded. Please refresh the page or check Cosmos connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
 
     <AppDataGrid T="LinkOverrideRow"
@@ -93,17 +93,9 @@
         <NoRecordsContent>
             @if (!_loadFailed)
             {
-                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                             Size="Size.Large"
-                             Color="Color.Tertiary" />
-                    <MudText Typo="Typo.body1" data-testid="admin-link-overrides-empty">
-                        No overrides configured.
-                    </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Overrides are created manually to resolve ambiguous or failed document links.
-                    </MudText>
-                </MudStack>
+                <AppEmptyState Heading="No overrides configured."
+                               Detail="Overrides are created manually to resolve ambiguous or failed document links."
+                               data-testid="admin-link-overrides-empty" />
             }
         </NoRecordsContent>
 

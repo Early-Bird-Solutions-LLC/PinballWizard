@@ -39,10 +39,10 @@
 
     @if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="admin-sources-load-failed">
+        <AppErrorAlert data-testid="admin-sources-load-failed">
             Ingestion sources could not be loaded. Please refresh the page or check Cosmos
             connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
 
     <AppDataGrid T="IngestionSourceRow"
@@ -64,11 +64,9 @@
             </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
-                    <MudChip T="string"
-                             Size="Size.Small"
-                             Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
+                    <AppStatusChip Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
                         @(context.Item.Enabled ? "Enabled" : "Disabled")
-                    </MudChip>
+                    </AppStatusChip>
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.Cadence" Title="Cadence" />
@@ -84,17 +82,14 @@
              * never masquerades as "no sources configured". *@
             @if (!_loadFailed)
             {
-                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                    <MudIcon Icon="@Icons.Material.Outlined.Inbox"
-                             Size="Size.Large"
-                             Color="Color.Tertiary" />
-                    <MudText Typo="Typo.body1" data-testid="admin-sources-empty">
-                        No sources configured
-                    </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
-                    </MudText>
-                </MudStack>
+                <AppEmptyState Heading="No sources configured"
+                               data-testid="admin-sources-empty">
+                    <DetailContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Ingestion sources are seeded via <code>--seed-ingestion-sources</code>.
+                        </MudText>
+                    </DetailContent>
+                </AppEmptyState>
             }
         </NoRecordsContent>
 

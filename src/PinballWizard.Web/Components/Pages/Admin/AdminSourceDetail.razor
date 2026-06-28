@@ -46,9 +46,9 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="source-detail-load-failed">
+        <AppErrorAlert data-testid="source-detail-load-failed">
             This source could not be loaded. Please refresh the page or check Cosmos connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_source is null)
     {
@@ -99,11 +99,10 @@
                     }
                     else
                     {
-                        <MudChip T="string" Size="Size.Small"
-                                 Color="@(_source.Enabled ? Color.Success : Color.Default)"
-                                 data-testid="source-enabled-chip">
+                        <AppStatusChip Color="@(_source.Enabled ? Color.Success : Color.Default)"
+                                       data-testid="source-enabled-chip">
                             @(_source.Enabled ? "Enabled" : "Disabled")
-                        </MudChip>
+                        </AppStatusChip>
                     }
                 </MudStack>
                 @KeyValue("Cadence", _source.Cadence)
@@ -134,9 +133,9 @@
             <MudText Typo="Typo.h6" GutterBottom="true">Catalog contribution</MudText>
             @if (_catalogFailed)
             {
-                <MudAlert Severity="Severity.Error" data-testid="catalog-load-failed">
+                <AppErrorAlert data-testid="catalog-load-failed">
                     Catalog contribution could not be loaded.
-                </MudAlert>
+                </AppErrorAlert>
             }
             else if (_stats is null)
             {
@@ -161,9 +160,9 @@
             <MudText Typo="Typo.h6" GutterBottom="true">Run history</MudText>
             @if (_runHistoryFailed)
             {
-                <MudAlert Severity="Severity.Error" data-testid="run-history-failed">
+                <AppErrorAlert data-testid="run-history-failed">
                     Run history could not be loaded.
-                </MudAlert>
+                </AppErrorAlert>
             }
             else if (_runs.Count == 0)
             {
@@ -173,6 +172,7 @@
             }
             else
             {
+                @* AppDataGrid not used: ChildRowContent requires typed RenderFragment<CellContext<T>> which cannot splat through AdditionalAttributes — ADR-0046 documented exception *@
                 <MudDataGrid T="ScrapeRunRecord" Items="@_runs"
                              Dense="true" Hover="true" Striped="true" Elevation="2"
                              data-testid="run-history-table">

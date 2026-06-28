@@ -54,10 +54,10 @@
     }
     else if (_loadError is not null)
     {
-        <MudAlert Severity="Severity.Error" data-testid="settings-load-error" Class="mb-4">
+        <AppErrorAlert data-testid="settings-load-error">
             Settings could not be loaded: @_loadError — the Wizard is still running on its
             last-known values; this page just can't show or edit them right now.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else
     {
@@ -273,8 +273,8 @@
                                             <MudText Typo="Typo.body2" Style="min-width: 3rem">v@(v.Version)</MudText>
                                             @if (v.IsActive)
                                             {
-                                                <MudChip T="string" Size="Size.Small" Color="Color.Success"
-                                                         data-testid="@($"prompt-active-chip-{v.Version}")">active</MudChip>
+                                                <AppStatusChip Color="Color.Success"
+                                                               data-testid="@($"prompt-active-chip-{v.Version}")">active</AppStatusChip>
                                             }
                                             else
                                             {

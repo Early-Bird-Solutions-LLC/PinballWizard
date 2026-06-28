@@ -38,10 +38,9 @@ public sealed class AppPageHeaderTests : AsyncBunitContext
     [Fact]
     public void OmitsSubtitleWhenNull()
     {
-        // No breadcrumbs — title-only render so only one .mud-typography exists
         var cut = Render<AppPageHeader>(p => p
             .Add(x => x.Title, "My Page"));
-        Assert.Single(cut.FindAll(".mud-typography"));
+        Assert.Empty(cut.FindAll(".mud-typography-body2"));
     }
 
     [Fact]

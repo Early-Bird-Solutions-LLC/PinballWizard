@@ -43,9 +43,9 @@
 
     @if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="triage-load-failed">
+        <AppErrorAlert data-testid="triage-load-failed">
             The triage queue could not be loaded. Please refresh the page or check Cosmos connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
 
     <AppDataGrid T="DocumentTriageRow"
@@ -59,12 +59,9 @@
             <PropertyColumn Property="x => x.LinkText" Title="Link Text" />
             <TemplateColumn Title="Status">
                 <CellTemplate>
-                    <MudChip T="string"
-                             Size="Size.Small"
-                             Color="@StatusColor(context.Item.Status)"
-                             Variant="Variant.Filled">
+                    <AppStatusChip Color="@StatusColor(context.Item.Status)">
                         @context.Item.Status
-                    </MudChip>
+                    </AppStatusChip>
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.FailureReason" Title="Failure Reason" />
@@ -101,17 +98,10 @@
         <NoRecordsContent>
             @if (!_loadFailed)
             {
-                <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2">
-                    <MudIcon Icon="@Icons.Material.Outlined.CheckCircle"
-                             Size="Size.Large"
-                             Color="Color.Tertiary" />
-                    <MudText Typo="Typo.body1" data-testid="admin-document-triage-empty">
-                        No documents awaiting triage.
-                    </MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        All scraped documents have been linked or resolved.
-                    </MudText>
-                </MudStack>
+                <AppEmptyState Heading="No documents awaiting triage."
+                               Detail="All scraped documents have been linked or resolved."
+                               Icon="@Icons.Material.Outlined.CheckCircle"
+                               data-testid="admin-document-triage-empty" />
             }
         </NoRecordsContent>
 

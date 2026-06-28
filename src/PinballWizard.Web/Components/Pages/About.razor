@@ -37,16 +37,8 @@
 <MudContainer MaxWidth="MaxWidth.Large" Class="about-page" data-testid="about-page">
 
     @* ── Page header ──────────────────────────────────────────────────────── *@
-    <MudText Typo="Typo.h4" Class="about-heading mt-6 mb-2" data-testid="about-heading">
-        About PinballWizard
-    </MudText>
-
-    <MudText Typo="Typo.body1" Class="about-intro mb-6" data-testid="about-intro">
-        PinballWizard is an AI-powered pinball encyclopedia and repair assistant that answers
-        questions grounded in first-party manufacturer data — manuals, service bulletins, and
-        machine specifications — and routes every unanswerable question to the authoritative
-        community resource that can help.
-    </MudText>
+    <AppPageHeader Title="About PinballWizard"
+                   Subtitle="PinballWizard is an AI-powered pinball encyclopedia and repair assistant that answers questions grounded in first-party manufacturer data — manuals, service bulletins, and machine specifications — and routes every unanswerable question to the authoritative community resource that can help." />
 
     @* ── Architecture summary ─────────────────────────────────────────────── *@
     <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4">
@@ -74,35 +66,35 @@
         Tech Stack
     </MudText>
 
-    <MudList T="string" Dense="true" Class="about-tech-list mb-6" data-testid="about-tech-list">
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+    <AppBulletList Class="about-tech-list mb-6" data-testid="about-tech-list">
+        <AppBulletItem>
             <MudText Typo="Typo.body2">.NET 10 / C# 14</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Blazor Web App (auto-render mode)</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">.NET Aspire 13 — local orchestration + service defaults</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Azure AI Foundry (Microsoft Agent Framework, multi-agent orchestration)</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Azure Cosmos DB Serverless — machine catalog + session state</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Azure AI Search Basic — RAG retrieval over indexed manuals and bulletins</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">MudBlazor — UI component library (strict mode)</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">OpenTelemetry — structured traces, metrics, and logs</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Server-Sent Events (text/event-stream) — streaming answer delivery</MudText>
-        </MudListItem>
-    </MudList>
+        </AppBulletItem>
+    </AppBulletList>
 
     @* ── How this was built ───────────────────────────────────────────────── *@
     <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4" data-testid="about-claude-heading">
@@ -122,32 +114,32 @@
         header, validated on every PR.
     </MudText>
 
-    <MudList T="string" Dense="true" Class="about-claude-list mb-6" data-testid="about-claude-list">
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+    <AppBulletList Class="about-claude-list mb-6" data-testid="about-claude-list">
+        <AppBulletItem>
             <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/claude-code.md"
                      Target="_blank"
                      rel="noopener noreferrer"
                      aria-label="How this repo uses Claude Code (opens on GitHub)">
                 How this repo uses Claude Code
             </MudLink>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0040-fork-claude-config-for-pinballwizard.md"
                      Target="_blank"
                      rel="noopener noreferrer"
                      aria-label="ADR-0040: forking the Claude Code config in-repo (opens on GitHub)">
                 ADR-0040 — forking the config in-repo
             </MudLink>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/tree/main/.claude"
                      Target="_blank"
                      rel="noopener noreferrer"
                      aria-label=".claude/ configuration directory (opens on GitHub)">
                 .claude/ configuration
             </MudLink>
-        </MudListItem>
-    </MudList>
+        </AppBulletItem>
+    </AppBulletList>
 
     @* ── What we cover ────────────────────────────────────────────────────── *@
     <MudText Typo="Typo.h5" Class="about-section-heading mb-2 mt-4">
@@ -159,35 +151,35 @@
         on 8 active manufacturers and OPDB:
     </MudText>
 
-    <MudList T="string" Dense="true" Class="about-manufacturer-list mb-2" data-testid="about-manufacturer-list">
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+    <AppBulletList Class="about-manufacturer-list mb-2" data-testid="about-manufacturer-list">
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Stern Pinball — manuals, game pages, and service bulletins</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Jersey Jack Pinball</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">American Pinball</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Spooky Pinball</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Pinball Brothers</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Barrels of Fun</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Multimorphic</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">Chicago Gaming Company</MudText>
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudText Typo="Typo.body2">OPDB — Open Pinball Database (canonical machine catalog)</MudText>
-        </MudListItem>
-    </MudList>
+        </AppBulletItem>
+    </AppBulletList>
 
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
         Everything else routes to authoritative community resources — Pinside, IFPA, Pinball Map,
@@ -205,8 +197,8 @@
         its source:
     </MudText>
 
-    <MudList T="string" Dense="true" Class="about-data-partners-list mb-2" data-testid="about-data-partners-list">
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+    <AppBulletList Class="about-data-partners-list mb-2" data-testid="about-data-partners-list">
+        <AppBulletItem>
             <MudLink Href="https://opdb.org"
                      Target="_blank"
                      rel="noopener noreferrer"
@@ -214,8 +206,8 @@
                 OPDB — Open Pinball Database
             </MudLink>
             — canonical machine catalog; the join key every other integration pivots on
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudLink Href="https://kineticist.com"
                      Target="_blank"
                      rel="noopener noreferrer"
@@ -224,8 +216,8 @@
             </MudLink>
             — gameplay-rules depth and catalog enrichment; partnership with founder Colin Alsheimer
             (API access + interim rules-guide permission, June 2026)
-        </MudListItem>
-        <MudListItem T="string" Icon="@Icons.Material.Filled.Circle">
+        </AppBulletItem>
+        <AppBulletItem>
             <MudLink Href="https://silverballlabs.com"
                      Target="_blank"
                      rel="noopener noreferrer"
@@ -241,8 +233,8 @@
                 PinballPrices.com
             </MudLink>
             (Ted "Doc" Finlay)
-        </MudListItem>
-    </MudList>
+        </AppBulletItem>
+    </AppBulletList>
 
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
         Attribution is required and present on every answer that draws from a partner's data.

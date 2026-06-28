@@ -48,19 +48,15 @@
     }
     else if (_loadFailed)
     {
-        <MudAlert Severity="Severity.Error" Class="mb-4" data-testid="manufacturers-load-failed">
+        <AppErrorAlert data-testid="manufacturers-load-failed">
             Manufacturer stats could not be loaded. Please refresh the page or check Cosmos connectivity.
-        </MudAlert>
+        </AppErrorAlert>
     }
     else if (_rows.Count == 0)
     {
-        <MudStack AlignItems="AlignItems.Center" Class="py-8" Spacing="2" data-testid="manufacturers-empty">
-            <MudIcon Icon="@Icons.Material.Outlined.Inbox" Size="Size.Large" Color="Color.Tertiary" />
-            <MudText Typo="Typo.body1">No manufacturers found</MudText>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">
-                The machine catalog does not contain any machines yet.
-            </MudText>
-        </MudStack>
+        <AppEmptyState Heading="No manufacturers found"
+                       Detail="The machine catalog does not contain any machines yet."
+                       data-testid="manufacturers-empty" />
     }
     else
     {
