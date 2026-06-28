@@ -40,6 +40,7 @@ public sealed class CgcGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Chicago Gaming";
+    public string Manufacturer => "Chicago Gaming";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Cgc;
 

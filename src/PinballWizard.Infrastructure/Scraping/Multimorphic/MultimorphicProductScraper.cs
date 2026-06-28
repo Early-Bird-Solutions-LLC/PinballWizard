@@ -15,6 +15,7 @@ public sealed class MultimorphicProductScraper : PoliteScraperBase, ISourceScrap
     private readonly MultimorphicOptions _options;
 
     public string Name => "Multimorphic";
+    public string Manufacturer => "Multimorphic";
     public string SourceId => IngestionSourceIds.Multimorphic;
 
     public MultimorphicProductScraper(

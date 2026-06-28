@@ -25,6 +25,10 @@ public sealed class DocumentRecord
     public List<CrossReference> CrossReferences { get; set; } = [];
     public string? RunId { get; set; }
 
+    // Canonical manufacturer name, denormalized from the scraper that produced this record.
+    // Stored in Cosmos for filtering; set by ScraperOrchestrator at upsert time.
+    public string? Manufacturer { get; set; }
+
     /// <summary>
     /// Generates a deterministic document ID from a canonical file URL.
     /// </summary>

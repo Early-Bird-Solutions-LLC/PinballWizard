@@ -37,6 +37,7 @@ public sealed class ApGamePageScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "American Pinball";
+    public string Manufacturer => "American Pinball";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Ap;
 

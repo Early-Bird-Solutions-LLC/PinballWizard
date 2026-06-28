@@ -1,0 +1,18 @@
+@page "/admin/documents"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Layout
+@using PinballWizard.Web.Components.Shared
+@rendermode InteractiveServer
+
+<PageTitle>PinballWizard Admin — Documents</PageTitle>
+
+<AppPageHeader Title="Documents"
+               Subtitle="Full corpus with triage status and failure reasons." />
+<DocumentList IsAdmin="true" Game="@Game" Manufacturer="@Manufacturer" />
+
+@code {
+    [SupplyParameterFromQuery(Name = "game")] public string? Game { get; set; }
+    [SupplyParameterFromQuery(Name = "manufacturer")] public string? Manufacturer { get; set; }
+}

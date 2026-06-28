@@ -23,12 +23,12 @@ public sealed class BrandHeaderTests : AsyncBunitContext
     }
 
     [Fact]
-    public void BrandHeader_RendersExactlyThreeAnchors_BrandWhatWeCoverAndBehindTheScenes()
+    public void BrandHeader_RendersExactlyFourAnchors_BrandWhatWeCoverDocumentsAndBehindTheScenes()
     {
         var cut = Render<BrandHeader>();
 
         var anchors = cut.FindAll("a");
-        Assert.Equal(3, anchors.Count);
+        Assert.Equal(4, anchors.Count);
     }
 
     [Fact]
@@ -38,6 +38,15 @@ public sealed class BrandHeaderTests : AsyncBunitContext
 
         var link = cut.Find("a[href='/admin']");
         Assert.Contains("Behind the Scenes", link.TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BrandHeader_RendersDocumentsLink()
+    {
+        var cut = Render<BrandHeader>();
+
+        var link = cut.Find("a[href='/documents']");
+        Assert.Contains("Documents", link.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -60,7 +69,7 @@ public sealed class BrandHeaderTests : AsyncBunitContext
     {
         var cut = Render<BrandHeader>();
 
-        // The single nav link sits inside the <nav aria-label="Main navigation"> region.
+        // The "What we cover" nav link sits first inside the <nav aria-label="Main navigation"> region.
         var navAnchor = cut.Find("nav[aria-label='Main navigation'] a");
         Assert.Equal("/about", navAnchor.GetAttribute("href"));
         Assert.Contains("What we cover", navAnchor.TextContent);
@@ -82,6 +91,6 @@ public sealed class BrandHeaderTests : AsyncBunitContext
         Assert.DoesNotContain("/wizard", hrefs);
         Assert.DoesNotContain("/status", hrefs);
         // "/" is allowed (brand mark) — only assert the redundant nav-Home is gone
-        // by counting anchors (covered by BrandHeader_RendersExactlyTwoAnchors).
+        // by counting anchors (covered by BrandHeader_RendersExactlyFourAnchors...).
     }
 }

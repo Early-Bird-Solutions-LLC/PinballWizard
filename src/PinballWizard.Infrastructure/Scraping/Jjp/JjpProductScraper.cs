@@ -40,6 +40,7 @@ public sealed class JjpProductScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "JJP";
+    public string Manufacturer => "Jersey Jack";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Jjp;
 

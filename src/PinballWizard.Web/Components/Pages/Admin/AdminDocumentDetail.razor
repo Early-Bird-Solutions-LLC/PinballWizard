@@ -1,0 +1,15 @@
+@page "/admin/documents/{DocumentId}"
+@layout AdminLayout
+@attribute [Authorize(Policy = "AdminOnly")]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Layout
+@using PinballWizard.Web.Components.Shared
+@rendermode InteractiveServer
+
+<PageTitle>PinballWizard Admin — Document</PageTitle>
+
+<PinballWizard.Web.Components.Shared.DocumentDetail DocumentId="@DocumentId" IsAdmin="true" />
+
+@code {
+    [Parameter] public string DocumentId { get; set; } = null!;
+}
