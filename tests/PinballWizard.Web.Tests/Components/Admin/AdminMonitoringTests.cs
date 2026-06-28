@@ -78,11 +78,21 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
     }
 
     [Fact]
-    public void CostTile_Shows0Dollars()
+    public void CostTile_ValueIsUnavailableSentinel()
     {
+        // Cost OTel not yet wired (#2688) — value must render as — (not $0.00)
+        // so operators can't mistake "not instrumented" for "costs nothing".
         var cut = Render<AdminMonitoring>();
         var value = cut.Find("[data-testid='mon-tile-cost-value']");
-        Assert.Contains("$0.00", value.TextContent);
+        Assert.DoesNotContain("$0.00", value.TextContent);
+    }
+
+    [Fact]
+    public void FivexxTile_Shows04Percent()
+    {
+        var cut = Render<AdminMonitoring>();
+        var value = cut.Find("[data-testid='mon-tile-5xx-value']");
+        Assert.Contains("0.4", value.TextContent);
     }
 
     [Fact]

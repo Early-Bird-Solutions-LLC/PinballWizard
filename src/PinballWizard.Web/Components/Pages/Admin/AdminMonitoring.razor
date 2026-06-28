@@ -33,7 +33,7 @@
         <span class="mon-toolbar__stamp" data-testid="monitoring-stamp">
             Refreshed @_renderedAt UTC
         </span>
-        <div class="mon-toolbar__periods" role="group" aria-label="Time period">
+        <div class="mon-toolbar__periods" aria-label="Time period (decorative — static SSR)">
             <span class="mon-period" data-testid="mon-period-1h">1h</span>
             <span class="mon-period mon-period--active" aria-current="true"
                   data-testid="mon-period-active">24h</span>
@@ -100,8 +100,9 @@
                     <span class="mon-state__dot" aria-hidden="true"></span>Eval-only
                 </span>
             </div>
-            <span class="mon-tile__value mon-tile__value--dim" data-testid="mon-tile-cost-value">
-                $0.00
+            <span class="mon-tile__value mon-tile__value--dim" data-testid="mon-tile-cost-value"
+                  aria-label="Cost not instrumented">
+                &mdash;
             </span>
             <p class="mon-tile__eval-note" data-testid="mon-tile-cost-note">
                 Awaiting token-usage #2688;<br />Azure Cost Mgmt authoritative
