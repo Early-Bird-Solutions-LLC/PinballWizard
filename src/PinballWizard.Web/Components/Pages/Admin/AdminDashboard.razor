@@ -2,25 +2,30 @@
 @layout AdminLayout
 @attribute [StreamRendering]
 @using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Application.Ai.Retrieval
 @using PinballWizard.Application.Persistence
+@using PinballWizard.Web.Components.Admin
 @attribute [AllowAnonymous]
 @inject ICatalogStatsReadRepository Stats
 @inject IIngestionSourceRepository Sources
 @inject ILinkOverrideRepository Overrides
+@inject IRagCorpusStatsReader CorpusReader
 @inject ILogger<AdminDashboard> Logger
 
 @* AdminDashboard — /admin overview page.
  *
  * Static SSR + [StreamRendering] (ADR-0034 doctrine — link cards + read-only
- * counts, no interactive need): the shell streams immediately, then the four
+ * counts, no interactive need): the shell streams immediately, then the six
  * summary counts stream in. No SignalR circuit. All counts come from bounded
- * reads (ADR-0036): Machines + Documents from the catalog_stats projection
- * (one pass), Sources from the single 'config' partition, Link Overrides from
- * the bounded LoadAll. A failed load shows a visible error glyph per card
+ * reads (ADR-0036): Machines + Documents + Manufacturers from the catalog_stats
+ * projection (one pass), Sources from the single 'config' partition, Link
+ * Overrides from the bounded LoadAll, Documents Indexed from IRagCorpusStatsReader
+ * (AI Search TotalChunks). A failed load shows a visible error glyph per card
  * (Invariant #17), never a silent dash or fabricated 0.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
+ * ADR-0021  — AI Search is the RAG index (IRagCorpusStatsReader)
  * ADR-0026  § 1 — routing inventory (/admin)
  * ADR-0034  — render-mode doctrine (static default)
  * ADR-0036  — Cosmos read-access (bounded reads only)
@@ -32,6 +37,8 @@
     <AppPageHeader Title="Admin Dashboard"
                    Subtitle="System overview — counts and status for the ingestion pipeline."
                    Breadcrumbs="@_breadcrumbs" />
+
+    <WizardUsageStrip />
 
     <MudGrid Spacing="3">
         <MudItem xs="12" sm="4">
@@ -98,12 +105,15 @@
         <MudItem xs="12" sm="4">
             <AppSummaryCard Icon="@Icons.Material.Filled.Storage"
                             IconColor="Color.Info"
-                            Label="RAG Corpus"
-                            Caption="indexed chunk stats"
+                            Label="Documents Indexed"
+                            Caption="RAG corpus · chunked + embedded"
                             ActionHref="/admin/corpus"
                             ActionLabel="View corpus">
                 <Content>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Coming soon</MudText>
+                    <AdminCountValue TestId="admin-corpus-chunks-count"
+                                     Loading="_loadingCorpus"
+                                     Failed="_corpusFailed"
+                                     Count="_corpusDocumentsCount" />
                 </Content>
             </AppSummaryCard>
         </MudItem>
@@ -112,11 +122,14 @@
             <AppSummaryCard Icon="@Icons.Material.Filled.Factory"
                             IconColor="Color.Primary"
                             Label="Manufacturers"
-                            Caption="catalog by brand"
+                            Caption="active · catalog by brand"
                             ActionHref="/admin/manufacturers"
                             ActionLabel="View manufacturers">
                 <Content>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary">Coming soon</MudText>
+                    <AdminCountValue TestId="admin-manufacturers-count"
+                                     Loading="_loadingStats"
+                                     Failed="_statsFailed"
+                                     Count="_manufacturersCount" />
                 </Content>
             </AppSummaryCard>
         </MudItem>
@@ -124,11 +137,12 @@
 </MudContainer>
 
 @code {
-    // Machines + Documents share the catalog_stats load (_loadingStats/_statsFailed).
+    // Machines + Documents + Manufacturers share the catalog_stats load.
     private bool _loadingStats = true;
     private bool _statsFailed;
     private int? _machinesCount;
     private int? _documentsCount;
+    private int? _manufacturersCount;
 
     private bool _loadingSources = true;
     private bool _sourcesFailed;
@@ -137,6 +151,10 @@
     private bool _loadingOverrides = true;
     private bool _overridesFailed;
     private int? _overridesCount;
+
+    private bool _loadingCorpus = true;
+    private bool _corpusFailed;
+    private int? _corpusDocumentsCount;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
@@ -150,6 +168,7 @@
         await LoadStatsAsync();
         await LoadSourcesAsync();
         await LoadOverridesAsync();
+        await LoadCorpusAsync();
     }
 
     private async Task LoadStatsAsync()
@@ -159,13 +178,16 @@
         {
             var machines = 0;
             var documents = 0;
+            var manufacturers = 0;
             await foreach (var mfr in Stats.StreamAllManufacturersAsync(cts.Token))
             {
+                manufacturers++;
                 machines += mfr.Machines.Count;
                 documents += mfr.Machines.Sum(m => m.DocCount);
             }
             _machinesCount = machines;
             _documentsCount = documents;
+            _manufacturersCount = manufacturers;
         }
         catch (OperationCanceledException)
         {
@@ -232,6 +254,30 @@
         finally
         {
             _loadingOverrides = false;
+        }
+    }
+
+    private async Task LoadCorpusAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var stats = await CorpusReader.GetCorpusStatsAsync(cts.Token);
+            _corpusDocumentsCount = (int)stats.TotalChunks;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin dashboard corpus-stats load timed out after 30 s.");
+            _corpusFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin dashboard corpus stats.");
+            _corpusFailed = true;
+        }
+        finally
+        {
+            _loadingCorpus = false;
         }
     }
 }

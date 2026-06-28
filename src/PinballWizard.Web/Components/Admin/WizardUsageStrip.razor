@@ -1,0 +1,32 @@
+@* WizardUsageStrip — Admin dashboard hero stat strip.
+ *
+ * Hardcoded showcase stats until the Foundry query-log pipeline is wired
+ * (Phase 4 post-ship).  Not a @page; no circuit-dependent controls.
+ *
+ * ADR-0008  — MudBlazor strict (no MudBlazor needed here — structural shell only)
+ *@
+<div class="wizard-usage-strip" data-testid="wizard-usage-strip">
+    <div class="wizard-usage-strip__left">
+        <span class="wizard-usage-strip__eyebrow" aria-hidden="true">Questions answered · last 30 days</span>
+        <span class="wizard-usage-strip__headline" aria-label="1,652 questions answered"
+              data-testid="wizard-usage-headline">1,652</span>
+        <span class="wizard-usage-strip__caption">across the Wizard, Valuation, Rules &amp; Repair agents</span>
+    </div>
+    <div class="wizard-usage-strip__right" aria-label="Answer quality metrics">
+        <div class="wizard-usage-strip__stat">
+            <span class="wizard-usage-strip__stat-value wizard-usage-strip__stat-value--grounded"
+                  data-testid="wizard-usage-grounded">93.8%</span>
+            <span class="wizard-usage-strip__stat-label">grounded &amp; answered</span>
+        </div>
+        <div class="wizard-usage-strip__stat">
+            <span class="wizard-usage-strip__stat-value"
+                  data-testid="wizard-usage-refused">6.2%</span>
+            <span class="wizard-usage-strip__stat-label">refused · low confidence</span>
+        </div>
+        <div class="wizard-usage-strip__stat">
+            <span class="wizard-usage-strip__stat-value"
+                  data-testid="wizard-usage-latency">2.3s</span>
+            <span class="wizard-usage-strip__stat-label">median latency</span>
+        </div>
+    </div>
+</div>
