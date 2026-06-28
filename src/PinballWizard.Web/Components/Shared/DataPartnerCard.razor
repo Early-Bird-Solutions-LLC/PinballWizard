@@ -1,0 +1,50 @@
+@* DataPartnerCard — whole-card-link data-partner card.
+ *
+ * Used on Landing (Compact=true, 18px padding, 22px name) and About
+ * (Compact=false, 20px padding, 24px name). The entire card is an <a>
+ * link so keyboard and pointer users share one hitbox — MudCard's
+ * Blazor @onclick handler does not produce an <a href> in the DOM.
+ *
+ * Visual anatomy (from top):
+ *   role eyebrow  — mono 10px uppercase amber
+ *   name + ↗      — Barlow Condensed 700 22/24px
+ *   description   — body 13px (flex:1)
+ *   status footer — hairline + green dot + mono 11px status text
+ *
+ * ADR-0026 § Landing/About surface (non-delight; chrome-only).
+ * ADR-0027 — routes outward; whole card is the outbound link.
+ *@
+
+<a class="@CssClass"
+   href="@Href"
+   target="_blank"
+   rel="noopener noreferrer"
+   aria-label="@Name — data partner (opens in new tab)"
+   data-testid="@($"data-partner-card-{Role.ToLowerInvariant()}")">
+
+    <span class="partner-card__role" aria-hidden="true">@Role</span>
+
+    <span class="partner-card__name">
+        @Name<span class="partner-card__arrow" aria-hidden="true">&#8599;</span>
+    </span>
+
+    <span class="partner-card__desc">@Description</span>
+
+    <span class="partner-card__status" aria-label="Status: @StatusText">
+        <span class="partner-card__status-dot" aria-hidden="true"></span>
+        <span>@StatusText</span>
+    </span>
+</a>
+
+@code {
+    [Parameter, EditorRequired] public string Role        { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Name        { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Href        { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Description { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string StatusText  { get; set; } = string.Empty;
+    [Parameter]                 public bool   Compact     { get; set; } = false;
+
+    private string CssClass => Compact
+        ? "partner-card"
+        : "partner-card partner-card--roomy";
+}

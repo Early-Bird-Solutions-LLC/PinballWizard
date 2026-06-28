@@ -1,0 +1,51 @@
+/* DataPartnersStrip scoped styles.
+ * Section header: mono eyebrow left + attribution link right, border-top rule.
+ * 3-column grid collapses to 1-column on narrow viewports.
+ */
+
+.partners-strip__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-top: 1px solid var(--pw-border-quiet);
+    padding-top: 8px;
+    margin-bottom: 16px;
+}
+
+.partners-strip__eyebrow {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--pw-text-secondary);
+}
+
+.partners-strip__attribution-link {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    color: var(--pw-accent-grounded);
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+}
+
+.partners-strip__attribution-link:hover {
+    opacity: 0.8;
+}
+
+.partners-strip__grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+@media (max-width: 640px) {
+    .partners-strip__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .partners-strip__attribution-link {
+        transition: none;
+    }
+}

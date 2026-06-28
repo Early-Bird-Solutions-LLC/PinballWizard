@@ -1,0 +1,60 @@
+@* DataPartnersStrip — landing-page data-partners section.
+ *
+ * Hardcoded (no API dep): the three partnership agreements are durable.
+ * Placed directly above FeaturedMachinesStrip per design handoff Screen A.
+ *
+ * Layout: section-header row (eyebrow left, attribution link right,
+ * border-top rule) + 3-column grid of compact DataPartnerCards.
+ *
+ * ADR-0026 § Landing surface.
+ * ADR-0027 — routes outward; attribution link leads to /about#data-partners.
+ *@
+
+@using PinballWizard.Web.Components.Shared
+
+<div class="partners-strip" data-testid="data-partners-strip">
+    <div class="partners-strip__header">
+        <span class="partners-strip__eyebrow">Data partners</span>
+        <a class="partners-strip__attribution-link"
+           href="/about#data-partners"
+           aria-label="Learn how attribution works on the About page">
+            How attribution works &#8594;
+        </a>
+    </div>
+
+    <div class="partners-strip__grid">
+        @foreach (var p in Partners)
+        {
+            <DataPartnerCard Role="@p.Role"
+                             Name="@p.Name"
+                             Href="@p.Href"
+                             Description="@p.Description"
+                             StatusText="@p.StatusText"
+                             Compact="true" />
+        }
+    </div>
+</div>
+
+@code {
+    private sealed record PartnerEntry(string Role, string Name, string Href, string Description, string StatusText);
+
+    // Partnership order: catalog first (the join key), then rules, then pricing.
+    private static readonly PartnerEntry[] Partners =
+    [
+        new("Catalog",
+            "OPDB",
+            "https://opdb.org",
+            "Open Pinball Database — the canonical machine catalog every integration pivots on.",
+            "Canonical · active"),
+        new("Rules",
+            "Kineticist",
+            "https://kineticist.com",
+            "Gameplay-rules depth and catalog enrichment via API access and rules-guide permission.",
+            "API + rules · Jun 2026"),
+        new("Pricing",
+            "Silverball Labs",
+            "https://silverballlabs.com",
+            "Live market pricing, drawn from the origin sales dataset at PinballPrices.com.",
+            "Live pricing · May 2026"),
+    ];
+}
