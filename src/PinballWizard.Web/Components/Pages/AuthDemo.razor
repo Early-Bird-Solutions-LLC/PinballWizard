@@ -1,0 +1,217 @@
+@* AuthDemo — Keyless AI authentication showcase page.
+ *
+ * Public, static SSR page explaining PinballWizard's use of GitHub OIDC →
+ * Anthropic Workload Identity Federation to eliminate static API keys from CI.
+ * Intended for engineering-curious prospects evaluating security posture.
+ *
+ * ADR-0047 — WIF decision record
+ * ADR-0008 — MudBlazor strict (no raw HTML equivalents for MudBlazor components)
+ *@
+
+@page "/auth-demo"
+@attribute [AllowAnonymous]
+
+<PageTitle>PinballWizard — Keyless AI Authentication</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="auth-demo-page" data-testid="auth-demo-page">
+
+    <AppPageHeader Title="Keyless AI Authentication"
+                   Subtitle="How PinballWizard eliminates static Anthropic API keys from CI using GitHub's native OIDC and Anthropic Workload Identity Federation." />
+
+    @* ── The Problem ──────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4" data-testid="auth-demo-problem-heading">
+        The Problem with Static Keys
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-4">
+        The conventional approach stores an <code>ANTHROPIC_API_KEY</code> as a long-lived
+        repository secret. This creates a standing exposure window: the key is valid
+        indefinitely, any maintainer with admin access can read it, and rotating it
+        requires coordinating every consumer. A leaked key is usable until someone notices
+        and manually revokes it.
+    </MudText>
+
+    @* ── The Solution ─────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4" data-testid="auth-demo-solution-heading">
+        The Solution: Cryptographic Identity
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-2">
+        GitHub Actions issues a signed OIDC JWT for every workflow run — bound
+        cryptographically to the specific repository, organization, and event. Anthropic's
+        Workload Identity Federation (WIF) accepts that token and returns a short-lived
+        access token (10 minutes). No static secret is ever stored or transmitted.
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-4">
+        The trust anchor is GitHub's OIDC issuer at
+        <code>https://token.actions.githubusercontent.com</code>. Anthropic validates the
+        JWT signature, checks the embedded claims (repository, org numeric ID), and mints
+        an access token scoped to the configured workspace.
+    </MudText>
+
+    @* ── How It Works ─────────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4" data-testid="auth-demo-flow-heading">
+        The Exchange Flow
+    </MudText>
+
+    <AppBulletList Class="mb-6" data-testid="auth-demo-flow-list">
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                GitHub runner calls <code>getIDToken('https://api.anthropic.com')</code> —
+                the audience pins the token so only Anthropic can verify it.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                The JWT is posted to <code>POST /v1/oauth/token</code> with
+                <code>grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer</code> alongside
+                four non-sensitive federation identifiers stored as GitHub Actions Variables
+                (not secrets).
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                Anthropic validates the JWT signature and checks the embedded claims:
+                repository name, organization name, and numeric org ID (rename-safe).
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                A <code>sk-ant-oat01-…</code> access token is returned, valid for 10 minutes.
+                It is immediately masked in CI logs with <code>::add-mask::</code>.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                The short-lived token is passed to <code>claude-code-action</code> for the
+                duration of the run. Nothing is persisted.
+            </MudText>
+        </AppBulletItem>
+    </AppBulletList>
+
+    @* ── Implementation ───────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4" data-testid="auth-demo-impl-heading">
+        Implementation
+    </MudText>
+
+    <MudText Typo="Typo.body1" Class="mb-3">
+        Three steps replace the static <code>secrets.ANTHROPIC_API_KEY</code> reference:
+    </MudText>
+
+    <MudPaper Elevation="2" Class="pa-4 mb-6 auth-demo-code" data-testid="auth-demo-code-block">
+        <pre class="auth-demo-pre"><code>- name: Fetch GitHub OIDC token
+  uses: actions/github-script@v8
+  with:
+    script: |
+      const token = await core.getIDToken('https://api.anthropic.com');
+      core.setSecret(token);
+      core.exportVariable('GHA_OIDC_TOKEN', token);
+
+- name: Exchange for Anthropic access token
+  env:
+    FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+    ORGANIZATION_ID:    ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+    SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+    WORKSPACE_ID:       ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+  run: |
+    PAYLOAD=$(jq -n \
+      --arg grant_type "urn:ietf:params:oauth:grant-type:jwt-bearer" \
+      --arg assertion        "$GHA_OIDC_TOKEN" \
+      --arg federation_rule_id "$FEDERATION_RULE_ID" \
+      --arg organization_id "$ORGANIZATION_ID" \
+      --arg service_account_id "$SERVICE_ACCOUNT_ID" \
+      --arg workspace_id    "$WORKSPACE_ID" \
+      '$ARGS.named')
+    ACCESS_TOKEN=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+      -H "content-type: application/json" \
+      -d "$PAYLOAD" | jq -r .access_token)
+    echo "::add-mask::$ACCESS_TOKEN"
+    echo "ANTHROPIC_ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+
+- name: Run Claude Code
+  uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ env.ANTHROPIC_ACCESS_TOKEN }}</code></pre>
+    </MudPaper>
+
+    @* ── Security Properties ──────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4" data-testid="auth-demo-security-heading">
+        Security Properties
+    </MudText>
+
+    <AppBulletList Class="mb-6" data-testid="auth-demo-security-list">
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                <strong>Nothing to leak.</strong> No static secret is stored — not in GitHub,
+                not in environment config, not in CI logs.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                <strong>Cryptographic binding.</strong> The JWT is scoped to exactly this
+                repository and org. The org's numeric ID (not its name) is required — a renamed
+                or re-registered org cannot match the rule.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                <strong>Short-lived.</strong> The 10-minute TTL means a captured token expires
+                before it can realistically be misused.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                <strong>Auditable.</strong> Every exchange appears in Anthropic Console's
+                Authentication events tab — timestamp, claims, outcome.
+            </MudText>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">
+                <strong>Instantly revocable.</strong> Deleting the federation rule in the
+                Anthropic Console cuts off CI access immediately, with no secret rotation needed.
+            </MudText>
+        </AppBulletItem>
+    </AppBulletList>
+
+    @* ── Further reading ──────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-2 mt-4">
+        Further Reading
+    </MudText>
+
+    <AppBulletList Class="mb-8" data-testid="auth-demo-links-list">
+        <AppBulletItem>
+            <MudLink Href="https://platform.claude.com/docs/en/manage-claude/workload-identity-federation"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="Anthropic Workload Identity Federation documentation (opens in new tab)">
+                Anthropic WIF documentation
+            </MudLink>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudLink Href="https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="Anthropic WIF with GitHub Actions guide (opens in new tab)">
+                Anthropic WIF — GitHub Actions guide
+            </MudLink>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/docs/adr/0047-anthropic-wif-github-actions.md"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="ADR-0047: Anthropic WIF for GitHub Actions CI (opens on GitHub)">
+                ADR-0047 — Anthropic WIF for GitHub Actions CI
+            </MudLink>
+        </AppBulletItem>
+        <AppBulletItem>
+            <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/.github/workflows/claude.yml"
+                     Target="_blank"
+                     rel="noopener noreferrer"
+                     aria-label="claude.yml workflow source (opens on GitHub)">
+                claude.yml — full workflow source
+            </MudLink>
+        </AppBulletItem>
+    </AppBulletList>
+
+</MudContainer>

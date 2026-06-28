@@ -72,6 +72,7 @@ public sealed class AuthorizationContractTests
     [InlineData(typeof(IndexPage))]
     [InlineData(typeof(Wizard))]
     [InlineData(typeof(About))]
+    [InlineData(typeof(AuthDemo))]
     [InlineData(typeof(Settings))]
     [InlineData(typeof(Status))]
     [InlineData(typeof(Error))]
