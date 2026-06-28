@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 
 namespace PinballWizard.Web.Services;
@@ -41,7 +42,7 @@ public interface IUserPreferencesService
     Task SetSoundAsync(string sound);
 }
 
-public sealed class UserPreferencesService(IJSRuntime js) : IUserPreferencesService
+public sealed class UserPreferencesService(IJSRuntime js, ILogger<UserPreferencesService>? logger = null) : IUserPreferencesService
 {
     public string CurrentTheme { get; private set; } = ThemeNames.Paper;
     public string CurrentMotion { get; private set; } = "match";
@@ -68,7 +69,7 @@ public sealed class UserPreferencesService(IJSRuntime js) : IUserPreferencesServ
     public async Task SetThemeAsync(string theme)
     {
         try { await js.InvokeVoidAsync("pinwiz.setTheme", theme).ConfigureAwait(false); }
-        catch (JSException) { }
+        catch (JSException ex) { logger?.LogDebug(ex, "localStorage write failed for {Preference}; preference stored in-memory only.", "theme"); }
         CurrentTheme = theme;
         StateChanged?.Invoke();
     }
@@ -76,7 +77,7 @@ public sealed class UserPreferencesService(IJSRuntime js) : IUserPreferencesServ
     public async Task SetMotionAsync(string motion)
     {
         try { await js.InvokeVoidAsync("pinwiz.setMotion", motion).ConfigureAwait(false); }
-        catch (JSException) { }
+        catch (JSException ex) { logger?.LogDebug(ex, "localStorage write failed for {Preference}; preference stored in-memory only.", "motion"); }
         CurrentMotion = motion;
         StateChanged?.Invoke();
     }
@@ -84,7 +85,7 @@ public sealed class UserPreferencesService(IJSRuntime js) : IUserPreferencesServ
     public async Task SetSoundAsync(string sound)
     {
         try { await js.InvokeVoidAsync("pinwiz.setSound", sound).ConfigureAwait(false); }
-        catch (JSException) { }
+        catch (JSException ex) { logger?.LogDebug(ex, "localStorage write failed for {Preference}; preference stored in-memory only.", "sound"); }
         CurrentSound = sound;
         StateChanged?.Invoke();
     }
