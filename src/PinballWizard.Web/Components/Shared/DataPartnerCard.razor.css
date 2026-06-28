@@ -1,0 +1,103 @@
+/* DataPartnerCard scoped styles.
+ * Whole-card <a> link: amber 3px top-rule, green status dot.
+ * .partner-card            → compact (landing, 18px / 22px name)
+ * .partner-card--roomy     → About page (20px / 24px name)
+ */
+
+.partner-card {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 18px;
+    text-decoration: none;
+    color: inherit;
+    background: var(--pw-bg-surface);
+    border: 1px solid var(--pw-border-quiet);
+    border-top: 3px solid var(--pw-accent-primary);
+    border-radius: 2px;
+    height: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, border-top-color 0.2s ease, background 0.2s ease;
+}
+
+.partner-card--roomy {
+    padding: 20px;
+}
+
+.partner-card:hover,
+.partner-card:focus-visible {
+    border-color: var(--pw-accent-mode);
+    border-top-color: var(--pw-accent-mode);
+    background: var(--pw-bg-surface-hi);
+    outline: none;
+}
+
+/* Restore keyboard focus outline for users who don't hover */
+.partner-card:focus-visible {
+    outline: 2px solid var(--pw-accent-primary);
+    outline-offset: 2px;
+}
+
+.partner-card__role {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--pw-accent-primary);
+    line-height: 1;
+}
+
+.partner-card__name {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: var(--pw-font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--pw-text-primary);
+    line-height: 1.15;
+}
+
+.partner-card--roomy .partner-card__name {
+    font-size: 24px;
+}
+
+.partner-card__arrow {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--pw-text-faint);
+}
+
+.partner-card__desc {
+    font-size: 13px;
+    color: var(--pw-text-secondary);
+    flex: 1;
+    line-height: 1.5;
+}
+
+.partner-card__status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--pw-border-faint);
+    padding-top: 6px;
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--pw-text-secondary);
+}
+
+.partner-card__status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--pw-accent-grounded);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--pw-accent-grounded) 12%, transparent);
+    flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .partner-card {
+        transition: none;
+    }
+}

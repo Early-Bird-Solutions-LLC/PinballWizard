@@ -28,6 +28,7 @@
 @using PinballWizard.Web.Clients
 @using PinballWizard.Web.Components.Degraded
 @using PinballWizard.Web.Components.Landing
+@using PinballWizard.Web.Components.Shared
 
 @inject IClientDegradationStore DegradationStore
 @inject ILogger<Index> Logger
@@ -50,6 +51,11 @@
     <div class="landing-page__section">
         <SeedQuestionGrid Questions="@_seedQuestions"
                           QuestionSelected="OnSeedQuestionSelected" />
+    </div>
+
+    @* Data partners — hardcoded, always renders; above Featured machines (Screen A) *@
+    <div class="landing-page__section">
+        <DataPartnersStrip />
     </div>
 
     @* Featured machines — null until data loads (shows skeletons) *@
