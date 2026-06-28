@@ -119,7 +119,7 @@ dotnet run --project src/PinballWizard.Cli -- --status
 | [`04-ai-search-rebuild.md`](runbooks/04-ai-search-rebuild.md) | AI Search index drift or rebuild needed |
 | [`05-secret-rotation.md`](runbooks/05-secret-rotation.md) | Scheduled or emergency secret rotation |
 | [`06-source-site-outage.md`](runbooks/06-source-site-outage.md) | A manufacturer site is unreachable |
-| [`h-chain-operator-runbook.md`](runbooks/h-chain-operator-runbook.md) | H-chain deployment operator procedures (Phase 6) |
+| [`h-chain-operator-runbook.md`](runbooks/h-chain-operator-runbook.md) | H-chain deployment operator procedures (completed Phase 6) |
 
 ---
 
