@@ -12,10 +12,10 @@ Forward-looking by design: gates that don't yet exist are listed with their targ
 
 The canonical per-PR gate is the two-step pre-push audit. Full detail in [`CLAUDE.md`](../CLAUDE.md) § "PR self-audit" and [`guardrails.md`](guardrails.md) § "Per-PR gate" — not duplicated here. Recap:
 
-- `/local-review` skill (10-category qualitative critique by `general-purpose` agent)
-- 7-item mechanical self-audit (dead-config grep, sibling-diff, no bare `catch`, CLI/orchestrator wiring, behavior-not-structure tests, zero warnings, identity check)
+- `/local-review` skill (Step 0 — 10-category qualitative critique by `general-purpose` agent)
+- `/standards-audit` (Step 1 — mechanical gate: runs each applicable standard's CHECK; replaces the former item checklist)
 - Build green, tests green
-- PR description records the audit outcome
+- PR description records both outcomes (🔴 fixed, ⚠️ fixed/deferred, `/standards-audit` verdict)
 - Memory updated if anything new is locked
 
 This doc adds nothing to the per-PR gate beyond what `guardrails.md` already specifies. The per-PR gate is intentionally tight; deeper gates fire at phase and release boundaries.
@@ -82,7 +82,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 ### Currently in place
 
-- **bUnit component tests (Phase 5)**: [`tests/PinballWizard.Web.Tests/Components/`](../tests/PinballWizard.Web.Tests/Components/) — component-level unit tests for every interactive Razor component using bUnit 2.x. 29 test files covering the delight surfaces (`WizardAnswerStream`, `RefusalPanel`, `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`) and admin components. Required for any component beyond static markup; any new interactive component must add a bUnit smoke test in the same PR per PR self-audit item 9d.
+- **bUnit component tests (Phase 5)**: [`tests/PinballWizard.Web.Tests/Components/`](../tests/PinballWizard.Web.Tests/Components/) — component-level unit tests for every interactive Razor component using bUnit 2.x. 29 test files covering the delight surfaces (`WizardAnswerStream`, `RefusalPanel`, `CitationStrip` family, `TiltPage`/`TiltErrorBoundary`) and admin components. Required for any component beyond static markup; any new interactive component must add a bUnit smoke test in the same PR (enforced by `/standards-audit`).
 - **Lighthouse CI (Phase 5)**: [`.github/workflows/lighthouse.yml`](../.github/workflows/lighthouse.yml) — runs on every PR touching Blazor/Web files. Thresholds enforced via `.lighthouserc.json`: Performance ≥70 (warn), Accessibility ≥90 (error), Best-Practices ≥90 (error), SEO ≥90 (warn). Failing threshold = failing CI job. Complements the axe-core accessibility gate in `Code quality § Currently in place`.
 - **End-to-end (E2E) suite**: [`tests/PinballWizard.Web.Tests/E2E/WizardE2ETests.cs`](../tests/PinballWizard.Web.Tests/E2E/WizardE2ETests.cs) — four browser-driven (Playwright) tests against the live deployed app, run by the 6-hourly scheduled canary + the post-deploy gate; CI-excluded (they need a live stack). Full per-test inventory in [`ENGINEERING_STANDARDS.md` § 7.1 — What we test](ENGINEERING_STANDARDS.md#71-what-we-test).
 
@@ -107,7 +107,7 @@ Reference: [`guardrails.md`](guardrails.md) § "Pre-public-launch gate" — 11-i
 
 ### Per-PR (existing; recap from `guardrails.md`)
 
-`/local-review` (10-category qualitative) + 7-item mechanical self-audit + PR template.
+`/local-review` (Step 0 — 10-category qualitative) + `/standards-audit` (Step 1 — mechanical gate) + PR template.
 
 ### Heavyweight triggers
 
@@ -148,7 +148,7 @@ Decisions that are smaller — tool versions within a category, threshold settin
 
 ### Explicit non-gate
 
-**XML doc completeness on public surface is not a quality gate.** Per [`feedback_no_xml_docs.md`](C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\feedback_no_xml_docs.md): user finds them not worth the maintenance cost; project doesn't ship a public NuGet package; `/local-review` § Comments policy explicitly does not flag missing XML docs. Revisit only if a NuGet package ships externally.
+**XML doc completeness on public surface is not a quality gate.** Per [`feedback_no_xml_docs.md`](C:\Users\JimKeeley\.claude\projects\c--earlybird-PinballWizard\memory\feedback_no_xml_docs.md): user finds them not worth the maintenance cost; project doesn't ship a public NuGet package; `/local-review` § Comments policy explicitly does not flag missing XML docs. Revisit only if a NuGet package ships externally.
 
 ## Operational quality (Phase 6)
 

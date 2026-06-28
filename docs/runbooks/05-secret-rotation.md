@@ -2,7 +2,7 @@
 **Trigger:** 90-day rotation cadence (calendar reminder) or key compromise detected
 **Alert rule:** Manual / DR drill
 **Time budget:** 60–90 minutes (all four secrets)
-**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live rotation drill against the deployed pinwiz.ai app remains an open Phase 7 task)
 
 ---
 

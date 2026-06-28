@@ -449,7 +449,7 @@ Calibrating the threshold against a baseline that's floored by upstream gaps wou
 - `deployFoundryModelDeployments` (default `true`) — set `false` on the FIRST deploy of a fresh Foundry account; flip `true` on a subsequent deploy.
 - `deployAiSearch` (default `true`) — set `false` until Phase 4 RAG actually consumes AI Search, OR when the chosen region is at SKU capacity.
 
-H1 succeeded 2026-05-07 against `pinwiz-foundry-dev-hlpz4` / project `pinwiz-wizard`; smoke probe (`--ensure-azure-foundry`) verified the chat (`gpt-4o-mini`) + embedding (`text-embedding-3-large`) deployments are live; the `gpt-4-1` heavy deployment also provisioned cleanly (deployment name uses `-1` not `.1` because Foundry rejects `.` in deployment names; the underlying model is `gpt-4.1`).
+H1 succeeded 2026-05-07 against `pinwiz-foundry-dev-hlpz4` (old sub `4dce9fdd`, deleted; current equivalent is `pinwiz-foundry-dev-buutj`) / project `pinwiz-wizard`; smoke probe (`--ensure-azure-foundry`) verified the chat (`gpt-4o-mini`) + embedding (`text-embedding-3-large`) deployments are live; the `gpt-4-1` heavy deployment also provisioned cleanly (deployment name uses `-1` not `.1` because Foundry rejects `.` in deployment names; the underlying model is `gpt-4.1`).
 
 **Alternatives considered:**
 
@@ -568,9 +568,10 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 **Decision:** H-DR-Cosmos hand-off complete. Cosmos point-in-time restore drill executed against the dev environment.
 
 **Drill details:**
-- Source account: `pinwiz-cosmos-dev-hlpz4` (Continuous 7-day backup, enabled 2026-05-14)
+
+- Source account: `pinwiz-cosmos-dev-hlpz4` (old sub `4dce9fdd`, deleted; current equivalent is `pinwiz-cosmos-dev-buutj`; Continuous 7-day backup, enabled 2026-05-14)
 - Restore point: `2026-05-15T12:22:31Z` (30 min before drill, known-good state)
-- Target account: `pinwiz-cosmos-dev-hlpz4-restore`
+- Target account: `pinwiz-cosmos-dev-hlpz4-restore` (old sub — deleted)
 - Restore initiated: `2026-05-15T12:56:00Z`
 - Restore completed: `2026-05-15T12:58:00Z` (provisioningState: Succeeded)
 - **Wall-clock restore duration: ~2 minutes**
@@ -591,8 +592,9 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 **Decision:** H-DR-Search hand-off complete. AI Search rebuild procedure validated against the dev environment.
 
 **Drill details:**
-- AI Search service: `pinwiz-search-dev-hlpz4` (Basic SKU, East US)
-- Index `pinwiz-rag-v1`: **does not exist** at drill time (RAG ingestion pipeline not yet deployed — Phase 7 work)
+
+- AI Search service: `pinwiz-search-dev-hlpz4` (old sub `4dce9fdd`, deleted; current equivalent is `pinwiz-search-dev-buutj`; Basic SKU, East US)
+- Index `pinwiz-rag-v1`: **does not exist** at drill time (RAG ingestion pipeline not yet deployed at drill time — now live in Phase 7)
 - Worker `pinwiz-ca-ragindexer-dev`: placeholder image, minReplicas=0 (no active replicas)
 
 **Steps exercised:**
@@ -607,7 +609,7 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 
 **Full rebuild time (est.):** Not measured at drill time — index empty. Build-spec estimates < 30 min for the curated-subset corpus (~30 machines × ~100 chunks). Measure on first real rebuild in Phase 7.
 
-**Revisit when:** Phase 7 deploys the real RAG worker image and populates the index. Re-walk the full runbook at that point to measure actual rebuild-to-zero-lag time.
+**Revisit when:** ~~Phase 7 deploys the real RAG worker image and populates the index.~~ **Superseded (2026-06-28):** Phase 7 is complete; the RAG worker image is live and the index is populated. Re-walk the full runbook against the live Phase 7 stack to measure actual rebuild-to-zero-lag time.
 
 **Related:** `docs/runbooks/04-ai-search-rebuild.md` (updated Last walked + Deployment Stack note + corrected ACA app name + AAD auth for index deletion).
 
@@ -619,7 +621,7 @@ Alerts 1–3 also auto-resolved once the synthetic data aged out of their evalua
 
 **State at verification (2026-05-15):** 7 tiles rendered. All tiles show "no data" — expected while the Wizard ACA app runs a placeholder image (no real `pinwiz.ai.*` / `pinwiz.rag.*` metrics emitted yet). One tile ("RAG changefeed health") showed a KQL parse error (`latest` is a reserved KQL token) — fixed in PR #215 (column alias renamed to `currentValue`). The workbook will show live signal once Phase 7 deploys the real app image.
 
-**Revisit when:** Phase 7 deploys the real Wizard image. Verify all 7 tiles populate with real signal at that point.
+**Revisit when:** ~~Phase 7 deploys the real Wizard image.~~ **Superseded (2026-06-28):** Phase 7 is complete and the real app image is live; workbook tiles should now populate with real signal. Verify all 7 tiles at the URL above.
 
 **Related:** PR #207 (workbook Bicep), PR #215 (KQL fix + availability test).
 

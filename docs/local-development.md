@@ -1,8 +1,8 @@
 ---
 status: Active
-phase: Phase-6
+phase: Phase-7
 owner: Jim
-last-reviewed: 2026-06-21
+last-reviewed: 2026-06-28
 ---
 
 # Running PinballWizard locally with a functional catalog
@@ -85,9 +85,18 @@ az login
 The credentials land in `.azure-local/` (gitignored) and persist across sessions. Subsequent terminal sessions in VS Code reuse them automatically. The AppHost relays `AZURE_CONFIG_DIR` to the orchestrated `Api` and `Web` children so their `DefaultAzureCredential` resolves the same personal identity.
 
 > **Never run `az login` without `AZURE_CONFIG_DIR` set in this project.** Doing so writes to `~/.azure` and may overwrite a different active session on the machine. The VS Code terminal sets it automatically; PowerShell sessions outside VS Code need it set manually:
+>
 > ```pwsh
 > $env:AZURE_CONFIG_DIR = "<repo-root>/.azure-local"
 > ```
+>
+> **`AZURE_TOKEN_CREDENTIALS=dev` is required when running against live Azure from a local machine.** Without it, `DefaultAzureCredential` probes IMDS (the Azure managed-identity endpoint) first and blocks for several seconds before falling through to `AzureCliCredential`. On a local dev box IMDS never resolves, so Cosmos and AI Search writes time out silently rather than failing fast. Set it before any CLI command that touches live Azure:
+>
+> ```pwsh
+> $env:AZURE_TOKEN_CREDENTIALS = "dev"
+> ```
+>
+> The VS Code `.vscode/settings.json` does **not** set this automatically — add it to your shell profile or set it at the start of each session. The AppHost does not relay it to child processes; set it in the same terminal before running CLI commands against live services.
 
 ---
 
