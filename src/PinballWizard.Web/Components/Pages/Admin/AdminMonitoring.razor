@@ -1,0 +1,320 @@
+@page "/admin/monitoring"
+@layout AdminLayout
+@attribute [StreamRendering]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Shared
+@attribute [AllowAnonymous]
+
+@* AdminMonitoring — /admin/monitoring SLO health and pipeline signals.
+ *
+ * Static SSR + [StreamRendering] (ADR-0034 — read-only display, no
+ * interactive need). All tiles show representative placeholder values;
+ * the OTel binds are identified but the live aggregation endpoint is
+ * not yet wired. pinwiz.ai.cost_usd_cents legitimately reads $0.00
+ * until upstream #2688 lands — tile renders "Eval-only" to convey that.
+ * Page is auth-gated by Cloudflare Zero Trust; [AllowAnonymous] at the
+ * Blazor level matches the other static admin pages (Dashboard, Sources).
+ *
+ * ADR-0008  — MudBlazor strict for chrome; var(--pw-*) for panels
+ * ADR-0009  — Entra External ID (Zero Trust gate)
+ * ADR-0026  § 1 — routing inventory (/admin/monitoring)
+ * ADR-0034  — render-mode doctrine (static SSR default)
+ *@
+
+<PageTitle>Monitoring — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <AppPageHeader Title="Monitoring"
+                   Subtitle="Live SLO health and pipeline signals from the OpenTelemetry stream."
+                   Breadcrumbs="@_breadcrumbs" />
+
+    @* Toolbar — refresh stamp + time-period segmented control *@
+    <div class="mon-toolbar" data-testid="monitoring-toolbar">
+        <span class="mon-toolbar__stamp" data-testid="monitoring-stamp">
+            Refreshed @_renderedAt UTC
+        </span>
+        <div class="mon-toolbar__periods" aria-label="Time period (decorative — static SSR)">
+            <span class="mon-period" data-testid="mon-period-1h">1h</span>
+            <span class="mon-period mon-period--active" aria-current="true"
+                  data-testid="mon-period-active">24h</span>
+            <span class="mon-period" data-testid="mon-period-7d">7d</span>
+        </div>
+    </div>
+
+    @* D1 — Health ribbon *@
+    <div class="mon-ribbon" data-testid="mon-d1-ribbon">
+
+        @* Tile 1: Answer latency p95 *@
+        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-latency">
+            <div class="mon-tile__header">
+                <span class="mon-tile__label">Answer latency p95</span>
+                <span class="mon-state mon-state--ok" data-testid="mon-tile-latency-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>OK
+                </span>
+            </div>
+            <span class="mon-tile__value" data-testid="mon-tile-latency-value">
+                2,310 <span class="mon-tile__unit">ms</span>
+            </span>
+            <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
+                 aria-hidden="true" focusable="false">
+                <line x1="0" y1="8" x2="120" y2="8"
+                      class="mon-sparkline__threshold" stroke-dasharray="3,3" />
+                <polyline points="0,28 20,25 40,30 60,22 80,26 100,24 120,25"
+                          class="mon-sparkline__line" fill="none" />
+            </svg>
+            <div class="mon-tile__footer">
+                <span class="mon-tile__instrument">pinwiz.ai.duration_ms</span>
+                <span class="mon-tile__threshold">&gt; 5,000 ms · 5 periods</span>
+            </div>
+        </div>
+
+        @* Tile 2: 5xx error rate *@
+        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-5xx">
+            <div class="mon-tile__header">
+                <span class="mon-tile__label">5xx error rate</span>
+                <span class="mon-state mon-state--ok" data-testid="mon-tile-5xx-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>OK
+                </span>
+            </div>
+            <span class="mon-tile__value" data-testid="mon-tile-5xx-value">
+                0.4<span class="mon-tile__unit">%</span>
+            </span>
+            <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
+                 aria-hidden="true" focusable="false">
+                <line x1="0" y1="12" x2="120" y2="12"
+                      class="mon-sparkline__threshold" stroke-dasharray="3,3" />
+                <polyline points="0,36 30,35 60,36 90,35 120,35"
+                          class="mon-sparkline__line" fill="none" />
+            </svg>
+            <div class="mon-tile__footer">
+                <span class="mon-tile__instrument">requests · /api/wizard/*</span>
+                <span class="mon-tile__threshold">&gt; 5% · 10-min</span>
+            </div>
+        </div>
+
+        @* Tile 3: Daily AI cost — eval-only until #2688 *@
+        <div class="mon-tile mon-tile--eval" data-testid="mon-tile-cost">
+            <div class="mon-tile__header">
+                <span class="mon-tile__label">Daily AI cost</span>
+                <span class="mon-state mon-state--eval" data-testid="mon-tile-cost-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>Eval-only
+                </span>
+            </div>
+            <span class="mon-tile__value mon-tile__value--dim" data-testid="mon-tile-cost-value"
+                  aria-label="Cost not instrumented">
+                &mdash;
+            </span>
+            <p class="mon-tile__eval-note" data-testid="mon-tile-cost-note">
+                Awaiting token-usage #2688;<br />Azure Cost Mgmt authoritative
+            </p>
+            <div class="mon-tile__footer">
+                <span class="mon-tile__instrument">pinwiz.ai.cost_usd_cents</span>
+                <span class="mon-tile__threshold">&gt; $15/day (1,500¢)</span>
+            </div>
+        </div>
+
+        @* Tile 4: Refusal rate *@
+        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-refusal">
+            <div class="mon-tile__header">
+                <span class="mon-tile__label">Refusal rate</span>
+                <span class="mon-state mon-state--ok" data-testid="mon-tile-refusal-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>In band
+                </span>
+            </div>
+            <span class="mon-tile__value" data-testid="mon-tile-refusal-value">
+                6.2<span class="mon-tile__unit">%</span>
+            </span>
+            <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
+                 aria-hidden="true" focusable="false">
+                <line x1="0" y1="6" x2="120" y2="6"
+                      class="mon-sparkline__threshold" stroke-dasharray="3,3" />
+                <polyline points="0,26 20,28 40,24 60,27 80,25 100,26 120,26"
+                          class="mon-sparkline__line" fill="none" />
+            </svg>
+            <div class="mon-tile__footer">
+                <span class="mon-tile__instrument">pinwiz.ai.refusals</span>
+                <span class="mon-tile__threshold">103 / 1,652</span>
+            </div>
+        </div>
+
+    </div>
+
+    @* D2 (Refusals) + D3 (Ingestion) side by side *@
+    <MudGrid Spacing="3" Class="mb-4">
+
+        @* D2 — Refusals by category *@
+        <MudItem xs="12" md="5">
+            <div class="mon-panel" data-testid="mon-d2-refusals">
+                <div class="mon-panel__header">
+                    <span class="mon-panel__title">Refusals by category</span>
+                    <span class="mon-panel__meta">last 24h · 103 total</span>
+                </div>
+                <p class="mon-panel__sub">
+                    Refusal is the safety invariant — category mix is the diagnostic.
+                </p>
+                <div class="mon-bars" data-testid="mon-refusal-bars">
+                    <div class="mon-bar-row" data-testid="mon-refusal-outofscope">
+                        <span class="mon-bar__label">OutOfScope</span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:100%"></div>
+                        </div>
+                        <span class="mon-bar__count">47</span>
+                    </div>
+                    <div class="mon-bar-row" data-testid="mon-refusal-insufficientgrounding">
+                        <span class="mon-bar__label">
+                            InsufficientGrounding
+                            <span class="mon-bar__tag">retrieval</span>
+                        </span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--retrieval" style="width:72%"></div>
+                        </div>
+                        <span class="mon-bar__count">34</span>
+                    </div>
+                    <div class="mon-bar-row" data-testid="mon-refusal-nocitation">
+                        <span class="mon-bar__label">
+                            NoCitation
+                            <span class="mon-bar__tag">retrieval</span>
+                        </span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--retrieval" style="width:26%"></div>
+                        </div>
+                        <span class="mon-bar__count">12</span>
+                    </div>
+                    <div class="mon-bar-row" data-testid="mon-refusal-lowmodelconfidence">
+                        <span class="mon-bar__label">LowModelConfidence</span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:19%"></div>
+                        </div>
+                        <span class="mon-bar__count">9</span>
+                    </div>
+                    <div class="mon-bar-row" data-testid="mon-refusal-harmfulcontent">
+                        <span class="mon-bar__label">HarmfulContent</span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:2%"></div>
+                        </div>
+                        <span class="mon-bar__count">1</span>
+                    </div>
+                    <div class="mon-bar-row" data-testid="mon-refusal-costceilinghit">
+                        <span class="mon-bar__label">CostCeilingHit</span>
+                        <div class="mon-bar__track">
+                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:0%"></div>
+                        </div>
+                        <span class="mon-bar__count">0</span>
+                    </div>
+                </div>
+            </div>
+        </MudItem>
+
+        @* D3 — Ingestion pipeline health *@
+        <MudItem xs="12" md="7">
+            <div class="mon-panel" data-testid="mon-d3-ingestion">
+                <div class="mon-panel__header">
+                    <span class="mon-panel__title">Ingestion pipeline health</span>
+                    <span class="mon-panel__meta">Change Feed worker — leasing and ingestion durability</span>
+                </div>
+                <div class="mon-pipeline" data-testid="mon-pipeline-rows">
+                    <div class="mon-pipeline__row" data-testid="mon-pipeline-lease">
+                        <div class="mon-pipeline__info">
+                            <span class="mon-pipeline__name">Lease lag</span>
+                            <span class="mon-pipeline__sub">changefeed_lease_lag</span>
+                        </div>
+                        <span class="mon-pipeline__count">0</span>
+                        <span class="mon-pip-state mon-pip-state--ok"
+                              data-testid="mon-pipeline-lease-state">caught up</span>
+                    </div>
+                    <div class="mon-pipeline__row" data-testid="mon-pipeline-deadletter">
+                        <div class="mon-pipeline__info">
+                            <span class="mon-pipeline__name">Dead letters (24h)</span>
+                            <span class="mon-pipeline__sub">RequestFailed · Cosmos</span>
+                        </div>
+                        <span class="mon-pipeline__count">2</span>
+                        <span class="mon-pip-state mon-pip-state--warn"
+                              data-testid="mon-pipeline-deadletter-state">review</span>
+                    </div>
+                    <div class="mon-pipeline__row" data-testid="mon-pipeline-shortcircuit">
+                        <div class="mon-pipeline__info">
+                            <span class="mon-pipeline__name">Short-circuits</span>
+                            <span class="mon-pipeline__sub">over_budget: 1 · empty_id: 0</span>
+                        </div>
+                        <span class="mon-pipeline__count">1</span>
+                        <span class="mon-pip-state mon-pip-state--faint"
+                              data-testid="mon-pipeline-shortcircuit-state">expected</span>
+                    </div>
+                    <div class="mon-pipeline__row mon-pipeline__row--canary"
+                         data-testid="mon-pipeline-drift">
+                        <div class="mon-pipeline__info">
+                            <span class="mon-pipeline__name mon-pipeline__name--canary">Reconcile drift</span>
+                            <span class="mon-pipeline__sub">the durability canary</span>
+                        </div>
+                        <span class="mon-pipeline__count mon-pipeline__count--canary">0</span>
+                        <span class="mon-pip-state mon-pip-state--ok"
+                              data-testid="mon-pipeline-drift-state">no loss</span>
+                    </div>
+                </div>
+            </div>
+        </MudItem>
+
+    </MudGrid>
+
+    @* D4 — Active alert rules *@
+    <div class="mon-panel" data-testid="mon-d4-alerts">
+        <div class="mon-panel__header">
+            <span class="mon-panel__title">Active alert rules</span>
+            <span class="mon-panel__meta">infra/modules/shared.bicep</span>
+        </div>
+        <div class="mon-alerts" data-testid="mon-alert-rows">
+            <div class="mon-alert-row" data-testid="mon-alert-latency">
+                <span class="mon-alert__name">pinwiz-alert-latency-p95</span>
+                <span class="mon-alert__condition">
+                    p95 &gt; 5,000 ms · 5 periods — now 2,310 ms
+                </span>
+                <span class="mon-alert-state mon-alert-state--ok"
+                      data-testid="mon-alert-latency-state">OK</span>
+            </div>
+            <div class="mon-alert-row" data-testid="mon-alert-5xx">
+                <span class="mon-alert__name">pinwiz-alert-5xx-rate</span>
+                <span class="mon-alert__condition">
+                    5xx &gt; 5% · 10-min window — now 0.4%
+                </span>
+                <span class="mon-alert-state mon-alert-state--ok"
+                      data-testid="mon-alert-5xx-state">OK</span>
+            </div>
+            <div class="mon-alert-row" data-testid="mon-alert-cost">
+                <span class="mon-alert__name">pinwiz-alert-daily-cost</span>
+                <span class="mon-alert__condition">
+                    cost &gt; 1,500¢/day — evaluation-only until #2688
+                </span>
+                <span class="mon-alert-state mon-alert-state--suppressed"
+                      data-testid="mon-alert-cost-state">Suppressed</span>
+            </div>
+            <div class="mon-alert-row" data-testid="mon-alert-deadletter">
+                <span class="mon-alert__name">pinwiz-alert-dead-letters</span>
+                <span class="mon-alert__condition">
+                    dead-letter rate &gt; 0 · 15-min — now 2 (under burst cap)
+                </span>
+                <span class="mon-alert-state mon-alert-state--ok"
+                      data-testid="mon-alert-deadletter-state">OK</span>
+            </div>
+            <div class="mon-alert-row" data-testid="mon-alert-availability">
+                <span class="mon-alert__name">pinwiz-alert-availability</span>
+                <span class="mon-alert__condition">
+                    health probe failures &gt; 2 · 5-min — now 0
+                </span>
+                <span class="mon-alert-state mon-alert-state--ok"
+                      data-testid="mon-alert-availability-state">OK</span>
+            </div>
+        </div>
+    </div>
+
+</MudContainer>
+
+@code {
+    private readonly string _renderedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Monitoring", href: "/admin/monitoring",
+            icon: Icons.Material.Filled.Monitor),
+    ];
+}
