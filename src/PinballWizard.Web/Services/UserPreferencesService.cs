@@ -43,7 +43,7 @@ public interface IUserPreferencesService
 
 public sealed class UserPreferencesService(IJSRuntime js) : IUserPreferencesService
 {
-    public string CurrentTheme { get; private set; } = ThemeNames.ModernLcd;
+    public string CurrentTheme { get; private set; } = ThemeNames.Paper;
     public string CurrentMotion { get; private set; } = "match";
     public string CurrentSound { get; private set; } = "muted";
     public bool StorageAvailable { get; private set; } = true;
