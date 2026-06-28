@@ -85,10 +85,10 @@ Valid `<type>` values: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `infr
 Recent examples from the history:
 
 ```
-feat(web) citation cards link to /documents/{id} for corpus chunks
-feat(documents) add document-type filter to browse page
-fix(catalog) self-correcting catalog_stats handler + clickable source URLs
-chore(dev) full-feature AppHost launcher + browser auto-open
+feat(web): citation cards link to /documents/{id} for corpus chunks
+feat(documents): add document-type filter to browse page
+fix(catalog): self-correcting catalog_stats handler + clickable source URLs
+chore(dev): full-feature AppHost launcher + browser auto-open
 ```
 
 Keep the first line at 72 characters or fewer. Always include a body paragraph. Don't add `Co-Authored-By` trailers.
