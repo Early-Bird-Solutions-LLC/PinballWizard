@@ -1,3 +1,4 @@
+using PinballWizard.Application.Documents;
 using PinballWizard.Core.Models;
 
 namespace PinballWizard.Application.Persistence;
@@ -65,5 +66,21 @@ public interface IRawDocumentRepository
     Task UpdateDocumentTypeAsync(
         string documentId,
         DocumentType newType,
+        CancellationToken cancellationToken);
+
+    // Stream documents for the /documents browse page.
+    // Optionally filtered by game title (CONTAINS, case-insensitive) and/or manufacturer (exact match).
+    // Admin fields (link_status, failure_reason, resolution_strategy) are null when includeAdminFields=false.
+    IAsyncEnumerable<DocumentListItem> StreamDocumentsAsync(
+        string? game,
+        string? manufacturer,
+        bool includeAdminFields,
+        CancellationToken cancellationToken);
+
+    // Point read for the /documents/{id} detail page.
+    // Returns null if the document_id does not exist in the container.
+    Task<DocumentDetailRecord?> GetDocumentDetailAsync(
+        string documentId,
+        bool includeAdminFields,
         CancellationToken cancellationToken);
 }

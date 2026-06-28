@@ -56,14 +56,16 @@ public sealed class CrossPartitionQueryAllowListTests
             "admin / --relink-all path; projects VALUE c.machine_id only, not SELECT *.",
 
         // StreamCrossPartitionAsync — StreamByStatusAsync (linker batch via IN clause),
-        // StreamAllAsync (full raw-doc scan for admin/export), and
-        // StreamBySourcePatternAsync (linker pattern matching). All are back-office
-        // / batch paths, not user-facing query hot paths.
+        // StreamAllAsync (full raw-doc scan for admin/export),
+        // StreamBySourcePatternAsync (linker pattern matching),
+        // StreamByRunIdAsync (per-run admin drill-down), and
+        // StreamDocumentsAsync (/documents browse page, optionally filtered by game/manufacturer).
         ["CosmosRawDocumentRepository.cs"] =
             "StreamCrossPartitionAsync in StreamByStatusAsync (linker IN-clause batch), " +
-            "StreamAllAsync (admin full-scan), and StreamBySourcePatternAsync (linker " +
-            "CONTAINS pattern match); all are back-office / batch paths, " +
-            "and StreamByRunIdAsync (per-run drill-down, back-office admin path).",
+            "StreamAllAsync (admin full-scan), StreamBySourcePatternAsync (linker " +
+            "CONTAINS pattern match), StreamByRunIdAsync (per-run drill-down, back-office admin path), " +
+            "and StreamDocumentsAsync (/documents browse page; game CONTAINS + manufacturer equality filter; " +
+            "ORDER BY timeline.first_discovered_at DESC).",
 
         // StreamCrossPartitionAsync — GetAllDocumentsAsync reads ~6 curated docs
         // for the landing page strip. Bounded to ~6 entries; ADR-0025 § 6 notes

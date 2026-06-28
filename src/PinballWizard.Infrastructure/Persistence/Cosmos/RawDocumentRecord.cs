@@ -75,11 +75,29 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     [JsonPropertyName("cross_references")]
     public List<RawCrossRef> CrossReferences { get; set; } = [];
 
+    [JsonPropertyName("game")]
+    public RawGameInfo? Game { get; set; }
+
     [JsonPropertyName("run_id")]
     public string? RunId { get; set; }
 
     [JsonPropertyName("manufacturer")]
     public string? Manufacturer { get; set; }
+}
+
+internal sealed class RawGameInfo
+{
+    [JsonPropertyName("title")]
+    public required string Title { get; init; }
+
+    [JsonPropertyName("slug")]
+    public required string Slug { get; init; }
+
+    [JsonPropertyName("edition")]
+    public string? Edition { get; init; }
+
+    [JsonPropertyName("game_page_url")]
+    public required string GamePageUrl { get; init; }
 }
 
 internal sealed class RawSourceInfo
