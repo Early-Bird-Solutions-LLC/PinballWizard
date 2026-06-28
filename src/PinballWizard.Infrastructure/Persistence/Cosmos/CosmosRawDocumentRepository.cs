@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
 
@@ -306,6 +307,107 @@ internal sealed class CosmosRawDocumentRepository
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
+    // IRawDocumentRepository.StreamDocumentsAsync
+    public async IAsyncEnumerable<DocumentListItem> StreamDocumentsAsync(
+        string? game,
+        string? manufacturer,
+        bool includeAdminFields,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        const string query =
+            "SELECT c.document_id, c.source.link_text, c.source.file_url, " +
+            "c.classification.document_type, c.classification.file_format, " +
+            "c.game.title, c.game.edition, c.manufacturer, " +
+            "c.file.page_count, c.file.size_bytes, c.timeline.first_discovered_at, " +
+            "c.link_status, c.link_failure_reason, c.resolution_strategy FROM c " +
+            "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
+            "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
+            "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
+            "ORDER BY c.timeline.first_discovered_at DESC";
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["game"] = game ?? "",
+            ["manufacturer"] = manufacturer ?? "",
+        };
+
+        await foreach (var raw in StreamCrossPartitionAsync(query, parameters, cancellationToken).ConfigureAwait(false))
+        {
+            yield return MapToListItem(raw, includeAdminFields);
+        }
+    }
+
+    // IRawDocumentRepository.GetDocumentDetailAsync
+    public async Task<DocumentDetailRecord?> GetDocumentDetailAsync(
+        string documentId,
+        bool includeAdminFields,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        var raw = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (raw is null)
+            return null;
+
+        var title = raw.Source?.LinkText
+            ?? (raw.Source?.FileUrl is { Length: > 0 } url
+                ? System.IO.Path.GetFileName(url).Split('?')[0]
+                : null)
+            ?? raw.PartitionKey;
+
+        return new DocumentDetailRecord(
+            DocumentId: raw.PartitionKey,
+            Title: title,
+            DocumentType: raw.Classification?.DocumentType ?? "",
+            FileFormat: raw.Classification?.FileFormat ?? "",
+            PageCount: raw.File?.PageCount,
+            SizeBytes: raw.File?.SizeBytes,
+            FileUrl: raw.Source?.FileUrl ?? "",
+            DiscoveryUrl: raw.Source?.DiscoveryUrl ?? "",
+            DiscoveryContext: raw.Source?.DiscoveryContext,
+            SourceTab: raw.Source?.Tab,
+            SourceType: raw.Source?.SourceType ?? "",
+            GameTitle: raw.Game?.Title,
+            GameSlug: raw.Game?.Slug,
+            Edition: raw.Game?.Edition,
+            EditionScope: null,
+            Manufacturer: raw.Manufacturer ?? "",
+            FirstDiscoveredAt: raw.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
+            LastDownloadedAt: raw.Timeline?.LastDownloadedAt,
+            LinkStatus: includeAdminFields ? raw.LinkStatus : null,
+            LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
+            ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
+            LinkedMachineIds: includeAdminFields ? raw.LinkedMachineIds?.AsReadOnly() : null
+        );
+    }
+
+    private static DocumentListItem MapToListItem(RawDocumentCosmosRecord r, bool includeAdminFields)
+    {
+        var title = r.Source?.LinkText
+            ?? (r.Source?.FileUrl is { Length: > 0 } url
+                ? System.IO.Path.GetFileName(url).Split('?')[0]
+                : null)
+            ?? r.PartitionKey;
+
+        return new DocumentListItem(
+            DocumentId: r.PartitionKey,
+            Title: title,
+            DocumentType: r.Classification?.DocumentType ?? "",
+            GameTitle: r.Game?.Title,
+            Edition: r.Game?.Edition,
+            Manufacturer: r.Manufacturer ?? "",
+            FileFormat: r.Classification?.FileFormat ?? "",
+            PageCount: r.File?.PageCount,
+            SizeBytes: r.File?.SizeBytes,
+            FirstDiscoveredAt: r.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
+            LinkStatus: includeAdminFields ? r.LinkStatus : null,
+            LinkFailureReason: includeAdminFields ? r.LinkFailureReason : null,
+            ResolutionStrategy: includeAdminFields ? r.ResolutionStrategy : null
+        );
+    }
+
     // ── Mapping helpers ──────────────────────────────────────────────────────
 
     private static RawDocumentCosmosRecord MapToCosmosRecord(DocumentRecord record)
@@ -373,7 +475,17 @@ internal sealed class CosmosRawDocumentRepository
                     DiscoveredAt = x.DiscoveredAt,
                 })
                 .ToList(),
+            Game = record.Game is { } g
+                ? new RawGameInfo
+                {
+                    Title = g.Title,
+                    Slug = g.Slug,
+                    Edition = g.Edition,
+                    GamePageUrl = g.GamePageUrl,
+                }
+                : null,
             RunId = record.RunId,
+            Manufacturer = record.Manufacturer,
         };
     }
 
@@ -482,6 +594,7 @@ internal sealed class CosmosRawDocumentRepository
                 })
                 .ToList(),
             RunId = cosmos.RunId,
+            Manufacturer = cosmos.Manufacturer,
         };
     }
 

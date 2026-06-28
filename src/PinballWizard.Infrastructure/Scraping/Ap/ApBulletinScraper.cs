@@ -17,6 +17,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
     private readonly ApOptions _apOptions;
 
     public string Name => "American Pinball Bulletins";
+    public string Manufacturer => "American Pinball";
     public string SourceId => IngestionSourceIds.ApBulletins;
 
     public ApBulletinScraper(

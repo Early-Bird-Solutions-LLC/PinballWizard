@@ -11,6 +11,8 @@ public interface ISourceScraper
     /// <summary>Human-readable name for logging.</summary>
     string Name { get; }
 
+    string Manufacturer { get; }
+
     /// <summary>The IngestionSource id this scraper's runs belong to (see IngestionSourceIds).</summary>
     string SourceId { get; }
 

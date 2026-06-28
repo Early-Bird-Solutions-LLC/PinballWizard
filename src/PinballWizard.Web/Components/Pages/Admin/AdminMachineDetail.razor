@@ -173,9 +173,16 @@
                     <PropertyColumn Property="d => d.DocumentType" Title="Type" Sortable="true" />
                     <TemplateColumn Title="Document">
                         <CellTemplate>
-                            <MudLink Href="@context.Item.DocumentUrl" Target="_blank">
-                                @(context.Item.LinkText ?? FileNameFromUrl(context.Item.DocumentUrl))
-                            </MudLink>
+                            <MudStack Spacing="0">
+                                <MudLink Href="@($"/documents/{context.Item.DocumentId}")"
+                                         data-testid="detail-doc-link">
+                                    @(context.Item.LinkText ?? FileNameFromUrl(context.Item.DocumentUrl))
+                                </MudLink>
+                                <MudLink Href="@context.Item.DocumentUrl" Target="_blank" Typo="Typo.caption"
+                                         Color="Color.Secondary">
+                                    Open file ↗
+                                </MudLink>
+                            </MudStack>
                         </CellTemplate>
                     </TemplateColumn>
                     <PropertyColumn Property="d => d.EditionScope" Title="Edition Scope" />

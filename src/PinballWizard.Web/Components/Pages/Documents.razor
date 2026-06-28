@@ -1,0 +1,18 @@
+@page "/documents"
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Shared
+@rendermode InteractiveServer
+
+<PageTitle>PinballWizard — Documents</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+    <AppPageHeader Title="Documents"
+                   Subtitle="Browse every manual, schematic, firmware, and ruleset we've indexed — with full source provenance." />
+    <DocumentList IsAdmin="false" Game="@Game" Manufacturer="@Manufacturer" />
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery(Name = "game")] public string? Game { get; set; }
+    [SupplyParameterFromQuery(Name = "manufacturer")] public string? Manufacturer { get; set; }
+}

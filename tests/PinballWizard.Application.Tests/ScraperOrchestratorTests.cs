@@ -400,6 +400,7 @@ public sealed class ScraperOrchestratorTests : IDisposable
         }
 
         public string Name { get; }
+        public string Manufacturer => "Stub";
         public string SourceId { get; }
         public bool WasInvoked { get; private set; }
 
@@ -426,6 +427,7 @@ public sealed class ScraperOrchestratorTests : IDisposable
         }
 
         public string Name { get; }
+        public string Manufacturer => "Stub";
         public string SourceId { get; }
 
         public async IAsyncEnumerable<ScrapedItem> ScrapeAsync(

@@ -1,0 +1,199 @@
+@namespace PinballWizard.Web.Components.Shared
+@using PinballWizard.Application.Documents
+@using PinballWizard.Application.Persistence
+@implements IDisposable
+@inject IRawDocumentRepository Repo
+@inject NavigationManager Nav
+@inject ILogger<DocumentList> Logger
+
+@if (_loadError)
+{
+    <AppErrorAlert data-testid="doc-list-load-error">
+        Couldn't load documents — try refreshing.
+    </AppErrorAlert>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
+        <MudTextField T="string"
+                      Value="@Game"
+                      ValueChanged="@(v => OnGameChanged(v))"
+                      Placeholder="Search by game…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Clearable="true"
+                      DebounceInterval="300"
+                      Immediate="true"
+                      data-testid="doc-list-game-filter" />
+        <MudChipSet T="string"
+                    SelectedValue="@Manufacturer"
+                    SelectedValueChanged="@(v => OnManufacturerChanged(v))"
+                    SelectionMode="SelectionMode.SingleSelection"
+                    data-testid="doc-list-mfr-filter">
+            @foreach (var mfr in _manufacturers)
+            {
+                <MudChip T="string" Value="@mfr" Variant="Variant.Outlined">@mfr</MudChip>
+            }
+        </MudChipSet>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading documents" />
+    }
+
+    <AppDataGrid T="DocumentListItem"
+                 Items="@_documents"
+                 data-testid="doc-list-grid"
+                 RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<DocumentListItem>>(this, OnRowClick))">
+        <Columns>
+            <TemplateColumn Title="Title" Sortable="true">
+                <CellTemplate>
+                    <MudLink Href="@DocUrl(context.Item.DocumentId)">
+                        @context.Item.Title
+                    </MudLink>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Type">
+                <CellTemplate>
+                    <AppStatusChip Color="Color.Default">@context.Item.DocumentType</AppStatusChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Game">
+                <CellTemplate>
+                    @context.Item.GameTitle@(context.Item.Edition is not null ? $" {context.Item.Edition}" : "")
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer" />
+            <PropertyColumn Property="x => x.FileFormat" Title="Format" />
+            <PropertyColumn Property="x => x.PageCount" Title="Pages" />
+            <TemplateColumn Title="Discovered">
+                <CellTemplate>
+                    @context.Item.FirstDiscoveredAt.ToString("yyyy-MM-dd")
+                </CellTemplate>
+            </TemplateColumn>
+            @if (IsAdmin)
+            {
+                <TemplateColumn Title="Link Status">
+                    <CellTemplate>
+                        @if (context.Item.LinkStatus is not null)
+                        {
+                            <AppStatusChip Color="@LinkStatusColor(context.Item.LinkStatus)">
+                                @context.Item.LinkStatus
+                            </AppStatusChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Failure Reason">
+                    <CellTemplate>
+                        <MudText Typo="Typo.caption" Style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            @context.Item.LinkFailureReason
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+            }
+        </Columns>
+        <NoRecordsContent>
+            @if (Game is not null || Manufacturer is not null)
+            {
+                <AppEmptyState Heading="No documents match"
+                               Detail="Try a different game or manufacturer"
+                               data-testid="doc-list-empty-filtered" />
+            }
+            else
+            {
+                <AppEmptyState Heading="No documents indexed yet"
+                               data-testid="doc-list-empty-corpus" />
+            }
+        </NoRecordsContent>
+    </AppDataGrid>
+}
+
+@code {
+    [Parameter] public bool IsAdmin { get; set; }
+    [Parameter] public string? Game { get; set; }
+    [Parameter] public string? Manufacturer { get; set; }
+
+    private List<DocumentListItem> _documents = [];
+    private bool _loading = true;
+    private bool _loadError;
+    private CancellationTokenSource _cts = new();
+
+    private static readonly string[] _manufacturers =
+    [
+        "American Pinball", "Barrels of Fun", "Chicago Gaming",
+        "Jersey Jack", "Multimorphic", "Pinball Brothers",
+        "Spooky", "Stern"
+    ];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        _loading = true;
+        _loadError = false;
+        _documents.Clear();
+
+        try
+        {
+            await foreach (var item in Repo.StreamDocumentsAsync(Game, Manufacturer, IsAdmin, token))
+            {
+                _documents.Add(item);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load documents");
+            _loadError = true;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+                _loading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private void OnGameChanged(string? value)
+    {
+        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["game"] = string.IsNullOrWhiteSpace(value) ? null : value,
+            ["manufacturer"] = Manufacturer
+        });
+        Nav.NavigateTo(uri, replace: true);
+    }
+
+    private void OnManufacturerChanged(string? value)
+    {
+        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["game"] = Game,
+            ["manufacturer"] = string.IsNullOrWhiteSpace(value) ? null : value
+        });
+        Nav.NavigateTo(uri, replace: true);
+    }
+
+    private void OnRowClick(DataGridRowClickEventArgs<DocumentListItem> args) =>
+        Nav.NavigateTo(DocUrl(args.Item.DocumentId));
+
+    private string DocUrl(string documentId) =>
+        IsAdmin ? $"/admin/documents/{documentId}" : $"/documents/{documentId}";
+
+    private static Color LinkStatusColor(string? status) => status switch
+    {
+        "linked" or "manually_linked" => Color.Success,
+        "failed" or "not_in_catalog" => Color.Error,
+        "platform_generic" => Color.Warning,
+        _ => Color.Default
+    };
+}

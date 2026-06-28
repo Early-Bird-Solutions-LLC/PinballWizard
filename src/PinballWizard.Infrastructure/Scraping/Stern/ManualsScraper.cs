@@ -29,6 +29,7 @@ public sealed class ManualsScraper : PoliteScraperBase, ISourceScraper
 
     /// <inheritdoc />
     public string Name => "Manuals";
+    public string Manufacturer => "Stern";
     /// <inheritdoc />
     public string SourceId => IngestionSourceIds.Stern;
 

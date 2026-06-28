@@ -89,6 +89,7 @@ public sealed class ScraperOrchestrator
 
                         var record = BuildDocumentRecord(item);
                         record.RunId = ScrapeRunId.For(sourceId, runStartedAt);
+                        record.Manufacturer = scraper.Manufacturer;
                         result.TotalLinks++;
                         sourceDocCount++;
 
