@@ -132,16 +132,26 @@ Per [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md), the AI surface uses
 | --- | --- | --- | --- |
 | `pinwiz.ai.cache.hits` | Counter | (none) | User-questions answered from the in-process LRU semantic cache without invoking Foundry |
 | `pinwiz.ai.cache.misses` | Counter | (none) | User-questions that missed the cache |
-| `pinwiz.ai.cost_usd_cents` | Counter | `model`, `sub_agent`, `prompt_version` | Estimated USD cents per call. Computed from token counts × `AiFoundryOptions.PricingTable`; drives the per-call ceiling (`AiFoundryOptions.PerCallCostCeilingUsdCents`) and the daily anomaly alarm. **Currently relies on `ITokenUsageReader` returning a `TokenUsage` snapshot — `NullTokenUsageReader` (default) returns null until `Microsoft.Agents.AI` exposes a stable Usage surface (issue #2688), so cost reads as 0 cents in Phase 3.** |
+| `pinwiz.ai.cache.bypass_multiturn` | Counter | (none) | Multi-turn asks that bypassed the semantic cache entirely (no read, no write) because the cache key has no history component — follow-up meaning depends on conversation context. Watch against `cache.hits`/`cache.misses` to track the cost impact of uncacheable multi-turn traffic (ADR-0015 amendment). |
+| `pinwiz.ai.cost_usd_cents` | Counter | `model`, `sub_agent`, `prompt_version` | Estimated USD cents per call. Computed from token counts × `AiFoundryOptions.PricingTable`; drives the per-call ceiling and the daily anomaly alarm. **Currently relies on `ITokenUsageReader` returning a `TokenUsage` snapshot — `NullTokenUsageReader` (default) returns null until `Microsoft.Agents.AI` exposes a stable Usage surface (issue #2688), so cost reads as 0 cents until the impl ships.** |
 | `pinwiz.ai.refusals` | Counter | `refusal_category`, `sub_agent` | Refusals tagged with category (`InsufficientGrounding` / `OutOfScope` / `LowModelConfidence` / `CostCeilingHit` / `HarmfulContent` per ADR-0017; `NoCitation` per ADR-0023). A spike on a single category points at a specific failure mode — `InsufficientGrounding` ↑ ⇒ retrieval is degraded; `NoCitation` ↑ ⇒ agent isn't calling grounding tools (correlate with `pinwiz.ai.tool_errors_total` to distinguish "tool threw" from "agent didn't call tool"). |
 | `pinwiz.ai.escalations` | Counter | (none) | User-questions where the Wizard routed from light-tier to heavy-tier (gpt-4o → gpt-4.1) |
 | `pinwiz.ai.duration_ms` | Histogram | (none) | User-question wall-clock; complements per-call `gen_ai.*` durations from auto-emitted spans |
+| `pinwiz.ai.first_token_ms` | Histogram | `cache_state`, `outcome` | Time from request to first text-bearing chunk emitted to the client. `cache_state` ∈ `hit`/`miss` keeps the cache-replay distribution (sub-ms) separate from live-stream distribution (hundreds of ms). `outcome` ∈ `streamed`/`refusal` distinguishes normal paths from guardrail-fires-before-first-token. Drives the ADR-0026 §7.1 user-delight revisit triggers. |
+| `pinwiz.ai.citations.extracted_total` | Counter | `source` | Citations attached to a Wizard answer. `source` ∈ `tool_trace`/`regex_legacy` (per ADR-0022; both extractors run during the Phase 4 cutover for behavioral comparison). |
+| `pinwiz.ai.citations.inherited_total` | Counter | (none) | Citations carried forward from a prior turn because the current turn answered from conversation context without firing a retrieval tool. High ratio of inherited-to-extracted is expected for clarifying questions. |
+| `pinwiz.ai.inline_marker_total` | Counter | (none) | Inline `[[cite:k]]` tokens the model emitted in an answer, before reconciliation. |
+| `pinwiz.ai.inline_marker_rendered_total` | Counter | (none) | Inline citation markers that reconciled to a real citation and were rewritten to `[[cite:N]]`. |
+| `pinwiz.ai.inline_marker_dropped_total` | Counter | `reason` | Inline `[[cite:k]]` tokens dropped because no structural citation matched. Degrade-visibly signal (invariant #17 / OBS-01). |
 | `pinwiz.ai.tool_errors_total` | Counter | `tool` | Function-tool calls whose inner catch boundary surfaced an exception (the tool returned an empty result rather than rethrowing — see [ADR-0023](adr/0023-citation-required-guardrail.md) § Negative consequence #3). Tag values: `searchCorpus`, `getMachineByTitle`. Distinguishes retrieval-side failures (which become `NoCitation` refusals) from agent-didn't-call-tool refusals — both can produce empty citation sets but operationally they need different alerts. |
+| `pinwiz.ai.search_unavailable_total` | Counter | `reason` | `SearchCorpusTool` calls where the retriever threw and the tool returned an empty result. `reason` ∈ `timeout`/`http_5xx`/`auth_failure`/`other`. Finer failure-type attribution than `tool_errors_total`. Drives the PR-D2 `SearchUnavailable` degradation-context mark surfaced to the frontend. |
 | `pinwiz.ai.tool_duration_ms` | Histogram | `tool` | Per-tool wall-clock measured at the tool's outer boundary (input normalization + downstream call + post-process). Tag values: `searchCorpus`, `getMachineByTitle`. Drives the [`architecture-v2.md`](architecture-v2.md) §7.1 user-delight revisit triggers (200ms p95 structured-records latency for `getMachineByTitle`, 500ms cold-start for `searchCorpus`). Pair with `pinwiz.rag.retrieval_duration_ms` to subtract retrieval latency and isolate per-tool overhead drift. |
+| `pinwiz.ai.community_resources_load_errors_total` | Counter | `reason` | `RefusalRecoveryService` calls where `ICommunityResourceLoader` threw during `BuildRecoveryAsync`. When non-zero, community routing CTAs are absent from refusal panels. `reason` ∈ `FileNotFoundException`/`InvalidOperationException`/`other`. Non-zero prod rate means `community_resources.v1.json` seed is unresolvable in the container (invariant #17 / OBS-01). |
+| `pinwiz.ai.related_machines_lookup_errors_total` | Counter | `reason` | `RefusalRecoveryService` calls where the related-machines lookup (`IMachineRepository.QueryByTitleAsync`) threw. When non-zero, related-machine suggestions are absent from refusal panels; community routing CTAs are **unaffected** (the two enrichments degrade independently). Non-zero rate on prod signals a cross-partition machine-title query failure (invariant #17 / OBS-01). |
 
 The brainstorm draft proposed a second `cache_state` tag on `tool_duration_ms`. Code-review against the shipped stack found the LRU semantic cache (per [ADR-0015](adr/0015-cost-routing-and-semantic-cache.md)) wraps `IAiRouter` *above* the tools — when a tool fires the cache state is structurally always "miss-path", which would make `cache_state` a constant column. The dimension was dropped; cache effectiveness is observed via `pinwiz.ai.cache.hits` / `pinwiz.ai.cache.misses` instead. A future per-tool internal cache (e.g. `searchCorpus` caching AI-Search query results) is the right time to revisit the tag.
 
-Activity (trace) name: `pinwiz.ai.router`.
+Activity (trace) names: `pinwiz.ai.router`, `pinwiz.eval.run`.
 
 ## RAG indexing + retrieval instruments (Phase 4)
 
@@ -185,6 +195,59 @@ Two histograms emitted at the SDK boundary inside [`CosmosRepository<T>`](../src
 | `pinwiz.cosmos.query_duration_ms` | Histogram | `container`, `operation` | Wall-clock duration of the same SDK call, same tags. PR 5 of the Cosmos delight track is validated against this instrument's pre/post p95 distribution on the `{operation=query, container=machines}` slice — the point-read refactor lands when the post-merge p95 drops under the §7.1 200ms trigger. |
 
 **Diagnostic-log capture on failure.** On any non-404 `CosmosException`, [`CosmosRepository<T>`](../src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosRepository.cs)'s helper opens a structured `BeginScope` carrying `cosmos.diagnostics` (`ex.Diagnostics.ToString()` — region, retry count, RU consumed, per-stage timing breakdown), `cosmos.status_code`, `cosmos.sub_status_code`, `cosmos.activity_id`, `cosmos.request_charge`, `pinwiz.container`, and `pinwiz.operation`. Operators investigating a 429/503/408 see the failure context in the App Insights log entry without a separate trace lookup. 404s are deliberately suppressed from this path — they are normal flow on `GetByIdAsync` cache misses and `DeleteAsync` idempotency, and routine traffic should not page operators.
+
+### Cosmos deserialization failures (invariant #17 / OBS-01)
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.cosmos.deser_failed_total` | Counter | `container`, `operation` | Cosmos point-reads or query pages where `System.Text.Json` threw `JsonException` during deserialization (corrupt or schema-mismatched stored document — e.g. `matchTokens` written as a flat array instead of `List<List<string>>`). A non-zero rate requires operator action: identify the corrupt document from the Error log and re-upsert with the correct shape. Incremented by `CosmosMetricsHelper` inside `CosmosRepository<T>` alongside the Error log so the failure is never silent (invariant #17 / OBS-01). |
+
+### Scraper degradation signals (invariant #17 / OBS-01)
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.scraper.politeness_fallback_active` | Counter | (none) | `IngestionSourcePolitenessResolver` fell back to global politeness defaults because the Cosmos repository threw during initialization. When non-zero, per-source politeness overrides are not applied — all scraping proceeds at the global default rate. Paired with an Error log (invariant #17 / OBS-01). |
+| `pinwiz.scraper.jsonld_missing_total` | Counter | `source`, `url` | Storefront product page where `JsonLdProductParser.FindFirstProduct` returned null and the extractor fell back to Open Graph / H1. Structured fields (editions, price, status) will be absent from the resulting `GameRecord`. `source` ∈ `JJP`/`BoF`/`Multimorphic`. Non-zero on BoF/Multimorphic indicates those sites have dropped JSON-LD; non-zero on JJP signals an unexpected Shopify theme regression. Paired with a `LogWarning` (invariant #17 / OBS-01). |
+
+### Web and streaming fallback signals (invariant #17 / OBS-01)
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `wizard.stream.fallback.attempted` | Counter | (none) | `WizardAnswerStream` attempts to recover from a stream error via the whole-response fallback path. Non-zero rate means streaming is degraded even if end-users receive an answer. Pair with the `wizard.stream.fallback.failed` Error log to compute fallback success rate (invariant #17). |
+| `pinwiz.web.landing_fallback_total` | Counter | (none) | Interactive-mode renders where `IWizardLandingClient` returned null (endpoint unreachable or non-2xx) and the landing page fell back to compiled-in static seed questions and featured machines. A sustained non-zero rate means the landing endpoint is unhealthy even though the page serves HTTP 200s. Alert on p5m sum > 0 in prod (invariant #17). |
+
+### Evaluation harness instruments (Phase 3 — ADR-0016)
+
+Emitted by the `--eval` CLI verb. Counters carry no per-question attributes — per-question scores live in the committed JSON result files rather than as metrics (per-question-per-run metric cardinality would explode unhelpfully). Phase 6 dashboards aggregate these as a "metric trajectory" surface alongside the committed JSON.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.eval.runs` | Counter | (none) | Evaluation harness runs that completed (regardless of pass/fail). |
+| `pinwiz.eval.runs.failed` | Counter | (none) | Evaluation harness runs that aborted with an exception before producing a result file. |
+| `pinwiz.eval.questions.scored` | Counter | (none) | Per-question evaluations completed (success + per-question failure both increment). |
+| `pinwiz.eval.evaluator.registrations` | Counter | (none) | Custom evaluator versions upserted into the Foundry project. Idempotent on every harness run; the counter increments per registration attempt regardless of whether the version already existed. |
+| `pinwiz.eval.question.duration_ms` | Histogram | (none) | Wall-clock duration of a single eval question (`IAiRouter` dispatch + scoring). |
+
+Activity (trace) name: `pinwiz.eval.run`.
+
+### Document reclassification instruments (`--reclassify-documents`)
+
+Emitted by `DocumentReclassifier.RunAsync` for the CLI maintenance verb that re-runs `ClassifyDocumentType` over stored `scraped_documents_raw` records and writes back any changed `document_type`. Safe to run repeatedly — second run is a no-op.
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.reclassify.scanned` | Counter | (none) | Every `scraped_documents_raw` record streamed, regardless of outcome. Use to track run completeness at corpus scale. |
+| `pinwiz.reclassify.changed` | Counter | `old_type`, `new_type` | Records whose `document_type` changed and were written back. Tag breakdown (e.g. `Other → Rulesheet`) confirms classification rule changes are taking effect. |
+| `pinwiz.reclassify.unchanged` | Counter | (none) | Records whose `ClassifyDocumentType` result matched the stored type — no write issued. High unchanged count on re-runs confirms idempotency. |
+| `pinwiz.reclassify.failed` | Counter | (none) | Per-document errors caught and logged without aborting the run (invariant #17 degrade-visibly). Non-zero rate means some documents were not reclassified; check Error logs for document IDs and exception types. |
+| `pinwiz.reclassify.duration_ms` | Histogram | (none) | Wall-clock duration of a complete `--reclassify-documents` run. Useful for capacity planning at corpus scale. |
+
+### RAG embedding token usage
+
+| Instrument | Type | Tags | Purpose |
+| --- | --- | --- | --- |
+| `pinwiz.rag.embedding_tokens_total` | Counter | `call_site` | Input tokens sent to the embedding API per `EmbedBatchAsync` call. Sourced from the SDK's `EmbeddingTokenUsage.InputTokenCount` (actual billed tokens, not an estimate). `call_site` ∈ `backfill`/`changefeed`/`query` splits indexing cost from query-time cost. Use to measure peak tokens/minute during rebuilds vs. the deployed TPM ceiling and to compute per-rebuild embedding cost. |
+| `pinwiz.rag.ingestion_type_filtered_total` | Counter | `document_type` | Documents skipped before download because their `document_type` is not in the RAG accepted-types set. A persistent non-zero rate for a type you expect to ingest means a classification or accept-list gap — the silent-drop class that hid the Domain-2 gameplay gap. |
 
 ### Inherited Foundry attributes (do NOT duplicate as `pinwiz.ai.*`)
 
