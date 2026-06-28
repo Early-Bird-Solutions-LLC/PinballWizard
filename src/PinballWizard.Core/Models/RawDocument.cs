@@ -37,6 +37,9 @@ public sealed class RawDocumentRecord
 
     public string? RunId { get; set; }
 
+    // Canonical manufacturer name, denormalized from the scraper that produced this record.
+    public string? Manufacturer { get; set; }
+
     // Linker-managed fields below
 
     public LinkStatus LinkStatus { get; set; } = LinkStatus.Pending;

@@ -77,6 +77,9 @@ internal sealed class RawDocumentCosmosRecord : IEntity
 
     [JsonPropertyName("run_id")]
     public string? RunId { get; set; }
+
+    [JsonPropertyName("manufacturer")]
+    public string? Manufacturer { get; set; }
 }
 
 internal sealed class RawSourceInfo

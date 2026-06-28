@@ -374,6 +374,7 @@ internal sealed class CosmosRawDocumentRepository
                 })
                 .ToList(),
             RunId = record.RunId,
+            Manufacturer = record.Manufacturer,
         };
     }
 
@@ -482,6 +483,7 @@ internal sealed class CosmosRawDocumentRepository
                 })
                 .ToList(),
             RunId = cosmos.RunId,
+            Manufacturer = cosmos.Manufacturer,
         };
     }
 
