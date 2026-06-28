@@ -76,7 +76,7 @@ public sealed class UserPreferencesServiceTests
 
         Assert.False(svc.StorageAvailable);
         // Defaults must be preserved on failure
-        Assert.Equal(ThemeNames.ModernLcd, svc.CurrentTheme);
+        Assert.Equal(ThemeNames.Paper, svc.CurrentTheme);
         Assert.Equal("match", svc.CurrentMotion);
         Assert.Equal("muted", svc.CurrentSound);
     }
