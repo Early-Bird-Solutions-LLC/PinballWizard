@@ -231,13 +231,14 @@ public sealed class CosmosOptions
         // everything else is point-reads by document_id.
         // timeline/first_discovered_at: ORDER BY in StreamDocumentsAsync (browse page).
         // manufacturer: equality filter in StreamDocumentsAsync.
+        // classification/document_type: nested path; browse-page type filter uses LOWER(c.classification.document_type).
         new()
         {
             Name = "scraped_documents_raw",
             PartitionKeyPath = "/document_id",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?", "/run_id/?", "/timeline/first_discovered_at/?", "/manufacturer/?"],
+                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?", "/classification/document_type/?", "/run_id/?", "/timeline/first_discovered_at/?", "/manufacturer/?"],
                 ExcludedPaths = ["/*"],
             },
         },

@@ -42,7 +42,7 @@ else
                     data-testid="doc-list-type-filter">
             @foreach (var dt in _documentTypes)
             {
-                <MudChip T="string" Value="@dt" Variant="Variant.Outlined">@dt</MudChip>
+                <MudChip T="string" Value="@dt" Variant="Variant.Outlined" aria-label="@($"Filter by {dt}")">@dt</MudChip>
             }
         </MudChipSet>
     </MudStack>

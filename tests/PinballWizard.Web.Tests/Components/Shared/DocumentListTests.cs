@@ -186,6 +186,22 @@ public sealed class DocumentListTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task TypeFilterChipStrip_RendersUserFacingDocumentTypes()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([]));
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Strip renders user-facing types and excludes internal artefacts.
+        var chipSetMarkup = cut.Find("[data-testid='doc-list-type-filter']").InnerHtml;
+        Assert.Contains("Manual", chipSetMarkup);
+        Assert.Contains("Rulesheet", chipSetMarkup);
+        Assert.DoesNotContain("MetadataCard", chipSetMarkup);
+    }
+
+    [Fact]
     public async Task TypeFilter_WithNoResults_ShowsFilteredEmptyState()
     {
         _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
