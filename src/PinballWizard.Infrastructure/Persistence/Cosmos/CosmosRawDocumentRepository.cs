@@ -318,7 +318,7 @@ internal sealed class CosmosRawDocumentRepository
             "SELECT * FROM c " +
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
             "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
-            "  AND (@manufacturer = '' OR c.manufacturer = @manufacturer) " +
+            "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
             "ORDER BY c.timeline.first_discovered_at DESC";
 
         var parameters = new Dictionary<string, object>
@@ -373,7 +373,7 @@ internal sealed class CosmosRawDocumentRepository
             LinkStatus: includeAdminFields ? raw.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
-            LinkedMachineIds: includeAdminFields ? raw.LinkedMachineIds.AsReadOnly() : null
+            LinkedMachineIds: includeAdminFields ? raw.LinkedMachineIds?.AsReadOnly() : null
         );
     }
 
