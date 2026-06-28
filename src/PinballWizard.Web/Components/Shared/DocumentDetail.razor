@@ -1,0 +1,218 @@
+@namespace PinballWizard.Web.Components.Shared
+@using PinballWizard.Application.Documents
+@using PinballWizard.Application.Persistence
+@inject IRawDocumentRepository Repo
+@inject NavigationManager Nav
+@inject ILogger<DocumentDetail> Logger
+
+@if (_loading)
+{
+    <AdminLoadingBar Label="Loading document" />
+}
+else if (_loadError)
+{
+    <AppErrorAlert data-testid="doc-detail-load-error">
+        Couldn't load document — try refreshing.
+    </AppErrorAlert>
+    <MudLink Href="@BackUrl" Class="mt-2">← All documents</MudLink>
+}
+else if (_doc is null)
+{
+    <AppErrorAlert data-testid="doc-detail-not-found">
+        Document not found.
+    </AppErrorAlert>
+    <MudLink Href="@BackUrl" Class="mt-2">← All documents</MudLink>
+}
+else
+{
+    <MudLink Href="@BackUrl" Class="mb-4 d-block" data-testid="doc-detail-back-link">← All documents</MudLink>
+
+    <MudGrid>
+        <MudItem xs="12" md="8">
+            <MudCard Elevation="2" data-testid="doc-detail-card">
+                <MudCardContent>
+                    <MudText Typo="Typo.h5" Class="mb-3" data-testid="doc-detail-title">@_doc.Title</MudText>
+
+                    <MudStack Row="true" Spacing="1" Class="mb-3">
+                        <AppStatusChip Color="Color.Primary">@_doc.DocumentType</AppStatusChip>
+                        <AppStatusChip Color="Color.Default">@_doc.FileFormat.ToUpperInvariant()</AppStatusChip>
+                    </MudStack>
+
+                    @if (_doc.GameTitle is not null)
+                    {
+                        <MudText Typo="Typo.body1" Class="mb-1" data-testid="doc-detail-game">
+                            @_doc.GameTitle@(_doc.Edition is not null ? $" {_doc.Edition}" : "")
+                        </MudText>
+                    }
+
+                    @if (_doc.EditionScope is not null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">
+                            @EditionScopeLabel(_doc.EditionScope)
+                        </MudText>
+                    }
+
+                    <MudText Typo="Typo.body2" Class="mb-3" data-testid="doc-detail-manufacturer">
+                        @_doc.Manufacturer
+                    </MudText>
+
+                    <MudDivider Class="my-3" />
+
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Found on</MudText>
+                    <MudLink Href="@_doc.DiscoveryUrl" Target="_blank" Typo="Typo.body2"
+                             data-testid="doc-detail-discovery-url">
+                        @_doc.DiscoveryUrl
+                    </MudLink>
+
+                    @if (_doc.DiscoveryContext is not null)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1"
+                                 data-testid="doc-detail-discovery-context">
+                            @_doc.DiscoveryContext
+                        </MudText>
+                    }
+
+                    <MudDivider Class="my-3" />
+
+                    <MudStack Row="true" Spacing="4">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Discovered</MudText>
+                            <MudText Typo="Typo.body2">@_doc.FirstDiscoveredAt.ToString("yyyy-MM-dd")</MudText>
+                        </MudStack>
+                        @if (_doc.LastDownloadedAt.HasValue)
+                        {
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Last downloaded</MudText>
+                                <MudText Typo="Typo.body2">@_doc.LastDownloadedAt.Value.ToString("yyyy-MM-dd")</MudText>
+                            </MudStack>
+                        }
+                        @if (_doc.SizeBytes.HasValue)
+                        {
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Size</MudText>
+                                <MudText Typo="Typo.body2">@FormatSize(_doc.SizeBytes.Value)</MudText>
+                            </MudStack>
+                        }
+                        @if (_doc.PageCount.HasValue)
+                        {
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Pages</MudText>
+                                <MudText Typo="Typo.body2">@_doc.PageCount</MudText>
+                            </MudStack>
+                        }
+                    </MudStack>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Href="@_doc.FileUrl"
+                               Target="_blank"
+                               data-testid="doc-detail-open-btn">
+                        Open document →
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        @if (IsAdmin)
+        {
+            <MudItem xs="12" md="4">
+                <MudCard Elevation="2" data-testid="doc-detail-admin-panel">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle2" Class="mb-3">Admin Details</MudText>
+
+                        @if (_doc.LinkStatus is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Link Status</MudText>
+                            <AppStatusChip Color="@LinkStatusColor(_doc.LinkStatus)" Class="mb-2">
+                                @_doc.LinkStatus
+                            </AppStatusChip>
+                        }
+
+                        @if (_doc.ResolutionStrategy is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Resolution</MudText>
+                            <MudText Typo="Typo.body2" Class="mb-2">@_doc.ResolutionStrategy</MudText>
+                        }
+
+                        @if (_doc.LinkFailureReason is not null)
+                        {
+                            <AppErrorAlert Class="mb-2">@_doc.LinkFailureReason</AppErrorAlert>
+                        }
+
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Document ID</MudText>
+                        <MudText Typo="Typo.caption" Class="mb-2" data-testid="doc-detail-doc-id">
+                            @_doc.DocumentId
+                        </MudText>
+
+                        @if (_doc.LinkedMachineIds?.Count > 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-1">Linked Machines</MudText>
+                            <MudStack Row="true" Wrap="Wrap.Wrap">
+                                @foreach (var id in _doc.LinkedMachineIds)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@id</MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    [Parameter, EditorRequired] public string DocumentId { get; set; } = null!;
+    [Parameter] public bool IsAdmin { get; set; }
+
+    private DocumentDetailRecord? _doc;
+    private bool _loading = true;
+    private bool _loadError;
+
+    private string BackUrl => IsAdmin ? "/admin/documents" : "/documents";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _loadError = false;
+        _doc = null;
+
+        try
+        {
+            _doc = await Repo.GetDocumentDetailAsync(DocumentId, IsAdmin, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load document detail for {DocumentId}", DocumentId);
+            _loadError = true;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string EditionScopeLabel(string scope) => scope switch
+    {
+        "franchise-wide" => "Franchise-wide",
+        "edition-subset" => "Edition subset",
+        "single-edition" => "Single edition",
+        _ => scope
+    };
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024} KB",
+        _ => $"{bytes / (1024 * 1024):F1} MB"
+    };
+
+    private static Color LinkStatusColor(string? status) => status switch
+    {
+        "linked" or "manually_linked" => Color.Success,
+        "failed" or "not_in_catalog" => Color.Error,
+        "platform_generic" => Color.Warning,
+        _ => Color.Default
+    };
+}

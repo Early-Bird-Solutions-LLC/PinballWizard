@@ -1,10 +1,14 @@
 @page "/documents/{DocumentId}"
 @attribute [AllowAnonymous]
 @using Microsoft.AspNetCore.Authorization
+@using PinballWizard.Web.Components.Shared
 @rendermode InteractiveServer
 
 <PageTitle>PinballWizard — Document</PageTitle>
-<MudText>Detail coming in Task 7.</MudText>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+    <PinballWizard.Web.Components.Shared.DocumentDetail DocumentId="@DocumentId" IsAdmin="false" />
+</MudContainer>
 
 @code {
     [Parameter] public string DocumentId { get; set; } = null!;
