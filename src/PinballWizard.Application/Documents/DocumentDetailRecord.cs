@@ -3,6 +3,7 @@ namespace PinballWizard.Application.Documents;
 // Full provenance record for the /documents/{id} detail page.
 // Admin-only fields are null when includeAdminFields is false.
 public sealed record DocumentDetailRecord(
+    // Serves as the raw document ID (spec's RawDocumentId) — same value, consolidated.
     string DocumentId,
     string Title,
     string DocumentType,

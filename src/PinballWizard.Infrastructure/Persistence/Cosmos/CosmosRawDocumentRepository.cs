@@ -315,7 +315,11 @@ internal sealed class CosmosRawDocumentRepository
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         const string query =
-            "SELECT * FROM c " +
+            "SELECT c.document_id, c.source.link_text, c.source.file_url, " +
+            "c.classification.document_type, c.classification.file_format, " +
+            "c.game.title, c.game.edition, c.manufacturer, " +
+            "c.file.page_count, c.file.size_bytes, c.timeline.first_discovered_at, " +
+            "c.link_status, c.link_failure_reason, c.resolution_strategy FROM c " +
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
             "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
             "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
@@ -348,7 +352,9 @@ internal sealed class CosmosRawDocumentRepository
             return null;
 
         var title = raw.Source?.LinkText
-            ?? System.IO.Path.GetFileName(raw.Source?.FileUrl ?? "").Split('?')[0]
+            ?? (raw.Source?.FileUrl is { Length: > 0 } url
+                ? System.IO.Path.GetFileName(url).Split('?')[0]
+                : null)
             ?? raw.PartitionKey;
 
         return new DocumentDetailRecord(
@@ -380,7 +386,9 @@ internal sealed class CosmosRawDocumentRepository
     private static DocumentListItem MapToListItem(RawDocumentCosmosRecord r, bool includeAdminFields)
     {
         var title = r.Source?.LinkText
-            ?? System.IO.Path.GetFileName(r.Source?.FileUrl ?? "").Split('?')[0]
+            ?? (r.Source?.FileUrl is { Length: > 0 } url
+                ? System.IO.Path.GetFileName(url).Split('?')[0]
+                : null)
             ?? r.PartitionKey;
 
         return new DocumentListItem(
