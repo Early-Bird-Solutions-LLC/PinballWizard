@@ -229,13 +229,15 @@ public sealed class CosmosOptions
         // Written by scrapers; read + updated by the linker.
         // Selective indexing: link_status and document_type queried in bulk;
         // everything else is point-reads by document_id.
+        // timeline/first_discovered_at: ORDER BY in StreamDocumentsAsync (browse page).
+        // manufacturer: equality filter in StreamDocumentsAsync.
         new()
         {
             Name = "scraped_documents_raw",
             PartitionKeyPath = "/document_id",
             IndexingPolicy = new CosmosIndexingPolicyOptions
             {
-                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?", "/run_id/?"],
+                IncludedPaths = ["/document_id/?", "/link_status/?", "/document_type/?", "/run_id/?", "/timeline/first_discovered_at/?", "/manufacturer/?"],
                 ExcludedPaths = ["/*"],
             },
         },

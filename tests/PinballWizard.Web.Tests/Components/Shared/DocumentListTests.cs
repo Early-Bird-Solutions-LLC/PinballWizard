@@ -115,6 +115,9 @@ public sealed class DocumentListTests : AsyncBunitContext
         var cut = fragment.FindComponent<PinballWizard.Web.Components.Shared.DocumentList>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
+        // Verify the repository was called with the game filter forwarded — not just displayed.
+        _repo.Received(1).StreamDocumentsAsync("Godzilla", Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
+
         // MudTextField splats UserAttributes to the inner <input> element,
         // so data-testid lands on the input directly — not on a wrapper div.
         var input = cut.Find("input[data-testid='doc-list-game-filter']");

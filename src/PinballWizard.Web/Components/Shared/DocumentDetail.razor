@@ -169,19 +169,26 @@ else
     private DocumentDetailRecord? _doc;
     private bool _loading = true;
     private bool _loadError;
+    private CancellationTokenSource _cts = new();
 
     private string BackUrl => IsAdmin ? "/admin/documents" : "/documents";
 
     protected override async Task OnParametersSetAsync()
     {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
         _loading = true;
         _loadError = false;
         _doc = null;
 
         try
         {
-            _doc = await Repo.GetDocumentDetailAsync(DocumentId, IsAdmin, CancellationToken.None);
+            _doc = await Repo.GetDocumentDetailAsync(DocumentId, IsAdmin, token);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load document detail for {DocumentId}", DocumentId);
@@ -189,8 +196,15 @@ else
         }
         finally
         {
-            _loading = false;
+            if (!token.IsCancellationRequested)
+                _loading = false;
         }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
     }
 
     private static string EditionScopeLabel(string scope) => scope switch

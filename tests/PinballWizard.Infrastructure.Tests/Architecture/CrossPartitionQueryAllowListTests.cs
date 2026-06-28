@@ -60,12 +60,15 @@ public sealed class CrossPartitionQueryAllowListTests
         // StreamBySourcePatternAsync (linker pattern matching),
         // StreamByRunIdAsync (per-run admin drill-down), and
         // StreamDocumentsAsync (/documents browse page, optionally filtered by game/manufacturer).
+        // StreamDocumentsAsync is user-facing: latency budget p95 < 2s at ≤10K docs.
+        // Game+manufacturer filters reduce scan materially. ORDER BY is index-backed
+        // via timeline/first_discovered_at in scraped_documents_raw IncludedPaths.
         ["CosmosRawDocumentRepository.cs"] =
             "StreamCrossPartitionAsync in StreamByStatusAsync (linker IN-clause batch), " +
             "StreamAllAsync (admin full-scan), StreamBySourcePatternAsync (linker " +
             "CONTAINS pattern match), StreamByRunIdAsync (per-run drill-down, back-office admin path), " +
             "and StreamDocumentsAsync (/documents browse page; game CONTAINS + manufacturer equality filter; " +
-            "ORDER BY timeline.first_discovered_at DESC).",
+            "ORDER BY timeline.first_discovered_at DESC; index-backed sort; p95 < 2s at ≤10K docs).",
 
         // StreamCrossPartitionAsync — GetAllDocumentsAsync reads ~6 curated docs
         // for the landing page strip. Bounded to ~6 entries; ADR-0025 § 6 notes

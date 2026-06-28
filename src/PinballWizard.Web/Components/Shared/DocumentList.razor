@@ -1,6 +1,7 @@
 @namespace PinballWizard.Web.Components.Shared
 @using PinballWizard.Application.Documents
 @using PinballWizard.Application.Persistence
+@implements IDisposable
 @inject IRawDocumentRepository Repo
 @inject NavigationManager Nav
 @inject ILogger<DocumentList> Logger
@@ -116,6 +117,7 @@ else
     private List<DocumentListItem> _documents = [];
     private bool _loading = true;
     private bool _loadError;
+    private CancellationTokenSource _cts = new();
 
     private static readonly string[] _manufacturers =
     [
@@ -126,17 +128,23 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
         _loading = true;
         _loadError = false;
         _documents.Clear();
 
         try
         {
-            await foreach (var item in Repo.StreamDocumentsAsync(Game, Manufacturer, IsAdmin, CancellationToken.None))
+            await foreach (var item in Repo.StreamDocumentsAsync(Game, Manufacturer, IsAdmin, token))
             {
                 _documents.Add(item);
             }
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load documents");
@@ -144,8 +152,15 @@ else
         }
         finally
         {
-            _loading = false;
+            if (!token.IsCancellationRequested)
+                _loading = false;
         }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
     }
 
     private void OnGameChanged(string? value)
