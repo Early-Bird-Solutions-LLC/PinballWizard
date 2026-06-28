@@ -1,0 +1,447 @@
+/* AdminMonitoring.razor.css — scoped styles for /admin/monitoring.
+ * All colors via var(--pw-*) tokens — never hardcoded hex.
+ * Layout: D1 ribbon 4-col grid → D2+D3 MudGrid row → D4 full-width panel.
+ * Responsive: ribbon collapses to 2-col @ md, 1-col @ sm. */
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+
+.mon-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.mon-toolbar__stamp {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    color: var(--pw-text-faint);
+    letter-spacing: 0.02em;
+}
+
+.mon-toolbar__periods {
+    display: flex;
+    gap: 4px;
+}
+
+.mon-period {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pw-text-secondary);
+    background: var(--pw-bg-surface-2);
+    border: 1px solid var(--pw-border-quiet);
+    border-radius: var(--pw-radius);
+    padding: 3px 10px;
+    cursor: default;
+    user-select: none;
+}
+
+.mon-period--active {
+    color: var(--pw-accent-primary);
+    border-color: var(--pw-accent-primary);
+    background: var(--pw-bg-surface);
+}
+
+/* ── D1 Health ribbon ────────────────────────────────────────────────── */
+
+.mon-ribbon {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.mon-tile {
+    background: var(--pw-bg-surface);
+    border: 1px solid var(--pw-border-quiet);
+    border-radius: var(--pw-radius);
+    border-top-width: 3px;
+    padding: 16px 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mon-tile--ok   { border-top-color: var(--pw-accent-grounded); }
+.mon-tile--eval { border-top-color: var(--pw-accent-primary); }
+
+.mon-tile__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.mon-tile__label {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--pw-text-secondary);
+}
+
+/* ── State pills ─────────────────────────────────────────────────────── */
+
+.mon-state {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mon-state__dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.mon-state--ok   { color: var(--pw-accent-grounded); }
+.mon-state--ok   .mon-state__dot { background: var(--pw-accent-grounded); }
+.mon-state--eval { color: var(--pw-accent-primary); }
+.mon-state--eval .mon-state__dot { background: var(--pw-accent-primary); }
+
+/* ── Tile value + unit ───────────────────────────────────────────────── */
+
+.mon-tile__value {
+    font-family: var(--pw-font-display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--pw-text-primary);
+    letter-spacing: -0.01em;
+}
+
+.mon-tile__unit {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--pw-text-secondary);
+}
+
+.mon-tile__value--dim {
+    color: var(--pw-text-secondary);
+}
+
+.mon-tile__eval-note {
+    margin: 0;
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--pw-text-faint);
+}
+
+/* ── Sparklines ──────────────────────────────────────────────────────── */
+
+.mon-sparkline {
+    width: 100%;
+    height: 40px;
+    overflow: visible;
+    margin: 2px 0;
+}
+
+.mon-sparkline__line {
+    stroke: var(--pw-accent-primary);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.mon-sparkline__threshold {
+    stroke: var(--pw-accent-refusal);
+    stroke-width: 1;
+    opacity: 0.5;
+}
+
+/* ── Tile footer ─────────────────────────────────────────────────────── */
+
+.mon-tile__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    border-top: 1px solid var(--pw-border-faint);
+    padding-top: 8px;
+    margin-top: 2px;
+}
+
+.mon-tile__instrument {
+    font-family: var(--pw-font-mono);
+    font-size: 9px;
+    color: var(--pw-text-faint);
+    letter-spacing: 0.02em;
+}
+
+.mon-tile__threshold {
+    font-family: var(--pw-font-mono);
+    font-size: 9px;
+    color: var(--pw-text-secondary);
+    white-space: nowrap;
+}
+
+/* ── Shared panel shell ──────────────────────────────────────────────── */
+
+.mon-panel {
+    background: var(--pw-bg-surface);
+    border: 1px solid var(--pw-border-quiet);
+    border-radius: var(--pw-radius);
+    overflow: hidden;
+    height: 100%;
+}
+
+.mon-panel__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--pw-border-faint);
+}
+
+.mon-panel__title {
+    font-family: var(--pw-font-display);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--pw-text-primary);
+}
+
+.mon-panel__meta {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    color: var(--pw-text-faint);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.mon-panel__sub {
+    margin: 10px 18px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--pw-text-secondary);
+}
+
+/* ── D2 Refusal bars ─────────────────────────────────────────────────── */
+
+.mon-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 18px 18px;
+}
+
+.mon-bar-row {
+    display: grid;
+    grid-template-columns: 180px 1fr 28px;
+    align-items: center;
+    gap: 8px;
+}
+
+.mon-bar__label {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    color: var(--pw-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.mon-bar__tag {
+    font-family: var(--pw-font-mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--pw-accent-refusal);
+    border: 1px solid var(--pw-accent-refusal);
+    border-radius: 2px;
+    padding: 0 3px;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.mon-bar__track {
+    height: 6px;
+    background: var(--pw-bg-surface-2);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.mon-bar__fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width var(--pw-motion-medium);
+}
+
+.mon-bar__fill--primary   { background: var(--pw-accent-primary); }
+.mon-bar__fill--retrieval { background: var(--pw-accent-refusal); }
+
+.mon-bar__count {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--pw-text-secondary);
+    text-align: right;
+}
+
+/* ── D3 Ingestion pipeline ───────────────────────────────────────────── */
+
+.mon-pipeline {
+    padding: 0 18px 6px;
+}
+
+.mon-pipeline__row {
+    display: grid;
+    grid-template-columns: 1fr 42px 90px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--pw-border-faint);
+}
+
+.mon-pipeline__row:first-child {
+    border-top: none;
+}
+
+.mon-pipeline__row--canary {
+    background: var(--pw-panel-grounded);
+    margin: 0 -18px;
+    padding: 12px 18px;
+}
+
+.mon-pipeline__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.mon-pipeline__name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--pw-text-primary);
+}
+
+.mon-pipeline__name--canary {
+    color: var(--pw-accent-grounded);
+    font-weight: 600;
+}
+
+.mon-pipeline__sub {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    color: var(--pw-text-faint);
+}
+
+.mon-pipeline__count {
+    font-family: var(--pw-font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--pw-text-primary);
+    text-align: right;
+    line-height: 1;
+}
+
+.mon-pipeline__count--canary {
+    color: var(--pw-accent-grounded);
+}
+
+/* ── Pipeline state chips ────────────────────────────────────────────── */
+
+.mon-pip-state {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.mon-pip-state--ok    { color: var(--pw-accent-grounded); }
+.mon-pip-state--warn  { color: var(--pw-accent-primary); }
+.mon-pip-state--faint { color: var(--pw-text-faint); }
+
+/* ── D4 Alert rules ──────────────────────────────────────────────────── */
+
+.mon-alerts {
+    padding: 0 18px 6px;
+}
+
+.mon-alert-row {
+    display: grid;
+    grid-template-columns: 220px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 11px 0;
+    border-top: 1px solid var(--pw-border-faint);
+}
+
+.mon-alert-row:first-child {
+    border-top: none;
+}
+
+.mon-alert__name {
+    font-family: var(--pw-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pw-text-primary);
+}
+
+.mon-alert__condition {
+    font-size: 12px;
+    color: var(--pw-text-secondary);
+    min-width: 0;
+}
+
+.mon-alert-state {
+    font-family: var(--pw-font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mon-alert-state--ok         { color: var(--pw-accent-grounded); }
+.mon-alert-state--suppressed { color: var(--pw-accent-primary); }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .mon-ribbon {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 540px) {
+    .mon-ribbon {
+        grid-template-columns: 1fr;
+    }
+
+    .mon-bar-row {
+        grid-template-columns: 1fr 28px;
+    }
+
+    .mon-bar__label {
+        grid-column: 1 / -1;
+    }
+
+    .mon-alert-row {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+    }
+
+    .mon-alert__condition {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+}
