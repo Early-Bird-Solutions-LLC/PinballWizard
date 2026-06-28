@@ -3,6 +3,7 @@
 @using PinballWizard.Application.Persistence
 @inject IRawDocumentRepository Repo
 @inject NavigationManager Nav
+@inject ILogger<DocumentList> Logger
 
 @if (_loadError)
 {
@@ -136,8 +137,9 @@ else
                 _documents.Add(item);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogError(ex, "Failed to load documents");
             _loadError = true;
         }
         finally
