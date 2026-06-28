@@ -69,11 +69,13 @@ public interface IRawDocumentRepository
         CancellationToken cancellationToken);
 
     // Stream documents for the /documents browse page.
-    // Optionally filtered by game title (CONTAINS, case-insensitive) and/or manufacturer (case-insensitive match).
+    // Optionally filtered by game title (CONTAINS, case-insensitive), manufacturer (case-insensitive match),
+    // and/or document type (case-insensitive equality against classification.document_type).
     // Admin fields (link_status, failure_reason, resolution_strategy) are null when includeAdminFields=false.
     IAsyncEnumerable<DocumentListItem> StreamDocumentsAsync(
         string? game,
         string? manufacturer,
+        string? type,
         bool includeAdminFields,
         CancellationToken cancellationToken);
 

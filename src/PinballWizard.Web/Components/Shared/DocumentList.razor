@@ -35,6 +35,16 @@ else
                 <MudChip T="string" Value="@mfr" Variant="Variant.Outlined">@mfr</MudChip>
             }
         </MudChipSet>
+        <MudChipSet T="string"
+                    SelectedValue="@Type"
+                    SelectedValueChanged="@(v => OnTypeChanged(v))"
+                    SelectionMode="SelectionMode.SingleSelection"
+                    data-testid="doc-list-type-filter">
+            @foreach (var dt in _documentTypes)
+            {
+                <MudChip T="string" Value="@dt" Variant="Variant.Outlined">@dt</MudChip>
+            }
+        </MudChipSet>
     </MudStack>
 
     @if (_loading)
@@ -94,10 +104,10 @@ else
             }
         </Columns>
         <NoRecordsContent>
-            @if (Game is not null || Manufacturer is not null)
+            @if (Game is not null || Manufacturer is not null || Type is not null)
             {
                 <AppEmptyState Heading="No documents match"
-                               Detail="Try a different game or manufacturer"
+                               Detail="Try a different game, manufacturer, or type"
                                data-testid="doc-list-empty-filtered" />
             }
             else
@@ -113,6 +123,7 @@ else
     [Parameter] public bool IsAdmin { get; set; }
     [Parameter] public string? Game { get; set; }
     [Parameter] public string? Manufacturer { get; set; }
+    [Parameter] public string? Type { get; set; }
 
     private List<DocumentListItem> _documents = [];
     private bool _loading = true;
@@ -124,6 +135,16 @@ else
         "American Pinball", "Barrels of Fun", "Chicago Gaming",
         "Jersey Jack", "Multimorphic", "Pinball Brothers",
         "Spooky", "Stern"
+    ];
+
+    // Valid document_type values derived from PinballWizard.Core.Models.DocumentType enum.
+    // Synthesized types (MetadataCard, GameOverview, NewsDigest) are omitted: they are
+    // internal catalog artefacts not surfaced as user-selectable filter options.
+    private static readonly string[] _documentTypes =
+    [
+        "Manual", "Schematic", "Firmware", "ServiceBulletin",
+        "Flyer", "SpecSheet", "FeatureMatrix", "Rulesheet",
+        "Readme", "Other"
     ];
 
     protected override async Task OnParametersSetAsync()
@@ -139,7 +160,7 @@ else
 
         try
         {
-            await foreach (var item in Repo.StreamDocumentsAsync(Game, Manufacturer, IsAdmin, token))
+            await foreach (var item in Repo.StreamDocumentsAsync(Game, Manufacturer, Type, IsAdmin, token))
             {
                 _documents.Add(item);
             }
@@ -168,7 +189,8 @@ else
         var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
         {
             ["game"] = string.IsNullOrWhiteSpace(value) ? null : value,
-            ["manufacturer"] = Manufacturer
+            ["manufacturer"] = Manufacturer,
+            ["type"] = Type
         });
         Nav.NavigateTo(uri, replace: true);
     }
@@ -178,7 +200,19 @@ else
         var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
         {
             ["game"] = Game,
-            ["manufacturer"] = string.IsNullOrWhiteSpace(value) ? null : value
+            ["manufacturer"] = string.IsNullOrWhiteSpace(value) ? null : value,
+            ["type"] = Type
+        });
+        Nav.NavigateTo(uri, replace: true);
+    }
+
+    private void OnTypeChanged(string? value)
+    {
+        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["game"] = Game,
+            ["manufacturer"] = Manufacturer,
+            ["type"] = string.IsNullOrWhiteSpace(value) ? null : value
         });
         Nav.NavigateTo(uri, replace: true);
     }
