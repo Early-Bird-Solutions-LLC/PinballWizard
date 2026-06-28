@@ -74,6 +74,15 @@ public sealed class SettingsTests : AsyncBunitContext
     }
 
     [Fact]
+    public void Settings_PaperCard_HasNoBetaTag()
+    {
+        var cut = Render<Settings>();
+
+        var paperCard = cut.Find("[data-testid='theme-card-paper']");
+        Assert.DoesNotContain("BETA", paperCard.TextContent);
+    }
+
+    [Fact]
     public void Settings_ThemeCard_MarksActiveThemeAsChecked()
     {
         _prefs.CurrentTheme.Returns(ThemeNames.ModernLcd);

@@ -178,7 +178,7 @@ html.theme-paper {
     --pw-accent-refusal:    #A23B2E;
     --pw-accent-mode:       #8C5829;
     --pw-border-quiet:      #D8D2C2;
-    --pw-border-glow-amber:   #B8763E40;
+    --pw-border-glow-amber:   #B8763E40;   /* 25% alpha — lighter glow on a light base */
     --pw-border-glow-green:   #1F6F5440;
     --pw-border-glow-magenta: #8C582940;
     --pw-border-glow-red:     #A23B2E40;
@@ -195,7 +195,9 @@ html.theme-paper {
     }
 }
 
-/* ── Additive-token overrides for existing sibling themes ────────────── */
+/* ── Additive-token overrides for pre-Paper sibling themes ──────────── */
+/* Paper already includes these inline above; these blocks patch the four
+   dark themes that existed before the additive tokens were introduced. */
 html.theme-daytime-route {
     --pw-text-tertiary:  #3a3228;
     --pw-text-faint:     #8a7e68;
