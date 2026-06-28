@@ -1,0 +1,11 @@
+@page "/documents/{DocumentId}"
+@attribute [AllowAnonymous]
+@using Microsoft.AspNetCore.Authorization
+@rendermode InteractiveServer
+
+<PageTitle>PinballWizard — Document</PageTitle>
+<MudText>Detail coming in Task 7.</MudText>
+
+@code {
+    [Parameter] public string DocumentId { get; set; } = null!;
+}
