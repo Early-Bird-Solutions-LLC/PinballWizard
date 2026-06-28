@@ -11,7 +11,7 @@ window.pinwiz = window.pinwiz || {};
 // Uses classList.add/remove so existing classes (e.g. mud-theme-*) are preserved.
 window.pinwiz.setTheme = function (name) {
     var html = document.documentElement;
-    ['daytime-route', 'backbox', 'cabinet', 'dmd-classic'].forEach(function (t) {
+    ['daytime-route', 'backbox', 'cabinet', 'dmd-classic', 'paper'].forEach(function (t) {
         html.classList.remove('theme-' + t);
     });
     if (name && name !== 'modern-lcd') {
