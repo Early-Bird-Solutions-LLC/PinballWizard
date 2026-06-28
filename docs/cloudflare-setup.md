@@ -1,8 +1,8 @@
 ---
 status: Active
-phase: Phase-6
+phase: Phase-7
 owner: Jim
-last-reviewed: 2026-06-18
+last-reviewed: 2026-06-28
 supersedes: ""
 ---
 
@@ -63,7 +63,7 @@ design. See `infra/cloudflare/README.md` for the developer workflow and token se
 
 ```powershell
 # Always work from the isolated worktree to avoid branch-switching conflicts
-cd C:\projects\PinballWizard\.worktrees\cloudflare\infra\cloudflare
+cd C:\earlybird\PinballWizard\.worktrees\cloudflare\infra\cloudflare
 
 $env:CLOUDFLARE_API_TOKEN = [System.Environment]::GetEnvironmentVariable('CLOUDFLARE_API_TOKEN_PINWIZ', 'Machine')
 
@@ -228,16 +228,13 @@ responses:
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | Disables accelerometer, camera, geolocation, gyroscope, magnetometer, microphone, payment, usb |
-| `Content-Security-Policy-Report-Only` | `default-src 'self'` + explicit allowlists; reports to `/_csp-reports` |
+| `Content-Security-Policy` | `default-src 'self'` + explicit allowlists + `upgrade-insecure-requests` (enforced as of 2026-06-11; previously Report-Only) |
 | `X-Powered-By` | Removed |
 | `X-AspNet-Version` | Removed |
 | `X-AspNetMvc-Version` | Removed |
 
 **Note:** `Server` header removal is not possible via Transform Rules (Cloudflare API
 rejects it as a protected system header, regardless of plan).
-
-When CSP reports are clean after a week, promote from `Content-Security-Policy-Report-Only`
-to enforced `Content-Security-Policy` via a PR to `headers.tf`.
 
 ---
 
@@ -312,7 +309,7 @@ See `docs/cost-tracking.md` for the full cost breakdown including Azure.
 | --- | --- | --- |
 | ~~Install Origin CA cert on ACA origin~~ | Done | Resolved 2026-06-18 via ADR-0038 — ACA ingress presents the Origin CA cert; `ssl=strict` satisfied |
 | Enforce Authenticated Origin Pulls at the ACA origin | Medium | Needs ACA `ingress.clientCertificateMode` + app-level validation of Cloudflare's client cert (ADR-0038, deferred) |
-| Promote CSP from Report-Only to enforced | Medium | After a week of clean CSP reports in Cloudflare dashboard |
+| ~~Promote CSP from Report-Only to enforced~~ | Done | Promoted 2026-06-11 (decision-log 2026-06-11 CSP entry, PR #357); Bot Management JS Detections disabled in the same change |
 | Promote OWASP PL1 to PL2 | Medium | After reviewing WAF Analytics for false positives |
 | Auth endpoint rate limit rule | Low | Add when `/api/auth` ships |
 | DMARC p=none → p=quarantine → p=reject | Low | After confirming no legitimate mail senders |
@@ -342,4 +339,5 @@ See `docs/cost-tracking.md` for the full cost breakdown including Azure.
 | 2026-05-16 | Origin CA certificate (15yr, RSA-2048) generated (lives in tofu state only; not imported to Key Vault until 2026-06-18) | IaC |
 | 2026-05-16 | TLS min version 1.2, Always Use HTTPS on, HSTS 1yr | IaC |
 | 2026-05-16 | API token updated to ClaudeCodeJim with full IaC permission set | Dashboard |
+| 2026-06-11 | CSP promoted from Report-Only to enforced `Content-Security-Policy` + `upgrade-insecure-requests`; Bot Management JS Detections disabled (decision-log 2026-06-11) | IaC (`headers.tf`, `waf.tf`) |
 | 2026-06-18 | Wizard custom domain rebound from Azure managed (Let's Encrypt) cert to Cloudflare Origin CA cert (ADR-0038); managed-cert renewal-through-proxy failure resolved | IaC (Bicep) + operator script |

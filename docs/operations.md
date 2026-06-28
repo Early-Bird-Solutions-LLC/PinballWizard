@@ -1,8 +1,8 @@
 ---
 status: Active
-phase: Phase-6
+phase: Phase-7
 owner: Jim
-last-reviewed: 2026-05-16
+last-reviewed: 2026-06-28
 supersedes: ""
 ---
 
@@ -48,7 +48,7 @@ For step-by-step procedures, see [`docs/runbooks/`](runbooks/README.md).
 | --- | --- | --- |
 | `dev` | Personal Earlybird (`b1f33f17`) | The only environment. Production traffic hits this. |
 
-No staging / pre-prod separation at current scale. Phase 6 operability makes `dev` the showcase environment. New environments would be new resource groups in the same subscription with a different `-Environment` parameter value.
+No staging / pre-prod separation at current scale. `dev` is the live showcase environment (Phase 7 current). New environments would be new resource groups in the same subscription with a different `-Environment` parameter value.
 
 ---
 
