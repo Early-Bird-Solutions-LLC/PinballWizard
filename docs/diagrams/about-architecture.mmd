@@ -15,13 +15,41 @@
 %% where <HASH> = lowercase hex SHA-256 of this file's bytes (LF endings).
 %% The failing test prints the expected value.
 graph TD
-    Browser["Public Web\n(Blazor Web App)"]
-    SSE["API Layer\n(ASP.NET Core SSE)"]
-    App["Application\n(IAiRouter · Azure AI Foundry)"]
-    Infra["Infrastructure\n(10 Scrapers · Cosmos DB · AI Search)"]
-    Azure["Azure Services\n(Cosmos DB Serverless · AI Search Basic\nAzure OpenAI · Container Apps)"]
+    subgraph FE["Public Interface  ·  Azure Container Apps"]
+        direction LR
+        PUB["Blazor Web App\nAsk · Machines · Documents · About"]
+        ADM["Admin Panel\n/admin/*"]
+    end
 
-    Browser -->|"HTTPS / text/event-stream"| SSE
-    SSE --> App
-    App --> Infra
-    Infra --> Azure
+    subgraph APIAPP["API + Application Layer"]
+        direction LR
+        SSE["ASP.NET Core\nStreaming endpoint\n(text/event-stream)"]
+        FOUNDRY["Azure AI Foundry\nMicrosoft Agent Framework\nWizard · Repair · Grounding · Search"]
+    end
+
+    subgraph DATA["Data Layer  ·  Azure"]
+        direction LR
+        COS["Cosmos DB Serverless\nmachines · documents · catalog_stats"]
+        SRCH["AI Search Basic\nvector + BM25 index"]
+        OAI["Azure OpenAI\ngpt-4o · text-embedding-3-small"]
+    end
+
+    subgraph INGEST["Data Ingestion  ·  offline pipeline"]
+        direction LR
+        SC["10 Polite Scrapers\nStern · JJP · AP · Spooky · PBros\nBoF · Multimorphic · CGC"]
+        OPDB["OPDB Sync\ncanonical machine catalog"]
+        RAG["RAG Ingestion Worker\nChange Feed → chunk → embed"]
+    end
+
+    PUB -->|"HTTPS / SSE"| SSE
+    PUB -->|"HTTPS"| COS
+    ADM -->|"HTTPS"| COS
+    SSE --> FOUNDRY
+    FOUNDRY -->|"getMachineByTitle"| COS
+    FOUNDRY -->|"searchCorpus"| SRCH
+    FOUNDRY --> OAI
+    SC --> COS
+    OPDB --> COS
+    COS -.->|"Change Feed"| RAG
+    RAG --> SRCH
+    RAG --> OAI
