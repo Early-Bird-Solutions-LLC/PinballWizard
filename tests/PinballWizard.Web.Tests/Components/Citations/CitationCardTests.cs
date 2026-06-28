@@ -150,7 +150,7 @@ public sealed class CitationCardTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Right_flipper_has_target_blank_and_rel_noopener_noreferrer()
+    public async Task Right_flipper_has_target_blank_and_rel_noopener_noreferrer() // non-corpus path; corpus-chunk security baseline covered by CorpusChunkCitation_SecondaryFileLink_GoesToSourceUrl
     {
         await using var ctx = BuildCtx();
         var citation = BuildCitation(sourceUrl: "https://sternpinball.com/manuals/test.pdf");
