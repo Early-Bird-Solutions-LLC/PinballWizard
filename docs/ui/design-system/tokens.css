@@ -52,6 +52,16 @@
   --pw-motion-fast: 150ms;
   --pw-motion-medium: 300ms;
   --pw-motion-slow: 600ms;
+
+  /* ── Shape (all themes) ────────────────────────────────────────── */
+  /* LayoutProperties.DefaultBorderRadius = "2px" → --mud-default-borderradius: 2px */
+  /* Overrides MudBlazor default (~8px) for a crisper, more mechanical feel */
+  /* Applied in PinballTheme.PinballLayoutProperties (shared by Create() and CreatePaper()) */
+
+  /* ── Elevation (all themes) ────────────────────────────────────── */
+  /* Shadows.Elevation = Enumerable.Repeat("none", 26).ToArray() (26 slots, indices 0–25) */
+  /* MudBlazor 9.x GenerateTheme accesses all 26 slots; supplying fewer causes */
+  /* IndexOutOfRangeException during render. Depth via bg tone shifts only — no drop shadows. */
 }
 
 * { box-sizing: border-box; }
@@ -71,30 +81,46 @@ body {
   color: var(--pw-text-secondary);
 }
 
-/* ── Paper sibling theme ──────────────────────────────────────────────── */
-/* Editorial light: warm cream base, amber accent, citation green, warm-brick
-   refusal. CSS-variable-only — delight surfaces pick up --pw-* tokens
-   automatically. Spec authority: design_handoff_pinwiz_themes/README.md. */
+/* ── Paper theme (light, warm walnut — new visitor default) ─────────────── */
+/* Applied as: html.theme-paper                                               */
+/* Spec authority: PinballWizard.Web/Components/Theming/PinballTheme.cs      */
+/*   CreatePaper() → PaletteLight (shipped chore(theme) #570)                */
+/* WCAG AA contrast ratios measured on cream bg (#f4f1ea):                   */
+/*   accent-primary  4.74:1 | accent-grounded 5.1:1 | accent-refusal 5.08:1 */
 html.theme-paper {
-  --pw-bg-base:           #F4F1EA;
-  --pw-bg-surface:        #FAF8F2;
-  --pw-bg-surface-hi:     #EDE8DC;
-  --pw-text-primary:      #0F1A2C;
-  --pw-text-secondary:    #4A5568;
-  --pw-accent-primary:    #B8763E;
-  --pw-accent-grounded:   #1F6F54;
-  --pw-accent-refusal:    #A23B2E;
-  --pw-accent-mode:       #8C5829;
-  --pw-border-quiet:      #D8D2C2;
-  --pw-border-glow-amber:   #B8763E40;
-  --pw-border-glow-green:   #1F6F5440;
-  --pw-border-glow-magenta: #8C582940;
-  --pw-border-glow-red:     #A23B2E40;
-  --pw-text-tertiary:     #3A4252;
-  --pw-text-faint:        #8A8578;
-  --pw-border-faint:      #ECE6DA;
-  --pw-bg-surface-2:      #EFEADE;
-  --pw-panel-grounded:    #F1F6F2;
+  /* ── Surfaces ── */
+  --pw-bg-base:           #f4f1ea;   /* warm cream — aged-paper base */
+  --pw-bg-surface:        #faf8f2;   /* elevated panel — slightly lighter */
+  --pw-bg-surface-hi:     #ede9e1;   /* hovered/active panels */
+
+  /* ── Text ── */
+  --pw-text-primary:      #1a1408;   /* near-black on cream (11.2:1) */
+  --pw-text-secondary:    #5c5042;   /* warm medium tone (5.6:1) */
+  --pw-text-disabled:     #9a9082;
+
+  /* ── Semantic accents — closed set; same meaning as dark theme ── */
+  --pw-accent-primary:    #b8763e;   /* antiqued amber (4.74:1 on cream — WCAG AA) */
+  --pw-accent-grounded:   #1f6f54;   /* muted forest green (5.1:1 on cream — WCAG AA) */
+  --pw-accent-refusal:    #c0200e;   /* saturated red (5.08:1 on cream — WCAG AA) */
+  --pw-accent-mode:       #8c5829;   /* warm copper (mode/topic nav state) */
+
+  /* ── Borders ── */
+  --pw-border-quiet:      #d8cdb5;   /* warm sand */
+  --pw-border-glow-amber:   #b8763e40;
+  --pw-border-glow-green:   #1f6f5440;
+  --pw-border-glow-magenta: #8c582940;
+  --pw-border-glow-red:     #c0200e40;
+
+  /* ── Additive tokens ── */
+  --pw-text-tertiary:     #3a2e22;
+  --pw-text-faint:        #8a7e68;
+  --pw-border-faint:      #ece6da;
+  --pw-bg-surface-2:      #ede9e1;
+  --pw-panel-grounded:    #f1f6f2;
+
+  /* ── MudBlazor alias ── */
+  /* AppbarBackground = "#1a1410" (warm walnut — machine-frame principle) */
+  /* Maps to: --mud-palette-appbar-background: #1a1410 (set via MudTheme.PaletteLight) */
 }
 
 @media (prefers-reduced-motion: reduce) {
