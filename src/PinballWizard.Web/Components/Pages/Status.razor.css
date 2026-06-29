@@ -1,0 +1,41 @@
+/* Status page scoped styles.
+ * Mirrors the .status-dot rules from LiveStatusBadge.razor.css — Blazor scoped CSS
+ * is hash-isolated per component, so Status.razor needs its own copy to render dots.
+ */
+
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    /* Soft pulse animation to draw eye only once on page load */
+    animation: status-pulse 2.5s ease-in-out 1;
+}
+
+.status-dot--green {
+    background-color: #34d96a; /* accent-grounded — matches PinballTheme Success */
+    box-shadow: 0 0 4px rgba(52, 217, 106, 0.5);
+}
+
+.status-dot--amber {
+    background-color: #ff9800; /* matches PinballTheme Warning */
+    box-shadow: 0 0 4px rgba(255, 152, 0, 0.5);
+}
+
+.status-dot--red {
+    background-color: #ff3b30; /* accent-refusal — matches PinballTheme Error */
+    box-shadow: 0 0 4px rgba(255, 59, 48, 0.5);
+}
+
+@keyframes status-pulse {
+    0%   { opacity: 0.3; transform: scale(0.8); }
+    50%  { opacity: 1;   transform: scale(1.15); }
+    100% { opacity: 1;   transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-dot {
+        animation: none;
+    }
+}
