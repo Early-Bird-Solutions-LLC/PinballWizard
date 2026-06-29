@@ -168,6 +168,7 @@ public static class PinballTheme
             AppbarText             = "#f4f1ea",
             DrawerBackground       = "#ede9e1",
             DrawerText             = "#1a1408",
+            DrawerIcon             = "#b8763e",
             TextPrimary            = "#1a1408",   // near-black text
             TextSecondary          = "#5c5042",   // warm mid-tone
             TextDisabled           = "#9a9082",

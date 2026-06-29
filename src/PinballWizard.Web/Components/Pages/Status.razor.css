@@ -14,17 +14,17 @@
 }
 
 .status-dot--green {
-    background-color: #34d96a; /* accent-grounded — matches PinballTheme Success */
+    background-color: var(--pw-accent-grounded, #34d96a);
     box-shadow: 0 0 4px rgba(52, 217, 106, 0.5);
 }
 
 .status-dot--amber {
-    background-color: #ff9800; /* matches PinballTheme Warning */
+    background-color: var(--pw-accent-primary, #ff9a1f);
     box-shadow: 0 0 4px rgba(255, 152, 0, 0.5);
 }
 
 .status-dot--red {
-    background-color: #ff3b30; /* accent-refusal — matches PinballTheme Error */
+    background-color: var(--pw-accent-refusal, #c0200e);
     box-shadow: 0 0 4px rgba(255, 59, 48, 0.5);
 }
 

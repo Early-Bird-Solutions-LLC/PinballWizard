@@ -79,6 +79,7 @@ html.theme-daytime-route {
     --mud-palette-appbar-text:         #f4f1ea;
     --mud-palette-drawer-background:   #f0ece3;
     --mud-palette-drawer-text:         #1f1a14;
+    --mud-palette-drawer-icon:         #cc5500;
     --mud-palette-text-primary:        #1f1a14;
     --mud-palette-text-secondary:      #5a4d3e;
     --mud-palette-action-default:      #5a4d3e;
@@ -123,6 +124,7 @@ html.theme-backbox {
     --mud-palette-appbar-text:         #e8edf5;
     --mud-palette-drawer-background:   #0d1220;
     --mud-palette-drawer-text:         #e8edf5;
+    --mud-palette-drawer-icon:         #ff3399;
     --mud-palette-text-primary:        #e8edf5;
     --mud-palette-text-secondary:      #8a93a8;
     --mud-palette-action-default:      #8a93a8;
@@ -167,6 +169,7 @@ html.theme-cabinet {
     --mud-palette-appbar-text:         #f4eedd;
     --mud-palette-drawer-background:   #221810;
     --mud-palette-drawer-text:         #f4eedd;
+    --mud-palette-drawer-icon:         #d23030;
     --mud-palette-text-primary:        #f4eedd;
     --mud-palette-text-secondary:      #b8a888;
     --mud-palette-action-default:      #b8a888;
@@ -212,6 +215,7 @@ html.theme-dmd-classic {
     --mud-palette-appbar-text:         #f4d090;
     --mud-palette-drawer-background:   #050300;
     --mud-palette-drawer-text:         #f4d090;
+    --mud-palette-drawer-icon:         #ff9900;
     --mud-palette-text-primary:        #f4d090;
     --mud-palette-text-secondary:      #b89060;
     --mud-palette-action-default:      #b89060;
@@ -234,19 +238,19 @@ html.theme-dmd-classic {
 html.theme-paper {
     --pw-bg-base:           #F4F1EA;
     --pw-bg-surface:        #FAF8F2;
-    --pw-bg-surface-hi:     #EDE8DC;
-    --pw-text-primary:      #0F1A2C;
-    --pw-text-secondary:    #4A5568;
+    --pw-bg-surface-hi:     #ede9e1;
+    --pw-text-primary:      #1a1408;
+    --pw-text-secondary:    #5c5042;
     --pw-accent-primary:    #B8763E;
     --pw-accent-grounded:   #1F6F54;
-    --pw-accent-refusal:    #A23B2E;
+    --pw-accent-refusal:    #c0200e;
     --pw-accent-mode:       #8C5829;
     --pw-border-quiet:      #D8D2C2;
     --pw-border-glow-amber:   #B8763E40;   /* 25% alpha — lighter glow on a light base */
     --pw-border-glow-green:   #1F6F5440;
     --pw-border-glow-magenta: #8C582940;
-    --pw-border-glow-red:     #A23B2E40;
-    --pw-text-tertiary:     #3A4252;
+    --pw-border-glow-red:     #c0200e40;
+    --pw-text-tertiary:     #3a2e22;
     --pw-text-faint:        #8A8578;
     --pw-border-faint:      #ECE6DA;
     --pw-bg-surface-2:      #EFEADE;
@@ -261,6 +265,7 @@ html.theme-paper {
     --mud-palette-appbar-text:         #f4f1ea;
     --mud-palette-drawer-background:   #ede9e1;
     --mud-palette-drawer-text:         #1a1408;
+    --mud-palette-drawer-icon:         #b8763e;
     --mud-palette-text-primary:        #1a1408;
     --mud-palette-text-secondary:      #5c5042;
     --mud-palette-action-default:      #5c5042;
@@ -321,6 +326,7 @@ html.theme-modern-lcd {
     --mud-palette-appbar-background:   #08070a;
     --mud-palette-appbar-text:         #f4f1ea;
     --mud-palette-drawer-background:   #101015;
+    --mud-palette-drawer-icon:         #ff9a1f;
     --mud-palette-text-primary:        #f4f1ea;
     --mud-palette-text-secondary:      #9a9590;
     --mud-palette-action-default:      #9a9590;

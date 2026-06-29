@@ -149,14 +149,20 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var landing = await LandingClient
-            .GetLandingAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        try
+        {
+            var landing = await LandingClient
+                .GetLandingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
 
-        // Pull SystemStatus from the landing payload; leave null if the
-        // endpoint is unavailable — cards render "Unknown" (amber) gracefully.
-        _status = landing?.SystemStatus;
-        _isLoading = false;
+            // Pull SystemStatus from the landing payload; leave null if the
+            // endpoint is unavailable — cards render "Unknown" (amber) gracefully.
+            _status = landing?.SystemStatus;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
