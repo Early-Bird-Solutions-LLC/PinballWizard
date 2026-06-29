@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A570%25%20gated-brightgreen)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Early-Bird-Solutions-LLC/PinballWizard?include_prereleases&label=release&color=blue)](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/releases)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
-[![Aspire](https://img.shields.io/badge/.NET%20Aspire-13.2-512BD4?logo=dotnet)](https://learn.microsoft.com/en-us/dotnet/aspire/)
+[![Aspire](https://img.shields.io/badge/.NET%20Aspire-13.4.6-512BD4?logo=dotnet)](https://learn.microsoft.com/en-us/dotnet/aspire/)
 
 > **An enterprise AI reference application by Earlybird Solutions** — demonstrating end-to-end architecture, build, and operation of a modern Azure + .NET Aspire AI platform.
 > The pinball domain is the vehicle. The engineering is the point.
@@ -96,7 +96,7 @@ original page on `sternpinball.com`.
 }
 ```
 
-Every Phase 2 citation carries `document_id` + `file_url` + `discovery_url` + `page_range` — resolving through `ProvenanceService` so every answer traces to a clickable original source. See [`docs/data-model.md`](docs/data-model.md) for the full record type definitions.
+Every Phase 2 citation carries `document_id` + `file_url` + `discovery_url` + `page_range` — resolving through `ProvenanceService` so every answer traces to a clickable original source.
 
 ## What this demonstrates
 
@@ -105,8 +105,10 @@ Capabilities verifiable directly in this repository:
 - **Cloud-native architecture (Azure + .NET Aspire)** — Container Apps (Wizard app + RAG Ingestion Worker), Cosmos Serverless, AI Search Basic, Azure OpenAI / Microsoft Foundry, Application Insights; Aspire-orchestrated local dev mirroring production topology
 - **AI engineering** — Event-driven RAG (Cosmos Change Feed → PdfPig → hybrid chunking → AI Search); Microsoft Agent Framework four-agent surface with function tools; two-stage re-ranking; LRU semantic cache; per-agent cost ceiling; threshold-driven refusal; evaluation harness (Foundry `EvaluationClient`) with citation-precision baseline
 - **Real-time streaming UI** — Blazor Web App (auto-render mode) with Server-Sent Events answer streaming; MudBlazor chrome + five theme variants (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips with provenance metadata; community-resource refusal panels meeting ADR-0027 plurality thresholds
-- **Clean Architecture and engineering discipline** — Core / Application / Infrastructure / Web / Api layering enforced by architecture fitness tests; 27 ADRs for non-obvious decisions; behavior-asserting test culture; zero-warning build under `TreatWarningsAsErrors`
-- **Identity, access, and admin separation** — Microsoft Entra External ID with blanket `FallbackPolicy` (auth required by default); admin RBAC from day one; structural `/admin` control plane (AdminDashboard, AdminMachines, AdminSources)
+- **Live pricing integration** — Silverball Labs API provides secondary-market valuations via the `getMarketValue` agent tool; every pricing answer carries source attribution ([ADR-0045](docs/adr/0045-silverball-labs-pricing-integration.md))
+- **Shared Blazor component library** — eight `App*` wrapper components in `Components/Shared/` extract repeated MudBlazor patterns across all pages; enforced by project convention tests ([ADR-0046](docs/adr/0046-shared-blazor-component-library.md))
+- **Clean Architecture and engineering discipline** — Core / Application / Infrastructure / Web / Api layering enforced by architecture fitness tests; 47 ADRs for non-obvious decisions; behavior-asserting test culture; zero-warning build under `TreatWarningsAsErrors`
+- **Identity, access, and admin separation** — Microsoft Entra External ID with blanket `FallbackPolicy` (auth required by default); admin RBAC from day one; complete admin control plane (AdminDashboard, AdminSources with enable/disable toggle, AdminMachines, AdminManufacturers, AdminMonitoring, per-source run history, corpus/RAG stats)
 - **Infrastructure-as-code and operability** — Bicep with two-tier deploy gating; ARM-vs-data-plane Cosmos abstraction ([ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md)); OpenTelemetry throughout; Application Insights workbook (7 tiles); 5 metric alert rules; 6 operational runbooks; H-chain operator procedures
 - **Polite integration with external systems** — `robots.txt` honored unconditionally; machine-consumer metadata (OG / JSON-LD / sitemap) preferred over DOM scraping; identifying User-Agents; `IPolitenessGate` enforced at every outbound HTTP call
 - **Cost discipline** — $300–$400/month steady-state cap with cost-per-feature attribution; per-call LLM cost ceiling (ADR-0015)
@@ -122,7 +124,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | [`docs/guardrails.md`](docs/guardrails.md) | Meta-spec — seven main goals, scope discipline, decision framework, phase gates, risk register, escalation triggers, monthly self-evaluation |
 | [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria and retrospectives; Phases 0–5 closed; Phase 6 current |
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0027 committed) |
+| [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0047) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
 | [`docs/runbooks/`](docs/runbooks/) | Operational runbooks (incident response, cost anomaly, Cosmos restore, AI Search rebuild, secret rotation, source-site outage) |
 | [`docs/observability.md`](docs/observability.md) | OTel instrument catalogue — scraper, RAG, AI orchestration, and user-delight instruments |
@@ -140,11 +142,11 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | 2 — Runtime validation | ✅ Complete | ADRs 0012/0013 promoted; `ingestion_sources` seeded; OPDB sync against deployed Cosmos populated 2,154 base machines + 165 alias-editions; OTel groundwork; work-email denylist; Playwright 1.59 bump |
 | 3 — AI & Integration layer | ✅ Complete | Microsoft Foundry orchestration ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)); four-agent surface with `getMachineByTitle`; confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)); per-agent cost routing + LRU semantic cache ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)); evaluation harness via Foundry `EvaluationClient` ([ADR-0016](docs/adr/0016-evaluation-harness.md)); H2 baseline captured |
 | 4 — Event-driven RAG | ✅ Complete | Cosmos Change Feed → `PinballWizard.RagIngestionWorker` → PdfPig text extraction → hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)) → text-embedding-3-large ([ADR-0020](docs/adr/0020-embedding-model.md)) → AI Search index ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)); `searchCorpus` function tool with tool-call-trace citation extraction ([ADR-0022](docs/adr/0022-citation-extraction.md)); citation-required guardrail ([ADR-0023](docs/adr/0023-citation-required-guardrail.md)); two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)); connected-agents dispatch wired |
-| 5 — Blazor + MudBlazor frontend | ✅ Complete | Blazor Web App (auto-render mode) + SSE streaming answer surface; five themes (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips; community-resource refusal panels ([ADR-0027](docs/adr/0027-community-resource-posture.md)); Entra External ID auth + blanket `FallbackPolicy`; `/admin` control plane skeleton (AdminDashboard, AdminMachines, AdminSources); axe-core CI; Lighthouse CI; Cosmos for user-delight containers ([ADR-0025](docs/adr/0025-cosmos-for-user-delight.md)) |
+| 5 — Blazor + MudBlazor frontend | ✅ Complete | Blazor Web App (auto-render mode) + SSE streaming answer surface; five themes (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips; community-resource refusal panels ([ADR-0027](docs/adr/0027-community-resource-posture.md)); Entra External ID auth + blanket `FallbackPolicy`; complete admin control plane (AdminDashboard, AdminSources with enable/disable toggle, AdminMachines, AdminManufacturers, AdminMonitoring, per-source run history, corpus/RAG stats); axe-core CI; Lighthouse CI; Cosmos for user-delight containers ([ADR-0025](docs/adr/0025-cosmos-for-user-delight.md)) |
 | 6 — Operability + launch readiness | 🚧 In progress | **Wave 1 complete:** 6 operational runbooks; Application Insights workbook (7 tiles); 5 metric alert rules; Wizard ACA app in Bicep; threat model; blanket auth `FallbackPolicy`. Wave 2 + H-chain operator procedures pending |
 | 7+ — Post-launch features | ⏳ Deferred | Strategy Tracker, OCR score capture, Dream Game generator |
 
-**Tests:** 1,564 passing across foundation + scrapers + Cosmos + OPDB + Foundry orchestration + RAG pipeline + Web (bUnit + Playwright + endpoint). Build runs clean with `TreatWarningsAsErrors`.
+**Tests:** 2,875 passing across foundation + scrapers + Cosmos + OPDB + Foundry orchestration + RAG pipeline + Web (bUnit + Playwright + endpoint). Build runs clean with `TreatWarningsAsErrors`.
 
 ### Known limitations v1
 
@@ -153,15 +155,14 @@ Phase 5 is code-complete and the application is fully deployable. The following 
 - **RAG corpus is a curated subset.** The AI Search index currently covers approximately 10 machines from the evaluation harness fixture set. Coverage expands as the scraper pipeline runs at scale against deployed Cosmos and the Change Feed worker processes the full `scraped_documents` backlog — this is a Phase 4.5 operator action, not a code gap.
 - **Cost attribution reads zero until upstream is resolved.** The `pinwiz.ai.cost_usd_cents` OTel instrument emits 0 because the Microsoft Agent Framework does not yet expose per-call token consumption in a consumable API surface (tracked upstream as issue #2688). Azure Cost Management is the authoritative budget signal for the $300–$400/mo cap until that issue resolves.
 - **Lighthouse CI measures the test environment.** The CI pipeline runs Lighthouse against the locally-served Blazor app. Live-surface Lighthouse validation (Core Web Vitals, TTI, LCP from the real Cloudflare-fronted edge) is a Phase 6 H-chain gate item that runs after `pinwiz.ai` goes live.
-- **`/admin` pages are structural placeholders.** AdminDashboard, AdminMachines, and AdminSources render with the correct auth guards and chrome; the backing data queries (ingestion health, source-site status, machine catalog browsing) land in Phase 7.
 
 ## Tech stack
 
 - **.NET 10 / C# 14**, `Directory.Build.props` enforcing zero warnings as errors
-- **.NET Aspire 13.2** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
+- **.NET Aspire 13.4.6** — local orchestration ([`PinballWizard.AppHost`](src/PinballWizard.AppHost/) + [`PinballWizard.ServiceDefaults`](src/PinballWizard.ServiceDefaults/) — OTel, service discovery, standard HTTP resilience, `/healthz` + `/alive`)
 - **Azure** — Cosmos DB Serverless, AI Search Basic, Azure OpenAI / Microsoft Foundry, Container Apps, Container Registry, Storage, Key Vault, Application Insights, Log Analytics
 - **Microsoft.Azure.Cosmos** (data-plane SDK) + **Azure.ResourceManager.CosmosDB** (ARM SDK) — split per [ADR-0012](docs/adr/0012-cosmos-arm-schema-data-plane-items.md): schema CRUD via ARM, item CRUD via data-plane SDK
-- **Microsoft Agent Framework (`Microsoft.Agents.AI` 1.4.0)** — Responses Agent pattern; `AIProjectClient.AsAIAgent`; OTel auto-emission
+- **Microsoft Agent Framework (`Microsoft.Agents.AI` 1.5.0)** — Responses Agent pattern; `AIProjectClient.AsAIAgent`; OTel auto-emission
 - **MudBlazor** — strict mode per [ADR-0008](docs/adr/0008-mudblazor-strict.md); five theme variants
 - **[Microsoft.Playwright](https://playwright.dev/dotnet/)** — browser automation for Vue.js scraper targets
 - **[AngleSharp](https://anglesharp.github.io/)** — HTML parsing for static pages

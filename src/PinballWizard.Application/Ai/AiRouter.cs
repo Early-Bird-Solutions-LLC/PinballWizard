@@ -809,7 +809,6 @@ public sealed class AiRouter : IAiRouter
                 var flushedCarry = InlineCitationReconciler.StripCiteTokens(citeCarry);
                 if (!string.IsNullOrEmpty(flushedCarry))
                     streamChunks.Add(new AnswerChunk.TextDelta(flushedCarry));
-                citeCarry = string.Empty;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && Is429(ex))

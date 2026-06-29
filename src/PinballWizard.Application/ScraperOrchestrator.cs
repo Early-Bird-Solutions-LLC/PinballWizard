@@ -52,7 +52,7 @@ public sealed class ScraperOrchestrator
     {
         var result = new ScrapeResult();
         var scrapers = FilterScrapers(sourceFilter);
-        var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
+        using var semaphore = new SemaphoreSlim(_settings.CosmosWriteConcurrency, _settings.CosmosWriteConcurrency);
         var gameCatalog = new GameCatalog { GeneratedAt = DateTime.UtcNow };
 
         // 5b: group by source so a source's run is ONE aggregated history record +

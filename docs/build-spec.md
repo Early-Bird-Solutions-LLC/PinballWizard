@@ -31,8 +31,8 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
 | 4 | Event-driven RAG — full architecture against a curated 7-machine subset; hybrid chunking; AI Search index with semantic ranker + page-anchor citations; tool-call-trace citation extraction; citation-required guardrail | ✅ Complete |
 | 4.5 | Manuals corpus expansion — same architecture, all Phase 1 manuals; long-tail PDF edge cases + OCR decision | ⏳ Not started |
-| 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
-| 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ⏳ Not started |
+| 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ✅ Complete |
+| 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ✅ Complete (H-chain + code; 3 launch gates pending Phase 7 sign-off) |
 | 7+ | Post-launch features — Strategy Tracker, OCR score capture, Dream Game generator, Trade Matchmaker, tournament push | ⏳ Deferred to post-launch decision |
 
 ---
@@ -973,8 +973,8 @@ Learnings:
 
 ## Phase 5 — Blazor + MudBlazor frontend
 
-**Status:** ✅ Complete — all PRs merged; ACA deployment pending live image (Phase 6 scope)
-**Sequence position:** Ran concurrently with Phase 4.5. Depends on Phase 4 for real Wizard answers on the chat surface. Admin and landing surfaces completed against stubs; Wizard chat surface integrated against the live API. Unblocks Phase 6 (operability work requires the real app deployed to ACA).
+**Status:** ✅ Complete — all PRs merged; ACA deployed with real app image (live behind Cloudflare since 2026-06-12); admin control plane fully complete (PRs #477–#484 merged 2026-06-22–2026-06-24)
+**Sequence position:** Ran concurrently with Phase 4.5. Depends on Phase 4 for real Wizard answers on the chat surface. Admin and landing surfaces completed against stubs in Phase 5; full admin control plane shipped in post-Phase-5 PRs (see § Post-Phase-5 admin capabilities below). Wizard chat surface integrated against the live API. Unblocks Phase 6 (operability work requires the real app deployed to ACA).
 **Demonstrable artifact:** A fully functional Blazor Web App (`PinballWizard.Web`) with SSE streaming Wizard chat, MudBlazor chrome, per-category refusal recovery with plural community-resource cards, pinball-themed error pages, a self-hosted font stack, three BETA sibling themes, and a settings page backed by `localStorage`. A companion `PinballWizard.Api` exposes `/api/wizard/ask:stream` (SSE) and `/api/wizard/landing`. 308 bUnit + Playwright Web tests green.
 
 ### What shipped
@@ -1023,9 +1023,13 @@ The self-hosted font decision (Wave F) was operationally correct but added 2–3
 
 Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist analogous to the Phase 4 exit criteria table was not written at phase close. The work was done; the spec section was not updated. This is the gap the current PR corrects.
 
+#### Post-Phase-5 admin capabilities (PRs merged 2026-06-22–2026-06-24)
+
+Six admin capabilities shipped after Phase 5 closed, completing the admin control plane scope item that Phase 5 listed but did not fully deliver: AdminDashboard with live source metrics (showcase public-read / gated-write split, PR #477); AdminSources with per-source enable/disable toggle and drilldown detail page (PRs #478, #479); corpus/RAG stats panel at `/admin/corpus` backed by live AI Search (PR #480); per-source scrape-run history timeline writing to a `scrape_runs` Cosmos container with per-source aggregation (PRs #481, #483); and AdminManufacturers catalog page at `/admin/manufacturers` (PR #484). All six capabilities are public-read with gated mutations, follow ADR-0034 static-SSR-by-default render-mode doctrine, and pass the full bUnit + contract + axe-route test suite. The full admin control plane is now complete as of 2026-06-24.
+
 ### Phase 5 follow-ups inherited by Phase 6
 
-- Live `pinwiz.ai` ACA deployment with the real Web image (currently placeholder) — Phase 6 H-chain scope.
+- Live `pinwiz.ai` ACA deployment with the real Web image — deployed (Phase 6 H-chain; real app live behind Cloudflare as of 2026-06-12).
 - Lighthouse CI score validation against the live deployed app (CI gate passes on the test build; live-surface validation deferred).
 - axe-core accessibility validation on the live deployed app (CI gate passes; live-surface validation deferred).
 - `NullTokenUsageReader` real impl — pending agent-framework#2688; cost tile on the ops dashboard shows $0 until resolved.
@@ -1034,7 +1038,7 @@ Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist anal
 
 ## Phase 6 — Operability + launch readiness
 
-**Status:** 🟡 H-chain complete; 3 gates deferred to Phase 7 — Lighthouse on live surface, axe-core on live surface, ≥ 30-day cost burn (all blocked on deploying the real app image)
+**Status:** 🟡 H-chain complete; 3 gates deferred to Phase 7 — Lighthouse on live surface, axe-core on live surface, ≥ 30-day cost burn (real app now deployed and live since 2026-06-12; gates unblocked but formal pass/sign-off not yet captured)
 **Sequence position:** Final phase before public launch. Depends on Phase 5 (the live system to operate). Phase 5's Wave 3 CI gates (axe-core accessibility, Lighthouse performance) are already in place and count as complete here — Phase 6 executes the launch-gate checklist against the live deployed system, it does not re-implement the gates.
 **Demonstrable artifact:** A prospect who lands on `pinwiz.ai` and on the GitHub repo can verify within five minutes: (1) the site is up and answering questions; (2) Application Insights dashboards are live and populated with real signal; (3) all 11 items in `guardrails.md` § Pre-public-launch gate are checked; (4) every runbook listed in `docs/runbooks/` exists, was walked through at least once, and is dated. The repo's `README.md` and `docs/vision.md` reflect the live state without aspirational language.
 

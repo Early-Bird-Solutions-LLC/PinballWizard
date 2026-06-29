@@ -82,7 +82,7 @@ To relitigate any of these: stop work on whatever surfaced the conflict, write a
 
 ### Autonomous vs. surface-to-user
 
-Per `c:\projects\CLAUDE.md` § "Executing actions with care" and the seven main goals.
+Per [`CLAUDE.md`](../CLAUDE.md) § "Executing actions with care" and the seven main goals.
 
 | Action class | Posture |
 | --- | --- |
@@ -108,7 +108,7 @@ Per `c:\projects\CLAUDE.md` § "Executing actions with care" and the seven main 
 | Phase boundary | This guardrails doc's phase-gate checklist + `/local-review` against the cumulative diff |
 | Pre-public-launch | Operational readiness review (Phase 6 spec) |
 
-`/local-review` and the 7-item self-audit run on **every** non-trivial PR — not just the heavyweight cases.
+`/local-review` and `/standards-audit` run on **every** non-trivial PR — not just the heavyweight cases.
 
 ## Phase gates
 
@@ -116,10 +116,10 @@ Phase gates are the structural guardrail against drift across longer time horizo
 
 ### Per-PR gate (existing — recapitulated for context)
 
-Already enforced via `/local-review` + 7-item self-audit + PR template. Brief recap:
+Already enforced via `/local-review` + `/standards-audit` + PR template. Brief recap:
 
-1. `/local-review` (10-category qualitative, all 🔴 fixed, ⚠️ fixed-or-deferred-with-justification)
-2. 7-item mechanical: dead-config grep, sibling-diff, no bare catch, CLI/orchestrator wiring, behavior-not-structure tests, zero warnings, identity check
+1. `/local-review` (qualitative, all 🔴 fixed, ⚠️ fixed-or-deferred-with-justification) — catches design/architecture/drift a grep cannot
+2. `/standards-audit` — resolves the diff to applicable standards, runs each rule's CHECK, and refuses to proceed on any 🔴. Replaces the former numbered checklist; every old item is now a named rule in `.claude/standards/`
 3. Build green, tests green
 4. Memory updated if anything new is locked
 5. PR description records the audit outcome
@@ -170,13 +170,13 @@ Living list. Format: `ID | description | severity | likelihood | mitigation | la
 | R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Resolved (route ii) | Documented asymmetry in [`tests/PinballWizard.Scraper.Tests/README.md`](../tests/PinballWizard.Scraper.Tests/README.md) § "Stern Playwright asymmetry"; pinned by `SternPlaywrightAsymmetryDocumentationTests`. Revisit when a Playwright-route test fixture lands. | 2026-05-04 |
 | R5 | AI Search + OpenAI cost overrun if usage scales unexpectedly | High | **Migrated to monitored-in-steady-state 2026-05-13** | Cost alerts active ($300/day threshold) + App Insights cost tile in "PinballWizard Ops" workbook. 30-day burn snapshot pending (see Phase 6 § Retrospective). Monthly review cadence per this doc. | 2026-05-13 |
 | R6 | Indefinite schedule drift without urgency forcing function | Medium | **Closed 2026-05-13** | All 6 phases shipped. Phase gates + per-phase exit checklists held the cadence across a 10-day accelerated build. | 2026-05-13 |
-| R7 | Quality-gate erosion (deferred ⚠️ becomes routine) | Medium | Possible | Monthly review of `/local-review` outcomes; ratchet rule: never lower a gate | 2026-05-04 |
-| R8 | Locked-decision soft-erosion via small concessions | High | Possible | This doc § "Locked decisions"; explicit relitigation requirement | 2026-05-04 |
-| R9 | Source site changes (DOM, robots.txt, ToS) break a scraper or revoke permission | Medium | Likely over time | Per-source health checks; politeness-overrides in Cosmos; monthly source review | 2026-05-04 |
-| R10 | Personal-account constraint accidentally violated (work email, work tenant) | High | Low | Identity check in 7-item audit; sanitization workflow; this doc goal 6 | 2026-05-04 |
+| R7 | Quality-gate erosion (deferred ⚠️ becomes routine) | Medium | Possible | Monthly review of `/local-review` outcomes; ratchet rule: never lower a gate | 2026-06-28 |
+| R8 | Locked-decision soft-erosion via small concessions | High | Possible | This doc § "Locked decisions"; explicit relitigation requirement | 2026-06-28 |
+| R9 | Source site changes (DOM, robots.txt, ToS) break a scraper or revoke permission | Medium | Likely over time | Per-source health checks; politeness-overrides in Cosmos; monthly source review | 2026-06-28 |
+| R10 | Personal-account constraint accidentally violated (work email, work tenant) | High | Low | Identity check in standards audit (`/standards-audit`); sanitization workflow; this doc goal 6 | 2026-06-28 |
 | R11 | Bicep alert/RBAC/diagnostics bugs not caught by `what-if` validation | Medium | Likely on first deploy of new resource types | Full apply against dev before merging any PR that adds alert rules, KEDA triggers, diagnostic settings, or role assignments. Budget for fix-up PRs. (Phase 6 lesson — 7 bugs / 3 fix PRs.) | 2026-05-13 |
-| R12 | `pinwiz.ai` live surface not yet serving real app (placeholder ACA image) | High | Certain (current state) | Containerize and deploy Blazor app as first Phase 7 action. Scopes 11+12 (Lighthouse / axe-core live) are blocked until resolved. | 2026-05-13 |
-| R13 | Per-IP rate limiting not implemented in code (Cloudflare Bot Fight is sole defence) | Medium | Possible post-launch | Monitor Cloudflare logs for abuse patterns; add ASP.NET Core rate-limiting middleware if patterns emerge. Deferred from Phase 6 per threat-model.md. | 2026-05-13 |
+| R12 | `pinwiz.ai` live surface not yet serving real app (placeholder ACA image) | High | **Resolved 2026-06-28** | CI/CD deploy workflow (`deploy.yml`) has been building and pushing real images on every `main` merge since Phase 7. Wizard, API, RAG indexer, and CLI all run real images. Scopes 11+12 unblocked. | 2026-06-28 |
+| R13 | Per-IP rate limiting not implemented in code (Cloudflare Bot Fight is sole defence) | Medium | Possible post-launch | Monitor Cloudflare logs for abuse patterns; add ASP.NET Core rate-limiting middleware if patterns emerge. Deferred from Phase 6 per threat-model.md. | 2026-06-28 |
 
 New risks land here, not in memory. Memory snapshots state at a moment; the risk register is the canonical living list.
 
@@ -250,7 +250,7 @@ Conditions that **stop work in flight**, not "after the current PR." Each has a 
 
 Drift is detected by re-asking the same questions on a schedule. The cadences:
 
-- **Per PR:** `/local-review` + 7-item self-audit (existing).
+- **Per PR:** `/local-review` (qualitative) + `/standards-audit` (mechanical gate) — see `.claude/PR-AUDIT.md`.
 - **Per phase boundary:** full per-phase gate checklist; risk register review; spec doc freshness check.
 - **Monthly (calendar-driven, even with no active work):** re-read this doc + `vision.md`. Ask: are we still aligned with the seven goals? Has the showcase narrative drifted? Are deferred items still rightly deferred? Is the risk register current?
 - **Pre-public-launch (Phase 6):** full pre-public-launch gate checklist.
