@@ -34,5 +34,5 @@ public sealed class CrossEncoderOptions
     // Model identifier passed in the Cohere rerank request body — must match the
     // Foundry MaaS deployment name (ADR-0024, amended). Verify against the live
     // catalog (az cognitiveservices model list) if the deployed name differs.
-    public string ModelId { get; set; } = "Cohere-rerank-v3.5";
+    public string ModelId { get; set; } = "Cohere-rerank-v4.0-pro";
 }

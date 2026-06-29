@@ -29,7 +29,7 @@ public sealed class CohereRerankRerankerTests
             Score: score);
 
     private static CrossEncoderOptions EnabledOptions(string endpoint = "https://foundry.example.com/providers/cohere/v2/rerank") =>
-        new() { Enabled = true, TopN = 5, ModelEndpoint = endpoint, ModelId = "Cohere-rerank-v3.5" };
+        new() { Enabled = true, TopN = 5, ModelEndpoint = endpoint, ModelId = "Cohere-rerank-v4.0-pro" };
 
     private static HttpClient FakeHttpClient(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
@@ -119,7 +119,7 @@ public sealed class CohereRerankRerankerTests
         var body = await handler.LastRequest!.Content!.ReadAsStringAsync();
         Assert.Contains("Kaiju multiball query", body);
         Assert.Contains("Content for chunk_A", body);
-        Assert.Contains("Cohere-rerank-v3.5", body);
+        Assert.Contains("Cohere-rerank-v4.0-pro", body);
     }
 
     [Fact]

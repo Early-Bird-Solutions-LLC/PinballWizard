@@ -676,19 +676,22 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
 // to the account's native rerank route:
 //   https://<account>.services.ai.azure.com/providers/cohere/v2/rerank
 // wired as Rag:CrossEncoder:ModelEndpoint on the ACA apps below; the `model`
-// field in that body is the deployment name 'Cohere-rerank-v3.5'.
+// field in that body is the deployment name 'Cohere-rerank-v4.0-pro'.
 //
-// VERIFY ON FIRST ENABLE (live Foundry catalog state — confirm before deploy):
-//   az cognitiveservices model list --location <region> \
-//     --query "[?model.format=='Cohere' && contains(model.name,'rerank')].model.{name:name,version:version}"
-// to confirm the exact name + version, and that the deploying identity has
-// accepted the Cohere Marketplace terms. Keyless inference on the native rerank
-// route has had documented Entra gaps on some model versions — validate the
-// H5b run end-to-end before flipping Rag:CrossEncoder:Enabled to production.
+// Model verified against the live eastus2 catalog 2026-06-29: Cohere-rerank-v3.5
+// is NOT offered in eastus2 (superseded); the available rerank models are
+// Cohere-rerank-v4.0-fast and Cohere-rerank-v4.0-pro (both version '1',
+// GlobalStandard). v4.0-pro chosen for reranking quality and to sidestep the
+// documented keyless-auth gap reported on v4.0-fast. Re-confirm before any
+// region change: az cognitiveservices model list --location <region>
+//   --query "[?model.format=='Cohere' && contains(model.name,'rerank')].model.{name:name,version:version}"
+// First enable requires the deploying identity to have accepted the Cohere
+// Marketplace terms. Validate the H5b run end-to-end (keyless inference) before
+// flipping Rag:CrossEncoder:Enabled to production.
 
 resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployCohereRerank) {
   parent: foundry
-  name: 'Cohere-rerank-v3.5'
+  name: 'Cohere-rerank-v4.0-pro'
   sku: {
     name: 'GlobalStandard'
     // MaaS partner-model quota units, not TPM like the OpenAI deployments
@@ -698,7 +701,7 @@ resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployment
   properties: {
     model: {
       format: 'Cohere'
-      name: 'Cohere-rerank-v3.5'
+      name: 'Cohere-rerank-v4.0-pro'
       version: '1'
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
