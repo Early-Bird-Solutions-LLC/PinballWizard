@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -62,9 +63,31 @@ public sealed class CohereRerankReranker : ICrossEncoderReranker
             "Cohere rerank: query_length={QueryLength}, candidates={CandidateCount}, topN={TopN}.",
             query.Length, candidates.Count, requestBody.TopN);
 
+        // Send a buffered StringContent (NOT PostAsJsonAsync) so the request
+        // carries a Content-Length header. The Cohere rerank route on the
+        // Foundry proxy rejects chunked transfer-encoding with
+        // 400 no_content_length_header; PostAsJsonAsync streams JsonContent of
+        // unknown length, which HttpClient sends chunked.
+        var json = JsonSerializer.Serialize(requestBody, SerializerOptions);
+        // Not disposed here: HttpClient owns the request content's lifetime once
+        // PostAsync sends it (same as the previous PostAsJsonAsync path).
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
         var response = await _httpClient
-            .PostAsJsonAsync(_options.ModelEndpoint, requestBody, SerializerOptions, cancellationToken)
+            .PostAsync(_options.ModelEndpoint, content, cancellationToken)
             .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // Surface the Cohere error body so a non-2xx is diagnosable (the
+            // raw status alone hides whether it's a bad request, a rate limit,
+            // or an auth problem). The caller still treats this as a failure
+            // and degrades to unranked results.
+            var errorBody = await response.Content
+                .ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogWarning(
+                "Cohere rerank returned {StatusCode}: {ErrorBody}",
+                (int)response.StatusCode, errorBody);
+        }
 
         response.EnsureSuccessStatusCode();
 

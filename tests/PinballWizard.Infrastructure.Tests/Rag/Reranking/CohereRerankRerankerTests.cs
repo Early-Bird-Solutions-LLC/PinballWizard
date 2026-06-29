@@ -123,6 +123,26 @@ public sealed class CohereRerankRerankerTests
     }
 
     [Fact]
+    public async Task RerankAsync_RequestCarriesContentLengthHeader()
+    {
+        // The Cohere rerank route on the Foundry proxy rejects chunked
+        // transfer-encoding with 400 no_content_length_header. The request must
+        // be sent as buffered content so HttpClient emits Content-Length — a
+        // regression guard against reverting to PostAsJsonAsync (streamed,
+        // unknown-length, chunked).
+        var cohereResponse = """{"results": [{"index": 0, "relevance_score": 0.80}]}""";
+        var handler = new CapturingFakeHttpHandler(cohereResponse);
+        var client = new HttpClient(handler);
+        var sut = new CohereRerankReranker(client, Options.Create(EnabledOptions()),
+            NullLogger<CohereRerankReranker>.Instance);
+
+        await sut.RerankAsync("query", new[] { MakeChunk("chunk_A") }, topN: 1, CancellationToken.None);
+
+        Assert.True(handler.LastRequest!.Content!.Headers.ContentLength.HasValue);
+        Assert.True(handler.LastRequest.Content.Headers.ContentLength!.Value > 0);
+    }
+
+    [Fact]
     public async Task RerankAsync_HttpError_ThrowsHttpRequestException()
     {
         var client = FakeHttpClient("{\"error\": \"unauthorized\"}", HttpStatusCode.Unauthorized);

@@ -694,9 +694,11 @@ resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployment
   name: 'Cohere-rerank-v4.0-pro'
   sku: {
     name: 'GlobalStandard'
-    // MaaS partner-model quota units, not TPM like the OpenAI deployments
-    // above; 1 is the minimum and sufficient for rerank call volume.
-    capacity: 1
+    // Capacity scales the rate-limit ceiling, NOT cost (Cohere MaaS is
+    // pay-per-token regardless). At capacity 1 the limit is just 1 request /
+    // 60s, which throttles even a single multi-tool Wizard turn. 500 is the
+    // model's catalog default (max 1,000,000) — ample headroom, no idle cost.
+    capacity: 500
   }
   properties: {
     model: {
