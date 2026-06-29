@@ -64,8 +64,8 @@ public static class ServiceCollectionExtensions
 
         // Named HttpClient for CohereRerankReranker — only resolved when
         // Rag:CrossEncoder:Enabled=true. Attaches a DefaultAzureCredential
-        // bearer token scoped to Azure AI / Cognitive Services so the Foundry
-        // external-connection proxy accepts the request.
+        // bearer token scoped to Cognitive Services so the Foundry account's
+        // native Cohere rerank route accepts the request keyless.
         services.AddHttpClient("CohereReranker")
             .AddHttpMessageHandler(() => new AzureCredentialBearerTokenHandler(
                 Credentials.SharedAzureCredential.Instance,
@@ -77,11 +77,11 @@ public static class ServiceCollectionExtensions
             if (!opts.Enabled)
                 return new NullCrossEncoderReranker();
 
-            // Cohere Rerank-v3 via Foundry connection. The HttpClient carries
-            // a DefaultAzureCredential bearer token for the Foundry endpoint.
-            // The managed identity on the Container App (or dev's az login
-            // session) must have the "Azure AI Developer" role on the Foundry
-            // project — same credential used for Foundry agent dispatch.
+            // Cohere Rerank via the Foundry MaaS deployment's native rerank
+            // route (ADR-0024, amended). The HttpClient carries a
+            // DefaultAzureCredential bearer token; the managed identity on the
+            // Container App (or dev's az login session) must hold Azure AI User
+            // on the Foundry account — the same credential used for agent dispatch.
             var httpClient = sp.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("CohereReranker");
             return new CohereRerankReranker(

@@ -57,8 +57,8 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
-@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024). Default FALSE — a Foundry ApiKey connection cannot be created without a non-empty credentials.key, and the cross-encoder reranker is disabled by default, so the connection is inert. Flip true only in the change that provisions the Cohere key and enables the reranker. Has no effect when deployPhase2=false.')
-param deployCohereConnection bool = false
+@description('When true, deploys Cohere Rerank as an Azure-native Foundry MaaS model deployment (ADR-0024, amended from an external api.cohere.com connection). Fully IaC, Azure Marketplace billing, no Cohere.com account or API key; inference is keyless via the ACA managed identity. Default FALSE — the reranker stays inert until the app-layer switch is flipped after the H5b gate passes. Has no effect when deployPhase2=false. See modules/shared.bicep deployCohereRerank for the Marketplace-terms prereq.')
+param deployCohereRerank bool = false
 
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test is not created. Update in the environment bicepparam when the ACA environment changes.')
 param wizardAliveUrl string = ''
@@ -135,7 +135,7 @@ module shared 'modules/shared.bicep' = {
     deployPhase2: deployPhase2
     deployFoundryModelDeployments: deployFoundryModelDeployments
     deployAiSearch: deployAiSearch
-    deployCohereConnection: deployCohereConnection
+    deployCohereRerank: deployCohereRerank
     wizardAliveUrl: wizardAliveUrl
     wizardCustomDomain: wizardCustomDomain
     wizardImageTag: wizardImageTag
@@ -211,6 +211,7 @@ output foundryProjectEndpoint string = shared.outputs.foundryProjectEndpoint
 output foundryChatDeploymentName string = shared.outputs.foundryChatDeploymentName
 output foundryChatHeavyDeploymentName string = shared.outputs.foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = shared.outputs.foundryEmbeddingDeploymentName
+output cohereRerankEndpoint string = shared.outputs.cohereRerankEndpoint
 
 // Wizard + Api Container Apps (Phase 7). wizardFqdn is the ACA-assigned FQDN
 // used by the CI/CD health check and the App Insights availability test.
