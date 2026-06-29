@@ -34,6 +34,17 @@
       "type": "aspire",
       "request": "launch",
       "program": "${workspaceFolder}/src/PinballWizard.AppHost/PinballWizard.AppHost.csproj",
+      // Open the Aspire dashboard in a browser once the process starts. VS Code's
+      // serverReadyAction monitors Debug Console output for the first match of
+      // the pattern and opens that URL. The Aspire CLI prints the dashboard login
+      // URL on a line containing "dashboard" or "login" — port 17110 is the
+      // stable HTTPS dashboard port from launchSettings.json. The token
+      // (pinwiz-dev) is already in the URL the CLI prints, so no uriFormat needed.
+      // start-apphost.ps1 uses the same regex for the terminal equivalent.
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "(https://localhost:17110[^\\s]*)"
+      },
       // Belt-and-suspenders for the passphrase: `aspire run` already applies the
       // launchSettings https profile (Development), but set it explicitly so a
       // future launchSettings change can't silently drop user-secrets loading.
