@@ -19,6 +19,41 @@
 
 ---
 
+## Out-of-band Key Vault secret inventory (provisioning, not rotation)
+
+These are the secrets `pinwiz-kv-<env>-<suffix>` MUST contain for a deploy to
+succeed. **They are intentionally NOT in IaC** — the Bicep declares zero
+`Microsoft.KeyVault/vaults/secrets` resources, so secret *values* never appear
+in templates, parameters, or deployment-stack state. The ACA apps reference them
+by `keyVaultUrl`; the values are set out of band, once.
+
+| KV secret | Source | Set / provision | Consumers |
+| --- | --- | --- | --- |
+| `AzureAd-ClientSecret` | Entra app reg "PinballWizard Web" → Certificates & secrets | `az keyvault secret set --vault-name <kv> --name AzureAd-ClientSecret --value <secret>` | wizard + api ACA (OIDC sign-in) |
+| `Opdb-ApiToken` | <https://opdb.org/profile> → API Keys (machine env `OPDB_API_TOKEN`) | `az keyvault secret set --vault-name <kv> --name Opdb-ApiToken --value $env:OPDB_API_TOKEN` | api/web ACA + CLI (OPDB sync) |
+| `silverball-api-key` | Silverball Labs (Will Oetting); machine env `SILVERBALL_API_KEY` | `az keyvault secret set --vault-name <kv> --name silverball-api-key --value $env:SILVERBALL_API_KEY` | api + wizard ACA (`SilverballLabs__ApiKey`, getMarketValue pricing) |
+| `cloudflare-origin-pinwiz` (KV **certificate**, not a plain secret) | Cloudflare Origin CA cert | `infra/scripts/Import-OriginCaCertToKeyVault.ps1` — NOT a plain `secret set` | wizard ACA custom-domain SNI binding (ADR-0038) |
+
+> **Cohere Rerank needs NO secret** (ADR-0024, amended) — it is an Azure-native
+> Foundry MaaS model deployment called keyless via managed identity.
+
+**⚠️ Vault-recreation hazard.** If the Key Vault is ever recreated — e.g.
+`deployPhase2` toggled `true → false → true`, or the vault soft-deleted and
+purged — **every** secret above must be re-provisioned out of band before the
+next deploy, or the ACA apps fail to roll a new revision (`configuration.secrets
+... Unable to get value using Managed identity` / `unable to fetch secret`).
+
+**Adding a new out-of-band secret** (e.g. wiring a new `keyVaultUrl` ACA secret
+reference in `shared.bicep`): the `az keyvault secret set` step is a separate,
+easy-to-forget action from the Bicep PR. Add the row here in the same PR, and
+provision the value in the live vault before the first deploy that applies the
+reference — otherwise the deploy fails on the first revision roll. (This is what
+happened 2026-06-29: PR #558 added the `silverball-api-key` ACA reference on
+2026-06-27 but the out-of-band `secret set` was never run; the gap stayed latent
+until the next revision-rolling deploy three weeks later.)
+
+---
+
 ## Pre-rotation checklist
 
 - [ ] Note the current secret value (or the last-known version) so you can verify the new one is in place.
