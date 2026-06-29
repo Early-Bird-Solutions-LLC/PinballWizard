@@ -101,5 +101,5 @@ code landed on it.
 
 ## References
 
-- [`project_phased_build_sequence.md`](../../../../Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phased_build_sequence.md) — Phase 1.0 (Solution Scaffolding) describes this pivot.
+- [`project_phased_build_sequence.md`](../../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phased_build_sequence.md) — Phase 1.0 (Solution Scaffolding) describes this pivot.
 - PR #20 — implementation.

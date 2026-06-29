@@ -135,8 +135,8 @@ None — this is the foundation phase.
 
 - [ADR 0007](adr/0007-ingestion-sources-as-cosmos-data.md) — IngestionSources as runtime Cosmos data, not Bicep config (locked the per-host politeness-overrides pattern)
 - [ADR 0011](adr/0011-scraper-machine-reconciliation.md) — Scraper-to-Machine reconciliation strategy (two-pass match: slug fast path + title-normalize bootstrap)
-- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
-- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
+- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
+- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
 - **Cross-origin parallelism allowed; within-origin parallelism explicitly disabled.** Politeness is per-origin, so different manufacturers can run concurrently without violating the principle.
 - **OPDB is the canonical key authority.** `OpdbId` becomes the canonical key on `Machine`; manufacturer slugs become alternate keys.
 
