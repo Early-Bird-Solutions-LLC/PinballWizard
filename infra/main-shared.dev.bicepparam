@@ -98,3 +98,26 @@ param wizardAliveUrl = 'https://pinwiz-ca-wizard-dev.graybay-045982b4.eastus2.az
 // Custom domain — requires Cloudflare DNS-only mode during cert provisioning.
 // Switch Cloudflare back to proxied (orange cloud) after deploy completes.
 param wizardCustomDomain = 'pinwiz.ai'
+
+// ADR-0024 Cohere Rerank — Azure-native Foundry MaaS model deployment.
+// Kept OFF until the H5b eval gate (build-spec § Phase 4.5) is run and passes.
+//
+// Fully IaC and keyless: no Cohere.com account, no API key, no out-of-band
+// secret. Cohere Rerank deploys as a Foundry model (like the gpt-4o deployment),
+// billed through Azure Marketplace; inference authenticates via the ACA managed
+// identity (already Azure AI User on the Foundry account). To enable:
+//
+//   1. One-time: ensure the deploying identity has accepted the Cohere
+//      Marketplace terms (first MaaS deploy of a partner model). Confirm the
+//      exact model name + version against the live catalog:
+//        az cognitiveservices model list --location eastus2 \
+//          --query "[?model.format=='Cohere' && contains(model.name,'rerank')].model"
+//   2. Flip the line below to true and redeploy.
+//
+// Deploying the model only makes it available to the reranker; it does NOT turn
+// the reranker on. The app-layer switch (Rag__CrossEncoder__Enabled, set in
+// modules/shared.bicep, currently 'false') flips to 'true' only after H5b proves
+// citation_precision >= 0.50. For the H5b eval itself, run the CLI locally with
+// Rag__CrossEncoder__Enabled=true as an env override against the deployed model —
+// see thoughts/shared/plans/2026-06-29_phase45-h5b-eval-runbook.md.
+param deployCohereRerank = false

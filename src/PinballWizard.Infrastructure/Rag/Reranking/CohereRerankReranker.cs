@@ -8,11 +8,11 @@ using PinballWizard.Core.Configuration;
 
 namespace PinballWizard.Infrastructure.Rag.Reranking;
 
-// Cohere Rerank-v3 implementation of ICrossEncoderReranker (ADR-0024
-// W4 fix-up). Calls the Cohere Rerank API via Azure AI Foundry's
-// external-model connection surface. Expects a POST endpoint that
-// accepts the Cohere v2 rerank JSON body and returns a JSON response
-// containing a "results" array with "index" and "relevance_score" fields.
+// Cohere Rerank implementation of ICrossEncoderReranker (ADR-0024, amended
+// to an Azure-native Foundry MaaS deployment). Calls the Foundry account's
+// native Cohere rerank route (/providers/cohere/v2/rerank) keyless via the
+// managed identity. POSTs the Cohere v2 rerank JSON body and reads a JSON
+// response with a "results" array of "index" and "relevance_score" fields.
 //
 // The HttpClient is injected by DI (registered in ServiceCollectionExtensions
 // with the Foundry AAD bearer token via DefaultAzureCredential). The

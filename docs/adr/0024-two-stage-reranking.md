@@ -161,6 +161,19 @@ Gate status: **Triggered** (`citation_precision=0.478 < 0.50`).
 
 Proceeding to W4 fix-up PR: wire `CohereRerankReranker` per the locked implementation path above. Cohere Rerank-v3 via Foundry connection; `ICrossEncoderReranker` abstraction in `Application/Ai/Retrieval/`; `CohereRerankReranker` in `Infrastructure`; injected into `AiSearchRagRetriever`. Re-run eval as H5b to confirm precision lift.
 
+## Amendment (2026-06-29) — Cohere via Foundry MaaS deployment, not an external connection
+
+**Status:** Accepted. Supersedes the "external `api.cohere.com` connection" mechanism from the original Decision; the gate (`citation_precision ≥ 0.50`) and everything else are unchanged.
+
+The original implementation provisioned Cohere Rerank as a Foundry **external-model connection** to `api.cohere.com`, authenticated with a Cohere.com API key. That carried an irreducible non-IaC step — obtaining and storing a third-party SaaS credential — which conflicts with the showcase's all-infrastructure-in-IaC posture and the account's `disableLocalAuth: true` stance.
+
+Cohere Rerank is available in the Azure AI Foundry model catalog as a **first-class MaaS model deployment** (`Microsoft.CognitiveServices/accounts/deployments`, `model.format: 'Cohere'`, `name: 'Cohere-rerank-v3.5'`), billed through Azure Marketplace. We deploy it exactly like the existing `gpt-4o` / `text-embedding-3-large` deployments. Consequences:
+
+- **Fully IaC, no external account or key.** The model is a Bicep resource (`cohereRerankDeployment`, gated by `deployCohereRerank`); billing is Azure-native pay-per-token (~$30/mo at 1K queries/day, within cap).
+- **Keyless inference.** `CohereRerankReranker` POSTs the native Cohere v2 rerank body — unchanged — to the account's native route `https://<account>.services.ai.azure.com/providers/cohere/v2/rerank`, authenticated by the ACA managed identity (already holds `Azure AI User` on the Foundry account). No secret anywhere; honors `disableLocalAuth: true`.
+- **Known risk (verify at H5b):** keyless Entra auth on the native Cohere rerank route has community reports of failures on `Cohere-rerank-v4.0-fast` (unconfirmed for v3.5; not in official limitation docs). Validate the H5b run end-to-end before flipping `Rag:CrossEncoder:Enabled` to production. Fallback if keyless proves unsupported: a keyed path, which would require revisiting the account's `disableLocalAuth` posture.
+- **First-enable prereq:** the deploying identity must have accepted the Cohere Marketplace terms; confirm the exact deployed model name/version against the live catalog (`az cognitiveservices model list`).
+
 ## References
 
 - [ADR-0014](0014-microsoft-foundry-orchestration.md) —
