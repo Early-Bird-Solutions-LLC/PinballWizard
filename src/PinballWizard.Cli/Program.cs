@@ -147,6 +147,16 @@ var twipSinceOption = new Option<string?>("--twip-since")
     Description = "ISO-8601 date (e.g. 2026-06-01). Limits --sync-twip-newsletter to articles published on or after this date. Defaults to Twip:DefaultLookbackDays (14) days ago. Accepts date portion only.",
 };
 
+var syncP3SdkDocsOption = new Option<bool>("--sync-p3-sdk-docs")
+{
+    Description = "Index Multimorphic P3 SDK developer documents (per-module UsageInstructions + INSTALL.txt + ReleaseNotes.txt) as SdkGuide chunks in AI Search. Reads from the local SDK zip or an already-extracted directory specified by --sdk-path. Skips the 1,032 Doxygen HTML files (low narrative RAG value). Idempotent: document_id is a stable hash of the file path. Requires Azure AI Search and Azure AI Foundry to be configured.",
+};
+
+var sdkPathOption = new Option<string?>("--sdk-path")
+{
+    Description = "Path to the P3 SDK zip (P3_SDK_V0.9.zip) or an extracted directory. Defaults to C:\\earlybird\\PinballWizard\\P3_SDK_V0.9.zip. Used with --sync-p3-sdk-docs.",
+};
+
 var refreshGameOverviewsOption = new Option<bool>("--refresh-game-overviews")
 {
     Description = "Atomic Stern game-page refresh: scrape the game-page source, reconcile onto Machine records, then synthesize and index GameOverview docs. Equivalent to --source games followed by --sync-game-overviews, in one polite pass. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
@@ -216,6 +226,8 @@ rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(syncKineticistTutorialsOption);
 rootCommand.Options.Add(syncTwipNewsletterOption);
 rootCommand.Options.Add(twipSinceOption);
+rootCommand.Options.Add(syncP3SdkDocsOption);
+rootCommand.Options.Add(sdkPathOption);
 rootCommand.Options.Add(refreshGameOverviewsOption);
 rootCommand.Options.Add(linkDocumentsOption);
 rootCommand.Options.Add(relinkAllOption);
@@ -247,6 +259,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
     var syncTwipNewsletter = parseResult.GetValue(syncTwipNewsletterOption);
     var twipSince = parseResult.GetValue(twipSinceOption);
+    var syncP3SdkDocs = parseResult.GetValue(syncP3SdkDocsOption);
+    var sdkPath = parseResult.GetValue(sdkPathOption);
     var refreshGameOverviews = parseResult.GetValue(refreshGameOverviewsOption);
     var linkDocuments = parseResult.GetValue(linkDocumentsOption);
     var relinkAll = parseResult.GetValue(relinkAllOption);
@@ -1204,6 +1218,34 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --sync-p3-sdk-docs (Multimorphic P3 SDK developer guides — SdkGuide
+    // chunks in AI Search). Reads high-value text files from the local SDK zip
+    // or extracted directory and synthesizes chunks via P3SdkDocsSynthesizer.
+    // Skips the 1,032 Doxygen HTML files. Idempotent. Requires Azure AI Search
+    // and Azure AI Foundry; does NOT require Cosmos (no scraped_documents path).
+    if (syncP3SdkDocs)
+    {
+        var p3Synthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.P3Sdk.P3SdkDocsSynthesizer>();
+
+        if (p3Synthesizer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-p3-sdk-docs requires Azure AI Search and Azure AI Foundry to be configured. " +
+                "Set AiSearch:Endpoint and AiFoundry:ProjectEndpoint in appsettings or environment.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var resolvedSdkPath = sdkPath ?? @"C:\earlybird\PinballWizard\P3_SDK_V0.9.zip";
+        Console.WriteLine($"Indexing P3 SDK developer docs from: {resolvedSdkPath}");
+
+        var p3Indexed = await p3Synthesizer.SyncAsync(resolvedSdkPath, cancellationToken);
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-p3-sdk-docs complete: indexed={p3Indexed}");
+        return;
+    }
+
     // Handle --reclassify-documents (in-place classification fix for stored
     // scraped_documents_raw records; no HTTP calls; ADR-0042 follow-up).
     // Resolves IDocumentReclassifier from DI; the service is only registered
@@ -1409,6 +1451,12 @@ static IHost CreateHost(string[] args)
         // Inside the RAG gate because TwipNewsletterSynthesizer depends on
         // IChunker, which AddHybridChunker() registers (line above).
         builder.Services.AddTwipScraping(builder.Configuration);
+
+        // P3 SDK docs synthesizer — indexes Multimorphic P3 SDK developer guides
+        // (UsageInstructions + INSTALL.txt + ReleaseNotes.txt) as SdkGuide chunks
+        // via --sync-p3-sdk-docs CLI verb. Inside the RAG gate because
+        // P3SdkDocsSynthesizer depends on IChunker and IRagIndexer.
+        builder.Services.AddTransient<PinballWizard.Infrastructure.Scraping.P3Sdk.P3SdkDocsSynthesizer>();
     }
 
     var politenessOptions = builder.Configuration.GetSection(PolitenessOptions.SectionName)
