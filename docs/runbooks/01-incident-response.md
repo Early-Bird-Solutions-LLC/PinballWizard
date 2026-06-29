@@ -2,7 +2,7 @@
 **Trigger:** `pinwiz-alert-availability` (availability < 99.5% over 7-day window) or `pinwiz-alert-5xx-rate` (5xx rate > 5% over 10-min window)
 **Alert rule:** `pinwiz-alert-availability` / `pinwiz-alert-5xx-rate`
 **Time budget:** First 30 minutes
-**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill against the deployed pinwiz.ai app remains an open Phase 7 task)
 
 ---
 
