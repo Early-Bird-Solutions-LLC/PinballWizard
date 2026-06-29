@@ -70,6 +70,22 @@ html.theme-daytime-route {
     --pw-border-glow-green:   #0d6e2d66;
     --pw-border-glow-magenta: #9a1c8a66;
     --pw-border-glow-red:     #a8201a66;
+    /* MudBlazor gap fix */
+    --mud-palette-primary:             #cc5500;
+    --mud-palette-primary-text:        #ffffff;
+    --mud-palette-background:          #faf6ef;
+    --mud-palette-surface:             #ffffff;
+    --mud-palette-appbar-background:   #2a1f14;
+    --mud-palette-appbar-text:         #f4f1ea;
+    --mud-palette-drawer-background:   #f0ece3;
+    --mud-palette-drawer-text:         #1f1a14;
+    --mud-palette-text-primary:        #1f1a14;
+    --mud-palette-text-secondary:      #5a4d3e;
+    --mud-palette-action-default:      #5a4d3e;
+    --mud-palette-success:             #0d6e2d;
+    --mud-palette-error:               #c02000;
+    --mud-palette-divider:             #d8cdb5;
+    --mud-palette-lines-default:       #d8cdb5;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -98,6 +114,22 @@ html.theme-backbox {
     --pw-border-glow-green:   #00e5cc66;
     --pw-border-glow-magenta: #b066ff66;
     --pw-border-glow-red:     #ff446666;
+    /* MudBlazor gap fix */
+    --mud-palette-primary:             #ff3399;
+    --mud-palette-primary-text:        #ffffff;
+    --mud-palette-background:          #0a0e1a;
+    --mud-palette-surface:             #131828;
+    --mud-palette-appbar-background:   #060a14;
+    --mud-palette-appbar-text:         #e8edf5;
+    --mud-palette-drawer-background:   #0d1220;
+    --mud-palette-drawer-text:         #e8edf5;
+    --mud-palette-text-primary:        #e8edf5;
+    --mud-palette-text-secondary:      #8a93a8;
+    --mud-palette-action-default:      #8a93a8;
+    --mud-palette-success:             #00e5cc;
+    --mud-palette-error:               #ff3333;
+    --mud-palette-divider:             #1f2740;
+    --mud-palette-lines-default:       #1f2740;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -126,6 +158,22 @@ html.theme-cabinet {
     --pw-border-glow-green:   #f5c83a66;
     --pw-border-glow-magenta: #5a8aa866;
     --pw-border-glow-red:     #c41e1e66;
+    /* MudBlazor gap fix */
+    --mud-palette-primary:             #d23030;
+    --mud-palette-primary-text:        #ffffff;
+    --mud-palette-background:          #2a1f15;
+    --mud-palette-surface:             #38291a;
+    --mud-palette-appbar-background:   #1a1208;
+    --mud-palette-appbar-text:         #f4eedd;
+    --mud-palette-drawer-background:   #221810;
+    --mud-palette-drawer-text:         #f4eedd;
+    --mud-palette-text-primary:        #f4eedd;
+    --mud-palette-text-secondary:      #b8a888;
+    --mud-palette-action-default:      #b8a888;
+    --mud-palette-success:             #f5c83a;
+    --mud-palette-error:               #ff3b30;
+    --mud-palette-divider:             #3d2e1f;
+    --mud-palette-lines-default:       #3d2e1f;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -155,6 +203,22 @@ html.theme-dmd-classic {
     --pw-border-glow-green:   #ffaa0099;
     --pw-border-glow-magenta: #ffcc6699;
     --pw-border-glow-red:     #ff440099;
+    /* MudBlazor gap fix */
+    --mud-palette-primary:             #ff9900;
+    --mud-palette-primary-text:        #000000;
+    --mud-palette-background:          #000000;
+    --mud-palette-surface:             #0a0700;
+    --mud-palette-appbar-background:   #000000;
+    --mud-palette-appbar-text:         #f4d090;
+    --mud-palette-drawer-background:   #050300;
+    --mud-palette-drawer-text:         #f4d090;
+    --mud-palette-text-primary:        #f4d090;
+    --mud-palette-text-secondary:      #b89060;
+    --mud-palette-action-default:      #b89060;
+    --mud-palette-success:             #ffaa00;
+    --mud-palette-error:               #ff4400;
+    --mud-palette-divider:             #2a1500;
+    --mud-palette-lines-default:       #2a1500;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -187,6 +251,23 @@ html.theme-paper {
     --pw-border-faint:      #ECE6DA;
     --pw-bg-surface-2:      #EFEADE;
     --pw-panel-grounded:    #F1F6F2;
+    /* MudBlazor gap fix — maps to PinballTheme.CreatePaper().PaletteLight */
+    --mud-palette-primary:             #b8763e;
+    --mud-palette-primary-text:        #ffffff;
+    --mud-palette-secondary:           #1f6f54;
+    --mud-palette-background:          #f4f1ea;
+    --mud-palette-surface:             #faf8f2;
+    --mud-palette-appbar-background:   #1a1410;
+    --mud-palette-appbar-text:         #f4f1ea;
+    --mud-palette-drawer-background:   #ede9e1;
+    --mud-palette-drawer-text:         #1a1408;
+    --mud-palette-text-primary:        #1a1408;
+    --mud-palette-text-secondary:      #5c5042;
+    --mud-palette-action-default:      #5c5042;
+    --mud-palette-success:             #1a8a45;
+    --mud-palette-error:               #c0200e;
+    --mud-palette-divider:             #d8cdb5;
+    --mud-palette-lines-default:       #d8cdb5;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -225,6 +306,28 @@ html.theme-dmd-classic {
     --pw-border-faint:   #1a0f00;
     --pw-bg-surface-2:   #0a0500;
     --pw-panel-grounded: #0a1a08;
+}
+
+/* ── Modern LCD sibling theme (identity mapping — matches :root default) ──── */
+/* Modern LCD is the default (:root) theme. This explicit block ensures
+   MudBlazor components are correctly themed when html.theme-modern-lcd is set,
+   matching PinballTheme.Create().PaletteLight exactly.
+   CSS-variable-only — no separate MudTheme companion needed. */
+html.theme-modern-lcd {
+    /* MudBlazor gap fix — identity mapping: matches PinballTheme.Create().PaletteLight */
+    --mud-palette-primary:             #ff9a1f;
+    --mud-palette-background:          #0c0b0e;
+    --mud-palette-surface:             #161519;
+    --mud-palette-appbar-background:   #08070a;
+    --mud-palette-appbar-text:         #f4f1ea;
+    --mud-palette-drawer-background:   #101015;
+    --mud-palette-text-primary:        #f4f1ea;
+    --mud-palette-text-secondary:      #9a9590;
+    --mud-palette-action-default:      #9a9590;
+    --mud-palette-success:             #34d96a;
+    --mud-palette-error:               #ff3b30;
+    --mud-palette-divider:             #2a282d;
+    --mud-palette-lines-default:       #2a282d;
 }
 
 /* Self-hosted web fonts. Files live under wwwroot/fonts/<family>/.
