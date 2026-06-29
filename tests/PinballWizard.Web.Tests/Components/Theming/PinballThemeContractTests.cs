@@ -276,13 +276,11 @@ public sealed class DmdClassicThemeContractTests
         => Assert.Equal(expected, actual, ignoreCase: true);
 }
 
-/// <summary>
-/// Pins the Paper sibling-theme token values. Paper has a full MudTheme companion
-/// (CreatePaper()) unlike the CSS-variable-only sibling themes above.
-/// Spec authority: docs/ui/themes/sibling-themes-overview.md § Paper.
-///
-/// Any palette change must update both CreatePaper() AND these constants together.
-/// </summary>
+// Pins the Paper sibling-theme token values. Paper has a full MudTheme companion
+// (CreatePaper()) unlike the CSS-variable-only sibling themes above.
+// Spec authority: docs/ui/themes/sibling-themes-overview.md § Paper.
+//
+// Any palette change must update both CreatePaper() AND these constants together.
 public static class PaperTheme
 {
     public const string CssClass            = "theme-paper";
