@@ -696,9 +696,11 @@ resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployment
     name: 'GlobalStandard'
     // Capacity scales the rate-limit ceiling, NOT cost (Cohere MaaS is
     // pay-per-token regardless). At capacity 1 the limit is just 1 request /
-    // 60s, which throttles even a single multi-tool Wizard turn. 500 is the
-    // model's catalog default (max 1,000,000) — ample headroom, no idle cost.
-    capacity: 500
+    // 60s, which throttles even a single multi-tool Wizard turn. The catalog
+    // default is 500, but this subscription's Cohere-Rerank-V4-Pro quota is
+    // only 20 (TPM-thousands) — so 20 is the deployable max here. Raise via an
+    // Azure quota-increase request if rerank throughput needs more headroom.
+    capacity: 20
   }
   properties: {
     model: {
