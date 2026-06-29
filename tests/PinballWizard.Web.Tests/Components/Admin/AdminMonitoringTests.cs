@@ -161,20 +161,15 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         Assert.Equal("Suppressed", state.TextContent.Trim());
     }
 
-    [Fact]
-    public void D4_OtherAlerts_AreOk()
+    [Theory]
+    [InlineData("mon-alert-latency-state")]
+    [InlineData("mon-alert-5xx-state")]
+    [InlineData("mon-alert-deadletter-state")]
+    [InlineData("mon-alert-availability-state")]
+    public void D4_OtherAlerts_AreOk(string testid)
     {
         var cut = Render<AdminMonitoring>();
-        foreach (var testid in new[]
-        {
-            "mon-alert-latency-state",
-            "mon-alert-5xx-state",
-            "mon-alert-deadletter-state",
-            "mon-alert-availability-state",
-        })
-        {
-            var el = cut.Find($"[data-testid='{testid}']");
-            Assert.Equal("OK", el.TextContent.Trim());
-        }
+        var el = cut.Find($"[data-testid='{testid}']");
+        Assert.Equal("OK", el.TextContent.Trim());
     }
 }
