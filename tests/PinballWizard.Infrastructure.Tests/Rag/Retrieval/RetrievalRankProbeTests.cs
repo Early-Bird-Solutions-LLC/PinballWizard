@@ -9,7 +9,7 @@ namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 // Uses a fake IRagRetriever returning a fixed chunk order so tests are
 // reranker-agnostic; the probe is defined to run with Rag:CrossEncoder:Enabled=false
 // at call time, enforced by the operator/CLI rather than the probe itself.
-// Tests exercise REAL mch_-prefixed citation projection so the matching logic
+// Tests exercise REAL bare-OPDB-id citation projection so the matching logic
 // is not stubbed out — changing the projection in the probe will surface here.
 public sealed class RetrievalRankProbeTests
 {
@@ -45,7 +45,7 @@ public sealed class RetrievalRankProbeTests
                 score: 1.0 - i * 0.05))
             .ToList();
         var probe = new RetrievalRankProbe(new FakeRetriever(chunks));
-        var q = MakeQuestion(expectedCitationSet: ["mch_GOLD"]);
+        var q = MakeQuestion(expectedCitationSet: ["GOLD"]);
 
         var result = await probe.ProbeAsync(q, topN: 5, CancellationToken.None);
 
@@ -64,7 +64,7 @@ public sealed class RetrievalRankProbeTests
                 score: 1.0 - i * 0.05))
             .ToList();
         var probe = new RetrievalRankProbe(new FakeRetriever(chunks));
-        var q = MakeQuestion(expectedCitationSet: ["mch_GOLD"]);
+        var q = MakeQuestion(expectedCitationSet: ["GOLD"]);
 
         var result = await probe.ProbeAsync(q, topN: 5, CancellationToken.None);
 
@@ -81,7 +81,7 @@ public sealed class RetrievalRankProbeTests
             .Select(i => MakeChunk(machineId: $"other{i}", score: 1.0 - i * 0.05))
             .ToList();
         var probe = new RetrievalRankProbe(new FakeRetriever(chunks));
-        var q = MakeQuestion(expectedCitationSet: ["mch_GOLD"]);
+        var q = MakeQuestion(expectedCitationSet: ["GOLD"]);
 
         var result = await probe.ProbeAsync(q, topN: 5, CancellationToken.None);
 

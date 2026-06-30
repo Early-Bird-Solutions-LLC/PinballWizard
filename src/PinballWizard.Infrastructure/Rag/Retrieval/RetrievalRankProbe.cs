@@ -15,18 +15,21 @@ namespace PinballWizard.Infrastructure.Rag.Retrieval;
 //
 // Citation matching: a RetrievedChunk matches the gold set when ProjectCitationId(chunk)
 // is in EvalQuestion.ExpectedCitationSet or any set in AcceptableCitationSets.
-// The projection "mch_" + chunk.MachineId is the hard-eval convention (Task 5+6 use
-// mch_-prefixed IDs in the hard set); it agrees with the mch_ prefix documented in
-// CLAUDE.md § Provenance model. CitationPrecisionEvaluator.Compute uses the same
+// The projection is the BARE OPDB MachineId (e.g. "GweeP-MW95j") — no "mch_" prefix —
+// matching EvaluationHarness.ExtractCitationIds which stores citation.MachineId directly
+// (EvaluationHarness.cs ~line 442). The eval ground-truth (data/eval/wizard.v2.jsonl)
+// likewise stores bare ids. CitationPrecisionEvaluator.Compute uses the same
 // case-insensitive set membership check applied here via HashSet<string>.
 public sealed class RetrievalRankProbe(IRagRetriever retriever) : IRetrievalRankProbe
 {
     // Projects a retrieved chunk to the citation id format used in EvalQuestion
-    // expected citation sets. Hard-eval convention (Task 5+6): mch_<MachineId>.
+    // expected citation sets. Convention: bare OPDB MachineId (no "mch_" prefix),
+    // matching EvaluationHarness.ExtractCitationIds (citation.MachineId, no prefix added)
+    // and data/eval/wizard.v2.jsonl ground-truth ids.
     // Shared so that any caller (probe, future harness extensions) uses the same
     // projection and cannot drift independently.
     internal static string ProjectCitationId(RetrievedChunk chunk) =>
-        "mch_" + chunk.MachineId;
+        chunk.MachineId;
 
     public async Task<RetrievalRankResult> ProbeAsync(
         EvalQuestion question,
@@ -35,6 +38,11 @@ public sealed class RetrievalRankProbe(IRagRetriever retriever) : IRetrievalRank
     {
         ArgumentNullException.ThrowIfNull(question);
 
+        // TopK=10 is the production default (RetrievalOptions.cs). This value defines the
+        // reranker's input window: ranks 1..topN are "easy" (first-stage already surfaces
+        // them), ranks topN+1..TopK are "reranker-sensitive" (reranker must promote them
+        // into the top-N for the question to be answered). If production TopK changes, this
+        // must change in lock-step so the slice boundary remains meaningful.
         var options = new RetrievalOptions();
         var chunks = await retriever.RetrieveAsync(question.Question, options, cancellationToken)
             .ConfigureAwait(false);
@@ -93,7 +101,6 @@ public sealed class RetrievalRankProbe(IRagRetriever retriever) : IRetrievalRank
     private static string ClassifySlice(int? goldRank, int topN) => goldRank switch
     {
         null => "retrieval-miss",
-        <= 0 => "retrieval-miss",
         var r when r <= topN => "easy",
         _ => "reranker-sensitive"
     };
