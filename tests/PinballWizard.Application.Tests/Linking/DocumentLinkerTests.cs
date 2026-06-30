@@ -372,6 +372,32 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    public async Task LinkAsync_SlugLessMachine_MatchedByTitle()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // A metadata/rulesheet-only Stern machine that was never game-page-scraped,
+        // so its ManufacturerSlugs is empty (slug: ""). Before the title-match
+        // fallback it was absent from the linker's index entirely → its manual
+        // could never link (corpus-mislink bug 1b: Jurassic Park GK17D, Star Wars
+        // G5vLR). The normalized TITLE now backs the match.
+        var slugLess = MakeMachine(id: "GK17D-MdEqz", title: "Jurassic Park", slug: "");
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/files/JurassicPark_Pro_web.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [slugLess]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal(["GK17D-MdEqz"], result.LinkedMachineIds);
+    }
+
+    [Fact]
     public async Task LinkAsync_Tier2FilenameSlug_AmbiguousMatch_NotInCatalog()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();

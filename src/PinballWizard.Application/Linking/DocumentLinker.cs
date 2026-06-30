@@ -124,6 +124,20 @@ public sealed class DocumentLinker : IDocumentLinker
                 }
                 slugIndex.Add((machine, normSlug));
             }
+
+            // Title-match fallback (corpus-mislink bug 1b): index the normalized
+            // machine TITLE so machines that were never game-page-scraped (empty
+            // ManufacturerSlugs — metadata/rulesheet-only OPDB entries, e.g.
+            // slug-less Stern Jurassic Park GK17D / Star Wars G5vLR) are still
+            // linkable by a document's filename/page title. The FULL normalized
+            // title must word-boundary-match (TryTier2FilenameSlug / TryMatchPage),
+            // and PreferByManufacturer still disambiguates collisions, so this
+            // widens reach without weakening the manufacturer-provenance guard.
+            var normTitle = LinkingUtilities.NormalizeForMatch(machine.Title);
+            if (!string.IsNullOrEmpty(normTitle))
+            {
+                slugIndex.Add((machine, normTitle));
+            }
         }
 
         // Operability: surface cross-manufacturer slug collisions so new ones
