@@ -55,7 +55,13 @@ public static class LinkingUtilities
     public static string NormalizeForMatch(string value)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
-        var lower = value.ToLowerInvariant();
+
+        // Insert boundary spaces at camelCase / acronym / letter-digit transitions
+        // so a concatenated filename title ("JamesBond007") tokenizes like a
+        // separator-delimited slug ("james-bond-007"). Without this, slug
+        // "james bond 007" can never word-boundary-match the single token
+        // "jamesbond007" (corpus-mislink bug 1a).
+        var lower = InsertTokenBoundaries(value).ToLowerInvariant();
         // Replace runs of separators and whitespace with single spaces
         var sb = new System.Text.StringBuilder(lower.Length);
         var lastWasSeparator = false;
@@ -77,6 +83,35 @@ public static class LinkingUtilities
             }
         }
         return sb.ToString().Trim();
+    }
+
+    // Inserts a space at camelCase / acronym→word / letter↔digit transitions so
+    // a concatenated title tokenizes like a separator-delimited slug. All-caps
+    // runs with no trailing lowercase ("TMNT") are left intact; "TMNTGame" splits
+    // to "TMNT Game". Operates on the case-bearing input (before lowercasing).
+    private static string InsertTokenBoundaries(string value)
+    {
+        var sb = new System.Text.StringBuilder(value.Length + 8);
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (i > 0 && IsTokenBoundary(value, i))
+            {
+                sb.Append(' ');
+            }
+            sb.Append(value[i]);
+        }
+        return sb.ToString();
+    }
+
+    private static bool IsTokenBoundary(string value, int i)
+    {
+        var prev = value[i - 1];
+        var c = value[i];
+        return (char.IsLower(prev) && char.IsUpper(c))                          // james|Bond
+            || (char.IsLetter(prev) && char.IsDigit(c))                         // Bond|007
+            || (char.IsDigit(prev) && char.IsLetter(c))                         // 007|Special
+            || (char.IsUpper(prev) && char.IsUpper(c)
+                && i + 1 < value.Length && char.IsLower(value[i + 1]));         // TMNT|Game
     }
 
     public static bool IsWordBoundaryMatch(string normText, string normSlug)

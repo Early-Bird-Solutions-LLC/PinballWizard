@@ -346,7 +346,7 @@ public class DocumentLinkerTests
     }
 
     [Fact]
-    public async Task LinkAsync_Tier2FilenameSlug_CamelCaseWithoutSeparators_NotMatched()
+    public async Task LinkAsync_Tier2FilenameSlug_CamelCaseWithoutSeparators_Matched()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -354,9 +354,12 @@ public class DocumentLinkerTests
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
 
         var machine = MakeMachine(slug: "stranger-things");
-        // "StrangerThings.pdf" → normalizes to "strangerthings pdf" (no space separation)
-        // slug "stranger-things" → normalizes to "stranger things"
-        // " stranger things " is NOT contained in " strangerthings pdf " → no match
+        // "StrangerThings.pdf" → NormalizeForMatch now splits the camelCase
+        // boundary → "stranger things pdf"; slug "stranger-things" → "stranger
+        // things". " stranger things " IS contained → match. (corpus-mislink
+        // bug 1a: a camelCase-concatenated filename title must link like a
+        // separator-delimited one — the Stern manuals JamesBond007_Pro_web.pdf,
+        // JurassicPark_Pro_web.pdf, etc. were going NotInCatalog before this fix.)
         var raw = MakeRaw(fileUrl: "https://example.com/files/StrangerThings.pdf");
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
@@ -364,8 +367,8 @@ public class DocumentLinkerTests
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
-        Assert.Null(result.ResolutionStrategy);
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("filename_slug", result.ResolutionStrategy);
     }
 
     [Fact]
