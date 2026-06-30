@@ -37,9 +37,17 @@ namespace PinballWizard.Application.Ai;
 // with live-pricing instructions: byCondition table, trendDirection prose, mandatory
 // Silverball Labs + PinballPrices.com attribution, no-financial-advice framing, and
 // graceful no-data path routing outward. Pairs with ADR-0045.
+// Bumped to "v8.2026.06" (rerank-hard-eval follow-up): Wizard.md adds an
+// explicit Step 1 routing row for identify-by-description / theme / indirect
+// (no-title) questions → Rules + searchCorpus(machineId=null), and a Step 2
+// note to skip getMachineByTitle when no machine is named. Closes the gap where
+// confusable cross-machine questions ("the monster-band one, not the 1313
+// Mockingbird Lane one") refused via Wizard instead of searching the corpus
+// (H5b-hard finding; ADR-0024 § Phase 4.5 H5b-hard outcome). Cache key in
+// AiRouter is (normalized, promptVersion) — bumping evicts stale refusals.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v7.2026.06";
+    public const string CurrentPromptVersion = "v8.2026.06";
 
     private readonly Dictionary<string, string> _prompts;
 
