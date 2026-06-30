@@ -105,6 +105,10 @@ infra/**/build/
 # baseline JSONs under data/eval/results/ are canonical (ADR-0016).
 data/eval/results/*.partial
 
+# Derived intermediate from `--probe-retrieval` (re-runnable). The canonical
+# slice-tagged set is the committed data/eval/wizard.hard.v1.jsonl.
+data/eval/*.classified.jsonl
+
 # Playwright responsive snapshot screenshots (written to ./screenshots/ by
 # ResponsiveSnapshotTests during local test runs). In CI the screenshots/
 # directory is captured as the `responsive-screenshots` artifact by the

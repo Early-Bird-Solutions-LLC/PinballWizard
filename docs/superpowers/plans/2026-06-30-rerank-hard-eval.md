@@ -195,7 +195,7 @@ This is research/curation, not TDD. Process:
 
 ## Task 7: Reranker A/B on the hard slice → enablement evidence
 
-- [ ] **Step 1: Run the harness on the hard set, reranker OFF** (isolated session, `Rag__CrossEncoder__Enabled=false`, `EvalHarness__GroundTruthPath=data/eval/wizard.hard.v1.jsonl`). Because the hard set is small, it completes within `RunTimeoutSeconds`.
+- [ ] **Step 1: Run the harness on the hard set, reranker OFF** (isolated session, `Rag__CrossEncoder__Enabled=false`, `Evaluation__GroundTruthPath=data/eval/wizard.hard.v1.jsonl` — section is `Evaluation`, NOT `EvalHarness`; the wrong key is silently ignored and the harness runs the default 42-question v2 set). Because the hard set is small, it completes within `RunTimeoutSeconds`.
 - [ ] **Step 2: Run reranker ON** (`Rag__CrossEncoder__Enabled=true`). Repeat each arm ≥2× (eval is noisy — `project_eval_noise_and_afm_remake_drift`).
 - [ ] **Step 3: Compare the `reranker-sensitive` slice** `citation_recall` (primary) + `coverage` (secondary), off vs on. A clear positive delta = the reranker's measured value; a null delta = the reranker doesn't help even where it structurally could — both are decision-grade.
 - [ ] **Step 4: Write up the result** in ADR-0024 (append an "H5b-hard outcome" section) and `build-spec.md` §Phase 4.5; this is the evidence for the `Rag:CrossEncoder:Enabled` production decision (which, if enabled, also needs the fixed reranker image deployed — already on main via #586).
