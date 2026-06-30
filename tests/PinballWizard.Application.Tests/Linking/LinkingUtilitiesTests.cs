@@ -46,6 +46,14 @@ public class LinkingUtilitiesTests
     [InlineData("TRON", "tron")]
     [InlineData("tron_legacy_manual.pdf", "tron legacy manual pdf")]
     [InlineData("", "")]
+    // camelCase / acronym / letter-digit boundaries: concatenated filename
+    // titles must tokenize like separator-delimited slugs (bug 1a).
+    [InlineData("JamesBond007", "james bond 007")]
+    [InlineData("StarWars", "star wars")]
+    [InlineData("JurassicPark", "jurassic park")]
+    [InlineData("TMNT", "tmnt")]                       // all-caps acronym: no split
+    [InlineData("TMNTGame", "tmnt game")]              // acronym→word boundary
+    [InlineData("JamesBond007_Pro_web.pdf", "james bond 007 pro web pdf")]
     public void NormalizeForMatch_stripsAndLowers(string input, string expected)
         => Assert.Equal(expected, LinkingUtilities.NormalizeForMatch(input));
 
@@ -54,6 +62,9 @@ public class LinkingUtilitiesTests
     [InlineData("tron_legacy_manual.pdf", "tron")]
     [InlineData("kiss_premium_manual.pdf", "kiss")]
     [InlineData("stern_tron_le.pdf", "tron")]
+    // camelCase-concatenated filename title now matches the separator slug (bug 1a).
+    [InlineData("JamesBond007_Pro_web.pdf", "james-bond-007")]
+    [InlineData("JurassicPark_Pro_web.pdf", "jurassic-park")]
     public void IsWordBoundaryMatch_matchesWholeSlug(string filename, string slug)
         => Assert.True(LinkingUtilities.IsWordBoundaryMatch(
             LinkingUtilities.NormalizeForMatch(filename),
