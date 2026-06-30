@@ -85,7 +85,7 @@ public sealed record EvalRunResult(
     [property: JsonPropertyName("aggregate")] EvalAggregate Aggregate,
     // Per-slice aggregate breakdown keyed by EvalQuestion.Slice. Rows with
     // a null Slice go into "(unsliced)" so the total across BySlice accounts
-    // for every question in Questions. Empty when all rows are unsliced (v2
-    // ground-truth) — the top-level Aggregate is unchanged in that case.
+    // for every question in Questions. A standard v2 run (no slices assigned)
+    // yields a single "(unsliced)" bucket; the top-level Aggregate is unchanged.
     [property: JsonPropertyName("by_slice")] IReadOnlyDictionary<string, EvalAggregate> BySlice,
     [property: JsonPropertyName("questions")] IReadOnlyList<EvalQuestionResult> Questions);

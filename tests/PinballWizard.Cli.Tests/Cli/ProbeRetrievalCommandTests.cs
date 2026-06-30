@@ -9,24 +9,20 @@ using Xunit;
 
 namespace PinballWizard.Cli.Tests.Cli;
 
-/// <summary>
-/// Tests for <c>ProbeRetrievalCommand.RunAsync</c>.
-///
-/// <c>ProbeRetrievalCommand</c> is <c>internal</c>; tests invoke it through
-/// reflection via <see cref="Type.GetType(string)"/> so no production source
-/// file needs modification. The observable contract — exit codes, stderr/stdout
-/// messages, and output file content — is what is asserted.
-///
-/// The full "probe runs and writes classified.jsonl" path requires a live
-/// AI Search endpoint and is therefore out of scope for unit tests. The two
-/// critical behaviors tested here are:
-///   1. When <see cref="IRetrievalRankProbe"/> is absent from DI (AI Search
-///      not configured), the verb exits 2 with a remediation message —
-///      mirroring the --eval / --link-documents exit-code-2 pattern.
-///   2. When the reranker is on (CrossEncoderOptions.Enabled=true), the verb
-///      exits 2 with a clear explanation that the measurement would be
-///      corrupted — the reranker-off guard.
-/// </summary>
+// Tests for ProbeRetrievalCommand.RunAsync.
+//
+// ProbeRetrievalCommand is internal; tests invoke it through reflection (via
+// Type.GetType) so no production source file needs modification. The observable
+// contract — exit codes, stderr/stdout messages, and output file content — is
+// what is asserted.
+//
+// The full "probe runs and writes classified.jsonl" path requires a live
+// AI Search endpoint and is out of scope for unit tests. The two critical
+// behaviors tested here:
+//   1. IRetrievalRankProbe absent from DI (AI Search not configured) → verb
+//      exits 2 with a remediation message (mirrors --eval / --link-documents).
+//   2. Reranker on (CrossEncoderOptions.Enabled=true) → verb exits 2 with a
+//      clear explanation that the measurement would be corrupted (reranker-off guard).
 [Collection("ConsoleCapture")]
 public sealed class ProbeRetrievalCommandTests : IDisposable
 {
