@@ -124,10 +124,10 @@ reranker-on. Existing aggregate metrics are unchanged for the v2 set.
 - Re-curating or replacing `wizard.v2.jsonl`.
 - Expanding the indexed corpus to create more hard questions (work with the corpus we have).
 
-## Open questions for review
+## Resolved decisions
 
-1. Slice metric: lead the reranker-sensitive slice on **citation_recall** or
-   **citation_coverage**? (Recommendation: recall as primary — "did the gold chunk get
-   cited" — coverage as secondary.)
-2. Probe as a new CLI verb (e.g. `--probe-retrieval <jsonl>`) vs a one-off test harness?
-   (Recommendation: CLI verb — reusable, fits the existing `--eval` pattern.)
+1. **Slice metric:** the reranker-sensitive slice leads on **`citation_recall`** (primary —
+   "did the gold chunk get cited") with `citation_coverage` as secondary. `citation_precision`
+   is reported but not the headline (it's at ceiling on both arms).
+2. **Probe surface:** a reusable CLI verb (e.g. `--probe-retrieval <jsonl>`), mirroring the
+   existing `--eval` pattern — not a one-off test harness.
