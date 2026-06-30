@@ -31,6 +31,7 @@ public sealed class CliOptionsContractTests
         "--rebuild-rag-index",
         "--ask",
         "--eval",
+        "--probe-retrieval",
         "--run-rag-backfill",
         "--sync-metadata-cards",
         "--link-documents",
@@ -126,6 +127,7 @@ public sealed class CliOptionsContractTests
         root.Options.Add(new Option<bool>("--rebuild-rag-index"));
         root.Options.Add(new Option<string?>("--ask"));
         root.Options.Add(new Option<bool>("--eval"));
+        root.Options.Add(new Option<string?>("--probe-retrieval"));
         root.Options.Add(new Option<bool>("--run-rag-backfill"));
         root.Options.Add(new Option<bool>("--sync-metadata-cards"));
         root.Options.Add(new Option<bool>("--link-documents"));

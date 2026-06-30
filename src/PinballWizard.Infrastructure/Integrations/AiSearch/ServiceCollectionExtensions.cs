@@ -93,6 +93,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
         services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
+        services.TryAddSingleton<IRetrievalRankProbe, RetrievalRankProbe>();
         services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);
         services.TryAddSingleton(BuildSearchIndexClient);
         services.TryAddSingleton<RagIndexBootstrapper>();
