@@ -222,6 +222,11 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             .ToList();
 
         machine.LastSeenAt = now;
+
+        // Enrich year from scraper when OPDB did not provide one (most post-2019 Stern machines).
+        // ReleaseYear comes from JSON-LD datePublished; we prefer it over null, not over OPDB data.
+        if (machine.Year is null && game.ReleaseYear is not null)
+            machine.Year = game.ReleaseYear;
     }
 
     private static MachineEdition MapEdition(EditionInfo info) => new()
