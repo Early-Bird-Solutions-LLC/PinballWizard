@@ -1,0 +1,137 @@
+using Microsoft.Playwright;
+using Xunit;
+
+namespace PinballWizard.Web.Tests.E2E;
+
+// Canary coverage for the PUBLIC (anonymous) routes.
+//
+// Motivation: /documents shipped to production showing the visible error state
+// "Couldn't load documents — try refreshing." (its Cosmos-backed load threw at
+// runtime) and went undetected because the post-deploy E2E canary only covered
+// ADMIN pages (AdminRouteCanaryE2ETests). This suite closes that gap: it asserts
+// each public page renders its data surface — not an error alert and not the
+// global Tilt error page.
+//
+// These run unauthenticated against the deployed wizard FQDN (the same target as
+// the admin canary). Public routes are [AllowAnonymous], so — unlike the admin
+// canary's auth-gated pages — they are fully exercisable here.
+[Collection("E2E live stack")]
+[Trait("Category", "E2E")]
+public sealed class PublicRouteCanaryE2ETests : IAsyncLifetime
+{
+    private readonly LiveStackFixture _stack;
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
+
+    public PublicRouteCanaryE2ETests(LiveStackFixture stack) => _stack = stack;
+
+    public async Task InitializeAsync()
+    {
+        if (!E2EFactAttribute.IsConfigured)
+            return;
+
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (_browser is not null)
+            await _browser.DisposeAsync();
+        _playwright?.Dispose();
+    }
+
+    // The regression that motivated this suite. /documents streams from Cosmos
+    // (scraped_documents_raw); if that query throws, DocumentList renders
+    // doc-list-load-error. This asserts the grid or an empty-state shows and the
+    // error alert does NOT — the exact failure the user reported in production.
+    [E2EFact]
+    public async Task Documents_Renders_GridOrEmpty_NotErrorState()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/documents");
+        await AssertNotErrorPageAsync(page, "/documents");
+
+        await page.WaitForSelectorAsync(
+            "[data-testid='doc-list-grid'], [data-testid='doc-list-empty-corpus'], [data-testid='doc-list-empty-filtered'], [data-testid='doc-list-load-error']",
+            new() { Timeout = 20_000 });
+
+        var errorVisible = await page.IsVisibleAsync("[data-testid='doc-list-load-error']");
+        Assert.False(errorVisible,
+            "/documents is showing 'Couldn't load documents' — the Cosmos scraped_documents_raw read is failing " +
+            "(check the web app's managed-identity Cosmos data-plane RBAC and that the container exists).");
+    }
+
+    // /settings hosts the public theme picker. Asserting the Paper card is present
+    // doubles as a deploy check for the sixth sibling theme.
+    [E2EFact]
+    public async Task Settings_Renders_ThemePicker_WithPaper()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/settings");
+        await AssertNotErrorPageAsync(page, "/settings");
+
+        await page.WaitForSelectorAsync("[data-testid='theme-card-paper']", new() { Timeout = 15_000 });
+        var paperVisible = await page.IsVisibleAsync("[data-testid='theme-card-paper']");
+        Assert.True(paperVisible, "/settings theme picker is missing the Paper theme card.");
+    }
+
+    // /status renders live dependency indicators; the page container must render
+    // regardless of whether any dependency is degraded.
+    [E2EFact]
+    public async Task Status_Renders_NoError()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/status");
+        await AssertNotErrorPageAsync(page, "/status");
+
+        await page.WaitForSelectorAsync("[data-testid='status-page']", new() { Timeout = 15_000 });
+    }
+
+    // Broad guard: every public route must render its own component, not the
+    // global Tilt error page. This is the assertion that would have caught the
+    // /admin/jobs-style "URL changed but the wrong component rendered" failure if
+    // it occurred on a public route.
+    [E2ETheory]
+    [InlineData("/")]
+    [InlineData("/about")]
+    [InlineData("/documents")]
+    [InlineData("/settings")]
+    [InlineData("/status")]
+    public async Task PublicRoute_DoesNotRenderErrorPage(string route)
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, route);
+        await AssertNotErrorPageAsync(page, route);
+    }
+
+    // --- helpers ---
+
+    private async Task<IPage> NewPageAsync()
+    {
+        var ctx = await _browser!.NewContextAsync();
+        return await ctx.NewPageAsync();
+    }
+
+    private async Task NavigateAsync(IPage page, string path)
+    {
+        await page.GotoAsync($"{_stack.WebBaseUrl}{path}",
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30_000 });
+    }
+
+    // The global exception handler routes unhandled render failures to /error
+    // (Error.razor), whose heading carries data-testid='tilt-heading'. A page that
+    // rendered its own content will not show that element and will not sit on /error.
+    private static async Task AssertNotErrorPageAsync(IPage page, string route)
+    {
+        Assert.False(page.Url.Contains("/error", StringComparison.OrdinalIgnoreCase),
+            $"Public route {route} redirected to the global error page ({page.Url}).");
+
+        var tiltHeading = page.Locator("[data-testid='tilt-heading']");
+        if (await tiltHeading.CountAsync() > 0)
+        {
+            Assert.False(await tiltHeading.IsVisibleAsync(),
+                $"Public route {route} rendered the global Tilt error page instead of its own content.");
+        }
+    }
+}
