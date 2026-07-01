@@ -44,7 +44,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // Filter 3 is the dominant cost saver: a re-poll that bumps
         // metadata without changing the body must NOT re-embed.
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync("doc_1", Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", TestMachineId, Arg.Any<CancellationToken>())
             .Returns("hash-123");
 
         var pipeline = fakes.BuildPipeline();
@@ -58,12 +58,45 @@ public sealed class ScrapedDocumentIngestionPipelineTests
     }
 
     [Fact]
+    public async Task IngestAsync_SameDocumentReAttributedToNewMachine_NotSkipped_EvenIfOtherMachineHashMatches()
+    {
+        // Re-attribution root-cause fix (Phase 3, bug #2): the index-state
+        // short-circuit is keyed on (document_id, machine_id), NOT
+        // document_id alone. A document whose content is unchanged but is
+        // now attributed to a NEW machine has no prior state row under that
+        // machine, so it must proceed to extract + index — not short-circuit
+        // on the hash recorded under the OLD machine. Before the fix, the
+        // correction never reached the index.
+        const string reAttributedMachine = "mch_stern_james_bond";
+        var fakes = new Fakes();
+        // Prior state exists for the OLD (wrong) machine at this hash …
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", "mch_gottlieb_james_bond", Arg.Any<CancellationToken>())
+            .Returns("hash-123");
+        // … but NOT for the newly-attributed machine.
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", reAttributedMachine, Arg.Any<CancellationToken>())
+            .Returns((string?)null);
+        fakes.SetExtractionSuccess();
+        fakes.SetChunkingResult(chunkCount: 3);
+        fakes.SetIndexingSuccess(indexed: 3, failures: 0);
+
+        var pipeline = fakes.BuildPipeline();
+        var change = NewChange(documentId: "doc_1", machineId: reAttributedMachine, contentHash: "hash-123");
+        await using var stream = NewStream();
+
+        var outcome = await pipeline.IngestAsync(change, stream, CancellationToken.None);
+
+        Assert.Equal(IngestionOutcome.Indexed, outcome);
+        await fakes.IndexState.Received(1).RecordIndexedAsync(
+            "doc_1", reAttributedMachine, "hash-123", 3, 0, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task IngestAsync_HashFirstSeen_ProceedsToExtractionAndIndexes()
     {
         // No prior state row → null lastHash → don't short-circuit;
         // proceed through the full happy path.
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync("doc_1", Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", TestMachineId, Arg.Any<CancellationToken>())
             .Returns((string?)null);
         fakes.SetExtractionSuccess(pages: 3);
         fakes.SetChunkingResult(chunkCount: 5);
@@ -85,7 +118,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
             Arg.Any<RagIndexerOptions>(),
             Arg.Any<CancellationToken>());
         await fakes.IndexState.Received(1).RecordIndexedAsync(
-            "doc_1", "hash-new", 5, 0, Arg.Any<CancellationToken>());
+            "doc_1", TestMachineId, "hash-new", 5, 0, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -95,7 +128,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // → don't short-circuit; the body changed so re-embedding is
         // mandatory.
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync("doc_1", Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", TestMachineId, Arg.Any<CancellationToken>())
             .Returns("hash-old");
         fakes.SetExtractionSuccess();
         fakes.SetChunkingResult(chunkCount: 2);
@@ -108,6 +141,59 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         var outcome = await pipeline.IngestAsync(change, stream, CancellationToken.None);
 
         Assert.Equal(IngestionOutcome.Indexed, outcome);
+    }
+
+    [Fact]
+    public async Task IngestAsync_ReIndex_DeletesPriorChunksForPairBeforeUpsert()
+    {
+        // Delete-prior-on-reingest (Phase 3, bug #3 defense): a content
+        // change re-chunks the document, and the new chunks get new
+        // chunk_ids (page ranges shift), so a plain upsert would leave the
+        // OLD chunks orphaned in the index. Deleting the (document, machine)
+        // pair's chunks BEFORE upserting keeps the index clean. Order
+        // matters: delete must precede upsert or it would wipe the fresh
+        // chunks too.
+        var fakes = new Fakes();
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", TestMachineId, Arg.Any<CancellationToken>())
+            .Returns("hash-old");
+        fakes.SetExtractionSuccess();
+        fakes.SetChunkingResult(chunkCount: 2);
+        fakes.SetIndexingSuccess(indexed: 2, failures: 0);
+
+        var pipeline = fakes.BuildPipeline();
+        var change = NewChange(documentId: "doc_1", contentHash: "hash-new");
+        await using var stream = NewStream();
+
+        await pipeline.IngestAsync(change, stream, CancellationToken.None);
+
+        Received.InOrder(() =>
+        {
+            fakes.Indexer.DeleteByDocumentAndMachineAsync(
+                "doc_1", TestMachineId, Arg.Any<CancellationToken>());
+            fakes.Indexer.UpsertAsync(
+                Arg.Any<ChunkRequest>(), Arg.Any<IReadOnlyList<Chunk>>(),
+                Arg.Any<RagIndexerOptions>(), Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task IngestAsync_HashUnchanged_DoesNotDeletePriorChunks()
+    {
+        // The short-circuit returns before any index mutation — a re-poll
+        // that didn't change content must NOT delete-then-skip (that would
+        // wipe the index for every unchanged re-delivery).
+        var fakes = new Fakes();
+        fakes.IndexState.GetLastIndexedHashAsync("doc_1", TestMachineId, Arg.Any<CancellationToken>())
+            .Returns("hash-123");
+
+        var pipeline = fakes.BuildPipeline();
+        var change = NewChange(documentId: "doc_1", contentHash: "hash-123");
+        await using var stream = NewStream();
+
+        await pipeline.IngestAsync(change, stream, CancellationToken.None);
+
+        await fakes.Indexer.DidNotReceiveWithAnyArgs()
+            .DeleteByDocumentAndMachineAsync(default!, default!, default);
     }
 
     [Theory]
@@ -124,7 +210,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // recorded — re-delivery should re-evaluate (the next deploy
         // might bring an OCR fallback for this document).
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         fakes.SetExtractionFailure(status, error: $"simulated {status}");
 
@@ -137,7 +223,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         Assert.Equal(IngestionOutcome.Skipped_ExtractionFailed, outcome);
         fakes.Chunker.DidNotReceiveWithAnyArgs().Chunk(default!, default!);
         await fakes.Indexer.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default!, default);
-        await fakes.IndexState.DidNotReceiveWithAnyArgs().RecordIndexedAsync(default!, default!, default, default, default);
+        await fakes.IndexState.DidNotReceiveWithAnyArgs().RecordIndexedAsync(default!, default!, default!, default, default, default);
     }
 
     [Fact]
@@ -148,7 +234,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // state to prevent a re-delivery retry loop. Indexer must NOT
         // be called (no chunks to upsert).
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         fakes.SetExtractionSuccess();
         fakes.SetChunkingResult(chunkCount: 0);
@@ -162,7 +248,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         Assert.Equal(IngestionOutcome.Indexed, outcome);
         await fakes.Indexer.DidNotReceiveWithAnyArgs().UpsertAsync(default!, default!, default!, default);
         await fakes.IndexState.Received(1).RecordIndexedAsync(
-            change.DocumentId, "hash-z", 0, 0, Arg.Any<CancellationToken>());
+            change.DocumentId, change.MachineId, "hash-z", 0, 0, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -174,7 +260,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // dead-letter escalation lives in the hosted service when
         // failureCount exceeds RagIngestionOptions.MaxFailuresPerDocument.
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         fakes.SetExtractionSuccess();
         fakes.SetChunkingResult(chunkCount: 4);
@@ -188,7 +274,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
 
         Assert.Equal(IngestionOutcome.Indexed, outcome);
         await fakes.IndexState.Received(1).RecordIndexedAsync(
-            change.DocumentId, "hash-p", 3, 1, Arg.Any<CancellationToken>());
+            change.DocumentId, change.MachineId, "hash-p", 3, 1, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -201,7 +287,7 @@ public sealed class ScrapedDocumentIngestionPipelineTests
         // page-anchored citation depends on DocumentUrl flowing through
         // unchanged to AI Search).
         var fakes = new Fakes();
-        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        fakes.IndexState.GetLastIndexedHashAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
         fakes.SetExtractionSuccess();
         fakes.SetChunkingResult(chunkCount: 1);

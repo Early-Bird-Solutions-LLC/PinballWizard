@@ -132,18 +132,23 @@ internal sealed class CosmosScrapedDocumentRepository
         }
     }
 
-    // IScrapedDocumentRepository.DeleteFanOutRowAsync — deletes the fan-out row
-    // "{documentId}_{machineId}" in the machineId partition. Idempotent (the base
-    // DeleteAsync treats a missing row as success).
-    // NOTE: targets ONLY linker fan-out rows (UpsertFromRawAsync, id =
-    // "{documentId}_{machineId}"). It will NOT match a catalog-seeder row
-    // (UpsertAsync, id = "{documentId}" with no machine suffix) — by design, since
-    // the linker only ever prunes its own fan-out. If the seeder write path is ever
-    // revived, unify its id scheme so stale seeder rows are prunable too.
-    public Task DeleteFanOutRowAsync(string documentId, string machineId, CancellationToken cancellationToken)
+    // IScrapedDocumentRepository.DeleteFanOutRowAsync — deletes the
+    // scraped_documents row for (documentId, machineId) in the machineId
+    // partition. Deletes BOTH id schemes that have existed for this container:
+    //   - "{documentId}_{machineId}" — the linker fan-out row (UpsertFromRawAsync);
+    //   - "{documentId}"             — a legacy catalog-seeder row (UpsertAsync),
+    //     written with no machine suffix in the machineId partition.
+    // Both deletes are idempotent (the base DeleteAsync treats a missing row as
+    // success), so targeting both forms is safe and covers legacy rows. This
+    // matters for re-attribution: a stale seeder row (e.g. a Stern manual
+    // attributed to a classic machine) must be prunable on re-link, or its index
+    // chunks survive --gc-rag-index (the pair still has a backing row) and the
+    // corpus mislink never clears.
+    public async Task DeleteFanOutRowAsync(string documentId, string machineId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
         ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
-        return DeleteAsync($"{documentId}_{machineId}", machineId, cancellationToken);
+        await DeleteAsync($"{documentId}_{machineId}", machineId, cancellationToken).ConfigureAwait(false);
+        await DeleteAsync(documentId, machineId, cancellationToken).ConfigureAwait(false);
     }
 }

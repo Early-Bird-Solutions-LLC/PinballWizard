@@ -38,11 +38,11 @@ The four integration tiers below show which are active now and which are deferre
 ```mermaid
 flowchart TD
     A[Tier A<br/>Catalog / ratings / files<br/>via Kineticist API]
-    B["Tier B<br/>Guide deep-linking<br/>route &amp; attribute"]
+    B["Tier B<br/>Guide deep-linking<br/>route + attribute"]
     C2[Tier C2<br/>Interim rules grounding<br/>scrape .md endpoint]
     GATE{Colin exposes<br/>guide content in API}
     C1[Tier C1<br/>Live rules tool<br/>durable content API]
-    D["Tier D<br/>Hype Index &amp;<br/>on-location counts"]
+    D["Tier D<br/>Hype Index +<br/>on-location counts"]
 
     A --> B
     B --> C2

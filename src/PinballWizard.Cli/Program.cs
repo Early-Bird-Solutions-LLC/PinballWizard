@@ -107,6 +107,11 @@ var rebuildRagIndexOption = new Option<bool>("--rebuild-rag-index")
     Description = "DESTRUCTIVE: drops the RAG index entirely and recreates it empty from the current schema, then exits. Removes ALL indexed chunks — you must re-ingest afterwards (--run-rag-backfill + --sync-metadata-cards). This is the supported way to correct mislabeled chunks (e.g. after the linker re-link): the index is a rebuildable projection of Cosmos, so corrections happen by wipe-and-rebuild, never by per-chunk deletion. Requires AiSearch:Endpoint to be configured."
 };
 
+var gcRagIndexOption = new Option<bool>("--gc-rag-index")
+{
+    Description = "Reconcile the RAG index against the scraped_documents catalog: delete index chunks whose (document_id, machine_id) pair has no backing fan-out row. This is the delete-propagation mechanism the Cosmos Change Feed (latest-version mode) cannot provide — after a --relink-all prunes stale fan-out rows, their index chunks linger as orphans until this pass removes them. Unlike --rebuild-rag-index (full wipe + re-ingest), this is a surgical, idempotent, read-mostly reconcile. Combine with --dry-run to preview orphan pairs without deleting. Requires Cosmos and Azure AI Search to be configured."
+};
+
 var askOption = new Option<string?>("--ask")
 {
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
@@ -220,6 +225,7 @@ rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
+rootCommand.Options.Add(gcRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(probeRetrievalOption);
@@ -252,6 +258,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
+    var gcRagIndex = parseResult.GetValue(gcRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
     var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
@@ -407,6 +414,35 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Console.Error.WriteLine($"  {result.Failed} documents failed — check logs for details.");
             Environment.ExitCode = 1;
         }
+        return;
+    }
+
+    // Handle --gc-rag-index (orphan garbage collection — delete propagation
+    // the Cosmos Change Feed can't provide). Resolves IRagIndexGarbageCollector;
+    // registered only when AI Search is wired, and its scraped_documents
+    // dependency additionally needs Cosmos (the early orchestrator gate above
+    // already ensures Cosmos). Honors the shared --dry-run flag to preview.
+    if (gcRagIndex)
+    {
+        var gc = host.Services.GetService<IRagIndexGarbageCollector>();
+        if (gc is null)
+        {
+            Console.Error.WriteLine(
+                "--gc-rag-index requires Cosmos and Azure AI Search to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos) and AiSearch:Endpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(dryRun
+            ? "RAG index GC (dry-run) starting — reporting orphan pairs without deleting..."
+            : "RAG index GC starting — deleting orphan chunks with no backing scraped_documents row...");
+        var gcResult = await gc.RunAsync(dryRun, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine(
+            $"RAG index GC {(gcResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
+            $"{gcResult.PairsScanned} pairs scanned, {gcResult.OrphanPairs} orphan pairs, " +
+            $"{gcResult.ChunksDeleted} chunks deleted.");
         return;
     }
 

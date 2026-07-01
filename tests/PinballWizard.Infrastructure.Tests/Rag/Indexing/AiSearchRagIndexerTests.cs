@@ -541,6 +541,42 @@ public sealed class AiSearchRagIndexerTests
             $"Expected embedder to be called at most once (sibling-cancel wiring), but was called {callCount} time(s).");
     }
 
+    [Fact]
+    public void BuildDeleteFilter_ComposesDocumentAndMachineClause()
+    {
+        // The delete path (re-attribution GC) targets exactly one
+        // (document_id, machine_id) pair — never a document across all
+        // machines (that would delete the correct attribution too).
+        var filter = AiSearchRagIndexer.BuildDeleteFilter("doc_b", "mch_a");
+        Assert.Equal("document_id eq 'doc_b' and machine_id eq 'mch_a'", filter);
+    }
+
+    [Fact]
+    public void BuildDeleteFilter_EscapesSingleQuotes()
+    {
+        // OData literal escape (' → '') so an id with a quote can't break
+        // the filter or inject clauses. IDs are SHA-derived today, but the
+        // escape is defense-in-depth against a future id-convention change.
+        var filter = AiSearchRagIndexer.BuildDeleteFilter("doc'x", "mch'y");
+        Assert.Equal("document_id eq 'doc''x' and machine_id eq 'mch''y'", filter);
+    }
+
+    [Fact]
+    public async Task DeleteByDocumentAndMachineAsync_NullDocumentId_Throws()
+    {
+        var sut = NewIndexer(Substitute.For<IChunkEmbedder>());
+        await Assert.ThrowsAnyAsync<ArgumentException>(() =>
+            sut.DeleteByDocumentAndMachineAsync(null!, "mch_a", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteByDocumentAndMachineAsync_EmptyMachineId_Throws()
+    {
+        var sut = NewIndexer(Substitute.For<IChunkEmbedder>());
+        await Assert.ThrowsAnyAsync<ArgumentException>(() =>
+            sut.DeleteByDocumentAndMachineAsync("doc_b", "", CancellationToken.None));
+    }
+
     private static AiSearchRagIndexer NewIndexer(IChunkEmbedder embedder)
     {
         // SearchClient is constructed against a placeholder URI — the
