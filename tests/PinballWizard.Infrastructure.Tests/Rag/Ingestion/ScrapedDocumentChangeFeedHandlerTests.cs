@@ -74,7 +74,7 @@ public sealed class ScrapedDocumentChangeFeedHandlerTests
         // (have the handler check the hash itself before fetching)
         // would need to update this test deliberately.
         var ctx = new TestContext();
-        ctx.IndexState.SeedExistingHash("doc_x", "hash-x");
+        ctx.IndexState.SeedExistingHash("doc_x", TestMachineId, "hash-x");
 
         var change = NewChange(documentId: "doc_x", contentHash: "hash-x");
         await ctx.Handler.HandleAsync(change, CancellationToken.None);
