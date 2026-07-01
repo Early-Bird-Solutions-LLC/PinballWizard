@@ -3,7 +3,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Logging
-@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
 @* AdminJobs — /admin/jobs live view of scheduled Container Apps Jobs + run-now.
@@ -33,6 +33,7 @@
 @inject ISnackbar Snackbar
 @inject ILogger<AdminJobs> Logger
 @inject NavigationManager Navigation
+@inject AdminActionGuard Guard
 
 <PageTitle>Jobs — PinballWizard Admin</PageTitle>
 
@@ -125,9 +126,9 @@
                             <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                            Color="Color.Primary"
                                            Size="Size.Small"
-                                           aria-label="Run job now"
+                                           aria-label="@(_isAdmin ? "Run job now" : "Sign in as an admin to run jobs")"
                                            data-testid="run-now-button"
-                                           Disabled="@(_startBusy)"
+                                           Disabled="@(_startBusy || !_isAdmin)"
                                            OnClick="@(() => OpenConfirmDialogAsync(context.Item))" />
                         </MudStack>
                     </CellTemplate>
@@ -186,12 +187,21 @@
     private bool _showConfirmDialog;
     private bool _startBusy;
     private JobStatus? _pendingJob;
+    private bool _isAdmin;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
         new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
         new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
     ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Admin pages render read-only for anonymous visitors (showcase); the
+        // Run-now action is gated on real admin auth — both here (button Disabled)
+        // and server-side in ConfirmStartJobAsync.
+        _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+    }
 
     // OnAfterRenderAsync so the loading shell reaches the client immediately
     // rather than blocking the prerender pass on the ARM round-trip.
@@ -256,6 +266,14 @@
     private async Task ConfirmStartJobAsync()
     {
         if (_pendingJob is null || JobService is null || _startBusy) return;
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            // Defense in depth: the button is disabled for anonymous visitors,
+            // but never trust the client — re-check before triggering ARM.
+            Snackbar.Add("Admin sign-in required to run jobs.", Severity.Warning);
+            _showConfirmDialog = false;
+            return;
+        }
         _startBusy = true;
         _showConfirmDialog = false;
         try
