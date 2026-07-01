@@ -42,7 +42,7 @@ flowchart TD
 
     GH_60["README + arch diagram +<br/>live demo link + docs tree<br/>(60 seconds)"]
     GH_5["History, PR descriptions,<br/>ADR log, audit trail<br/>(5 minutes)"]
-    PW_exp["Wizard Q&amp;A with clickable<br/>citations to manufacturer sites;<br/>faceted catalog; game detail pages;<br/>traffic attribution"]
+    PW_exp["Wizard Q+A with clickable<br/>citations to manufacturer sites;<br/>faceted catalog; game detail pages;<br/>traffic attribution"]
     DS_exp["Single page: what was built,<br/>what it demonstrates,<br/>where to look next<br/>(30 seconds)"]
 
     GH_out(["Opinion on<br/>engineering rigor"])

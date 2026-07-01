@@ -28,7 +28,7 @@ flowchart LR
     P0[Phase 0<br/>Foundation]
     P1[Phase 1<br/>Content Ingestion]
     P2[Phase 2<br/>Runtime Validation]
-    P3["Phase 3<br/>AI &amp; Integration"]
+    P3["Phase 3<br/>AI + Integration"]
     P4[Phase 4<br/>Event-driven RAG]
     P45[Phase 4.5<br/>Corpus Expansion]
     P5[Phase 5<br/>Blazor Frontend]
