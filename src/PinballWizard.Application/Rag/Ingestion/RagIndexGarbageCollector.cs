@@ -42,14 +42,33 @@ public sealed class RagIndexGarbageCollector : IRagIndexGarbageCollector
         _logger = logger;
     }
 
+    // The RAG index holds several document classes, but only scraped-document
+    // manuals/bulletins (deterministic id "doc_…", per the provenance model in
+    // CLAUDE.md) are backed by scraped_documents and reconcilable against it.
+    // Synthesized classes — metadata cards ("meta_…"), game overviews
+    // ("overview_…"), Kineticist tutorials, TWIP news ("twip_…") — are populated
+    // directly from the machines container / external sources and have NO
+    // scraped_documents row by design. The GC MUST ignore them, or it would
+    // delete every synthesized chunk (they'd all look like orphans).
+    private const string ScrapedDocumentIdPrefix = "doc_";
+
     public async Task<RagIndexGcResult> RunAsync(bool dryRun, CancellationToken cancellationToken)
     {
-        // Collect the index's distinct pairs, grouped by document, so we
-        // issue one catalog lookup per document rather than per pair.
+        // Collect the index's distinct SCRAPED-document pairs, grouped by
+        // document, so we issue one catalog lookup per document rather than per
+        // pair. Non-scraped classes are skipped up front — they are out of this
+        // GC's authority (their source of truth is not scraped_documents).
         var machinesByDocument = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var pairsScanned = 0;
+        var skippedNonScraped = 0;
         await foreach (var pair in _pairSource.StreamIndexedPairsAsync(cancellationToken).ConfigureAwait(false))
         {
+            if (!pair.DocumentId.StartsWith(ScrapedDocumentIdPrefix, StringComparison.Ordinal))
+            {
+                skippedNonScraped++;
+                continue;
+            }
+
             pairsScanned++;
             if (!machinesByDocument.TryGetValue(pair.DocumentId, out var machines))
             {
@@ -60,10 +79,13 @@ public sealed class RagIndexGarbageCollector : IRagIndexGarbageCollector
         }
 
         _logger.LogInformation(
-            "RAG index GC starting ({Mode}): {PairCount} distinct (document, machine) pairs across {DocumentCount} documents.",
+            "RAG index GC starting ({Mode}): {PairCount} scraped-document (document, machine) pairs across " +
+            "{DocumentCount} documents; skipped {SkippedNonScraped} synthesized chunks " +
+            "(metadata cards / overviews / news — not reconciled against scraped_documents).",
             dryRun ? "dry-run" : "delete",
             pairsScanned,
-            machinesByDocument.Count);
+            machinesByDocument.Count,
+            skippedNonScraped);
 
         var orphanPairs = 0;
         var chunksDeleted = 0;
