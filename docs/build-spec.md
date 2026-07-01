@@ -21,6 +21,33 @@ Each phase has the same structure:
 
 Detailed PR-by-PR history for shipped phases lives in memory under `session_handoff_*.md`. This doc is the durable artifact; memory is the running journal.
 
+The diagram below shows the phase progression at a glance; the master table that follows contains the full names and statuses.
+
+```mermaid
+flowchart LR
+    P0[Phase 0<br/>Foundation]
+    P1[Phase 1<br/>Content Ingestion]
+    P2[Phase 2<br/>Runtime Validation]
+    P3["Phase 3<br/>AI &amp; Integration"]
+    P4[Phase 4<br/>Event-driven RAG]
+    P45[Phase 4.5<br/>Corpus Expansion]
+    P5[Phase 5<br/>Blazor Frontend]
+    P6([Phase 6<br/>Launch Readiness])
+    P7[Phase 7+<br/>Post-launch]
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P45
+    P4 --> P5
+    P45 --> P6
+    P5 --> P6
+    P6 --> P7
+
+    classDef done fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class P0,P1,P2,P3,P4,P45,P5,P6 done
+    class P7 future
+```
+
 ## Master phase timeline
 
 | Phase | Name | Status |
@@ -30,7 +57,7 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
 | 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
 | 4 | Event-driven RAG — full architecture against a curated 7-machine subset; hybrid chunking; AI Search index with semantic ranker + page-anchor citations; tool-call-trace citation extraction; citation-required guardrail | ✅ Complete |
-| 4.5 | Manuals corpus expansion — same architecture, all Phase 1 manuals; long-tail PDF edge cases + OCR decision | ⏳ Not started |
+| 4.5 | Manuals corpus expansion — full Phase 1 manuals corpus; Azure Document Intelligence OCR fallback; metadata-card synthesis; non-Stern bulletin discovery; Cohere reranker deployed (off by documented decision, ADR-0024) | ✅ Complete |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ✅ Complete |
 | 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ✅ Complete (H-chain + code; 3 launch gates pending Phase 7 sign-off) |
 | 7+ | Post-launch features — Strategy Tracker, OCR score capture, Dream Game generator, Trade Matchmaker, tournament push | ⏳ Deferred to post-launch decision |
