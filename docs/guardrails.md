@@ -80,6 +80,42 @@ To relitigate any of these: stop work on whatever surfaced the conflict, write a
 
 ## Decision framework
 
+The flowchart below captures how every incoming action is classified and routed; the tables that follow provide the authoritative per-class criteria.
+
+```mermaid
+flowchart TD
+    A([Incoming action]) --> B{Classify action}
+
+    B --> C[Autonomous]
+    B --> D[Surface-to-user]
+    B --> E["Refuse &amp; surface"]
+    B --> F[Ambiguous?]
+
+    F --> D
+
+    C --> C1[Proceed in Auto Mode]
+    C --> C2{Heavyweight<br/>review trigger?}
+    C2 -- Security / identity PR --> C3([Run /security-review])
+    C2 -- Cross-cutting refactor --> C4([Recommend /ultrareview])
+    C2 -- Phase boundary --> C5([Phase-gate checklist<br/>+ /local-review])
+    C2 -- No --> C6([Every non-trivial PR:<br/>/local-review +<br/>/standards-audit])
+
+    D --> D1{ADR addition?}
+    D1 -- Yes --> D2[Draft autonomously]
+    D2 --> D3([Surface draft &amp;<br/>wait for explicit yes])
+    D1 -- No --> D4([Surface &amp; wait<br/>for explicit yes])
+
+    E --> E5([Stop. Surface conflict.<br/>Wait for user decision.])
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class C,C1,C2,D,D1,D2,E,F svc
+    class C3,C4,C5,C6,D3,D4,E5 gov
+    class A,B data
+```
+
 ### Autonomous vs. surface-to-user
 
 Per [`CLAUDE.md`](../CLAUDE.md) § "Executing actions with care" and the seven main goals.

@@ -24,6 +24,38 @@ mid-stream.
 
 ## Decision
 
+The diagram below shows the enforced dependency direction — arrows point inward toward Core; no upward references are possible because they would fail to compile.
+
+```mermaid
+flowchart TD
+    Core["PinballWizard.Core"]
+    Application["PinballWizard.Application"]
+    Infrastructure["PinballWizard.Infrastructure"]
+    Cli["PinballWizard.Cli"]
+    Web["PinballWizard.Web"]
+    Worker["PinballWizard.RagIngestionWorker"]
+
+    Application --> Core
+    Infrastructure --> Core
+    Infrastructure --> Application
+    Cli --> Core
+    Cli --> Application
+    Cli --> Infrastructure
+    Web --> Application
+    Worker --> Application
+    Worker --> Infrastructure
+
+    classDef core fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef app fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef infra fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef host fill:#fde8c4,stroke:#c77d1a,color:#000
+
+    class Core core
+    class Application app
+    class Infrastructure infra
+    class Cli,Web,Worker host
+```
+
 We adopt a **Clean Architecture multi-project layout** under `src/`:
 
 | Project | Depends on | Contains |
