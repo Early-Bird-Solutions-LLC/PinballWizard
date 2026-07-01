@@ -258,6 +258,34 @@ Routing key is **(refusal category) × (question topic)**, where topic uses the 
 
 The matrix is **explicit and editable** — when a new refusal pattern emerges in real use, add a row rather than letting the AI agent improvise destinations. Improvised destinations drift toward "whatever Google would suggest" and dilute the community-resource posture.
 
+The diagram below traces how a user question flows through the topic classifier to the plural outbound destination set. Alphabetical ordering within each set is the documented convention; outbound routing is the feature.
+
+```mermaid
+flowchart TD
+    Q([User question]) --> C{"QuestionTopic<br/>classifier"}
+
+    C -->|repair| R[repair]
+    C -->|gameplay| G[gameplay]
+    C -->|market| M[market]
+    C -->|location| L[location]
+    C -->|tournament| T[tournament]
+    C -->|general| GN[general]
+
+    R --> R1("Pinside per-machine /forum<br/>Reddit /r/pinball repair threads<br/>TiltForums tech section<br/>+ manufacturer support · manual")
+    G --> G1("Pinside per-machine /forum<br/>Reddit /r/pinball discussion<br/>+ manufacturer page · OPDB + IPDB")
+    M --> M1("eBay sold-listings search<br/>Mr. Pinball Classifieds<br/>PinballPrices entry<br/>+ Pinside /market · manufacturer page<br/>+ Facebook / Craigslist named in text")
+    L --> L1("Pinball Map<br/>machine search")
+    T --> T1("IFPA event listings<br/>Match Play public events<br/>Pinside per-event pages")
+    GN --> GN1("trivia / credits: IPDB + OPDB<br/>news: Pinball News · This Week in Pinball<br/>discussion: Pinside Forum · Reddit · TiltForums")
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+
+    class C svc
+    class R,G,M,L,T,GN svc
+    class R1,G1,M1,L1,T1,GN1 ext
+```
+
 ## Resolver implementation (sketch)
 
 The resolver is the boundary between the AI layer (which surfaces entities and refusals) and the outbound URL strings the UI renders. Sketch only — implementation belongs in a future PR.
