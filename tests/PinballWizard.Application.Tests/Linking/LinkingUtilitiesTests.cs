@@ -54,6 +54,13 @@ public class LinkingUtilitiesTests
     [InlineData("TMNT", "tmnt")]                       // all-caps acronym: no split
     [InlineData("TMNTGame", "tmnt game")]              // acronym→word boundary
     [InlineData("JamesBond007_Pro_web.pdf", "james bond 007 pro web pdf")]
+    // Ampersand (and other non-alphanumeric punctuation) is a separator, so a
+    // title with '&' normalizes the same as its hyphenated slug — e.g. the Stern
+    // "Dungeons & Dragons" slug 'dungeons-dragons' must match page text
+    // "Dungeons & Dragons" (corpus-mislink: the Stern D&D manual was landing on
+    // the classic Bally D&D because '&' text never matched the '-' slug).
+    [InlineData("Dungeons & Dragons", "dungeons dragons")]
+    [InlineData("dungeons-dragons", "dungeons dragons")]
     public void NormalizeForMatch_stripsAndLowers(string input, string expected)
         => Assert.Equal(expected, LinkingUtilities.NormalizeForMatch(input));
 

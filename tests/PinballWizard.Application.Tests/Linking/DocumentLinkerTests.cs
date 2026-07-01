@@ -834,6 +834,57 @@ public class DocumentLinkerTests
         Assert.DoesNotContain("GrZXj-MD3ee", result.LinkedMachineIds);
     }
 
+    [Fact]
+    public async Task LinkAsync_Page_AmpersandTitle_LinksToSternSlugFamily_NotClassic()
+    {
+        // Dungeons & Dragons live case: the Stern D&D (GK1Ej, slug
+        // "dungeons-dragons") collides on franchise with the slug-less classic
+        // Bally "Dungeons & Dragons". Before the '&' normalization fix, page text
+        // "Dungeons & Dragons" normalized to "dungeons & dragons" and never matched
+        // the Stern slug "dungeons dragons" — so only the Bally TITLE matched and
+        // the Stern manual landed on Bally. With '&' as a separator the page text
+        // matches the Stern slug, and source-manufacturer narrowing + edition
+        // resolution land it on the Stern Pro base.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var sternPro = MakeMachine(id: "GK1Ej-MwNZr", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
+        sternPro.GroupId = "GK1Ej"; sternPro.Year = 2025; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK1Ej-MePok", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
+        sternPrem.GroupId = "GK1Ej"; sternPrem.Year = 2025; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4JBP-MJ6jr", manufacturer: "bally", title: "Dungeons & Dragons", slug: "");
+        classic.GroupId = "G4JBP"; classic.Year = 1987;
+
+        const string blobName = "manualspage/DungeonsAndDragons_Pro_web.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+        // Filename spells "And" (camelCase) so the slug "dungeons dragons" isn't a
+        // contiguous filename match → falls to the page tier, which is the path
+        // under test.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2025/03/DungeonsAndDragons_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "DungeonsAndDragons_Pro_web.pdf" });
+
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "DUNGEONS & DRAGONS — The Tyrant's Eye. Pro model service manual.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GK1Ej-MwNZr"], result.LinkedMachineIds);
+        Assert.DoesNotContain("G4JBP-MJ6jr", result.LinkedMachineIds);
+    }
+
     // -------------------------------------------------------------------------
     // FanOut: scraped_documents write
     // -------------------------------------------------------------------------
