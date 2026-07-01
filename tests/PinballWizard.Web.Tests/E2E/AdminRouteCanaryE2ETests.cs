@@ -179,6 +179,24 @@ public sealed class AdminRouteCanaryE2ETests : IAsyncLifetime
             "/admin/jobs is showing the ARM error — check Container Apps Jobs Operator RBAC on the UAMI.");
     }
 
+    // Coverage for the remaining admin routes (list + detail). Every admin page
+    // is public-read ([AllowAnonymous]) — each must render the admin layout, not
+    // redirect to auth and not crash. Detail routes use a bogus id so the page's
+    // own not-found state renders (still inside the admin layout); the assertion
+    // is that the admin shell is present, i.e. no auth redirect / global error.
+    [E2ETheory]
+    [InlineData("/admin/documents")]
+    [InlineData("/admin/documents/doc_deadbeefdeadbeef")]
+    [InlineData("/admin/monitoring")]
+    [InlineData("/admin/machines/nonexistent-opdb-id")]
+    [InlineData("/admin/jobs/pinwiz-job-nonexistent")]
+    public async Task AdminRoute_RendersAdminLayout_NotAuthRedirect(string path)
+    {
+        var page = await NewPageAsync();
+        await NavigateAdminAsync(page, path);
+        await AssertAdminNavVisibleAsync(page);
+    }
+
     // --- helpers ---
 
     private async Task<IPage> NewPageAsync()
