@@ -10,6 +10,7 @@ using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
 using PinballWizard.Application.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Retrieval;
 
 namespace PinballWizard.Infrastructure.Rag.Indexing;
 
@@ -264,6 +265,103 @@ public sealed class AiSearchRagIndexer : IRagIndexer
 
         return new IndexUpsertResult(indexedTotal, failures);
     }
+
+    // AI Search delete-by-key batches cap at 1000 actions per request
+    // (same ceiling as upload). Per-(document, machine) chunk counts are
+    // far below this (a large manual is ~140 chunks), but the batching
+    // keeps the delete correct if a future chunker produces more.
+    private const int DeleteBatchSize = 1000;
+
+    public async Task<int> DeleteByDocumentAndMachineAsync(
+        string documentId,
+        string machineId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
+
+        // Query the chunk_id keys for this (document, machine) pair. No
+        // Size cap: GetResultsAsync follows AI Search's continuation
+        // tokens so every matching chunk is enumerated — a Size limit
+        // would silently under-delete a large document (invariant #17:
+        // no silent caps).
+        var options = new SearchOptions
+        {
+            Filter = BuildDeleteFilter(documentId, machineId),
+        };
+        options.Select.Add(AiSearchIndexFields.ChunkId);
+
+        var response = await _searchClient
+            .SearchAsync<SearchDocument>(searchText: "*", options, cancellationToken)
+            .ConfigureAwait(false);
+
+        var keys = new List<string>();
+        await foreach (var result in response.Value.GetResultsAsync().ConfigureAwait(false))
+        {
+            if (result.Document.TryGetValue(AiSearchIndexFields.ChunkId, out var raw)
+                && raw is string chunkId
+                && !string.IsNullOrEmpty(chunkId))
+            {
+                keys.Add(chunkId);
+            }
+        }
+
+        if (keys.Count == 0)
+        {
+            _logger.LogDebug(
+                "RAG index delete: no chunks for document={DocumentId} machine={MachineId}; nothing to do.",
+                documentId, machineId);
+            return 0;
+        }
+
+        var deleted = 0;
+        foreach (var (start, count) in BatchIndices(keys.Count, DeleteBatchSize))
+        {
+            var batchKeys = keys.GetRange(start, count);
+            var deleteResponse = await _searchClient
+                .DeleteDocumentsAsync(AiSearchIndexFields.ChunkId, batchKeys, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var r in deleteResponse.Value.Results)
+            {
+                // AI Search returns 200/404 as "succeeded" for delete-by-key
+                // (deleting an absent key is idempotent success), so Succeeded
+                // is the right predicate for "no longer present".
+                if (r.Succeeded)
+                {
+                    deleted++;
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "RAG index delete: chunk {ChunkId} delete failed (status {Status}): {Error} " +
+                        "(document={DocumentId} machine={MachineId}).",
+                        r.Key, r.Status, r.ErrorMessage ?? string.Empty, documentId, machineId);
+                }
+            }
+        }
+
+        _logger.LogInformation(
+            "RAG index delete: removed {Deleted}/{Found} chunks for document={DocumentId} machine={MachineId}.",
+            deleted, keys.Count, documentId, machineId);
+
+        return deleted;
+    }
+
+    // Composes the OData filter that scopes a delete to exactly one
+    // (document_id, machine_id) pair. Internal + static so the filter
+    // shape is unit-testable without a live SearchClient.
+    internal static string BuildDeleteFilter(string documentId, string machineId)
+        => $"{AiSearchIndexFields.DocumentId} eq '{EscapeODataLiteral(documentId)}' and " +
+           $"{AiSearchIndexFields.MachineId} eq '{EscapeODataLiteral(machineId)}'";
+
+    // OData V4 string-literal escape: a single quote is doubled. IDs are
+    // SHA-derived today so this is defense-in-depth against a future
+    // id-convention change that admits quotes.
+    private static string EscapeODataLiteral(string value)
+        => value.Contains('\'', StringComparison.Ordinal)
+            ? value.Replace("'", "''", StringComparison.Ordinal)
+            : value;
 
     // Compute the deterministic chunk_id per the contract on
     // `IRagIndexer`. Matches the project's `mch_` / `doc_` pattern:

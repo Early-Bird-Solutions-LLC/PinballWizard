@@ -346,7 +346,7 @@ public class DocumentLinkerTests
     }
 
     [Fact]
-    public async Task LinkAsync_Tier2FilenameSlug_CamelCaseWithoutSeparators_NotMatched()
+    public async Task LinkAsync_Tier2FilenameSlug_CamelCaseWithoutSeparators_Matched()
     {
         var rawRepo = Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
@@ -354,9 +354,12 @@ public class DocumentLinkerTests
         var docWriter = Substitute.For<IScrapedDocumentRepository>();
 
         var machine = MakeMachine(slug: "stranger-things");
-        // "StrangerThings.pdf" → normalizes to "strangerthings pdf" (no space separation)
-        // slug "stranger-things" → normalizes to "stranger things"
-        // " stranger things " is NOT contained in " strangerthings pdf " → no match
+        // "StrangerThings.pdf" → NormalizeForMatch now splits the camelCase
+        // boundary → "stranger things pdf"; slug "stranger-things" → "stranger
+        // things". " stranger things " IS contained → match. (corpus-mislink
+        // bug 1a: a camelCase-concatenated filename title must link like a
+        // separator-delimited one — the Stern manuals JamesBond007_Pro_web.pdf,
+        // JurassicPark_Pro_web.pdf, etc. were going NotInCatalog before this fix.)
         var raw = MakeRaw(fileUrl: "https://example.com/files/StrangerThings.pdf");
 
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
@@ -364,8 +367,34 @@ public class DocumentLinkerTests
         await linker.InitializeAsync(CancellationToken.None);
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
-        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
-        Assert.Null(result.ResolutionStrategy);
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("filename_slug", result.ResolutionStrategy);
+    }
+
+    [Fact]
+    public async Task LinkAsync_SlugLessMachine_MatchedByTitle()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // A metadata/rulesheet-only Stern machine that was never game-page-scraped,
+        // so its ManufacturerSlugs is empty (slug: ""). Before the title-match
+        // fallback it was absent from the linker's index entirely → its manual
+        // could never link (corpus-mislink bug 1b: Jurassic Park GK17D, Star Wars
+        // G5vLR). The normalized TITLE now backs the match.
+        var slugLess = MakeMachine(id: "GK17D-MdEqz", title: "Jurassic Park", slug: "");
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/files/JurassicPark_Pro_web.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [slugLess]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("filename_slug", result.ResolutionStrategy);
+        Assert.Equal(["GK17D-MdEqz"], result.LinkedMachineIds);
     }
 
     [Fact]
@@ -618,6 +647,312 @@ public class DocumentLinkerTests
         await docWriter.Received(1).UpsertFromRawAsync(
             raw, "GweeP-Ml9pZ", Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<string?>(), EditionScope.FranchiseWide, Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
+    // Tier 2 — cross-manufacturer collision with a Stern edition family
+    // (corpus re-attribution: a classic same-title machine must NOT block the
+    // Stern remake from resolving — source manufacturer wins, then edition).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier2_SternRemakeWithClassicCollision_SlugHaving_LinksToSternEdition()
+    {
+        // KISS live case: Stern KISS (slug "kiss", group G4qX5, year 2015, two
+        // edition bases) collides on title with the slug-less classic Bally KISS.
+        // "KISSProweb.pdf" is a Stern manual (ManualsPage). It must resolve to the
+        // Stern Pro base — NOT go NotInCatalog because multiple Stern editions +
+        // the classic can't be disambiguated. (Phase 2 regressed this: indexing
+        // the classic title made bestMatches span two groups → not an edition
+        // family → PreferByManufacturer sees >1 Stern edition → null → ambiguous.)
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var sternPro = MakeMachine(id: "G4qX5-MJN17", manufacturer: "stern", title: "KISS", slug: "kiss");
+        sternPro.GroupId = "G4qX5"; sternPro.Year = 2015; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "G4qX5-Mz2Pp", manufacturer: "stern", title: "KISS", slug: "kiss");
+        sternPrem.GroupId = "G4qX5"; sternPrem.Year = 2015; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4jXr-MQ6kz", manufacturer: "bally", title: "KISS", slug: "");
+        classic.GroupId = "G4jXr"; classic.Year = 1979;
+
+        // Separator-delimited edition token so the edition resolves at Tier 2
+        // (isolates the manufacturer-narrowing fix). The live concatenated form
+        // KISSProweb.pdf resolves via the page tier — covered by the page test.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/11/KISS_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["G4qX5-MJN17"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2_SternRemakeWithClassicCollision_SlugLess_LinksToSternEdition()
+    {
+        // Jurassic Park live case: the Stern JP (GK17D, 2019) is slug-less
+        // (metadata-only) and collides on title with the slug-less classic Data
+        // East JP. "JurassicPark_Pro_web.pdf" (Stern manual) must resolve to the
+        // Stern Pro base — the slug-less Stern remake was the whole point of the
+        // Phase 2 title-match, and it must win over the classic by source
+        // manufacturer, then by edition.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPro.GroupId = "GK17D"; sternPro.Year = 2019; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK17D-MKNKd", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPrem.GroupId = "GK17D"; sternPrem.Year = 2019; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4ZVB-MJ5lE", manufacturer: "dataeast", title: "Jurassic Park", slug: "");
+        classic.GroupId = "G4ZVB"; classic.Year = 1993;
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/04/JurassicPark_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GK17D-MdEqz"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
+    public async Task LinkAsync_Page_SternRemakeWithClassicCollision_LinksToSternEdition()
+    {
+        // Mirror of the Tier-2 fix in the page tier (TryMatchPage): a filename
+        // with no edition token falls to page-1 text, which matches both the
+        // Stern family and the classic by title. Source manufacturer must narrow
+        // to the Stern family before edition resolution. Page text has no edition
+        // token → group fan-out across the Stern family (franchise-wide), and the
+        // classic must be excluded.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPro.GroupId = "GK17D"; sternPro.Year = 2019; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK17D-MKNKd", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPrem.GroupId = "GK17D"; sternPrem.Year = 2019; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4ZVB-MJ5lE", manufacturer: "dataeast", title: "Jurassic Park", slug: "");
+        classic.GroupId = "G4ZVB"; classic.Year = 1993;
+
+        const string blobName = "manualspage/JurassicPark-Rulesheet.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+
+        // Filename has no slug/title match (so Tier 2 misses) → forces the page tier.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2020/06/JP-Rulesheet.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "JP-Rulesheet.pdf" });
+
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "JURASSIC PARK rulesheet — applies to all editions.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Contains("GK17D-MdEqz", result.LinkedMachineIds);
+        Assert.Contains("GK17D-MKNKd", result.LinkedMachineIds);
+        Assert.DoesNotContain("G4ZVB-MJ5lE", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_GenericSingleWordTitle_NotIndexedForTitleMatch()
+    {
+        // A slug-less machine whose title is a single generic word — e.g. the
+        // Stern Electronics 1977 game literally titled "Pinball" — must NOT be
+        // title-indexed. The word "pinball" appears in nearly every document in
+        // this corpus ("Stern Pinball" letterhead, service bulletins, etc.), so
+        // indexing that title matched 172 unrelated docs onto it. Only
+        // multi-token (specific) titles are reliable match keys; single generic
+        // words are not. The correctly-slugged Stern machine must still resolve.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var generic = MakeMachine(id: "GrZXj-MD3ee", manufacturer: "stern", title: "Pinball", slug: "");
+        var target = MakeMachine(id: "GBLZ-0001", manufacturer: "stern", title: "Ghostbusters", slug: "ghostbusters");
+
+        // A Stern service bulletin whose page/filename contains "pinball" but is
+        // really about Ghostbusters. It must link to Ghostbusters, never "Pinball".
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters_Manual.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [generic, target]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GBLZ-0001"], result.LinkedMachineIds);
+        Assert.DoesNotContain("GrZXj-MD3ee", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_GenericSingleWordTitle_DoesNotMatchOnThatWord()
+    {
+        // Direct check: a doc that literally contains the generic title word in
+        // its filename ("...pinball...") must NOT resolve to the "Pinball"
+        // machine — the single-word title is not an index entry at all, so the
+        // doc falls to NotInCatalog rather than mislinking.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var generic = MakeMachine(id: "GrZXj-MD3ee", manufacturer: "stern", title: "Pinball", slug: "");
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/Stern-Pinball-SB191.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [generic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("GrZXj-MD3ee", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
+    public async Task LinkAsync_Page_AmpersandTitle_LinksToSternSlugFamily_NotClassic()
+    {
+        // Dungeons & Dragons live case: the Stern D&D (GK1Ej, slug
+        // "dungeons-dragons") collides on franchise with the slug-less classic
+        // Bally "Dungeons & Dragons". Before the '&' normalization fix, page text
+        // "Dungeons & Dragons" normalized to "dungeons & dragons" and never matched
+        // the Stern slug "dungeons dragons" — so only the Bally TITLE matched and
+        // the Stern manual landed on Bally. With '&' as a separator the page text
+        // matches the Stern slug, and source-manufacturer narrowing + edition
+        // resolution land it on the Stern Pro base.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var sternPro = MakeMachine(id: "GK1Ej-MwNZr", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
+        sternPro.GroupId = "GK1Ej"; sternPro.Year = 2025; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK1Ej-MePok", manufacturer: "stern", title: "Dungeons & Dragons: The Tyrant's Eye", slug: "dungeons-dragons");
+        sternPrem.GroupId = "GK1Ej"; sternPrem.Year = 2025; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4JBP-MJ6jr", manufacturer: "bally", title: "Dungeons & Dragons", slug: "");
+        classic.GroupId = "G4JBP"; classic.Year = 1987;
+
+        const string blobName = "manualspage/DungeonsAndDragons_Pro_web.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+        // Filename spells "And" (camelCase) so the slug "dungeons dragons" isn't a
+        // contiguous filename match → falls to the page tier, which is the path
+        // under test.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2025/03/DungeonsAndDragons_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "DungeonsAndDragons_Pro_web.pdf" });
+
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "DUNGEONS & DRAGONS — The Tyrant's Eye. Pro model service manual.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GK1Ej-MwNZr"], result.LinkedMachineIds);
+        Assert.DoesNotContain("G4JBP-MJ6jr", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2_KnownMfrDoc_MatchesOnlyOtherManufacturer_NotInCatalog()
+    {
+        // Grand Prix live case: a Stern manual (ManualsPage → mfr "stern") whose
+        // filename matches ONLY a non-Stern machine (Williams "Grand Prix", no
+        // Stern Grand Prix exists) must NOT link to the Williams machine — a
+        // sternpinball.com PDF on a Williams machine is a provenance violation.
+        // The fuzzy-tier manufacturer filter is HARD: no same-manufacturer match
+        // → NotInCatalog (an honest gap), never a wrong-manufacturer citation.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var williams = MakeMachine(id: "G4O1L-MDW47", manufacturer: "williams", title: "Grand Prix", slug: "");
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/12/Grand_Prix_Manual.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [williams]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("G4O1L-MDW47", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
+    public async Task LinkAsync_Page_KnownMfrDoc_MatchesOnlyOtherManufacturer_NotLinked()
+    {
+        // Batman→"8 Ball" live case: a Stern manual whose page text incidentally
+        // contains a common phrase ("8 ball") that matches a non-Stern machine's
+        // title (Williams "8 Ball") must NOT link there. Hard manufacturer filter
+        // in the page tier drops the cross-manufacturer match → no link.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var williams = MakeMachine(id: "G592K-MJoxd", manufacturer: "williams", title: "8 Ball", slug: "");
+        const string blobName = "manualspage/Batman_LE_Pre_web.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2023/01/Batman_LE_Pre_web.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "Batman_LE_Pre_web.pdf" });
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "Batman LE. Multiball feature includes an 8 ball mode.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [williams], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("G592K-MJoxd", result.LinkedMachineIds);
     }
 
     // -------------------------------------------------------------------------

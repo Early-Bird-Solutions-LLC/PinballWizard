@@ -9,8 +9,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Rag.Indexing;
+using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Ingestion;
 using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 
@@ -98,7 +100,28 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(BuildSearchIndexClient);
         services.TryAddSingleton<RagIndexBootstrapper>();
 
+        // Orphan garbage collector (--gc-rag-index). The pair source
+        // enumerates the index; the collector reconciles it against the
+        // scraped_documents catalog (IScrapedDocumentRepository, registered
+        // by Cosmos persistence) and deletes orphan chunks via IRagIndexer.
+        // Resolving the collector therefore also requires Cosmos to be wired.
+        services.TryAddSingleton<IIndexedPairSource>(BuildIndexedPairSource);
+        services.TryAddSingleton<IRagIndexGarbageCollector, RagIndexGarbageCollector>();
+
         return services;
+    }
+
+    private static AiSearchIndexedPairSource BuildIndexedPairSource(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.IndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new AiSearchIndexedPairSource(
+            searchClient,
+            sp.GetRequiredService<ILogger<AiSearchIndexedPairSource>>());
     }
 
     private static AzureOpenAIQueryEmbedder BuildQueryEmbedder(IServiceProvider sp)

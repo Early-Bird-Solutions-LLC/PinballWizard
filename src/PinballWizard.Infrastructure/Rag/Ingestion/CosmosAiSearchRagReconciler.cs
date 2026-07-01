@@ -166,7 +166,7 @@ public sealed class CosmosAiSearchRagReconciler : IRagReconciler
         long? actualCount;
         try
         {
-            actualCount = await CountChunksAsync(stateRow.DocumentId, cancellationToken)
+            actualCount = await CountChunksAsync(stateRow.DocumentId, stateRow.MachineId, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -218,16 +218,24 @@ public sealed class CosmosAiSearchRagReconciler : IRagReconciler
         return DriftClassification.Match;
     }
 
-    // Filtered AI Search query — `filter=document_id eq '<id>'` with
-    // `IncludeTotalCount=true` and `Size=0` so the server returns the
-    // total count without paging through documents. This is by far
-    // the cheapest verify path; the alternative (`SearchAsync` + iterate)
-    // would download chunks just to count them.
-    private async Task<long> CountChunksAsync(string documentId, CancellationToken cancellationToken)
+    // Filtered AI Search query — `filter=document_id eq '<id>' and
+    // machine_id eq '<mch>'` with `IncludeTotalCount=true` and `Size=0`
+    // so the server returns the total count without paging through
+    // documents. This is by far the cheapest verify path; the
+    // alternative (`SearchAsync` + iterate) would download chunks just
+    // to count them. The machine_id clause is essential now that
+    // rag_index_state rows are per-(document, machine): a state row
+    // records only its own machine's chunk count, so a document-only
+    // count would sum every machine's chunks and surface a spurious
+    // count_mismatch for any fanned-out document.
+    private async Task<long> CountChunksAsync(
+        string documentId, string machineId, CancellationToken cancellationToken)
     {
         var options = new SearchOptions
         {
-            Filter = $"{AiSearchIndexFields.DocumentId} eq '{EscapeForOData(documentId)}'",
+            Filter =
+                $"{AiSearchIndexFields.DocumentId} eq '{EscapeForOData(documentId)}' and " +
+                $"{AiSearchIndexFields.MachineId} eq '{EscapeForOData(machineId)}'",
             IncludeTotalCount = true,
             Size = 0,
         };

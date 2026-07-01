@@ -150,6 +150,106 @@ public sealed class AiSearchRagIndexerLiveTests
     }
 
     [Fact]
+    public async Task DeleteByDocumentAndMachine_LiveContract_RemovesOnlyTargetedMachineChunks()
+    {
+        if (!IsLiveContractEnabled())
+        {
+            return;
+        }
+
+        var searchEndpoint = Environment.GetEnvironmentVariable("AZURE_AI_SEARCH_ENDPOINT")
+            ?? throw new InvalidOperationException("AZURE_AI_SEARCH_ENDPOINT is required when PINBALL_WIZARD_LIVE_RAG_TESTS=1.");
+        var foundryEndpoint = Environment.GetEnvironmentVariable("AZURE_AI_FOUNDRY_PROJECT_ENDPOINT")
+            ?? throw new InvalidOperationException("AZURE_AI_FOUNDRY_PROJECT_ENDPOINT is required when PINBALL_WIZARD_LIVE_RAG_TESTS=1.");
+
+        const string testIndexName = "pinwiz-rag-delete-livetest";
+        const string testSemanticConfig = "pinwiz-rag-delete-livetest-semantic";
+        const string embeddingDeployment = "text-embedding-3-large";
+
+        var credential = new DefaultAzureCredential();
+        var indexClient = new SearchIndexClient(new Uri(searchEndpoint), credential);
+        var schema = AiSearchIndexSchema.Build(testIndexName, testSemanticConfig);
+        await indexClient.CreateOrUpdateIndexAsync(schema, allowIndexDowntime: true);
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+
+            var openAiAccountEndpoint =
+                PinballWizard.Infrastructure.Integrations.AiSearch.ServiceCollectionExtensions
+                    .DeriveAccountEndpoint(foundryEndpoint);
+            var openAiClient = new AzureOpenAIClient(openAiAccountEndpoint, credential);
+            var chunkEmbedder = new AzureOpenAIChunkEmbedder(
+                openAiClient.GetEmbeddingClient(embeddingDeployment),
+                NullLogger<AzureOpenAIChunkEmbedder>.Instance);
+
+            var searchClient = new SearchClient(new Uri(searchEndpoint), testIndexName, credential);
+            var indexer = new AiSearchRagIndexer(searchClient, chunkEmbedder, NullLogger<AiSearchRagIndexer>.Instance);
+
+            // Same document fanned out to two machines (the re-attribution
+            // shape: one manual, a wrong machine and the right one).
+            const string documentId = "doc_delete_livetest";
+            const string wrongMachine = "mch_wrong";
+            const string rightMachine = "mch_right";
+            var chunks = new List<Chunk>
+            {
+                new(0, "Slingshot coil replacement steps.", "Slingshot", 1, 1, 8),
+                new(1, "Pop bumper rebuild instructions.", "Pop Bumper", 2, 2, 8),
+            };
+
+            await indexer.UpsertAsync(NewRequest(documentId, wrongMachine), chunks, new RagIndexerOptions(), cts.Token);
+            await indexer.UpsertAsync(NewRequest(documentId, rightMachine), chunks, new RagIndexerOptions(), cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+
+            // Delete only the wrong-machine attribution.
+            var deleted = await indexer.DeleteByDocumentAndMachineAsync(documentId, wrongMachine, cts.Token);
+            Assert.Equal(2, deleted);
+            await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+
+            // Wrong-machine chunks gone; right-machine chunks retained.
+            Assert.Equal(0, await CountChunksAsync(searchClient, documentId, wrongMachine, cts.Token));
+            Assert.Equal(2, await CountChunksAsync(searchClient, documentId, rightMachine, cts.Token));
+
+            // Idempotent: deleting the already-absent pair returns 0.
+            Assert.Equal(0, await indexer.DeleteByDocumentAndMachineAsync(documentId, wrongMachine, cts.Token));
+        }
+        finally
+        {
+            try
+            {
+                await indexClient.DeleteIndexAsync(testIndexName, CancellationToken.None);
+            }
+            catch (Azure.RequestFailedException)
+            {
+                // Swallow cleanup failures — deleting the test-only index is
+                // best-effort; the test result is what matters. Scoped to the
+                // AI Search SDK's failure type (not a generic catch).
+            }
+        }
+
+        static ChunkRequest NewRequest(string documentId, string machineId) => new(
+            MachineId: machineId,
+            MachineTitle: "Delete Test Machine",
+            Manufacturer: "TestCo",
+            DocumentId: documentId,
+            DocumentUrl: "https://example.invalid/delete-livetest.pdf",
+            DocumentType: DocumentType.Manual);
+
+        static async Task<long> CountChunksAsync(
+            SearchClient client, string documentId, string machineId, CancellationToken ct)
+        {
+            var options = new SearchOptions
+            {
+                Filter = $"document_id eq '{documentId}' and machine_id eq '{machineId}'",
+                IncludeTotalCount = true,
+                Size = 0,
+            };
+            var response = await client.SearchAsync<SearchDocument>(searchText: "*", options, ct);
+            return response.Value.TotalCount ?? 0;
+        }
+    }
+
+    [Fact]
     public async Task RagIndexBootstrapper_LiveContract_CreatesAndIsIdempotent()
     {
         if (!IsLiveContractEnabled())
