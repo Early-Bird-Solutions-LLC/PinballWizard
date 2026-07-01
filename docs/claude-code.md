@@ -31,17 +31,17 @@ layer.
 flowchart TD
   dev([developer]) --> session[Claude Code session]
   session --> repo[.claude/ — in-repo authoritative config]
-  repo --> rules[rules/\nno-guessing · timeout-debugging\nparallel-sessions · pinball-workflows]
-  repo --> skills[skills/\ncommit · pr · pre-commit-workflow\nlocal-review · screenshot · playwright-setup]
-  repo --> commands[commands/\n14 slash-command definitions]
-  repo --> agents[agents/\ncodebase-analyzer · web-search-researcher\nthoughts-analyzer · modernization-analyst]
-  rules --> gate[pre-commit-workflow\nno secrets · no debug leftovers\nnot on protected branch]
+  repo --> rules["rules/<br/>no-guessing · timeout-debugging<br/>parallel-sessions · pinball-workflows"]
+  repo --> skills["skills/<br/>commit · pr · pre-commit-workflow<br/>local-review · screenshot · playwright-setup"]
+  repo --> commands["commands/<br/>14 slash-command definitions"]
+  repo --> agents["agents/<br/>codebase-analyzer · web-search-researcher<br/>thoughts-analyzer · modernization-analyst"]
+  rules --> gate["pre-commit-workflow<br/>no secrets · no debug leftovers<br/>not on protected branch"]
   skills --> gate
-  gate --> review[/local-review\nqualitative diff review]
-  review --> audit[PR-AUDIT.md\n12-item mechanical checklist]
-  audit --> commit[git commit\npersonal identity · no Co-Authored-By]
-  commit --> push[gh pr create\nclaude-code label · /local-review outcome recorded]
-  push --> pr[PR description\nfindings addressed · ADR links · test evidence]
+  gate --> review["/local-review<br/>qualitative diff review"]
+  review --> audit["PR-AUDIT.md<br/>12-item mechanical checklist"]
+  audit --> commit["git commit<br/>personal identity · no Co-Authored-By"]
+  commit --> push["gh pr create<br/>claude-code label · /local-review outcome recorded"]
+  push --> pr["PR description<br/>findings addressed · ADR links · test evidence"]
 ```
 
 ## Provenance and drift
