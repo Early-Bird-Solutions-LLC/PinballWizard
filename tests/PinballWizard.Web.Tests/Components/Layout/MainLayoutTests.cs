@@ -104,4 +104,24 @@ public sealed class MainLayoutTests : AsyncBunitContext
 
         cut.FindComponent<BrandFooter>();
     }
+
+    [Fact]
+    public void MainLayout_RendersPublicNavRail_WithAllReadDestinations()
+    {
+        // AppNavRail is hosted as an interactive island inside the static MainLayout.
+        // Even in bUnit (which ignores @rendermode), the component must render its
+        // anchor elements for each nav item so the rail is structurally correct.
+        var cut = Render<MainLayout>(parameters => parameters
+            .Add(p => p.Body, builder =>
+            {
+                builder.OpenElement(0, "span");
+                builder.AddContent(1, "Body content");
+                builder.CloseElement();
+            }));
+
+        Assert.NotNull(cut.Find("a[href='/about']"));
+        Assert.NotNull(cut.Find("a[href='/documents']"));
+        Assert.NotNull(cut.Find("a[href='/admin']"));
+        Assert.NotNull(cut.Find(".app-nav-rail"));
+    }
 }

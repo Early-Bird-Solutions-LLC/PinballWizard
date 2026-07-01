@@ -51,6 +51,11 @@
        without competing with the AppBar chrome above or the page content below. *@
     <OutageBanner />
 
+    <AppNavRail @rendermode="InteractiveServer"
+                Open="false"
+                HeaderText="PinballWizard"
+                Items="@PublicNav" />
+
     <MudMainContent>
         <TiltErrorBoundary>
             @Body
@@ -62,4 +67,12 @@
 
 @code {
     private readonly MudTheme _theme = PinballTheme.Create();
+
+    private static readonly IReadOnlyList<NavRailItem> PublicNav = new[]
+    {
+        new NavRailItem("/", "Ask the Wizard", Icons.Material.Filled.AutoAwesome, MatchAll: true),
+        new NavRailItem("/about", "What we cover", Icons.Material.Filled.Explore),
+        new NavRailItem("/documents", "Documents", Icons.Material.Filled.Article),
+        new NavRailItem("/admin", "Behind the Scenes", Icons.Material.Filled.Visibility),
+    };
 }
