@@ -24,7 +24,11 @@ public sealed record EvalQuestionResult(
     [property: JsonPropertyName("answer_text")] string AnswerText,
     [property: JsonPropertyName("scores")] EvalScores Scores,
     [property: JsonPropertyName("duration_ms")] double DurationMs,
-    [property: JsonPropertyName("error")] string? Error = null);
+    [property: JsonPropertyName("error")] string? Error = null,
+    // Slice carries the EvalQuestion.Slice tag into the scored result so the
+    // harness can group scored rows and compute per-slice aggregates without
+    // re-reading the ground-truth file. Null for pre-hard-eval-set rows.
+    [property: JsonPropertyName("slice")] string? Slice = null);
 
 // Null scores mean "metric undefined on this row" — the row is excluded
 // from that metric's aggregate denominator rather than scored (which
@@ -79,4 +83,9 @@ public sealed record EvalRunResult(
     [property: JsonPropertyName("results_path")] string ResultsPath,
     [property: JsonPropertyName("prompt_version")] string? PromptVersion,
     [property: JsonPropertyName("aggregate")] EvalAggregate Aggregate,
+    // Per-slice aggregate breakdown keyed by EvalQuestion.Slice. Rows with
+    // a null Slice go into "(unsliced)" so the total across BySlice accounts
+    // for every question in Questions. A standard v2 run (no slices assigned)
+    // yields a single "(unsliced)" bucket; the top-level Aggregate is unchanged.
+    [property: JsonPropertyName("by_slice")] IReadOnlyDictionary<string, EvalAggregate> BySlice,
     [property: JsonPropertyName("questions")] IReadOnlyList<EvalQuestionResult> Questions);

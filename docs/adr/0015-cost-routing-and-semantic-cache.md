@@ -155,7 +155,7 @@ sets correlated by trace ID.
 
 - The 80% cheap / 20% escalation pattern keeps the completion line
   item near the $10–20/mo target validated in
-  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md).
+  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md).
 - User-question-level caching (vs. sub-call caching) is the right
   granularity for the agent framework — sub-calls are
   prompt-version-specific and re-running them adds nothing if the
@@ -227,7 +227,7 @@ sets correlated by trace ID.
 - **No cache.** Rejected: a 30-question demo session would cost
   ~$0.30–$3.00 without cache; with cache it's a fraction.
 - **Redis-backed semantic cache.** Locked deferral per
-  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md):
+  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md):
   "in-process LRU sufficient at v1 scale; Redis revisit trigger
   = multi-instance ACA + cache-hit-rate justifies."
 - **TTL on the cache instead of LRU-only.** Rejected:

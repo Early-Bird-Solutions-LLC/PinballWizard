@@ -1,0 +1,50 @@
+name: Docs
+
+# Docs-as-code gate: the documentation is part of the showcase artifact, so it
+# is tested like code. Fails a PR that introduces a broken internal link or a
+# Mermaid diagram that doesn't render. Renovate keeps the action versions current.
+#
+# - Link check: every relative markdown link must resolve on disk (this is the
+#   guard that would have caught the docs/README.md -> glossary.md dead link).
+# - Mermaid: every ```mermaid block must render under mermaid-cli.
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'tools/docs/**'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'tools/docs/**'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Docs — links + diagrams
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Internal link check
+        run: node tools/docs/check-links.mjs
+
+      - name: Install mermaid-cli
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Mermaid diagram validation
+        run: node tools/docs/validate-mermaid.mjs

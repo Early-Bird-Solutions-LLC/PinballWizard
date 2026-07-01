@@ -53,21 +53,33 @@ $env:AiSearch__Endpoint                = "https://pinwiz-search-dev-buutj.search
 $env:AiSearch__IndexName               = "pinwiz-rag-v1"
 
 # ── Launch + browser auto-open ─────────────────────────────────────────────
-# Pipe aspire run output through so we can detect the Aspire dashboard URL
-# (printed once on startup) and open it automatically. The pipe preserves all
-# output in the terminal; Start-Process fires exactly once on the first match.
+# Stream aspire run output line-by-line via a redirected stdout reader so we
+# can detect the Aspire dashboard URL and open it automatically, while also
+# getting the correct process exit code.
+#
+# Using a pipe (aspire | ForEach-Object) causes $LASTEXITCODE to reflect the
+# pipeline result rather than aspire's exit — so errors are never detected.
+# Reading stdout via Process.StandardOutput fixes that.
+$startInfo = [System.Diagnostics.ProcessStartInfo]::new('aspire', 'run --apphost src\PinballWizard.AppHost')
+$startInfo.UseShellExecute = $false
+$startInfo.RedirectStandardOutput = $true
+# stderr is not redirected — it flows to this terminal unchanged.
+
 $browserOpened = $false
-aspire run --apphost src\PinballWizard.AppHost | ForEach-Object {
-    Write-Host $_
+$proc = [System.Diagnostics.Process]::Start($startInfo)
+while (-not $proc.StandardOutput.EndOfStream) {
+    $line = $proc.StandardOutput.ReadLine()
+    Write-Host $line
     if (-not $browserOpened -and
-        ($_ -match 'dashboard' -or $_ -match 'login') -and
-        $_ -match '(https?://localhost:\d+\S*)') {
+        ($line -match 'dashboard' -or $line -match 'login') -and
+        $line -match '(https?://localhost:\d+\S*)') {
         $browserOpened = $true
         $url = $Matches[1].TrimEnd('.')
         Write-Host "[start-apphost] Opening browser → $url" -ForegroundColor Cyan
         Start-Process $url
     }
 }
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "[start-apphost] aspire run exited with code $LASTEXITCODE"
+$proc.WaitForExit()
+if ($proc.ExitCode -ne 0) {
+    Write-Error "[start-apphost] aspire run exited with code $($proc.ExitCode)"
 }

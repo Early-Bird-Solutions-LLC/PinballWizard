@@ -22,12 +22,62 @@
 // the canonical Modern LCD token values (identical to PaletteLight since this
 // theme has one visual register).
 
+using System.Linq;
 using MudBlazor;
 
 namespace PinballWizard.Web.Components.Theming;
 
 public static class PinballTheme
 {
+    // ── Shared typography (Barlow Condensed display, Inter body) ──
+    // Both Create() and CreatePaper() use identical typography settings.
+    // Display reserved for announcements (headers, panel titles,
+    // refusal-panel category labels). Body is Inter throughout —
+    // condensed-sans body is fatiguing.
+    // JetBrains Mono is consumed via the --pw-font-mono variable
+    // in app.css (citation IDs, machine slugs, URL chains).
+    private static Typography PinballTypography => new()
+    {
+        Default = new DefaultTypography
+        {
+            FontFamily = ["Inter", "Roboto", "Helvetica", "Arial", "sans-serif"],
+            FontSize = "0.875rem",
+            FontWeight = "400",
+            LineHeight = "1.43",
+            LetterSpacing = "0.01071em",
+        },
+        H1 = new H1Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "2.5rem",  FontWeight = "700" },
+        H2 = new H2Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "2rem",    FontWeight = "700" },
+        H3 = new H3Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.75rem", FontWeight = "700" },
+        H4 = new H4Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.5rem",  FontWeight = "700" },
+        H5 = new H5Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.25rem", FontWeight = "500" },
+        H6 = new H6Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1rem",    FontWeight = "500" },
+        Subtitle1 = new Subtitle1Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "1rem",   FontWeight = "400" },
+        Subtitle2 = new Subtitle2Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.875rem", FontWeight = "500" },
+        Body1 = new Body1Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "1rem",   FontWeight = "400", LineHeight = "1.5" },
+        Body2 = new Body2Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.875rem", FontWeight = "400", LineHeight = "1.43" },
+        Caption = new CaptionTypography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.75rem", FontWeight = "400" },
+        Overline = new OverlineTypography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.75rem", FontWeight = "400", LetterSpacing = "0.08333em" },
+    };
+
+    // ── Shared shape and elevation ──
+    // Flat-elevation design: all shadow levels resolve to "none" so the
+    // MudBlazor chrome doesn't add Material-style drop shadows. Border-radius
+    // is kept at 2px for a sharp, technical aesthetic consistent with
+    // the Modern LCD and Paper visual systems.
+    private static LayoutProperties PinballLayoutProperties => new()
+    {
+        DefaultBorderRadius = "2px",
+    };
+
+    private static Shadow PinballShadows => new()
+    {
+        // MudBlazor 9.x Shadow.Elevation is a 26-element array (indices 0–25).
+        // MudThemeProvider.GenerateTheme accesses all 26 slots; supplying 25
+        // causes an IndexOutOfRangeException during render.
+        Elevation = Enumerable.Repeat("none", 26).ToArray(),
+    };
+
     public static MudTheme Create()
     {
         return new MudTheme
@@ -93,35 +143,70 @@ public static class PinballTheme
                 OverlayDark = "rgba(12, 11, 14, 0.8)",
                 OverlayLight = "rgba(30, 29, 34, 0.6)",
             },
-            // ── Typography (Modern LCD spec — Barlow Condensed display, Inter body) ──
-            // Display reserved for announcements (headers, panel titles,
-            // refusal-panel category labels). Body is Inter through and
-            // through — condensed-sans body is fatiguing.
-            // JetBrains Mono is consumed via the --pw-font-mono variable
-            // in app.css (citation IDs, machine slugs, URL chains).
-            Typography = new Typography
-            {
-                Default = new DefaultTypography
-                {
-                    FontFamily = ["Inter", "Roboto", "Helvetica", "Arial", "sans-serif"],
-                    FontSize = "0.875rem",
-                    FontWeight = "400",
-                    LineHeight = "1.43",
-                    LetterSpacing = "0.01071em",
-                },
-                H1 = new H1Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "2.5rem",  FontWeight = "700" },
-                H2 = new H2Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "2rem",    FontWeight = "700" },
-                H3 = new H3Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.75rem", FontWeight = "700" },
-                H4 = new H4Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.5rem",  FontWeight = "700" },
-                H5 = new H5Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1.25rem", FontWeight = "500" },
-                H6 = new H6Typography { FontFamily = ["Barlow Condensed", "Roboto", "sans-serif"], FontSize = "1rem",    FontWeight = "500" },
-                Subtitle1 = new Subtitle1Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "1rem",   FontWeight = "400" },
-                Subtitle2 = new Subtitle2Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.875rem", FontWeight = "500" },
-                Body1 = new Body1Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "1rem",   FontWeight = "400", LineHeight = "1.5" },
-                Body2 = new Body2Typography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.875rem", FontWeight = "400", LineHeight = "1.43" },
-                Caption = new CaptionTypography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.75rem", FontWeight = "400" },
-                Overline = new OverlineTypography { FontFamily = ["Inter", "Roboto", "sans-serif"], FontSize = "0.75rem", FontWeight = "400", LetterSpacing = "0.08333em" },
-            },
+            Typography = PinballTypography,
+            LayoutProperties = PinballLayoutProperties,
+            Shadows = PinballShadows,
         };
     }
+
+    // ── Paper light palette (docs/ui/themes/sibling-themes-overview.md § Paper) ──
+    // Warm off-white / aged-paper base with earthy accent tones.
+    // The Paper theme is the default for new visitors (chore(theme) #570).
+    // It is the only sibling theme with a full MudTheme companion — all
+    // other sibling themes (Backbox, Cabinet, DaytimeRoute, DmdClassic)
+    // are CSS-variable-only overrides applied via ThemeService.
+    public static MudTheme CreatePaper() => new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary                = "#b8763e",   // accent-primary — warm copper
+            PrimaryContrastText    = "#ffffff",
+            Secondary              = "#1f6f54",   // accent-grounded — forest green
+            Background             = "#f4f1ea",   // bg-base — aged paper
+            Surface                = "#faf8f2",   // bg-surface — lighter paper
+            AppbarBackground       = "#1a1410",   // near-black header
+            AppbarText             = "#f4f1ea",
+            DrawerBackground       = "#ede9e1",
+            DrawerText             = "#1a1408",
+            DrawerIcon             = "#b8763e",
+            TextPrimary            = "#1a1408",   // near-black text
+            TextSecondary          = "#5c5042",   // warm mid-tone
+            TextDisabled           = "#9a9082",
+            ActionDefault          = "#5c5042",
+            ActionDisabled         = "#9a9082",
+            Divider                = "#d8cdb5",   // border-quiet — warm sand
+            DividerLight           = "#e8e3da",
+            Success                = "#1a8a45",
+            SuccessContrastText    = "#ffffff",
+            Error                  = "#c0200e",
+            ErrorContrastText      = "#ffffff",
+            Warning                = "#b86c00",
+            WarningContrastText    = "#ffffff",
+            Info                   = "#1a5c8a",
+            InfoContrastText       = "#ffffff",
+            GrayDefault            = "#5c5042",
+            GrayLight              = "#d8cdb5",
+            GrayLighter            = "#ede9e1",
+            GrayDark               = "#3a2e22",
+            GrayDarker             = "#1a1408",
+            OverlayLight           = "rgba(244, 241, 234, 0.5)",
+            OverlayDark            = "rgba(26, 20, 8, 0.7)",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary          = "#ff9a1f",
+            Background       = "#0c0b0e",
+            Surface          = "#161519",
+            AppbarBackground = "#08070a",
+            DrawerBackground = "#101015",
+            TextPrimary      = "#f4f1ea",
+            TextSecondary    = "#9a9590",
+            Success          = "#34d96a",
+            Error            = "#ff3b30",
+            Divider          = "#2a282d",
+        },
+        Typography = PinballTypography,
+        LayoutProperties = PinballLayoutProperties,
+        Shadows = PinballShadows,
+    };
 }

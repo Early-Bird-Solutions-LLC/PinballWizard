@@ -4,7 +4,7 @@
 
 **PinballWizard is a customer-facing showcase / reference application** that demonstrates Jim's ability to architect, build, ship, and operate an enterprise-class AI solution end-to-end. It will be shown to prospective Earlybird Solutions clients as proof of capability across Clean Architecture, .NET Aspire, Azure (Cosmos / AI Search / OpenAI / Container Apps), AAD identity, IaC, observability, polite-by-construction scraping, and event-driven RAG. **The pinball domain is the vehicle — the engineering rigor is the point.**
 
-Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a polite, manufacturer-fanned-out scraper that crawls pinball-machine sources and persists into Cosmos with rich provenance metadata. **Phase 2** (in progress) adds an event-driven RAG pipeline with source-cited Q&A. See `project_phase2_architecture_decisions.md` for locked decisions and `project_phased_build_sequence.md` for the build order.
+Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a polite, manufacturer-fanned-out scraper that crawls pinball-machine sources and persists into Cosmos with rich provenance metadata. **Phases 2–6** are complete — the shipped product is a live RAG-powered Wizard on pinwiz.ai with source-cited Q&A, admin control plane, and end-to-end observability. Phase 7 is the current active work stream.
 
 **Hosted on the personal Earlybird Azure subscription** (sub `b1f33f17-…` "pinwiz.ai", tenant `9793cd0f-…`). Never linked to work tooling — see `feedback_personal_identity_only.md`. The personal-account constraint is administrative, not a quality posture: this is a reference app and is held to enterprise standards.
 
@@ -12,7 +12,7 @@ Functionally: **Phase 1** (live, validated end-to-end as of 2026-05-04) is a pol
 
 Because this app is shown to potential customers, every PR must hold the bar a prospect would expect on day one of an engagement:
 
-- **No quick fixes / shortcuts.** If a proper IaC / DI / abstraction path exists, take it. Tactical hacks have no place in a reference app — ad-hoc CLI calls, hardcoded values, manual workarounds, copy-paste-with-drift, or "we'll clean it up later" all undermine the demo. If unsure, surface the trade-off explicitly per `c:\projects\CLAUDE.md` § "Quality-First Principle".
+- **No quick fixes / shortcuts.** If a proper IaC / DI / abstraction path exists, take it. Tactical hacks have no place in a reference app — ad-hoc CLI calls, hardcoded values, manual workarounds, copy-paste-with-drift, or "we'll clean it up later" all undermine the demo. If unsure, surface the trade-off explicitly per `c:\earlybird\CLAUDE.md` (workspace conventions).
 - **Architecture must read cleanly.** Clean Architecture layering, ADRs for non-obvious decisions, named abstractions over implicit conventions. A senior architect skimming the repo should be able to trace any subsystem in under five minutes.
 - **Observability and operability are first-class.** OTel traces, structured logging, `/healthz` + `/alive`, friendly error messages with remediation, idempotent operations. The system should look healthy from a dashboard, not just from green tests.
 - **Tests assert behavior, not structure.** A test named "deduplicates" must include a fixture where dedup actually fires. Coverage is necessary but not sufficient — tests are documentation of intent.
@@ -130,7 +130,7 @@ Key invariants to keep top-of-mind:
 
 ## Documentation map
 
-ADRs: [`docs/adr/`](docs/adr/) (index in its README). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--projects-PinballWizard\memory\`).
+ADRs: [`docs/adr/`](docs/adr/) (index in its README). Canonical specs: [`docs/vision.md`](docs/vision.md), [`docs/build-spec.md`](docs/build-spec.md), [`docs/guardrails.md`](docs/guardrails.md), [`docs/quality-spec.md`](docs/quality-spec.md). Locked invariants: [`.claude/INVARIANTS.md`](.claude/INVARIANTS.md). Volatile session-state lives in memory (`C:\Users\JimKeeley\.claude\projects\c--earlybird-PinballWizard\memory\`).
 
 ## Phase 2 Preview (NOT building yet)
 

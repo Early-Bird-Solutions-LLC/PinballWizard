@@ -498,6 +498,105 @@ public sealed class EvaluationHarnessTests
         Assert.Equal(1, roundtrip.Aggregate.QuestionCount);
     }
 
+    [Fact]
+    public async Task RunAsync_SlicedRows_ProducesPerSliceAggregates_AndPreservesOverallAggregate()
+    {
+        // Two rows tagged "easy" (precision=1.0) and two tagged
+        // "reranker-sensitive" (precision=0.0 — wrong citation) are scored.
+        // Assertions:
+        //   - BySlice["easy"].CitationPrecisionMean == 1.0
+        //   - BySlice["reranker-sensitive"].CitationPrecisionMean == 0.0
+        //   - top-level Aggregate.CitationPrecisionMean == 0.5 (overall mean)
+        //   - top-level Aggregate.QuestionCount == 4 (unchanged)
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-e-001","question":"q-easy-1","expected_sub_agent":"Rules","expected_citation_set":["CORRECT-1"],"acceptable_refusal":false,"slice":"easy"}""",
+            """{"id":"ev-e-002","question":"q-easy-2","expected_sub_agent":"Rules","expected_citation_set":["CORRECT-2"],"acceptable_refusal":false,"slice":"easy"}""",
+            """{"id":"ev-r-001","question":"q-rerank-1","expected_sub_agent":"Rules","expected_citation_set":["CORRECT-3"],"acceptable_refusal":false,"slice":"reranker-sensitive"}""",
+            """{"id":"ev-r-002","question":"q-rerank-2","expected_sub_agent":"Rules","expected_citation_set":["CORRECT-4"],"acceptable_refusal":false,"slice":"reranker-sensitive"}""");
+
+        var callIndex = 0;
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var idx = Interlocked.Increment(ref callIndex);
+                // Questions 1+2 ("easy"): cite the correct expected citation.
+                // Questions 3+4 ("reranker-sensitive"): cite a wrong citation.
+                var (citation, id) = idx <= 2
+                    ? ($"CORRECT-{idx}", $"CORRECT-{idx}")
+                    : ("WRONG", "WRONG");
+                return Task.FromResult(new WizardAnswer(
+                    Text: $"Answer {idx}.",
+                    Citations: new List<Citation> { new(citation, $"https://example.com/{id}", MachineId: id) },
+                    SubAgentUsed: "Rules",
+                    Confidence: 0.9,
+                    Escalated: false,
+                    IsRefusal: false,
+                    RefusalCategory: null,
+                    PromptVersion: "v-test",
+                    FoundryThreadId: null));
+            });
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // Per-slice breakdown must exist for both slices.
+        Assert.True(result.BySlice.ContainsKey("easy"), "Expected 'easy' key in BySlice");
+        Assert.True(result.BySlice.ContainsKey("reranker-sensitive"), "Expected 'reranker-sensitive' key in BySlice");
+
+        // easy slice: both rows cited correctly → precision mean = 1.0.
+        var easyAgg = result.BySlice["easy"];
+        Assert.Equal(2, easyAgg.QuestionCount);
+        Assert.Equal(1.0, easyAgg.CitationPrecisionMean);
+        Assert.Equal(1.0, easyAgg.CitationRecallMean);
+
+        // reranker-sensitive slice: both rows cited wrong → precision mean = 0.0.
+        var rerankAgg = result.BySlice["reranker-sensitive"];
+        Assert.Equal(2, rerankAgg.QuestionCount);
+        Assert.Equal(0.0, rerankAgg.CitationPrecisionMean);
+        Assert.Equal(0.0, rerankAgg.CitationRecallMean);
+
+        // Top-level Aggregate must be the overall mean across all four rows
+        // (unchanged: this is the invariant that no slice tag may perturb it).
+        Assert.Equal(4, result.Aggregate.QuestionCount);
+        Assert.Equal(0.5, result.Aggregate.CitationPrecisionMean);
+        Assert.Equal(0.5, result.Aggregate.CitationRecallMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnslicedRows_GoToUnslicedBucket()
+    {
+        // A standard v2 ground-truth row (no slice field) must land in the
+        // "(unsliced)" bucket so BySlice covers all questions. The top-level
+        // Aggregate must be identical to the single-question result.
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-001","question":"What's the wizard mode?","expected_sub_agent":"Rules","expected_citation_set":["GRBN-MQR4P"],"acceptable_refusal":false}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "Cited correctly.",
+                Citations: new List<Citation> { new("OPDB record", "https://opdb.org/machines/GRBN-MQR4P", MachineId: "GRBN-MQR4P") },
+                SubAgentUsed: "Rules",
+                Confidence: 0.9,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // The one unsliced question lands in "(unsliced)".
+        var unslicedAgg = Assert.Single(result.BySlice).Value;
+        Assert.Equal("(unsliced)", Assert.Single(result.BySlice).Key);
+        Assert.Equal(1, unslicedAgg.QuestionCount);
+        // Top-level aggregate is unchanged.
+        Assert.Equal(result.Aggregate.QuestionCount, unslicedAgg.QuestionCount);
+        Assert.Equal(result.Aggregate.CitationPrecisionMean, unslicedAgg.CitationPrecisionMean);
+    }
+
     private sealed class HarnessFixture : IDisposable
     {
         public string Root { get; }

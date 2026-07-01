@@ -1,5 +1,7 @@
 # Security Policy
 
+This document describes the supported version scope, vulnerability reporting process, and security posture for PinballWizard.
+
 ## Supported Versions
 
 PinballWizard is pre-1.0 and ships from the `main` branch. Security fixes
@@ -20,8 +22,7 @@ Use [GitHub's private security advisory flow](https://github.com/Early-Bird-Solu
    assessment.
 
 If GitHub Security Advisories are not available to you, email the
-project maintainer at the address in the GitHub profile linked from this
-repo's owner.
+project maintainer at [jim@earlybirdsolutions.com](mailto:jim@earlybirdsolutions.com).
 
 ## What's in scope
 
@@ -29,6 +30,9 @@ repo's owner.
   vulnerability that could let a malicious source site or attacker
   compromise the host running the scraper, exfiltrate data, or persist
   state across runs.
+- The HTTP API (`PinballWizard.Api`) and Blazor web front end (`PinballWizard.Web`)
+  — authentication bypass, privilege escalation, injection, or data
+  exfiltration paths.
 - The Docker image as published — privilege escalation, supply-chain
   issues, embedded secrets.
 - The CI workflows in `.github/workflows/` — workflow injection,
@@ -38,13 +42,11 @@ repo's owner.
 
 ## What's out of scope
 
-- The third-party site this scraper crawls (`sternpinball.com`) — those
-  belong to its operators.
+- The third-party sites this scraper crawls (10+ manufacturer sites) —
+  vulnerabilities on those sites belong to their operators.
 - Self-inflicted issues from running with credentials this project does
   not require (e.g., setting `AZURE_*` secrets the scraper has no use
   for).
-- Findings against the planned-but-unbuilt Phase 2 platform until that
-  code lands in this repository.
 
 ## Disclosure
 
@@ -59,11 +61,9 @@ We follow [coordinated disclosure](https://en.wikipedia.org/wiki/Coordinated_vul
 ## Hardening posture
 
 The scraper is designed to **read from public sources and write to local
-storage** — no secrets, no inbound API, no persistent service surface.
-Phase 2's planned platform is documented in
-[`docs/infra_analysis.md`](docs/infra_analysis.md) and follows a
-zero-secret architecture (Managed Identity + RBAC, no API keys, no
-shared keys on Storage). The custom
+storage**. The deployed platform (API + Blazor web + RAG ingestion worker
+on Azure Container Apps) follows a zero-secret architecture: Managed
+Identity + RBAC, no API keys, no shared keys on Storage. The custom
 [`sanitization.yml`](.github/workflows/sanitization.yml) workflow blocks
 common credential patterns from being committed.
 
