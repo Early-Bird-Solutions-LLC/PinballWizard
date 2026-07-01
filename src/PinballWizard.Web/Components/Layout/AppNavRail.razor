@@ -1,0 +1,53 @@
+@* AppNavRail — shared collapsible left navigation rail.
+ *
+ * The entire interactive surface of the nav lives in ONE island: the MudDrawer
+ * (Mini variant — collapsed shows an icon rail, expanded shows labels) plus the
+ * in-rail toggle button. Host it with @rendermode="InteractiveServer" so the
+ * toggle's @onclick is live even inside a statically-rendered layout.
+ *
+ * Design: docs/superpowers/specs/2026-07-01-public-left-nav-design.md
+ * ADR-0008 — MudBlazor strict.
+ *@
+
+<MudDrawer Open="@_open"
+           Variant="DrawerVariant.Mini"
+           Elevation="2"
+           Class="app-nav-rail">
+    <MudDrawerHeader Class="d-flex align-center pa-2">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       OnClick="Toggle"
+                       data-testid="nav-rail-toggle"
+                       aria-label="@(_open ? "Collapse navigation" : "Expand navigation")"
+                       title="@(_open ? "Collapse navigation" : "Expand navigation")" />
+        @if (_open)
+        {
+            <MudText Typo="Typo.subtitle1" Class="ml-2">@HeaderText</MudText>
+        }
+    </MudDrawerHeader>
+
+    <MudNavMenu>
+        @foreach (var item in Items)
+        {
+            <MudNavLink Href="@item.Href"
+                        Match="@(item.MatchAll ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                        Icon="@item.Icon"
+                        title="@item.Label"
+                        aria-label="@item.Label">
+                @item.Label
+            </MudNavLink>
+        }
+    </MudNavMenu>
+</MudDrawer>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<NavRailItem> Items { get; set; } = Array.Empty<NavRailItem>();
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string HeaderText { get; set; } = "Navigation";
+
+    private bool _open;
+
+    protected override void OnInitialized() => _open = Open;
+
+    private void Toggle() => _open = !_open;
+}
