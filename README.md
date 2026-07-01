@@ -63,6 +63,29 @@ This chain is the contract between Phase 1 and the Phase 2 RAG layer — every a
 the Wizard gives cites a `document_id` that resolves through this record back to the
 original page on `sternpinball.com`.
 
+The lineage below traces one `doc_id` from the manufacturer page it was scraped from through to the citation the Wizard renders — the provenance fields carried at each hop are the contract that makes every answer auditable ([diagram conventions](docs/diagram-conventions.md)):
+
+```mermaid
+flowchart LR
+    Src(["Manufacturer page<br/>(discovery_url)"]):::ext
+    Scrape["Polite scraper<br/>OG / JSON-LD / sitemap"]:::svc
+    Rec[("DocumentRecord (Cosmos)<br/>id=doc_9f3a1c7b…<br/>source · game · classification")]:::data
+    Worker["RAG worker<br/>PdfPig + hybrid chunking"]:::svc
+    Idx[("AI Search chunk<br/>document_id · page_start/end")]:::data
+    Ans(["Wizard citation<br/>document_id + file_url + page_range"]):::gov
+    Orig(["Original PDF on<br/>manufacturer site"]):::ext
+
+    Src --> Scrape --> Rec
+    Rec -->|Change Feed| Worker --> Idx
+    Idx --> Ans
+    Ans -->|ProvenanceService resolves| Orig
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+```
+
 ```json
 {
   "id": "doc_9f3a1c7b2e004d51",
