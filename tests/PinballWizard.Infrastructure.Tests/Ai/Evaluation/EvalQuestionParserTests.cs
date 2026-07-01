@@ -298,6 +298,24 @@ public sealed class EvalQuestionParserTests
         Assert.Null(withoutAnnotation.AcceptableSubAgents);
     }
 
+    // ── Hard-eval slice/source/first_stage_rank fields ──────────────────
+
+    [Fact]
+    public void Parse_HardEvalSliceFields_RoundTrip()
+    {
+        var lines = new[]
+        {
+            """{"id":"hard-0001","question":"q","expected_sub_agent":"Rules","expected_citation_set":["mch_X"],"acceptable_refusal":false,"slice":"reranker-sensitive","source":"confusable-edition","first_stage_rank":7}""",
+        };
+
+        var result = EvalQuestionParser.Parse(lines, "test");
+
+        var q = result[0];
+        Assert.Equal("reranker-sensitive", q.Slice);
+        Assert.Equal("confusable-edition", q.Source);
+        Assert.Equal(7, q.FirstStageRank);
+    }
+
     [Fact]
     public void ParseFile_ValidFile_RoundTrip()
     {

@@ -80,6 +80,42 @@ To relitigate any of these: stop work on whatever surfaced the conflict, write a
 
 ## Decision framework
 
+The flowchart below captures how every incoming action is classified and routed; the tables that follow provide the authoritative per-class criteria.
+
+```mermaid
+flowchart TD
+    A([Incoming action]) --> B{Classify action}
+
+    B --> C[Autonomous]
+    B --> D[Surface-to-user]
+    B --> E["Refuse &amp; surface"]
+    B --> F[Ambiguous?]
+
+    F --> D
+
+    C --> C1[Proceed in Auto Mode]
+    C --> C2{Heavyweight<br/>review trigger?}
+    C2 -- Security / identity PR --> C3([Run /security-review])
+    C2 -- Cross-cutting refactor --> C4([Recommend /ultrareview])
+    C2 -- Phase boundary --> C5([Phase-gate checklist<br/>+ /local-review])
+    C2 -- No --> C6([Every non-trivial PR:<br/>/local-review +<br/>/standards-audit])
+
+    D --> D1{ADR addition?}
+    D1 -- Yes --> D2[Draft autonomously]
+    D2 --> D3([Surface draft &amp;<br/>wait for explicit yes])
+    D1 -- No --> D4([Surface &amp; wait<br/>for explicit yes])
+
+    E --> E5([Stop. Surface conflict.<br/>Wait for user decision.])
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class C,C1,C2,D,D1,D2,E,F svc
+    class C3,C4,C5,C6,D3,D4,E5 gov
+    class A,B data
+```
+
 ### Autonomous vs. surface-to-user
 
 Per [`CLAUDE.md`](../CLAUDE.md) § "Executing actions with care" and the seven main goals.
@@ -167,7 +203,7 @@ Living list. Format: `ID | description | severity | likelihood | mitigation | la
 | R1 | Showcase narrative undersold while AI tracks (C/D/E) unstarted | High | **Resolved 2026-05-13** | README rewrite (PR #209) + live system deployed through Phase 6; prospect-visible demonstrable artifact exists end-to-end. | 2026-05-13 |
 | R2 | Stale Playwright 1.12.0 dependency carries records workaround | Medium | **Resolved 2026-05-11** | Playwright upgraded to 1.59.0 (Phase 5 Wave 1). Records workaround documented in DL-0002; `SternPlaywrightDtoActivatorContractTests` pins the contract. | 2026-05-13 |
 | R3 | Open Dependabot PRs against deprecated path send "unmaintained" signal | Low | **Resolved 2026-05-13** | All Dependabot PRs triaged: deprecated-path PRs (#199, #200) closed; clean PRs (#197, #198, #203) merged. | 2026-05-13 |
-| R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Resolved (route ii) | Documented asymmetry in [`tests/PinballWizard.Scraper.Tests/README.md`](../tests/PinballWizard.Scraper.Tests/README.md) § "Stern Playwright asymmetry"; pinned by `SternPlaywrightAsymmetryDocumentationTests`. Revisit when a Playwright-route test fixture lands. | 2026-05-04 |
+| R4 | Stern Playwright scrapers lack scraper-pipeline integration tests | Low | Resolved (route ii) | Documented asymmetry in [`tests/PinballWizard.Infrastructure.Tests/README.md`](../tests/PinballWizard.Infrastructure.Tests/README.md) § "Stern Playwright asymmetry"; pinned by `SternPlaywrightAsymmetryDocumentationTests`. Revisit when a Playwright-route test fixture lands. | 2026-05-04 |
 | R5 | AI Search + OpenAI cost overrun if usage scales unexpectedly | High | **Migrated to monitored-in-steady-state 2026-05-13** | Cost alerts active ($300/day threshold) + App Insights cost tile in "PinballWizard Ops" workbook. 30-day burn snapshot pending (see Phase 6 § Retrospective). Monthly review cadence per this doc. | 2026-05-13 |
 | R6 | Indefinite schedule drift without urgency forcing function | Medium | **Closed 2026-05-13** | All 6 phases shipped. Phase gates + per-phase exit checklists held the cadence across a 10-day accelerated build. | 2026-05-13 |
 | R7 | Quality-gate erosion (deferred ⚠️ becomes routine) | Medium | Possible | Monthly review of `/local-review` outcomes; ratchet rule: never lower a gate | 2026-06-28 |

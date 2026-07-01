@@ -356,8 +356,8 @@ The marketplace category retains plural coverage (Facebook + Mr. Pinball + Pinsi
 **Findings:**
 
 1. **Already current** (no change needed):
-   - `<TargetFramework>net10.0</TargetFramework>` solution-wide via [`Directory.Build.props:13`](Directory.Build.props#L13).
-   - `<LangVersion>latest</LangVersion>` opts every project into C# 14 ([`Directory.Build.props:16`](Directory.Build.props#L16)).
+   - `<TargetFramework>net10.0</TargetFramework>` solution-wide via [`Directory.Build.props:13`](../Directory.Build.props#L13).
+   - `<LangVersion>latest</LangVersion>` opts every project into C# 14 ([`Directory.Build.props:16`](../Directory.Build.props#L16)).
    - SDK pinned to `10.0.100` with `rollForward: latestFeature` in [`global.json`](../global.json) — picks up minor SDK bumps automatically.
    - **File-scoped namespaces** everywhere — zero `namespace X { }` block forms across `src/` and `tests/` (verified by grep).
    - **Records used liberally** — every immutable data carrier uses `public sealed record` (positional or with-init). 20+ types audited.

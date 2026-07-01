@@ -23,7 +23,8 @@ Phase 5 code is complete and the application is fully deployable. The public `pi
 ```mermaid
 graph TB
     Mfg(Manufacturer sites)
-    OPDB(OPDB API)
+    OPDB(OPDB catalog API)
+    Silverball(Silverball Labs + PinballPrices.com pricing API)
     Scrapers[Polite scrapers]
     Cosmos[(Cosmos DB)]
     Worker[RAG Ingestion Worker]
@@ -42,6 +43,7 @@ graph TB
     Worker --> Search
     Cosmos --> Api
     Search --> Api
+    Silverball -->|getMarketValue tool| Api
     Api --> Web
     Web --> CF
     CF --> Site
@@ -49,7 +51,9 @@ graph TB
     Admin --> Web
 ```
 
-Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines`, `ingestion_sources`, and RAG-state containers; the RAG Ingestion Worker (`PinballWizard.RagIngestionWorker`) consumes the Cosmos Change Feed, runs PdfPig text extraction, hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)), and embeds into AI Search ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)). The Wizard API (Microsoft Agent Framework + Azure Foundry orchestration, [ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) runs four agents — Wizard, Valuation, Rules, Repair — with `getMachineByTitle` + `searchCorpus` function tools, per-agent cost routing ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)), confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)), and two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)). The Blazor Web App ([ADR-0026](docs/adr/0026-user-delight-frontend-and-streaming.md)) streams answers over SSE with source citations and community-resource refusal panels; admin RBAC is gated by Entra External ID ([ADR-0009](docs/adr/0009-entra-external-id-admin-rbac-v1.md)). Cloudflare Pro provides DNS + CDN + WAF + Bot Fight. Phase 6 adds the Application Insights workbook, five metric alert rules, and the Wizard ACA app definition in Bicep.
+**Data partners.** Two authorized sources feed the catalog through the scraper path — **OPDB** (canonical machine catalog, keyed on OPDB id) and the **manufacturer sites** (Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, CGC). A third, **Silverball Labs** (with **PinballPrices.com** as the origin dataset), is a *live* partner: the Wizard API calls its OPDB-id-keyed pricing REST API at answer time via the `getMarketValue` function tool ([ADR-0045](docs/adr/0045-silverball-labs-pricing-integration.md)), and every pricing answer carries dual attribution taken from the API payload.
+
+Manufacturer sources include Stern, JJP, AP, Spooky, Pinball Brothers, BoF, Multimorphic, and CGC. Polite scrapers extend `PoliteScraperBase` + `IPolitenessGate` + `RobotsTxtCache` (robots.txt honored unconditionally). Cosmos holds `machines`, `ingestion_sources`, and RAG-state containers; the RAG Ingestion Worker (`PinballWizard.RagIngestionWorker`) consumes the Cosmos Change Feed, runs PdfPig text extraction, hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)), and embeds into AI Search ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)). The Wizard API (Microsoft Agent Framework + Azure Foundry orchestration, [ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)) runs four agents — Wizard, Valuation, Rules, Repair — with `getMachineByTitle` + `searchCorpus` + `getMarketValue` function tools, per-agent cost routing ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)), confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)), and two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)). The Blazor Web App ([ADR-0026](docs/adr/0026-user-delight-frontend-and-streaming.md)) streams answers over SSE with source citations and community-resource refusal panels; admin RBAC is gated by Entra External ID ([ADR-0009](docs/adr/0009-entra-external-id-admin-rbac-v1.md)). Cloudflare Pro provides DNS + CDN + WAF + Bot Fight. Phase 6 adds the Application Insights workbook, five metric alert rules, and the Wizard ACA app definition in Bicep.
 
 ## Provenance model
 
@@ -58,6 +62,29 @@ Every item the scraper captures becomes a `DocumentRecord` with a deterministic 
 This chain is the contract between Phase 1 and the Phase 2 RAG layer — every answer
 the Wizard gives cites a `document_id` that resolves through this record back to the
 original page on `sternpinball.com`.
+
+The lineage below traces one `doc_id` from the manufacturer page it was scraped from through to the citation the Wizard renders — the provenance fields carried at each hop are the contract that makes every answer auditable ([diagram conventions](docs/diagram-conventions.md)):
+
+```mermaid
+flowchart LR
+    Src(["Manufacturer page<br/>(discovery_url)"]):::ext
+    Scrape["Polite scraper<br/>OG / JSON-LD / sitemap"]:::svc
+    Rec[("DocumentRecord (Cosmos)<br/>id=doc_9f3a1c7b…<br/>source · game · classification")]:::data
+    Worker["RAG worker<br/>PdfPig + hybrid chunking"]:::svc
+    Idx[("AI Search chunk<br/>document_id · page_start/end")]:::data
+    Ans(["Wizard citation<br/>document_id + file_url + page_range"]):::gov
+    Orig(["Original PDF on<br/>manufacturer site"]):::ext
+
+    Src --> Scrape --> Rec
+    Rec -->|Change Feed| Worker --> Idx
+    Idx --> Ans
+    Ans -->|ProvenanceService resolves| Orig
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+```
 
 ```json
 {

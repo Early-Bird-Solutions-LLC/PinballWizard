@@ -21,6 +21,33 @@ Each phase has the same structure:
 
 Detailed PR-by-PR history for shipped phases lives in memory under `session_handoff_*.md`. This doc is the durable artifact; memory is the running journal.
 
+The diagram below shows the phase progression at a glance; the master table that follows contains the full names and statuses.
+
+```mermaid
+flowchart LR
+    P0[Phase 0<br/>Foundation]
+    P1[Phase 1<br/>Content Ingestion]
+    P2[Phase 2<br/>Runtime Validation]
+    P3["Phase 3<br/>AI &amp; Integration"]
+    P4[Phase 4<br/>Event-driven RAG]
+    P45[Phase 4.5<br/>Corpus Expansion]
+    P5[Phase 5<br/>Blazor Frontend]
+    P6([Phase 6<br/>Launch Readiness])
+    P7[Phase 7+<br/>Post-launch]
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P45
+    P4 --> P5
+    P45 --> P6
+    P5 --> P6
+    P6 --> P7
+
+    classDef done fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class P0,P1,P2,P3,P4,P45,P5,P6 done
+    class P7 future
+```
+
 ## Master phase timeline
 
 | Phase | Name | Status |
@@ -30,7 +57,7 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
 | 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
 | 4 | Event-driven RAG — full architecture against a curated 7-machine subset; hybrid chunking; AI Search index with semantic ranker + page-anchor citations; tool-call-trace citation extraction; citation-required guardrail | ✅ Complete |
-| 4.5 | Manuals corpus expansion — same architecture, all Phase 1 manuals; long-tail PDF edge cases + OCR decision | ⏳ Not started |
+| 4.5 | Manuals corpus expansion — full Phase 1 manuals corpus; Azure Document Intelligence OCR fallback; metadata-card synthesis; non-Stern bulletin discovery; Cohere reranker deployed (off by documented decision, ADR-0024) | ✅ Complete |
 | 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ✅ Complete |
 | 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ✅ Complete (H-chain + code; 3 launch gates pending Phase 7 sign-off) |
 | 7+ | Post-launch features — Strategy Tracker, OCR score capture, Dream Game generator, Trade Matchmaker, tournament push | ⏳ Deferred to post-launch decision |
@@ -135,8 +162,8 @@ None — this is the foundation phase.
 
 - [ADR 0007](adr/0007-ingestion-sources-as-cosmos-data.md) — IngestionSources as runtime Cosmos data, not Bicep config (locked the per-host politeness-overrides pattern)
 - [ADR 0011](adr/0011-scraper-machine-reconciliation.md) — Scraper-to-Machine reconciliation strategy (two-pass match: slug fast path + title-normalize bootstrap)
-- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
-- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
+- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
+- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
 - **Cross-origin parallelism allowed; within-origin parallelism explicitly disabled.** Politeness is per-origin, so different manufacturers can run concurrently without violating the principle.
 - **OPDB is the canonical key authority.** `OpdbId` becomes the canonical key on `Machine`; manufacturer slugs become alternate keys.
 
@@ -926,7 +953,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 
 ## Phase 4.5 — Manuals corpus expansion
 
-**Status:** 🔵 In progress — W0–W4 implemented (H5 eval ran, `citation_precision=0.478`, ADR-0024 Cohere Rerank gate triggered and `CohereRerankReranker` wired, PR #292); the post-rerank **H5b confirmation eval is outstanding** (needs live Azure access) — Phase 4.5 closes only once H5b shows `citation_precision ≥ 0.50` per ADR-0024.
+**Status:** ✅ Complete — W0–W4 shipped; H5b ran the Cohere reranker live (2026-06-30) and the ADR-0024 gate (`citation_precision ≥ 0.50`) is comfortably met (0.96 on `wizard.v2.jsonl`, reranker off **or** on). The H5b A/B was near-ceiling on precision and could not isolate the reranker, so a **reranker-sensitive hard eval + retrieval-rank probe** (`data/eval/wizard.hard.v1.jsonl`, PR #587) was built to measure it directly. Outcome: **no measurable citation-recall benefit** from the reranker on the current corpus — first-stage retrieval already lands the right machine in the agent's top-5 for 94% of hard questions, and on the rare reranker-sensitive rows recall is dominated by sub-agent routing, not retrieval order. `Rag:CrossEncoder:Enabled` stays **false** in production by documented decision (ADR-0024 § Phase 4.5 H5b-hard outcome); the deployment is provisioned and verified working end-to-end (keyless `Cohere-rerank-v4.0-pro`) for a future evidence-driven re-enable.
 **Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they ran concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
 **Demonstrable artifact:** Every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged). H5 eval baseline demonstrates a meaningful lift from the all-refused H4 floor.
 
@@ -939,7 +966,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 | W2 — Corpus expansion | ✅ Complete (PR #268) | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
 | W3a — Metadata-card synthesis | ✅ Complete (PR #269) | Machine records → `metadata_card` chunks → AI Search |
 | W3b — Bulletin discovery pass | ✅ Complete (PR #289) | Extend bulletin ingestion to non-Stern manufacturers |
-| W4 — Phase exit + H5 eval | 🔵 Implemented; H5b confirmation pending | H5 eval ran (`citation_precision=0.478`, PR #291) → ADR-0024 gate triggered → `CohereRerankReranker` wired (PR #292). Outstanding: run post-rerank **H5b** eval to confirm `citation_precision ≥ 0.50` and formally close the phase (needs live Azure). |
+| W4 — Phase exit + H5 eval | ✅ Complete | H5 eval ran (`citation_precision=0.478`, PR #291) → ADR-0024 gate triggered → `CohereRerankReranker` wired (PR #292). H5b ran the reranker live (2026-06-30): gate met (0.96, off or on). H5b-hard (PR #587 + `wizard.hard.v1.jsonl`) measured the reranker on a reranker-sensitive set — no measurable recall benefit; `Rag:CrossEncoder:Enabled=false` by documented decision (ADR-0024). Phase closed. |
 
 ### W0: Eval set realignment (PR #265, complete)
 

@@ -5,9 +5,10 @@
 window.pinwiz = window.pinwiz || {};
 
 // ── Theme ─────────────────────────────────────────────────────────────────
-// Applies a sibling-theme CSS class to <html>. Modern LCD = no class (default).
-// Class name is `theme-<name>` for every non-default theme — matching the early
-// inline applier in App.razor — so all sibling themes switch live, not only on reload.
+// Applies a sibling-theme CSS class to <html>. Modern LCD is the classless base;
+// every other theme (including Paper — the default for new visitors, see getTheme
+// and the App.razor inline applier) gets a `theme-<name>` class, so themes switch
+// live, not only on reload.
 // Uses classList.add/remove so existing classes (e.g. mud-theme-*) are preserved.
 window.pinwiz.setTheme = function (name) {
     var html = document.documentElement;
@@ -20,7 +21,10 @@ window.pinwiz.setTheme = function (name) {
     try { localStorage.setItem('pinwiz.theme', name); } catch (_) { }
 };
 window.pinwiz.getTheme = function () {
-    try { return localStorage.getItem('pinwiz.theme') || 'modern-lcd'; } catch (_) { return 'modern-lcd'; }
+    // Paper is the default for a visitor with no saved preference (theme #343).
+    // A visitor who explicitly picked Modern LCD has 'modern-lcd' stored, which
+    // setTheme/the applier treat as the classless base.
+    try { return localStorage.getItem('pinwiz.theme') || 'paper'; } catch (_) { return 'paper'; }
 };
 
 // ── Motion ────────────────────────────────────────────────────────────────

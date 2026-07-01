@@ -96,4 +96,12 @@ public sealed record EvalQuestion(
     // Do NOT annotate questions that require corpus retrieval (rules details,
     // repair procedures, service bulletins) — a direct Wizard answer there
     // IS a routing miss and must stay scored as such.
-    [property: JsonPropertyName("acceptable_sub_agents")] IReadOnlyList<string>? AcceptableSubAgents = null);
+    [property: JsonPropertyName("acceptable_sub_agents")] IReadOnlyList<string>? AcceptableSubAgents = null,
+    // Hard-eval slice/source/first_stage_rank fields (reranker-sensitive
+    // hard set). Slice tags the question category; Source tags the
+    // confusability pattern; FirstStageRank is the BM25/vector rank of
+    // the correct document before reranking (measures reranker lift).
+    // All three are optional so existing wizard.v2.jsonl rows parse unchanged.
+    [property: JsonPropertyName("slice")] string? Slice = null,
+    [property: JsonPropertyName("source")] string? Source = null,
+    [property: JsonPropertyName("first_stage_rank")] int? FirstStageRank = null);

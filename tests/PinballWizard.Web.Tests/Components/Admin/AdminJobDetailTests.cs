@@ -35,7 +35,9 @@ public sealed class AdminJobDetailTests : AsyncBunitContext
     {
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
-        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        this.AddAuthorization().SetAuthorized("test-admin@example.com")
+            .SetPolicies(PinballWizard.Web.Security.AuthorizationPolicies.AdminOnly);
+        Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
         Services.AddSingleton<ILogger<AdminJobDetail>>(NullLogger<AdminJobDetail>.Instance);
     }
 

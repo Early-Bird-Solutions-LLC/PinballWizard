@@ -55,8 +55,8 @@ param deployFoundryModelDeployments bool = true
 @description('When true (default), provisions Azure AI Search Basic. Set false to skip the search service when (a) Phase 4 RAG has not yet started consuming it (Phase 3 only uses Foundry-OPDB grounding), or (b) the chosen region is currently out of capacity for the Basic SKU (Microsoft documents this as transient — retry every few hours). Skipping saves ~$74/mo idle. Has no effect when deployPhase2=false.')
 param deployAiSearch bool = true
 
-@description('When true, provisions the Cohere Rerank-v3 Foundry connection (ADR-0024 cross-encoder). Default FALSE: a Foundry ApiKey connection is rejected at create unless credentials.key is non-empty (Azure returns "Credentials Property cannot be empty for auth type ApiKey"), and the Cohere key is provisioned out-of-band (see the runbook by the resource). The cross-encoder reranker is disabled by default (Rag:CrossEncoder:Enabled=false), so the connection is inert until that gate work happens — flip this true in the same change that provisions the key and enables the reranker. Has no effect when deployPhase2=false.')
-param deployCohereConnection bool = false
+@description('When true, deploys the Cohere Rerank model into the Foundry account as an Azure-native MaaS model deployment (ADR-0024 cross-encoder; amended to MaaS deployment over an external api.cohere.com connection — fully IaC, Azure Marketplace billing, no Cohere.com account or API key). Default FALSE. Keyless: inference authenticates via the ACA managed identity (the same identity already holds Azure AI User on the Foundry account), so there is no secret. The reranker stays inert until the app-layer switch (Rag:CrossEncoder:Enabled) is flipped after the H5b gate passes. Has no effect when deployPhase2=false. Prereq on first enable: the deploying identity must have accepted the Cohere Marketplace terms / hold Marketplace permissions on the subscription.')
+param deployCohereRerank bool = false
 
 @description('Entra app registration (client) ID for the Wizard web app OIDC sign-in (PR-B0 infra half — "PinballWizard Web" registration, GlobalAdmin app role per ADR-0009). Empty (default) leaves the Entra wiring entirely off: no AzureAd__* env vars, no ACA secret, and the app skips auth registration when AzureAd:TenantId is absent. The client secret is NOT a parameter — it lives in Key Vault (AzureAd-ClientSecret) and reaches the container only via the ACA secret keyVaultUrl reference.')
 param azureAdClientId string = ''
@@ -659,45 +659,62 @@ resource foundryEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deploy
 }
 
 // -----------------------------------------------------------------------------
-// Cohere Rerank-v3 external connection (ADR-0024 W4 fix-up)
+// Cohere Rerank — Azure-native MaaS model deployment (ADR-0024, amended)
 // -----------------------------------------------------------------------------
-// Wires Cohere Rerank-v3 as a Foundry external-model connection. The
-// CohereRerankReranker in Infrastructure calls the project connection
-// endpoint, which Foundry proxies to Cohere's API under the managed identity
-// credential. Cost: ~$1 / 1,000 reranks of 50 chunks — at 1K Wizard queries/day
-// that's ~$30/mo, well within the $300–$400/mo cap.
+// Deploys Cohere Rerank as a first-class Foundry model deployment on the
+// AIServices account — the same resource shape as the gpt-4o / gpt-4.1 /
+// text-embedding-3-large deployments above (format 'Cohere' instead of
+// 'OpenAI'). This supersedes the original ADR-0024 external api.cohere.com
+// connection: it is fully IaC, billed through Azure Marketplace (pay-per-token,
+// ~$1/1,000 reranks → ~$30/mo at 1K queries/day, within the cap), and needs NO
+// Cohere.com account and NO API key. Inference is keyless — the Web/Api ACA
+// managed identity already holds Azure AI User on this Foundry account
+// (acaIdentityFoundryAiUser), which is the data-plane role for Foundry model
+// inference. Honors the account's disableLocalAuth=true posture (no key path).
 //
-// The API key must be set on the connection's credentials after provisioning —
-// Bicep cannot set it because secrets must not appear in deployment outputs.
-// Operator runbook: after first deploy with deployPhase2=true, run:
-//   az cognitiveservices account project connection update \
-//     --name pinwiz-foundry-<env>-<suffix> \
-//     --project-name pinwiz-wizard \
-//     --connection-name cohere-rerank-v3 \
-//     --api-key <Cohere API key from Key Vault>
-// The Key Vault secret name is 'cohere-api-key'.
+// CohereRerankReranker (Infrastructure) POSTs the native Cohere v2 rerank body
+// to the account's native rerank route:
+//   https://<account>.services.ai.azure.com/providers/cohere/v2/rerank
+// wired as Rag:CrossEncoder:ModelEndpoint on the ACA apps below; the `model`
+// field in that body is the deployment name 'Cohere-rerank-v4.0-pro'.
 //
-// Connection name is stable across environments — Rag:CrossEncoder:ModelEndpoint
-// points at the project endpoint, not the connection endpoint. Foundry routes
-// internally via the connection name; no per-env config change needed.
+// Model verified against the live eastus2 catalog 2026-06-29: Cohere-rerank-v3.5
+// is NOT offered in eastus2 (superseded); the available rerank models are
+// Cohere-rerank-v4.0-fast and Cohere-rerank-v4.0-pro (both version '1',
+// GlobalStandard). v4.0-pro chosen for reranking quality and to sidestep the
+// documented keyless-auth gap reported on v4.0-fast. Re-confirm before any
+// region change: az cognitiveservices model list --location <region>
+//   --query "[?model.format=='Cohere' && contains(model.name,'rerank')].model.{name:name,version:version}"
+// First enable requires the deploying identity to have accepted the Cohere
+// Marketplace terms. Validate the H5b run end-to-end (keyless inference) before
+// flipping Rag:CrossEncoder:Enabled to production.
 
-resource cohereRerankConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = if (deployPhase2 && deployCohereConnection) {
-  parent: foundryProject
-  name: 'cohere-rerank-v3'
-  properties: {
-    authType: 'ApiKey'
-    // 'CohereRerank' is NOT a valid ConnectionCategory — Azure rejects it at
-    // request deserialization ("unable to deserialize request body"), which has
-    // been silently failing every stack deploy since this resource landed in
-    // #292. The generic external API-key category is 'ApiKey' (per the
-    // 2025-06-01 Project Connections schema). The Cohere API key is set
-    // post-deploy via the runbook above (credentials is non-required at create
-    // time — two-phase creation), so the reranker stays inert until that key is
-    // provisioned AND Rag__CrossEncoder__Enabled is flipped to true.
-    category: 'ApiKey'
-    target: 'https://api.cohere.com/v2/rerank'
-    isSharedToAll: false
+resource cohereRerankDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (deployPhase2 && deployCohereRerank) {
+  parent: foundry
+  name: 'Cohere-rerank-v4.0-pro'
+  sku: {
+    name: 'GlobalStandard'
+    // Capacity scales the rate-limit ceiling, NOT cost (Cohere MaaS is
+    // pay-per-token regardless). At capacity 1 the limit is just 1 request /
+    // 60s, which throttles even a single multi-tool Wizard turn. The catalog
+    // default is 500, but this subscription's Cohere-Rerank-V4-Pro quota is
+    // only 20 (TPM-thousands) — so 20 is the deployable max here. Raise via an
+    // Azure quota-increase request if rerank throughput needs more headroom.
+    capacity: 20
   }
+  properties: {
+    model: {
+      format: 'Cohere'
+      name: 'Cohere-rerank-v4.0-pro'
+      version: '1'
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+  // Serialize after the embedding deployment to avoid cross-deployment
+  // capacity contention during create (same pattern as the chat deployments).
+  dependsOn: [
+    foundryEmbeddingDeployment
+  ]
 }
 
 // -----------------------------------------------------------------------------
@@ -1030,16 +1047,17 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
             }
             {
               // ADR-0024 cross-encoder reranker. Disabled by default (Null
-              // reranker); operator flips Enabled=true once Cohere API key
-              // is set on the Foundry connection (see Cohere connection
-              // provisioning comment above). ModelEndpoint points at the
-              // Foundry project's Cohere connection proxy endpoint.
+              // reranker); operator flips Enabled=true after the H5b gate
+              // passes (see the Cohere MaaS deployment comment above).
+              // ModelEndpoint points at the Foundry account's native Cohere
+              // rerank route; inference is keyless via this app's managed
+              // identity (Azure AI User on the Foundry account).
               name: 'Rag__CrossEncoder__Enabled'
               value: 'false'
             }
             {
               name: 'Rag__CrossEncoder__ModelEndpoint'
-              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
+              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/providers/cohere/v2/rerank'
             }
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
@@ -1420,15 +1438,15 @@ resource apiApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) {
               value: cosmosAccount.id
             }
             {
-              // ADR-0024 cross-encoder reranker — disabled until the Cohere API key
-              // is set on the Foundry connection (matches ragIndexerApp). When the
-              // H5b gate work enables Cohere, flip this to 'true' in both places.
+              // ADR-0024 cross-encoder reranker — disabled until the H5b gate
+              // passes (matches ragIndexerApp; keyless Cohere MaaS deployment).
+              // When H5b passes, flip this to 'true' in both places.
               name: 'Rag__CrossEncoder__Enabled'
               value: 'false'
             }
             {
               name: 'Rag__CrossEncoder__ModelEndpoint'
-              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
+              value: empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/providers/cohere/v2/rerank'
             }
             {
               // Silverball Labs live pricing API key sourced from Key Vault via
@@ -2582,8 +2600,8 @@ output foundryChatDeploymentName string = empty(foundry.?name ?? '') ? '' : foun
 output foundryChatHeavyDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryChatHeavyDeploymentName
 output foundryEmbeddingDeploymentName string = empty(foundry.?name ?? '') ? '' : foundryEmbeddingDeploymentName
 
-@description('Cohere Rerank-v3 Foundry connection proxy endpoint (ADR-0024). Set Rag:CrossEncoder:ModelEndpoint to this value and Rag:CrossEncoder:Enabled=true to activate the cross-encoder reranker.')
-output cohereRerankEndpoint string = empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProjectName}/connections/cohere-rerank-v3/invoke'
+@description('Cohere Rerank native inference route on the Foundry account (ADR-0024, MaaS deployment). Already wired as Rag:CrossEncoder:ModelEndpoint on the ACA apps; inference is keyless via managed identity. Set Rag:CrossEncoder:Enabled=true to activate the reranker after the H5b gate passes.')
+output cohereRerankEndpoint string = empty(foundry.?name ?? '') ? '' : 'https://${foundry.name}.services.ai.azure.com/providers/cohere/v2/rerank'
 
 output storageAccountName string = storage.?name ?? ''
 output storageBlobEndpoint string = storage.?properties.primaryEndpoints.blob ?? ''

@@ -28,8 +28,8 @@ public sealed class CohereRerankRerankerTests
             Content: $"Content for {id}",
             Score: score);
 
-    private static CrossEncoderOptions EnabledOptions(string endpoint = "https://foundry.example.com/cohere/rerank") =>
-        new() { Enabled = true, TopN = 5, ModelEndpoint = endpoint, ModelId = "rerank-english-v3.0" };
+    private static CrossEncoderOptions EnabledOptions(string endpoint = "https://foundry.example.com/providers/cohere/v2/rerank") =>
+        new() { Enabled = true, TopN = 5, ModelEndpoint = endpoint, ModelId = "Cohere-rerank-v4.0-pro" };
 
     private static HttpClient FakeHttpClient(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
@@ -119,7 +119,27 @@ public sealed class CohereRerankRerankerTests
         var body = await handler.LastRequest!.Content!.ReadAsStringAsync();
         Assert.Contains("Kaiju multiball query", body);
         Assert.Contains("Content for chunk_A", body);
-        Assert.Contains("rerank-english-v3.0", body);
+        Assert.Contains("Cohere-rerank-v4.0-pro", body);
+    }
+
+    [Fact]
+    public async Task RerankAsync_RequestCarriesContentLengthHeader()
+    {
+        // The Cohere rerank route on the Foundry proxy rejects chunked
+        // transfer-encoding with 400 no_content_length_header. The request must
+        // be sent as buffered content so HttpClient emits Content-Length — a
+        // regression guard against reverting to PostAsJsonAsync (streamed,
+        // unknown-length, chunked).
+        var cohereResponse = """{"results": [{"index": 0, "relevance_score": 0.80}]}""";
+        var handler = new CapturingFakeHttpHandler(cohereResponse);
+        var client = new HttpClient(handler);
+        var sut = new CohereRerankReranker(client, Options.Create(EnabledOptions()),
+            NullLogger<CohereRerankReranker>.Instance);
+
+        await sut.RerankAsync("query", new[] { MakeChunk("chunk_A") }, topN: 1, CancellationToken.None);
+
+        Assert.True(handler.LastRequest!.Content!.Headers.ContentLength.HasValue);
+        Assert.True(handler.LastRequest.Content.Headers.ContentLength!.Value > 0);
     }
 
     [Fact]

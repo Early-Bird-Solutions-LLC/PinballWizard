@@ -30,6 +30,62 @@ The architecture-in-depth layers are:
 - **Data**: Azure Cosmos DB (catalog read-only on user path), Azure AI Search (vector index, read-only on user path)
 - **Auth**: Entra External ID (OpenID Connect) for `/admin`; `[AllowAnonymous]` on all public routes
 
+The diagram below traces the inbound request path through each defense layer and annotates the public attack surfaces at their entry points.
+
+```mermaid
+flowchart TD
+    Browser([Browser / User]):::ext
+
+    subgraph EDGE["Edge — Cloudflare Pro"]
+        CF_WAF[WAF + OWASP ruleset]:::gov
+        CF_BOT[Bot Fight Mode]:::gov
+        CF_RL[Rate limiting per-path]:::gov
+        CF_DDOS[DDoS mitigation]:::gov
+        CF_TLS[TLS termination]:::gov
+    end
+
+    subgraph COMPUTE["Compute — Azure Container Apps"]
+        WEB[ACA Web project]:::svc
+        API[ACA Api project]:::svc
+        ENTRA[Entra External ID<br/>OIDC + MFA gate]:::gov
+        JOB[Scraper ACA Job<br/>outbound-only]:::svc
+    end
+
+    subgraph DATA["Data — Azure backing services"]
+        FOUNDRY[(Azure Foundry<br/>getMachineByTitle<br/>searchCorpus)]:::data
+        COSMOS[(Azure Cosmos DB<br/>catalog read-only)]:::data
+        SEARCH[(Azure AI Search<br/>vector index read-only)]:::data
+    end
+
+    Browser -->|"Surface 1 — anonymous<br/>/wizard &amp; /api/wizard/ask:stream"| CF_WAF
+    Browser -->|"Surface 2 — admin<br/>/admin/**"| CF_WAF
+    Browser -->|"Surface 3 — static<br/>/about &amp; /settings"| CF_WAF
+    Browser -->|"Surface 4 — health<br/>/status"| CF_WAF
+
+    CF_WAF --> CF_BOT
+    CF_BOT --> CF_RL
+    CF_RL --> CF_DDOS
+    CF_DDOS --> CF_TLS
+
+    CF_TLS -->|anonymous routes| WEB
+    CF_TLS -->|/admin routes| ENTRA
+    ENTRA -->|authenticated| WEB
+
+    WEB -->|Wizard SSE| API
+    WEB -->|/about /settings /status| WEB
+
+    API --> FOUNDRY
+    FOUNDRY --> COSMOS
+    FOUNDRY --> SEARCH
+
+    JOB -->|scheduled outbound crawl| INTERNET([Manufacturer sites]):::ext
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+```
+
 ---
 
 ## Surface 1: Anonymous Wizard endpoint (`/`, `/wizard`, `/api/wizard/ask:stream`)
