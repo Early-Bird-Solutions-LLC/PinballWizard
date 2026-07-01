@@ -438,6 +438,56 @@ public sealed class ScraperReconciliationServiceTests
         await _repo.Received(1).UpsertAsync(existing, Arg.Any<CancellationToken>());
     }
 
+    // ── Year enrichment from scraper ────────────────────────────────────
+
+    [Fact]
+    public async Task ReconcileAsync_CopiesReleaseYear_WhenMachineYearIsNull()
+    {
+        // Arrange — machine has no OPDB year; scraper provides one
+        var machine = MakeMachine("GweeP-MW95j", "stern", "Godzilla");
+        machine.Year = null;
+        machine.ManufacturerSlugs["stern"] = "godzilla";
+        StubPartition("stern", machine);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_godzilla",
+            Title = "Godzilla",
+            Slug = "godzilla",
+            GamePageUrl = "https://sternpinball.com/game/godzilla/",
+            ReleaseYear = 2023,
+        });
+
+        // Act
+        await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(2023, machine.Year);
+    }
+
+    [Fact]
+    public async Task ReconcileAsync_DoesNotOverwriteExistingYear_WhenMachineYearIsSet()
+    {
+        // Existing OPDB year must not be stomped by the scraper value.
+        var machine = MakeMachine("GweeP-MW95j", "stern", "Godzilla");
+        machine.Year = 2021;
+        machine.ManufacturerSlugs["stern"] = "godzilla";
+        StubPartition("stern", machine);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_godzilla",
+            Title = "Godzilla",
+            Slug = "godzilla",
+            GamePageUrl = "https://sternpinball.com/game/godzilla/",
+            ReleaseYear = 2023,
+        });
+
+        await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(2021, machine.Year);
+    }
+
     // ── Constructor null-checks ──────────────────────────────────────────
 
     [Fact]
