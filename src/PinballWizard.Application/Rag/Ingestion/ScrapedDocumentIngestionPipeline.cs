@@ -93,13 +93,17 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         // without touching the body. Embedding a 200-page manual is the
         // dominant per-doc cost; this is the biggest cost saver on
         // steady-state re-deliveries.
-        var lastHash = await _indexState.GetLastIndexedHashAsync(change.DocumentId, cancellationToken)
+        // Keyed on (document_id, machine_id): a re-attribution carries the
+        // same content hash but a NEW machine_id, so it has no prior state
+        // under that machine and correctly proceeds to re-index (bug #2 fix).
+        var lastHash = await _indexState
+            .GetLastIndexedHashAsync(change.DocumentId, change.MachineId, cancellationToken)
             .ConfigureAwait(false);
         if (lastHash is not null && string.Equals(lastHash, change.ContentHash, StringComparison.Ordinal))
         {
             _logger.LogDebug(
-                "RAG ingestion short-circuit — document {DocumentId} hash unchanged ({Hash}).",
-                change.DocumentId, change.ContentHash);
+                "RAG ingestion short-circuit — document {DocumentId} machine {MachineId} hash unchanged ({Hash}).",
+                change.DocumentId, change.MachineId, change.ContentHash);
             return IngestionOutcome.Skipped_HashUnchanged;
         }
 
@@ -141,10 +145,22 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
                 "RAG ingestion: chunker produced zero chunks for document {DocumentId} (machine {MachineId}). Recording state to prevent retry loop.",
                 change.DocumentId, change.MachineId);
             await _indexState.RecordIndexedAsync(
-                change.DocumentId, change.ContentHash, chunkCount: 0, failureCount: 0, cancellationToken)
+                change.DocumentId, change.MachineId, change.ContentHash, chunkCount: 0, failureCount: 0, cancellationToken)
                 .ConfigureAwait(false);
             return IngestionOutcome.Indexed;
         }
+
+        // Delete-prior-on-reingest. We only reach here when the content
+        // hash is new/changed for this (document, machine) pair, so the
+        // chunk boundaries may have shifted — new chunks get new chunk_ids
+        // and a plain upsert would leave the old chunks orphaned. Deleting
+        // the pair's existing chunks first keeps the index consistent.
+        // Must precede the upsert: DeleteByDocumentAndMachine targets the
+        // whole (document, machine) pair, so running it afterwards would
+        // wipe the freshly-upserted chunks too. A no-op (returns 0) on the
+        // first-ever index of a pair.
+        await _indexer.DeleteByDocumentAndMachineAsync(change.DocumentId, change.MachineId, cancellationToken)
+            .ConfigureAwait(false);
 
         // Embed + upsert. AiSearchRagIndexer batches embedding calls
         // and AI Search uploads internally; we treat the result as
@@ -166,6 +182,7 @@ public sealed class ScrapedDocumentIngestionPipeline : IRagIngestionPipeline
         {
             await _indexState.RecordIndexedAsync(
                 change.DocumentId,
+                change.MachineId,
                 change.ContentHash,
                 chunkCount: upsertResult.Indexed,
                 failureCount: upsertResult.Failures.Count,
