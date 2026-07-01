@@ -778,6 +778,62 @@ public class DocumentLinkerTests
         Assert.DoesNotContain("G4ZVB-MJ5lE", result.LinkedMachineIds);
     }
 
+    [Fact]
+    public async Task LinkAsync_GenericSingleWordTitle_NotIndexedForTitleMatch()
+    {
+        // A slug-less machine whose title is a single generic word — e.g. the
+        // Stern Electronics 1977 game literally titled "Pinball" — must NOT be
+        // title-indexed. The word "pinball" appears in nearly every document in
+        // this corpus ("Stern Pinball" letterhead, service bulletins, etc.), so
+        // indexing that title matched 172 unrelated docs onto it. Only
+        // multi-token (specific) titles are reliable match keys; single generic
+        // words are not. The correctly-slugged Stern machine must still resolve.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var generic = MakeMachine(id: "GrZXj-MD3ee", manufacturer: "stern", title: "Pinball", slug: "");
+        var target = MakeMachine(id: "GBLZ-0001", manufacturer: "stern", title: "Ghostbusters", slug: "ghostbusters");
+
+        // A Stern service bulletin whose page/filename contains "pinball" but is
+        // really about Ghostbusters. It must link to Ghostbusters, never "Pinball".
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/Ghostbusters_Manual.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [generic, target]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GBLZ-0001"], result.LinkedMachineIds);
+        Assert.DoesNotContain("GrZXj-MD3ee", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_GenericSingleWordTitle_DoesNotMatchOnThatWord()
+    {
+        // Direct check: a doc that literally contains the generic title word in
+        // its filename ("...pinball...") must NOT resolve to the "Pinball"
+        // machine — the single-word title is not an index entry at all, so the
+        // doc falls to NotInCatalog rather than mislinking.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var generic = MakeMachine(id: "GrZXj-MD3ee", manufacturer: "stern", title: "Pinball", slug: "");
+        var raw = MakeRaw(fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/Stern-Pinball-SB191.pdf");
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [generic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("GrZXj-MD3ee", result.LinkedMachineIds);
+    }
+
     // -------------------------------------------------------------------------
     // FanOut: scraped_documents write
     // -------------------------------------------------------------------------

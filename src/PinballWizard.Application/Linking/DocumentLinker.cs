@@ -133,8 +133,17 @@ public sealed class DocumentLinker : IDocumentLinker
             // title must word-boundary-match (TryTier2FilenameSlug / TryMatchPage),
             // and PreferByManufacturer still disambiguates collisions, so this
             // widens reach without weakening the manufacturer-provenance guard.
+            //
+            // GUARD: only index MULTI-TOKEN titles. A single generic word is not a
+            // reliable identifier — the Stern Electronics 1977 game titled
+            // literally "Pinball" (slug-less) otherwise matched the word "pinball"
+            // that appears in nearly every document in this corpus, capturing 172
+            // unrelated docs. Multi-word franchise titles ("Jurassic Park",
+            // "Star Wars") are distinctive; single words are dropped (a benign
+            // missing-link — a wrong link is worse than an honest gap). Slug-having
+            // machines are unaffected (they still match by slug above).
             var normTitle = LinkingUtilities.NormalizeForMatch(machine.Title);
-            if (!string.IsNullOrEmpty(normTitle))
+            if (!string.IsNullOrEmpty(normTitle) && normTitle.Contains(' ', StringComparison.Ordinal))
             {
                 slugIndex.Add((machine, normTitle));
             }
