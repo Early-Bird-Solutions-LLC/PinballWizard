@@ -271,13 +271,13 @@ So the per-PR pair of `Analyze (csharp)` runs is a *partial* duplicate: the C# a
 
 1. **Flyers (208 docs in corpus)** — chunking strategy TBD. Flyers are visually dense, short-text, promotional layouts. PdfPig extracts minimal text; ADI layout mode extracts more but produces noisy chunks. Decision deferred until a Phase 5+ eval question set explicitly targets flyer content to justify the investment.
 2. **Other bucket (98 docs)** — classification TBD. `document_type=Other` items are a mixed bag (press kits, show programs, promotional PDFs). Require manual review to determine if they belong in separate document types or should be chunked with their closest sibling type.
-3. **`NullTokenUsageReader` real implementation** — pending upstream fix in `azure-sdk-for-net#2688`. The `NullTokenUsageReader` stub in `Infrastructure/Integrations/Foundry/` is intentional; the real implementation cannot be wired until the SDK surfaces token usage in the Responses API response surface. Revisit when azure-sdk-for-net ships the fix.
+3. **`NullTokenUsageReader` real implementation** — pending upstream fix in `microsoft/agent-framework#2688`. The `NullTokenUsageReader` stub in `Infrastructure/Integrations/Foundry/` is intentional; the real implementation cannot be wired until the SDK surfaces token usage on the `AgentResponse` surface. Revisit when Microsoft Agent Framework ships the fix.
 
 **Alternatives considered:** N/A — these are explicit scope deferrals, not trade-off decisions.
 
 **Rationale:** Phase 4.5's demonstrable artifact is manuals in the index with bounded long-tail failure rate and a meaningful H5 lift from H4. Flyers and Other documents expand scope without improving the core citation story; `NullTokenUsageReader` is blocked on an upstream SDK gap.
 
-**Revisit when:** Phase 5+ eval questions target flyer content (flyers); manual review batch is scheduled (Other); azure-sdk-for-net#2688 is resolved (`NullTokenUsageReader`).
+**Revisit when:** Phase 5+ eval questions target flyer content (flyers); manual review batch is scheduled (Other); agent-framework#2688 is resolved (`NullTokenUsageReader`).
 
 **Related:** `docs/superpowers/plans/2026-05-21-phase45-corpus-expansion.md` Task 16
 
