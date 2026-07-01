@@ -68,6 +68,11 @@ jobs:
             --arg service_account_id "$SERVICE_ACCOUNT_ID" \
             --arg workspace_id "$WORKSPACE_ID" \
             '$ARGS.named')
+          # Diagnostic: field lengths only (no secret values; the assertion is
+          # masked regardless). An empty assertion — length 0 — is the classic
+          # cause of an opaque request-validation failure with nothing logged
+          # server-side, so this line pinpoints it at a glance.
+          echo "field lengths: assertion=${#GHA_OIDC_TOKEN} federation_rule_id=${#FEDERATION_RULE_ID} organization_id=${#ORGANIZATION_ID} service_account_id=${#SERVICE_ACCOUNT_ID} workspace_id=${#WORKSPACE_ID}"
           # Capture body + HTTP status separately. A bare `curl | jq .access_token`
           # swallows the error response, leaving a failed exchange undiagnosable
           # (violates the degrade-visibly invariant). The error body carries
@@ -87,6 +92,10 @@ jobs:
             printf '%s' "$BODY" \
               | jq -r '"  type=\(.error.type // .type // "?") message=\(.error.message // "?") request_id=\(.request_id // "?")"' \
               2>/dev/null || printf '  raw: %s\n' "$BODY"
+            # Full error body — a failed exchange carries no token, so no secret.
+            # Surfaces any field-level validation detail the summary line omits.
+            echo "  full error body:"
+            printf '%s\n' "$BODY" | jq . 2>/dev/null || printf '  %s\n' "$BODY"
             exit 1
           fi
           echo "::add-mask::$ACCESS_TOKEN"
