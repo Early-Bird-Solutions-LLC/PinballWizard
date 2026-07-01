@@ -113,13 +113,37 @@ public sealed class PublicRouteCanaryE2ETests : IAsyncLifetime
     [InlineData("/")]
     [InlineData("/about")]
     [InlineData("/documents")]
+    [InlineData("/documents/doc_deadbeefdeadbeef")] // bogus id → not-found state, not the error page
     [InlineData("/settings")]
     [InlineData("/status")]
+    [InlineData("/auth-demo")]
+    [InlineData("/wizard/q/nonexistent-slug")] // seed-question deep link
+    [InlineData("/this-route-does-not-exist")]  // catch-all → NotFound, not the error page
     public async Task PublicRoute_DoesNotRenderErrorPage(string route)
     {
         var page = await NewPageAsync();
         await NavigateAsync(page, route);
         await AssertNotErrorPageAsync(page, route);
+    }
+
+    // /auth-demo is a public showcase page explaining the admin auth model.
+    [E2EFact]
+    public async Task AuthDemo_Renders_NoError()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/auth-demo");
+        await AssertNotErrorPageAsync(page, "/auth-demo");
+        await page.WaitForSelectorAsync("[data-testid='auth-demo-page']", new() { Timeout = 15_000 });
+    }
+
+    // /tilt is the intentional demo of the Tilt (error) surface — unlike every
+    // other public route, it SHOULD render the error UI. Pin that it does.
+    [E2EFact]
+    public async Task TiltDemo_RendersErrorSurface()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/tilt");
+        await page.WaitForSelectorAsync("[data-testid='tilt-heading']", new() { Timeout = 15_000 });
     }
 
     // --- helpers ---
