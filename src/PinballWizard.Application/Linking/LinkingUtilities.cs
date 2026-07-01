@@ -112,11 +112,12 @@ public static class LinkingUtilities
     {
         var prev = value[i - 1];
         var c = value[i];
-        return (char.IsLower(prev) && char.IsUpper(c))                          // james|Bond
-            || (char.IsLetter(prev) && char.IsDigit(c))                         // Bond|007
-            || (char.IsDigit(prev) && char.IsLetter(c))                         // 007|Special
-            || (char.IsUpper(prev) && char.IsUpper(c)
-                && i + 1 < value.Length && char.IsLower(value[i + 1]));         // TMNT|Game
+        if (char.IsLower(prev) && char.IsUpper(c)) return true;   // james|Bond
+        if (char.IsLetter(prev) && char.IsDigit(c)) return true;  // Bond|007
+        if (char.IsDigit(prev) && char.IsLetter(c)) return true;  // 007|Special
+        // Acronym→word: an uppercase run followed by upper-then-lower (TMNT|Game).
+        return char.IsUpper(prev) && char.IsUpper(c)
+            && i + 1 < value.Length && char.IsLower(value[i + 1]);
     }
 
     public static bool IsWordBoundaryMatch(string normText, string normSlug)

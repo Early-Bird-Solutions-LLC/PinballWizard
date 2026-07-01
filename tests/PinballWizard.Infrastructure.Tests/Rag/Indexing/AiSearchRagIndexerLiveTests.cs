@@ -219,9 +219,11 @@ public sealed class AiSearchRagIndexerLiveTests
             {
                 await indexClient.DeleteIndexAsync(testIndexName, CancellationToken.None);
             }
-            catch (Exception)
+            catch (Azure.RequestFailedException)
             {
-                // Swallow cleanup failures — the test result is what matters.
+                // Swallow cleanup failures — deleting the test-only index is
+                // best-effort; the test result is what matters. Scoped to the
+                // AI Search SDK's failure type (not a generic catch).
             }
         }
 

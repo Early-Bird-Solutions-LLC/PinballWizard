@@ -730,6 +730,8 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
     public async Task LinkAsync_Page_SternRemakeWithClassicCollision_LinksToSternEdition()
     {
         // Mirror of the Tier-2 fix in the page tier (TryMatchPage): a filename
@@ -835,6 +837,8 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
     public async Task LinkAsync_Page_AmpersandTitle_LinksToSternSlugFamily_NotClassic()
     {
         // Dungeons & Dragons live case: the Stern D&D (GK1Ej, slug
@@ -914,6 +918,8 @@ public class DocumentLinkerTests
     }
 
     [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "cs/local-not-disposed",
+        Justification = "MemoryStream ownership transfers to the SUT: DocumentLinker.TryExtractDocumentAsync consumes the mocked IDocumentBlobStore.TryOpenReadAsync stream inside an 'await using' and disposes it there (mirrors InMemoryDocumentBytesSource).")]
     public async Task LinkAsync_Page_KnownMfrDoc_MatchesOnlyOtherManufacturer_NotLinked()
     {
         // Batman→"8 Ball" live case: a Stern manual whose page text incidentally
