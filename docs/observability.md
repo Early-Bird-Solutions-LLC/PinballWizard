@@ -12,6 +12,58 @@ Read alongside [`build-spec.md`](build-spec.md) Phase 2 § Scope item 5 (the sco
 - **Where signals land today:** Log Analytics (via Cosmos diagnostic settings — Phase 1 Bicep). Aspire dashboard locally.
 - **Where signals will land (Phase 6+):** Application Insights, once Phase 2 Bicep flips. Same OTLP exporter + Meter / Source names continue to work; only the destination changes.
 
+The diagram below traces how telemetry moves from emitting sources through the shared instrumentation layer, out via the OTLP exporter, and into the backend(s) that back alert rules.
+
+```mermaid
+flowchart TD
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+
+    SCRAPER[Scrapers]
+    OPDB[OPDB sync]
+    PMAP[Pinball Map fetch]
+    ROUTER[AI router / Foundry]
+    WORKER[RAG ingestion worker]
+    COSMOS_SRC[Cosmos repository]
+    EVAL[Eval harness]
+    WEB[Web / streaming]
+
+    TELEM[PinballWizardTelemetry<br/>Meter + ActivitySource]
+
+    SD[ServiceDefaults<br/>UseOtlpExporter]
+
+    ASPIRE[(Aspire dashboard<br/>local only)]
+    LA[(Log Analytics<br/>today — Phase 1 Bicep)]
+    AI[(Application Insights<br/>Phase 6+)]
+
+    ALERTS[Alert rules<br/>latency · 5xx · cost]
+    ACTIONS([Ops action group])
+
+    SCRAPER --> TELEM
+    OPDB --> TELEM
+    PMAP --> TELEM
+    ROUTER --> TELEM
+    WORKER --> TELEM
+    COSMOS_SRC --> TELEM
+    EVAL --> TELEM
+    WEB --> TELEM
+
+    TELEM --> SD
+
+    SD -->|local: OTLP to dashboard| ASPIRE
+    SD -->|deployed: OTLP| LA
+    SD -->|Phase 6+: OTLP| AI
+
+    LA --> ALERTS
+    AI --> ALERTS
+    ALERTS --> ACTIONS
+
+    class SCRAPER,OPDB,PMAP,ROUTER,WORKER,COSMOS_SRC,EVAL,WEB,TELEM,SD svc
+    class ASPIRE,LA,AI data
+    class ALERTS,ACTIONS gov
+```
+
 ## Metric inventory
 
 ### OPDB sync (Phase 2 § Scope item 5)

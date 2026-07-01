@@ -32,6 +32,42 @@ Three landing surfaces, each calibrated for a different audience and time budget
 
 **From a direct share** (LinkedIn post, cover letter, follow-up email). The link points to a single page — either the README or a dedicated showcase page — that compresses the demo into one screen of "what was built, what it demonstrates, where to look next." Pre-qualified prospects don't need the full GitHub journey; they need the thirty-second case.
 
+The diagram below maps how each surface reaches its audience and what impression it is designed to leave.
+
+```mermaid
+flowchart TD
+    GH("GitHub repo<br/><small>Senior engineer / architect</small>")
+    PW("pinwiz.ai<br/><small>Business stakeholder /<br/>technical buyer / enthusiast</small>")
+    DS("Direct share<br/><small>LinkedIn / cover letter / email<br/>Pre-qualified prospect</small>")
+
+    GH_60["README + arch diagram +<br/>live demo link + docs tree<br/>(60 seconds)"]
+    GH_5["History, PR descriptions,<br/>ADR log, audit trail<br/>(5 minutes)"]
+    PW_exp["Wizard Q&amp;A with clickable<br/>citations to manufacturer sites;<br/>faceted catalog; game detail pages;<br/>traffic attribution"]
+    DS_exp["Single page: what was built,<br/>what it demonstrates,<br/>where to look next<br/>(30 seconds)"]
+
+    GH_out(["Opinion on<br/>engineering rigor"])
+    PW_out(["Live platform credibility:<br/>source-citing AI in action"])
+    DS_out(["Qualified first impression;<br/>clear next step"])
+
+    GH --> GH_60
+    GH_60 --> GH_5
+    GH_5 --> GH_out
+
+    PW --> PW_exp
+    PW_exp --> PW_out
+
+    DS --> DS_exp
+    DS_exp --> DS_out
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+
+    class GH,PW,DS ext
+    class GH_60,GH_5,PW_exp,DS_exp svc
+    class GH_out,PW_out,DS_out gov
+```
+
 ## What this is not
 
 - **Not a SaaS or commercial product.** Free to use; no monetization roadmap; no pricing page; no signup wall in front of the public Wizard.

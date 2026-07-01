@@ -1,6 +1,6 @@
 @page "/admin/documents"
 @layout AdminLayout
-@attribute [Authorize(Policy = "AdminOnly")]
+@attribute [AllowAnonymous]
 @using Microsoft.AspNetCore.Authorization
 @using PinballWizard.Web.Components.Layout
 @using PinballWizard.Web.Components.Shared

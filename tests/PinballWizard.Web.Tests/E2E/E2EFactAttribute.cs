@@ -47,3 +47,18 @@ public sealed class E2EFactAttribute : FactAttribute
         }
     }
 }
+
+// Theory counterpart to E2EFactAttribute — same skip logic, for
+// [InlineData]-driven E2E cases (e.g. a route table checked one page per row).
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+public sealed class E2ETheoryAttribute : TheoryAttribute
+{
+    public E2ETheoryAttribute()
+    {
+        if (!E2EFactAttribute.IsConfigured)
+        {
+            Skip = "E2E not configured — set E2E__BaseUrl (deployed target) or live-stack env vars " +
+                   "(local spawn; see tools/e2e/Run-E2E.ps1).";
+        }
+    }
+}
