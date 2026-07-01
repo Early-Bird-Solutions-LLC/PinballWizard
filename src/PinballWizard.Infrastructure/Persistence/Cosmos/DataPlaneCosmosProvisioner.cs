@@ -122,7 +122,8 @@ public sealed class DataPlaneCosmosProvisioner : ICosmosProvisioner
     }
 
     internal static bool TtlMatches(int? actual, int? expected) =>
-        actual == expected;
+        actual == expected
+        || (expected is null && actual == -2); // Aspire emulator sentinel: -2 means "no default TTL"
 
     // Cosmos automatically injects this system-managed path into ExcludedPaths on every
     // container. It is never present in our CosmosIndexingPolicyOptions configuration,
