@@ -8,8 +8,10 @@ namespace PinballWizard.Infrastructure.Rag.Ingestion;
 
 // Default `IIndexState` impl backed by the `rag_index_state` Cosmos
 // container declared in `CosmosOptions.Containers`. One row per
-// document_id; deterministic id `idx_<document_id>` for direct
-// point-reads without a query.
+// (document_id, machine_id); deterministic id
+// `idx_<document_id>_<machine_id>` for direct point-reads without a
+// query. Partition key stays `/document_id` so all machine-rows for a
+// document share one partition.
 //
 // `RecordIndexedAsync` upserts unconditionally — a happy-path run
 // always overwrites the previous hash. Failure handling is the
@@ -44,9 +46,11 @@ public sealed class CosmosBackedIndexState : IIndexState
 
     public async Task<string?> GetLastIndexedHashAsync(
         string documentId,
+        string machineId,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
 
         try
         {
@@ -57,7 +61,7 @@ public sealed class CosmosBackedIndexState : IIndexState
                 async ct =>
                 {
                     var response = await _container.ReadItemAsync<IndexStateDocument>(
-                        IndexStateDocument.RowIdPrefix + documentId,
+                        IndexStateDocument.ComposeRowId(documentId, machineId),
                         new PartitionKey(documentId),
                         cancellationToken: ct).ConfigureAwait(false);
                     return (response.Resource.LastIndexedHash, response.RequestCharge);
@@ -72,18 +76,21 @@ public sealed class CosmosBackedIndexState : IIndexState
 
     public async Task RecordIndexedAsync(
         string documentId,
+        string machineId,
         string contentHash,
         int chunkCount,
         int failureCount,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(machineId);
         ArgumentException.ThrowIfNullOrWhiteSpace(contentHash);
 
         var record = new IndexStateDocument
         {
-            Id = IndexStateDocument.RowIdPrefix + documentId,
+            Id = IndexStateDocument.ComposeRowId(documentId, machineId),
             DocumentId = documentId,
+            MachineId = machineId,
             LastIndexedHash = contentHash,
             ChunkCount = chunkCount,
             FailureCount = failureCount,
@@ -105,7 +112,7 @@ public sealed class CosmosBackedIndexState : IIndexState
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogDebug(
-            "RAG index state: recorded document={DocumentId} hash={Hash} chunks={Chunks} failures={Failures}.",
-            documentId, contentHash, chunkCount, failureCount);
+            "RAG index state: recorded document={DocumentId} machine={MachineId} hash={Hash} chunks={Chunks} failures={Failures}.",
+            documentId, machineId, contentHash, chunkCount, failureCount);
     }
 }

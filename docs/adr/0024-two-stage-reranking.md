@@ -33,10 +33,10 @@ The pipeline runs two re-ranking stages; the second is provisioned but disabled 
 
 ```mermaid
 flowchart TD
-    Q([Query]) --> H["Hybrid Retrieval<br/>BM25 &amp; vector"]
+    Q([Query]) --> H["Hybrid Retrieval<br/>BM25 + vector"]
     H --> C50["Top-50 candidates"]
     C50 --> S1["Stage 1: AI Search<br/>Semantic Ranker"]
-    S1 --> G{"Rag:CrossEncoder:Enabled?<br/>citation_precision &lt; 0.65<br/>&amp;&amp; ≥30% refusals<br/>trace to retrieval"}
+    S1 --> G{"Rag:CrossEncoder:Enabled?<br/>citation_precision &lt; 0.65<br/>++ ≥30% refusals<br/>trace to retrieval"}
     G -- "false (default)" --> R(["Top-K results<br/>to agent"])
     G -.->|true| S2["Stage 2: Cohere<br/>rerank-v4.0-pro"]
     S2 -.-> R

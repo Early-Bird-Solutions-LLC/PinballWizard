@@ -32,4 +32,17 @@ public interface IRagIndexer
         IReadOnlyList<Chunk> chunks,
         RagIndexerOptions options,
         CancellationToken cancellationToken);
+
+    // Deletes every index chunk for one (document_id, machine_id) pair.
+    // The scope is deliberately the pair, NOT the document across all
+    // machines: a re-attribution moves a document from a wrong machine to
+    // the right one, and only the wrong-machine chunks must go — deleting
+    // by document alone would take out the correct attribution too. Used
+    // by the ingestion pipeline (delete-prior-on-reingest) and the orphan
+    // GC pass. Idempotent: deleting an already-absent pair is a no-op that
+    // returns 0. Returns the count of chunks actually deleted.
+    Task<int> DeleteByDocumentAndMachineAsync(
+        string documentId,
+        string machineId,
+        CancellationToken cancellationToken);
 }

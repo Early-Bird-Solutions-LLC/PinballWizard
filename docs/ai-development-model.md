@@ -31,18 +31,18 @@ passes through on the way to `main`:
 ```mermaid
 flowchart TB
     subgraph H1 [Human]
-        Intent["Intent &amp; scope"]
+        Intent["Intent and scope"]
     end
     subgraph AI [AI authors]
-        Spec["Brainstorm → spec"]
+        Spec["Brainstorm to spec"]
         Plan["Implementation plan"]
         TDD["TDD authoring"]
-        Self["First-party review<br/>/local-review + /standards-audit"]
+        Self["First-party review"]
     end
-    subgraph GATES [Automated &amp; independent gates]
-        CI["CI gates<br/>build, tests, coverage, secrets"]
+    subgraph GATES [Automated gates]
+        CI["CI gates"]
         Bots["CodeQL + code-quality"]
-        Senior["Whole-branch senior review"]
+        Senior["Senior review"]
     end
     subgraph H2 [Human]
         Merge(["Merge to main"])
@@ -50,7 +50,7 @@ flowchart TB
 
     Intent --> Spec --> Plan --> TDD --> Self --> CI --> Bots --> Senior --> Merge
 
-    Inv["Locked invariants &amp; standards"] -. bounds every stage .-> TDD
+    Inv["Locked invariants"] -. bounds every stage .-> TDD
     Mem[("Memory")] -. informs .-> Spec
     ADR["ADRs"] -. trace why .-> Plan
 

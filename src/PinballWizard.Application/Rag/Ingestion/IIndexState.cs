@@ -15,10 +15,20 @@ namespace PinballWizard.Application.Rag.Ingestion;
 // document extract time) is the right signal.
 //
 // The default Infrastructure implementation backs this with a
-// dedicated Cosmos container `rag_index_state` keyed by document_id.
-// A separate container (vs. a field on `scraped_documents`) keeps
-// scraper write paths free of indexer-side write contention and
-// gives the lease-lag observability sampler a clean place to read.
+// dedicated Cosmos container `rag_index_state` keyed by
+// (document_id, machine_id). A separate container (vs. a field on
+// `scraped_documents`) keeps scraper write paths free of indexer-side
+// write contention and gives the lease-lag observability sampler a
+// clean place to read.
+//
+// Keying on (document_id, machine_id) — not document_id alone — is
+// what makes re-attribution correct: one document can be fanned out
+// to multiple machines, and a document re-attributed from a wrong
+// machine to the right one carries the SAME content hash but a NEW
+// machine_id. A document-only key would short-circuit that re-delivery
+// as "hash unchanged" and the correction would never reach the index.
+// The machine-scoped key makes the new attribution a fresh row, so it
+// indexes.
 //
 // `RecordIndexedAsync` is called only on the happy path
 // (IngestionOutcome.Indexed). Skipped / dead-lettered outcomes do
@@ -28,10 +38,12 @@ public interface IIndexState
 {
     Task<string?> GetLastIndexedHashAsync(
         string documentId,
+        string machineId,
         CancellationToken cancellationToken);
 
     Task RecordIndexedAsync(
         string documentId,
+        string machineId,
         string contentHash,
         int chunkCount,
         int failureCount,
