@@ -315,12 +315,16 @@ internal sealed class CosmosRawDocumentRepository
         bool includeAdminFields,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        // SELECT * (not a projection): results are streamed into
+        // RawDocumentCosmosRecord, whose required members (id, document_url) and
+        // nested objects (source, game, classification, file, timeline) MapToListItem
+        // reads. A flat field projection (SELECT c.document_id, c.source.link_text, …)
+        // omits id/document_url and flattens the nested shape, so every row fails
+        // deserialization ("missing required properties including 'id', 'document_url'").
+        // The ORDER BY still resolves against the container's selective index on
+        // timeline/first_discovered_at (see CosmosOptions scraped_documents_raw).
         const string query =
-            "SELECT c.document_id, c.source.link_text, c.source.file_url, " +
-            "c.classification.document_type, c.classification.file_format, " +
-            "c.game.title, c.game.edition, c.manufacturer, " +
-            "c.file.page_count, c.file.size_bytes, c.timeline.first_discovered_at, " +
-            "c.link_status, c.link_failure_reason, c.resolution_strategy FROM c " +
+            "SELECT * FROM c " +
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
             "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
             "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
