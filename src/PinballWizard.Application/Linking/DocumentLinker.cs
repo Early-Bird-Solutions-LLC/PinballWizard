@@ -487,23 +487,31 @@ public sealed class DocumentLinker : IDocumentLinker
         return preferred.Count == 1 ? preferred[0] : null;
     }
 
-    // Narrows a set of title/slug-colliding candidates to those matching the
-    // document's source manufacturer, so a cross-manufacturer collision (a Stern
-    // remake's edition family + a slug-less classic same-title machine) collapses
-    // to the source manufacturer's candidates BEFORE edition-family resolution.
-    // A PREFERENCE, not a hard filter: when no candidate matches the source
-    // manufacturer (or the hint is unknown), the original set is returned so a
-    // document that legitimately matches only another manufacturer still links —
-    // and the caller's existing PreferByManufacturer / ambiguity path is unchanged
-    // for genuinely same-manufacturer collisions (e.g. Tron Pro vs Tron Legacy).
+    // Narrows title/slug-colliding candidates from the FUZZY tiers (filename
+    // Tier 2, page Tiers 3–4) to those matching the document's source
+    // manufacturer. This is a HARD filter when the source manufacturer is known:
+    // a manufacturer-specific scraper only ever discovers that manufacturer's own
+    // documents (see LinkingUtilities.InferManufacturerKey), so a fuzzy match onto
+    // a DIFFERENT manufacturer's machine is always wrong — a sternpinball.com PDF
+    // on a Williams machine is a provenance violation, worse than an honest
+    // NotInCatalog. When no same-manufacturer candidate matches, the result is
+    // EMPTY and the caller treats the document as unmatched (→ NotInCatalog).
+    //
+    // Applies ONLY to the fuzzy tiers. Tier 1 (xref slug) uses PreferByManufacturer
+    // and keeps preference-with-fallback: an explicit, document-authored
+    // cross-reference URL is a stronger signal than a filename / page-text title
+    // collision, so it is trusted even to a lone other-manufacturer machine (see
+    // LinkAsync_Tier1Xref_NoSternCandidate_DoesNotRegress).
+    //
+    // When the source manufacturer is unknown (SourceType not mapped → null key),
+    // no constraint is applied and the original set is returned.
     private static List<Machine> NarrowToSourceManufacturer(List<Machine> candidates, string? mfrKey)
     {
-        if (candidates.Count <= 1 || mfrKey is null) return candidates;
+        if (mfrKey is null) return candidates;
 
-        var narrowed = candidates
+        return candidates
             .Where(m => string.Equals(m.PartitionKey, mfrKey, StringComparison.OrdinalIgnoreCase))
             .ToList();
-        return narrowed.Count > 0 ? narrowed : candidates;
     }
 
     // An edition family: multiple base machines sharing one non-null OPDB group
@@ -738,21 +746,20 @@ public sealed class DocumentLinker : IDocumentLinker
         // (or non-family multi-) machine applies to that whole machine.
         var editionScope = EditionScope.FranchiseWide;
 
-        // When page text matches multiple machines (a title collision — page 1
-        // of a Stern Godzilla manual matches both Sega and Stern Godzilla),
-        // scope the fan-out to the document's source manufacturer so we don't
-        // mislabel the doc onto the wrong maker. If the hint resolves a single
-        // machine, link only that one; otherwise keep the original all-match
-        // fan-out (no regression for genuinely multi-machine documents).
-        if (matchedMachines.Count > 1)
+        // HARD manufacturer filter (fuzzy page tier): a page-text title match onto
+        // a machine of a DIFFERENT manufacturer than the document's source is
+        // always wrong (page prose incidentally mentions many titles — e.g. a
+        // Stern Batman manual page saying "8 ball" must NOT link to Williams
+        // "8 Ball"). Drop non-source-manufacturer matches for ANY match count; an
+        // empty result means no valid same-manufacturer machine → no page match.
+        var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+        matchedMachines = NarrowToSourceManufacturer(matchedMachines, mfrKey);
+        if (matchedMachines.Count == 0)
         {
-            // Collapse cross-manufacturer title collisions to the source
-            // manufacturer FIRST (same rationale as Tier 2): a Stern doc whose
-            // page text matches both the Stern edition family and a slug-less
-            // classic same-title machine must resolve within the Stern family,
-            // not fan out to the classic. Preference, not a hard filter.
-            var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
-            matchedMachines = NarrowToSourceManufacturer(matchedMachines, mfrKey);
+            _logger.LogDebug(
+                "DocumentLinker: {Tier} — page matches dropped: none match source manufacturer for {DocId}.",
+                strategyName, raw.DocumentId);
+            return null;
         }
 
         if (matchedMachines.Count > 1)

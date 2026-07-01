@@ -885,6 +885,70 @@ public class DocumentLinkerTests
         Assert.DoesNotContain("G4JBP-MJ6jr", result.LinkedMachineIds);
     }
 
+    [Fact]
+    public async Task LinkAsync_Tier2_KnownMfrDoc_MatchesOnlyOtherManufacturer_NotInCatalog()
+    {
+        // Grand Prix live case: a Stern manual (ManualsPage → mfr "stern") whose
+        // filename matches ONLY a non-Stern machine (Williams "Grand Prix", no
+        // Stern Grand Prix exists) must NOT link to the Williams machine — a
+        // sternpinball.com PDF on a Williams machine is a provenance violation.
+        // The fuzzy-tier manufacturer filter is HARD: no same-manufacturer match
+        // → NotInCatalog (an honest gap), never a wrong-manufacturer citation.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var williams = MakeMachine(id: "G4O1L-MDW47", manufacturer: "williams", title: "Grand Prix", slug: "");
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/12/Grand_Prix_Manual.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [williams]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("G4O1L-MDW47", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Page_KnownMfrDoc_MatchesOnlyOtherManufacturer_NotLinked()
+    {
+        // Batman→"8 Ball" live case: a Stern manual whose page text incidentally
+        // contains a common phrase ("8 ball") that matches a non-Stern machine's
+        // title (Williams "8 Ball") must NOT link there. Hard manufacturer filter
+        // in the page tier drops the cross-manufacturer match → no link.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var williams = MakeMachine(id: "G592K-MJoxd", manufacturer: "williams", title: "8 Ball", slug: "");
+        const string blobName = "manualspage/Batman_LE_Pre_web.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2023/01/Batman_LE_Pre_web.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "Batman_LE_Pre_web.pdf" });
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "Batman LE. Multiball feature includes an 8 ball mode.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [williams], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.DoesNotContain("G592K-MJoxd", result.LinkedMachineIds);
+    }
+
     // -------------------------------------------------------------------------
     // FanOut: scraped_documents write
     // -------------------------------------------------------------------------
