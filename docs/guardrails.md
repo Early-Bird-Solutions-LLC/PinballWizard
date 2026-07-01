@@ -88,7 +88,7 @@ flowchart TD
 
     B --> C[Autonomous]
     B --> D[Surface-to-user]
-    B --> E["Refuse &amp; surface"]
+    B --> E["Refuse + surface"]
     B --> F[Ambiguous?]
 
     F --> D
@@ -102,8 +102,8 @@ flowchart TD
 
     D --> D1{ADR addition?}
     D1 -- Yes --> D2[Draft autonomously]
-    D2 --> D3([Surface draft &amp;<br/>wait for explicit yes])
-    D1 -- No --> D4([Surface &amp; wait<br/>for explicit yes])
+    D2 --> D3([Surface draft +<br/>wait for explicit yes])
+    D1 -- No --> D4([Surface + wait<br/>for explicit yes])
 
     E --> E5([Stop. Surface conflict.<br/>Wait for user decision.])
 

@@ -57,9 +57,9 @@ flowchart TD
         SEARCH[(Azure AI Search<br/>vector index read-only)]:::data
     end
 
-    Browser -->|"Surface 1 — anonymous<br/>/wizard &amp; /api/wizard/ask:stream"| CF_WAF
+    Browser -->|"Surface 1 — anonymous<br/>/wizard + /api/wizard/ask:stream"| CF_WAF
     Browser -->|"Surface 2 — admin<br/>/admin/**"| CF_WAF
-    Browser -->|"Surface 3 — static<br/>/about &amp; /settings"| CF_WAF
+    Browser -->|"Surface 3 — static<br/>/about + /settings"| CF_WAF
     Browser -->|"Surface 4 — health<br/>/status"| CF_WAF
 
     CF_WAF --> CF_BOT

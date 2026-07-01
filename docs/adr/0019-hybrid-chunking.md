@@ -39,7 +39,7 @@ metadata assembly to AI Search upsert.
 flowchart TD
     PDF([PDF manual]):::ext
 
-    EXTRACT["PdfPig: extract outline<br/>&amp; text"]:::svc
+    EXTRACT["PdfPig: extract outline<br/>+ text"]:::svc
     OUTLINE{"Has outline?"}:::svc
 
     SECTION["Group pages into<br/>heading-bounded sections"]:::svc
