@@ -21,6 +21,33 @@ Each phase has the same structure:
 
 Detailed PR-by-PR history for shipped phases lives in memory under `session_handoff_*.md`. This doc is the durable artifact; memory is the running journal.
 
+The diagram below shows the phase progression at a glance; the master table that follows contains the full names and statuses.
+
+```mermaid
+flowchart LR
+    P0[Phase 0<br/>Foundation]
+    P1[Phase 1<br/>Content Ingestion]
+    P2[Phase 2<br/>Runtime Validation]
+    P3["Phase 3<br/>AI &amp; Integration"]
+    P4[Phase 4<br/>Event-driven RAG]
+    P45[Phase 4.5<br/>Corpus Expansion]
+    P5[Phase 5<br/>Blazor Frontend]
+    P6([Phase 6<br/>Launch Readiness])
+    P7[Phase 7+<br/>Post-launch]
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P45
+    P4 --> P5
+    P45 --> P6
+    P5 --> P6
+    P6 --> P7
+
+    classDef done fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class P0,P1,P2,P3,P4,P45,P5,P6 done
+    class P7 future
+```
+
 ## Master phase timeline
 
 | Phase | Name | Status |

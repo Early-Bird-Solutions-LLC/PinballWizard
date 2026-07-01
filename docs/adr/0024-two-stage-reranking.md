@@ -29,6 +29,27 @@ the decision should be locked in repo from Phase 4 forward.
 
 ## Decision
 
+The pipeline runs two re-ranking stages; the second is provisioned but disabled pending the gate condition below.
+
+```mermaid
+flowchart TD
+    Q([Query]) --> H["Hybrid Retrieval<br/>BM25 &amp; vector"]
+    H --> C50["Top-50 candidates"]
+    C50 --> S1["Stage 1: AI Search<br/>Semantic Ranker"]
+    S1 --> G{"Rag:CrossEncoder:Enabled?<br/>citation_precision &lt; 0.65<br/>&amp;&amp; ≥30% refusals<br/>trace to retrieval"}
+    G -- "false (default)" --> R(["Top-K results<br/>to agent"])
+    G -.->|true| S2["Stage 2: Cohere<br/>rerank-v4.0-pro"]
+    S2 -.-> R
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+
+    class H,C50,S1 svc
+    class S2 future
+    class G gov
+```
+
 ### Phase 4 v1: AI Search semantic ranker is the re-rank layer
 
 The semantic ranker enabled by [ADR-0021](0021-ai-search-index-schema.md)
