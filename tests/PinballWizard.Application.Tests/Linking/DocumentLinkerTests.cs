@@ -650,6 +650,135 @@ public class DocumentLinkerTests
     }
 
     // -------------------------------------------------------------------------
+    // Tier 2 — cross-manufacturer collision with a Stern edition family
+    // (corpus re-attribution: a classic same-title machine must NOT block the
+    // Stern remake from resolving — source manufacturer wins, then edition).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier2_SternRemakeWithClassicCollision_SlugHaving_LinksToSternEdition()
+    {
+        // KISS live case: Stern KISS (slug "kiss", group G4qX5, year 2015, two
+        // edition bases) collides on title with the slug-less classic Bally KISS.
+        // "KISSProweb.pdf" is a Stern manual (ManualsPage). It must resolve to the
+        // Stern Pro base — NOT go NotInCatalog because multiple Stern editions +
+        // the classic can't be disambiguated. (Phase 2 regressed this: indexing
+        // the classic title made bestMatches span two groups → not an edition
+        // family → PreferByManufacturer sees >1 Stern edition → null → ambiguous.)
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var sternPro = MakeMachine(id: "G4qX5-MJN17", manufacturer: "stern", title: "KISS", slug: "kiss");
+        sternPro.GroupId = "G4qX5"; sternPro.Year = 2015; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "G4qX5-Mz2Pp", manufacturer: "stern", title: "KISS", slug: "kiss");
+        sternPrem.GroupId = "G4qX5"; sternPrem.Year = 2015; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4jXr-MQ6kz", manufacturer: "bally", title: "KISS", slug: "");
+        classic.GroupId = "G4jXr"; classic.Year = 1979;
+
+        // Separator-delimited edition token so the edition resolves at Tier 2
+        // (isolates the manufacturer-narrowing fix). The live concatenated form
+        // KISSProweb.pdf resolves via the page tier — covered by the page test.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/11/KISS_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["G4qX5-MJN17"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2_SternRemakeWithClassicCollision_SlugLess_LinksToSternEdition()
+    {
+        // Jurassic Park live case: the Stern JP (GK17D, 2019) is slug-less
+        // (metadata-only) and collides on title with the slug-less classic Data
+        // East JP. "JurassicPark_Pro_web.pdf" (Stern manual) must resolve to the
+        // Stern Pro base — the slug-less Stern remake was the whole point of the
+        // Phase 2 title-match, and it must win over the classic by source
+        // manufacturer, then by edition.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPro.GroupId = "GK17D"; sternPro.Year = 2019; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK17D-MKNKd", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPrem.GroupId = "GK17D"; sternPrem.Year = 2019; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4ZVB-MJ5lE", manufacturer: "dataeast", title: "Jurassic Park", slug: "");
+        classic.GroupId = "G4ZVB"; classic.Year = 1993;
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2022/04/JurassicPark_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal(["GK17D-MdEqz"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Page_SternRemakeWithClassicCollision_LinksToSternEdition()
+    {
+        // Mirror of the Tier-2 fix in the page tier (TryMatchPage): a filename
+        // with no edition token falls to page-1 text, which matches both the
+        // Stern family and the classic by title. Source manufacturer must narrow
+        // to the Stern family before edition resolution. Page text has no edition
+        // token → group fan-out across the Stern family (franchise-wide), and the
+        // classic must be excluded.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+        var textExtractor = Substitute.For<IDocumentTextExtractor>();
+        var blobStore = Substitute.For<IDocumentBlobStore>();
+
+        var sternPro = MakeMachine(id: "GK17D-MdEqz", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPro.GroupId = "GK17D"; sternPro.Year = 2019; sternPro.EditionTokens = ["pro"];
+        var sternPrem = MakeMachine(id: "GK17D-MKNKd", manufacturer: "stern", title: "Jurassic Park", slug: "");
+        sternPrem.GroupId = "GK17D"; sternPrem.Year = 2019; sternPrem.EditionTokens = ["premium", "le"];
+        var classic = MakeMachine(id: "G4ZVB-MJ5lE", manufacturer: "dataeast", title: "Jurassic Park", slug: "");
+        classic.GroupId = "G4ZVB"; classic.Year = 1993;
+
+        const string blobName = "manualspage/JurassicPark-Rulesheet.pdf";
+        blobStore.TryOpenReadAsync(blobName, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream([1, 2, 3])));
+
+        // Filename has no slug/title match (so Tier 2 misses) → forces the page tier.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2020/06/JP-Rulesheet.pdf",
+            sourceType: SourceType.ManualsPage,
+            file: new DownloadedFileInfo { LocalPath = blobName, Filename = "JP-Rulesheet.pdf" });
+
+        var page1 = new ExtractedPage(PageNumber: 1, Text: "JURASSIC PARK rulesheet — applies to all editions.");
+        textExtractor.ExtractAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(new ExtractedDocument(ExtractionStatus.Success, page1.Text, [page1], [], null));
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [sternPro, sternPrem, classic], textExtractor: textExtractor, blobStore: blobStore);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Contains("GK17D-MdEqz", result.LinkedMachineIds);
+        Assert.Contains("GK17D-MKNKd", result.LinkedMachineIds);
+        Assert.DoesNotContain("G4ZVB-MJ5lE", result.LinkedMachineIds);
+    }
+
+    // -------------------------------------------------------------------------
     // FanOut: scraped_documents write
     // -------------------------------------------------------------------------
 

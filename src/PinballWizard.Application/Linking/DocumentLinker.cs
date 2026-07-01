@@ -478,6 +478,25 @@ public sealed class DocumentLinker : IDocumentLinker
         return preferred.Count == 1 ? preferred[0] : null;
     }
 
+    // Narrows a set of title/slug-colliding candidates to those matching the
+    // document's source manufacturer, so a cross-manufacturer collision (a Stern
+    // remake's edition family + a slug-less classic same-title machine) collapses
+    // to the source manufacturer's candidates BEFORE edition-family resolution.
+    // A PREFERENCE, not a hard filter: when no candidate matches the source
+    // manufacturer (or the hint is unknown), the original set is returned so a
+    // document that legitimately matches only another manufacturer still links —
+    // and the caller's existing PreferByManufacturer / ambiguity path is unchanged
+    // for genuinely same-manufacturer collisions (e.g. Tron Pro vs Tron Legacy).
+    private static List<Machine> NarrowToSourceManufacturer(List<Machine> candidates, string? mfrKey)
+    {
+        if (candidates.Count <= 1 || mfrKey is null) return candidates;
+
+        var narrowed = candidates
+            .Where(m => string.Equals(m.PartitionKey, mfrKey, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return narrowed.Count > 0 ? narrowed : candidates;
+    }
+
     // An edition family: multiple base machines sharing one non-null OPDB group
     // segment AND one non-null release year (e.g. Godzilla Pro + Premium/LE,
     // both "GweeP"/2021). Matches the reconciler's edition-family definition —
@@ -576,14 +595,26 @@ public sealed class DocumentLinker : IDocumentLinker
             }
         }
 
+        // Collapse cross-manufacturer title collisions to the document's source
+        // manufacturer BEFORE edition resolution. A Stern manual whose filename
+        // matches both the Stern remake's edition family AND a slug-less classic
+        // same-title machine (indexed by title since Phase 2) would otherwise
+        // span two groups → not an edition family → PreferByManufacturer sees
+        // multiple Stern editions → null → wrongly NotInCatalog. Narrowing to the
+        // source manufacturer first lets the edition family resolve within it.
+        // Preference, not a hard filter (keeps the original set when no candidate
+        // matches, so a doc matching only another manufacturer still links).
+        var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+        var candidates = NarrowToSourceManufacturer(bestMatches, mfrKey);
+
         // Same-franchise edition family (multiple bases sharing one group
         // segment + year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
         // GweeP-Ml9pZ) → resolve by edition from the filename token. Page text
         // isn't available at Tier 2; the page tiers add page-1 authority later.
-        if (bestMatches.Count > 1 && IsEditionFamily(bestMatches))
+        if (candidates.Count > 1 && IsEditionFamily(candidates))
         {
             var resolution = EditionResolver.Resolve(
-                filename, page1Text: null, bestMatches, raw.Source.LinkText);
+                filename, page1Text: null, candidates, raw.Source.LinkText);
             if (resolution.IsGroupFanOut)
             {
                 _logger.LogDebug("Tier2 filename_edition_group: {DocumentId} → {Count} group bases for '{Filename}'.",
@@ -609,10 +640,10 @@ public sealed class DocumentLinker : IDocumentLinker
         // longest length → disambiguate by source manufacturer (e.g. a Stern
         // Godzilla_Pro_web.pdf resolves to Stern, not Sega) before falling back
         // to NotInCatalog ambiguity.
-        Machine? best = bestMatches.Count == 1
-            ? bestMatches[0]
-            : PreferByManufacturer(bestMatches, LinkingUtilities.InferManufacturerKey(raw.Source));
-        bool ambiguous = best is null && bestMatches.Count > 1;
+        Machine? best = candidates.Count == 1
+            ? candidates[0]
+            : PreferByManufacturer(candidates, mfrKey);
+        bool ambiguous = best is null && candidates.Count > 1;
 
         if (ambiguous)
         {
@@ -704,6 +735,17 @@ public sealed class DocumentLinker : IDocumentLinker
         // mislabel the doc onto the wrong maker. If the hint resolves a single
         // machine, link only that one; otherwise keep the original all-match
         // fan-out (no regression for genuinely multi-machine documents).
+        if (matchedMachines.Count > 1)
+        {
+            // Collapse cross-manufacturer title collisions to the source
+            // manufacturer FIRST (same rationale as Tier 2): a Stern doc whose
+            // page text matches both the Stern edition family and a slug-less
+            // classic same-title machine must resolve within the Stern family,
+            // not fan out to the classic. Preference, not a hard filter.
+            var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+            matchedMachines = NarrowToSourceManufacturer(matchedMachines, mfrKey);
+        }
+
         if (matchedMachines.Count > 1)
         {
             // Same-franchise edition family → resolve by edition, with the page-1
