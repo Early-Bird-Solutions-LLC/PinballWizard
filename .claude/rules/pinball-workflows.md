@@ -36,6 +36,16 @@ while PRs are reviewed async (`feedback_proceed_while_user_reviews_prs`).
 - Always put the full PR URL in the response (`feedback_always_link_prs`).
 - The PR description records the `/local-review` outcome.
 
+## 4a. After the PR exists — code-scanning triage (BLOCKING, automatic)
+
+GitHub code scanning (`CodeQL` / `github-advanced-security[bot]` + `github-code-quality[bot]`)
+runs server-side after `gh pr create` and comments on the diff. **Heed it as part
+of shipping — the user should never have to paste a finding.** Immediately after
+creating the PR: wait for the `Analyze` checks, fetch the bot findings, and triage
+each (fix-and-push, or dismiss-with-justification). The PR is not "done" until code
+scanning is green or every finding is fixed / dismissed-with-reason. Full mechanism
++ exact `gh` commands: [`.claude/PR-AUDIT.md`](../PR-AUDIT.md) Step 2.
+
 ## 5. Quick reference
 
 | Trigger | Action |
@@ -43,4 +53,5 @@ while PRs are reviewed async (`feedback_proceed_while_user_reviews_prs`).
 | Code change on `main` | Block → prompt for feature branch |
 | "commit" | pre-commit-workflow → commit skill |
 | After push | (nothing — no time tracking) |
-| "create PR" | `/local-review` → PR-AUDIT → `gh pr create` → add+verify `claude-code` label |
+| "create PR" | `/local-review` → PR-AUDIT → `gh pr create` → add+verify `claude-code` label → **PR-AUDIT Step 2 (post-push code-scanning triage)** |
+| PR checks / bot review comments appear | Fetch + triage automatically (fix or dismiss-with-reason) — PR-AUDIT Step 2; don't wait to be told |
