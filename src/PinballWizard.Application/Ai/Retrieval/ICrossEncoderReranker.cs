@@ -7,8 +7,8 @@ namespace PinballWizard.Application.Ai.Retrieval;
 //
 // NullCrossEncoderReranker is the default when Rag:CrossEncoder:Enabled
 // is false — it returns the first TopN candidates unchanged. The real
-// implementation (CohereRerankReranker) calls Cohere Rerank-v3 via the
-// Foundry connection configured under Rag:CrossEncoder:ModelEndpoint.
+// implementation (CohereRerankReranker) calls Cohere Rerank via the
+// Foundry MaaS deployment route configured under Rag:CrossEncoder:ModelEndpoint.
 public interface ICrossEncoderReranker
 {
     // Rerank the candidate chunks by (query, chunk) relevance. Returns

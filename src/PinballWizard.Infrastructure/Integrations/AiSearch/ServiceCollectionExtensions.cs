@@ -9,8 +9,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Rag.Indexing;
+using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Rag.Indexing;
+using PinballWizard.Infrastructure.Rag.Ingestion;
 using PinballWizard.Infrastructure.Rag.Reranking;
 using PinballWizard.Infrastructure.Rag.Retrieval;
 
@@ -64,8 +66,8 @@ public static class ServiceCollectionExtensions
 
         // Named HttpClient for CohereRerankReranker — only resolved when
         // Rag:CrossEncoder:Enabled=true. Attaches a DefaultAzureCredential
-        // bearer token scoped to Azure AI / Cognitive Services so the Foundry
-        // external-connection proxy accepts the request.
+        // bearer token scoped to Cognitive Services so the Foundry account's
+        // native Cohere rerank route accepts the request keyless.
         services.AddHttpClient("CohereReranker")
             .AddHttpMessageHandler(() => new AzureCredentialBearerTokenHandler(
                 Credentials.SharedAzureCredential.Instance,
@@ -77,11 +79,11 @@ public static class ServiceCollectionExtensions
             if (!opts.Enabled)
                 return new NullCrossEncoderReranker();
 
-            // Cohere Rerank-v3 via Foundry connection. The HttpClient carries
-            // a DefaultAzureCredential bearer token for the Foundry endpoint.
-            // The managed identity on the Container App (or dev's az login
-            // session) must have the "Azure AI Developer" role on the Foundry
-            // project — same credential used for Foundry agent dispatch.
+            // Cohere Rerank via the Foundry MaaS deployment's native rerank
+            // route (ADR-0024, amended). The HttpClient carries a
+            // DefaultAzureCredential bearer token; the managed identity on the
+            // Container App (or dev's az login session) must hold Azure AI User
+            // on the Foundry account — the same credential used for agent dispatch.
             var httpClient = sp.GetRequiredService<IHttpClientFactory>()
                 .CreateClient("CohereReranker");
             return new CohereRerankReranker(
@@ -93,11 +95,33 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
         services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
+        services.TryAddSingleton<IRetrievalRankProbe, RetrievalRankProbe>();
         services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);
         services.TryAddSingleton(BuildSearchIndexClient);
         services.TryAddSingleton<RagIndexBootstrapper>();
 
+        // Orphan garbage collector (--gc-rag-index). The pair source
+        // enumerates the index; the collector reconciles it against the
+        // scraped_documents catalog (IScrapedDocumentRepository, registered
+        // by Cosmos persistence) and deletes orphan chunks via IRagIndexer.
+        // Resolving the collector therefore also requires Cosmos to be wired.
+        services.TryAddSingleton<IIndexedPairSource>(BuildIndexedPairSource);
+        services.TryAddSingleton<IRagIndexGarbageCollector, RagIndexGarbageCollector>();
+
         return services;
+    }
+
+    private static AiSearchIndexedPairSource BuildIndexedPairSource(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.IndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new AiSearchIndexedPairSource(
+            searchClient,
+            sp.GetRequiredService<ILogger<AiSearchIndexedPairSource>>());
     }
 
     private static AzureOpenAIQueryEmbedder BuildQueryEmbedder(IServiceProvider sp)

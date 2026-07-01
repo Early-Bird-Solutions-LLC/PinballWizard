@@ -68,11 +68,34 @@ jobs:
             --arg service_account_id "$SERVICE_ACCOUNT_ID" \
             --arg workspace_id "$WORKSPACE_ID" \
             '$ARGS.named')
-          ACCESS_TOKEN=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+          # Diagnostic: field lengths only (no secret values; the assertion is
+          # masked regardless). An empty assertion — length 0 — is the classic
+          # cause of an opaque request-validation failure with nothing logged
+          # server-side, so this line pinpoints it at a glance.
+          echo "field lengths: assertion=${#GHA_OIDC_TOKEN} federation_rule_id=${#FEDERATION_RULE_ID} organization_id=${#ORGANIZATION_ID} service_account_id=${#SERVICE_ACCOUNT_ID} workspace_id=${#WORKSPACE_ID}"
+          # Capture body + HTTP status separately. A bare `curl | jq .access_token`
+          # swallows the error response, leaving a failed exchange undiagnosable
+          # (violates the degrade-visibly invariant). The error body carries
+          # error.type + request_id and contains no secret; the access token is
+          # masked before use and never echoed.
+          RESPONSE=$(curl -sS -w '\n%{http_code}' https://api.anthropic.com/v1/oauth/token \
             -H "content-type: application/json" \
-            -d "$PAYLOAD" | jq -r .access_token)
-          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
-            echo "::error::Anthropic WIF token exchange failed"
+            -d "$PAYLOAD")
+          HTTP_CODE=$(printf '%s' "$RESPONSE" | tail -n1)
+          BODY=$(printf '%s' "$RESPONSE" | sed '$d')
+          ACCESS_TOKEN=$(printf '%s' "$BODY" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Anthropic WIF token exchange failed (HTTP $HTTP_CODE)"
+            # A 400 invalid_grant is intentionally opaque — the specific cause is
+            # logged server-side only, visible on the Claude Console WIF
+            # authentication-history page. Surface what the response does carry.
+            printf '%s' "$BODY" \
+              | jq -r '"  type=\(.error.type // .type // "?") message=\(.error.message // "?") request_id=\(.request_id // "?")"' \
+              2>/dev/null || printf '  raw: %s\n' "$BODY"
+            # Full error body — a failed exchange carries no token, so no secret.
+            # Surfaces any field-level validation detail the summary line omits.
+            echo "  full error body:"
+            printf '%s\n' "$BODY" | jq . 2>/dev/null || printf '  %s\n' "$BODY"
             exit 1
           fi
           echo "::add-mask::$ACCESS_TOKEN"

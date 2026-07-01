@@ -25,6 +25,52 @@ The pinball domain is the vehicle; the engineering rigor is the point. The secti
 are the actual process, not an aspiration — each stage links to the artifact that enforces
 it.
 
+The whole pipeline on one screen — who owns each stage, and the gate chain every change
+passes through on the way to `main`:
+
+```mermaid
+flowchart TB
+    subgraph H1 [Human]
+        Intent["Intent and scope"]
+    end
+    subgraph AI [AI authors]
+        Spec["Brainstorm to spec"]
+        Plan["Implementation plan"]
+        TDD["TDD authoring"]
+        Self["First-party review"]
+    end
+    subgraph GATES [Automated gates]
+        CI["CI gates"]
+        Bots["CodeQL + code-quality"]
+        Senior["Senior review"]
+    end
+    subgraph H2 [Human]
+        Merge(["Merge to main"])
+    end
+
+    Intent --> Spec --> Plan --> TDD --> Self --> CI --> Bots --> Senior --> Merge
+
+    Inv["Locked invariants"] -. bounds every stage .-> TDD
+    Mem[("Memory")] -. informs .-> Spec
+    ADR["ADRs"] -. trace why .-> Plan
+
+    classDef human fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef ai fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef gate fill:#ececec,stroke:#8a8a8a,color:#000
+    class Intent,Merge human
+    class Spec,Plan,TDD,Self ai
+    class CI,Bots,Senior gate
+```
+
+The color reinforces the lanes at a glance: **amber = human-owned**, **blue =
+AI-authored**, **grey = automated / independent gate**. The **human** owns the two
+irreducible ends — intent at the top, the merge to `main` at the bottom — while **AI**
+authors everything in between and the change earns its way across the automated,
+independently-owned gates we cannot quietly tune. The dotted inputs (locked invariants,
+memory, ADRs) are the cross-cutting controls detailed below and are left untinted, since
+they run through every stage rather than belonging to one. The stage-by-stage sections that
+follow expand each node.
+
 ## The process, stage by stage
 
 Each stage controls for a specific failure mode and is backed by an artifact in this repo.

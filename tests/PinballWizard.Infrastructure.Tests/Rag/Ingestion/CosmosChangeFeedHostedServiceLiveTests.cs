@@ -126,26 +126,27 @@ public sealed class CosmosChangeFeedHostedServiceLiveTests
                 TimeProvider.System);
 
             var documentId = $"livetest_ix_{Guid.NewGuid():N}";
+            const string machineId = "mch_livetest";
 
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
 
-                Assert.Null(await indexState.GetLastIndexedHashAsync(documentId, cts.Token));
+                Assert.Null(await indexState.GetLastIndexedHashAsync(documentId, machineId, cts.Token));
 
                 await indexState.RecordIndexedAsync(
-                    documentId, "hash-livetest", chunkCount: 7, failureCount: 0, cts.Token);
+                    documentId, machineId, "hash-livetest", chunkCount: 7, failureCount: 0, cts.Token);
 
                 Assert.Equal(
                     "hash-livetest",
-                    await indexState.GetLastIndexedHashAsync(documentId, cts.Token));
+                    await indexState.GetLastIndexedHashAsync(documentId, machineId, cts.Token));
             }
             finally
             {
                 try
                 {
                     await container.DeleteItemAsync<IndexStateDocument>(
-                        IndexStateDocument.RowIdPrefix + documentId,
+                        IndexStateDocument.ComposeRowId(documentId, machineId),
                         new PartitionKey(documentId));
                 }
                 catch (Exception)

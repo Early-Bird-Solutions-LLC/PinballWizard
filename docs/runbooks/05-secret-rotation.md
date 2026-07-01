@@ -2,7 +2,7 @@
 **Trigger:** 90-day rotation cadence (calendar reminder) or key compromise detected
 **Alert rule:** Manual / DR drill
 **Time budget:** 60–90 minutes (all four secrets)
-**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live rotation drill against the deployed pinwiz.ai app remains an open Phase 7 task)
 
 ---
 
@@ -16,6 +16,41 @@
 | OPDB API token | https://opdb.org/profile → API Keys | ACA `pinwiz-web` env var `Opdb__ApiToken`; local `.env` | Every 90 days |
 
 **Note on Cosmos:** Production Cosmos access is AAD-backed via `DefaultAzureCredential` (`ArmCosmosProvisioner` + `DataPlaneCosmos`). There is no master-key secret in production to rotate. If you suspect the account's connection string was leaked, the remediation is to verify the RBAC role assignments (not key rotation) and revoke if a service principal was compromised.
+
+---
+
+## Out-of-band Key Vault secret inventory (provisioning, not rotation)
+
+These are the secrets `pinwiz-kv-<env>-<suffix>` MUST contain for a deploy to
+succeed. **They are intentionally NOT in IaC** — the Bicep declares zero
+`Microsoft.KeyVault/vaults/secrets` resources, so secret *values* never appear
+in templates, parameters, or deployment-stack state. The ACA apps reference them
+by `keyVaultUrl`; the values are set out of band, once.
+
+| KV secret | Source | Set / provision | Consumers |
+| --- | --- | --- | --- |
+| `AzureAd-ClientSecret` | Entra app reg "PinballWizard Web" → Certificates & secrets | `az keyvault secret set --vault-name <kv> --name AzureAd-ClientSecret --value <secret>` | wizard + api ACA (OIDC sign-in) |
+| `Opdb-ApiToken` | <https://opdb.org/profile> → API Keys (machine env `OPDB_API_TOKEN`) | `az keyvault secret set --vault-name <kv> --name Opdb-ApiToken --value $env:OPDB_API_TOKEN` | api/web ACA + CLI (OPDB sync) |
+| `silverball-api-key` | Silverball Labs (Will Oetting); machine env `SILVERBALL_API_KEY` | `az keyvault secret set --vault-name <kv> --name silverball-api-key --value $env:SILVERBALL_API_KEY` | api + wizard ACA (`SilverballLabs__ApiKey`, getMarketValue pricing) |
+| `cloudflare-origin-pinwiz` (KV **certificate**, not a plain secret) | Cloudflare Origin CA cert | `infra/scripts/Import-OriginCaCertToKeyVault.ps1` — NOT a plain `secret set` | wizard ACA custom-domain SNI binding (ADR-0038) |
+
+> **Cohere Rerank needs NO secret** (ADR-0024, amended) — it is an Azure-native
+> Foundry MaaS model deployment called keyless via managed identity.
+
+**⚠️ Vault-recreation hazard.** If the Key Vault is ever recreated — e.g.
+`deployPhase2` toggled `true → false → true`, or the vault soft-deleted and
+purged — **every** secret above must be re-provisioned out of band before the
+next deploy, or the ACA apps fail to roll a new revision (`configuration.secrets
+... Unable to get value using Managed identity` / `unable to fetch secret`).
+
+**Adding a new out-of-band secret** (e.g. wiring a new `keyVaultUrl` ACA secret
+reference in `shared.bicep`): the `az keyvault secret set` step is a separate,
+easy-to-forget action from the Bicep PR. Add the row here in the same PR, and
+provision the value in the live vault before the first deploy that applies the
+reference — otherwise the deploy fails on the first revision roll. (This is what
+happened 2026-06-29: PR #558 added the `silverball-api-key` ACA reference on
+2026-06-27 but the out-of-band `secret set` was never run; the gap stayed latent
+until the next revision-rolling deploy three weeks later.)
 
 ---
 

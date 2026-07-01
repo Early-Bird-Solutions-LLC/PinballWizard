@@ -18,8 +18,8 @@
     <script>
         (function () {
             try {
-                var t = localStorage.getItem('pinwiz.theme');
-                if (t && t !== 'modern-lcd') document.documentElement.classList.add('theme-' + t);
+                var t = localStorage.getItem('pinwiz.theme') || 'paper';
+                if (t !== 'modern-lcd') document.documentElement.classList.add('theme-' + t);
                 var m = localStorage.getItem('pinwiz.motion');
                 if (m) document.documentElement.dataset.motion = m;
             } catch (_) { }

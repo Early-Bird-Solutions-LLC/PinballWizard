@@ -33,6 +33,32 @@ Full content/API inventory, alternatives, and the conditional paths:
 
 ## Decision
 
+The four integration tiers below show which are active now and which are deferred pending partner API readiness.
+
+```mermaid
+flowchart TD
+    A[Tier A<br/>Catalog / ratings / files<br/>via Kineticist API]
+    B["Tier B<br/>Guide deep-linking<br/>route + attribute"]
+    C2[Tier C2<br/>Interim rules grounding<br/>scrape .md endpoint]
+    GATE{Colin exposes<br/>guide content in API}
+    C1[Tier C1<br/>Live rules tool<br/>durable content API]
+    D["Tier D<br/>Hype Index +<br/>on-location counts"]
+
+    A --> B
+    B --> C2
+    C2 -.-> GATE
+    GATE -.-> C1
+    GATE -.-> D
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+
+    class A,B,C2 svc
+    class C1,D future
+    class GATE gov
+```
+
 Integrate Kineticist behind `KineticistOptions` (Key-Vault-backed API key; DI-gated — when
 the config is absent, nothing is registered, matching the other backend-gated tools),
 across four tiers:
