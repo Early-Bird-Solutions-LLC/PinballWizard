@@ -5,8 +5,9 @@ namespace PinballWizard.Core.Configuration;
 // Configuration for the ADR-0024 cross-encoder reranker layer.
 // Bound from the "Rag:CrossEncoder" configuration section.
 // Enabled=false (default) wires NullCrossEncoderReranker — zero latency
-// and zero cost. Set Enabled=true and provide ModelEndpoint (Cohere
-// Rerank-v3 via Foundry connection) to activate the real reranker.
+// and zero cost. Set Enabled=true and provide ModelEndpoint (Cohere Rerank
+// as an Azure-native Foundry MaaS deployment, called keyless via managed
+// identity) to activate the real reranker.
 public sealed class CrossEncoderOptions
 {
     public const string SectionName = "Rag:CrossEncoder";
@@ -25,12 +26,13 @@ public sealed class CrossEncoderOptions
     [Range(1, 50)]
     public int TopN { get; set; } = 5;
 
-    // Cohere Rerank-v3 endpoint via Azure AI Foundry connection.
-    // Format: https://<foundry-project-endpoint>/cohere/rerank
-    // Required when Enabled=true; ignored when Enabled=false.
+    // Cohere Rerank native inference route on the Foundry account.
+    // Format: https://<foundry-account>.services.ai.azure.com/providers/cohere/v2/rerank
+    // Wired by Bicep (cohereRerankEndpoint output); ignored when Enabled=false.
     public string ModelEndpoint { get; set; } = string.Empty;
 
-    // Model identifier passed in the Cohere rerank request body.
-    // Default matches ADR-0024's locked choice (Cohere Rerank-v3).
-    public string ModelId { get; set; } = "rerank-english-v3.0";
+    // Model identifier passed in the Cohere rerank request body — must match the
+    // Foundry MaaS deployment name (ADR-0024, amended). Verify against the live
+    // catalog (az cognitiveservices model list) if the deployed name differs.
+    public string ModelId { get; set; } = "Cohere-rerank-v4.0-pro";
 }

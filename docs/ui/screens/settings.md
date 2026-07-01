@@ -4,17 +4,17 @@
 
 ## Purpose
 
-Settings is the home for **locally-persisted user preferences** — the small set of choices the user makes about how the Wizard renders for them. It is *not* an account screen, *not* a profile, *not* a notifications hub. The community-resource posture explicitly forbids those surfaces ([ADR-0027](../adr/0027-community-resource-posture.md) § 1, § 10), and the Wizard has no per-user account in v1 anyway ([ADR-0009](../adr/0009-entra-external-id-admin-rbac-v1.md) — admin RBAC only; no end-user passport in v1).
+Settings is the home for **locally-persisted user preferences** — the small set of choices the user makes about how the Wizard renders for them. It is *not* an account screen, *not* a profile, *not* a notifications hub. The community-resource posture explicitly forbids those surfaces ([ADR-0027](../../adr/0027-community-resource-posture.md) § 1, § 10), and the Wizard has no per-user account in v1 anyway ([ADR-0009](../../adr/0009-entra-external-id-admin-rbac-v1.md) — admin RBAC only; no end-user passport in v1).
 
 What Settings covers in v1:
 
 1. **Theme picker** — the only Wave 3 obligation that *requires* a Settings screen to ship. When sibling themes ship, users need somewhere to switch.
 2. **Motion preference** — surface the `prefers-reduced-motion` media query as a user-overridable preference. Useful for users on devices that don't expose the OS-level setting clearly, or for users who want motion-on for specific themes.
-3. **Sound preference** — the muted-by-default toggle from [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted. Persisted to localStorage; defaults to muted.
+3. **Sound preference** — the muted-by-default toggle from [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted. Persisted to localStorage; defaults to muted.
 
 What Settings is explicitly **not** in v1:
 
-- No "saved questions" list (engagement-metric framing forbidden per [ADR-0027](../adr/0027-community-resource-posture.md) § 1).
+- No "saved questions" list (engagement-metric framing forbidden per [ADR-0027](../../adr/0027-community-resource-posture.md) § 1).
 - No "notification preferences" (no captive notifications surface in v1).
 - No account / profile / sign-in (the Wizard is anonymous-by-construction for the public surface; admin auth lives in `AdminLayout`, not here).
 - No data-export / data-import buttons (no per-user data exists to export).
@@ -25,8 +25,8 @@ This spec consumes:
 - [`docs/ui/themes/sibling-themes-overview.md`](../themes/sibling-themes-overview.md) — sibling theme directional sketches + theme-picker UI considerations
 - [`docs/ui/screens/answer-with-citations.md`](answer-with-citations.md) — locked visual tokens (color, type, spacing, motion) inherited verbatim
 - [`docs/ui/prototypes/theme-picker.html`](../prototypes/theme-picker.html) — the working theme-picker prototype that established switching by CSS-variable swap + localStorage persistence
-- [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) — Wave 1/2/3 implementation track
-- [ADR-0027](../adr/0027-community-resource-posture.md) — community-resource posture (the why-not list above derives from this ADR's § 10)
+- [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) — Wave 1/2/3 implementation track
+- [ADR-0027](../../adr/0027-community-resource-posture.md) — community-resource posture (the why-not list above derives from this ADR's § 10)
 
 It does NOT cover: the answer screen, the empty/landing screen, the what-we-cover screen, the machine-detail screen, the `/error` page, the `/admin/*` surfaces.
 
@@ -47,7 +47,7 @@ The page presents **three sections in vertical stack**, in this order:
 | 2 | **Motion** | Adjacent to theme — both shape "how does the page feel to me?" |
 | 3 | **Sound** | Smaller, less-frequently-touched preference. Mute-by-default per ADR-0026, so most users never come here unless they specifically want sound on. |
 
-Each section is self-contained, identical card grammar, peer-parity per [ADR-0027](../adr/0027-community-resource-posture.md) § 2 (no "primary" section visually elevated above its peers). Section card grammar matches the citation card from `answer-with-citations.md` § State 2: `--bg-surface` background, `--border-quiet` border, `--space-3` internal padding, `--radius-panel` radius.
+Each section is self-contained, identical card grammar, peer-parity per [ADR-0027](../../adr/0027-community-resource-posture.md) § 2 (no "primary" section visually elevated above its peers). Section card grammar matches the citation card from `answer-with-citations.md` § State 2: `--bg-surface` background, `--border-quiet` border, `--space-3` internal padding, `--radius-panel` radius.
 
 ## Per-section spec
 
@@ -67,14 +67,14 @@ Each section is self-contained, identical card grammar, peer-parity per [ADR-002
 - **`BETA` tag** — for any sibling theme that hasn't earned a full spec yet (per the sibling-themes-overview guidance). Default-Modern-LCD has no tag. Cabinet, Score Reel, and any future siblings carry `BETA` until each earns its own `docs/ui/themes/[name].md`.
 - **Selection affordance** — a single `<input type="radio" name="theme">` per card; the whole card is the click target via `<label>`. The selected card carries a `--border-glow-grounded` border treatment to indicate the active state.
 
-**Card grammar (peer-parity rule):** every theme preview card is **visually identical in structure** — same dimensions, same internal layout, same swatch size, same type weight on the name. Per [ADR-0027](../adr/0027-community-resource-posture.md) § 2: no "default" card visually elevated, no "recommended" badge on Modern LCD beyond the absence of a `BETA` tag. The signal that Modern LCD is the default for new users is *the absence of `BETA`*, not a "DEFAULT" badge that would read as endorsement.
+**Card grammar (peer-parity rule):** every theme preview card is **visually identical in structure** — same dimensions, same internal layout, same swatch size, same type weight on the name. Per [ADR-0027](../../adr/0027-community-resource-posture.md) § 2: no "default" card visually elevated, no "recommended" badge on Modern LCD beyond the absence of a `BETA` tag. The signal that Modern LCD is the default for new users is *the absence of `BETA`*, not a "DEFAULT" badge that would read as endorsement.
 
 **Layout:**
 
 - **Mobile (< 768px):** single-column stack. One theme per row.
 - **Desktop (≥ 768px):** 2-column or 3-column grid (auto-fit `minmax(280px, 1fr)`). The grid stays uniform — no theme is featured wider or taller than its siblings.
 
-**Ordering:** alphabetical by theme name (resolver-computed at render time, not baked into the markup), matching the [ADR-0027](../adr/0027-community-resource-posture.md) § 3 within-set ordering rule. Adding a new sibling theme later doesn't require re-ordering the grid manually. This applies even to Modern LCD — it appears alphabetically, not first by editorial choice.
+**Ordering:** alphabetical by theme name (resolver-computed at render time, not baked into the markup), matching the [ADR-0027](../../adr/0027-community-resource-posture.md) § 3 within-set ordering rule. Adding a new sibling theme later doesn't require re-ordering the grid manually. This applies even to Modern LCD — it appears alphabetically, not first by editorial choice.
 
 **Persistence:** the theme selection persists to `localStorage` under the key `pinwiz.theme` (matching the working prototype at [`docs/ui/prototypes/theme-picker.html`](../prototypes/theme-picker.html)). On page load, `MainLayout` reads the key and sets a `data-theme="<name>"` attribute on `<html>`; CSS variable swaps activate the theme. Default for any user without a `pinwiz.theme` value: Modern LCD.
 
@@ -115,7 +115,7 @@ Each section is self-contained, identical card grammar, peer-parity per [ADR-002
 | **Muted** (default) | All sound assets remain unloaded; no audio plays. |
 | **Sound on** | Future sound assets play (subject to ADR-0026 § Explicitly NOT adopted: never auto-play in any state — sounds only fire as response to user interaction, never on page load). |
 
-**Implementation:** persists to `localStorage` under `pinwiz.sound` (values: `"muted"`, `"on"`; default `"muted"`). The `SoundController` component (referenced in [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § 6) reads this key and exposes the toggle state to any component that emits sound. The toggle is the *only* way to turn sound on — the showcase posture forbids auto-playing audio in any flow ([ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted).
+**Implementation:** persists to `localStorage` under `pinwiz.sound` (values: `"muted"`, `"on"`; default `"muted"`). The `SoundController` component (referenced in [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § 6) reads this key and exposes the toggle state to any component that emits sound. The toggle is the *only* way to turn sound on — the showcase posture forbids auto-playing audio in any flow ([ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted).
 
 **v1 caveat:** v1 ships with no sound assets. The toggle exists in v1 so the persistence layer is in place when sound assets ship later, and so the user surface signals the project's posture (sound is opt-in, never auto-on) from day one.
 
@@ -172,7 +172,7 @@ Each control still works for the current page-load. No errors thrown; no banner.
 - Persist to `localStorage`.
 - The 200ms dim transition fires (suppressed under reduced-motion).
 - No page reload.
-- No confirmation toast — the visual change *is* the confirmation. Per [ADR-0027](../adr/0027-community-resource-posture.md) § 10, no engagement-metric / "saved!" notification framing.
+- No confirmation toast — the visual change *is* the confirmation. Per [ADR-0027](../../adr/0027-community-resource-posture.md) § 10, no engagement-metric / "saved!" notification framing.
 
 ### Click a motion radio
 
@@ -201,16 +201,16 @@ Each control still works for the current page-load. No errors thrown; no banner.
 ## Out of scope for this spec
 
 - **Account / profile / sign-in.** v1 is anonymous on the public surface. If end-user accounts ship later (Entra External ID for end-user social login per [`memory/project_phase2_architecture_decisions.md`](../../../../Users/JimKeeley/.claude/projects/C--projects-PinballWizard/memory/project_phase2_architecture_decisions.md) — when passport ships), an account section *may* be added here, but it lives in a separate Settings v2 spec PR.
-- **Saved questions / history.** Forbidden in v1 per [ADR-0027](../adr/0027-community-resource-posture.md) § 10 (engagement-metric framing). The shareable-deep-link pattern (`/wizard/q/{slug}` per [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § 1) covers the "I want to come back to this answer" use case without state on the client.
+- **Saved questions / history.** Forbidden in v1 per [ADR-0027](../../adr/0027-community-resource-posture.md) § 10 (engagement-metric framing). The shareable-deep-link pattern (`/wizard/q/{slug}` per [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § 1) covers the "I want to come back to this answer" use case without state on the client.
 - **Notifications preferences.** No notifications in v1. If notifications ever ship for genuinely useful reasons (a manufacturer publishes a service bulletin for a machine the user explicitly subscribed to), they go through a dedicated subscriptions surface, not a generic notifications-prefs surface.
 - **Data export / data import.** No per-user data exists in v1 to export. If account-bound data exists later, this is a separate Settings v2 surface.
 - **"Reset to defaults" button.** Not in v1 — defaults are recoverable by clearing browser storage, which is the standard browser-mediated reset path. A dedicated reset button would imply user-data complexity that doesn't exist.
-- **Per-theme palette overrides** (e.g., "use Modern LCD with this accent color"). Themes are atomic units; adding palette-override controls re-litigates the locked-palette rule in [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § 6. If a theme's palette feels wrong for a user, the right fix is a sibling theme that addresses the gap, landed via the sibling-theme-promotion path.
+- **Per-theme palette overrides** (e.g., "use Modern LCD with this accent color"). Themes are atomic units; adding palette-override controls re-litigates the locked-palette rule in [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § 6. If a theme's palette feels wrong for a user, the right fix is a sibling theme that addresses the gap, landed via the sibling-theme-promotion path.
 - **Language / locale.** v1 is English-only. Localization spec lives in a separate doc when it earns its keep.
-- **Admin settings.** Admin RBAC + admin-side preferences (if any) live in `AdminLayout` per [ADR-0009](../adr/0009-entra-external-id-admin-rbac-v1.md). The public Settings screen never surfaces admin controls.
+- **Admin settings.** Admin RBAC + admin-side preferences (if any) live in `AdminLayout` per [ADR-0009](../../adr/0009-entra-external-id-admin-rbac-v1.md). The public Settings screen never surfaces admin controls.
 
 ## Iteration log
 
 | Date | Change | Rationale |
 |---|---|---|
-| 2026-05-09 | v1 spec | Operationalizes the theme picker into a dedicated screen (the Wave 3 obligation that unblocks sibling-theme rollout per [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md)). Three sections in v1: theme, motion, sound — peer parity, alphabetical theme ordering, no "default"/"recommended" badges that would re-litigate [ADR-0027](../adr/0027-community-resource-posture.md) § 2. Explicit non-scope for account/saved-questions/notifications/data-export per [ADR-0027](../adr/0027-community-resource-posture.md) § 10 (no captive UI, no engagement-metric framing). Persistence via localStorage matching the working prototype at [`docs/ui/prototypes/theme-picker.html`](../prototypes/theme-picker.html). Three-state motion preference (match-device / on / off) instead of a binary toggle — three states is honest about what the OS-level query actually expresses. Sound toggle is mute-by-default per [ADR-0026](../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted (auto-playing audio rejected permanently); v1 ships the toggle even though no sound assets exist yet, so persistence is in place when assets land later and the user-surface signal of "sound is opt-in, never auto-on" is established from day one. |
+| 2026-05-09 | v1 spec | Operationalizes the theme picker into a dedicated screen (the Wave 3 obligation that unblocks sibling-theme rollout per [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md)). Three sections in v1: theme, motion, sound — peer parity, alphabetical theme ordering, no "default"/"recommended" badges that would re-litigate [ADR-0027](../../adr/0027-community-resource-posture.md) § 2. Explicit non-scope for account/saved-questions/notifications/data-export per [ADR-0027](../../adr/0027-community-resource-posture.md) § 10 (no captive UI, no engagement-metric framing). Persistence via localStorage matching the working prototype at [`docs/ui/prototypes/theme-picker.html`](../prototypes/theme-picker.html). Three-state motion preference (match-device / on / off) instead of a binary toggle — three states is honest about what the OS-level query actually expresses. Sound toggle is mute-by-default per [ADR-0026](../../adr/0026-user-delight-frontend-and-streaming.md) § Explicitly NOT adopted (auto-playing audio rejected permanently); v1 ships the toggle even though no sound assets exist yet, so persistence is in place when assets land later and the user-surface signal of "sound is opt-in, never auto-on" is established from day one. |

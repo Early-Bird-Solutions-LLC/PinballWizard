@@ -31,6 +31,43 @@ for retrieval consistency.
 Hybrid chunking. Token-budgeted chunks within heading-bounded
 sections.
 
+The following diagram traces the algorithm from PDF input through section
+discovery, the has-outline branch, token-budgeted windowing, and chunk
+metadata assembly to AI Search upsert.
+
+```mermaid
+flowchart TD
+    PDF([PDF manual]):::ext
+
+    EXTRACT["PdfPig: extract outline<br/>&amp; text"]:::svc
+    OUTLINE{"Has outline?"}:::svc
+
+    SECTION["Group pages into<br/>heading-bounded sections"]:::svc
+    WINDOW["Token-budgeted windowing<br/>~512 tokens, ~10% overlap<br/>cl100k_base BPE"]:::svc
+    SMALL["Section &lt; budget?<br/>Emit single chunk<br/>no padding or merge"]:::svc
+
+    FALLBACK["Fixed-size windowing<br/>across whole document<br/>page numbers preserved<br/>section_heading empty"]:::svc
+
+    CHUNK["Chunk with metadata<br/>section_heading<br/>page_start / page_end<br/>document_url<br/>machine_id / manufacturer"]:::svc
+
+    INDEX[(AI Search index)]:::data
+
+    PDF --> EXTRACT
+    EXTRACT --> OUTLINE
+    OUTLINE -- Yes --> SECTION
+    OUTLINE -- No --> FALLBACK
+    SECTION --> WINDOW
+    WINDOW -->|"Section &lt; budget"| SMALL
+    WINDOW -->|"Section &ge; budget"| CHUNK
+    SMALL --> CHUNK
+    FALLBACK --> CHUNK
+    CHUNK --> INDEX
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+```
+
 ### Algorithm
 
 1. **Section discovery.** Use PdfPig's outline tree as the section

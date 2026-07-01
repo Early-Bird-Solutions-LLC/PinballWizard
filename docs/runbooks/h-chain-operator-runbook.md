@@ -238,7 +238,7 @@ H2 and H3 also require the H1 outputs (Cosmos endpoint, AI Search endpoint, Foun
 
 ## H3 — Final eval
 
-**Goal:** capture the post-RAG eval baseline once W4-1 (`searchCorpus`) and W4-3 (citation-required guardrail) have shipped. Calibrate the [ADR-0017](../adr/0017-confidence-threshold-refusal.md) confidence threshold and [ADR-0023](../adr/0023-citation-required-guardrail.md) citation-required threshold against the measured numbers. Optionally trigger the [ADR-0024](../adr/0024-cross-encoder-reranker.md) cross-encoder gate.
+**Goal:** capture the post-RAG eval baseline once W4-1 (`searchCorpus`) and W4-3 (citation-required guardrail) have shipped. Calibrate the [ADR-0017](../adr/0017-confidence-threshold-refusal.md) confidence threshold and [ADR-0023](../adr/0023-citation-required-guardrail.md) citation-required threshold against the measured numbers. Optionally trigger the [ADR-0024](../adr/0024-two-stage-reranking.md) cross-encoder gate.
 
 **When to run:** **gated on W4-3 shipping**. If W4-3 is still open, H3 is not yet runnable — the guardrail is the structural change that lifts citation_precision off its H2 floor. Sequence: H2 (post-W2-3) → W3-1 → W3-2 → W4-1 → W4-2 → W4-3 → H3.
 
@@ -313,4 +313,4 @@ This runbook decays gracefully as the underlying memory entries evolve. When a m
 - [`memory/feedback_personal_identity_only.md`](../../) — the personal-Earlybird-subscription guard logic in `Deploy-SharedResources.ps1`.
 - [`docs/build-spec.md`](../build-spec.md) § Phase 3 § Operational hand-offs and § Phase 4 § Operational hand-offs — the canonical H1 / H2 / H3 contracts this runbook executes against.
 - [`CLAUDE.md`](../../CLAUDE.md) § Locked invariants #5 (personal identity) and #6 (PowerShell, not Git-Bash) — invariants that show up as gotchas in this runbook.
-- ADRs [0010](../adr/0010-personal-subscription-only.md), [0012](../adr/0012-cosmos-arm-schema-data-plane-items.md), [0013](../adr/0013-two-tier-bicep-deploy.md), [0014](../adr/0014-microsoft-foundry-orchestration.md), [0017](../adr/0017-confidence-threshold-refusal.md), [0021](../adr/0021-ai-search-index-schema.md), [0023](../adr/0023-citation-required-guardrail.md), [0024](../adr/0024-cross-encoder-reranker.md) — the architectural decisions this runbook implements operationally.
+- ADRs [0010](../adr/0010-personal-azure-subscription-only.md), [0012](../adr/0012-cosmos-arm-schema-data-plane-items.md), [0013](../adr/0013-two-tier-bicep-deploy.md), [0014](../adr/0014-microsoft-foundry-orchestration.md), [0017](../adr/0017-confidence-threshold-refusal.md), [0021](../adr/0021-ai-search-index-schema.md), [0023](../adr/0023-citation-required-guardrail.md), [0024](../adr/0024-two-stage-reranking.md) — the architectural decisions this runbook implements operationally.

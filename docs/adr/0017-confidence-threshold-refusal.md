@@ -5,7 +5,7 @@
 
 ## Context
 
-[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md)
+[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
 locks the principle that the Wizard must refuse rather than
 fabricate when confidence is low: *"Manual wiring questions can be
 physically dangerous; threshold-driven refusal is non-negotiable."*
@@ -22,6 +22,55 @@ threshold-driven refusal. We need a recorded definition of
 the eval set.
 
 ## Decision
+
+The diagram below shows how the three confidence signals flow through the pipeline to produce either a categorized refusal or a citation-backed streamed answer.
+
+```mermaid
+flowchart TD
+    FS["Foundry content safety<br/>(ADR-0014)"]:::svc
+    HC([HarmfulContent refusal]):::gov
+
+    RS["retrieval_similarity<br/>(cosine sim, top doc)"]:::svc
+    MS["model_self_reported<br/>(logprobs / prompt-coerced)"]:::svc
+    CC["citation_coverage<br/>(citations / ⌈paragraphs/4⌉)"]:::svc
+
+    GM["Geometric mean<br/>(a × b × c)^(1/3)"]:::svc
+
+    TH{"composite ≥ 0.65?"}:::svc
+
+    IG([InsufficientGrounding]):::gov
+    OOS([OutOfScope]):::gov
+    LMC([LowModelConfidence]):::gov
+    CCH([CostCeilingHit]):::gov
+
+    PASS["Pass — composite ≥ 0.65"]:::gov
+    CIT["Citations required<br/>(guardrails.md goal #5)"]:::gov
+    ANS(["Streamed answer<br/>with citations"]):::gov
+
+    FS -->|"harmful content flagged"| HC
+    FS -->|"safe"| RS
+    FS -->|"safe"| MS
+    FS -->|"safe"| CC
+
+    RS --> GM
+    MS --> GM
+    CC --> GM
+
+    GM --> TH
+
+    TH -->|"No — low retrieval sim"| IG
+    TH -->|"No — unknown-branch dispatch"| OOS
+    TH -->|"No — low model confidence"| LMC
+    TH -->|"No — cost ceiling tripped"| CCH
+    TH -->|"Yes"| PASS
+
+    PASS --> CIT
+    CIT --> ANS
+
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef gov fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+```
 
 ### Confidence calculation
 
@@ -163,7 +212,7 @@ Analytics + (post-deployPhase2) App Insights.
   against the eval set is small effort and produces a defensible
   number.
 - **No refusal mechanism** (always answer). Rejected:
-  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md)
+  [`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
   locked refusal as non-negotiable for safety reasons. This ADR
   honors that lock.
 - **Foundry-side refusal only** (drop our confidence layer entirely).

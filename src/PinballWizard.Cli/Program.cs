@@ -117,6 +117,18 @@ var evalOption = new Option<bool>("--eval")
     Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
 };
 
+var probeRetrievalOption = new Option<string?>("--probe-retrieval")
+{
+    Description = "Classify a candidate eval JSONL by first-stage retrieval rank (Phase 4.5 H5b prep). " +
+                  "Reads each EvalQuestion from <input.jsonl>, calls IRetrievalRankProbe.ProbeAsync, " +
+                  "and writes <input>.classified.jsonl with 'slice' and 'first_stage_rank' populated. " +
+                  "Prints a one-line slice-distribution summary (easy=N reranker-sensitive=N retrieval-miss=N). " +
+                  "IMPORTANT: this verb measures FIRST-STAGE rank (before Cohere cross-encoder reranking). " +
+                  "Requires Rag:CrossEncoder:Enabled=false — the command exits with code 2 and a clear " +
+                  "error message if the reranker is on, because the measurement would be corrupted. " +
+                  "Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured."
+};
+
 var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
 {
     Description = "One-shot RAG index backfill: iterates all scraped_documents via the raw Change Feed stream iterator (no lease checkpoints) and runs each document through the full RAG ingestion pipeline (extract → chunk → embed → AI Search upsert). Idempotent: documents already indexed with the same content hash are skipped. Use after provisioning a fresh RAG index to populate it from existing scraped documents before the Change Feed Processor starts handling ongoing writes. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured."
@@ -210,6 +222,7 @@ rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
+rootCommand.Options.Add(probeRetrievalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
@@ -241,6 +254,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
+    var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
@@ -784,6 +798,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                           $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
                           $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
                           $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
+        return;
+    }
+
+    // Handle --probe-retrieval (Phase 4.5 first-stage rank classifier; H5b
+    // eval prep). Resolves IRetrievalRankProbe from DI; the probe is only
+    // registered when AddAzureAiSearchIntegration was wired (i.e.,
+    // AiSearch:Endpoint is set). Guards against reranker-on runs (would
+    // corrupt the first-stage measurement) via CrossEncoderOptions.Enabled.
+    // Mirrors the --eval exit-code-2 remediation pattern.
+    if (!string.IsNullOrWhiteSpace(probeRetrieval))
+    {
+        await ProbeRetrievalCommand.RunAsync(probeRetrieval, host.Services, cancellationToken);
         return;
     }
 

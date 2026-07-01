@@ -99,5 +99,5 @@ that supersedes or amends this one.
 
 - [`docs/infra_analysis.md`](../infra_analysis.md) §1 — MudBlazor
   noted as the strict UI library.
-- [`project_phase2_architecture_decisions.md`](../../../../Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md)
+- [`project_phase2_architecture_decisions.md`](../../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
   — MudBlazor strict locked decision.

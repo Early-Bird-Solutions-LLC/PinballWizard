@@ -131,7 +131,7 @@ If the personal Azure subscription is ever migrated or replaced:
 
 ## References
 
-- [`feedback_personal_identity_only.md`](../../../../Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_personal_identity_only.md) — locked feedback memory; the rationale for treating personal/work identity separation as durable.
+- [`feedback_personal_identity_only.md`](../../../../Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_personal_identity_only.md) — locked feedback memory; the rationale for treating personal/work identity separation as durable.
 - [ADR 0005](0005-standalone-azure-infrastructure.md) — own resource groups, own lifecycle within the chosen subscription.
 - [`infra/scripts/Deploy-SharedResources.ps1`](../../infra/scripts/Deploy-SharedResources.ps1) — the enforcement.
 - [`infra/README.md`](../../infra/README.md) — deploy instructions referencing this ADR.

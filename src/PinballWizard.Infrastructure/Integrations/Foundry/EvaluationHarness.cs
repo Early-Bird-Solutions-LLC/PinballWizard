@@ -199,6 +199,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
 
         var completedAt = _timeProvider.GetUtcNow();
         var aggregate = ComputeAggregate(perQuestionResults);
+        var bySlice = ComputeBySlice(perQuestionResults);
         var resultsPath = BuildResultsPath(startedAt);
         var evaluationId = $"pinwiz-eval-{startedAt:yyyyMMddTHHmmssZ}";
 
@@ -210,6 +211,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
             ResultsPath: resultsPath,
             PromptVersion: _promptProvider.PromptVersion,
             Aggregate: aggregate,
+            BySlice: bySlice,
             Questions: perQuestionResults);
 
         Directory.CreateDirectory(_evalOptions.ResultsDirectory);
@@ -249,6 +251,7 @@ public sealed class EvaluationHarness : IEvaluationHarness
         try
         {
             var resultsPath = BuildResultsPath(startedAt) + ".partial";
+            var partialResults = perQuestionResults;
             var runResult = new EvalRunResult(
                 EvaluationId: $"pinwiz-eval-{startedAt:yyyyMMddTHHmmssZ}-PARTIAL",
                 StartedAt: startedAt,
@@ -256,8 +259,9 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 GroundTruthPath: groundTruthPath,
                 ResultsPath: resultsPath,
                 PromptVersion: _promptProvider.PromptVersion,
-                Aggregate: ComputeAggregate(perQuestionResults),
-                Questions: perQuestionResults);
+                Aggregate: ComputeAggregate(partialResults),
+                BySlice: ComputeBySlice(partialResults),
+                Questions: partialResults);
 
             Directory.CreateDirectory(_evalOptions.ResultsDirectory);
             var json = JsonSerializer.Serialize(runResult, ResultsSerializerOptions);
@@ -419,7 +423,8 @@ public sealed class EvaluationHarness : IEvaluationHarness
             AnswerText: answerText,
             Scores: scores,
             DurationMs: durationMs,
-            Error: error);
+            Error: error,
+            Slice: question.Slice);
     }
 
     private static List<string> ExtractCitationIds(IReadOnlyList<Citation> citations)
@@ -559,6 +564,36 @@ public sealed class EvaluationHarness : IEvaluationHarness
                 ? groundingIntegritySum / groundingIntegrityCount
                 : null,
             GroundingIntegrityCount: groundingIntegrityCount);
+    }
+
+    // Groups per-question results by Slice and calls ComputeAggregate on each
+    // group — the same arithmetic used for the top-level Aggregate, so slice
+    // means are computed identically (DRY: no duplicated aggregation logic).
+    // Rows with a null Slice go into the "(unsliced)" bucket so every question
+    // is accounted for and the bucket set is exhaustive. The result is ordered
+    // by key for stable JSON serialization across runs.
+    private static Dictionary<string, EvalAggregate> ComputeBySlice(
+        List<EvalQuestionResult> results)
+    {
+        var groups = new Dictionary<string, List<EvalQuestionResult>>(StringComparer.Ordinal);
+        foreach (var r in results)
+        {
+            var key = r.Slice ?? "(unsliced)";
+            if (!groups.TryGetValue(key, out var bucket))
+            {
+                bucket = [];
+                groups[key] = bucket;
+            }
+            bucket.Add(r);
+        }
+
+        // Sort keys so the JSON output is stable across runs.
+        return groups
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToDictionary(
+                kv => kv.Key,
+                kv => ComputeAggregate(kv.Value),
+                StringComparer.Ordinal);
     }
 
     private string BuildResultsPath(DateTimeOffset startedAt)
