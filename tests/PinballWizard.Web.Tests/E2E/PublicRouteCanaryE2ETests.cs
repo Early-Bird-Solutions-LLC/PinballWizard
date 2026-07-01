@@ -76,6 +76,23 @@ public sealed class PublicRouteCanaryE2ETests : IAsyncLifetime
         Assert.True(paperVisible, "/settings theme picker is missing the Paper theme card.");
     }
 
+    // A new visitor (no saved preference) must land on the Paper theme — the
+    // documented default (theme #343). The client applies it via the App.razor
+    // inline script + app.js getTheme; a regression to the old 'modern-lcd'
+    // default (which left new visitors on the wrong theme) fails here.
+    [E2EFact]
+    public async Task NewVisitor_DefaultsToPaperTheme()
+    {
+        var page = await NewPageAsync(); // fresh context ⇒ empty localStorage
+        await NavigateAsync(page, "/");
+        await AssertNotErrorPageAsync(page, "/");
+
+        var hasPaper = await page.EvaluateAsync<bool>(
+            "() => document.documentElement.classList.contains('theme-paper')");
+        Assert.True(hasPaper,
+            "A new visitor's <html> should carry the theme-paper class (Paper is the default).");
+    }
+
     // /status renders live dependency indicators; the page container must render
     // regardless of whether any dependency is degraded.
     [E2EFact]
