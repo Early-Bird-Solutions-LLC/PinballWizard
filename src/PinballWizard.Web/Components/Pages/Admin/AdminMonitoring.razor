@@ -17,8 +17,8 @@
  * the loading shell reaches the client immediately (no prerender double-load).
  * Each metric is nullable; null renders a visible "unavailable" marker —
  * never 0 or silent blank (Invariant #17). Cost tile remains Eval-only until
- * token-usage instrumentation lands in #2688. D4 alert rules are static; live
- * ARM integration is Task 7.
+ * token-usage instrumentation lands in #2688. D4 "now" values for latency,
+ * 5xx, and dead-letters are live from the snapshot (Task 7).
  *
  * Window buttons (1h / 24h / 7d) re-query the reader on click, setting
  * _window and re-running LoadAsync.
@@ -358,17 +358,24 @@
 
     </MudGrid>
 
-    @* D4 — Active alert rules (static; live ARM integration is Task 7) *@
+    @* D4 — Configured alert rules. Panel title updated (Task 7); "now" values for
+     * latency, 5xx, and dead-letters wired to the live snapshot (Task 7).
+     * State chips (OK / Suppressed) are configuration-derived; authoritative
+     * firing state lives in Azure Monitor.
+     *@
     <div class="mon-panel" data-testid="mon-d4-alerts">
         <div class="mon-panel__header">
-            <span class="mon-panel__title">Active alert rules</span>
+            <span class="mon-panel__title">Configured alert rules</span>
             <span class="mon-panel__meta">infra/modules/shared.bicep</span>
         </div>
+        <p class="mon-panel__sub">
+            State chips are configuration-derived; authoritative firing state lives in Azure Monitor.
+        </p>
         <div class="mon-alerts" data-testid="mon-alert-rows">
             <div class="mon-alert-row" data-testid="mon-alert-latency">
                 <span class="mon-alert__name">pinwiz-alert-latency-p95</span>
                 <span class="mon-alert__condition">
-                    p95 &gt; 5,000 ms · 5 periods — now 2,310 ms
+                    p95 &gt; 5,000 ms · 5 periods — now @AlertLatencyNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-latency-state">OK</span>
@@ -376,7 +383,7 @@
             <div class="mon-alert-row" data-testid="mon-alert-5xx">
                 <span class="mon-alert__name">pinwiz-alert-5xx-rate</span>
                 <span class="mon-alert__condition">
-                    5xx &gt; 5% · 10-min window — now 0.4%
+                    5xx &gt; 5% · 10-min window — now @AlertFivexxNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-5xx-state">OK</span>
@@ -392,7 +399,7 @@
             <div class="mon-alert-row" data-testid="mon-alert-deadletter">
                 <span class="mon-alert__name">pinwiz-alert-dead-letters</span>
                 <span class="mon-alert__condition">
-                    dead-letter rate &gt; 0 · 15-min — now 2 (under burst cap)
+                    dead-letter rate &gt; 0 · 15-min — now @AlertDeadLettersNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-deadletter-state">OK</span>
@@ -560,4 +567,26 @@
 
     private string DriftStateClass() =>
         _snapshot?.ReconcileDrift switch { null => "mon-pip-state--faint", 0 => "mon-pip-state--ok", _ => "mon-pip-state--warn" };
+
+    // ── D4 Alert rule "now" helpers ────────────────────────────────────────────
+    // Return the live metric value formatted for the condition text, or "unavailable"
+    // when the backing metric is null (Invariant #17 — never render 0 for missing data).
+
+    private string AlertLatencyNow() =>
+        _loading ? "…" :
+        _snapshot?.LatencyP95Ms is { } lat
+            ? $"{lat.ToString("N0", CultureInfo.InvariantCulture)} ms"
+            : "unavailable";
+
+    private string AlertFivexxNow() =>
+        _loading ? "…" :
+        _snapshot?.FivexxRatePercent is { } rate
+            ? $"{rate.ToString("G", CultureInfo.InvariantCulture)}%"
+            : "unavailable";
+
+    private string AlertDeadLettersNow() =>
+        _loading ? "…" :
+        _snapshot?.DeadLetters is { } dl
+            ? dl.ToString(CultureInfo.InvariantCulture)
+            : "unavailable";
 }

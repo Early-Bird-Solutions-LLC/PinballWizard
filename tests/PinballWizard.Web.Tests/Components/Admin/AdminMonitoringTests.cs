@@ -333,7 +333,57 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         });
     }
 
-    // ── D4 Alert rules — semantic invariants (static, Task 7 wires live data) ─
+    // ── D4 Alert rules — configured panel title + live now-values (Task 7) ──────
+
+    [Fact]
+    public void D4_Panel_IsTitledConfiguredAlertRules()
+    {
+        var cut = RenderWith(FullSnap());
+        cut.WaitForAssertion(() =>
+            Assert.Contains("Configured alert rules",
+                cut.Find("[data-testid='mon-d4-alerts']").TextContent));
+    }
+
+    [Fact]
+    public void D4_LatencyAlert_ShowsLiveNowValue()
+    {
+        var cut = RenderWith(FullSnap());
+        cut.WaitForAssertion(() =>
+            Assert.Contains("2,310",
+                cut.Find("[data-testid='mon-alert-latency']").TextContent));
+    }
+
+    [Fact]
+    public void D4_LatencyAlert_LiveValue_IsDataDriven()
+    {
+        // Proves the latency "now" is driven by the snapshot, not a hardcoded string.
+        var snap = FullSnap() with { LatencyP95Ms = 1750 };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+            Assert.Contains("1,750",
+                cut.Find("[data-testid='mon-alert-latency']").TextContent));
+    }
+
+    [Fact]
+    public void D4_LatencyAlert_NullSnapshot_ShowsUnavailable()
+    {
+        var snap = FullSnap() with { LatencyP95Ms = null };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+        {
+            var text = cut.Find("[data-testid='mon-alert-latency']").TextContent;
+            Assert.Contains("unavailable", text, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public void D4_CostAlert_StaysSuppressed()
+    {
+        var cut = RenderWith(FullSnap());
+        cut.WaitForAssertion(() =>
+            Assert.Contains("Suppressed",
+                cut.Find("[data-testid='mon-alert-cost-state']").TextContent));
+    }
 
     [Fact]
     public async Task D4_HasFiveAlertRows()
