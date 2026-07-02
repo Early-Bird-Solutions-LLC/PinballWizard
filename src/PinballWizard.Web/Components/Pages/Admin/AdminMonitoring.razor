@@ -1,6 +1,7 @@
 @page "/admin/monitoring"
 @layout AdminLayout
 @rendermode InteractiveServer
+@inherits AdminPageBase
 @using System.Globalization
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.Extensions.Logging
@@ -443,7 +444,7 @@
     {
         _loadFailed = false;
         _loading = true;
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _snapshot = await MonitoringReader.GetSnapshotAsync(_window, cts.Token);
@@ -461,7 +462,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

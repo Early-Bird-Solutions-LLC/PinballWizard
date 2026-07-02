@@ -5,6 +5,7 @@
 @using Microsoft.Extensions.Logging
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminJobDetail — /admin/jobs/{JobName} detail view for a single Container Apps Job.
  *
@@ -272,11 +273,11 @@
         {
             _serviceUnavailable = true;
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
             return;
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _detail = await JobService
@@ -306,7 +307,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -314,7 +315,7 @@
     {
         _loadingMore = true;
         _historyCount += 10;
-        StateHasChanged();
+        SafeStateHasChanged();
         try
         {
             await LoadAsync(_historyCount);
@@ -322,7 +323,7 @@
         finally
         {
             _loadingMore = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

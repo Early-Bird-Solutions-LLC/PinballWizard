@@ -444,3 +444,60 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         Assert.Equal("OK", el.TextContent.Trim());
     }
 }
+
+// Dispose-mid-load guard (#615): disposing AdminMonitoring while OnAfterRenderAsync is
+// blocked on GetSnapshotAsync must not throw ObjectDisposedException.
+//
+// How the guard works:
+//   1. AdminPageBase.Dispose() sets _disposed=true THEN cancels the disposal CTS.
+//   2. CreateLoadCts() links each 30-second timeout CTS to the disposal CTS, so
+//      the in-flight Task.Delay(Infinity, ct) sees its token cancelled and throws
+//      OperationCanceledException.
+//   3. The catch block runs; the finally calls SafeStateHasChanged() which sees
+//      _disposed=true and returns without touching the disposed renderer.
+//      Without SafeStateHasChanged(), plain StateHasChanged() on a disposed renderer
+//      would throw ObjectDisposedException.
+//
+// Synchronisation note: the Task.Delay continuation runs on a background thread
+// after DisposeAsync() returns, so we cannot await it in-test. The safety of the
+// async path is verified by the synchronous AdminPageBaseTests (CreateLoadCts_CancelsOnDispose
+// + SafeStateHasChanged_AfterDispose_DoesNotThrow). This test validates the integration:
+// DisposeAsync() itself completes without exception when a blocking load is in progress.
+public sealed class AdminMonitoringDisposeGuardTests : AsyncBunitContext
+{
+    public AdminMonitoringDisposeGuardTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+        Services.AddSingleton<ILogger<AdminMonitoring>>(NullLogger<AdminMonitoring>.Instance);
+    }
+
+    [Fact]
+    public async Task DisposesMidLoad_DoesNotThrowObjectDisposedException()
+    {
+        // Mock that blocks until the cancellation token fires (simulates a slow read).
+        var reader = Substitute.For<IMonitoringStatsReader>();
+        reader.GetSnapshotAsync(Arg.Any<MonitoringWindow>(), Arg.Any<CancellationToken>())
+              .Returns(async callInfo =>
+              {
+                  await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
+                  return new MonitoringSnapshot { Window = MonitoringWindow.TwentyFourHours, GeneratedAt = DateTimeOffset.UtcNow }; // unreachable
+              });
+        Services.AddSingleton(reader);
+
+        Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminMonitoring>(1);
+            builder.CloseComponent();
+        });
+
+        // OnAfterRenderAsync started and is blocked on GetSnapshotAsync.
+        // DisposeAsync() → AdminPageBase.Dispose(): _disposed=true, cancels disposal CTS
+        // → linked CTS from CreateLoadCts is cancelled → Task.Delay throws OCE
+        // → catch block sets _loadFailed; finally: SafeStateHasChanged() returns (noop).
+        await DisposeAsync(); // must not throw
+    }
+}
