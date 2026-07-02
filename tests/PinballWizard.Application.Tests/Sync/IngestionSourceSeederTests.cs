@@ -238,6 +238,41 @@ public sealed class IngestionSourceSeederTests : IDisposable
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
 
+    [Fact]
+    public void ProductionManifest_EveryEntryHasSourceGroupAndDiscoveryStatus()
+    {
+        var repoRoot = FindRepoRoot();
+        var manifestPath = Path.Combine(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+
+        foreach (var entry in doc.RootElement.EnumerateArray())
+        {
+            var id = entry.GetProperty("id").GetString();
+
+            Assert.True(entry.TryGetProperty("sourceGroup", out var group)
+                && !string.IsNullOrWhiteSpace(group.GetString()),
+                $"Entry '{id}' is missing a non-empty sourceGroup.");
+
+            Assert.True(entry.TryGetProperty("discoveryStatus", out var status)
+                && status.GetString() is "Active" or "NoSource" or "Deferred",
+                $"Entry '{id}' has an invalid or missing discoveryStatus.");
+
+            // No display-name mojibake or leftover status suffixes.
+            var name = entry.GetProperty("displayName").GetString()!;
+            Assert.DoesNotContain("â€", name, StringComparison.Ordinal); // corrupted em-dash bytes
+            Assert.DoesNotContain("(NoSource)", name, StringComparison.Ordinal);
+            Assert.DoesNotContain("(Deferred)", name, StringComparison.Ordinal);
+        }
+
+        // The four disabled sub-feeds must carry an explanation.
+        var disabledWithReason = doc.RootElement.EnumerateArray()
+            .Where(e => e.GetProperty("discoveryStatus").GetString() is "NoSource" or "Deferred")
+            .ToList();
+        Assert.Equal(4, disabledWithReason.Count);
+        Assert.All(disabledWithReason, e =>
+            Assert.False(string.IsNullOrWhiteSpace(e.GetProperty("discoveryNotes").GetString())));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static IngestionSourceSeed Seed(
