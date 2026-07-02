@@ -82,7 +82,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
 
         // Act
-        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         // Assert
         Assert.Equal(MachineId, entry.MachineId);
@@ -176,7 +176,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
         var change = MakeChange(MachineId, Manufacturer, null);
 
-        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         Assert.Equal(MachineId, entry.MachineId);
         Assert.Equal(0, entry.DocCount);
@@ -226,7 +226,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
 
         // Act
-        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         // Assert — title and identity fields populated from machine record
         Assert.Equal("Godzilla", entry.Title);  // machine.Title beats last-scraped-doc title
@@ -259,7 +259,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var change = MakeChange(MachineId, Manufacturer, null);
         var sut = CreateSut();
 
-        var entry = await sut.ComputeMachineEntryAsync(change, CancellationToken.None);
+        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         Assert.Null(entry.Year);
         Assert.Null(entry.EditionLabel);
@@ -384,6 +384,86 @@ public sealed class CatalogStatsChangeFeedHandlerTests
 
         // Assert
         Assert.Equal(fixedAsOf, doc.AsOfUtc);
+    }
+
+    // -------------------------------------------------------------------------
+    // HandleAsync — a scraped_documents change carries the manufacturer in DISPLAY
+    // case ("Stern"), but machines are partitioned under the normalized lowercase
+    // key ("stern") — the SAME key --rebuild-catalog-stats uses (machine.PartitionKey).
+    // The handler MUST normalize before (a) the machine point-read and (b) the
+    // catalog_stats doc key, else it misses the machine (→ null Year) and mints a
+    // DUPLICATE rollup doc under "Stern". Regression guard for the live catalog_stats
+    // manufacturer-casing duplicates (203 null-year entries observed 2026-07-02).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_DisplayCaseManufacturer_NormalizesKeyForLookupAndUpsert()
+    {
+        // Arrange
+        const string displayManufacturer = "Stern";   // as carried on the change record
+        const string normalizedKey       = "stern";   // machine partition key / rollup id
+
+        var doc1 = MakeScrapedDoc(MachineId, "Manual", "Godzilla Pro");
+        _scrapedDocsContainer
+            .GetItemQueryIterator<ScrapedDocumentTypeProjection>(
+                Arg.Any<QueryDefinition>(),
+                Arg.Any<string>(),
+                Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<ScrapedDocumentTypeProjection>([[doc1]]));
+
+        // The machine resolves ONLY under the normalized partition key; a lookup
+        // with the raw display case ("Stern") returns null (mirrors live Cosmos).
+        var machine = new Machine
+        {
+            Id                      = MachineId,
+            PartitionKey            = normalizedKey,
+            ManufacturerDisplayName = "Stern Pinball",
+            Title                   = "Godzilla",
+            Year                    = 2021,
+            EditionLabel            = "Pro",
+            GroupId                 = "GweeP",
+            ManufacturerSlugs       = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                { ["stern"] = "godzilla" },
+        };
+        _machineRepo
+            .GetByIdAsync(MachineId, normalizedKey, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(machine));
+        _machineRepo
+            .GetByIdAsync(MachineId, Arg.Is<string>(k => k != normalizedKey), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Machine?>(null));
+
+        // No existing rollup doc → 404 → fresh record.
+        _catalogStatsContainer
+            .ReadItemAsync<CatalogStatsCosmosRecord>(
+                Arg.Any<string>(),
+                Arg.Any<PartitionKey>(),
+                Arg.Any<ItemRequestOptions>(),
+                Arg.Any<CancellationToken>())
+            .ThrowsAsync(new CosmosException("not found", HttpStatusCode.NotFound, 0, "x", 0));
+
+        CatalogStatsCosmosRecord? upserted = null;
+        _catalogStatsContainer
+            .UpsertItemAsync(
+                Arg.Do<CatalogStatsCosmosRecord>(d => upserted = d),
+                Arg.Any<PartitionKey>(),
+                Arg.Any<ItemRequestOptions>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ItemResponse<CatalogStatsCosmosRecord>>(null!));
+
+        var change = MakeChange(MachineId, displayManufacturer, "Godzilla Pro");
+        var sut = CreateSut();
+
+        // Act
+        await sut.HandleAsync(change, CancellationToken.None);
+
+        // Assert — rollup keyed by the NORMALIZED manufacturer (no "Stern" duplicate),
+        // and the machine resolved so Year is populated (not left null).
+        Assert.NotNull(upserted);
+        Assert.Equal(normalizedKey, upserted!.Id);
+        Assert.Equal(normalizedKey, upserted.PartitionKey);
+        var entry = Assert.Single(upserted.Machines);
+        Assert.Equal(2021, entry.Year);
+        Assert.Equal("Godzilla", entry.Title);
     }
 
     // -------------------------------------------------------------------------
