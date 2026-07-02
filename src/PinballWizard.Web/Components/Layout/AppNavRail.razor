@@ -1,0 +1,69 @@
+@* AppNavRail — shared left navigation rail.
+ *
+ * Two hosting modes:
+ *   1. Collapsible (ShowToggle=true, default) — a MudDrawer Mini rail with an
+ *      in-rail toggle button. Because the toggle has an @onclick, the host layout
+ *      MUST set @rendermode="InteractiveServer" on the <AppNavRail> tag so the
+ *      click is live (the component cannot self-enforce that). Used by MainLayout
+ *      (public, default collapsed).
+ *   2. Static always-expanded (ShowToggle=false) — no toggle, no @onclick, so the
+ *      rail is pure static markup (anchors only) and needs NO @rendermode. Used by
+ *      AdminLayout, whose /admin/* pages run their own interactive circuits; a
+ *      zero-@onclick layout subtree keeps the rail's interactivity profile
+ *      identical to the previous inline admin drawer.
+ *
+ * Design: docs/superpowers/specs/2026-07-01-public-left-nav-design.md
+ * ADR-0008 — MudBlazor strict.
+ *@
+
+<MudDrawer Open="@_open"
+           Variant="DrawerVariant.Mini"
+           Elevation="2"
+           Class="app-nav-rail"
+           aria-label="@(_open ? HeaderText : "Navigation")">
+    <MudDrawerHeader Class="d-flex align-center pa-2">
+        @if (ShowToggle)
+        {
+            <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                           Color="Color.Inherit"
+                           OnClick="Toggle"
+                           data-testid="nav-rail-toggle"
+                           aria-label="@(_open ? "Collapse navigation" : "Expand navigation")"
+                           title="@(_open ? "Collapse navigation" : "Expand navigation")" />
+        }
+        @if (_open)
+        {
+            <MudText Typo="Typo.subtitle1" Class="@(ShowToggle ? "ml-2" : null)">@HeaderText</MudText>
+        }
+    </MudDrawerHeader>
+
+    <MudNavMenu>
+        @foreach (var item in Items)
+        {
+            <MudNavLink Href="@item.Href"
+                        Match="@(item.MatchAll ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                        Icon="@item.Icon"
+                        title="@item.Label"
+                        aria-label="@item.Label">
+                @item.Label
+            </MudNavLink>
+        }
+    </MudNavMenu>
+</MudDrawer>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<NavRailItem> Items { get; set; } = Array.Empty<NavRailItem>();
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string HeaderText { get; set; } = "Navigation";
+
+    // When false, the rail renders no toggle button (no @onclick) and stays at
+    // whatever Open state it was given — a pure static rail that needs no
+    // @rendermode on the host. See the file header for the two hosting modes.
+    [Parameter] public bool ShowToggle { get; set; } = true;
+
+    private bool _open;
+
+    protected override void OnInitialized() => _open = Open;
+
+    private void Toggle() => _open = !_open;
+}
