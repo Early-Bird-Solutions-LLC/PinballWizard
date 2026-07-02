@@ -245,12 +245,12 @@ public sealed class LandingHeroTests
         });
         var cut = fragment.FindComponent<LandingHero>();
 
-        // Simulate Enter key press — MudAutocomplete raises OnKeyDown.
-        var input = cut.Find("[data-testid='landing-hero-input'] input");
-        await cut.InvokeAsync(() => input.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs
-        {
-            Key = "Enter",
-        }));
+        // Simulate Enter key press — MudAutocomplete raises OnKeyDown. Find the
+        // element INSIDE InvokeAsync so the event-handler id is resolved on the
+        // same dispatcher pass it is fired on (project_bunit_dispatcher_click_pattern).
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='landing-hero-input'] input")
+               .KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Enter" }));
 
         Assert.Equal("How does Godzilla wizard mode work?", submitted);
     }
@@ -279,6 +279,11 @@ public sealed class LandingHeroTests
         // Simulate the user selecting "Godzilla Pro" from the dropdown.
         // Invoking ValueChanged directly mirrors how MudAutocomplete fires
         // it on item selection (click or keyboard Enter on highlighted item).
+        // NOTE: the keyboard "Enter on a highlighted suggestion" path also fires
+        // OnKeyDown; the _pendingNavigationSuggestion flag suppresses the free-text
+        // submit in that case. bUnit cannot faithfully simulate MudAutocomplete's
+        // internal keydown→ValueChanged ordering, so that specific interleaving is
+        // exercised manually, not here — this test pins the navigation outcome.
         var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
         await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
             new MachineSuggestion("opdb-stern-godzilla-pro", "Godzilla Pro", "Stern", 2021)));
@@ -287,31 +292,28 @@ public sealed class LandingHeroTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 9. Suggest client errors → no crash, no suggestions
+    // 9. Suggest client returns no suggestions → no crash, no dropdown
     //
-    // When IMachineSuggestClient throws or returns empty, the autocomplete
-    // renders with no suggestions.  The hero must NOT surface an exception
-    // panel — the user should see an empty dropdown (identical to the
-    // pre-Phase-3 no-suggestions state).
-    //
-    // We verify this by registering a faulting client and asserting the
-    // component still renders without throwing.
+    // The IMachineSuggestClient contract is "never throw into the UI" — its
+    // implementation (MachineSuggestClient) catches transport / non-200 / JSON
+    // errors internally and returns []. So at the hero level the observable
+    // degraded state is an EMPTY suggestion list, which must render cleanly as
+    // the pre-Phase-3 no-suggestions experience (free text still works).
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task LandingHero_WhenSuggestClientThrows_RendersWithoutCrash()
+    public async Task LandingHero_WhenSuggestClientReturnsEmpty_RendersWithoutCrash()
     {
         await using var ctx = new BunitContext();
 
-        // Faulting client: throws HttpRequestException on every call.
-        // MachineSuggestClient.TryGetAsync catches this and returns null (→ []).
-        // LandingHero's SearchSuggestionsAsync returns [] → MudAutocomplete
-        // shows no dropdown.  The hero itself must not crash.
-        var faultingClient = Substitute.For<IMachineSuggestClient>();
-        faultingClient.GetSuggestionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                      .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
+        // Client returns [] (the degraded state the client contract guarantees on
+        // any backend failure). LandingHero's SearchSuggestionsAsync surfaces [] →
+        // MudAutocomplete shows no dropdown; the hero must not crash.
+        var emptyClient = Substitute.For<IMachineSuggestClient>();
+        emptyClient.GetSuggestionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                   .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
 
-        RegisterHeroServices(ctx, faultingClient);
+        RegisterHeroServices(ctx, emptyClient);
 
         // Render must not throw.
         var cut = RenderHeroWithPopover(ctx);
@@ -343,5 +345,41 @@ public sealed class LandingHeroTests
         Assert.Equal(2, autocomplete.Instance.MinCharacters);
         Assert.True(autocomplete.Instance.DebounceInterval >= 200,
             "DebounceInterval must be at least 200ms to avoid a call on every keystroke.");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 11. Submit adornment (arrow icon) → QuestionSubmitted with the raw text
+    //
+    // The adornment button is the mouse alternative to Enter for the free-text
+    // path. It must fire QuestionSubmitted with the current text, independent of
+    // any suggestion selection. Invoking OnAdornmentClick directly mirrors how
+    // MudBlazor raises it on the adornment button click.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LandingHero_OnAdornmentClick_InvokesQuestionSubmitted()
+    {
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
+
+        string? submitted = null;
+
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            builder.AddAttribute(2, nameof(LandingHero.QuestionText), "What is Medieval Madness worth?");
+            builder.AddAttribute(3, nameof(LandingHero.QuestionSubmitted),
+                EventCallback.Factory.Create<string>(this, q => submitted = q));
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<LandingHero>();
+
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        await cut.InvokeAsync(() => autocomplete.Instance.OnAdornmentClick.InvokeAsync(
+            new Microsoft.AspNetCore.Components.Web.MouseEventArgs()));
+
+        Assert.Equal("What is Medieval Madness worth?", submitted);
     }
 }
