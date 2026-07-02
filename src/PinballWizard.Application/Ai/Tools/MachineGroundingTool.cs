@@ -110,10 +110,10 @@ public sealed class MachineGroundingTool
     // Scores a collision-row entry (stored MatchTokens) against tokens extracted
     // from the user-supplied title string. Returns an integer score: +1 per
     // titleToken that appears in matchTokens (each titleToken counted at most
-    // once per entry). Zero means no signal — used as a tie-break sentinel to
-    // preserve insertion-order behaviour when the input carries no manufacturer
-    // qualifier (e.g. bare "Godzilla" scores 0 for all entries, so the first
-    // entry wins as before).
+    // once per entry). Zero means no signal — when all entries tie at zero (e.g.
+    // bare "Godzilla"), the content-intrinsic tie-break in
+    // ResolveContentIntrinsicTieBreakAsync resolves the winner by completeness
+    // and recency instead of insertion order (ADR-0049 Phase 1).
     //
     // Using the stored MatchTokens (e.g. ["jjp", "jersey", "jack"]) rather than
     // the raw manufacturer key ("jjp") means expanded display names like
@@ -271,36 +271,56 @@ public sealed class MachineGroundingTool
 
             if (lookupHit)
             {
-                // Score every collision-row entry against tokens extracted from
-                // the input title. MatchTokens (e.g. ["jjp", "jersey", "jack"])
+                // Phase 1: score every collision-row entry against tokens extracted
+                // from the input title. MatchTokens (e.g. ["jjp", "jersey", "jack"])
                 // are used when available so expanded display names ("Jersey Jack
-                // Pirates") resolve correctly. Null fallback uses the raw
-                // manufacturer key as a single-element list — backward-compatible
-                // for rows written before MatchTokens was introduced.
-                // The highest-scoring entry is resolved first; ties (all-zero or
-                // equal scores) preserve insertion order — backward-compatible with
-                // the pre-scoring first-hit behaviour for bare franchise titles.
+                // Pirates") resolve correctly. Null fallback uses the raw manufacturer
+                // key as a single-element list — backward-compatible for rows written
+                // before MatchTokens was introduced.
                 var titleTokens = TokenizeForOverlap(title);
-                var bestIdx = 0;
-                var bestScore = ScoreEntryAgainstTokens(
-                    lookup!.MatchTokens?[0] ?? [lookup.Manufacturers[0]],
-                    titleTokens);
-
-                for (var i = 1; i < lookup.OpdbIds.Count; i++)
+                var scores = new int[lookup!.OpdbIds.Count];
+                for (var i = 0; i < lookup.OpdbIds.Count; i++)
                 {
-                    var score = ScoreEntryAgainstTokens(
+                    scores[i] = ScoreEntryAgainstTokens(
                         lookup.MatchTokens?[i] ?? [lookup.Manufacturers[i]],
                         titleTokens);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestIdx = i;
-                    }
+                }
+
+                // Phase 2: collect all entries tied at the best score. An unambiguous
+                // winner (exactly one entry at the top score) takes the fast path
+                // (single point-read). A tie — including the all-zero bare-franchise
+                // case (e.g. bare "Godzilla") — goes to the content-intrinsic
+                // tie-break instead of insertion order (ADR-0049 Phase 1).
+                var bestScore = 0;
+                foreach (var s in scores)
+                    if (s > bestScore) bestScore = s;
+
+                var tiedIndices = new List<int>(lookup.OpdbIds.Count);
+                for (var i = 0; i < scores.Length; i++)
+                    if (scores[i] == bestScore) tiedIndices.Add(i);
+
+                int bestIdx;
+                Machine? tieBreakWinner = null;
+
+                if (tiedIndices.Count == 1)
+                {
+                    // No tie — unambiguous winner on token-overlap signal.
+                    bestIdx = tiedIndices[0];
+                }
+                else
+                {
+                    // Multiple entries share the best score. Resolve by fetching the
+                    // tied candidates and ranking them on content-intrinsic signals
+                    // (completeness then recency) instead of write order (ADR-0049).
+                    (bestIdx, tieBreakWinner) = await ResolveContentIntrinsicTieBreakAsync(
+                        lookup, tiedIndices, cancellationToken).ConfigureAwait(false);
                 }
 
                 var opdbId = lookup.OpdbIds[bestIdx];
                 var manufacturer = lookup.Manufacturers[bestIdx];
-                match = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
+                // Reuse the Machine fetched during tie-break resolution to avoid a
+                // redundant point-read on the bare-franchise-collision path.
+                match = tieBreakWinner ?? await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
                 if (match is not null)
                 {
                     resolvedLookup = lookup;
@@ -551,6 +571,93 @@ public sealed class MachineGroundingTool
         }
 
         return collisions;
+    }
+
+    // ── Content-intrinsic tie-break (ADR-0049 Phase 1) ──────────────────────
+
+    // Breaks a token-overlap score tie among multiple lookup-row entries by
+    // fetching the tied candidates' Machine records and ranking them on:
+    //   (a) MachineCompleteness.Score — higher wins (richer record data),
+    //   (b) Year descending — newer wins (newer titles tend to be richer),
+    //   (c) tiedIndices insertion order — deterministic final fallback.
+    //
+    // Returns (bestIdx, winner) where winner is the Machine already fetched
+    // so the caller avoids a redundant point-read on the most common path.
+    //
+    // Degrade gracefully: a null-fetch (stale lookup row) or Cosmos exception
+    // on a candidate is skipped. If ALL candidates fail, returns the first
+    // tied index and null — the caller will do a fresh fetch which may also
+    // fail and trigger the cross-partition fallback (invariant #17: never
+    // silent, never fabricate).
+    private async Task<(int BestIdx, Machine? Winner)> ResolveContentIntrinsicTieBreakAsync(
+        MachineTitleLookup lookup,
+        List<int> tiedIndices,
+        CancellationToken cancellationToken)
+    {
+        // (idx, machine, completeness) for every successfully-fetched candidate.
+        var candidates = new List<(int Idx, Machine Machine, int Completeness)>(tiedIndices.Count);
+
+        foreach (var idx in tiedIndices)
+        {
+            var opdbId = lookup.OpdbIds[idx];
+            var manufacturer = lookup.Manufacturers[idx];
+            try
+            {
+                var machine = await _machines
+                    .GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (machine is null)
+                {
+                    // Stale lookup-row entry — skip without counting as a failure.
+                    // The null-match path in the caller will trigger the fallback.
+                    _logger.LogDebug(
+                        "MachineGroundingTool: tie-break candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping.",
+                        opdbId, manufacturer);
+                    continue;
+                }
+
+                candidates.Add((idx, machine, MachineCompleteness.Score(machine)));
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // propagate cancellation — never swallow it
+            }
+            catch (Exception ex)
+            {
+                // Cosmos failure on a single candidate — degrade, log, skip.
+                _logger.LogWarning(ex,
+                    "MachineGroundingTool: tie-break fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
+                    opdbId, manufacturer);
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            // All candidate fetches degraded — fall back to insertion order
+            // (first tied index). The caller will attempt its own fetch of
+            // that entry and may fall through to the cross-partition path.
+            _logger.LogWarning(
+                "MachineGroundingTool: all {Count} tie-break candidate fetches failed. Falling back to insertion-order first tied index ({FallbackIdx}).",
+                tiedIndices.Count, tiedIndices[0]);
+            return (tiedIndices[0], null);
+        }
+
+        // Rank by: completeness score desc → year desc → original index asc.
+        // The original index ascending provides a deterministic insertion-order
+        // final fallback when completeness and year are also equal.
+        var winner = candidates
+            .OrderByDescending(c => c.Completeness)
+            .ThenByDescending(c => c.Machine.Year ?? 0)
+            .ThenBy(c => c.Idx)
+            .First();
+
+        _logger.LogDebug(
+            "MachineGroundingTool: content-intrinsic tie-break chose opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' (completeness={Completeness}, year={Year}) from {Count} tied candidate(s).",
+            lookup.OpdbIds[winner.Idx], lookup.Manufacturers[winner.Idx],
+            winner.Completeness, winner.Machine.Year, candidates.Count);
+
+        return (winner.Idx, winner.Machine);
     }
 
     // ── Forgiving resolution (ADR-0048) ─────────────────────────────────────
