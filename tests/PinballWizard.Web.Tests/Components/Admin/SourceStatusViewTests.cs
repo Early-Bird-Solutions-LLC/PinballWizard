@@ -9,6 +9,7 @@ public sealed class SourceStatusViewTests
     [Theory]
     [InlineData(true, null, SourceStatus.Active, "Active")]
     [InlineData(true, "Active", SourceStatus.Active, "Active")]
+    [InlineData(true, "Deferred", SourceStatus.Active, "Active")]
     [InlineData(false, "NoSource", SourceStatus.NoSource, "No source")]
     [InlineData(false, "Deferred", SourceStatus.Deferred, "Deferred")]
     [InlineData(false, null, SourceStatus.Disabled, "Disabled")]

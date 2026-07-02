@@ -270,7 +270,12 @@ public sealed class IngestionSourceSeederTests : IDisposable
             .ToList();
         Assert.Equal(4, disabledWithReason.Count);
         Assert.All(disabledWithReason, e =>
-            Assert.False(string.IsNullOrWhiteSpace(e.GetProperty("discoveryNotes").GetString())));
+        {
+            var id = e.GetProperty("id").GetString();
+            Assert.True(e.TryGetProperty("discoveryNotes", out var notes)
+                && !string.IsNullOrWhiteSpace(notes.GetString()),
+                $"Disabled entry '{id}' is missing a non-empty discoveryNotes.");
+        });
     }
 
     // ── Discovery + group fields ──────────────────────────────────────────
