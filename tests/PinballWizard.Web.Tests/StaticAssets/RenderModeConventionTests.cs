@@ -45,7 +45,7 @@ public sealed class RenderModeConventionTests
     [Fact]
     public void EveryInteractivePage_DeclaresRenderMode()
     {
-        var componentsDir = Path.Combine(
+        var componentsDir = Path.Join(
             RepoRoot(), "src", "PinballWizard.Web", "Components");
 
         var violations = new List<string>();
@@ -110,7 +110,7 @@ public sealed class RenderModeConventionTests
     [Fact]
     public void EveryStaticPage_WithLiveGridPager_DeclaresRenderMode()
     {
-        var componentsDir = Path.Combine(
+        var componentsDir = Path.Join(
             RepoRoot(), "src", "PinballWizard.Web", "Components");
 
         var violations = new List<string>();
