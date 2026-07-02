@@ -340,6 +340,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         Assert.Equal("Pinball Brothers", upserted!.SourceGroup);
         Assert.Equal("Deferred", upserted.DiscoveryStatus);
         Assert.Equal("Needs API key.", upserted.DiscoveryNotes);
+        Assert.Equal(new DateOnly(2026, 5, 26), upserted.DiscoveryDate);
         // …runtime counter preserved.
         Assert.Equal(99, upserted.TotalDocumentsDiscovered);
     }
