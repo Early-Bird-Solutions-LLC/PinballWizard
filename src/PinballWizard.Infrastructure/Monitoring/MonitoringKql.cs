@@ -33,9 +33,20 @@ internal static class MonitoringKql
         "| summarize c = sum(value) by cat";
 
     public static string FivexxRate(string pathPrefix) =>
-        $"requests | where url has '{pathPrefix}' " +
+        // Escape single quotes in pathPrefix so an operator-supplied value containing '
+        // cannot close the KQL string literal early (KQL injection mitigation).
+        // Per KQL docs: inside a single-quoted literal, escape ' with \'.
+        // Source: https://learn.microsoft.com/en-us/kusto/query/scalar-data-types/string
+        $"requests | where url has '{EscapeKqlStringLiteral(pathPrefix)}' " +
         "| summarize failed = countif(toint(resultCode) >= 500), total = count() " +
         "| extend pct = iff(total > 0, 100.0 * failed / total, 0.0) | project pct";
+
+    /// <summary>
+    /// Escapes a value for safe embedding inside a KQL single-quoted string literal.
+    /// Replaces <c>'</c> with <c>\'</c> per the KQL string-literal specification.
+    /// </summary>
+    private static string EscapeKqlStringLiteral(string value) =>
+        value.Replace("'", @"\'");
 
     public const string LeaseLag =
         "customMetrics | where name == 'pinwiz.rag.changefeed_lease_lag' " +
