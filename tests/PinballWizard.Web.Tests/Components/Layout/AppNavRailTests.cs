@@ -152,4 +152,44 @@ public sealed class AppNavRailTests : AsyncBunitContext
         var drawer = cut.FindComponent<MudDrawer>();
         Assert.Equal(Breakpoint.None, drawer.Instance.Breakpoint);
     }
+
+    [Fact]
+    public async Task HoverToPeek_PointerEnterOpens_PointerLeaveCloses()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.HoverToPeek), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        var rail = cut.Find(".app-nav-rail");
+        await cut.InvokeAsync(() => rail.PointerEnter());
+        Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+
+        await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerLeave());
+        Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+    }
+
+    [Fact]
+    public async Task HoverToPeek_Off_PointerEnterDoesNothing()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.HoverToPeek), false);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerEnter());
+        Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+    }
 }

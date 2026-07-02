@@ -21,7 +21,9 @@
            Breakpoint="@Breakpoint"
            Elevation="2"
            Class="app-nav-rail"
-           aria-label="@(IsOpen ? HeaderText : "Navigation")">
+           aria-label="@(IsOpen ? HeaderText : "Navigation")"
+           @onpointerenter="OnPointerEnter"
+           @onpointerleave="OnPointerLeave">
     <MudDrawerHeader Class="d-flex align-center pa-2">
         @if (ShowToggle)
         {
@@ -64,12 +66,26 @@
 
     [Parameter] public Breakpoint Breakpoint { get; set; } = Breakpoint.Md;
 
+    // When true, pointer-enter peeks the rail open (only if not pinned);
+    // pointer-leave retracts. Default false so the static admin rail is unaffected.
+    [Parameter] public bool HoverToPeek { get; set; }
+
     private bool _pinned;
-    private bool _peek = false; // reserved — set by hover/focus in a later task
+    private bool _peek;
 
     private bool IsOpen => _pinned || _peek;
 
     protected override void OnInitialized() => _pinned = Open;
 
     private void Toggle() => _pinned = !_pinned;
+
+    private void OnPointerEnter()
+    {
+        if (HoverToPeek && !_pinned) _peek = true;
+    }
+
+    private void OnPointerLeave()
+    {
+        if (HoverToPeek && _peek) _peek = false;
+    }
 }
