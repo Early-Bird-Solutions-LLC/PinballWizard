@@ -101,9 +101,9 @@
             Description: "Demonstrates the Repair sub-agent's safety-first diagnostic flow using indexed service bulletins."),
         new SeedQuestion(
             Slug: "what-is-the-jersey-jack-wonka-machine",
-            Question: "What is the Jersey Jack Wonka pinball machine, and who makes it?",
+            Question: "What is the Willy Wonka & The Chocolate Factory pinball machine, and who makes it?",
             TargetSubAgent: "Wizard",
-            Description: "Demonstrates the Wizard orchestrator answering a general machine-identity question via getMachineByTitle, grounded with an OPDB citation (replaces a capability/meta question that refused with no citations)."),
+            Description: "Demonstrates the Wizard orchestrator answering a general machine-identity question via getMachineByTitle, grounded with an OPDB citation. Uses the full catalog title so getMachineByTitle resolves on the exact-match point-read path."),
     ];
 
     // ── Compiled-in fallback featured machines ─────────────────────────────
@@ -118,10 +118,8 @@
             "Spooky Pinball's licensed tribute to the classic slasher franchise."),
         new FeaturedMachine("ap-houdini", "Houdini: Master of Mystery", null, 4,
             "American Pinball's debut machine evokes the showmanship of the legendary illusionist."),
-        new FeaturedMachine("chicago-gaming-medieval-madness", "Medieval Madness (Remake)", null, 5,
+        new FeaturedMachine("chicago-gaming-medieval-madness", "Medieval Madness Remake", null, 5,
             "Chicago Gaming Company's faithful recreation of the beloved Williams classic."),
-        new FeaturedMachine("multimorphic-p3", "P3 Pinball Platform", null, 6,
-            "Multimorphic's modular P3 platform redefines what a pinball machine can be."),
     ];
 
     protected override async Task OnInitializedAsync()

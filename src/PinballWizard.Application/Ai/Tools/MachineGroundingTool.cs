@@ -190,26 +190,50 @@ public sealed class MachineGroundingTool
                 // null it so the loop condition fires for it too.
                 lookup = null;
 
-                var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-                for (var strip = 1; strip <= 1 && lookup is null; strip++)
+                // "&" ↔ "and" variant retry — a cheap point-read on the same fast
+                // path. OPDB stores titles with a literal ampersand ("Dungeons &
+                // Dragons", "Willy Wonka & The Chocolate Factory"), but users type
+                // "and". NormalizeTitle does NOT canonicalize the connective, so the
+                // literal spelling misses. Try the alternate spelling(s) before the
+                // more expensive prefix-strip / fuzzy paths. Scoring below still uses
+                // the ORIGINAL title tokens, so a manufacturer qualifier in the
+                // user's phrasing continues to resolve collisions correctly.
+                foreach (var variant in GenerateConnectiveVariants(title))
                 {
-                    var remaining = normalizedTokens.Length - strip;
-                    if (remaining < 2)
-                        break;
-
-                    var retryKey = string.Join(" ", normalizedTokens, strip, remaining);
-                    lookup = await _titleLookups.GetByTitleAsync(retryKey, cancellationToken).ConfigureAwait(false);
-                    if (lookup is not null && lookup.OpdbIds.Count > 0)
+                    var variantLookup = await _titleLookups.GetByTitleAsync(variant, cancellationToken).ConfigureAwait(false);
+                    if (variantLookup is not null && variantLookup.OpdbIds.Count > 0)
                     {
+                        lookup = variantLookup;
                         _logger.LogDebug(
-                            "MachineGroundingTool: prefix-strip retry hit on '{RetryKey}' (original: '{OriginalTitle}', strips={Strip}).",
-                            retryKey, title, strip);
+                            "MachineGroundingTool: '&'/'and' variant retry hit on '{Variant}' (original: '{OriginalTitle}').",
+                            variant, title);
+                        break;
                     }
-                    else
+                }
+
+                if (lookup is null)
+                {
+                    var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
+                        .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                    for (var strip = 1; strip <= 1 && lookup is null; strip++)
                     {
-                        lookup = null; // treat empty OpdbIds as a miss so the loop continues
+                        var remaining = normalizedTokens.Length - strip;
+                        if (remaining < 2)
+                            break;
+
+                        var retryKey = string.Join(" ", normalizedTokens, strip, remaining);
+                        lookup = await _titleLookups.GetByTitleAsync(retryKey, cancellationToken).ConfigureAwait(false);
+                        if (lookup is not null && lookup.OpdbIds.Count > 0)
+                        {
+                            _logger.LogDebug(
+                                "MachineGroundingTool: prefix-strip retry hit on '{RetryKey}' (original: '{OriginalTitle}', strips={Strip}).",
+                                retryKey, title, strip);
+                        }
+                        else
+                        {
+                            lookup = null; // treat empty OpdbIds as a miss so the loop continues
+                        }
                     }
                 }
             }
@@ -320,6 +344,28 @@ public sealed class MachineGroundingTool
                 }
             }
 
+            // Forgiving-resolution fallback (ADR-0048). Every exact path missed —
+            // point-read, '&'/'and' variant, prefix-strip, and the cross-partition
+            // STRINGEQUALS query. Before giving up, substring-search machine titles
+            // by the query's most distinctive tokens so nickname / partial-title
+            // queries ("Wonka" → "Willy Wonka & The Chocolate Factory") resolve
+            // instead of silently refusing. When the fuzzy match is ambiguous across
+            // OPDB groups, the losing groups are surfaced as TitleCollisions so the
+            // agent asks a clarifying question rather than guessing.
+            IReadOnlyList<MachineSiblingGroundingDto> fuzzyTitleCollisions = [];
+            if (match is null)
+            {
+                var fuzzy = await ResolveFuzzyByTitleAsync(title, cancellationToken).ConfigureAwait(false);
+                if (fuzzy is not null)
+                {
+                    match = fuzzy.Value.Primary;
+                    fuzzyTitleCollisions = fuzzy.Value.Collisions;
+                    _logger.LogDebug(
+                        "MachineGroundingTool: forgiving fuzzy fallback resolved '{Title}' to '{ResolvedTitle}' ({OpdbId}); {CollisionCount} cross-group collision(s).",
+                        title, match.Title, match.Id, fuzzyTitleCollisions.Count);
+                }
+            }
+
             if (match is null)
             {
                 _logger.LogDebug("MachineGroundingTool: no match for title '{Title}'.", title);
@@ -344,6 +390,11 @@ public sealed class MachineGroundingTool
             var titleCollisions = await ResolveTitleCollisionsAsync(
                 match, resolvedLookup, resolvedLookupBestIdx, cancellationToken).ConfigureAwait(false);
 
+            // The lookup-row path (resolvedLookup) and the fuzzy fallback are
+            // mutually exclusive — fuzzy only runs when no lookup row resolved the
+            // match — so at most one of these is non-empty.
+            var effectiveCollisions = titleCollisions.Count > 0 ? titleCollisions : fuzzyTitleCollisions;
+
             return new MachineGroundingDto(
                 OpdbId: match.Id,
                 Title: match.Title,
@@ -355,7 +406,7 @@ public sealed class MachineGroundingTool
                 Editions: editions,
                 GroupId: match.GroupId,
                 Siblings: siblings,
-                TitleCollisions: titleCollisions);
+                TitleCollisions: effectiveCollisions);
         }
         finally
         {
@@ -501,6 +552,147 @@ public sealed class MachineGroundingTool
 
         return collisions;
     }
+
+    // ── Forgiving resolution (ADR-0048) ─────────────────────────────────────
+
+    // Number of distinct OPDB groups surfaced as fuzzy TitleCollisions before
+    // the agent's clarifying question would get unwieldy. Matches the 2–3
+    // candidate ceiling the agent [Description] instructs for disambiguation.
+    private const int MaxFuzzyCollisionGroups = 3;
+
+    // How many of the query's tokens (longest first) to probe the substring
+    // index with. Two bounds the cross-partition CONTAINS scans on this rare
+    // miss-only path while still covering multi-word nicknames.
+    private const int MaxFuzzyProbeTokens = 2;
+
+    // Generates "&" ↔ "and" spelling variants of a title. OPDB stores the
+    // literal ampersand; users type "and" (and vice versa). Word-boundary /
+    // surrounding-whitespace anchored so we never rewrite a literal "&" inside
+    // a token or the substring "and" inside a word (e.g. "Sandman"). Returns
+    // only variants that actually differ from the input.
+    internal static IEnumerable<string> GenerateConnectiveVariants(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            yield break;
+
+        var andToAmp = System.Text.RegularExpressions.Regex.Replace(
+            title, @"\s+and\s+", " & ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!string.Equals(andToAmp, title, StringComparison.Ordinal))
+            yield return andToAmp;
+
+        var ampToAnd = System.Text.RegularExpressions.Regex.Replace(
+            title, @"\s*&\s*", " and ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!string.Equals(ampToAnd, title, StringComparison.Ordinal))
+            yield return ampToAnd;
+    }
+
+    // Result of a forgiving substring resolution: the primary machine to
+    // ground on, plus zero or more DIFFERENT-group candidates to surface as
+    // TitleCollisions so the agent can ask a clarifying question.
+    private readonly record struct FuzzyMatch(
+        Machine Primary,
+        IReadOnlyList<MachineSiblingGroundingDto> Collisions);
+
+    // Substring-search machine titles by the query's most distinctive tokens,
+    // score the candidates by token overlap, and pick a primary. Same-group
+    // candidates collapse to the primary (siblings handle editions); distinct
+    // groups become TitleCollisions. Returns null when nothing overlaps.
+    // Best-effort: a repository failure logs at Warning and returns null so the
+    // caller falls through to its honest "no match" refusal (invariant #17).
+    private async Task<FuzzyMatch?> ResolveFuzzyByTitleAsync(
+        string title,
+        CancellationToken cancellationToken)
+    {
+        var queryTokens = TokenizeForOverlap(title);
+        if (queryTokens.Count == 0)
+            return null;
+
+        // Probe the longest tokens first — length is a cheap selectivity proxy
+        // (a distinctive "wonka"/"houdini" scans far fewer rows than a common
+        // short token). Distinct + capped to bound the unindexed CONTAINS scans.
+        var probeTokens = queryTokens
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(t => t.Length)
+            .Take(MaxFuzzyProbeTokens)
+            .ToList();
+
+        var candidatesById = new Dictionary<string, Machine>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var probe in probeTokens)
+            {
+                var results = _machines.SearchByTitleContainsAsync(probe, cancellationToken);
+                if (results is null)
+                    continue;
+
+                await foreach (var candidate in results.WithCancellation(cancellationToken).ConfigureAwait(false))
+                {
+                    candidatesById[candidate.Id] = candidate;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "MachineGroundingTool: forgiving substring search for '{Title}' failed. Returning no fuzzy match.",
+                title);
+            PinballWizardTelemetry.AiToolErrors.Add(
+                1,
+                new KeyValuePair<string, object?>("tool", ToolTagValue),
+                new KeyValuePair<string, object?>("reason", "fuzzy_search_unavailable"));
+            return null;
+        }
+
+        if (candidatesById.Count == 0)
+            return null;
+
+        // Score each candidate by how many query tokens appear in its title.
+        // Stable OrderByDescending preserves discovery order for equal scores,
+        // so a same-score tie is resolved deterministically (first found wins).
+        var scored = candidatesById.Values
+            .Select(m => (Machine: m, Score: ScoreEntryAgainstTokens(TokenizeForOverlap(m.Title), queryTokens)))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ToList();
+
+        if (scored.Count == 0)
+            return null;
+
+        var primary = scored[0].Machine;
+        var primaryGroup = GroupKeyOf(primary);
+
+        // Surface only DIFFERENT-group candidates as collisions — same-group
+        // editions are already reachable via the Siblings path, so duplicating
+        // them here would make the agent's clarifying question redundant.
+        var collisions = new List<MachineSiblingGroundingDto>();
+        var seenGroups = new HashSet<string>(StringComparer.Ordinal) { primaryGroup };
+        foreach (var (machine, _) in scored.Skip(1))
+        {
+            var group = GroupKeyOf(machine);
+            if (!seenGroups.Add(group))
+                continue;
+
+            collisions.Add(new MachineSiblingGroundingDto(
+                OpdbId: machine.Id,
+                Title: machine.Title,
+                Year: machine.Year,
+                Editions: ProjectEditions(machine.Editions),
+                EditionLabel: machine.EditionLabel,
+                EditionTokens: machine.EditionTokens.AsReadOnly()));
+
+            if (collisions.Count >= MaxFuzzyCollisionGroups)
+                break;
+        }
+
+        return new FuzzyMatch(primary, collisions);
+    }
+
+    // Identity for "same franchise release" grouping: the OPDB GroupId when
+    // present, else the machine's own Id (a solo title is its own group).
+    private static string GroupKeyOf(Machine machine) =>
+        string.IsNullOrEmpty(machine.GroupId) ? machine.Id : machine.GroupId;
 
     private static List<MachineEditionGroundingDto> ProjectEditions(
         IEnumerable<MachineEdition> editions) =>
