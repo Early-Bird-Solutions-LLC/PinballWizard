@@ -1,5 +1,6 @@
 using Bunit;
 using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
@@ -41,7 +42,7 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
-    public void Toggle_StartsCollapsed_WhenOpenFalse()
+    public void InitialState_IsCollapsed_WhenOpenFalse()
     {
         var cut = Render(builder =>
         {
@@ -58,7 +59,7 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
-    public void Toggle_StartsExpanded_WhenOpenTrue()
+    public void InitialState_IsExpanded_WhenOpenTrue()
     {
         var cut = Render(builder =>
         {
@@ -90,5 +91,26 @@ public sealed class AppNavRailTests : AsyncBunitContext
         await cut.InvokeAsync(() => cut.Find("[data-testid='nav-rail-toggle']").Click());
 
         Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+    }
+
+    [Fact]
+    public void NavLink_UsesMatchAll_ForMatchAllItems()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        var navLinks = cut.FindComponents<MudNavLink>();
+        var rootLink = navLinks.Single(l => l.Instance.Href == "/");
+        var aboutLink = navLinks.Single(l => l.Instance.Href == "/about");
+
+        Assert.Equal(NavLinkMatch.All, rootLink.Instance.Match);
+        Assert.Equal(NavLinkMatch.Prefix, aboutLink.Instance.Match);
     }
 }

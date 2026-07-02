@@ -13,7 +13,8 @@
 <MudDrawer Open="@_open"
            Variant="DrawerVariant.Mini"
            Elevation="2"
-           Class="app-nav-rail">
+           Class="app-nav-rail"
+           aria-label="@(_open ? HeaderText : "Navigation")">
     <MudDrawerHeader Class="d-flex align-center pa-2">
         <MudIconButton Icon="@Icons.Material.Filled.Menu"
                        Color="Color.Inherit"
