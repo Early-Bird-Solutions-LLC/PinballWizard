@@ -22,7 +22,12 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // empty grid.
 public sealed class AdminSourcesTests : AsyncBunitContext
 {
-    private static IngestionSource MakeSource(string id, bool enabled) => new()
+    private static IngestionSource MakeSource(
+        string id, bool enabled,
+        string? sourceGroup = null,
+        string? discoveryStatus = null,
+        string? discoveryNotes = null,
+        DateOnly? discoveryDate = null) => new()
     {
         Id = id,
         DisplayName = $"{id} Pinball",
@@ -30,6 +35,10 @@ public sealed class AdminSourcesTests : AsyncBunitContext
         BaseUrl = $"https://{id}.example.com",
         Enabled = enabled,
         Cadence = "weekly",
+        SourceGroup = sourceGroup ?? $"{id} Group",
+        DiscoveryStatus = discoveryStatus,
+        DiscoveryNotes = discoveryNotes,
+        DiscoveryDate = discoveryDate,
         TotalDocumentsDiscovered = 7,
         TotalRunFailures = 0,
     };
@@ -68,7 +77,7 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     }
 
     [Fact]
-    public void WithSources_RendersRows()
+    public void WithSources_RendersStatusVocabulary()
     {
         RegisterSources(ct => Stream([MakeSource("stern", true), MakeSource("jjp", false)], ct));
         _ = Services.GetRequiredService<BunitNavigationManager>();
@@ -78,10 +87,64 @@ public sealed class AdminSourcesTests : AsyncBunitContext
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("stern Pinball", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("jjp Pinball", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Enabled", cut.Markup, StringComparison.Ordinal);
-            Assert.Contains("Disabled", cut.Markup, StringComparison.Ordinal);
+            Assert.Contains("Active", cut.Markup, StringComparison.Ordinal);   // enabled row
+            Assert.Contains("Disabled", cut.Markup, StringComparison.Ordinal); // disabled, no discovery reason
         });
+    }
+
+    [Fact]
+    public void NoSourceRow_RendersNoSourceChipAndInlineReason()
+    {
+        RegisterSources(ct => Stream([
+            MakeSource("jjp_bulletins", false,
+                sourceGroup: "Jersey Jack Pinball",
+                discoveryStatus: "NoSource",
+                discoveryNotes: "No bulletin section exists here.",
+                discoveryDate: new DateOnly(2026, 5, 26))
+        ], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Contains("No source", cut.Markup, StringComparison.Ordinal);
+            var reason = cut.Find("[data-testid='source-reason']");
+            Assert.Contains("No bulletin section exists here.", reason.TextContent, StringComparison.Ordinal);
+            Assert.Contains("2026-05-26", reason.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
+    public void ActiveRow_RendersNoReasonCaption()
+    {
+        RegisterSources(ct => Stream([
+            MakeSource("stern", true, sourceGroup: "Stern Pinball",
+                discoveryStatus: "Active", discoveryNotes: "Should not be shown for active.")
+        ], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+            Assert.Empty(cut.FindAll("[data-testid='source-reason']")));
+    }
+
+    [Fact]
+    public void SubFeeds_GroupUnderTheirManufacturer()
+    {
+        RegisterSources(ct => Stream([
+            MakeSource("jjp", true, sourceGroup: "Jersey Jack Pinball"),
+            MakeSource("jjp_bulletins", false, sourceGroup: "Jersey Jack Pinball",
+                discoveryStatus: "NoSource", discoveryNotes: "n/a", discoveryDate: new DateOnly(2026, 5, 26)),
+        ], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+            // One group header for the shared manufacturer, rendered once.
+            Assert.Single(cut.FindAll("[data-testid='source-group-header']")));
     }
 
     [Fact]
