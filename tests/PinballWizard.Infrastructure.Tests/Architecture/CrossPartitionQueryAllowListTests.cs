@@ -43,8 +43,10 @@ public sealed class CrossPartitionQueryAllowListTests
         // cleanup (ADR-0025 § 4 PR-5).
         ["MachineRepository.cs"] =
             "StreamCrossPartitionAsync (StreamAllAsync) + direct GetItemQueryIterator<Machine> " +
-            "(QueryByTitleAsync MaxItemCount=1, GetSiblingsByGroupIdAsync SELECT TOP 50 MaxItemCount=10); " +
-            "bounded equality matches, metered; direct-iterator routing is tracked cleanup; " +
+            "(QueryByTitleAsync MaxItemCount=1, GetSiblingsByGroupIdAsync SELECT TOP 50 MaxItemCount=10, " +
+            "SearchByTitleContainsAsync SELECT TOP 25 MaxItemCount=25 — forgiving substring fallback for " +
+            "getMachineByTitle, unindexed CONTAINS but miss-only and TOP-guarded); " +
+            "bounded matches, metered; direct-iterator routing is tracked cleanup; " +
             "StreamByRunIdAsync (run_id equality match, bounded by run cardinality)",
 
         // Direct-iterator GetItemQueryIterator<string> — projects only machine_id
