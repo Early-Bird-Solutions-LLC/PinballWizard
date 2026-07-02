@@ -359,9 +359,9 @@ Per [`guardrails.md`](guardrails.md) § Spec maintenance, this doc updates **in 
 
 Canonical KQL queries for the three core SLI metrics. These back the "PinballWizard Ops"
 Application Insights workbook tiles and the metric alert rules in `infra/modules/shared.bicep`.
-The `/admin/monitoring` page (`AdminMonitoring`) also runs these KQL shapes at runtime via
-`IMonitoringStatsReader` (`LogAnalyticsMonitoringStatsReader`); each tile degrades visibly to an
-error state when its query fails rather than hiding the failure.
+The `/admin/monitoring` page (`AdminMonitoring`) also runs the latency, 5xx-rate, and refusal KQL
+shapes at runtime via `IMonitoringStatsReader` (`LogAnalyticsMonitoringStatsReader`); each tile
+degrades visibly to an error state when its query fails rather than hiding the failure.
 
 Run these in the Application Insights → Logs blade, or copy them into the workbook editor.
 

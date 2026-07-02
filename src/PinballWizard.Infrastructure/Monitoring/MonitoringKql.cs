@@ -41,16 +41,14 @@ internal static class MonitoringKql
         "| summarize failed = countif(toint(resultCode) >= 500), total = count() " +
         "| extend pct = iff(total > 0, 100.0 * failed / total, 0.0) | project pct";
 
-    /// <summary>
-    /// Escapes a value for safe embedding inside a KQL single-quoted string literal.
-    /// Backslashes are escaped first (<c>\</c>→<c>\\</c>), then single quotes
-    /// (<c>'</c>→<c>\'</c>), per the KQL string-literal specification.
-    /// Order matters: escaping quotes first would leave a backslash-before-quote
-    /// sequence (<c>\'</c>) that a second pass could corrupt, and — critically —
-    /// an input such as <c>a\'b</c> would produce <c>a\\'b</c> in the output,
-    /// where KQL reads <c>\\</c> as a literal backslash and the following <c>'</c>
-    /// closes the string literal, re-enabling injection.
-    /// </summary>
+    // Escapes a value for safe embedding inside a KQL single-quoted string literal.
+    // Backslashes are escaped first (\→\\), then single quotes ('→\'),
+    // per the KQL string-literal specification.
+    // Order matters: escaping quotes first would leave a backslash-before-quote
+    // sequence (\') that a second pass could corrupt, and — critically —
+    // an input such as a\'b would produce a\\'b in the output,
+    // where KQL reads \\ as a literal backslash and the following '
+    // closes the string literal, re-enabling injection.
     private static string EscapeKqlStringLiteral(string value) =>
         value.Replace(@"\", @"\\").Replace("'", @"\'");
 

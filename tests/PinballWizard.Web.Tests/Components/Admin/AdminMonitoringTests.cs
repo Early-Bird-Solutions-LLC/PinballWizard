@@ -100,8 +100,9 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
     {
         var cut = RenderWith(FullSnap());
         await FlushLoadAsync(cut);
-        var active = cut.Find("[data-testid='mon-period-active']");
+        var active = cut.Find("[data-testid='mon-period-24h']");
         Assert.Equal("24h", active.TextContent.Trim());
+        Assert.Contains("mon-period--active", active.ClassName ?? string.Empty);
     }
 
     // ── D1 Ribbon structure ───────────────────────────────────────────────────
@@ -372,6 +373,30 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         cut.WaitForAssertion(() =>
         {
             var text = cut.Find("[data-testid='mon-alert-latency']").TextContent;
+            Assert.Contains("unavailable", text, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public void D4_FivexxAlert_NullSnapshot_ShowsUnavailable()
+    {
+        var snap = FullSnap() with { FivexxRatePercent = null };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+        {
+            var text = cut.Find("[data-testid='mon-alert-5xx']").TextContent;
+            Assert.Contains("unavailable", text, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    [Fact]
+    public void D4_DeadLetterAlert_NullSnapshot_ShowsUnavailable()
+    {
+        var snap = FullSnap() with { DeadLetters = null };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+        {
+            var text = cut.Find("[data-testid='mon-alert-deadletter']").TextContent;
             Assert.Contains("unavailable", text, StringComparison.OrdinalIgnoreCase);
         });
     }

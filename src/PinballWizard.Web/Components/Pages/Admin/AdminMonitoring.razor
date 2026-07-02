@@ -62,7 +62,7 @@
             <button type="button"
                     class="mon-period @(_window == MonitoringWindow.TwentyFourHours ? "mon-period--active" : "")"
                     aria-current="@(_window == MonitoringWindow.TwentyFourHours ? "true" : null)"
-                    data-testid="mon-period-active"
+                    data-testid="mon-period-24h"
                     @onclick="() => SetWindowAsync(MonitoringWindow.TwentyFourHours)">24h</button>
             <button type="button"
                     class="mon-period @(_window == MonitoringWindow.SevenDays ? "mon-period--active" : "")"

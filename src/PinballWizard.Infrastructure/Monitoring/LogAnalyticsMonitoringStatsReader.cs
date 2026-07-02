@@ -58,15 +58,34 @@ internal sealed class LogAnalyticsMonitoringStatsReader : IMonitoringStatsReader
 
         // Each section is loaded independently: a failing query degrades only
         // its own tile (Invariant #17 — visible unavailable, never a fake 0).
-        var latency = await SafeScalarAsync(MonitoringKql.LatencyP95, range, "latency-p95", cancellationToken);
-        var answered = await SafeScalarAsync(MonitoringKql.AnsweredCount, range, "answered-count", cancellationToken);
-        var refusals = await SafeScalarAsync(MonitoringKql.RefusalTotal, range, "refusal-total", cancellationToken);
-        var fivexx = await SafeScalarAsync(MonitoringKql.FivexxRate(_options.WizardApiPathPrefix), range, "5xx-rate", cancellationToken);
-        var breakdown = await SafeGroupedAsync(MonitoringKql.RefusalByCategory, range, "refusal-by-category", cancellationToken);
-        var lease = await SafeScalarAsync(MonitoringKql.LeaseLag, range, "lease-lag", cancellationToken);
-        var deadLetters = await SafeScalarAsync(MonitoringKql.DeadLetters, range, "dead-letters", cancellationToken);
-        var shortCircuits = await SafeScalarAsync(MonitoringKql.ShortCircuits, range, "short-circuits", cancellationToken);
-        var drift = await SafeScalarAsync(MonitoringKql.ReconcileDrift, range, "reconcile-drift", cancellationToken);
+        // All nine tasks are started concurrently; Task.WhenAll waits for all of
+        // them. Per-query failures are swallowed inside SafeScalarAsync /
+        // SafeGroupedAsync (they return null on non-cancellation exceptions), so
+        // Task.WhenAll never throws due to a single query failure — only a real
+        // OperationCanceledException from the shared CTS propagates, which is
+        // intentional. LogsQueryClient is thread-safe (Azure SDK design contract).
+        var tLatency = SafeScalarAsync(MonitoringKql.LatencyP95, range, "latency-p95", cancellationToken);
+        var tAnswered = SafeScalarAsync(MonitoringKql.AnsweredCount, range, "answered-count", cancellationToken);
+        var tRefusals = SafeScalarAsync(MonitoringKql.RefusalTotal, range, "refusal-total", cancellationToken);
+        var tFivexx = SafeScalarAsync(MonitoringKql.FivexxRate(_options.WizardApiPathPrefix), range, "5xx-rate", cancellationToken);
+        var tBreakdown = SafeGroupedAsync(MonitoringKql.RefusalByCategory, range, "refusal-by-category", cancellationToken);
+        var tLease = SafeScalarAsync(MonitoringKql.LeaseLag, range, "lease-lag", cancellationToken);
+        var tDeadLetters = SafeScalarAsync(MonitoringKql.DeadLetters, range, "dead-letters", cancellationToken);
+        var tShortCircuits = SafeScalarAsync(MonitoringKql.ShortCircuits, range, "short-circuits", cancellationToken);
+        var tDrift = SafeScalarAsync(MonitoringKql.ReconcileDrift, range, "reconcile-drift", cancellationToken);
+
+        await Task.WhenAll(tLatency, tAnswered, tRefusals, tFivexx, tBreakdown,
+            tLease, tDeadLetters, tShortCircuits, tDrift);
+
+        var latency = await tLatency;
+        var answered = await tAnswered;
+        var refusals = await tRefusals;
+        var fivexx = await tFivexx;
+        var breakdown = await tBreakdown;
+        var lease = await tLease;
+        var deadLetters = await tDeadLetters;
+        var shortCircuits = await tShortCircuits;
+        var drift = await tDrift;
 
         long? refusalCount = refusals is { } r ? (long)r : null;
         long? answeredCount = answered is { } a ? (long)a : null;
