@@ -5,6 +5,7 @@
 @using Microsoft.Extensions.Logging
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminLinkOverrides — /admin/link-overrides admin-configured document-to-machine mapping view.
  *
@@ -173,7 +174,7 @@
 
     private async Task LoadAsync()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _isAdmin = await Guard.IsAdminAsync(AuthState);
@@ -202,7 +203,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

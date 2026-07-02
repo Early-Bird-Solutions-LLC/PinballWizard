@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminSettings — /admin/settings runtime-mutable Wizard configuration.
  *
@@ -357,12 +358,13 @@
     {
         _loading = true;
         _loadError = null;
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
 
         try
         {
             _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
 
-            var stored = (await SettingsRepo.GetAllAsync(CancellationToken.None).ConfigureAwait(true))
+            var stored = (await SettingsRepo.GetAllAsync(cts.Token).ConfigureAwait(true))
                 .ToDictionary(r => r.Key, StringComparer.Ordinal);
 
             _rows.Clear();
@@ -382,7 +384,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
