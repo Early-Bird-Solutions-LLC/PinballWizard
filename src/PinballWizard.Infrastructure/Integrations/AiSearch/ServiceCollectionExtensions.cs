@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Findability;
+using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
@@ -99,6 +101,13 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);
         services.TryAddSingleton(BuildSearchIndexClient);
         services.TryAddSingleton<RagIndexBootstrapper>();
+
+        // ADR-0049 phase 2a: machine findability index bootstrapper and projector.
+        // Both are gated on AiSearch:Endpoint presence (same gate as the corpus
+        // index). MachineSearchIndexBootstrapper uses the shared SearchIndexClient.
+        // The projector's SearchClient targets the machine index specifically.
+        services.TryAddSingleton<MachineSearchIndexBootstrapper>();
+        services.TryAddSingleton<IMachineSearchIndexProjector>(BuildMachineIndexProjector);
 
         // Orphan garbage collector (--gc-rag-index). The pair source
         // enumerates the index; the collector reconciles it against the
@@ -218,6 +227,21 @@ public static class ServiceCollectionExtensions
             searchClient,
             sp.GetRequiredService<IChunkEmbedder>(),
             sp.GetRequiredService<ILogger<AiSearchRagIndexer>>());
+    }
+
+    private static MachineSearchIndexProjector BuildMachineIndexProjector(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.MachineIndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new MachineSearchIndexProjector(
+            searchClient,
+            sp.GetRequiredService<IMachineRepository>(),
+            sp.GetRequiredService<IOptions<AiSearchOptions>>(),
+            sp.GetRequiredService<ILogger<MachineSearchIndexProjector>>());
     }
 
     // Foundry's project endpoint URL has the shape

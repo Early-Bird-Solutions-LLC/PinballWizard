@@ -41,6 +41,12 @@ public sealed class AiSearchOptions
     // matching semantic-config swap.
     public string SemanticConfigName { get; set; } = "pinwiz-rag-semantic-v1";
 
+    // Machine findability index name (ADR-0049 phase 2a). Versioned alongside
+    // the machine index schema — a schema-breaking change ships as
+    // `pinwiz-machines-v2`. Populated from `--rebuild-machine-index` and
+    // future Phase 2b query code.
+    public string MachineIndexName { get; set; } = "pinwiz-machines-v1";
+
     // Embedding deployment name on the configured Azure OpenAI account
     // (ADR-0020 — `text-embedding-3-large` @ 3072d). Defaults to
     // `text-embedding-3-large`, matching `AiFoundryOptions.EmbeddingDeploymentName`

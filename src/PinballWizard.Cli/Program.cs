@@ -12,7 +12,9 @@ using PinballWizard.Application;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Catalog;
+using PinballWizard.Application.Findability;
 using PinballWizard.Application.Landing;
+using PinballWizard.Application.SeedData;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
@@ -110,6 +112,16 @@ var rebuildRagIndexOption = new Option<bool>("--rebuild-rag-index")
 var gcRagIndexOption = new Option<bool>("--gc-rag-index")
 {
     Description = "Reconcile the RAG index against the scraped_documents catalog: delete index chunks whose (document_id, machine_id) pair has no backing fan-out row. This is the delete-propagation mechanism the Cosmos Change Feed (latest-version mode) cannot provide — after a --relink-all prunes stale fan-out rows, their index chunks linger as orphans until this pass removes them. Unlike --rebuild-rag-index (full wipe + re-ingest), this is a surgical, idempotent, read-mostly reconcile. Combine with --dry-run to preview orphan pairs without deleting. Requires Cosmos and Azure AI Search to be configured."
+};
+
+var ensureMachineIndexOption = new Option<bool>("--ensure-machine-index")
+{
+    Description = "Non-destructive: ensures the AI Search machine findability index schema and synonym map exist (creates them if absent; no-op if already present). Safe to call at startup or in CI without data loss. Use --rebuild-machine-index to wipe and re-project. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
+};
+
+var rebuildMachineIndexOption = new Option<bool>("--rebuild-machine-index")
+{
+    Description = "DESTRUCTIVE: drops and recreates the AI Search machine findability index (ADR-0049 phase 2a), then projects all Machine records from Cosmos into it. Wipes ALL existing indexed documents — run only when a schema-breaking change requires a full rebuild. For non-destructive schema + synonym-map updates use --ensure-machine-index. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
 };
 
 var askOption = new Option<string?>("--ask")
@@ -226,6 +238,8 @@ rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(gcRagIndexOption);
+rootCommand.Options.Add(ensureMachineIndexOption);
+rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
 rootCommand.Options.Add(probeRetrievalOption);
@@ -259,6 +273,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var gcRagIndex = parseResult.GetValue(gcRagIndexOption);
+    var ensureMachineIndex = parseResult.GetValue(ensureMachineIndexOption);
+    var rebuildMachineIndex = parseResult.GetValue(rebuildMachineIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
     var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
@@ -798,6 +814,88 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine(
             $"AI Search RAG index rebuilt: {rebuildResult.IndexName}. " +
             "Re-ingest now: --run-rag-backfill then --sync-metadata-cards.");
+        return;
+    }
+
+    // Shared synonym file load for --ensure-machine-index and --rebuild-machine-index.
+    // SeedPathResolver.Resolve walks up from AppContext.BaseDirectory so the path
+    // works from both repo-root CLI invocations and bin-output dotnet run launches.
+    // The guard in MachineSearchIndexBootstrapper.EnsureSynonymMapAsync logs a
+    // Warning and skips the upsert when the text is empty (rather than sending an
+    // empty body that AI Search would reject with 400).
+    static async Task<string> LoadSynonymsTextAsync(CancellationToken ct)
+    {
+        const string relativePath = "data/seeds/machine_synonyms.v1.txt";
+        var resolved = SeedPathResolver.Resolve(relativePath);
+        return File.Exists(resolved)
+            ? await File.ReadAllTextAsync(resolved, ct).ConfigureAwait(false)
+            : string.Empty;
+    }
+
+    // Handle --ensure-machine-index (ADR-0049 phase 2a machine findability index
+    // non-destructive ensure). Resolves MachineSearchIndexBootstrapper from DI;
+    // registered when AddAzureAiSearchIntegration is wired (AiSearch:Endpoint set).
+    // Does NOT project documents — use --rebuild-machine-index for a full rebuild.
+    if (ensureMachineIndex)
+    {
+        var machineBootstrapper = host.Services.GetService<MachineSearchIndexBootstrapper>();
+
+        if (machineBootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-machine-index requires Azure AI Search to be configured. " +
+                $"Set {AiSearchOptions.EndpointKey}.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var synonymsText = await LoadSynonymsTextAsync(cancellationToken);
+        Console.WriteLine("Ensuring machine search index schema and synonym map (non-destructive)...");
+        var ensureResult = await machineBootstrapper.EnsureCreatedAsync(synonymsText, cancellationToken);
+        Console.WriteLine(ensureResult.Created
+            ? $"Machine search index created: {ensureResult.IndexName}"
+            : $"Machine search index already present: {ensureResult.IndexName}");
+        return;
+    }
+
+    // Handle --rebuild-machine-index (ADR-0049 phase 2a machine findability index
+    // DESTRUCTIVE rebuild). Resolves MachineSearchIndexBootstrapper and
+    // IMachineSearchIndexProjector from DI; both are only registered when
+    // AddAzureAiSearchIntegration was wired (i.e., AiSearch:Endpoint is set).
+    // Also requires Cosmos (IMachineRepository). Wipes ALL indexed documents;
+    // use --ensure-machine-index for non-destructive schema/synonym updates.
+    if (rebuildMachineIndex)
+    {
+        var machineBootstrapper = host.Services.GetService<MachineSearchIndexBootstrapper>();
+        var machineProjector    = host.Services.GetService<IMachineSearchIndexProjector>();
+
+        if (machineBootstrapper is null || machineProjector is null)
+        {
+            Console.Error.WriteLine(
+                "--rebuild-machine-index requires Azure AI Search and Cosmos to be configured. " +
+                $"Set {AiSearchOptions.EndpointKey} and Cosmos:AccountEndpoint (or ConnectionStrings:cosmos).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var synonymsText = await LoadSynonymsTextAsync(cancellationToken);
+        Console.WriteLine("DESTRUCTIVE: dropping and recreating machine search index schema and synonym map...");
+        var machineBootstrapResult = await machineBootstrapper.RecreateAsync(synonymsText, cancellationToken);
+        Console.WriteLine(machineBootstrapResult.Created
+            ? $"Machine search index created: {machineBootstrapResult.IndexName}"
+            : $"Machine search index rebuilt: {machineBootstrapResult.IndexName}");
+
+        Console.WriteLine("Projecting all machines from Cosmos into the machine search index...");
+        var projectionResult = await machineProjector.ProjectAllAsync(cancellationToken);
+        Console.WriteLine(
+            $"Machine index rebuild complete: projected={projectionResult.Projected} " +
+            $"failed={projectionResult.Failed} duration={projectionResult.Duration.TotalSeconds:N1}s");
+
+        if (projectionResult.Failed > 0)
+        {
+            Console.Error.WriteLine($"  {projectionResult.Failed} documents failed — check logs for details.");
+            Environment.ExitCode = 1;
+        }
         return;
     }
 

@@ -580,6 +580,23 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a complete --reclassify-documents run in milliseconds. Useful for capacity planning at corpus scale.");
 
+    // ── Machine findability index instrumentation (ADR-0049 phase 2a) ──────
+    // Emitted by MachineSearchIndexProjector.ProjectAllAsync at the end of
+    // each --rebuild-machine-index / --ensure-machine-index + project run.
+    // Operators chart MachineIndexProjected to confirm full-corpus coverage
+    // (expect ~3 000 at steady state) and MachineIndexProjectionDurationMs
+    // to catch regressions as the corpus grows.
+
+    public static readonly Counter<long> MachineIndexProjected = Meter.CreateCounter<long>(
+        "pinwiz.machine.index.projected_total",
+        unit: "{document}",
+        description: "Machine documents successfully upserted into the AI Search machine findability index (ADR-0049) by MachineSearchIndexProjector. Incremented at the end of each projection run by the success count (batch.Count - batchFailed). Pair with pinwiz.machine.index.projection_duration_ms to measure throughput. A value significantly below the known catalog size indicates batch failures — check logs for batch-upsert errors.");
+
+    public static readonly Histogram<double> MachineIndexProjectionDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.machine.index.projection_duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of a complete MachineSearchIndexProjector.ProjectAllAsync run in milliseconds — from first Cosmos StreamAllAsync page to final batch flush. Includes Cosmos streaming latency and AI Search batch-upsert latency. Drives capacity planning at corpus scale: if a full rebuild exceeds 5 minutes, consider increasing BatchSize or parallelising the batch-flush loop (ADR-0049 phase 2b follow-up).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
