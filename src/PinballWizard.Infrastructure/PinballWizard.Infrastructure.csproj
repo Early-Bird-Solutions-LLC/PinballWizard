@@ -19,6 +19,12 @@
          Microsoft Agent Framework wrapper) for IAiRouter + agent
          construction via AsAIAgent. -->
     <PackageReference Include="Azure.AI.Projects" />
+    <!-- Azure.Monitor.Query is the data-plane SDK for Azure Monitor Log Analytics.
+         Task 4 (LogAnalyticsQueryService) uses LogsQueryClient to run KQL queries
+         against the pinwiz.ai Log Analytics workspace with DefaultAzureCredential
+         — no API key in code or config. Supports both query + batch-query surfaces.
+         Version 1.7.1 resolved 2026-07-01 via `dotnet add package`. -->
+    <PackageReference Include="Azure.Monitor.Query" />
     <!-- Microsoft.Agents.AI.Foundry is the Foundry-specific provider for
          the Microsoft Agent Framework. It exposes AIProjectClient.AsAIAgent
          (the Responses Agent extension) which the FoundryAgentFactory

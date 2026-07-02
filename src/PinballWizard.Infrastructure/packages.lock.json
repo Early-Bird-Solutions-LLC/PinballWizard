@@ -70,6 +70,16 @@
           "Azure.Core": "1.53.0"
         }
       },
+      "Azure.Monitor.Query": {
+        "type": "Direct",
+        "requested": "[1.7.1, )",
+        "resolved": "1.7.1",
+        "contentHash": "HJnal+BIaBiuiba1p2X5lNyx6I+CnqcjEMNv19R1jtjas5hk9sdUcPmZOLaECFRExFBxLDc2xuLJkXmglFXQbg==",
+        "dependencies": {
+          "Azure.Core": "1.47.1",
+          "System.ClientModel": "1.6.0"
+        }
+      },
       "Azure.ResourceManager.AppContainers": {
         "type": "Direct",
         "requested": "[1.5.0, )",
