@@ -90,6 +90,16 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
                 c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
             .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
 
+        // LandingHero (ADR-0049 phase 3) injects IMachineSuggestClient for the
+        // typeahead. It MUST be registered here or the Index page's hero cannot be
+        // constructed and the whole page renders empty (same failure class as the
+        // /settings IUserPreferencesService exclusion). The 503 stub makes the
+        // client return [] → the autocomplete simply shows no suggestions.
+        builder.Services
+            .AddHttpClient<IMachineSuggestClient, MachineSuggestClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
         // No-op auth — no OIDC, no challenge, no redirect.
         builder.Services
             .AddAuthentication(defaultScheme: "Test")
