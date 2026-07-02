@@ -1,9 +1,9 @@
 # 0049 — Findability & relevance-ranking program (AI-Search-backed machine lookup, content-intrinsic ranking, eval-first)
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-02
 
-> Flips to **Accepted** once (1) the scoring-profile-on-hybrid spike (§ Open item) is resolved and (2) the direction is confirmed. Per-phase mechanics may get their own follow-up ADRs as they are built.
+> The one blocking open question (scoring-profile-on-hybrid) was resolved by a live spike (§ Resolved open item). Per-phase mechanics may get their own follow-up ADRs as they are built.
 
 ## Context
 
@@ -42,6 +42,12 @@ Issue #609 began as a narrow "canonicalize `&`/`and` in lookup keys" fix (a foll
 - Cost envelope unchanged (stay on Basic; semantic ranker already within the free-quota posture). No new infra tier.
 - The Cosmos `machine_title_lookups` materialized view and its OPDB-sync key-writing phases may become partially redundant once Phase 2 lands; that consolidation is a Phase 2 design question, not a day-one removal.
 
-## Open item (gates flip to Accepted)
+## Resolved open item — scoring profiles DO affect hybrid ranking
 
-**Does a scoring profile influence the ranking of a hybrid (text + vector) query, or only pure keyword queries?** Microsoft docs did not confirm this, and it is the crux of combining content-intrinsic ranking with hybrid retrieval. A bounded live spike against the dev search service resolves it before the Phase 2 ranking mechanism is finalized. If scoring profiles do **not** affect hybrid ranking, Phase 2 ranking shifts to application-side re-scoring over the candidate set (or a keyword-leg-only profile) — the rest of the decision is unaffected.
+The crux question for combining content-intrinsic ranking with hybrid retrieval — *does a scoring profile influence a hybrid (text + vector) query, or only pure keyword queries?* — was left unconfirmed by the Microsoft docs, so it was resolved by a bounded live spike against the dev search service (throwaway index, created and deleted; probe committed at `tools/probe-scoring-profile-hybrid.csx`).
+
+**Verdict: it affects hybrid ranking.** A `magnitude` boost (boost 50, range 0–100) on a `quality` field completely inverted a hybrid query's order — the doc with the *weakest* text AND vector relevance rose from last (#5, score 0.0318) to first (#1, score 1.6146), while the strongest-relevance doc fell to last. The profile applies to the BM25/keyword leg within/before the RRF fusion pass, so it is not limited to keyword-only queries. (Corollary: a pure vector-only query has no BM25 leg for the text-weight portion to act on — our retrieval is hybrid, so this does not bite; edition/canonicality boosts still apply via `magnitude`/`tag` on the fused set.)
+
+**Consequence for Phase 2:** content-intrinsic ranking is implemented directly with an AI Search **scoring profile** (magnitude on a computed completeness score, freshness on last-updated, tag boost for canonical editions) — no application-side re-scoring fallback is needed. Function-boosted fields must be `filterable`.
+
+The same spike also empirically confirmed Lucene fuzzy `content:term~1` matches a 1-edit-distance typo on a standard-analyzer field — validating the typo-tolerance lever for Phase 2.
