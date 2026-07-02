@@ -61,4 +61,21 @@ public sealed class MonitoringKqlTests
         // The escaped form must appear instead.
         Assert.Contains(@"has '/api/foo\' | union requests //'", kql);
     }
+
+    [Fact]
+    public void FivexxRate_EscapesBackslashBeforeQuote_CannotBreakOut()
+    {
+        // Input: a\'b (chars: a, backslash, quote, b)
+        // Without escaping backslashes first, the current Replace("'", @"\'") would produce:
+        //   a\\'b  (a, backslash, backslash, quote, b)
+        // KQL parses \\ as a literal backslash, then ' CLOSES the string → injection survives.
+        // Correct fix: escape backslashes first (\→\\), THEN escape quotes ('→\').
+        // Expected output in KQL: a\\\'b (a, \\=literal-backslash, \'=escaped-quote, b)
+        // → KQL sees: a\' and the literal stays closed.
+        const string input = @"a\'b"; // a, backslash, quote, b
+        var kql = MonitoringKql.FivexxRate(input);
+
+        // The escaped result must contain a\\\'b — both the backslash AND the quote escaped.
+        Assert.Contains(@"'a\\\'b'", kql);
+    }
 }

@@ -43,10 +43,16 @@ internal static class MonitoringKql
 
     /// <summary>
     /// Escapes a value for safe embedding inside a KQL single-quoted string literal.
-    /// Replaces <c>'</c> with <c>\'</c> per the KQL string-literal specification.
+    /// Backslashes are escaped first (<c>\</c>→<c>\\</c>), then single quotes
+    /// (<c>'</c>→<c>\'</c>), per the KQL string-literal specification.
+    /// Order matters: escaping quotes first would leave a backslash-before-quote
+    /// sequence (<c>\'</c>) that a second pass could corrupt, and — critically —
+    /// an input such as <c>a\'b</c> would produce <c>a\\'b</c> in the output,
+    /// where KQL reads <c>\\</c> as a literal backslash and the following <c>'</c>
+    /// closes the string literal, re-enabling injection.
     /// </summary>
     private static string EscapeKqlStringLiteral(string value) =>
-        value.Replace("'", @"\'");
+        value.Replace(@"\", @"\\").Replace("'", @"\'");
 
     public const string LeaseLag =
         "customMetrics | where name == 'pinwiz.rag.changefeed_lease_lag' " +
