@@ -1498,7 +1498,7 @@ Gate status: **{Not triggered / Triggered}**.
 Add an entry for:
 - Flyers (208 docs) — chunking strategy TBD
 - Other bucket (98 docs) — classification TBD
-- `NullTokenUsageReader` real impl — pending azure-sdk-for-net#2688
+- `NullTokenUsageReader` real impl — pending agent-framework#2688
 
 - [ ] **Step 5: Commit phase close**
 

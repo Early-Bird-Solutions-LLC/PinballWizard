@@ -278,7 +278,7 @@ Not indexed in Phase 4.5. Flyers are typically single-page marketing PDFs — ch
 
 ### `NullTokenUsageReader` real impl
 
-Pending `azure/azure-sdk-for-net#2688`. When the SDK exposes `Usage` on `AgentResponse`, swap the abstraction. No Phase 4.5 action needed.
+Pending `microsoft/agent-framework#2688`. When the SDK exposes `Usage` on `AgentResponse`, swap the abstraction. No Phase 4.5 action needed.
 
 ### ADR-0024 cross-encoder gate (if H5 ≥ 0.50)
 

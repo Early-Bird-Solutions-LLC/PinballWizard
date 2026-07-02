@@ -10,7 +10,10 @@ window.pinwiz = window.pinwiz || {};
 // and the App.razor inline applier) gets a `theme-<name>` class, so themes switch
 // live, not only on reload.
 // Uses classList.add/remove so existing classes (e.g. mud-theme-*) are preserved.
-window.pinwiz.setTheme = function (name) {
+// Internal: set the sibling-theme class on <html> (Modern LCD = classless base).
+// Shared by setTheme (user picks a theme) and applyStoredHtmlState (re-apply after
+// an enhanced navigation) so the class list and the modern-lcd rule live in one place.
+window.pinwiz._applyThemeClass = function (name) {
     var html = document.documentElement;
     ['daytime-route', 'backbox', 'cabinet', 'dmd-classic', 'paper'].forEach(function (t) {
         html.classList.remove('theme-' + t);
@@ -18,6 +21,9 @@ window.pinwiz.setTheme = function (name) {
     if (name && name !== 'modern-lcd') {
         html.classList.add('theme-' + name);
     }
+};
+window.pinwiz.setTheme = function (name) {
+    window.pinwiz._applyThemeClass(name);
     try { localStorage.setItem('pinwiz.theme', name); } catch (_) { }
 };
 window.pinwiz.getTheme = function () {
@@ -26,6 +32,49 @@ window.pinwiz.getTheme = function () {
     // setTheme/the applier treat as the classless base.
     try { return localStorage.getItem('pinwiz.theme') || 'paper'; } catch (_) { return 'paper'; }
 };
+
+// Re-applies the <html>-level preference state (theme class + data-motion) that the
+// App.razor first-paint inline script sets from localStorage. Blazor enhanced
+// navigation replaces <html> with the server-rendered response — which carries none
+// of these client-applied attributes — so they are stripped on every in-app
+// navigation, dropping the page to the Modern LCD base until the next full reload.
+// The wiring block below registers this on Blazor's `enhancedload` event so the
+// visitor's chosen theme (and motion preference) survive navigation. Idempotent;
+// safe to call repeatedly.
+window.pinwiz.applyStoredHtmlState = function () {
+    try {
+        window.pinwiz._applyThemeClass(window.pinwiz.getTheme());
+        var m = localStorage.getItem('pinwiz.motion');
+        if (m) document.documentElement.dataset.motion = m;
+    } catch (_) { }
+};
+
+// Wire applyStoredHtmlState to Blazor's `enhancedload` event so the theme (and
+// motion) survive in-app navigation. Enhanced navigation replaces <html> with the
+// server response, which carries none of these client-applied attributes; without
+// this re-apply the page reverts to the Modern LCD base on every navigation until
+// the next full reload (regression guard: PublicRouteThemeNavigationE2ETests).
+//
+// Registered here in the external app.js — allowed by the CSP 'self' script-src —
+// rather than an inline <script> in App.razor, which would need a per-edit SHA-256
+// hash in the Cloudflare edge policy and is blocked by the enforced CSP without one
+// (see CspPolicySyncTests). app.js loads before blazor.web.js, so `Blazor` is not
+// yet defined at top level; defer wiring to DOMContentLoaded/load (both fire after
+// blazor.web.js has executed and defined the global). Enhanced navigations only
+// occur on user interaction, long after load, so no event is missed.
+(function () {
+    var wired = false;
+    function wireEnhancedNavThemeReapply() {
+        if (wired || !window.Blazor || typeof window.Blazor.addEventListener !== 'function') {
+            return;
+        }
+        window.Blazor.addEventListener('enhancedload', window.pinwiz.applyStoredHtmlState);
+        wired = true;
+    }
+    wireEnhancedNavThemeReapply(); // in case Blazor is already available
+    document.addEventListener('DOMContentLoaded', wireEnhancedNavThemeReapply);
+    window.addEventListener('load', wireEnhancedNavThemeReapply);
+})();
 
 // ── Motion ────────────────────────────────────────────────────────────────
 // Sets data-motion on <html>. CSS rules key off this to override
@@ -71,3 +120,18 @@ window.pinwiz._pulseHashTarget = function () {
     el.classList.add('pw-pulse');
 };
 window.addEventListener('hashchange', window.pinwiz._pulseHashTarget);
+
+// ── Nav rail preference (collapsed/expanded persistence) ────────────────────
+// localStorage wrapped in try/catch so private-mode / disabled storage degrades
+// to a no-op (the rail still toggles; the preference just isn't remembered).
+window.pinwiz.navRail = {
+    get: function (key) {
+        try {
+            var v = localStorage.getItem(key);
+            return v === null ? null : v === "true";
+        } catch (_) { return null; }
+    },
+    set: function (key, value) {
+        try { localStorage.setItem(key, value ? "true" : "false"); } catch (_) { /* no-op */ }
+    }
+};

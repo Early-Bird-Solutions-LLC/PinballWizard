@@ -93,6 +93,21 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     }
 
     [Fact]
+    public void AdminLayout_NavRail_DoesNotOptIntoInteractiveFeatures()
+    {
+        var cut = RenderWithBody();
+
+        // Guard: AdminLayout passes none of the opt-in enhancement params.
+        // HoverToPeek, Persist, and ShowToggle must all be false — the admin rail
+        // is a static always-expanded rail that is deliberately outside the
+        // interactive feature set added to the public MainLayout rail.
+        var rail = cut.FindComponent<AppNavRail>();
+        Assert.False(rail.Instance.HoverToPeek);
+        Assert.False(rail.Instance.Persist);
+        Assert.False(rail.Instance.ShowToggle);
+    }
+
+    [Fact]
     public void AdminLayout_PassesThrough_BodyContent()
     {
         var cut = RenderWithBody();

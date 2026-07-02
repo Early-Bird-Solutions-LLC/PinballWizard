@@ -6,6 +6,7 @@
 @using PinballWizard.Application.Persistence
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).
  *
@@ -240,7 +241,7 @@
 
     private async Task LoadAsync()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             var rows = new List<MachineCatalogRow>();
@@ -295,7 +296,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

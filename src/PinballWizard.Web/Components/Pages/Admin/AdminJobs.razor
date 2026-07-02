@@ -5,6 +5,7 @@
 @using Microsoft.Extensions.Logging
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminJobs — /admin/jobs live view of scheduled Container Apps Jobs + run-now.
  *
@@ -217,11 +218,11 @@
         {
             _serviceUnavailable = true;
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
             return;
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _jobs = (await JobService.ListJobsAsync(cts.Token).ConfigureAwait(true)).ToList();
@@ -247,7 +248,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
