@@ -206,7 +206,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
     public void ProductionManifest_DeserializesCleanlyAndContainsExpectedEntries()
     {
         var repoRoot = FindRepoRoot();
-        var manifestPath = Path.Combine(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
+        var manifestPath = Path.Join(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
         Assert.True(File.Exists(manifestPath), $"Production manifest missing at {manifestPath}");
 
         var json = File.ReadAllText(manifestPath);
@@ -242,7 +242,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
     public void ProductionManifest_EveryEntryHasSourceGroupAndDiscoveryStatus()
     {
         var repoRoot = FindRepoRoot();
-        var manifestPath = Path.Combine(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
+        var manifestPath = Path.Join(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
 
         foreach (var entry in doc.RootElement.EnumerateArray())
