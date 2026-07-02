@@ -1,0 +1,68 @@
+using PinballWizard.Application.Monitoring;
+
+namespace PinballWizard.Infrastructure.Monitoring;
+
+// Pure KQL builders + mappings. No SDK dependency — fully unit-tested.
+// Queries are consumed with a QueryTimeRange(TimeSpan) so they carry no
+// time filter themselves.
+internal static class MonitoringKql
+{
+    public static TimeSpan ToTimeSpan(MonitoringWindow window) => window switch
+    {
+        MonitoringWindow.OneHour => TimeSpan.FromHours(1),
+        MonitoringWindow.TwentyFourHours => TimeSpan.FromHours(24),
+        MonitoringWindow.SevenDays => TimeSpan.FromDays(7),
+        _ => TimeSpan.FromHours(24),
+    };
+
+    public const string LatencyP95 =
+        "customMetrics | where name == 'pinwiz.ai.duration_ms' " +
+        "| summarize p95 = percentile(value, 95)";
+
+    public const string AnsweredCount =
+        "customMetrics | where name == 'pinwiz.ai.duration_ms' " +
+        "| summarize answered = sum(valueCount)";
+
+    public const string RefusalTotal =
+        "customMetrics | where name == 'pinwiz.ai.refusals' " +
+        "| summarize refusals = sum(value)";
+
+    public const string RefusalByCategory =
+        "customMetrics | where name == 'pinwiz.ai.refusals' " +
+        "| extend cat = tostring(customDimensions.refusal_category) " +
+        "| summarize c = sum(value) by cat";
+
+    public static string FivexxRate(string pathPrefix) =>
+        $"requests | where url has '{pathPrefix}' " +
+        "| summarize failed = countif(toint(resultCode) >= 500), total = count() " +
+        "| extend pct = iff(total > 0, 100.0 * failed / total, 0.0) | project pct";
+
+    public const string LeaseLag =
+        "customMetrics | where name == 'pinwiz.rag.changefeed_lease_lag' " +
+        "| top 1 by timestamp desc | project value";
+
+    public const string DeadLetters =
+        "customMetrics | where name == 'pinwiz.rag.changefeed_dead_letter_total' " +
+        "| summarize v = sum(value)";
+
+    public const string ShortCircuits =
+        "customMetrics | where name == 'pinwiz.rag.changefeed_short_circuit_total' " +
+        "| summarize v = sum(value)";
+
+    public const string ReconcileDrift =
+        "customMetrics | where name == 'pinwiz.rag.changefeed_reconcile_drift_total' " +
+        "| summarize v = sum(value)";
+
+    public static IReadOnlyList<RefusalCategoryCount> NormalizeCategories(
+        IEnumerable<KeyValuePair<string, long>> raw)
+    {
+        var lookup = raw
+            .GroupBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Sum(kv => kv.Value), StringComparer.Ordinal);
+
+        return RefusalCategories.All
+            .Select(cat => new RefusalCategoryCount(
+                cat, lookup.TryGetValue(cat, out var c) ? c : 0))
+            .ToList();
+    }
+}
