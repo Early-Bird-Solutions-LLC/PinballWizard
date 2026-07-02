@@ -55,6 +55,10 @@
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
     margin-bottom: 20px;
+    /* Critical (ALERT) status reuses the theme's danger-red slot so it tracks
+       the active site theme rather than an admin-only color. Distinct from the
+       amber 'attention' accent used by eval/review/suppressed. */
+    --mon-status-critical: var(--pw-accent-refusal);
 }
 
 .mon-tile {
@@ -68,9 +72,9 @@
     gap: 6px;
 }
 
-.mon-tile--ok   { border-top-color: var(--pw-accent-grounded); }
-.mon-tile--warn { border-top-color: var(--pw-accent-primary); }
-.mon-tile--eval { border-top-color: var(--pw-accent-primary); }
+.mon-tile--ok    { border-top-color: var(--pw-accent-grounded); }
+.mon-tile--alert { border-top-color: var(--mon-status-critical); }
+.mon-tile--eval  { border-top-color: var(--pw-accent-primary); }
 
 .mon-tile__header {
     display: flex;
@@ -110,12 +114,12 @@
     flex-shrink: 0;
 }
 
-.mon-state--ok   { color: var(--pw-accent-grounded); }
-.mon-state--ok   .mon-state__dot { background: var(--pw-accent-grounded); }
-.mon-state--warn { color: var(--pw-accent-primary); }
-.mon-state--warn .mon-state__dot { background: var(--pw-accent-primary); }
-.mon-state--eval { color: var(--pw-accent-primary); }
-.mon-state--eval .mon-state__dot { background: var(--pw-accent-primary); }
+.mon-state--ok    { color: var(--pw-accent-grounded); }
+.mon-state--ok    .mon-state__dot { background: var(--pw-accent-grounded); }
+.mon-state--alert { color: var(--mon-status-critical); }
+.mon-state--alert .mon-state__dot { background: var(--mon-status-critical); }
+.mon-state--eval  { color: var(--pw-accent-primary); }
+.mon-state--eval  .mon-state__dot { background: var(--pw-accent-primary); }
 
 /* ── Tile value + unit ───────────────────────────────────────────────── */
 
