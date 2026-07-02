@@ -192,4 +192,47 @@ public sealed class AppNavRailTests : AsyncBunitContext
         await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerEnter());
         Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
     }
+
+    [Fact]
+    public void Persist_ReadsStoredPinned_OnFirstRender()
+    {
+        JSInterop.Setup<bool?>("pinwiz.navRail.get", "pinwiz.nav.pinned").SetResult(true);
+
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.Persist), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        cut.WaitForAssertion(() =>
+            Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label")));
+    }
+
+    [Fact]
+    public async Task Persist_WritesPinned_OnToggle()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose; // get() returns null; set() is a no-op sink we assert on
+
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.Persist), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        await cut.InvokeAsync(() => cut.Find("[data-testid='nav-rail-toggle']").Click());
+
+        var invocation = JSInterop.Invocations.Single(i => i.Identifier == "pinwiz.navRail.set");
+        Assert.Equal("pinwiz.nav.pinned", invocation.Arguments[0]);
+        Assert.Equal(true, invocation.Arguments[1]);
+    }
 }

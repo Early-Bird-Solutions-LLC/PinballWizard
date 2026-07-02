@@ -1,3 +1,4 @@
+@inject Microsoft.JSInterop.IJSRuntime JS
 @* AppNavRail — shared left navigation rail.
  *
  * Two hosting modes:
@@ -70,6 +71,11 @@
     // pointer-leave retracts. Default false so the static admin rail is unaffected.
     [Parameter] public bool HoverToPeek { get; set; }
 
+    // When true, the pinned state is persisted to localStorage under PersistKey.
+    // Default false — admin rail and any static rail are unaffected (no JS calls).
+    [Parameter] public bool Persist { get; set; }
+    [Parameter] public string PersistKey { get; set; } = "pinwiz.nav.pinned";
+
     private bool _pinned;
     private bool _peek;
 
@@ -77,7 +83,24 @@
 
     protected override void OnInitialized() => _pinned = Open;
 
-    private void Toggle() => _pinned = !_pinned;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Persist)
+        {
+            var stored = await NavRailStorage.GetPinnedAsync(JS, PersistKey);
+            if (stored.HasValue && stored.Value != _pinned)
+            {
+                _pinned = stored.Value;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task Toggle()
+    {
+        _pinned = !_pinned;
+        if (Persist) await NavRailStorage.SetPinnedAsync(JS, PersistKey, _pinned);
+    }
 
     private void OnPointerEnter()
     {

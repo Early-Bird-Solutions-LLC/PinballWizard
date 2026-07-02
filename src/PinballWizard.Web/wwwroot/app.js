@@ -71,3 +71,18 @@ window.pinwiz._pulseHashTarget = function () {
     el.classList.add('pw-pulse');
 };
 window.addEventListener('hashchange', window.pinwiz._pulseHashTarget);
+
+// ── Nav rail preference (collapsed/expanded persistence) ────────────────────
+// localStorage wrapped in try/catch so private-mode / disabled storage degrades
+// to a no-op (the rail still toggles; the preference just isn't remembered).
+window.pinwiz.navRail = {
+    get: function (key) {
+        try {
+            var v = window.localStorage.getItem(key);
+            return v === null ? null : v === "true";
+        } catch (_) { return null; }
+    },
+    set: function (key, value) {
+        try { window.localStorage.setItem(key, value ? "true" : "false"); } catch (_) { /* no-op */ }
+    }
+};
