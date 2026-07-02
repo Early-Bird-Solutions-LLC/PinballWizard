@@ -54,4 +54,14 @@ public interface IMachineRepository : IRepository<Machine>
     // view. Bounded by run cardinality (one OPDB sync touches all ~2,400
     // machines at most; individual scraper runs are a fraction of that).
     IAsyncEnumerable<Machine> StreamByRunIdAsync(string runId, CancellationToken cancellationToken);
+
+    // Cross-partition case-insensitive SUBSTRING title search. Unlike
+    // QueryByTitleAsync (exact STRINGEQUALS), this matches any machine whose
+    // Title CONTAINS the given fragment. It backs getMachineByTitle's
+    // forgiving-resolution fallback (nickname / partial-title queries like
+    // "Wonka" → "Willy Wonka & The Chocolate Factory"): it fires ONLY after
+    // every exact path (point-read, &/and variant, prefix-strip, STRINGEQUALS)
+    // has missed, so the unindexed CONTAINS scan is rare. Bounded server-side
+    // by MaxItemCount and by the caller's per-probe cap; expected 0..N matches.
+    IAsyncEnumerable<Machine> SearchByTitleContainsAsync(string fragment, CancellationToken cancellationToken);
 }

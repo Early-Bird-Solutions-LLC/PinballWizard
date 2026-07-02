@@ -1491,6 +1491,212 @@ public sealed class MachineGroundingToolTests
         await Task.CompletedTask;
     }
 
+    // ── Forgiving resolution (ADR-0048) ────────────────────────────────────
+    // getMachineByTitle must resolve real-user phrasings that the exact
+    // point-read path cannot: "&"/"and" spelling differences and nickname /
+    // partial-title queries. These fire only after every exact path misses.
+
+    [Fact]
+    public void GenerateConnectiveVariants_AndSpelledOut_YieldsAmpersandVariant()
+    {
+        var variants = MachineGroundingTool.GenerateConnectiveVariants("Dungeons and Dragons").ToList();
+        Assert.Contains("Dungeons & Dragons", variants);
+    }
+
+    [Fact]
+    public void GenerateConnectiveVariants_Ampersand_YieldsAndVariant()
+    {
+        var variants = MachineGroundingTool.GenerateConnectiveVariants("Willy Wonka & The Chocolate Factory").ToList();
+        Assert.Contains("Willy Wonka and The Chocolate Factory", variants);
+    }
+
+    [Fact]
+    public void GenerateConnectiveVariants_NoConnective_YieldsNothing()
+    {
+        // Must NOT rewrite "and"/"&" embedded inside a word (Sandman, AT&T-style).
+        Assert.Empty(MachineGroundingTool.GenerateConnectiveVariants("Sandman").ToList());
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AndSpelledOut_ResolvesAmpersandCatalogTitle()
+    {
+        // Catalog stores "Dungeons & Dragons"; the lookup row is keyed on the
+        // "&" spelling. A user typing "Dungeons and Dragons" must resolve via
+        // the "&"/"and" variant retry — not silently miss, not a fuzzy scan.
+        var lookup = new MachineTitleLookup
+        {
+            Id = MachineTitleLookup.NormalizeTitle("Dungeons & Dragons"),
+            PartitionKey = MachineTitleLookup.NormalizeTitle("Dungeons & Dragons"),
+        };
+        lookup.UpsertEntry("G4JBP-MJ6jr", "bally", ["bally"]);
+
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync("Dungeons and Dragons", Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+        lookups.GetByTitleAsync("Dungeons & Dragons", Arg.Any<CancellationToken>())
+            .Returns(lookup);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.GetByOpdbIdAsync("G4JBP-MJ6jr", "bally", Arg.Any<CancellationToken>())
+            .Returns(BuildMachine("G4JBP-MJ6jr", "bally", "Bally", "Dungeons & Dragons", 1987));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Dungeons and Dragons", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("G4JBP-MJ6jr", result!.OpdbId);
+        // The fast variant retry resolved it — no fuzzy substring scan needed.
+        repo.DidNotReceiveWithAnyArgs().SearchByTitleContainsAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_Nickname_ResolvesViaFuzzyFallback_SingleGroup()
+    {
+        // "Wonka" is a nickname — no exact / variant / prefix-strip key exists.
+        // The forgiving fuzzy fallback substring-searches machine titles and
+        // finds the single "Willy Wonka & The Chocolate Factory" OPDB group.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var wonkaStd = new Machine
+        {
+            Id = "GYWBZ-MkPrr", PartitionKey = "jjp",
+            ManufacturerDisplayName = "Jersey Jack Pinball",
+            Title = "Willy Wonka & The Chocolate Factory", Year = 2019, GroupId = "GYWBZ",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var wonkaLe = new Machine
+        {
+            Id = "GYWBZ-MW9B0", PartitionKey = "jjp",
+            ManufacturerDisplayName = "Jersey Jack Pinball",
+            Title = "Willy Wonka & The Chocolate Factory", Year = 2019, GroupId = "GYWBZ",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.SearchByTitleContainsAsync("wonka", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(wonkaStd, wonkaLe));
+        repo.GetSiblingsByGroupIdAsync("GYWBZ", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(wonkaStd, wonkaLe));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("Willy Wonka & The Chocolate Factory", result!.Title);
+        Assert.Equal("GYWBZ", result.GroupId);
+        // Single OPDB group → no cross-group ambiguity → agent answers directly.
+        Assert.Empty(result.TitleCollisions);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AmbiguousNickname_SurfacesFuzzyTitleCollisions()
+    {
+        // A token that substring-matches machines in two DIFFERENT OPDB groups
+        // must ground a primary AND surface the other group as a TitleCollision
+        // so the agent asks a clarifying question instead of silently guessing.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var ballyDnd = new Machine
+        {
+            Id = "G4JBP-MJ6jr", PartitionKey = "bally", ManufacturerDisplayName = "Bally",
+            Title = "Dungeons & Dragons", Year = 1987, GroupId = "G4JBP",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var sternDnd = new Machine
+        {
+            Id = "GK1Ej-MwNZr", PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball",
+            Title = "Dungeons & Dragons: The Tyrant's Eye", Year = 2025, GroupId = "GK1Ej",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.SearchByTitleContainsAsync("dragons", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(ballyDnd, sternDnd));
+        repo.GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Dragons", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("G4JBP-MJ6jr", result!.OpdbId);
+        var collision = Assert.Single(result.TitleCollisions);
+        Assert.Equal("GK1Ej-MwNZr", collision.OpdbId);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_FuzzyNoCandidates_ReturnsNull()
+    {
+        // No exact key, no fuzzy substring hit → the tool must still refuse
+        // honestly (null), never fabricate a match.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.SearchByTitleContainsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Nonexistent Machine Xyz", CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_FuzzySearchThrows_EmitsAiToolErrorsAndReturnsNull()
+    {
+        // Invariant #17: the forgiving fuzzy fallback is best-effort. A Cosmos
+        // failure during the substring search must NOT throw — it degrades to
+        // an honest "no match" (null) AND meters
+        // AiToolErrors{tool=getMachineByTitle, reason=fuzzy_search_unavailable}
+        // so the degraded path is visible on dashboards, never silent.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        // The fuzzy substring scan throws a Cosmos-style exception mid-stream.
+        repo.SearchByTitleContainsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ThrowingAsyncEnumerable<Machine>(new InvalidOperationException("Cosmos 503")));
+
+        var bag = new ConcurrentBag<(string Tool, string Reason)>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+        {
+            if (instrument.Name != "pinwiz.ai.tool_errors_total") return;
+            string? tool = null, reason = null;
+            foreach (var t in tags)
+            {
+                if (t.Key == "tool") tool = t.Value as string;
+                else if (t.Key == "reason") reason = t.Value as string;
+            }
+            bag.Add((tool ?? "", reason ?? ""));
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiToolErrors);
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        // Degrades to an honest refusal — never throws, never fabricates.
+        Assert.Null(result);
+        // The degraded path is metered, not silent.
+        Assert.Contains(bag, e => e.Tool == "getMachineByTitle" && e.Reason == "fuzzy_search_unavailable");
+    }
+
     // ── Invariant #17 audit 2026-06-12: item 2 ─────────────────────────────
     // ResolveSiblingsAsync: Cosmos failure → AiToolErrors counter increments
     // with reason=siblings_unavailable and tool=getMachineByTitle.
