@@ -132,6 +132,16 @@ public sealed class AdminMachineDetailTests : AsyncBunitContext
         yield break;
     }
 
+    private static async IAsyncEnumerable<Machine> TwoSiblingStream(
+        Machine first,
+        Machine second,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        yield return first;
+        yield return second;
+    }
+
     private static async IAsyncEnumerable<MachineDocumentLink> DocStream(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
     {
@@ -266,6 +276,51 @@ public sealed class AdminMachineDetailTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task AdminMachineDetail_SiblingStrip_DistinctTitlesSharedFeatureLabel_IdentifiesEachByTitle()
+    {
+        // Regression: OPDB groups distinct EM-era games under one group where each
+        // member's EditionLabel is derived from a shared "feature" rather than a
+        // unique edition suffix. Gottlieb group G4xlK does exactly this — Free Fall,
+        // Sky Star, and Sky Dive all carry the "Add-a-ball" feature. Rendering
+        // EditionLabel alone collapsed them to three identical "Add-a-ball" cards
+        // that looked like duplicates. The strip must identify each sibling by its
+        // distinct Title so the cards are tellable apart.
+        var freeFall = new Machine
+        {
+            Id                      = "G4xlK-MDEKL",
+            PartitionKey            = FakeMfr,
+            ManufacturerDisplayName = "Gottlieb",
+            Title                   = "Free Fall",
+            EditionLabel            = "Add-a-ball",
+            GroupId                 = FakeGroupId,
+            FirstSeenAt             = DateTimeOffset.UtcNow,
+            LastSeenAt              = DateTimeOffset.UtcNow,
+        };
+        var skyStar = new Machine
+        {
+            Id                      = "G4xlK-MQkWr",
+            PartitionKey            = FakeMfr,
+            ManufacturerDisplayName = "Gottlieb",
+            Title                   = "Sky Star",
+            EditionLabel            = "Add-a-ball",
+            GroupId                 = FakeGroupId,
+            FirstSeenAt             = DateTimeOffset.UtcNow,
+            LastSeenAt              = DateTimeOffset.UtcNow,
+        };
+
+        _machinesRepo
+            .GetSiblingsByGroupIdAsync(FakeGroupId, Arg.Any<CancellationToken>())
+            .Returns(callInfo => TwoSiblingStream(freeFall, skyStar, callInfo.Arg<CancellationToken>()));
+
+        var cut = RenderDetail();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var strip = cut.Find("[data-testid='edition-sibling-strip']");
+        Assert.Contains("Free Fall", strip.InnerHtml, StringComparison.Ordinal);
+        Assert.Contains("Sky Star",  strip.InnerHtml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AdminMachineDetail_SiblingStrip_ShowsDocCounts()
     {
         // Pro has 0 docs; Premium/LE has 5.
@@ -285,11 +340,11 @@ public sealed class AdminMachineDetailTests : AsyncBunitContext
         var cut = RenderDetail();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
+        // QuerySelector returns null (not throw) when absent, so assert non-null:
+        // the 0-doc edition (Pro) gets an Error chip, the 5-doc edition a Success chip.
         var strip = cut.Find("[data-testid='edition-sibling-strip']");
-        strip.QuerySelector(".mud-chip-color-error"); // throws NotFoundException if absent
-
-        // And a success chip for the edition with 5 docs.
-        strip.QuerySelector(".mud-chip-color-success");
+        Assert.NotNull(strip.QuerySelector(".mud-chip-color-error"));
+        Assert.NotNull(strip.QuerySelector(".mud-chip-color-success"));
     }
 
     [Fact]
