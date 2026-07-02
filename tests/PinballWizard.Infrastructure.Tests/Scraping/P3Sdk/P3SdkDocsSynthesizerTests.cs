@@ -40,7 +40,7 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
             NullLogger<P3SdkDocsSynthesizer>.Instance);
 
         // Build a minimal fake SDK directory that mirrors the real SDK layout.
-        _tempSdkDir = Path.Combine(Path.GetTempPath(), $"p3sdk_test_{Guid.NewGuid():N}");
+        _tempSdkDir = Path.Join(Path.GetTempPath(), $"p3sdk_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempSdkDir);
         WriteFile("INSTALL.txt", "P3 SDK Installation\n\nUnzip to your Unity project.\nRequires Unity 2021.3 LTS or later.");
         WriteFile("ReleaseNotes.txt", "P3 SDK v0.9 Release Notes\n\nNew: Portal module driver updated.\nFixed: CCR timing issue resolved.");
@@ -60,10 +60,6 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
     [Fact]
     public void Ctor_NullChunker_Throws()
     {
-        var chunker = new HybridChunker(
-            Options.Create(new ChunkerOptions()),
-            NullLogger<HybridChunker>.Instance);
-
         Assert.Throws<ArgumentNullException>(() =>
             new P3SdkDocsSynthesizer(null!, _ragIndexer, NullLogger<P3SdkDocsSynthesizer>.Instance));
     }
@@ -177,8 +173,8 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
     {
         // Remove two of the five fake files — synthesizer should gracefully skip them
         // and still index the others (no fabrication, no crash — Invariant #17).
-        File.Delete(Path.Combine(_tempSdkDir, "ReleaseNotes.txt"));
-        File.Delete(Path.Combine(_tempSdkDir, ".multimorphic", "P3", "ModuleDrivers", "FR", "1.0.4.7", "UsageInstructions.txt"));
+        File.Delete(Path.Join(_tempSdkDir, "ReleaseNotes.txt"));
+        File.Delete(Path.Join(_tempSdkDir, ".multimorphic", "P3", "ModuleDrivers", "FR", "1.0.4.7", "UsageInstructions.txt"));
 
         var indexed = await _sut.SyncAsync(_tempSdkDir);
 
@@ -190,7 +186,7 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
     {
         // Write an empty INSTALL.txt — the synthesizer must not fabricate content
         // and must not count it as indexed (Invariant #17).
-        File.WriteAllText(Path.Combine(_tempSdkDir, "INSTALL.txt"), string.Empty);
+        File.WriteAllText(Path.Join(_tempSdkDir, "INSTALL.txt"), string.Empty);
 
         var indexed = await _sut.SyncAsync(_tempSdkDir);
 
@@ -202,7 +198,7 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
 
     private void WriteFile(string relativePath, string content)
     {
-        var fullPath = Path.Combine(_tempSdkDir, relativePath);
+        var fullPath = Path.Join(_tempSdkDir, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         File.WriteAllText(fullPath, content);
     }
@@ -210,7 +206,7 @@ public sealed class P3SdkDocsSynthesizerTests : IDisposable
     private void WriteModuleFile(string moduleRelativePath, string content)
     {
         // Path is relative to .multimorphic/P3/ModuleDrivers/
-        var fullRelative = Path.Combine(".multimorphic", "P3", "ModuleDrivers", moduleRelativePath);
+        var fullRelative = Path.Join(".multimorphic", "P3", "ModuleDrivers", moduleRelativePath);
         WriteFile(fullRelative, content);
     }
 }

@@ -79,7 +79,7 @@ public sealed class P3SdkDocsSynthesizer
 
         if (File.Exists(sdkPath) && sdkPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
         {
-            tempDir = Path.Combine(Path.GetTempPath(), $"p3sdk_{Guid.NewGuid():N}");
+            tempDir = Path.Join(Path.GetTempPath(), $"p3sdk_{Guid.NewGuid():N}");
             _logger.LogInformation("P3SdkDocsSynthesizer: extracting zip to {TempDir}.", tempDir);
             ZipFile.ExtractToDirectory(sdkPath, tempDir, overwriteFiles: true);
             // The zip unpacks into a single P3_SDK_V0.9 subdirectory.
@@ -121,8 +121,11 @@ public sealed class P3SdkDocsSynthesizer
             if (cancellationToken.IsCancellationRequested) break;
 
             // Normalise to OS path separator for the local filesystem lookup.
+            // osRelative is always a trusted, relative segment from the compile-time
+            // HighValueRelativePaths list — Path.Join never drops rootDir the way
+            // Path.Combine would if a segment were rooted (CodeQL cs/path-combine).
             var osRelative = relativePath.Replace('/', Path.DirectorySeparatorChar);
-            var fullPath = Path.Combine(rootDir, osRelative);
+            var fullPath = Path.Join(rootDir, osRelative);
 
             if (!File.Exists(fullPath))
             {
