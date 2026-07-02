@@ -118,12 +118,29 @@ public sealed class PublicRouteCanaryE2ETests : IAsyncLifetime
     [InlineData("/status")]
     [InlineData("/auth-demo")]
     [InlineData("/wizard/q/nonexistent-slug")] // seed-question deep link
-    [InlineData("/this-route-does-not-exist")]  // catch-all → NotFound, not the error page
     public async Task PublicRoute_DoesNotRenderErrorPage(string route)
     {
         var page = await NewPageAsync();
         await NavigateAsync(page, route);
         await AssertNotErrorPageAsync(page, route);
+    }
+
+    // A genuinely-unknown route hits the catch-all, which INTENTIONALLY routes to the
+    // pinball-themed error page at /error?reason=not-found (FE-05: a 404 never shows the
+    // framework default page). This pins that intended routing — the opposite of the
+    // guard above, which asserts REAL pages render their own content. Kept out of
+    // PublicRoute_DoesNotRenderErrorPage, whose /error-avoidance assertion is by design
+    // wrong for a non-existent route.
+    [E2EFact]
+    public async Task UnknownRoute_RoutesToThemedNotFoundPage()
+    {
+        var page = await NewPageAsync();
+        await NavigateAsync(page, "/this-route-does-not-exist");
+
+        await page.WaitForURLAsync("**/error*", new() { Timeout = 15_000 });
+        Assert.Contains("reason=not-found", page.Url, StringComparison.Ordinal);
+        // The themed surface renders (not a raw framework 404).
+        await page.WaitForSelectorAsync("[data-testid='tilt-heading']", new() { Timeout = 15_000 });
     }
 
     // /auth-demo is a public showcase page explaining the admin auth model.

@@ -6,17 +6,16 @@ using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Infrastructure.Rag.Indexing;
 
 // ADR-0049 phase 2a: projects all Machine records from Cosmos into the
 // AI Search machine findability index. Called from CLI --rebuild-machine-index.
 //
-// Completeness is computed INLINE here as a simple proportion of non-empty
-// data-quality signals. This avoids adding a Core helper for a purely
-// infrastructure concern — the computation is purposefully simple and collocated.
-// TODO (ADR-0049 phase 2b): reconcile to a shared MachineCompleteness helper if a parallel branch
-// introduces one (e.g. for a scoring UI in the admin control plane).
+// Completeness uses MachineCompleteness.Score(machine) / 6.0 — the same 6-signal
+// Core formula used by the content-intrinsic tie-break in MachineGroundingTool.
+// Normalizing to [0,1] keeps the scoring-profile magnitude range valid.
 //
 // Batching: AI Search upsert accepts up to 1,000 documents per batch. We
 // use 100 to stay well under the 16 MB request size limit while keeping
@@ -61,7 +60,7 @@ public sealed class MachineSearchIndexProjector(
                 Year            = machine.Year,
                 GroupId         = machine.GroupId,
                 EditionLabel    = machine.EditionLabel,
-                Completeness    = ComputeCompleteness(machine),
+                Completeness    = MachineCompleteness.Score(machine) / 6.0,
                 LastUpdatedUtc  = machine.LastSeenAt == default
                     ? machine.FirstSeenAt
                     : machine.LastSeenAt,
@@ -132,34 +131,4 @@ public sealed class MachineSearchIndexProjector(
         }
     }
 
-    // Inline completeness: proportion of key data-quality signals present.
-    // Signals checked (7 total):
-    //   1. Title is non-empty (always true for any Machine we store — defensive)
-    //   2. Year is populated
-    //   3. ManufacturerDisplayName is non-empty (always true for stored machines)
-    //   4. GroupId is populated (linked to OPDB group)
-    //   5. At least one Theme
-    //   6. At least one Designer
-    //   7. At least one Edition
-    //
-    // Simple linear score: sum(present) / total_signals.
-    // Rationale: canonical OPDB machines have title + year + manufacturer +
-    // group + themes; scraper-only machines may lack year/themes/designers.
-    // A score of ~0.57 (4/7) is the practical floor for OPDB-linked records.
-    // TODO (ADR-0049 phase 2b): reconcile completeness to a shared MachineCompleteness helper.
-    internal static double ComputeCompleteness(Core.Domain.Machine machine)
-    {
-        const int totalSignals = 7;
-        var present = 0;
-
-        if (!string.IsNullOrWhiteSpace(machine.Title))                   present++;
-        if (machine.Year.HasValue)                                        present++;
-        if (!string.IsNullOrWhiteSpace(machine.ManufacturerDisplayName)) present++;
-        if (!string.IsNullOrWhiteSpace(machine.GroupId))                 present++;
-        if (machine.Themes.Count > 0)                                    present++;
-        if (machine.Designers.Count > 0)                                 present++;
-        if (machine.Editions.Count > 0)                                  present++;
-
-        return (double)present / totalSignals;
-    }
 }

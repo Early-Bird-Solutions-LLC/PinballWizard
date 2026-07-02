@@ -16,6 +16,11 @@ namespace PinballWizard.Web.Tests.E2E;
 // config, or after any live-data migration.
 [Collection("E2E live stack")]
 [Trait("Category", "E2E")]
+// The ask flow makes a real model call (~cents) and is the slowest E2E by far. The
+// post-deploy canary (deploy.yml) filters this out with `E2E!=Ask` so it stays a fast,
+// free, deterministic route/health check; the local full run (tools/e2e/Run-E2E.ps1)
+// still exercises it via the bare `Category=E2E` filter.
+[Trait("E2E", "Ask")]
 public sealed class WizardE2ETests : IAsyncLifetime
 {
     private readonly LiveStackFixture _stack;

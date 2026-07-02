@@ -597,6 +597,28 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of a complete MachineSearchIndexProjector.ProjectAllAsync run in milliseconds — from first Cosmos StreamAllAsync page to final batch flush. Includes Cosmos streaming latency and AI Search batch-upsert latency. Drives capacity planning at corpus scale: if a full rebuild exceeds 5 minutes, consider increasing BatchSize or parallelising the batch-flush loop (ADR-0049 phase 2b follow-up).");
 
+    // ── Machine search instrumentation (ADR-0049 phase 2b) ─────────────
+    // Emitted by AiSearchMachineIndex.SearchAsync on every getMachineByTitle
+    // forgiving-resolution call that reaches the AI Search machine index.
+
+    // Duration of a single AI Search machine-index query (from client.SearchAsync
+    // to hit mapping complete). Tracks user-felt findability latency. A spike here
+    // indicates AI Search service degradation, not Cosmos — distinct from
+    // RagRetrievalDurationMs (corpus index) and AiToolDurationMs (whole tool).
+    public static readonly Histogram<double> MachineSearchDurationMs = Meter.CreateHistogram<double>(
+        "pinwiz.machine.search.duration_ms",
+        unit: "ms",
+        description: "Wall-clock duration of one AiSearchMachineIndex.SearchAsync call in milliseconds. Emitted on every query reaching the machine findability index (ADR-0049 phase 2b), including queries that return zero hits. Pair with pinwiz.machine.search.errors_total to distinguish slow-success from degrade-to-Cosmos paths.");
+
+    // Counts degradation events where AiSearchMachineIndex.SearchAsync threw and
+    // MachineGroundingTool fell back to the Cosmos SearchByTitleContainsAsync net.
+    // A non-zero rate here indicates AI Search machine-index availability issues.
+    // Tagged reason: "query_failed" (transport / service error).
+    public static readonly Counter<long> MachineSearchErrors = Meter.CreateCounter<long>(
+        "pinwiz.machine.search.errors_total",
+        unit: "{error}",
+        description: "Count of AiSearchMachineIndex.SearchAsync failures that triggered a degrade-to-Cosmos fallback in MachineGroundingTool (ADR-0049 phase 2b). Tagged with reason. A sustained non-zero rate indicates AI Search machine-index availability or configuration issues.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

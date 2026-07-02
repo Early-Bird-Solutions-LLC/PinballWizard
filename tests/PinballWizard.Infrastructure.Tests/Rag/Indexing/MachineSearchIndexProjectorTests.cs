@@ -1,150 +1,144 @@
 using PinballWizard.Core.Domain;
-using PinballWizard.Infrastructure.Rag.Indexing;
 using Xunit;
 
 namespace PinballWizard.Infrastructure.Tests.Rag.Indexing;
 
-// Behavior-asserting tests for MachineSearchIndexProjector (ADR-0049 phase 2a).
-// ComputeCompleteness is internal static — testable without a live SearchClient.
+// Behavior-asserting tests for MachineSearchIndexProjector (ADR-0049 phase 2a/2b).
+//
+// Phase 2b reconciled the projector's completeness computation from an inline
+// 7-signal fraction to MachineCompleteness.Score(machine) / 6.0 — the same Core
+// formula used by the content-intrinsic tie-break in MachineGroundingTool. These
+// tests document the expected completeness value for real machine states and guard
+// against formula drift (e.g., someone re-introducing the 7-signal inline).
+//
+// The 6 Core signals (MachineCompleteness.Score):
+//   1. ManufacturerDisplayName non-empty
+//   2. Year > 0
+//   3. Themes non-empty
+//   4. Designers non-empty
+//   5. Editions non-empty
+//   6. OpdbSourceUrl non-empty
+//
 // The ProjectAllAsync HTTP path (batch upsert against AI Search) is covered by
 // integration / live tests gated on PINBALL_WIZARD_LIVE_MACHINE_INDEX_TESTS=1,
 // following the same pattern as AiSearchRagIndexerLiveTests.
 public sealed class MachineSearchIndexProjectorTests
 {
-    // ── Completeness scoring ──────────────────────────────────────────────────
+    // ── Completeness scoring (MachineCompleteness.Score / 6.0) ───────────────
 
     [Fact]
-    public void ComputeCompleteness_AllSignalsPresent_ReturnsOne()
+    public void Completeness_AllSixSignalsPresent_ReturnsOne()
     {
-        // A fully-populated machine record (title + year + manufacturer +
-        // groupId + themes + designers + editions) should score 1.0.
+        // Manufacturer + Year + Themes + Designers + Editions + OpdbSourceUrl = 6/6.
         var machine = BuildMachine(
             year: 2024,
-            groupId: "GweeP",
+            opdbSourceUrl: "https://opdb.org/machines/GRBN-MQR4P",
             themes: ["Science Fiction"],
             designers: ["Steve Ritchie"],
             editions: [new MachineEdition { Name = "Pro" }]);
 
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
+        var score = MachineCompleteness.Score(machine) / 6.0;
 
         Assert.Equal(1.0, score, precision: 9);
     }
 
     [Fact]
-    public void ComputeCompleteness_OnlyTitleAndManufacturer_ReturnsTwoSevenths()
+    public void Completeness_OnlyManufacturer_ReturnsOneSixth()
     {
-        // A scraper-only record with no OPDB data: title + manufacturer present
-        // (signals 1+3 of 7). Expected: 2/7 ≈ 0.2857.
+        // A scraper-only record with no OPDB data: only ManufacturerDisplayName
+        // is present. Expected: 1/6 ≈ 0.1667.
         var machine = BuildMachine(
             year: null,
-            groupId: null,
+            opdbSourceUrl: null,
             themes: [],
             designers: [],
             editions: []);
 
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
+        var score = MachineCompleteness.Score(machine) / 6.0;
 
-        Assert.Equal(2.0 / 7.0, score, precision: 9);
+        Assert.Equal(1.0 / 6.0, score, precision: 9);
     }
 
     [Fact]
-    public void ComputeCompleteness_OPDBMinimumRecord_ReturnsFourSevenths()
+    public void Completeness_OPDBMinimumRecord_ReturnsThreeSixths()
     {
-        // A minimal but valid OPDB-linked record has title + year + manufacturer +
-        // groupId (signals 1+2+3+4 of 7). Expected: 4/7 ≈ 0.5714.
-        // This is the practical floor for OPDB records per ADR-0049 comment.
+        // A minimal OPDB-linked record: Manufacturer + Year + OpdbSourceUrl
+        // present; Themes/Designers/Editions not yet populated. Expected: 3/6 = 0.5.
         var machine = BuildMachine(
             year: 2019,
-            groupId: "MMDNS",
+            opdbSourceUrl: "https://opdb.org/machines/MMDNS",
             themes: [],
             designers: [],
             editions: []);
 
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
+        var score = MachineCompleteness.Score(machine) / 6.0;
 
-        Assert.Equal(4.0 / 7.0, score, precision: 9);
+        Assert.Equal(3.0 / 6.0, score, precision: 9);
     }
 
     [Fact]
-    public void ComputeCompleteness_WithThemesButNoDesignersOrEditions_ReturnsFiveSevenths()
+    public void Completeness_WithThemesAndDesigners_ReturnsFiveSixths()
     {
+        // Manufacturer + Year + OpdbSourceUrl + Themes + Designers = 5/6.
         var machine = BuildMachine(
             year: 2022,
-            groupId: "GRBN",
+            opdbSourceUrl: "https://opdb.org/machines/GRBN",
             themes: ["Monsters", "Horror"],
-            designers: [],
+            designers: ["Keith Elwin"],
             editions: []);
 
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
+        var score = MachineCompleteness.Score(machine) / 6.0;
 
-        Assert.Equal(5.0 / 7.0, score, precision: 9);
+        Assert.Equal(5.0 / 6.0, score, precision: 9);
     }
 
     [Fact]
-    public void ComputeCompleteness_AllListsPopulatedButMissingYearAndGroup_ReturnsFiveSevenths()
+    public void Completeness_ScoreIsLinearNotBinary()
     {
-        // title + manufacturer + themes + designers + editions = 5/7
-        var machine = BuildMachine(
-            year: null,
-            groupId: null,
-            themes: ["Comedy"],
-            designers: ["Pat Lawlor"],
-            editions: [new MachineEdition { Name = "Standard" }]);
-
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
-
-        Assert.Equal(5.0 / 7.0, score, precision: 9);
-    }
-
-    // ── Document field mapping ────────────────────────────────────────────────
-
-    [Fact]
-    public void ComputeCompleteness_IsLinear_NotBinary()
-    {
-        // Score scales with the number of present signals, not boolean.
-        var partial = BuildMachine(
+        // Score should rise monotonically as signals are added.
+        var minimal = BuildMachine(
             year: 2020,
-            groupId: null,
+            opdbSourceUrl: null,
             themes: [],
             designers: [],
             editions: []);
 
-        var fuller = BuildMachine(
+        var richer = BuildMachine(
             year: 2020,
-            groupId: "ABCD",
-            themes: [],
+            opdbSourceUrl: "https://opdb.org/machines/ABC",
+            themes: ["Rock"],
             designers: [],
             editions: []);
 
-        var partialScore = MachineSearchIndexProjector.ComputeCompleteness(partial);
-        var fullerScore  = MachineSearchIndexProjector.ComputeCompleteness(fuller);
+        var minimalScore = MachineCompleteness.Score(minimal) / 6.0;
+        var richerScore  = MachineCompleteness.Score(richer) / 6.0;
 
-        Assert.True(fullerScore > partialScore,
-            $"Expected fullerScore ({fullerScore:F4}) > partialScore ({partialScore:F4})");
+        Assert.True(richerScore > minimalScore,
+            $"Expected richerScore ({richerScore:F4}) > minimalScore ({minimalScore:F4})");
     }
 
     [Fact]
-    public void ComputeCompleteness_ScoreIsBetweenZeroAndOne()
+    public void Completeness_ScoreIsBetweenZeroAndOne()
     {
         var machine = BuildMachine(
             year: null,
-            groupId: null,
+            opdbSourceUrl: null,
             themes: [],
             designers: [],
             editions: []);
 
-        var score = MachineSearchIndexProjector.ComputeCompleteness(machine);
+        var score = MachineCompleteness.Score(machine) / 6.0;
 
         Assert.InRange(score, 0.0, 1.0);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    // Constructs a Machine where title + manufacturer are always present
-    // (signals 1+3 of 7 always true). Tests specify the remaining signals.
+    // Constructs a Machine where ManufacturerDisplayName is always present
+    // (signal #1 of 6 always true). Tests specify the remaining 5 signals.
     private static Machine BuildMachine(
         int? year,
-        string? groupId,
+        string? opdbSourceUrl,
         List<string> themes,
         List<string> designers,
         List<MachineEdition> editions)
@@ -153,10 +147,10 @@ public sealed class MachineSearchIndexProjectorTests
         {
             Id                      = "GRBN-MQR4P",
             PartitionKey            = "stern",
-            ManufacturerDisplayName  = "Stern Pinball",
+            ManufacturerDisplayName = "Stern Pinball",
             Title                   = "Godzilla",
             Year                    = year,
-            GroupId                 = groupId,
+            OpdbSourceUrl           = opdbSourceUrl ?? string.Empty,
             Themes                  = themes,
             Designers               = designers,
             Editions                = editions,

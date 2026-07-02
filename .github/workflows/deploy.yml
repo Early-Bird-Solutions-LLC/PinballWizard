@@ -279,10 +279,14 @@ jobs:
         env:
           E2E__BaseUrl: https://${{ needs.smoke.outputs.wizard_fqdn }}
         run: |
+          # Route/health canaries only — exclude the ask flow (E2E=Ask, WizardE2ETests):
+          # it makes a real model call per run (cost + latency) and, being the slowest
+          # E2E, previously pushed this job past its 15-min budget and got cancelled.
+          # The ask flow is validated by the local full run (tools/e2e/Run-E2E.ps1).
           dotnet test \
             --no-build \
             --configuration Release \
-            --filter "Category=E2E" \
+            --filter "Category=E2E&E2E!=Ask" \
             --logger "trx;LogFileName=e2e-results.trx" \
             --results-directory ./e2e-results \
             tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj
