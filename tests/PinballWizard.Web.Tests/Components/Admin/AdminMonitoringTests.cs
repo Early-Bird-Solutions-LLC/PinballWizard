@@ -315,22 +315,41 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         });
     }
 
-    // ── D1 ALERT state — warn CSS class ──────────────────────────────────────
+    // ── D1 ALERT state — distinct red CSS class ──────────────────────────────
 
     [Fact]
-    public void LatencyTile_AlertState_HasWarnClass()
+    public void LatencyTile_AlertState_HasAlertClass()
     {
-        // Fix 3: LatencyP95Ms = 6000 > 5,000 ms threshold → ALERT state.
-        // State pill must carry mon-state--warn (not --eval), tile must carry mon-tile--warn.
+        // LatencyP95Ms = 6000 > 5,000 ms threshold → ALERT state.
+        // State pill must carry mon-state--alert (danger-red via --mon-status-critical),
+        // tile must carry mon-tile--alert. Neither --warn nor --eval (amber).
         var snap = FullSnap() with { LatencyP95Ms = 6000 };
         var cut = RenderWith(snap);
         cut.WaitForAssertion(() =>
         {
             var pill = cut.Find("[data-testid='mon-tile-latency-state']");
             Assert.Contains("ALERT", pill.TextContent);
-            Assert.Contains("mon-state--warn", pill.ClassName ?? string.Empty);
+            Assert.Contains("mon-state--alert", pill.ClassName ?? string.Empty);
             var tile = cut.Find("[data-testid='mon-tile-latency']");
-            Assert.Contains("mon-tile--warn", tile.ClassName ?? string.Empty);
+            Assert.Contains("mon-tile--alert", tile.ClassName ?? string.Empty);
+        });
+    }
+
+    [Fact]
+    public void FivexxTile_AlertState_HasAlertClass()
+    {
+        // FivexxRatePercent = 6.0 > 5% threshold → ALERT state.
+        // State pill must carry mon-state--alert (danger-red via --mon-status-critical),
+        // tile must carry mon-tile--alert. Neither --warn nor --eval (amber).
+        var snap = FullSnap() with { FivexxRatePercent = 6.0 };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+        {
+            var pill = cut.Find("[data-testid='mon-tile-5xx-state']");
+            Assert.Contains("ALERT", pill.TextContent);
+            Assert.Contains("mon-state--alert", pill.ClassName ?? string.Empty);
+            var tile = cut.Find("[data-testid='mon-tile-5xx']");
+            Assert.Contains("mon-tile--alert", tile.ClassName ?? string.Empty);
         });
     }
 

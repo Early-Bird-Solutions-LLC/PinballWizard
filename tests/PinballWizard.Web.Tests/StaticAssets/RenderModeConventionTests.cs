@@ -45,7 +45,7 @@ public sealed class RenderModeConventionTests
     [Fact]
     public void EveryInteractivePage_DeclaresRenderMode()
     {
-        var componentsDir = Path.Combine(
+        var componentsDir = Path.Join(
             RepoRoot(), "src", "PinballWizard.Web", "Components");
 
         var violations = new List<string>();
@@ -83,6 +83,69 @@ public sealed class RenderModeConventionTests
             "the controls are silently dead (ADR-0034 doctrine). Add '@rendermode " +
             "InteractiveServer' (and ensure the layout's MudBlazor providers are pinned " +
             "interactive), or make the control static-friendly (a real Href/anchor):\n" +
+            string.Join("\n", violations));
+    }
+
+    // Opening tag of an AppDataGrid, capturing its attribute span (up to the
+    // first '>'). Attribute values on the grid tag never contain '>', so [^>]*
+    // is safe; it spans newlines because the tag is often multi-line.
+    private static readonly Regex AppDataGridOpenTag =
+        new(@"<AppDataGrid\b[^>]*>", RegexOptions.Compiled);
+
+    private static readonly Regex ShowPagerFalse =
+        new(@"ShowPager\s*=\s*""false""", RegexOptions.Compiled);
+
+    // The explicit MudBlazor pager element, when a page drops to a bare
+    // <MudDataGrid> and wires the pager by hand.
+    private static readonly Regex MudDataGridPagerElement =
+        new(@"<MudDataGridPager\b", RegexOptions.Compiled);
+
+    // A data-grid pager is interactive by construction: page navigation and the
+    // rows-per-page selector need a Blazor circuit. On a static-SSR page they
+    // render but are inert — the pager buttons do nothing (the /admin/sources
+    // regression, 2026-07-02). Unlike @onclick this is INTERNAL to MudDataGrid,
+    // so the token scan above cannot see it; this check looks at the grid tag
+    // itself. AppDataGrid ships a live pager by default (ShowPager=true), so a
+    // static page must either declare @rendermode or set ShowPager="false".
+    [Fact]
+    public void EveryStaticPage_WithLiveGridPager_DeclaresRenderMode()
+    {
+        var componentsDir = Path.Join(
+            RepoRoot(), "src", "PinballWizard.Web", "Components");
+
+        var violations = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(componentsDir, "*.razor", SearchOption.AllDirectories))
+        {
+            var raw = File.ReadAllText(file);
+            var content = CommentBlock.Replace(raw, string.Empty);
+
+            var isPage = Regex.IsMatch(content, @"(?m)^\s*@page\b");
+            if (!isPage || Regex.IsMatch(content, @"@rendermode\b"))
+            {
+                continue;
+            }
+
+            // Any AppDataGrid on the page that does not explicitly suppress its
+            // pager renders a live pager.
+            var hasLivePager =
+                AppDataGridOpenTag.Matches(content).Any(m => !ShowPagerFalse.IsMatch(m.Value))
+                || MudDataGridPagerElement.IsMatch(content);
+
+            if (hasLivePager)
+            {
+                violations.Add(
+                    $"  {Path.GetFileName(file)} — data-grid pager on a static page (no @rendermode)");
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            "These routable pages render a MudDataGrid pager under static SSR, so the pager's " +
+            "page-navigation and rows-per-page controls are silently dead (ADR-0034 doctrine, the " +
+            "/admin/sources regression). Add '@rendermode InteractiveServer' (matching " +
+            "AdminManufacturers), or set ShowPager=\"false\" if the grid is small and fixed " +
+            "(matching AdminCorpus):\n" +
             string.Join("\n", violations));
     }
 

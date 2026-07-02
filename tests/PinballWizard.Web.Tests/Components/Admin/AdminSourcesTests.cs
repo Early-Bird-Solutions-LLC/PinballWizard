@@ -13,12 +13,13 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 
 // bUnit tests for AdminSources.razor (/admin/sources).
 //
-// AdminSources is static SSR + [StreamRendering] (ADR-0034 doctrine: no
-// interactive need). It streams IIngestionSourceRepository.StreamAllAsync in
-// OnInitializedAsync; bUnit runs that synchronously, so WaitForAssertion sees
-// the final state. Tests assert the real load path: rows render, the empty-state
-// still fires on no sources, and a throwing repo surfaces the visible error
-// state (Invariant #17), not a silent empty grid.
+// AdminSources is @rendermode InteractiveServer (ADR-0034 amendment: its
+// AppDataGrid pager needs a live circuit). It loads
+// IIngestionSourceRepository.StreamAllAsync in OnInitializedAsync; bUnit runs
+// that synchronously, so WaitForAssertion sees the final state. Tests assert the
+// real load path: rows render, the empty-state still fires on no sources, and a
+// throwing repo surfaces the visible error state (Invariant #17), not a silent
+// empty grid.
 public sealed class AdminSourcesTests : AsyncBunitContext
 {
     private static IngestionSource MakeSource(string id, bool enabled) => new()

@@ -507,11 +507,11 @@
         _loading ? "—" :
         _snapshot?.RefusalRatePercent is not null ? "In band" : "unavailable";
 
-    // CSS class for the state pill (ok = grounded green, warn = primary blue alert, eval = primary blue eval-only).
+    // CSS class for the state pill (ok = grounded green, alert = danger-red, eval = amber eval-only).
     private static string StateClass(string stateText) => stateText switch
     {
         "OK" or "In band" => "mon-state--ok",
-        "ALERT" => "mon-state--warn",
+        "ALERT" => "mon-state--alert",
         _ => "mon-state--eval",
     };
 
@@ -519,7 +519,7 @@
     private static string TileClass(string stateText) => stateText switch
     {
         "OK" or "In band" => "mon-tile--ok",
-        "ALERT" => "mon-tile--warn",
+        "ALERT" => "mon-tile--alert",
         _ => "mon-tile--eval",
     };
 

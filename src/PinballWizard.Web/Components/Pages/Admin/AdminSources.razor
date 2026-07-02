@@ -1,19 +1,20 @@
 @page "/admin/sources"
 @layout AdminLayout
-@attribute [StreamRendering]
 @using Microsoft.AspNetCore.Authorization
 @using PinballWizard.Application.Persistence
 @attribute [AllowAnonymous]
+@rendermode InteractiveServer
 @inject IIngestionSourceRepository SourceRepo
 @inject ILogger<AdminSources> Logger
 
 @* AdminSources — /admin/sources ingestion-sources list.
  *
- * Static SSR + [StreamRendering] (ADR-0034 doctrine — read-only display, no
- * interactive need): the shell streams immediately and the source rows stream
- * in when the single-partition StreamAllAsync read completes. No SignalR
- * circuit. Failure degrades visibly via MudAlert (Invariant #17), not a silent
- * empty grid — ISnackbar is deliberately NOT used (it needs a circuit).
+ * Interactive (@rendermode InteractiveServer, ADR-0034 amendment): the AppDataGrid
+ * pager (page navigation + rows-per-page selector) is interactive by construction
+ * and needs a live Blazor circuit — under static SSR those controls render but are
+ * inert (the pager buttons do nothing). Mirrors AdminManufacturers. Data loads once
+ * in OnInitializedAsync. Failure degrades visibly via MudAlert (Invariant #17), not
+ * a silent empty grid.
  *
  * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
  * Auth: public-read showcase surface ([AllowAnonymous]). Read-only grid; no mutations.
@@ -21,7 +22,7 @@
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth
  * ADR-0026  § 1 — routing inventory (/admin/sources)
- * ADR-0034  — render-mode doctrine (static default)
+ * ADR-0034  — render-mode doctrine (interactive for a paged grid)
  * ADR-0036  — Cosmos read-access (single-partition stream, no cross-partition scan)
  *@
 
@@ -121,9 +122,8 @@
         new BreadcrumbItem("Sources", href: "/admin/sources", icon: Icons.Material.Filled.Source),
     ];
 
-    // Static SSR: OnInitializedAsync runs once (no prerender/circuit double-run).
-    // [StreamRendering] streams the shell (with the loading bar) first, then the
-    // populated grid when the read completes.
+    // Interactive circuit: the loading bar shows on first render, then the grid
+    // populates when this single-partition StreamAllAsync read completes.
     protected override async Task OnInitializedAsync()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
