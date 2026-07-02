@@ -181,7 +181,7 @@ public sealed class FindabilityProbeParserTests
     [Fact]
     public void ParseFile_FixtureFile_LoadsAllRows()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "findability.fixture.jsonl");
+        var path = Path.Join(AppContext.BaseDirectory, "findability.fixture.jsonl");
         Assert.True(File.Exists(path), $"Fixture not copied to output directory: {path}");
 
         var probes = FindabilityProbeParser.ParseFile(path);

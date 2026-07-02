@@ -15,7 +15,7 @@ public sealed class FindabilityDatasetContractTests
     private static string DatasetPath()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PinballWizard.slnx")))
+        while (dir is not null && !File.Exists(Path.Join(dir.FullName, "PinballWizard.slnx")))
         {
             dir = dir.Parent;
         }
@@ -24,7 +24,7 @@ public sealed class FindabilityDatasetContractTests
             throw new InvalidOperationException(
                 "Could not locate repo root (no PinballWizard.slnx found walking up from the test assembly).");
         }
-        return Path.Combine(dir.FullName, "data", "eval", "findability.v1.jsonl");
+        return Path.Join(dir.FullName, "data", "eval", "findability.v1.jsonl");
     }
 
     [Fact]

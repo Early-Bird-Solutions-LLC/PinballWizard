@@ -43,7 +43,11 @@ public sealed class NdcgAtKEvaluator
         var gradeLookup = new Dictionary<string, int>(grades, StringComparer.OrdinalIgnoreCase);
 
         var idcg = ComputeIdcg(gradeLookup.Values, k);
-        if (idcg == 0.0)
+        // IDCG is a sum of non-negative gains, so it is either exactly 0 (no
+        // positive grades) or comfortably above zero (the smallest possible
+        // gain is (2^1-1)/log2(2) = 1.0). A `<= 0` guard avoids a float-equality
+        // comparison while remaining exact for the only reachable zero case.
+        if (idcg <= 0.0)
         {
             return 1.0;
         }
