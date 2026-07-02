@@ -59,7 +59,7 @@ internal sealed class MachineSearchDocument
     // Inline completeness score — proportion of data-quality signals present
     // on this Machine record. Drives the scoring-profile magnitude function.
     // Filterable (required for scoring functions per ADR-0049).
-    // reconcile to a shared MachineCompleteness in a follow-up once the
+    // TODO (ADR-0049 phase 2b): reconcile completeness to a shared MachineCompleteness helper once the
     // parallel branch that may introduce one lands.
     [JsonPropertyName(MachineSearchIndexFields.Completeness)]
     public double Completeness { get; set; }

@@ -3,6 +3,7 @@ using Azure.Search.Documents.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Findability;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Configuration;
 
@@ -14,7 +15,7 @@ namespace PinballWizard.Infrastructure.Rag.Indexing;
 // Completeness is computed INLINE here as a simple proportion of non-empty
 // data-quality signals. This avoids adding a Core helper for a purely
 // infrastructure concern — the computation is purposefully simple and collocated.
-// reconcile to a shared MachineCompleteness in a follow-up if a parallel branch
+// TODO (ADR-0049 phase 2b): reconcile to a shared MachineCompleteness helper if a parallel branch
 // introduces one (e.g. for a scoring UI in the admin control plane).
 //
 // Batching: AI Search upsert accepts up to 1,000 documents per batch. We
@@ -91,6 +92,9 @@ public sealed class MachineSearchIndexProjector(
             "Machine index projection complete: projected={Projected} failed={Failed} durationMs={DurationMs}",
             projected, failed, duration.TotalMilliseconds);
 
+        PinballWizardTelemetry.MachineIndexProjected.Add(projected);
+        PinballWizardTelemetry.MachineIndexProjectionDurationMs.Record(duration.TotalMilliseconds);
+
         return new MachineIndexProjectionResult(projected, failed, duration);
     }
 
@@ -142,7 +146,7 @@ public sealed class MachineSearchIndexProjector(
     // Rationale: canonical OPDB machines have title + year + manufacturer +
     // group + themes; scraper-only machines may lack year/themes/designers.
     // A score of ~0.57 (4/7) is the practical floor for OPDB-linked records.
-    // reconcile to a shared MachineCompleteness in a follow-up.
+    // TODO (ADR-0049 phase 2b): reconcile completeness to a shared MachineCompleteness helper.
     internal static double ComputeCompleteness(Core.Domain.Machine machine)
     {
         const int totalSignals = 7;

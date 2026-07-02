@@ -87,17 +87,25 @@ public sealed class MachineSearchIndexSchemaTests
     }
 
     [Fact]
-    public void Build_TitlePrefixUsesEdgeNGramAnalyzerAndSynonymMap()
+    public void Build_TitlePrefixUsesSplitIndexSearchAnalyzerWithoutSynonymMap()
     {
-        // ADR-0049: "title_prefix" uses the custom edge-n-gram analyzer for
-        // typeahead/prefix matching without wildcard syntax.
+        // ADR-0049: "title_prefix" uses split index/search analyzers.
+        // At INDEX time: edge-n-gram (emits 2..25-char n-grams for typeahead).
+        // At SEARCH time: standard Lucene (applying edge-n-gram at query time
+        // would n-gram the user's input and cause false positives on every
+        // 2-char prefix). No synonym map: abbreviation expansion is the
+        // standard "title" field's job; applying it here double-compounds.
         var index = Build();
         var titlePrefix = index.Fields.Single(f => f.Name == MachineSearchIndexFields.TitlePrefix);
         Assert.True(titlePrefix.IsSearchable);
+        // Split analyzer pair — AnalyzerName must be null (single-analyzer path unused)
+        Assert.Null(titlePrefix.AnalyzerName);
         Assert.Equal(
             new LexicalAnalyzerName(MachineSearchIndexSchema.EdgeNGramAnalyzerName),
-            titlePrefix.AnalyzerName);
-        Assert.Contains(MachineSearchIndexSchema.SynonymMapName, titlePrefix.SynonymMapNames);
+            titlePrefix.IndexAnalyzerName);
+        Assert.Equal(LexicalAnalyzerName.StandardLucene, titlePrefix.SearchAnalyzerName);
+        // No synonym map on the prefix field
+        Assert.Empty(titlePrefix.SynonymMapNames);
     }
 
     [Fact]
@@ -210,10 +218,14 @@ public sealed class MachineSearchIndexSchemaTests
         Assert.Equal(2.0, magnitude.Boost);
         Assert.Equal(0, magnitude.Parameters.BoostingRangeStart);
         Assert.Equal(1, magnitude.Parameters.BoostingRangeEnd);
+        // Pin any completeness value outside [0,1] to the nearest endpoint.
+        Assert.True(magnitude.Parameters.ShouldBoostBeyondRangeByConstant);
 
         var freshness = Assert.Single(functions.OfType<FreshnessScoringFunction>());
         Assert.Equal(MachineSearchIndexFields.LastUpdatedUtc, freshness.FieldName);
         Assert.Equal(1.5, freshness.Boost);
+        // 60-day boosting window — tunable after Phase 2b A/B data accumulates.
+        Assert.Equal(TimeSpan.FromDays(60), freshness.Parameters.BoostingDuration);
     }
 
     [Fact]
@@ -228,16 +240,20 @@ public sealed class MachineSearchIndexSchemaTests
     }
 
     [Fact]
-    public void Build_EdgeNGramFilterHasCorrectMinMaxGram()
+    public void Build_EdgeNGramFilterHasCorrectMinMaxGramAndFrontSide()
     {
         // minGram=2 / maxGram=25 — covers shortest meaningful prefix ("ba")
         // to longest pinball title without bloating the index.
+        // Side=Front is explicit (the default, but stated in schema so intent
+        // is unambiguous: n-grams generate from the START of each token for
+        // typeahead, not from the end).
         var index = Build();
         var filter = index.TokenFilters
             .OfType<EdgeNGramTokenFilter>()
             .Single(f => f.Name == MachineSearchIndexSchema.EdgeNGramFilterName);
         Assert.Equal(2, filter.MinGram);
         Assert.Equal(25, filter.MaxGram);
+        Assert.Equal(EdgeNGramTokenFilterSide.Front, filter.Side);
     }
 
     [Fact]

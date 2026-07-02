@@ -116,8 +116,22 @@ public sealed class MachineSearchIndexBootstrapper(
     // CreateOrUpdateSynonymMapAsync is a safe upsert. The synonym map
     // resource is separate from the index; once created it can be updated
     // without rebuilding the index (the attachment is by name).
+    //
+    // Guard: if synonymsText is null/whitespace the upsert is skipped and a
+    // Warning is logged. AI Search rejects an empty synonym map body with 400;
+    // the guard prevents a spurious failure when the seed file is absent or
+    // empty and degrades visibly rather than hiding the gap.
     private async Task EnsureSynonymMapAsync(string synonymsText, CancellationToken cancellationToken)
     {
+        if (!ShouldUpsertSynonymMap(synonymsText))
+        {
+            _logger.LogWarning(
+                "Machine synonym map upsert skipped: synonymsText is null/empty/whitespace. " +
+                "Ensure data/seeds/machine_synonyms.v1.txt exists and is non-empty. " +
+                "The synonym map will not be created or updated on this run.");
+            return;
+        }
+
         var synonymMap = new SynonymMap(MachineSearchIndexSchema.SynonymMapName, synonymsText);
 
         await _indexClient
@@ -128,6 +142,10 @@ public sealed class MachineSearchIndexBootstrapper(
             "Machine synonym map ensured: name={SynonymMapName}",
             MachineSearchIndexSchema.SynonymMapName);
     }
+
+    // Exposed internal for unit-testing the guard logic without a live SearchIndexClient.
+    internal static bool ShouldUpsertSynonymMap(string? synonymsText) =>
+        !string.IsNullOrWhiteSpace(synonymsText);
 }
 
 public sealed record MachineIndexBootstrapResult(string IndexName, bool Created);

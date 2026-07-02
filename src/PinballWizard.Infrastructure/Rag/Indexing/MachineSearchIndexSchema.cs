@@ -25,7 +25,10 @@ namespace PinballWizard.Infrastructure.Rag.Indexing;
 //   Both fields are filterable (mandatory requirement for scoring profile functions).
 //
 // Synonym map "pinwiz-machine-synonyms-v1" is created separately (requires a
-// CreateOrUpdateSynonymMap call) and attached to "title" and "title_prefix".
+// CreateOrUpdateSynonymMap call) and attached only to "title" (BM25 field).
+// "title_prefix" uses split IndexAnalyzerName/SearchAnalyzerName (edge-n-gram
+// is index-only; synonym expansion on a prefix field causes false positives
+// at query time). "title_phonetic" explicitly gets no synonym map.
 // The synonyms file is seeded from data/seeds/machine_synonyms.v1.txt.
 //
 // Schema versioning: index name encodes the version (pinwiz-machines-v1).
@@ -76,16 +79,19 @@ internal static class MachineSearchIndexSchema
                 SynonymMapNames = { SynonymMapName },
             },
 
-            // title_prefix — edge-n-gram analyzer. Emits n-grams 2..25 chars
-            // at index time so prefix queries and typeahead work without
-            // wildcard syntax. Not filterable/sortable (the standard "title"
-            // field covers those use-cases). Synonym map attached so
-            // abbreviations also expand on prefix field.
+            // title_prefix — split index/search analyzer. At index time the
+            // edge-n-gram analyzer emits 2..25-char n-grams so prefix queries
+            // and typeahead work without wildcard syntax. At search time the
+            // standard analyzer is used — applying the edge-n-gram at query time
+            // would n-gram the user's input, causing every 2-char prefix to
+            // match everything in the index (false positives). No synonym map:
+            // synonym expansion on an n-gram field double-compounds the query
+            // path; abbreviation resolution is the standard "title" field's job.
             new(MachineSearchIndexFields.TitlePrefix, SearchFieldDataType.String)
             {
-                IsSearchable  = true,
-                AnalyzerName  = new LexicalAnalyzerName(EdgeNGramAnalyzerName),
-                SynonymMapNames = { SynonymMapName },
+                IsSearchable      = true,
+                IndexAnalyzerName = new LexicalAnalyzerName(EdgeNGramAnalyzerName),
+                SearchAnalyzerName = LexicalAnalyzerName.StandardLucene,
             },
 
             // title_phonetic — doubleMetaphone phonetic analyzer. Indexes
@@ -201,6 +207,10 @@ internal static class MachineSearchIndexSchema
                 {
                     MinGram = 2,
                     MaxGram = 25,
+                    // Explicit: generate n-grams from the FRONT of each token
+                    // (the default, but stated explicitly so schema intent is
+                    // unambiguous in review and in the test assertion).
+                    Side = EdgeNGramTokenFilterSide.Front,
                 },
                 new PhoneticTokenFilter(PhoneticFilterName)
                 {

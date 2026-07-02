@@ -10,7 +10,7 @@ namespace PinballWizard.Infrastructure.Rag.Indexing;
 // Phase 2b's query code will import these same constants to name the
 // fields it targets at query time — keeping schema definition and
 // query field references in sync mechanically rather than by convention.
-internal static class MachineSearchIndexFields
+public static class MachineSearchIndexFields
 {
     public const string Id              = "id";
     public const string Title           = "title";
