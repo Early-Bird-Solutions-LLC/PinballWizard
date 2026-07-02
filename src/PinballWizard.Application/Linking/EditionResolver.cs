@@ -39,6 +39,20 @@ public static class EditionResolver
         "rulesheet", "rule-sheet", "rule sheet",
     };
 
+    // Spaced word markers for discovery anchor text ("Guardians of the Galaxy Pro
+    // Flyer"): the link text is padded with spaces before matching so a marker only
+    // fires on a whole word, not inside another (" le " never matches "galaxy").
+    // Ordered most-specific-first. Anniversary tokens are digit-prefixed, so a bare
+    // substring is already unambiguous.
+    private static readonly (string Marker, string Token)[] LinkTextMarkers =
+    {
+        ("70th", "70th"), ("60th", "60th"), ("30th", "30th"),
+        (" pro ", "pro"),
+        (" le ", "le"),
+        (" premium ", "premium"), (" prem ", "premium"),
+        (" sle ", "sle"), (" ve ", "ve"), (" vault ", "vault"),
+    };
+
     /// <summary>
     /// Returns a normalized edition token from a filename, or null if the
     /// filename has no edition marker or is a group-level document.
@@ -84,8 +98,13 @@ public static class EditionResolver
         if (candidates.Count == 1) return EditionResolution.ForSingleEdition(candidates[0]);
         if (IsGroupLevelDoc(filename, linkText)) return EditionResolution.FanOut(candidates);
 
-        // Page-1 text is authoritative; fall back to the filename token.
-        var token = ExtractEditionFromPageText(page1Text) ?? ExtractEditionToken(filename);
+        // Page-1 text is authoritative; then the filename token; then the discovery
+        // link text. Abbreviated flyer filenames (e.g. "GOTG-Pro.pdf", "GOTG-LE.pdf")
+        // carry an undelimited "-pro."/"-le." the filename markers don't catch, but
+        // their anchor text ("Guardians of the Galaxy Pro Flyer") names the edition.
+        var token = ExtractEditionFromPageText(page1Text)
+            ?? ExtractEditionToken(filename)
+            ?? ExtractEditionTokenFromLinkText(linkText);
         if (token is null)
         {
             return EditionResolution.Unresolved();
@@ -105,6 +124,20 @@ public static class EditionResolver
         if (lower.Contains("le manual", StringComparison.Ordinal)
             || lower.Contains("premium manual", StringComparison.Ordinal)) return "le";
         if (lower.Contains("70th", StringComparison.Ordinal)) return "70th";
+        return null;
+    }
+
+    // Extracts an edition token from the discovery anchor text. The caller applies
+    // IsGroupLevelDoc(filename, linkText) before this, so group-level anchors
+    // ("… Feature Matrix") have already fanned out and never reach here.
+    private static string? ExtractEditionTokenFromLinkText(string? linkText)
+    {
+        if (string.IsNullOrWhiteSpace(linkText)) return null;
+        var padded = $" {linkText.ToLowerInvariant()} ";
+        foreach (var (marker, token) in LinkTextMarkers)
+        {
+            if (padded.Contains(marker, StringComparison.Ordinal)) return token;
+        }
         return null;
     }
 }
