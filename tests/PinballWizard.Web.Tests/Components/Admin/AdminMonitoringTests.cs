@@ -130,9 +130,12 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
     [Fact]
     public void LatencyTile_RendersLiveValue()
     {
-        var cut = RenderWith(FullSnap());
+        // Uses a different latency than LatencyTile_Shows2310ms to prove the tile is data-driven,
+        // not matching a hardcoded string.
+        var snap = FullSnap() with { LatencyP95Ms = 1500 };
+        var cut = RenderWith(snap);
         cut.WaitForAssertion(() =>
-            Assert.Contains("2,310", cut.Find("[data-testid='mon-tile-latency-value']").TextContent));
+            Assert.Contains("1,500", cut.Find("[data-testid='mon-tile-latency-value']").TextContent));
     }
 
     [Fact]
@@ -273,6 +276,61 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         await cut.InvokeAsync(() => cut.Find("[data-testid='mon-period-7d']").Click());
         cut.WaitForAssertion(() =>
             _reader.Received().GetSnapshotAsync(MonitoringWindow.SevenDays, Arg.Any<CancellationToken>()));
+    }
+
+    [Fact]
+    public async Task Load_FailedThenToggleSucceeds_ClearsErrorAlert()
+    {
+        // Fix 1: _loadFailed must reset to false at the start of every LoadAsync call so a
+        // successful re-query after a prior failure clears the error alert (Invariant #17 — never
+        // fabricate state: showing both the error alert AND live values is a lie).
+        var snap = FullSnap();
+        _reader = Substitute.For<IMonitoringStatsReader>();
+        _reader.GetSnapshotAsync(Arg.Any<MonitoringWindow>(), Arg.Any<CancellationToken>())
+               .Returns(
+                   _ => Task.FromException<MonitoringSnapshot>(new InvalidOperationException("simulated reader failure")),
+                   _ => Task.FromResult(snap));
+        Services.AddSingleton(_reader);
+
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminMonitoring>(1);
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<AdminMonitoring>();
+
+        // First load (OnAfterRenderAsync firstRender) throws → error alert must appear.
+        cut.WaitForAssertion(() =>
+            Assert.NotEmpty(cut.FindAll("[data-testid='mon-load-failed']")));
+
+        // Toggle window → second load succeeds → error alert must be GONE, live value visible.
+        await cut.InvokeAsync(() => cut.Find("[data-testid='mon-period-7d']").Click());
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Empty(cut.FindAll("[data-testid='mon-load-failed']"));
+            Assert.Contains("2,310", cut.Find("[data-testid='mon-tile-latency-value']").TextContent);
+        });
+    }
+
+    // ── D1 ALERT state — warn CSS class ──────────────────────────────────────
+
+    [Fact]
+    public void LatencyTile_AlertState_HasWarnClass()
+    {
+        // Fix 3: LatencyP95Ms = 6000 > 5,000 ms threshold → ALERT state.
+        // State pill must carry mon-state--warn (not --eval), tile must carry mon-tile--warn.
+        var snap = FullSnap() with { LatencyP95Ms = 6000 };
+        var cut = RenderWith(snap);
+        cut.WaitForAssertion(() =>
+        {
+            var pill = cut.Find("[data-testid='mon-tile-latency-state']");
+            Assert.Contains("ALERT", pill.TextContent);
+            Assert.Contains("mon-state--warn", pill.ClassName ?? string.Empty);
+            var tile = cut.Find("[data-testid='mon-tile-latency']");
+            Assert.Contains("mon-tile--warn", tile.ClassName ?? string.Empty);
+        });
     }
 
     // ── D4 Alert rules — semantic invariants (static, Task 7 wires live data) ─

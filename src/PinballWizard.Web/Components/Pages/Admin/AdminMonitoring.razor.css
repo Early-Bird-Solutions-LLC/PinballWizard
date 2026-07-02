@@ -69,6 +69,7 @@
 }
 
 .mon-tile--ok   { border-top-color: var(--pw-accent-grounded); }
+.mon-tile--warn { border-top-color: var(--pw-accent-primary); }
 .mon-tile--eval { border-top-color: var(--pw-accent-primary); }
 
 .mon-tile__header {
@@ -111,6 +112,8 @@
 
 .mon-state--ok   { color: var(--pw-accent-grounded); }
 .mon-state--ok   .mon-state__dot { background: var(--pw-accent-grounded); }
+.mon-state--warn { color: var(--pw-accent-primary); }
+.mon-state--warn .mon-state__dot { background: var(--pw-accent-primary); }
 .mon-state--eval { color: var(--pw-accent-primary); }
 .mon-state--eval .mon-state__dot { background: var(--pw-accent-primary); }
 

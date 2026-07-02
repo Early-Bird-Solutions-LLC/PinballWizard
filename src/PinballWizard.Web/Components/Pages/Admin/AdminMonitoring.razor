@@ -434,6 +434,7 @@
 
     private async Task LoadAsync()
     {
+        _loadFailed = false;
         _loading = true;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
@@ -498,10 +499,11 @@
         _loading ? "—" :
         _snapshot?.RefusalRatePercent is not null ? "In band" : "unavailable";
 
-    // CSS class for the state pill (ok = grounded green, eval = primary blue).
+    // CSS class for the state pill (ok = grounded green, warn = primary blue alert, eval = primary blue eval-only).
     private static string StateClass(string stateText) => stateText switch
     {
         "OK" or "In band" => "mon-state--ok",
+        "ALERT" => "mon-state--warn",
         _ => "mon-state--eval",
     };
 
@@ -509,6 +511,7 @@
     private static string TileClass(string stateText) => stateText switch
     {
         "OK" or "In band" => "mon-tile--ok",
+        "ALERT" => "mon-tile--warn",
         _ => "mon-tile--eval",
     };
 
