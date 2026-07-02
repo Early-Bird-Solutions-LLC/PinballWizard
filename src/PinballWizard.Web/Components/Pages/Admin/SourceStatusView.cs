@@ -23,6 +23,7 @@ public sealed record SourceStatusView(SourceStatus Status, string Label, Color C
 
         return discoveryStatus switch
         {
+            // NoSource and Disabled share Color.Default — both are neutral, not error states.
             "NoSource" => new SourceStatusView(
                 SourceStatus.NoSource, "No source", Color.Default, Icons.Material.Filled.RemoveCircleOutline),
             "Deferred" => new SourceStatusView(

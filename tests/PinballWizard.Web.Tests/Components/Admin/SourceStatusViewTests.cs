@@ -34,4 +34,16 @@ public sealed class SourceStatusViewTests
     {
         Assert.Equal(Color.Warning, SourceStatusView.Derive(false, "Deferred").Color);
     }
+
+    [Fact]
+    public void Derive_NoSource_UsesDefaultColour()
+    {
+        Assert.Equal(Color.Default, SourceStatusView.Derive(false, "NoSource").Color);
+    }
+
+    [Fact]
+    public void Derive_Disabled_UsesDefaultColour()
+    {
+        Assert.Equal(Color.Default, SourceStatusView.Derive(false, null).Color);
+    }
 }
