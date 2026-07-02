@@ -11,6 +11,7 @@
 @using PinballWizard.Web.Security
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 @inject IOptions<PolitenessOptions> PolitenessOpts
 @inject IIngestionSourceRepository SourceRepo
 @inject ICatalogStatsReadRepository CatalogStatsRepo
@@ -264,7 +265,7 @@
 
     private async Task LoadAsync()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
 
         _isAdmin = await Guard.IsAdminAsync(AuthState);
 
@@ -335,7 +336,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -353,8 +354,8 @@
         if (_source is null) return;
 
         _toggleBusy = true;
-        StateHasChanged();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        SafeStateHasChanged();
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             var updated = await SourceRepo.SetEnabledAsync(_source.Id, newValue, cts.Token);
@@ -388,7 +389,7 @@
         finally
         {
             _toggleBusy = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

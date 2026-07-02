@@ -7,6 +7,7 @@
 @using PinballWizard.Core.Domain
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminMachineDetail — /admin/machines/{opdbId} per-game diagnostic view (AB#259).
  *
@@ -286,11 +287,11 @@
         {
             _missingMfr = true;
             _loading    = false;
-            StateHasChanged();
+            SafeStateHasChanged();
             return;
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             // 1. Point read for the machine.
@@ -299,7 +300,7 @@
             {
                 _notFound = true;
                 _loading  = false;
-                StateHasChanged();
+                SafeStateHasChanged();
                 return;
             }
 
@@ -363,7 +364,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
