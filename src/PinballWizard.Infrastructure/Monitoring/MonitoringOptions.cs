@@ -10,4 +10,10 @@ public sealed class MonitoringOptions
 
     // Prefix used to scope the 5xx rate query to the Wizard API surface.
     public string WizardApiPathPrefix { get; set; } = "/api/wizard/";
+
+    // How long a successfully-fetched snapshot is served from the in-memory
+    // cache before the next call re-queries Log Analytics. Applies per window
+    // (OneHour / TwentyFourHours / SevenDays cached independently). Failed
+    // snapshots are never cached — the next call always retries.
+    public TimeSpan CacheTtl { get; set; } = TimeSpan.FromSeconds(30);
 }
