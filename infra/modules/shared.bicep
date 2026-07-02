@@ -442,6 +442,25 @@ resource acaIdentityJobsOperator 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
+// Log Analytics: Reader (73c42c96-...) scoped to the workspace so the wizard
+// app's AdminMonitoringReader can query live telemetry via the Log Analytics
+// Query API under DefaultAzureCredential (UAMI = acaIdentity).
+// Gated on deployPhase2 to match the wizardApp resource that consumes this role.
+// logAnalytics is Phase-1 (always present); the RBAC only needs to exist when
+// the wizard ACA app is deployed (Phase 2).
+// Role: Log Analytics Reader — guid verified via:
+//   az role definition list --name "Log Analytics Reader" --query "[0].name" -o tsv
+//   → 73c42c96-874c-492b-b04d-ab87d138a893
+resource acaIdentityLogAnalyticsReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: logAnalytics
+  name: guid(logAnalytics.id, '${namePrefix}-aca-id-${environment}', '73c42c96-874c-492b-b04d-ab87d138a893')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '73c42c96-874c-492b-b04d-ab87d138a893')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Azure AI Search (Basic)
 // -----------------------------------------------------------------------------
@@ -1964,6 +1983,15 @@ resource wizardApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhase2) 
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.?properties.ConnectionString ?? ''
+            }
+            {
+              // Log Analytics workspace GUID consumed by AdminMonitoringReader
+              // (Monitoring:LogAnalyticsWorkspaceId) to scope KQL queries.
+              // logAnalytics is a Phase-1 resource (always present); the customerId
+              // property is the workspace GUID (same value wired at line ~956 for
+              // the ACA environment's log-analytics configuration).
+              name: 'Monitoring__LogAnalyticsWorkspaceId'
+              value: logAnalytics.properties.customerId
             }
             {
               // Aspire service-discovery env var pointing at the internal ACA Api app.
