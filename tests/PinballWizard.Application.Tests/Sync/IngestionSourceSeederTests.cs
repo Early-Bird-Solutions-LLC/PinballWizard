@@ -206,7 +206,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
     public void ProductionManifest_DeserializesCleanlyAndContainsExpectedEntries()
     {
         var repoRoot = FindRepoRoot();
-        var manifestPath = Path.Combine(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
+        var manifestPath = Path.Join(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
         Assert.True(File.Exists(manifestPath), $"Production manifest missing at {manifestPath}");
 
         var json = File.ReadAllText(manifestPath);
@@ -238,11 +238,127 @@ public sealed class IngestionSourceSeederTests : IDisposable
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
 
+    [Fact]
+    public void ProductionManifest_EveryEntryHasSourceGroupAndDiscoveryStatus()
+    {
+        var repoRoot = FindRepoRoot();
+        var manifestPath = Path.Join(repoRoot, "data", "seeds", "ingestion_sources.v1.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+
+        foreach (var entry in doc.RootElement.EnumerateArray())
+        {
+            var id = entry.GetProperty("id").GetString();
+
+            Assert.True(entry.TryGetProperty("sourceGroup", out var group)
+                && !string.IsNullOrWhiteSpace(group.GetString()),
+                $"Entry '{id}' is missing a non-empty sourceGroup.");
+
+            Assert.True(entry.TryGetProperty("discoveryStatus", out var status)
+                && status.GetString() is "Active" or "NoSource" or "Deferred",
+                $"Entry '{id}' has an invalid or missing discoveryStatus.");
+
+            // No display-name mojibake or leftover status suffixes.
+            var name = entry.GetProperty("displayName").GetString()!;
+            Assert.DoesNotContain("â€", name, StringComparison.Ordinal); // corrupted em-dash bytes
+            Assert.DoesNotContain("(NoSource)", name, StringComparison.Ordinal);
+            Assert.DoesNotContain("(Deferred)", name, StringComparison.Ordinal);
+        }
+
+        // The four disabled sub-feeds must carry an explanation.
+        var disabledWithReason = doc.RootElement.EnumerateArray()
+            .Where(e => e.GetProperty("discoveryStatus").GetString() is "NoSource" or "Deferred")
+            .ToList();
+        Assert.Equal(4, disabledWithReason.Count);
+        Assert.All(disabledWithReason, e =>
+        {
+            var id = e.GetProperty("id").GetString();
+            Assert.True(e.TryGetProperty("discoveryNotes", out var notes)
+                && !string.IsNullOrWhiteSpace(notes.GetString()),
+                $"Disabled entry '{id}' is missing a non-empty discoveryNotes.");
+        });
+    }
+
+    // ── Discovery + group fields ──────────────────────────────────────────
+
+    [Fact]
+    public async Task SeedAsync_FirstRun_PersistsDiscoveryAndGroupFields()
+    {
+        _repo.GetByIdAsync(Arg.Any<string>(), "config", Arg.Any<CancellationToken>())
+            .Returns((IngestionSource?)null);
+
+        IngestionSource? upserted = null;
+        _repo.UpsertAsync(Arg.Any<IngestionSource>(), Arg.Any<CancellationToken>())
+            .Returns(call => { upserted = call.Arg<IngestionSource>(); return Task.FromResult(upserted); });
+
+        var manifestPath = WriteManifest(
+            Seed("jjp_bulletins", "Service Bulletins", "jjp_bulletins",
+                "https://www.jerseyjackpinball.com/", false, "none",
+                sourceGroup: "Jersey Jack Pinball",
+                discoveryStatus: "NoSource",
+                discoveryNotes: "No bulletin section exists.",
+                discoveryDate: new DateOnly(2026, 5, 26)));
+
+        await _seeder.SeedAsync(manifestPath, CancellationToken.None);
+
+        Assert.NotNull(upserted);
+        Assert.Equal("Jersey Jack Pinball", upserted!.SourceGroup);
+        Assert.Equal("NoSource", upserted.DiscoveryStatus);
+        Assert.Equal("No bulletin section exists.", upserted.DiscoveryNotes);
+        Assert.Equal(new DateOnly(2026, 5, 26), upserted.DiscoveryDate);
+    }
+
+    [Fact]
+    public async Task SeedAsync_ReRun_UpdatesDiscoveryFieldsWhilePreservingRuntimeCounters()
+    {
+        var existing = new IngestionSource
+        {
+            Id = "pb_bulletins",
+            PartitionKey = "config",
+            DisplayName = "old",
+            ScraperImplKey = "pb_bulletins",
+            BaseUrl = "https://old/",
+            Enabled = false,
+            Cadence = "none",
+            SourceGroup = "old-group",
+            DiscoveryStatus = "NoSource",
+            DiscoveryNotes = "old note",
+            TotalDocumentsDiscovered = 99,
+        };
+        _repo.GetByIdAsync("pb_bulletins", "config", Arg.Any<CancellationToken>()).Returns(existing);
+
+        IngestionSource? upserted = null;
+        _repo.UpsertAsync(Arg.Any<IngestionSource>(), Arg.Any<CancellationToken>())
+            .Returns(call => { upserted = call.Arg<IngestionSource>(); return Task.FromResult(upserted); });
+
+        var manifestPath = WriteManifest(
+            Seed("pb_bulletins", "Service Bulletins", "pb_bulletins",
+                "https://pinballbrothers.freshdesk.com/", false, "none",
+                sourceGroup: "Pinball Brothers",
+                discoveryStatus: "Deferred",
+                discoveryNotes: "Needs API key.",
+                discoveryDate: new DateOnly(2026, 5, 26)));
+
+        await _seeder.SeedAsync(manifestPath, CancellationToken.None);
+
+        Assert.NotNull(upserted);
+        // Discovery/group config re-applied from the seed…
+        Assert.Equal("Pinball Brothers", upserted!.SourceGroup);
+        Assert.Equal("Deferred", upserted.DiscoveryStatus);
+        Assert.Equal("Needs API key.", upserted.DiscoveryNotes);
+        Assert.Equal(new DateOnly(2026, 5, 26), upserted.DiscoveryDate);
+        // …runtime counter preserved.
+        Assert.Equal(99, upserted.TotalDocumentsDiscovered);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static IngestionSourceSeed Seed(
         string id, string displayName, string scraperImplKey,
-        string baseUrl, bool enabled, string cadence)
+        string baseUrl, bool enabled, string cadence,
+        string? sourceGroup = null,
+        string? discoveryStatus = null,
+        string? discoveryNotes = null,
+        DateOnly? discoveryDate = null)
     {
         return new IngestionSourceSeed
         {
@@ -253,6 +369,10 @@ public sealed class IngestionSourceSeederTests : IDisposable
             Enabled = enabled,
             Cadence = cadence,
             PolitenessOverrides = null,
+            SourceGroup = sourceGroup ?? displayName, // default keeps existing call sites valid
+            DiscoveryStatus = discoveryStatus,
+            DiscoveryNotes = discoveryNotes,
+            DiscoveryDate = discoveryDate,
         };
     }
 

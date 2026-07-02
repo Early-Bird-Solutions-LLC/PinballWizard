@@ -25,4 +25,16 @@ public sealed class IngestionSourceSeed
 
     [JsonPropertyName("politenessOverrides")]
     public PolitenessOverrides? PolitenessOverrides { get; init; }
+
+    [JsonPropertyName("sourceGroup")]
+    public required string SourceGroup { get; init; }
+
+    [JsonPropertyName("discoveryStatus")]
+    public string? DiscoveryStatus { get; init; }
+
+    [JsonPropertyName("discoveryNotes")]
+    public string? DiscoveryNotes { get; init; }
+
+    [JsonPropertyName("discoveryDate")]
+    public DateOnly? DiscoveryDate { get; init; }
 }

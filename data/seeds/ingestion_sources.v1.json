@@ -6,7 +6,9 @@
     "baseUrl": "https://sternpinball.com/",
     "enabled": true,
     "cadence": "daily",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Stern Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "jjp",
@@ -15,16 +17,20 @@
     "baseUrl": "https://www.jerseyjackpinball.com/",
     "enabled": true,
     "cadence": "daily",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Jersey Jack Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "jjp_support",
-    "displayName": "Jersey Jack Pinball \u2014 Per-Edition Support Docs",
+    "displayName": "Per-Edition Support Docs",
     "scraperImplKey": "jjp_support",
     "baseUrl": "https://www.jerseyjackpinball.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Jersey Jack Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "ap",
@@ -33,7 +39,9 @@
     "baseUrl": "https://www.american-pinball.com/",
     "enabled": true,
     "cadence": "daily",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "American Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "spooky",
@@ -42,16 +50,20 @@
     "baseUrl": "https://www.spookypinball.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Spooky Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "spooky_support",
-    "displayName": "Spooky Pinball Support",
+    "displayName": "Support",
     "scraperImplKey": "spooky_support",
     "baseUrl": "https://www.spookypinball.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Spooky Pinball",
+    "discoveryStatus": "Active"
   },
   {
     "id": "pinballbrothers",
@@ -60,18 +72,21 @@
     "baseUrl": "https://pinballbrothers.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Pinball Brothers",
+    "discoveryStatus": "Active"
   },
   {
     "id": "pb_docs",
-    "displayName": "Pinball Brothers \u00e2\u20ac\u201d Per-Game Documents",
+    "displayName": "Per-Game Documents",
     "scraperImplKey": "pb_docs",
     "baseUrl": "https://pinballbrothers.com/",
     "enabled": true,
     "cadence": "weekly",
     "politenessOverrides": null,
+    "sourceGroup": "Pinball Brothers",
     "discoveryStatus": "Active",
-    "discoveryNotes": "Pinball Brothers game pages embed per-game PDF rulesheets in nectar_btn shortcode url= attributes within content.rendered. ABBA Pinball has ABBA_Quick_Rule_Sheet.pdf (confirmed rulesheet; link text 'Rulesheet', URL path /games/abba/documents/). robots.txt: Disallow /wp-admin/ only; no Crawl-delay; no restrictions on /games/ or /wp-json/. PbGamePageDocumentScraper extracts from WP REST pages?_fields=\u00e2\u20ac\u00a6,content. Predator/Queen/Alien pages have no documents as of 2026-06-25.",
+    "discoveryNotes": "Pinball Brothers game pages embed per-game PDF rulesheets in nectar_btn shortcode url= attributes within content.rendered. ABBA Pinball has ABBA_Quick_Rule_Sheet.pdf (confirmed rulesheet; link text 'Rulesheet', URL path /games/abba/documents/). robots.txt: Disallow /wp-admin/ only; no Crawl-delay; no restrictions on /games/ or /wp-json/. PbGamePageDocumentScraper extracts from WP REST pages?_fields=…,content. Predator/Queen/Alien pages have no documents as of 2026-06-25.",
     "discoveryDate": "2026-06-25"
   },
   {
@@ -81,7 +96,9 @@
     "baseUrl": "https://shop.kollectfun.com/",
     "enabled": true,
     "cadence": "monthly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Barrels of Fun",
+    "discoveryStatus": "Active"
   },
   {
     "id": "multimorphic",
@@ -90,7 +107,9 @@
     "baseUrl": "https://www.multimorphic.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Multimorphic",
+    "discoveryStatus": "Active"
   },
   {
     "id": "cgc",
@@ -99,7 +118,9 @@
     "baseUrl": "https://chicago-gaming.com/",
     "enabled": true,
     "cadence": "weekly",
-    "politenessOverrides": null
+    "politenessOverrides": null,
+    "sourceGroup": "Chicago Gaming Company",
+    "discoveryStatus": "Active"
   },
   {
     "id": "opdb",
@@ -110,7 +131,9 @@
     "cadence": "daily",
     "politenessOverrides": {
       "requestDelayMs": 10000
-    }
+    },
+    "sourceGroup": "Open Pinball Database (OPDB)",
+    "discoveryStatus": "Active"
   },
   {
     "id": "pinballmap",
@@ -121,76 +144,84 @@
     "cadence": "daily",
     "politenessOverrides": {
       "requestDelayMs": 5000
-    }
+    },
+    "sourceGroup": "Pinball Map",
+    "discoveryStatus": "Active"
   },
   {
     "id": "jjp_bulletins",
-    "displayName": "Jersey Jack Pinball \u00e2\u20ac\u201d Service Bulletins (NoSource)",
+    "displayName": "Service Bulletins",
     "scraperImplKey": "jjp_bulletins",
     "baseUrl": "https://www.jerseyjackpinball.com/",
     "enabled": false,
     "cadence": "none",
     "politenessOverrides": null,
+    "sourceGroup": "Jersey Jack Pinball",
     "discoveryStatus": "NoSource",
-    "discoveryNotes": "No service bulletin section on jerseyjackpinball.com. Per-game support pages at /pages/support/{slug} contain manuals, code updates, ISOs, and rules \u00e2\u20ac\u201d but no bulletin-class documents. robots.txt (Shopify) has no path restrictions on support content.",
+    "discoveryNotes": "No service bulletin section on jerseyjackpinball.com. Per-game support pages at /pages/support/{slug} contain manuals, code updates, ISOs, and rules — but no bulletin-class documents. robots.txt (Shopify) has no path restrictions on support content.",
     "discoveryDate": "2026-05-26"
   },
   {
     "id": "ap_bulletins",
-    "displayName": "American Pinball \u00e2\u20ac\u201d Service Bulletins",
+    "displayName": "Service Bulletins",
     "scraperImplKey": "ap_bulletins",
     "baseUrl": "https://www.american-pinball.com/",
     "enabled": true,
     "cadence": "weekly",
     "politenessOverrides": null,
+    "sourceGroup": "American Pinball",
     "discoveryStatus": "Active",
-    "discoveryNotes": "Service bulletins published at american-pinball.com/support/ \u00e2\u20ac\u201d single static HTML page with anchor-tab layout per game (Houdini, Oktoberfest, Hot Wheels, Galactic Tank Force, Legends of Valhalla, Barry O's BBQ Challenge). Bulletin PDFs hosted on CDN subdomain s4.american-pinball.com under /img/support/YYYY-M/{filename}.pdf. No robots.txt restrictions found. ApBulletinScraper wired.",
+    "discoveryNotes": "Service bulletins published at american-pinball.com/support/ — single static HTML page with anchor-tab layout per game (Houdini, Oktoberfest, Hot Wheels, Galactic Tank Force, Legends of Valhalla, Barry O's BBQ Challenge). Bulletin PDFs hosted on CDN subdomain s4.american-pinball.com under /img/support/YYYY-M/{filename}.pdf. No robots.txt restrictions found. ApBulletinScraper wired.",
     "discoveryDate": "2026-05-26"
   },
   {
     "id": "spooky_bulletins",
-    "displayName": "Spooky Pinball \u00e2\u20ac\u201d Service Bulletins (NoSource)",
+    "displayName": "Service Bulletins",
     "scraperImplKey": "spooky_bulletins",
     "baseUrl": "https://www.spookypinball.com/",
     "enabled": false,
     "cadence": "none",
     "politenessOverrides": null,
+    "sourceGroup": "Spooky Pinball",
     "discoveryStatus": "NoSource",
-    "discoveryNotes": "No service bulletin document type on spookypinball.com. /game-support/ hub has per-game pages with manuals, switch/coil charts, rules PDFs, and code update packages \u00e2\u20ac\u201d but no distinct bulletin/advisory category. robots.txt specifies 10-second crawl-delay; no path restrictions on support content.",
+    "discoveryNotes": "No service bulletin document type on spookypinball.com. /game-support/ hub has per-game pages with manuals, switch/coil charts, rules PDFs, and code update packages — but no distinct bulletin/advisory category. robots.txt specifies 10-second crawl-delay; no path restrictions on support content.",
     "discoveryDate": "2026-05-26"
   },
   {
     "id": "cgc_bulletins",
-    "displayName": "Chicago Gaming Company \u00e2\u20ac\u201d Service Bulletins (NoSource)",
+    "displayName": "Service Bulletins",
     "scraperImplKey": "cgc_bulletins",
     "baseUrl": "https://chicago-gaming.com/",
     "enabled": false,
     "cadence": "none",
     "politenessOverrides": null,
+    "sourceGroup": "Chicago Gaming Company",
     "discoveryStatus": "NoSource",
     "discoveryNotes": "chicago-gaming.com/product/bulletins/ exists but contains only arcade product bulletins (Arcade Legends, Golden Tee). Pinball titles (Attack From Mars, Medieval Madness, Monster Bash, Pulp Fiction, Cactus Canyon) are not covered. Pinball support routed via Freshdesk; /coinop/{slug}/update pages list code updates only.",
     "discoveryDate": "2026-05-26"
   },
   {
     "id": "pb_bulletins",
-    "displayName": "Pinball Brothers \u00e2\u20ac\u201d Service Bulletins (Deferred)",
+    "displayName": "Service Bulletins",
     "scraperImplKey": "pb_bulletins",
     "baseUrl": "https://pinballbrothers.freshdesk.com/",
     "enabled": false,
     "cadence": "none",
     "politenessOverrides": null,
+    "sourceGroup": "Pinball Brothers",
     "discoveryStatus": "Deferred",
     "discoveryNotes": "Service bulletins exist at pinballbrothers.freshdesk.com/support/solutions (General > Service Bulletins folder, 4 confirmed notices). Freshdesk REST API available at {subdomain}.freshdesk.com/api/v2/solutions/folders/{id}/articles returns JSON but requires API key even for public portals. Deferred pending API key acquisition.",
     "discoveryDate": "2026-05-26"
   },
   {
     "id": "kineticist_tutorials",
-    "displayName": "Kineticist \u00e2\u20ac\u201d Pinball Tutorials",
+    "displayName": "Pinball Tutorials",
     "scraperImplKey": "kineticist_tutorials",
     "baseUrl": "https://www.kineticist.com/",
     "enabled": true,
     "cadence": "weekly",
     "politenessOverrides": null,
+    "sourceGroup": "Kineticist",
     "discoveryStatus": "Active",
     "discoveryNotes": "Kineticist founder Colin Alsheimer granted explicit written permission (ADR-0043 / PR #520) to index published gameplay tutorials. Appending .md to any article URL returns clean Markdown with title, author, date, category, and canonical URL inline. Category listing at /news/category/pinball-tutorial. robots.txt ai-train=yes, ai-input=yes; /news/ allowed for all crawlers including ClaudeBot. ~50 tutorials across 2 pages as of 2026-06-25. Ingested via --sync-kineticist-tutorials CLI verb (synthesis path, not change-feed).",
     "discoveryDate": "2026-06-25"
@@ -205,8 +236,9 @@
     "politenessOverrides": {
       "requestDelayMs": 2000
     },
+    "sourceGroup": "This Week in Pinball",
     "discoveryStatus": "Active",
-    "discoveryNotes": "Colin Alsheimer / Kineticist granted explicit permission to index TWIP newsletter content per ADR-0043 (June 2026). robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths. No API key required \u00e2\u20ac\u201d content is publicly accessible.",
+    "discoveryNotes": "Colin Alsheimer / Kineticist granted explicit permission to index TWIP newsletter content per ADR-0043 (June 2026). robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths. No API key required — content is publicly accessible.",
     "discoveryDate": "2026-06-26"
   }
 ]

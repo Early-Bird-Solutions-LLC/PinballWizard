@@ -95,6 +95,10 @@ public sealed class IngestionSourceSeeder : IIngestionSourceSeeder
                     Enabled = seed.Enabled,
                     Cadence = seed.Cadence,
                     PolitenessOverrides = seed.PolitenessOverrides,
+                    SourceGroup = seed.SourceGroup,
+                    DiscoveryStatus = seed.DiscoveryStatus,
+                    DiscoveryNotes = seed.DiscoveryNotes,
+                    DiscoveryDate = seed.DiscoveryDate,
                 };
 
                 await _repository.UpsertAsync(newEntity, cancellationToken).ConfigureAwait(false);
@@ -113,6 +117,10 @@ public sealed class IngestionSourceSeeder : IIngestionSourceSeeder
                 existing.Enabled = seed.Enabled;
                 existing.Cadence = seed.Cadence;
                 existing.PolitenessOverrides = seed.PolitenessOverrides;
+                existing.SourceGroup = seed.SourceGroup;
+                existing.DiscoveryStatus = seed.DiscoveryStatus;
+                existing.DiscoveryNotes = seed.DiscoveryNotes;
+                existing.DiscoveryDate = seed.DiscoveryDate;
 
                 await _repository.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
                 updated++;
