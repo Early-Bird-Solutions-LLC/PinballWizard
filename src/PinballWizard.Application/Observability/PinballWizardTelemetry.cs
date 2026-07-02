@@ -610,14 +610,16 @@ public static class PinballWizardTelemetry
         unit: "ms",
         description: "Wall-clock duration of one AiSearchMachineIndex.SearchAsync call in milliseconds. Emitted on every query reaching the machine findability index (ADR-0049 phase 2b), including queries that return zero hits. Pair with pinwiz.machine.search.errors_total to distinguish slow-success from degrade-to-Cosmos paths.");
 
-    // Counts degradation events where AiSearchMachineIndex.SearchAsync threw and
-    // MachineGroundingTool fell back to the Cosmos SearchByTitleContainsAsync net.
-    // A non-zero rate here indicates AI Search machine-index availability issues.
-    // Tagged reason: "query_failed" (transport / service error).
+    // Counts machine findability-index degradation events. Tagged reason:
+    //   "query_failed"       — SearchAsync threw and MachineGroundingTool fell back
+    //                          to the Cosmos SearchByTitleContainsAsync net (phase 2b).
+    //   "suggest_unavailable" — SearchAsync threw and the public typeahead suggest
+    //                          service degraded to an empty dropdown (phase 3).
+    // A sustained non-zero rate indicates AI Search machine-index availability issues.
     public static readonly Counter<long> MachineSearchErrors = Meter.CreateCounter<long>(
         "pinwiz.machine.search.errors_total",
         unit: "{error}",
-        description: "Count of AiSearchMachineIndex.SearchAsync failures that triggered a degrade-to-Cosmos fallback in MachineGroundingTool (ADR-0049 phase 2b). Tagged with reason. A sustained non-zero rate indicates AI Search machine-index availability or configuration issues.");
+        description: "Count of AiSearchMachineIndex.SearchAsync failures that triggered a degrade path — to Cosmos in MachineGroundingTool (reason=query_failed, ADR-0049 phase 2b) or to an empty typeahead in the suggest service (reason=suggest_unavailable, phase 3). Tagged with reason. A sustained non-zero rate indicates AI Search machine-index availability or configuration issues.");
 
     // ── Activity (trace) names ───────────────────────────────────────────
 
