@@ -531,51 +531,98 @@ public sealed class DocumentLinker : IDocumentLinker
 
     private LinkingResult? TryTier1XrefSlug(RawDocumentRecord raw)
     {
-        // Collect all distinct machine IDs resolved from xref slugs.
-        var resolvedMachineIds = new List<string>();
-        var resolvedSlugs = new List<string>();
         var mfrHint = LinkingUtilities.InferManufacturerKey(raw.Source);
+        var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
+
+        // Resolve each DISTINCT xref game-slug independently. Keying on distinct
+        // slugs (not machine IDs) lets an edition fan-out — one slug resolving to
+        // several editions of one game — stay a SINGLE resolution rather than
+        // tripping the cross-game ambiguity guard below.
+        LinkingResult? resolved = null;
+        var seenSlugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var xref in raw.CrossReferences)
         {
             var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
-            if (slug is null) continue;
-
+            if (slug is null || !seenSlugs.Add(slug)) continue;
             if (!_machinesBySlug.TryGetValue(slug, out var candidates)) continue;
 
-            // Disambiguate slug collisions (e.g. Sega vs Stern Godzilla) by the
-            // document's source manufacturer; falls through to ambiguity below
-            // when the hint can't pick a single machine.
-            var machine = PreferByManufacturer(candidates, mfrHint);
-            if (machine is null) continue;
+            var result = ResolveSlugToResult(raw, candidates, filename, mfrHint);
+            if (result is null) continue;
 
-            if (!resolvedMachineIds.Contains(machine.Id))
+            if (resolved is not null)
             {
-                resolvedMachineIds.Add(machine.Id);
-                resolvedSlugs.Add(slug);
+                // A second, different game-slug also resolved — genuinely ambiguous.
+                _logger.LogDebug(
+                    "Tier1 xref_slug: {DocumentId} → ambiguous (multiple distinct game slugs resolved).",
+                    raw.DocumentId);
+                return null;
             }
+            resolved = result;
         }
 
-        if (resolvedMachineIds.Count == 0) return null;
+        return resolved;
+    }
 
-        // Multiple distinct machines from different xref slugs — ambiguous; fall through.
-        if (resolvedMachineIds.Count > 1)
+    // Resolves one xref slug's candidate set to a link result: narrow to the source
+    // manufacturer, then resolve within a same-franchise edition family by the doc's
+    // edition signal (filename / link text) or pick the single / manufacturer-preferred
+    // machine. Returns null when nothing resolves (caller tries the next slug / tier).
+    private LinkingResult? ResolveSlugToResult(
+        RawDocumentRecord raw, List<Machine> candidates, string filename, string? mfrHint)
+    {
+        // Narrow to the source manufacturer as a PREFERENCE, not a hard filter: if no
+        // candidate matches (e.g. a Stern-sourced doc whose slug resolves only to a
+        // non-Stern machine), keep the original set so the legitimate single link still
+        // resolves — matching the pre-edition Tier 1 (PreferByManufacturer short-circuit).
+        var narrowed = NarrowToSourceManufacturer(candidates, mfrHint);
+        if (narrowed.Count == 0) narrowed = candidates;
+
+        // Same-franchise edition family (multiple bases sharing one group segment +
+        // year, e.g. Batman '66 Premium GRoz4-MjBV6 + LE GRoz4-MrRPw) — resolve by the
+        // doc's edition signal instead of bailing on multiplicity, which is what left
+        // every Batman '66 / Guardians of the Galaxy edition-specific doc NotInCatalog.
+        if (narrowed.Count > 1 && IsEditionFamily(narrowed))
         {
-            _logger.LogDebug(
-                "Tier1 xref_slug: {DocumentId} → ambiguous (multiple distinct machines via slugs={Slugs}).",
-                raw.DocumentId, string.Join(",", resolvedSlugs));
-            return null;
+            return ResolveEditionFamily(
+                raw, narrowed, filename, page1Text: null, "xref_slug_edition", "xref_slug_edition_group");
         }
 
-        _logger.LogDebug("Tier1 xref_slug: {DocumentId} → {MachineId} via slug={Slug}.",
-            raw.DocumentId, resolvedMachineIds[0], resolvedSlugs[0]);
+        var machine = narrowed.Count == 1 ? narrowed[0] : PreferByManufacturer(narrowed, mfrHint);
+        if (machine is null) return null;
 
+        _logger.LogDebug("Tier1 xref_slug: {DocumentId} → {MachineId}.", raw.DocumentId, machine.Id);
         return new LinkingResult(
-            raw.DocumentId,
-            LinkStatus.Linked,
-            "xref_slug",
-            [resolvedMachineIds[0]],
-            FailureReason: null);
+            raw.DocumentId, LinkStatus.Linked, "xref_slug", [machine.Id], FailureReason: null);
+    }
+
+    // Shared edition-family dispatch used by Tier 1 (xref_slug) and Tier 2 (filename):
+    // resolve a same-group+year candidate set to a concrete link result via the doc's
+    // filename / page-1 / link-text edition signal. Group-level docs fan out; a single
+    // resolved edition links to that base; an unresolved family returns null so the
+    // caller falls through to a later tier. Keeps the edition dispatch in one place.
+    private LinkingResult? ResolveEditionFamily(
+        RawDocumentRecord raw, IReadOnlyList<Machine> candidates, string filename,
+        string? page1Text, string strategy, string groupStrategy)
+    {
+        var resolution = EditionResolver.Resolve(filename, page1Text, candidates, raw.Source.LinkText);
+        if (resolution.IsGroupFanOut)
+        {
+            _logger.LogDebug("{Strategy}: {DocumentId} → {Count} group bases.",
+                groupStrategy, raw.DocumentId, resolution.Machines.Count);
+            return new LinkingResult(raw.DocumentId, LinkStatus.Linked, groupStrategy,
+                resolution.Machines.Select(m => m.Id).ToList(), FailureReason: null)
+                { EditionScope = resolution.Scope };
+        }
+        if (!resolution.IsUnresolved)
+        {
+            _logger.LogDebug("{Strategy}: {DocumentId} → {MachineId}.",
+                strategy, raw.DocumentId, resolution.Machines[0].Id);
+            return new LinkingResult(raw.DocumentId, LinkStatus.Linked, strategy,
+                [resolution.Machines[0].Id], FailureReason: null)
+                { EditionScope = resolution.Scope };
+        }
+        return null;
     }
 
     private LinkingResult? TryTier2FilenameSlug(RawDocumentRecord raw)
@@ -628,29 +675,15 @@ public sealed class DocumentLinker : IDocumentLinker
         // segment + year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
         // GweeP-Ml9pZ) → resolve by edition from the filename token. Page text
         // isn't available at Tier 2; the page tiers add page-1 authority later.
+        // Same-franchise edition family (multiple bases sharing one group segment +
+        // year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE GweeP-Ml9pZ) → resolve by
+        // the filename token via the shared dispatch. Page text isn't available at
+        // Tier 2; the page tiers add page-1 authority later. Unresolved → null (falls
+        // through to the page tiers, which can read page-1 text).
         if (candidates.Count > 1 && IsEditionFamily(candidates))
         {
-            var resolution = EditionResolver.Resolve(
-                filename, page1Text: null, candidates, raw.Source.LinkText);
-            if (resolution.IsGroupFanOut)
-            {
-                _logger.LogDebug("Tier2 filename_edition_group: {DocumentId} → {Count} group bases for '{Filename}'.",
-                    raw.DocumentId, resolution.Machines.Count, filename);
-                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition_group",
-                    resolution.Machines.Select(m => m.Id).ToList(), FailureReason: null)
-                    { EditionScope = resolution.Scope };
-            }
-            if (!resolution.IsUnresolved)
-            {
-                _logger.LogDebug("Tier2 filename_edition: {DocumentId} → {MachineId} for '{Filename}'.",
-                    raw.DocumentId, resolution.Machines[0].Id, filename);
-                return new LinkingResult(raw.DocumentId, LinkStatus.Linked, "filename_edition",
-                    [resolution.Machines[0].Id], FailureReason: null)
-                    { EditionScope = resolution.Scope };
-            }
-            // Unresolved within the family → fall through to the page tiers,
-            // which can read page-1 text for an authoritative edition signal.
-            return null;
+            return ResolveEditionFamily(
+                raw, candidates, filename, page1Text: null, "filename_edition", "filename_edition_group");
         }
 
         // Single longest match → use it. Multiple distinct machines tied at the
