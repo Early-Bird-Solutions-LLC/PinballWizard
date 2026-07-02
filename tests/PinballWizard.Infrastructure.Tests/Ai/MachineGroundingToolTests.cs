@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
@@ -1997,6 +1999,206 @@ public sealed class MachineGroundingToolTests
         // Warning must have been logged about the missing collision candidate.
         Assert.True(logger.WarningCount > 0,
             "Expected at least one Warning log for the missing collision candidate.");
+    }
+
+    // ── AI Search machine index path (ADR-0049 phase 2b) ────────────────────
+    // These tests verify that MachineGroundingTool.ResolveFuzzyByTitleAsync
+    // uses IMachineSearchIndex when configured, degrades to Cosmos CONTAINS on
+    // transport failure, and produces honest null on authoritative misses.
+    // All tests arrange every upstream lookup path to miss so execution reaches
+    // the forgiving-resolution step.
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchHit_ResolvesPrimaryAndCollision()
+    {
+        // AI Search returns two hits from DIFFERENT OPDB groups. The first
+        // becomes the primary; the second becomes a TitleCollision so the
+        // agent can ask a clarifying question (e.g. "Sega Godzilla" vs
+        // "Stern Godzilla").
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var primaryMachine = new Machine
+        {
+            Id = "GRBN-STERN", PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Godzilla", Year = 2021, GroupId = "GRBN",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+        var collisionMachine = new Machine
+        {
+            Id = "GZLA-SEGA", PartitionKey = "sega",
+            ManufacturerDisplayName = "Sega",
+            Title = "Godzilla", Year = 1998, GroupId = "GZLA",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.GetByOpdbIdAsync("GRBN-STERN", "stern", Arg.Any<CancellationToken>())
+            .Returns(primaryMachine);
+        repo.GetByOpdbIdAsync("GZLA-SEGA", "sega", Arg.Any<CancellationToken>())
+            .Returns(collisionMachine);
+        // Siblings: primary has GroupId="GRBN"; return empty so the test
+        // only asserts AI Search TitleCollisions (not sibling list noise).
+        repo.GetSiblingsByGroupIdAsync("GRBN", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var searchIndex = Substitute.For<IMachineSearchIndex>();
+        searchIndex.SearchAsync("Godzilla", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MachineSearchHit>
+            {
+                new("GRBN-STERN", "Godzilla", "Stern Pinball", "stern", "GRBN", 2021, 0.95),
+                new("GZLA-SEGA",  "Godzilla", "Sega",          "sega",  "GZLA", 1998, 0.72),
+            });
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
+        var result = await tool.GetMachineByTitleAsync("Godzilla", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GRBN-STERN", result!.OpdbId);
+        Assert.Single(result.TitleCollisions);
+        Assert.Equal("GZLA-SEGA", result.TitleCollisions[0].OpdbId);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchZeroHits_ReturnsNull_NoCosmosContainsFallback()
+    {
+        // An authoritative empty result from the index means no machine
+        // exists for this query. The Cosmos CONTAINS safety net must NOT
+        // fire — doing so would surface results the index says don't exist.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var searchIndex = Substitute.For<IMachineSearchIndex>();
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MachineSearchHit>());
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
+        var result = await tool.GetMachineByTitleAsync("xyzzy quux", CancellationToken.None);
+
+        Assert.Null(result);
+        // Cosmos CONTAINS must never be called — zero hits is an honest miss.
+        repo.DidNotReceiveWithAnyArgs().SearchByTitleContainsAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchStalePrimary_ReturnsNull_NoCosmosContains()
+    {
+        // The index returns a top hit, but its machine row is GONE from Cosmos
+        // (stale index / projection lag). This is NOT a transport error, so the
+        // tool must return an HONEST null (never fabricate a machine from the
+        // index title) and must NOT fall through to the Cosmos CONTAINS net —
+        // the index authoritatively pointed at one specific, now-missing machine
+        // (invariant #17). It self-heals on the next projection.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        // The top hit's machine row is missing from Cosmos.
+        repo.GetByOpdbIdAsync("GYWBZ-MkPrr", "jjp", Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        var searchIndex = Substitute.For<IMachineSearchIndex>();
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MachineSearchHit>
+            {
+                new("GYWBZ-MkPrr", "Willy Wonka & The Chocolate Factory", "Jersey Jack Pinball", "jjp", "GYWBZ", 2019, 0.9),
+            });
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        // Honest null — no fabrication from the index title.
+        Assert.Null(result);
+        // A stale primary is a miss, not a transport failure: the CONTAINS net
+        // must NOT fire (the index resolved to a specific machine that is gone).
+        repo.DidNotReceiveWithAnyArgs().SearchByTitleContainsAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchThrows_DegradestoCosmosContains()
+    {
+        // A transport / service error from AI Search degrades to the Cosmos
+        // CONTAINS safety net. The user still gets an answer; the failure is
+        // logged and metered (invariant #17 — never silent, never fabricate).
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var wonkaMachine = new Machine
+        {
+            Id = "GYWBZ-MkPrr", PartitionKey = "jjp",
+            ManufacturerDisplayName = "Jersey Jack Pinball",
+            Title = "Willy Wonka & The Chocolate Factory", Year = 2019, GroupId = "GYWBZ",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.SearchByTitleContainsAsync("wonka", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(wonkaMachine));
+        repo.GetSiblingsByGroupIdAsync("GYWBZ", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var searchIndex = Substitute.For<IMachineSearchIndex>();
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("simulated AI Search transport failure"));
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        // Cosmos CONTAINS delivered the answer via degradation.
+        Assert.NotNull(result);
+        Assert.Equal("GYWBZ-MkPrr", result!.OpdbId);
+        // Confirmed the CONTAINS path was used (not the AI Search path).
+        repo.Received(1).SearchByTitleContainsAsync("wonka", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchNotConfigured_UsesCosmosContains()
+    {
+        // When IMachineSearchIndex is not injected (null), the tool falls
+        // straight through to the Cosmos CONTAINS safety net — identical to
+        // pre-phase-2b behavior. The nullable parameter is the DI contract
+        // for "AI Search not configured."
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var wonkaMachine = new Machine
+        {
+            Id = "GYWBZ-MkPrr", PartitionKey = "jjp",
+            ManufacturerDisplayName = "Jersey Jack Pinball",
+            Title = "Willy Wonka & The Chocolate Factory", Year = 2019, GroupId = "GYWBZ",
+            FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.SearchByTitleContainsAsync("wonka", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(wonkaMachine));
+        repo.GetSiblingsByGroupIdAsync("GYWBZ", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        // No IMachineSearchIndex: 3-parameter constructor (null default).
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GYWBZ-MkPrr", result!.OpdbId);
     }
 
     // Simple capturing logger for the Grounding collision-warning test.
