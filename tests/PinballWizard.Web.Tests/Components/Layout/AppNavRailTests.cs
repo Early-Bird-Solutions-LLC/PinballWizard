@@ -169,7 +169,7 @@ public sealed class AppNavRailTests : AsyncBunitContext
 
         var rail = cut.Find(".app-nav-rail");
         await cut.InvokeAsync(() => rail.PointerEnter());
-        Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+        Assert.Equal("Pin navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
 
         await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerLeave());
         Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
@@ -284,5 +284,49 @@ public sealed class AppNavRailTests : AsyncBunitContext
         var invocation = JSInterop.Invocations.Single(i => i.Identifier == "pinwiz.navRail.set");
         Assert.Equal("pinwiz.nav.pinned", invocation.Arguments[0]);
         Assert.Equal(true, invocation.Arguments[1]);
+    }
+
+    [Fact]
+    public async Task Persist_False_Toggle_CallsNoJs()
+    {
+        // Persist is off by default — clicking the toggle must not write to localStorage.
+        // JSInterop.Mode is Loose (set in constructor), so any incidental call is allowed;
+        // we just assert that NO pinwiz.navRail.* identifier was invoked.
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        await cut.InvokeAsync(() => cut.Find("[data-testid='nav-rail-toggle']").Click());
+
+        Assert.DoesNotContain(JSInterop.Invocations,
+            i => i.Identifier.StartsWith("pinwiz.navRail", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Persist_NullStored_KeepsCollapsedDefault()
+    {
+        // Private-mode / first-visit: localStorage returns null. The rail must stay
+        // collapsed (null never fabricates a pin — Invariant #17 no-masking-fallbacks).
+        JSInterop.Setup<bool?>("pinwiz.navRail.get", "pinwiz.nav.pinned").SetResult(null);
+
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.Persist), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        cut.WaitForAssertion(() =>
+            Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label")));
     }
 }

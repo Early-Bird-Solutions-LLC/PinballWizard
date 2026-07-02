@@ -41,8 +41,8 @@
                            Color="Color.Inherit"
                            OnClick="Toggle"
                            data-testid="nav-rail-toggle"
-                           aria-label="@(IsOpen ? "Collapse navigation" : "Expand navigation")"
-                           title="@(IsOpen ? "Collapse navigation" : "Expand navigation")" />
+                           aria-label="@(_pinned ? "Collapse navigation" : (_peek ? "Pin navigation" : "Expand navigation"))"
+                           title="@(_pinned ? "Collapse navigation" : (_peek ? "Pin navigation" : "Expand navigation"))" />
         }
         @if (IsOpen)
         {

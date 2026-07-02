@@ -78,11 +78,11 @@ window.addEventListener('hashchange', window.pinwiz._pulseHashTarget);
 window.pinwiz.navRail = {
     get: function (key) {
         try {
-            var v = window.localStorage.getItem(key);
+            var v = localStorage.getItem(key);
             return v === null ? null : v === "true";
         } catch (_) { return null; }
     },
     set: function (key, value) {
-        try { window.localStorage.setItem(key, value ? "true" : "false"); } catch (_) { /* no-op */ }
+        try { localStorage.setItem(key, value ? "true" : "false"); } catch (_) { /* no-op */ }
     }
 };
