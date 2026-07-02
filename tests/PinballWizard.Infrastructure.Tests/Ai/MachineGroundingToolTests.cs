@@ -2090,6 +2090,43 @@ public sealed class MachineGroundingToolTests
     }
 
     [Fact]
+    public async Task GetMachineByTitleAsync_AiSearchStalePrimary_ReturnsNull_NoCosmosContains()
+    {
+        // The index returns a top hit, but its machine row is GONE from Cosmos
+        // (stale index / projection lag). This is NOT a transport error, so the
+        // tool must return an HONEST null (never fabricate a machine from the
+        // index title) and must NOT fall through to the Cosmos CONTAINS net —
+        // the index authoritatively pointed at one specific, now-missing machine
+        // (invariant #17). It self-heals on the next projection.
+        var lookups = Substitute.For<IMachineTitleLookupRepository>();
+        lookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((MachineTitleLookup?)null);
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        // The top hit's machine row is missing from Cosmos.
+        repo.GetByOpdbIdAsync("GYWBZ-MkPrr", "jjp", Arg.Any<CancellationToken>())
+            .Returns((Machine?)null);
+
+        var searchIndex = Substitute.For<IMachineSearchIndex>();
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MachineSearchHit>
+            {
+                new("GYWBZ-MkPrr", "Willy Wonka & The Chocolate Factory", "Jersey Jack Pinball", "jjp", "GYWBZ", 2019, 0.9),
+            });
+
+        var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
+        var result = await tool.GetMachineByTitleAsync("Wonka", CancellationToken.None);
+
+        // Honest null — no fabrication from the index title.
+        Assert.Null(result);
+        // A stale primary is a miss, not a transport failure: the CONTAINS net
+        // must NOT fire (the index resolved to a specific machine that is gone).
+        repo.DidNotReceiveWithAnyArgs().SearchByTitleContainsAsync(default!, default);
+    }
+
+    [Fact]
     public async Task GetMachineByTitleAsync_AiSearchThrows_DegradestoCosmosContains()
     {
         // A transport / service error from AI Search degrades to the Cosmos

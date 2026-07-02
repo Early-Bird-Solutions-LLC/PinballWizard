@@ -854,6 +854,15 @@ public sealed class MachineGroundingTool
                     continue;
                 }
 
+                // Post-fetch group re-check against the AUTHORITATIVE Cosmos GroupId.
+                // The pre-fetch dedup used the index-supplied GroupId, which can be
+                // stale; if the candidate's real group is the primary's, it is already
+                // reachable via Siblings and must not surface as a cross-group
+                // collision (mirrors ResolveTitleCollisionsAsync). Self-heals on the
+                // next projection.
+                if (string.Equals(GroupKeyOf(candidate), primaryGroup, StringComparison.Ordinal))
+                    continue;
+
                 collisions.Add(new MachineSiblingGroundingDto(
                     OpdbId: candidate.Id,
                     Title: candidate.Title,
