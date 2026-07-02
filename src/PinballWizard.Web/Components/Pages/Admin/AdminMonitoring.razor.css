@@ -277,7 +277,11 @@
 
 .mon-bar-row {
     display: grid;
-    grid-template-columns: 180px 1fr 28px;
+    /* Label column grows to fit its content (name + optional retrieval tag)
+       so the tag chip can never overflow onto the bar track; 180px floor
+       keeps short-label rows aligned. Collapses to full-width label below
+       540px (see media query). */
+    grid-template-columns: minmax(180px, max-content) 1fr 28px;
     align-items: center;
     gap: 8px;
 }

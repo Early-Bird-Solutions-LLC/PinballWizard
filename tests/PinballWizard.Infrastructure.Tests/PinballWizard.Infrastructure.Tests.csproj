@@ -23,4 +23,11 @@
     <ProjectReference Include="../../src/PinballWizard.Application/PinballWizard.Application.csproj" />
     <ProjectReference Include="../../src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Findability fixture: copy flat into the output directory so
+         FindabilityProbeParserTests can locate it via AppContext.BaseDirectory. -->
+    <None Include="Ai\Evaluation\Findability\findability.fixture.jsonl"
+          Link="findability.fixture.jsonl"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

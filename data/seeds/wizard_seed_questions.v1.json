@@ -21,9 +21,9 @@
     },
     {
       "slug": "what-is-the-jersey-jack-wonka-machine",
-      "question": "What is the Jersey Jack Wonka pinball machine, and who makes it?",
+      "question": "What is the Willy Wonka & The Chocolate Factory pinball machine, and who makes it?",
       "target_sub_agent": "Wizard",
-      "description": "Demonstrates the Wizard orchestrator answering a general machine-identity question directly via getMachineByTitle, grounded with an OPDB citation — the first-30-seconds showcase entry point. Replaces a capability/meta question that produced no citations and was therefore refused by the citation-required confidence gate (OutOfScope)."
+      "description": "Demonstrates the Wizard orchestrator answering a general machine-identity question directly via getMachineByTitle, grounded with an OPDB citation — the first-30-seconds showcase entry point. Uses the full catalog title 'Willy Wonka & The Chocolate Factory' (OPDB canonical, Jersey Jack 2019) so getMachineByTitle resolves on the exact-match point-read path rather than depending on the forgiving fuzzy fallback."
     }
   ]
 }

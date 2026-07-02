@@ -1,0 +1,9 @@
+# Synthetic findability probes — OBVIOUSLY FAKE OPDB IDs — unit tests only
+# Do NOT use these in live evaluation runs.
+{"id":"find-t001","query":"alpha bravo pinball machine","expected_opdb_ids":["FAKE-AAAA1"]}
+{"id":"find-t002","query":"charlie delta flipper game","expected_opdb_ids":["FAKE-BBBB2","FAKE-CCCC3"]}
+{"id":"find-t003","query":"echo foxtrot wizard mode rules","expected_opdb_ids":["FAKE-DDDD4"],"graded":{"FAKE-DDDD4":3,"FAKE-EEEE5":1}}
+{"id":"find-t004","query":"golf hotel multiball machine","expected_opdb_ids":["FAKE-FFFF6"]}
+{"id":"find-t005","query":"india juliet pinball repair","expected_opdb_ids":["FAKE-GGGG7"]}
+{"id":"find-t006","query":"kilo lima game tips strategy","expected_opdb_ids":["FAKE-HHHH8","FAKE-IIII9"],"graded":{"FAKE-HHHH8":2,"FAKE-IIII9":1}}
+{"id":"find-t007","query":"mike november premium edition","expected_opdb_ids":["FAKE-JJJJ0"]}

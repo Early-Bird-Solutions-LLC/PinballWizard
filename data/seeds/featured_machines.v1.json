@@ -31,17 +31,10 @@
     },
     {
       "slug": "chicago-gaming-medieval-madness",
-      "title": "Medieval Madness (Remake)",
+      "title": "Medieval Madness Remake",
       "opdb_id": null,
       "display_order": 5,
       "tagline": "Chicago Gaming Company's faithful recreation of the beloved Williams classic lets a new generation storm castles and slay trolls."
-    },
-    {
-      "slug": "multimorphic-p3",
-      "title": "P3 Pinball Platform",
-      "opdb_id": null,
-      "display_order": 6,
-      "tagline": "Multimorphic's modular P3 platform redefines what a pinball machine can be: swap game kits and transform the experience without changing the cabinet."
     }
   ]
 }
