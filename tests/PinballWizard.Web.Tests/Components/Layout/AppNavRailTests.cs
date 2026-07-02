@@ -134,4 +134,22 @@ public sealed class AppNavRailTests : AsyncBunitContext
         Assert.Equal(NavLinkMatch.All, rootLink.Instance.Match);
         Assert.Equal(NavLinkMatch.Prefix, aboutLink.Instance.Match);
     }
+
+    [Fact]
+    public void Breakpoint_IsForwardedToDrawer()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.Breakpoint), Breakpoint.None);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        var drawer = cut.FindComponent<MudDrawer>();
+        Assert.Equal(Breakpoint.None, drawer.Instance.Breakpoint);
+    }
 }
