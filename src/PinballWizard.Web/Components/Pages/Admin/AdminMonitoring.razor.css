@@ -35,8 +35,11 @@
     border: 1px solid var(--pw-border-quiet);
     border-radius: var(--pw-radius);
     padding: 3px 10px;
-    cursor: default;
+    cursor: pointer;
     user-select: none;
+    /* button reset */
+    appearance: none;
+    line-height: 1.4;
 }
 
 .mon-period--active {
@@ -130,6 +133,37 @@
 
 .mon-tile__value--dim {
     color: var(--pw-text-secondary);
+}
+
+/* Loading pulse — shown in tile value spans while snapshot is in-flight. */
+.mon-tile__value--loading {
+    font-size: 20px;
+    color: var(--pw-text-faint);
+    animation: mon-fade-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes mon-fade-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+/* Unavailable — shown when the metric's source returned null (Invariant #17). */
+.mon-tile__value--unavailable {
+    font-size: 14px;
+    font-style: italic;
+    font-family: var(--pw-font-mono);
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    color: var(--pw-text-faint);
+}
+
+/* Pipeline count unavailable — complements the tile variant for D3 rows. */
+.mon-pipeline__count--unavailable {
+    font-size: 14px;
+    font-style: italic;
+    font-family: var(--pw-font-mono);
+    font-weight: 400;
+    color: var(--pw-text-faint);
 }
 
 .mon-tile__eval-note {
