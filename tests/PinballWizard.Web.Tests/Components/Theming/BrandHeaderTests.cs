@@ -1,3 +1,4 @@
+using System.Linq;
 using Bunit;
 using Bunit.TestDoubles;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,12 +8,11 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Theming;
 
-// Pins the chrome nav structure to docs/ui/screens/answer-with-citations.md
-// § Screen zones #1: "Brand mark on the left, 'What we cover' link on
-// the right." Mechanically prevents nav-link inflation regression — the
-// audit at docs/PHASE5-DRIFT-AUDIT.md § 3 caught this drift on Wave 1
-// (4-link nav read as generic SaaS); without a structural test the next
-// "let's add a link" edit will quietly re-introduce the same drift.
+// Pins the header as brand-mark-only after nav links moved to AppNavRail
+// (design doc: docs/superpowers/specs/2026-07-01-public-left-nav-design.md).
+// Mechanically prevents duplicate-nav regression — a future edit that re-adds
+// nav links to the header will fail BrandHeader_RendersExactlyOneAnchor_BrandMarkOnly
+// and BrandHeader_DoesNotRender_MovedNavLinks before it ever ships.
 public sealed class BrandHeaderTests : AsyncBunitContext
 {
     public BrandHeaderTests()
@@ -20,33 +20,6 @@ public sealed class BrandHeaderTests : AsyncBunitContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         _ = Services.GetRequiredService<BunitNavigationManager>();
-    }
-
-    [Fact]
-    public void BrandHeader_RendersExactlyFourAnchors_BrandWhatWeCoverDocumentsAndBehindTheScenes()
-    {
-        var cut = Render<BrandHeader>();
-
-        var anchors = cut.FindAll("a");
-        Assert.Equal(4, anchors.Count);
-    }
-
-    [Fact]
-    public void BrandHeader_RendersBehindTheScenesLink()
-    {
-        var cut = Render<BrandHeader>();
-
-        var link = cut.Find("a[href='/admin']");
-        Assert.Contains("Behind the Scenes", link.TextContent, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void BrandHeader_RendersDocumentsLink()
-    {
-        var cut = Render<BrandHeader>();
-
-        var link = cut.Find("a[href='/documents']");
-        Assert.Contains("Documents", link.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -65,32 +38,23 @@ public sealed class BrandHeaderTests : AsyncBunitContext
     }
 
     [Fact]
-    public void BrandHeader_NavLink_LinksToAbout_WithWhatWeCoverLabel()
+    public void BrandHeader_RendersExactlyOneAnchor_BrandMarkOnly()
     {
+        // Nav links moved into AppNavRail (design 2026-07-01). The header is now
+        // brand-mark-only; pin that so a future edit can't re-add duplicate header nav.
         var cut = Render<BrandHeader>();
-
-        // The "What we cover" nav link sits first inside the <nav aria-label="Main navigation"> region.
-        var navAnchor = cut.Find("nav[aria-label='Main navigation'] a");
-        Assert.Equal("/about", navAnchor.GetAttribute("href"));
-        Assert.Contains("What we cover", navAnchor.TextContent);
+        Assert.Single(cut.FindAll("a"));
     }
 
     [Fact]
-    public void BrandHeader_DoesNotLinkTo_RemovedRoutes()
+    public void BrandHeader_DoesNotRender_MovedNavLinks()
     {
-        // Drift guard: Home / /wizard / /status used to be exposed as nav links.
-        // The audit moved /status to the footer (handled by BrandFooter) and
-        // dropped Home + Wizard as redundant. Mechanically pin the absence so
-        // a future "let's add Status back to the header" edit fails this test.
         var cut = Render<BrandHeader>();
-
-        var hrefs = cut.FindAll("a")
-            .Select(a => a.GetAttribute("href"))
-            .ToArray();
-
+        var hrefs = cut.FindAll("a").Select(a => a.GetAttribute("href")).ToArray();
+        Assert.DoesNotContain("/about", hrefs);
+        Assert.DoesNotContain("/documents", hrefs);
+        Assert.DoesNotContain("/admin", hrefs);
         Assert.DoesNotContain("/wizard", hrefs);
         Assert.DoesNotContain("/status", hrefs);
-        // "/" is allowed (brand mark) — only assert the redundant nav-Home is gone
-        // by counting anchors (covered by BrandHeader_RendersExactlyFourAnchors...).
     }
 }

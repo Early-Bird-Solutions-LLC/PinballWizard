@@ -6,7 +6,9 @@ namespace PinballWizard.Application.Tests.Application.Landing;
 
 // Pins the on-disk data/seeds/featured_machines.v1.json contract:
 //   - schema_version = 1
-//   - Exactly 6 machines
+//   - Exactly 5 machines (Multimorphic P3 dropped: it has no row in the
+//     live OPDB machines catalog, so featuring it produced an unresolvable
+//     "Try asking about…" card — a refusal on the showcase's first screen)
 //   - No duplicate slugs
 //   - opdb_id either null or matching GRBN-[A-Z0-9]+ format
 //
@@ -32,12 +34,12 @@ public sealed class FeaturedMachinesContractTests
     }
 
     [Fact]
-    public void ProductionManifest_HasExactlySixMachines()
+    public void ProductionManifest_HasExactlyFiveMachines()
     {
         var manifest = LoadManifest();
 
         Assert.NotNull(manifest.FeaturedMachines);
-        Assert.Equal(6, manifest.FeaturedMachines!.Count);
+        Assert.Equal(5, manifest.FeaturedMachines!.Count);
     }
 
     [Fact]

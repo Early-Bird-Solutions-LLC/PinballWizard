@@ -326,10 +326,10 @@ public sealed class IndexPageTests
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
 
-        // Strip must receive the compiled-in fallback (6 machines), not null.
+        // Strip must receive the compiled-in fallback (5 machines), not null.
         var strip = cut.FindComponent<FeaturedMachinesStrip>();
         Assert.NotNull(strip.Instance.Machines);
-        Assert.Equal(6, strip.Instance.Machines!.Count);
+        Assert.Equal(5, strip.Instance.Machines!.Count);
     }
 
     // ──────────────────────────────────────────────────────────────────────
