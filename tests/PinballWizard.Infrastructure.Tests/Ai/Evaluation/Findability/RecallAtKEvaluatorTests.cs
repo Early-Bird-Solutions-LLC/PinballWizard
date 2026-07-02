@@ -131,4 +131,22 @@ public sealed class RecallAtKEvaluatorTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             _evaluator.Compute(["A"], ["A"], k: -1));
     }
+
+    [Fact]
+    public void Compute_DuplicateCandidate_DoesNotExceedOne()
+    {
+        // A misbehaving lookup repeats the one relevant id. Each expected id
+        // counts at most once — recall stays 1.0, never 2.0.
+        var recall = _evaluator.Compute(["A", "A"], ["A"], k: 2);
+        Assert.Equal(1.0, recall);
+    }
+
+    [Fact]
+    public void Compute_DuplicateCandidate_WithMultipleExpected_CountsEachOnce()
+    {
+        // ["A","A","B"] against expected {A,B}: the duplicate A does not inflate;
+        // both distinct expected ids are found → 1.0.
+        var recall = _evaluator.Compute(["A", "A", "B"], ["A", "B"], k: 3);
+        Assert.Equal(1.0, recall);
+    }
 }

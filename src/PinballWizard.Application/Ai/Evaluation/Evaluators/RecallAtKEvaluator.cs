@@ -44,10 +44,15 @@ public sealed class RecallAtKEvaluator
         var expectedSet = new HashSet<string>(expectedOpdbIds, StringComparer.OrdinalIgnoreCase);
         var window = Math.Min(k, rankedCandidates.Count);
 
+        // Count each expected ID at most once. A well-behaved IFindabilityLookup
+        // returns distinct results, but if one repeats a candidate the metric
+        // must still never exceed 1.0 — the `counted` set enforces that ceiling.
+        var counted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var hits = 0;
         for (var i = 0; i < window; i++)
         {
-            if (expectedSet.Contains(rankedCandidates[i]))
+            var candidate = rankedCandidates[i];
+            if (expectedSet.Contains(candidate) && counted.Add(candidate))
             {
                 hits++;
             }

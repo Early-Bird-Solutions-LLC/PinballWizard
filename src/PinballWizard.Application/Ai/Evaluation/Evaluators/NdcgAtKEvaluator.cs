@@ -79,9 +79,20 @@ public sealed class NdcgAtKEvaluator
         var dcg = 0.0;
         var window = Math.Min(k, rankedCandidates.Count);
 
+        // A duplicate candidate contributes no additional gain. IDCG counts each
+        // graded item once, so without this guard a lookup that repeats a
+        // relevant ID could drive NDCG above 1.0 — the `seen` set holds the
+        // metric within [0, 1].
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < window; i++)
         {
-            gradeLookup.TryGetValue(rankedCandidates[i], out var rel);
+            var candidate = rankedCandidates[i];
+            if (!seen.Add(candidate))
+            {
+                continue;
+            }
+
+            gradeLookup.TryGetValue(candidate, out var rel);
             var clampedRel = Math.Max(0, rel);
             // Position is 1-based: i=0 → position 1, discount = log₂(2) = 1.0
             dcg += (Math.Pow(2.0, clampedRel) - 1.0) / Math.Log2(i + 2);

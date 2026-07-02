@@ -211,4 +211,15 @@ public sealed class NdcgAtKEvaluatorTests
         Assert.Throws<ArgumentNullException>(() =>
             _evaluator.Compute(["A"], (IReadOnlyCollection<string>)null!, k: 1));
     }
+
+    [Fact]
+    public void Compute_DuplicateRelevantCandidate_DoesNotExceedOne()
+    {
+        // A misbehaving lookup repeats the one grade-3 id. IDCG counts it once,
+        // so DCG must too — a duplicate contributes no extra gain and NDCG stays
+        // at 1.0 (A already at the ideal position 1), never above 1.0.
+        var grades = new Dictionary<string, int> { ["A"] = 3 };
+        var ndcg = _evaluator.Compute(["A", "A"], grades, k: 2);
+        Assert.Equal(1.0, ndcg);
+    }
 }
