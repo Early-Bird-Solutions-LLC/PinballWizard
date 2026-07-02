@@ -69,6 +69,13 @@ public enum DocumentType
     // Indexed with synthetic machine_id "pinball_news"; not PDF-derived.
     // Per ADR-0043, access granted by Colin Alsheimer / Kineticist.
     NewsDigest,
+
+    // Multimorphic P3 SDK developer guide: per-module UsageInstructions,
+    // INSTALL.txt, and ReleaseNotes.txt. Synthesized directly from the local
+    // SDK zip via --sync-p3-sdk-docs; not PDF-derived and not change-feed
+    // routed. Added to RagIngestionOptions.AcceptedDocumentTypes so the
+    // Wizard can answer P3 developer questions.
+    SdkGuide,
 }
 
 /// <summary>
