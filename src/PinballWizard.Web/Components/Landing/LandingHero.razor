@@ -1,14 +1,38 @@
 @* LandingHero — top-of-page hero for the public / route.
  *
  * Renders the PinballWizard brand name, a 1–2 sentence tagline explaining
- * what the application does, and a prominent MudTextField question input
- * that autofocuses on page load. The hero is hardcoded — it does NOT depend
+ * what the application does, and a prominent MudAutocomplete question input
+ * that autofocuses on page load.  The hero is hardcoded — it does NOT depend
  * on /api/wizard/landing — so it renders immediately even when the landing
  * endpoint is unavailable.
  *
  * The question input is two-way bound to the QuestionText parameter so the
  * parent (Index.razor) can pre-fill it when a seed question card is clicked.
- * QuestionSubmitted is invoked when the user presses Enter or clicks "Ask".
+ * QuestionSubmitted is invoked when the user presses Enter or clicks "Ask"
+ * WITHOUT selecting a suggestion from the dropdown.  When the user DOES select
+ * a suggestion, the component navigates directly to /wizard?q={title}, bypassing
+ * QuestionSubmitted entirely — the suggestion is already a resolved title.
+ *
+ * Dual submit paths (ADR-0049 Phase 3):
+ *   1. Suggestion selected (click or keyboard Enter on a highlighted item)
+ *      → Nav.NavigateTo("/wizard?q={suggestion.Title}").
+ *   2. Free-text Enter / adornment click (no suggestion selected)
+ *      → QuestionSubmitted fires with the raw typed text.
+ *      The parent (Index.razor) handles this via OnQuestionSubmitted.
+ *
+ * Autocomplete degradation (ADR-0049 § Fault-tolerance):
+ *   If IMachineSuggestClient returns an empty list (endpoint down, non-200,
+ *   transport error), the dropdown is empty and the hero renders identically
+ *   to its pre-Phase-3 state.  Free-text Enter still works — the fallback is
+ *   invisible to the user.
+ *
+ * MudBlazor component choice (ADR-0008 strict):
+ *   MudAutocomplete<MachineSuggestion> (T non-nullable) replaces MudTextField.
+ *   T is the non-nullable record type because the Razor source generator emits
+ *   the T argument outside a #nullable context; using T="MachineSuggestion?"
+ *   triggers CS8669 under -warnaserror.  The component never produces null
+ *   suggestions (SearchFunc returns from a typed list), so the non-nullable T
+ *   is correct and safe.
  *
  * Custom delight surface — LandingHero is within the four locked delight
  * surfaces (ADR-0026 § 6, CLAUDE.md invariant 14):
@@ -20,11 +44,14 @@
  * Barlow Condensed display headline (h1), eyebrow tagline, ALL-CAPS brand name.
  * Prototype reference: docs/ui/prototypes/empty-landing.html.
  *
- * ADR-0008 — MudBlazor strict for chrome. Hero input is MudTextField.
+ * ADR-0008 — MudBlazor strict for chrome. Hero input is MudAutocomplete.
  * ADR-0026 § Landing surface.
+ * ADR-0049 § Phase 3 — typeahead suggestions.
  *@
 
+@using PinballWizard.Web.Clients
 @inject NavigationManager Nav
+@inject IMachineSuggestClient SuggestClient
 
 <div class="landing-hero" data-testid="landing-hero">
     <div class="landing-hero__brand">
@@ -40,25 +67,67 @@
     </div>
 
     <div class="landing-hero__input-row" data-testid="landing-hero-input">
-        <MudTextField @ref="_inputRef"
-                      @bind-Value="QuestionText"
-                      Immediate="true"
-                      Placeholder="Ask the Wizard…"
-                      Variant="Variant.Outlined"
-                      Adornment="Adornment.End"
-                      AdornmentIcon="@Icons.Material.Filled.ArrowForward"
-                      AdornmentColor="Color.Primary"
-                      AdornmentAriaLabel="Ask"
-                      OnAdornmentClick="OnSubmitClick"
-                      FullWidth="true"
-                      AutoFocus="true"
-                      aria-label="Question input"
-                      OnKeyDown="OnKeyDown" />
+        @* MudAutocomplete replaces MudTextField to add as-you-type machine suggestions.
+         *
+         * T="MachineSuggestion" (non-nullable): the Razor source generator emits T
+         * outside a nullable context, so nullable T causes CS8669 under -warnaserror.
+         * Non-nullable is safe because SearchFunc never returns null items.
+         *
+         * Dual-submit: ValueChanged fires when a suggestion is selected from the dropdown;
+         * OnKeyDown catches Enter with no selection and fires QuestionSubmitted.
+         * The _pendingNavigationSuggestion flag bridges the two code paths: MudAutocomplete
+         * fires ValueChanged synchronously before calling OnKeyDown (within the same browser
+         * event cycle), so the flag is set before OnKeyDown checks it.
+         *
+         * CoerceText=true (default): selecting a suggestion updates the Text input to the
+         * suggestion's Title (via ToStringFunc).  This fires TextChanged after ValueChanged,
+         * which is why OnTextChanged intentionally does NOT reset _pendingNavigationSuggestion
+         * when the new text matches the pending suggestion's Title.
+         *@
+        <MudAutocomplete T="MachineSuggestion"
+                         @ref="_inputRef"
+                         Text="@QuestionText"
+                         TextChanged="@OnTextChanged"
+                         ValueChanged="@OnSuggestionSelected"
+                         SearchFunc="@SearchSuggestionsAsync"
+                         ToStringFunc="@(s => s?.Title ?? string.Empty)"
+                         MinCharacters="2"
+                         DebounceInterval="250"
+                         Placeholder="Ask the Wizard…"
+                         Variant="Variant.Outlined"
+                         Adornment="Adornment.End"
+                         AdornmentIcon="@Icons.Material.Filled.ArrowForward"
+                         AdornmentColor="Color.Primary"
+                         AdornmentAriaLabel="Ask"
+                         OnAdornmentClick="@OnSubmitClick"
+                         FullWidth="true"
+                         AutoFocus="true"
+                         aria-label="Question input"
+                         OnKeyDown="@OnKeyDown">
+            <ItemTemplate Context="suggestion">
+                @* Show "{Title} — {Manufacturer} {Year}" for disambiguation.
+                 * Null guard is defensive: T is non-nullable but the context param
+                 * in ItemTemplate is typed T (MachineSuggestion), not T? *@
+                @if (suggestion is not null)
+                {
+                    <MudText Typo="Typo.body2">
+                        @suggestion.Title — @suggestion.Manufacturer@(suggestion.Year is not null ? $" {suggestion.Year}" : "")
+                    </MudText>
+                }
+            </ItemTemplate>
+        </MudAutocomplete>
     </div>
 </div>
 
 @code {
-    private MudTextField<string>? _inputRef;
+    private MudAutocomplete<MachineSuggestion>? _inputRef;
+
+    // Tracks the suggestion selected from the dropdown in the CURRENT event cycle.
+    // MudAutocomplete fires ValueChanged synchronously within the keydown handler
+    // (before our OnKeyDown runs), so this flag is set when OnKeyDown checks it.
+    // Reset in OnKeyDown after the check, or in OnTextChanged when the user edits
+    // text that no longer matches the suggestion (stale selection guard).
+    private MachineSuggestion? _pendingNavigationSuggestion;
 
     // Two-way bound by the parent (Index.razor). Pre-filled when a seed
     // question card is clicked.
@@ -68,10 +137,57 @@
     [Parameter]
     public EventCallback<string> QuestionTextChanged { get; set; }
 
-    // Invoked when the user submits (Enter key or adornment click).
+    // Invoked when the user submits WITHOUT selecting a suggestion from the
+    // dropdown — i.e., free-text Enter key or adornment click.
     [Parameter]
     public EventCallback<string> QuestionSubmitted { get; set; }
 
+    // ── Suggestion selection path ──────────────────────────────────────────
+    // Fires when the user picks a suggestion from the dropdown (click or
+    // keyboard Enter on a highlighted item).  Navigate directly to the wizard
+    // with the suggestion's canonical title — it's already a resolved machine
+    // name, so there's no need to route through QuestionSubmitted.
+    private void OnSuggestionSelected(MachineSuggestion suggestion)
+    {
+        // Guard: with T=MachineSuggestion (non-nullable), suggestion should
+        // never be null here, but MudAutocomplete's internal state management
+        // can fire ValueChanged with default(T) in edge cases.
+        if (suggestion is null) return;
+
+        // Set the flag BEFORE navigation so OnKeyDown (which fires after
+        // ValueChanged within the same browser event cycle) can detect that
+        // a suggestion was selected and skip firing QuestionSubmitted.
+        _pendingNavigationSuggestion = suggestion;
+
+        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(suggestion.Title)}");
+    }
+
+    // Sync raw text back to the parent binding and keep QuestionText current
+    // so the free-text submit paths have the right value.
+    //
+    // NOTE: does NOT reset _pendingNavigationSuggestion when text equals the
+    // pending suggestion's title.  CoerceText=true (MudAutocomplete default)
+    // fires TextChanged after ValueChanged during a keyboard selection, with
+    // the suggestion title as the new text.  Resetting the flag here would
+    // break the OnKeyDown guard (the flag would be null by the time OnKeyDown
+    // runs).  Only reset when the user edits text that diverges from the
+    // pending suggestion, signalling a new free-text query.
+    private async Task OnTextChanged(string? text)
+    {
+        var newText = text ?? string.Empty;
+        QuestionText = newText;
+        await QuestionTextChanged.InvokeAsync(newText).ConfigureAwait(false);
+
+        // User is typing a new query — any prior pending suggestion is stale.
+        if (_pendingNavigationSuggestion is not null
+            && newText != _pendingNavigationSuggestion.Title)
+        {
+            _pendingNavigationSuggestion = null;
+        }
+    }
+
+    // ── Free-text submit paths ─────────────────────────────────────────────
+    // Adornment (arrow) click: always fires QuestionSubmitted with the raw text.
     private async Task OnSubmitClick()
     {
         if (!string.IsNullOrWhiteSpace(QuestionText))
@@ -80,11 +196,50 @@
         }
     }
 
+    // Enter key: fire QuestionSubmitted ONLY when no suggestion is being
+    // selected in this event cycle.  MudAutocomplete fires ValueChanged
+    // (→ OnSuggestionSelected) synchronously before calling OnKeyDown, so
+    // _pendingNavigationSuggestion is already set when we reach this check.
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(QuestionText))
+        if (e.Key != "Enter") return;
+
+        if (_pendingNavigationSuggestion is not null)
+        {
+            // Navigation was already triggered by OnSuggestionSelected — clear
+            // the flag and skip QuestionSubmitted to avoid a double-fire.
+            _pendingNavigationSuggestion = null;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(QuestionText))
         {
             await QuestionSubmitted.InvokeAsync(QuestionText).ConfigureAwait(false);
         }
+    }
+
+    // ── Search function (SearchFunc for MudAutocomplete) ──────────────────
+    // Delegates to IMachineSuggestClient.  Returns an empty sequence on any
+    // client error (the client's own fault-tolerance contract).
+    // OperationCanceledException propagates naturally: MudAutocomplete
+    // cancels the prior search when the user types again, and the component
+    // knows how to handle that cancellation.
+    // Return type is IEnumerable<MachineSuggestion>? (nullable IEnumerable) to match
+    // MudAutocomplete<T>.SearchFunc delegate type:
+    //   Func<string, CancellationToken, Task<IEnumerable<T>?>>
+    // With T=MachineSuggestion (non-nullable), the delegate return is Task<IEnumerable<MachineSuggestion>?>.
+    // Task<T> is invariant in T, so returning Task<IEnumerable<MachineSuggestion>> (non-nullable T)
+    // would be a nullability mismatch under -warnaserror.  Returning the nullable variant is safe
+    // because the actual value is always non-null ([] or the results list).
+    private async Task<IEnumerable<MachineSuggestion>?> SearchSuggestionsAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<MachineSuggestion> results =
+            await SuggestClient.GetSuggestionsAsync(query, cancellationToken).ConfigureAwait(false);
+
+        // IReadOnlyList<MachineSuggestion> implements IEnumerable<MachineSuggestion>,
+        // and is assignable to IEnumerable<MachineSuggestion>? (non-null satisfies nullable).
+        return results;
     }
 }
