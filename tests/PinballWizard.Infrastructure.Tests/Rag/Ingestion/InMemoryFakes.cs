@@ -17,6 +17,12 @@ internal sealed class InMemoryRagIndexer : IRagIndexer
 {
     public ConcurrentBag<UpsertCall> Calls { get; } = [];
 
+    public ConcurrentBag<DeleteCall> DeleteCalls { get; } = [];
+
+    // Number of chunks the fake reports deleted per DeleteByDocumentAndMachineAsync
+    // call. Tests that assert delete-prior behavior set this; default 0.
+    public int DeleteResult { get; set; }
+
     // Default = success; tests that need a transport-level failure swap
     // this for an exception-throwing impl.
     public Func<ChunkRequest, IReadOnlyList<Chunk>, IndexUpsertResult> ResultFactory { get; set; } =
@@ -33,32 +39,45 @@ internal sealed class InMemoryRagIndexer : IRagIndexer
         return Task.FromResult(ResultFactory(request, chunks));
     }
 
+    public Task<int> DeleteByDocumentAndMachineAsync(
+        string documentId, string machineId, CancellationToken cancellationToken)
+    {
+        DeleteCalls.Add(new DeleteCall(documentId, machineId));
+        return Task.FromResult(DeleteResult);
+    }
+
     internal sealed record UpsertCall(
         string DocumentId, string MachineId, int ChunkCount, string? Edition, string? EditionScope);
+
+    internal sealed record DeleteCall(string DocumentId, string MachineId);
 }
 
 internal sealed class InMemoryIndexState : IIndexState
 {
-    private readonly ConcurrentDictionary<string, StateRow> _rows = new();
+    // Keyed on (documentId, machineId) per the Phase 3 re-attribution fix —
+    // one document fanned out to two machines occupies two independent rows.
+    private readonly ConcurrentDictionary<(string DocumentId, string MachineId), StateRow> _rows = new();
 
-    public IReadOnlyDictionary<string, StateRow> Snapshot => _rows;
+    public IReadOnlyDictionary<(string DocumentId, string MachineId), StateRow> Snapshot => _rows;
 
-    public Task<string?> GetLastIndexedHashAsync(string documentId, CancellationToken cancellationToken) =>
-        Task.FromResult(_rows.TryGetValue(documentId, out var row) ? row.Hash : null);
+    public Task<string?> GetLastIndexedHashAsync(
+        string documentId, string machineId, CancellationToken cancellationToken) =>
+        Task.FromResult(_rows.TryGetValue((documentId, machineId), out var row) ? row.Hash : null);
 
     public Task RecordIndexedAsync(
         string documentId,
+        string machineId,
         string contentHash,
         int chunkCount,
         int failureCount,
         CancellationToken cancellationToken)
     {
-        _rows[documentId] = new StateRow(contentHash, chunkCount, failureCount);
+        _rows[(documentId, machineId)] = new StateRow(contentHash, chunkCount, failureCount);
         return Task.CompletedTask;
     }
 
-    public void SeedExistingHash(string documentId, string hash) =>
-        _rows[documentId] = new StateRow(hash, ChunkCount: 0, FailureCount: 0);
+    public void SeedExistingHash(string documentId, string machineId, string hash) =>
+        _rows[(documentId, machineId)] = new StateRow(hash, ChunkCount: 0, FailureCount: 0);
 
     internal sealed record StateRow(string Hash, int ChunkCount, int FailureCount);
 }

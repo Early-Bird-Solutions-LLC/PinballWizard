@@ -110,10 +110,10 @@ public sealed class MachineGroundingTool
     // Scores a collision-row entry (stored MatchTokens) against tokens extracted
     // from the user-supplied title string. Returns an integer score: +1 per
     // titleToken that appears in matchTokens (each titleToken counted at most
-    // once per entry). Zero means no signal — used as a tie-break sentinel to
-    // preserve insertion-order behaviour when the input carries no manufacturer
-    // qualifier (e.g. bare "Godzilla" scores 0 for all entries, so the first
-    // entry wins as before).
+    // once per entry). Zero means no signal — when all entries tie at zero (e.g.
+    // bare "Godzilla"), the content-intrinsic tie-break in
+    // ResolveContentIntrinsicTieBreakAsync resolves the winner by completeness
+    // and recency instead of insertion order (ADR-0049 Phase 1).
     //
     // Using the stored MatchTokens (e.g. ["jjp", "jersey", "jack"]) rather than
     // the raw manufacturer key ("jjp") means expanded display names like
@@ -190,26 +190,50 @@ public sealed class MachineGroundingTool
                 // null it so the loop condition fires for it too.
                 lookup = null;
 
-                var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-                for (var strip = 1; strip <= 1 && lookup is null; strip++)
+                // "&" ↔ "and" variant retry — a cheap point-read on the same fast
+                // path. OPDB stores titles with a literal ampersand ("Dungeons &
+                // Dragons", "Willy Wonka & The Chocolate Factory"), but users type
+                // "and". NormalizeTitle does NOT canonicalize the connective, so the
+                // literal spelling misses. Try the alternate spelling(s) before the
+                // more expensive prefix-strip / fuzzy paths. Scoring below still uses
+                // the ORIGINAL title tokens, so a manufacturer qualifier in the
+                // user's phrasing continues to resolve collisions correctly.
+                foreach (var variant in GenerateConnectiveVariants(title))
                 {
-                    var remaining = normalizedTokens.Length - strip;
-                    if (remaining < 2)
-                        break;
-
-                    var retryKey = string.Join(" ", normalizedTokens, strip, remaining);
-                    lookup = await _titleLookups.GetByTitleAsync(retryKey, cancellationToken).ConfigureAwait(false);
-                    if (lookup is not null && lookup.OpdbIds.Count > 0)
+                    var variantLookup = await _titleLookups.GetByTitleAsync(variant, cancellationToken).ConfigureAwait(false);
+                    if (variantLookup is not null && variantLookup.OpdbIds.Count > 0)
                     {
+                        lookup = variantLookup;
                         _logger.LogDebug(
-                            "MachineGroundingTool: prefix-strip retry hit on '{RetryKey}' (original: '{OriginalTitle}', strips={Strip}).",
-                            retryKey, title, strip);
+                            "MachineGroundingTool: '&'/'and' variant retry hit on '{Variant}' (original: '{OriginalTitle}').",
+                            variant, title);
+                        break;
                     }
-                    else
+                }
+
+                if (lookup is null)
+                {
+                    var normalizedTokens = MachineTitleLookup.NormalizeTitle(title)
+                        .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                    for (var strip = 1; strip <= 1 && lookup is null; strip++)
                     {
-                        lookup = null; // treat empty OpdbIds as a miss so the loop continues
+                        var remaining = normalizedTokens.Length - strip;
+                        if (remaining < 2)
+                            break;
+
+                        var retryKey = string.Join(" ", normalizedTokens, strip, remaining);
+                        lookup = await _titleLookups.GetByTitleAsync(retryKey, cancellationToken).ConfigureAwait(false);
+                        if (lookup is not null && lookup.OpdbIds.Count > 0)
+                        {
+                            _logger.LogDebug(
+                                "MachineGroundingTool: prefix-strip retry hit on '{RetryKey}' (original: '{OriginalTitle}', strips={Strip}).",
+                                retryKey, title, strip);
+                        }
+                        else
+                        {
+                            lookup = null; // treat empty OpdbIds as a miss so the loop continues
+                        }
                     }
                 }
             }
@@ -247,36 +271,56 @@ public sealed class MachineGroundingTool
 
             if (lookupHit)
             {
-                // Score every collision-row entry against tokens extracted from
-                // the input title. MatchTokens (e.g. ["jjp", "jersey", "jack"])
+                // Phase 1: score every collision-row entry against tokens extracted
+                // from the input title. MatchTokens (e.g. ["jjp", "jersey", "jack"])
                 // are used when available so expanded display names ("Jersey Jack
-                // Pirates") resolve correctly. Null fallback uses the raw
-                // manufacturer key as a single-element list — backward-compatible
-                // for rows written before MatchTokens was introduced.
-                // The highest-scoring entry is resolved first; ties (all-zero or
-                // equal scores) preserve insertion order — backward-compatible with
-                // the pre-scoring first-hit behaviour for bare franchise titles.
+                // Pirates") resolve correctly. Null fallback uses the raw manufacturer
+                // key as a single-element list — backward-compatible for rows written
+                // before MatchTokens was introduced.
                 var titleTokens = TokenizeForOverlap(title);
-                var bestIdx = 0;
-                var bestScore = ScoreEntryAgainstTokens(
-                    lookup!.MatchTokens?[0] ?? [lookup.Manufacturers[0]],
-                    titleTokens);
-
-                for (var i = 1; i < lookup.OpdbIds.Count; i++)
+                var scores = new int[lookup!.OpdbIds.Count];
+                for (var i = 0; i < lookup.OpdbIds.Count; i++)
                 {
-                    var score = ScoreEntryAgainstTokens(
+                    scores[i] = ScoreEntryAgainstTokens(
                         lookup.MatchTokens?[i] ?? [lookup.Manufacturers[i]],
                         titleTokens);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestIdx = i;
-                    }
+                }
+
+                // Phase 2: collect all entries tied at the best score. An unambiguous
+                // winner (exactly one entry at the top score) takes the fast path
+                // (single point-read). A tie — including the all-zero bare-franchise
+                // case (e.g. bare "Godzilla") — goes to the content-intrinsic
+                // tie-break instead of insertion order (ADR-0049 Phase 1).
+                var bestScore = 0;
+                foreach (var s in scores)
+                    if (s > bestScore) bestScore = s;
+
+                var tiedIndices = new List<int>(lookup.OpdbIds.Count);
+                for (var i = 0; i < scores.Length; i++)
+                    if (scores[i] == bestScore) tiedIndices.Add(i);
+
+                int bestIdx;
+                Machine? tieBreakWinner = null;
+
+                if (tiedIndices.Count == 1)
+                {
+                    // No tie — unambiguous winner on token-overlap signal.
+                    bestIdx = tiedIndices[0];
+                }
+                else
+                {
+                    // Multiple entries share the best score. Resolve by fetching the
+                    // tied candidates and ranking them on content-intrinsic signals
+                    // (completeness then recency) instead of write order (ADR-0049).
+                    (bestIdx, tieBreakWinner) = await ResolveContentIntrinsicTieBreakAsync(
+                        lookup, tiedIndices, cancellationToken).ConfigureAwait(false);
                 }
 
                 var opdbId = lookup.OpdbIds[bestIdx];
                 var manufacturer = lookup.Manufacturers[bestIdx];
-                match = await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
+                // Reuse the Machine fetched during tie-break resolution to avoid a
+                // redundant point-read on the bare-franchise-collision path.
+                match = tieBreakWinner ?? await _machines.GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken).ConfigureAwait(false);
                 if (match is not null)
                 {
                     resolvedLookup = lookup;
@@ -320,6 +364,28 @@ public sealed class MachineGroundingTool
                 }
             }
 
+            // Forgiving-resolution fallback (ADR-0048). Every exact path missed —
+            // point-read, '&'/'and' variant, prefix-strip, and the cross-partition
+            // STRINGEQUALS query. Before giving up, substring-search machine titles
+            // by the query's most distinctive tokens so nickname / partial-title
+            // queries ("Wonka" → "Willy Wonka & The Chocolate Factory") resolve
+            // instead of silently refusing. When the fuzzy match is ambiguous across
+            // OPDB groups, the losing groups are surfaced as TitleCollisions so the
+            // agent asks a clarifying question rather than guessing.
+            IReadOnlyList<MachineSiblingGroundingDto> fuzzyTitleCollisions = [];
+            if (match is null)
+            {
+                var fuzzy = await ResolveFuzzyByTitleAsync(title, cancellationToken).ConfigureAwait(false);
+                if (fuzzy is not null)
+                {
+                    match = fuzzy.Value.Primary;
+                    fuzzyTitleCollisions = fuzzy.Value.Collisions;
+                    _logger.LogDebug(
+                        "MachineGroundingTool: forgiving fuzzy fallback resolved '{Title}' to '{ResolvedTitle}' ({OpdbId}); {CollisionCount} cross-group collision(s).",
+                        title, match.Title, match.Id, fuzzyTitleCollisions.Count);
+                }
+            }
+
             if (match is null)
             {
                 _logger.LogDebug("MachineGroundingTool: no match for title '{Title}'.", title);
@@ -344,6 +410,11 @@ public sealed class MachineGroundingTool
             var titleCollisions = await ResolveTitleCollisionsAsync(
                 match, resolvedLookup, resolvedLookupBestIdx, cancellationToken).ConfigureAwait(false);
 
+            // The lookup-row path (resolvedLookup) and the fuzzy fallback are
+            // mutually exclusive — fuzzy only runs when no lookup row resolved the
+            // match — so at most one of these is non-empty.
+            var effectiveCollisions = titleCollisions.Count > 0 ? titleCollisions : fuzzyTitleCollisions;
+
             return new MachineGroundingDto(
                 OpdbId: match.Id,
                 Title: match.Title,
@@ -355,7 +426,7 @@ public sealed class MachineGroundingTool
                 Editions: editions,
                 GroupId: match.GroupId,
                 Siblings: siblings,
-                TitleCollisions: titleCollisions);
+                TitleCollisions: effectiveCollisions);
         }
         finally
         {
@@ -501,6 +572,242 @@ public sealed class MachineGroundingTool
 
         return collisions;
     }
+
+    // ── Content-intrinsic tie-break (ADR-0049 Phase 1) ──────────────────────
+
+    // Breaks a token-overlap score tie among multiple lookup-row entries by
+    // fetching the tied candidates' Machine records and ranking them on:
+    //   (a) MachineCompleteness.Score — higher wins (richer record data),
+    //   (b) Year descending — newer wins (newer titles tend to be richer),
+    //   (c) tiedIndices insertion order — deterministic final fallback.
+    //
+    // Returns (bestIdx, winner) where winner is the Machine already fetched
+    // so the caller avoids a redundant point-read on the most common path.
+    //
+    // Degrade gracefully: a null-fetch (stale lookup row) or Cosmos exception
+    // on a candidate is skipped. If ALL candidates fail, returns the first
+    // tied index and null — the caller will do a fresh fetch which may also
+    // fail and trigger the cross-partition fallback (invariant #17: never
+    // silent, never fabricate).
+    private async Task<(int BestIdx, Machine? Winner)> ResolveContentIntrinsicTieBreakAsync(
+        MachineTitleLookup lookup,
+        List<int> tiedIndices,
+        CancellationToken cancellationToken)
+    {
+        // (idx, machine, completeness) for every successfully-fetched candidate.
+        var candidates = new List<(int Idx, Machine Machine, int Completeness)>(tiedIndices.Count);
+
+        foreach (var idx in tiedIndices)
+        {
+            var opdbId = lookup.OpdbIds[idx];
+            var manufacturer = lookup.Manufacturers[idx];
+            try
+            {
+                var machine = await _machines
+                    .GetByOpdbIdAsync(opdbId, manufacturer, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (machine is null)
+                {
+                    // Stale lookup-row entry — skip. Warning (not Debug) to match the
+                    // invariant #17 audit level in ResolveTitleCollisionsAsync for the
+                    // identical stale-candidate scenario: a missing row is a degraded
+                    // path operators should see on dashboards. Self-heals on next OPDB sync.
+                    _logger.LogWarning(
+                        "MachineGroundingTool: tie-break candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping. Stale lookup will self-correct on the next OPDB sync.",
+                        opdbId, manufacturer);
+                    continue;
+                }
+
+                candidates.Add((idx, machine, MachineCompleteness.Score(machine)));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Cosmos failure on a single candidate — degrade, log, meter, skip.
+                // The exception filter re-raises OperationCanceledException (never
+                // swallow cancellation) while catching transient faults — the same
+                // best-effort pattern as ResolveSiblingsAsync / ResolveFuzzyByTitleAsync.
+                // Metered so the degraded tie-break path is visible on dashboards
+                // (invariant #17), not just the aggregate all-failed case.
+                _logger.LogWarning(ex,
+                    "MachineGroundingTool: tie-break fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
+                    opdbId, manufacturer);
+
+                PinballWizardTelemetry.AiToolErrors.Add(
+                    1,
+                    new KeyValuePair<string, object?>("tool", ToolTagValue),
+                    new KeyValuePair<string, object?>("reason", "tie_break_unavailable"));
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            // All candidate fetches degraded — fall back to insertion order
+            // (first tied index). The caller will attempt its own fetch of
+            // that entry and may fall through to the cross-partition path.
+            _logger.LogWarning(
+                "MachineGroundingTool: all {Count} tie-break candidate fetches failed. Falling back to insertion-order first tied index ({FallbackIdx}).",
+                tiedIndices.Count, tiedIndices[0]);
+            return (tiedIndices[0], null);
+        }
+
+        // Rank by: completeness score desc → year desc → original index asc.
+        // The original index ascending provides a deterministic insertion-order
+        // final fallback when completeness and year are also equal.
+        var winner = candidates
+            .OrderByDescending(c => c.Completeness)
+            .ThenByDescending(c => c.Machine.Year ?? 0)
+            .ThenBy(c => c.Idx)
+            .First();
+
+        _logger.LogDebug(
+            "MachineGroundingTool: content-intrinsic tie-break chose opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' (completeness={Completeness}, year={Year}) from {Count} tied candidate(s).",
+            lookup.OpdbIds[winner.Idx], lookup.Manufacturers[winner.Idx],
+            winner.Completeness, winner.Machine.Year, candidates.Count);
+
+        return (winner.Idx, winner.Machine);
+    }
+
+    // ── Forgiving resolution (ADR-0048) ─────────────────────────────────────
+
+    // Number of distinct OPDB groups surfaced as fuzzy TitleCollisions before
+    // the agent's clarifying question would get unwieldy. Matches the 2–3
+    // candidate ceiling the agent [Description] instructs for disambiguation.
+    private const int MaxFuzzyCollisionGroups = 3;
+
+    // How many of the query's tokens (longest first) to probe the substring
+    // index with. Two bounds the cross-partition CONTAINS scans on this rare
+    // miss-only path while still covering multi-word nicknames.
+    private const int MaxFuzzyProbeTokens = 2;
+
+    // Generates "&" ↔ "and" spelling variants of a title. OPDB stores the
+    // literal ampersand; users type "and" (and vice versa). Word-boundary /
+    // surrounding-whitespace anchored so we never rewrite a literal "&" inside
+    // a token or the substring "and" inside a word (e.g. "Sandman"). Returns
+    // only variants that actually differ from the input.
+    internal static IEnumerable<string> GenerateConnectiveVariants(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            yield break;
+
+        var andToAmp = System.Text.RegularExpressions.Regex.Replace(
+            title, @"\s+and\s+", " & ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!string.Equals(andToAmp, title, StringComparison.Ordinal))
+            yield return andToAmp;
+
+        var ampToAnd = System.Text.RegularExpressions.Regex.Replace(
+            title, @"\s*&\s*", " and ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!string.Equals(ampToAnd, title, StringComparison.Ordinal))
+            yield return ampToAnd;
+    }
+
+    // Result of a forgiving substring resolution: the primary machine to
+    // ground on, plus zero or more DIFFERENT-group candidates to surface as
+    // TitleCollisions so the agent can ask a clarifying question.
+    private readonly record struct FuzzyMatch(
+        Machine Primary,
+        IReadOnlyList<MachineSiblingGroundingDto> Collisions);
+
+    // Substring-search machine titles by the query's most distinctive tokens,
+    // score the candidates by token overlap, and pick a primary. Same-group
+    // candidates collapse to the primary (siblings handle editions); distinct
+    // groups become TitleCollisions. Returns null when nothing overlaps.
+    // Best-effort: a repository failure logs at Warning and returns null so the
+    // caller falls through to its honest "no match" refusal (invariant #17).
+    private async Task<FuzzyMatch?> ResolveFuzzyByTitleAsync(
+        string title,
+        CancellationToken cancellationToken)
+    {
+        var queryTokens = TokenizeForOverlap(title);
+        if (queryTokens.Count == 0)
+            return null;
+
+        // Probe the longest tokens first — length is a cheap selectivity proxy
+        // (a distinctive "wonka"/"houdini" scans far fewer rows than a common
+        // short token). Distinct + capped to bound the unindexed CONTAINS scans.
+        var probeTokens = queryTokens
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(t => t.Length)
+            .Take(MaxFuzzyProbeTokens)
+            .ToList();
+
+        var candidatesById = new Dictionary<string, Machine>(StringComparer.Ordinal);
+        try
+        {
+            foreach (var probe in probeTokens)
+            {
+                var results = _machines.SearchByTitleContainsAsync(probe, cancellationToken);
+                if (results is null)
+                    continue;
+
+                await foreach (var candidate in results.WithCancellation(cancellationToken).ConfigureAwait(false))
+                {
+                    candidatesById[candidate.Id] = candidate;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "MachineGroundingTool: forgiving substring search for '{Title}' failed. Returning no fuzzy match.",
+                title);
+            PinballWizardTelemetry.AiToolErrors.Add(
+                1,
+                new KeyValuePair<string, object?>("tool", ToolTagValue),
+                new KeyValuePair<string, object?>("reason", "fuzzy_search_unavailable"));
+            return null;
+        }
+
+        if (candidatesById.Count == 0)
+            return null;
+
+        // Score each candidate by how many query tokens appear in its title.
+        // Stable OrderByDescending preserves discovery order for equal scores,
+        // so a same-score tie is resolved deterministically (first found wins).
+        var scored = candidatesById.Values
+            .Select(m => (Machine: m, Score: ScoreEntryAgainstTokens(TokenizeForOverlap(m.Title), queryTokens)))
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ToList();
+
+        if (scored.Count == 0)
+            return null;
+
+        var primary = scored[0].Machine;
+        var primaryGroup = GroupKeyOf(primary);
+
+        // Surface only DIFFERENT-group candidates as collisions — same-group
+        // editions are already reachable via the Siblings path, so duplicating
+        // them here would make the agent's clarifying question redundant.
+        var collisions = new List<MachineSiblingGroundingDto>();
+        var seenGroups = new HashSet<string>(StringComparer.Ordinal) { primaryGroup };
+        foreach (var (machine, _) in scored.Skip(1))
+        {
+            var group = GroupKeyOf(machine);
+            if (!seenGroups.Add(group))
+                continue;
+
+            collisions.Add(new MachineSiblingGroundingDto(
+                OpdbId: machine.Id,
+                Title: machine.Title,
+                Year: machine.Year,
+                Editions: ProjectEditions(machine.Editions),
+                EditionLabel: machine.EditionLabel,
+                EditionTokens: machine.EditionTokens.AsReadOnly()));
+
+            if (collisions.Count >= MaxFuzzyCollisionGroups)
+                break;
+        }
+
+        return new FuzzyMatch(primary, collisions);
+    }
+
+    // Identity for "same franchise release" grouping: the OPDB GroupId when
+    // present, else the machine's own Id (a solo title is its own group).
+    private static string GroupKeyOf(Machine machine) =>
+        string.IsNullOrEmpty(machine.GroupId) ? machine.Id : machine.GroupId;
 
     private static List<MachineEditionGroundingDto> ProjectEditions(
         IEnumerable<MachineEdition> editions) =>

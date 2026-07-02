@@ -3,8 +3,9 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.Logging
-@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminJobDetail — /admin/jobs/{JobName} detail view for a single Container Apps Job.
  *
@@ -34,6 +35,7 @@
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 @inject ILogger<AdminJobDetail> Logger
+@inject AdminActionGuard Guard
 
 <PageTitle>@(_detail?.DisplayName ?? JobName) — Jobs — PinballWizard Admin</PageTitle>
 
@@ -107,9 +109,9 @@
                 <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                Color="Color.Primary"
                                Size="Size.Large"
-                               aria-label="Run job now"
+                               aria-label="@(_isAdmin ? "Run job now" : "Sign in as an admin to run jobs")"
                                data-testid="run-now-button"
-                               Disabled="@_startBusy"
+                               Disabled="@(_startBusy || !_isAdmin)"
                                OnClick="@OpenRunNowConfirm" />
             </MudStack>
         </MudPaper>
@@ -206,6 +208,9 @@
 @code {
     [Parameter] public string JobName { get; set; } = "";
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
     private IJobAdminService? JobService => ServiceProvider.GetService<IJobAdminService>();
 
     private JobDetail? _detail;
@@ -216,6 +221,7 @@
     private bool _loadingMore;
     private bool _showRunNowConfirm;
     private bool _startBusy;
+    private bool _isAdmin;
     private int _historyCount = 10;
     private TimeZoneInfo? _timeZoneInfo;
     private string _tzLabel = "UTC";
@@ -226,6 +232,14 @@
         new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
         new BreadcrumbItem(_detail?.DisplayName ?? JobName, href: null, disabled: true),
     ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Public-read showcase: anonymous visitors see job detail read-only; the
+        // Run-now action is gated on real admin auth (button Disabled + server-side
+        // re-check in ConfirmStartJobAsync).
+        _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+    }
 
     // OnAfterRenderAsync so the loading shell reaches the client immediately
     // rather than blocking the prerender pass on the ARM round-trip.
@@ -259,11 +273,11 @@
         {
             _serviceUnavailable = true;
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
             return;
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _detail = await JobService
@@ -293,7 +307,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -301,7 +315,7 @@
     {
         _loadingMore = true;
         _historyCount += 10;
-        StateHasChanged();
+        SafeStateHasChanged();
         try
         {
             await LoadAsync(_historyCount);
@@ -309,7 +323,7 @@
         finally
         {
             _loadingMore = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -318,6 +332,13 @@
     private async Task ConfirmStartJobAsync()
     {
         if (_detail is null || JobService is null || _startBusy) return;
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            // Defense in depth: never trust the disabled button — re-check before ARM.
+            Snackbar.Add("Admin sign-in required to run jobs.", Severity.Warning);
+            _showRunNowConfirm = false;
+            return;
+        }
         _startBusy = true;
         _showRunNowConfirm = false;
         try

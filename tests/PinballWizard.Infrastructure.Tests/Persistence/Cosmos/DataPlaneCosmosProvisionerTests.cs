@@ -76,6 +76,28 @@ public sealed class DataPlaneCosmosProvisionerTests
         Assert.True(DataPlaneCosmosProvisioner.IndexingPolicyMatches(actual, expected));
     }
 
+    [Fact]
+    public void TtlMatches_TrueWhenBothNull()
+    {
+        Assert.True(DataPlaneCosmosProvisioner.TtlMatches(null, null));
+    }
+
+    [Fact]
+    public void TtlMatches_TrueWhenActualIsEmulatorSentinel_AndExpectedIsNull()
+    {
+        // Aspire vnext-preview emulator reports DefaultTimeToLive = -2 when no TTL is configured.
+        // Treat -2 as equivalent to null so --ensure-cosmos-containers is idempotent locally.
+        Assert.True(DataPlaneCosmosProvisioner.TtlMatches(-2, null));
+    }
+
+    [Fact]
+    public void TtlMatches_FalseWhenActualDiffersFromExpected()
+    {
+        Assert.False(DataPlaneCosmosProvisioner.TtlMatches(3600, null));
+        Assert.False(DataPlaneCosmosProvisioner.TtlMatches(null, 3600));
+        Assert.False(DataPlaneCosmosProvisioner.TtlMatches(-2, 3600));
+    }
+
     private static CosmosContainerOptions ScrapedDocsOpts() => new()
     {
         Name = "scraped_documents_raw",

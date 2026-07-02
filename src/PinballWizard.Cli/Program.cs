@@ -12,7 +12,9 @@ using PinballWizard.Application;
 using PinballWizard.Application.Ai;
 using PinballWizard.Application.Ai.Evaluation;
 using PinballWizard.Application.Catalog;
+using PinballWizard.Application.Findability;
 using PinballWizard.Application.Landing;
+using PinballWizard.Application.SeedData;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
@@ -107,6 +109,21 @@ var rebuildRagIndexOption = new Option<bool>("--rebuild-rag-index")
     Description = "DESTRUCTIVE: drops the RAG index entirely and recreates it empty from the current schema, then exits. Removes ALL indexed chunks — you must re-ingest afterwards (--run-rag-backfill + --sync-metadata-cards). This is the supported way to correct mislabeled chunks (e.g. after the linker re-link): the index is a rebuildable projection of Cosmos, so corrections happen by wipe-and-rebuild, never by per-chunk deletion. Requires AiSearch:Endpoint to be configured."
 };
 
+var gcRagIndexOption = new Option<bool>("--gc-rag-index")
+{
+    Description = "Reconcile the RAG index against the scraped_documents catalog: delete index chunks whose (document_id, machine_id) pair has no backing fan-out row. This is the delete-propagation mechanism the Cosmos Change Feed (latest-version mode) cannot provide — after a --relink-all prunes stale fan-out rows, their index chunks linger as orphans until this pass removes them. Unlike --rebuild-rag-index (full wipe + re-ingest), this is a surgical, idempotent, read-mostly reconcile. Combine with --dry-run to preview orphan pairs without deleting. Requires Cosmos and Azure AI Search to be configured."
+};
+
+var ensureMachineIndexOption = new Option<bool>("--ensure-machine-index")
+{
+    Description = "Non-destructive: ensures the AI Search machine findability index schema and synonym map exist (creates them if absent; no-op if already present). Safe to call at startup or in CI without data loss. Use --rebuild-machine-index to wipe and re-project. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
+};
+
+var rebuildMachineIndexOption = new Option<bool>("--rebuild-machine-index")
+{
+    Description = "DESTRUCTIVE: drops and recreates the AI Search machine findability index (ADR-0049 phase 2a), then projects all Machine records from Cosmos into it. Wipes ALL existing indexed documents — run only when a schema-breaking change requires a full rebuild. For non-destructive schema + synonym-map updates use --ensure-machine-index. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
+};
+
 var askOption = new Option<string?>("--ask")
 {
     Description = "Phase 3 thin Wizard slice: invokes the IAiRouter end-to-end against the deployed Foundry project (per ADR-0014) for a single question and prints the WizardAnswer JSON. Requires AiFoundry:ProjectEndpoint to be configured. Wave 2 PR 4 ships the skeleton (Wizard agent only); PR 5 adds sub-agents + getMachineByTitle grounding; PR 6 adds confidence-driven refusal."
@@ -115,6 +132,18 @@ var askOption = new Option<string?>("--ask")
 var evalOption = new Option<bool>("--eval")
 {
     Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
+};
+
+var probeRetrievalOption = new Option<string?>("--probe-retrieval")
+{
+    Description = "Classify a candidate eval JSONL by first-stage retrieval rank (Phase 4.5 H5b prep). " +
+                  "Reads each EvalQuestion from <input.jsonl>, calls IRetrievalRankProbe.ProbeAsync, " +
+                  "and writes <input>.classified.jsonl with 'slice' and 'first_stage_rank' populated. " +
+                  "Prints a one-line slice-distribution summary (easy=N reranker-sensitive=N retrieval-miss=N). " +
+                  "IMPORTANT: this verb measures FIRST-STAGE rank (before Cohere cross-encoder reranking). " +
+                  "Requires Rag:CrossEncoder:Enabled=false — the command exits with code 2 and a clear " +
+                  "error message if the reranker is on, because the measurement would be corrupted. " +
+                  "Requires AiSearch:Endpoint to be configured. Exit code 2 + remediation hint when not configured."
 };
 
 var runRagBackfillOption = new Option<bool>("--run-rag-backfill")
@@ -218,8 +247,12 @@ rootCommand.Options.Add(ensureAzureFoundryOption);
 rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
+rootCommand.Options.Add(gcRagIndexOption);
+rootCommand.Options.Add(ensureMachineIndexOption);
+rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
+rootCommand.Options.Add(probeRetrievalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
@@ -251,8 +284,12 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureAiSearch = parseResult.GetValue(ensureAiSearchOption);
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
+    var gcRagIndex = parseResult.GetValue(gcRagIndexOption);
+    var ensureMachineIndex = parseResult.GetValue(ensureMachineIndexOption);
+    var rebuildMachineIndex = parseResult.GetValue(rebuildMachineIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
+    var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
@@ -407,6 +444,35 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Console.Error.WriteLine($"  {result.Failed} documents failed — check logs for details.");
             Environment.ExitCode = 1;
         }
+        return;
+    }
+
+    // Handle --gc-rag-index (orphan garbage collection — delete propagation
+    // the Cosmos Change Feed can't provide). Resolves IRagIndexGarbageCollector;
+    // registered only when AI Search is wired, and its scraped_documents
+    // dependency additionally needs Cosmos (the early orchestrator gate above
+    // already ensures Cosmos). Honors the shared --dry-run flag to preview.
+    if (gcRagIndex)
+    {
+        var gc = host.Services.GetService<IRagIndexGarbageCollector>();
+        if (gc is null)
+        {
+            Console.Error.WriteLine(
+                "--gc-rag-index requires Cosmos and Azure AI Search to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos) and AiSearch:Endpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(dryRun
+            ? "RAG index GC (dry-run) starting — reporting orphan pairs without deleting..."
+            : "RAG index GC starting — deleting orphan chunks with no backing scraped_documents row...");
+        var gcResult = await gc.RunAsync(dryRun, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine(
+            $"RAG index GC {(gcResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
+            $"{gcResult.PairsScanned} pairs scanned, {gcResult.OrphanPairs} orphan pairs, " +
+            $"{gcResult.ChunksDeleted} chunks deleted.");
         return;
     }
 
@@ -765,6 +831,88 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Shared synonym file load for --ensure-machine-index and --rebuild-machine-index.
+    // SeedPathResolver.Resolve walks up from AppContext.BaseDirectory so the path
+    // works from both repo-root CLI invocations and bin-output dotnet run launches.
+    // The guard in MachineSearchIndexBootstrapper.EnsureSynonymMapAsync logs a
+    // Warning and skips the upsert when the text is empty (rather than sending an
+    // empty body that AI Search would reject with 400).
+    static async Task<string> LoadSynonymsTextAsync(CancellationToken ct)
+    {
+        const string relativePath = "data/seeds/machine_synonyms.v1.txt";
+        var resolved = SeedPathResolver.Resolve(relativePath);
+        return File.Exists(resolved)
+            ? await File.ReadAllTextAsync(resolved, ct).ConfigureAwait(false)
+            : string.Empty;
+    }
+
+    // Handle --ensure-machine-index (ADR-0049 phase 2a machine findability index
+    // non-destructive ensure). Resolves MachineSearchIndexBootstrapper from DI;
+    // registered when AddAzureAiSearchIntegration is wired (AiSearch:Endpoint set).
+    // Does NOT project documents — use --rebuild-machine-index for a full rebuild.
+    if (ensureMachineIndex)
+    {
+        var machineBootstrapper = host.Services.GetService<MachineSearchIndexBootstrapper>();
+
+        if (machineBootstrapper is null)
+        {
+            Console.Error.WriteLine(
+                "--ensure-machine-index requires Azure AI Search to be configured. " +
+                $"Set {AiSearchOptions.EndpointKey}.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var synonymsText = await LoadSynonymsTextAsync(cancellationToken);
+        Console.WriteLine("Ensuring machine search index schema and synonym map (non-destructive)...");
+        var ensureResult = await machineBootstrapper.EnsureCreatedAsync(synonymsText, cancellationToken);
+        Console.WriteLine(ensureResult.Created
+            ? $"Machine search index created: {ensureResult.IndexName}"
+            : $"Machine search index already present: {ensureResult.IndexName}");
+        return;
+    }
+
+    // Handle --rebuild-machine-index (ADR-0049 phase 2a machine findability index
+    // DESTRUCTIVE rebuild). Resolves MachineSearchIndexBootstrapper and
+    // IMachineSearchIndexProjector from DI; both are only registered when
+    // AddAzureAiSearchIntegration was wired (i.e., AiSearch:Endpoint is set).
+    // Also requires Cosmos (IMachineRepository). Wipes ALL indexed documents;
+    // use --ensure-machine-index for non-destructive schema/synonym updates.
+    if (rebuildMachineIndex)
+    {
+        var machineBootstrapper = host.Services.GetService<MachineSearchIndexBootstrapper>();
+        var machineProjector    = host.Services.GetService<IMachineSearchIndexProjector>();
+
+        if (machineBootstrapper is null || machineProjector is null)
+        {
+            Console.Error.WriteLine(
+                "--rebuild-machine-index requires Azure AI Search and Cosmos to be configured. " +
+                $"Set {AiSearchOptions.EndpointKey} and Cosmos:AccountEndpoint (or ConnectionStrings:cosmos).");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var synonymsText = await LoadSynonymsTextAsync(cancellationToken);
+        Console.WriteLine("DESTRUCTIVE: dropping and recreating machine search index schema and synonym map...");
+        var machineBootstrapResult = await machineBootstrapper.RecreateAsync(synonymsText, cancellationToken);
+        Console.WriteLine(machineBootstrapResult.Created
+            ? $"Machine search index created: {machineBootstrapResult.IndexName}"
+            : $"Machine search index rebuilt: {machineBootstrapResult.IndexName}");
+
+        Console.WriteLine("Projecting all machines from Cosmos into the machine search index...");
+        var projectionResult = await machineProjector.ProjectAllAsync(cancellationToken);
+        Console.WriteLine(
+            $"Machine index rebuild complete: projected={projectionResult.Projected} " +
+            $"failed={projectionResult.Failed} duration={projectionResult.Duration.TotalSeconds:N1}s");
+
+        if (projectionResult.Failed > 0)
+        {
+            Console.Error.WriteLine($"  {projectionResult.Failed} documents failed — check logs for details.");
+            Environment.ExitCode = 1;
+        }
+        return;
+    }
+
     // Handle --eval (Phase 3 evaluation harness; ADR-0016). Resolves
     // IEvaluationHarness from DI; the harness is only registered when
     // AddAzureFoundryIntegration was wired (i.e., AiFoundry:ProjectEndpoint
@@ -798,6 +946,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                           $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
                           $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
                           $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
+        return;
+    }
+
+    // Handle --probe-retrieval (Phase 4.5 first-stage rank classifier; H5b
+    // eval prep). Resolves IRetrievalRankProbe from DI; the probe is only
+    // registered when AddAzureAiSearchIntegration was wired (i.e.,
+    // AiSearch:Endpoint is set). Guards against reranker-on runs (would
+    // corrupt the first-stage measurement) via CrossEncoderOptions.Enabled.
+    // Mirrors the --eval exit-code-2 remediation pattern.
+    if (!string.IsNullOrWhiteSpace(probeRetrieval))
+    {
+        await ProbeRetrievalCommand.RunAsync(probeRetrieval, host.Services, cancellationToken);
         return;
     }
 

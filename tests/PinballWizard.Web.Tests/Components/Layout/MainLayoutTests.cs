@@ -104,4 +104,42 @@ public sealed class MainLayoutTests : AsyncBunitContext
 
         cut.FindComponent<BrandFooter>();
     }
+
+    [Fact]
+    public void MainLayout_PublicNavRail_EnablesHoverPeekPersistAndNoBreakpoint()
+    {
+        var cut = Render<MainLayout>(parameters => parameters
+            .Add(p => p.Body, builder =>
+            {
+                builder.OpenElement(0, "span");
+                builder.AddContent(1, "Body content");
+                builder.CloseElement();
+            }));
+
+        var rail = cut.FindComponent<AppNavRail>();
+        Assert.True(rail.Instance.HoverToPeek);
+        Assert.True(rail.Instance.Persist);
+        Assert.Equal(Breakpoint.None, rail.Instance.Breakpoint);
+    }
+
+    [Fact]
+    public void MainLayout_RendersPublicNavRail_WithAllReadDestinations()
+    {
+        // AppNavRail is hosted as an interactive island inside the static MainLayout.
+        // bUnit doesn't respect @rendermode — it renders all components in one
+        // synchronous pass, so the rail's anchor elements are always available for
+        // assertion regardless of the InteractiveServer island boundary.
+        var cut = Render<MainLayout>(parameters => parameters
+            .Add(p => p.Body, builder =>
+            {
+                builder.OpenElement(0, "span");
+                builder.AddContent(1, "Body content");
+                builder.CloseElement();
+            }));
+
+        Assert.NotNull(cut.Find("a[href='/about']"));
+        Assert.NotNull(cut.Find("a[href='/documents']"));
+        Assert.NotNull(cut.Find("a[href='/admin']"));
+        Assert.NotNull(cut.Find(".app-nav-rail"));
+    }
 }

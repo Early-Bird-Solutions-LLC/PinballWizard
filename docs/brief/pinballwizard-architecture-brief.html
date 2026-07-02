@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PinballWizard — Architecture &amp; Capability Brief · EarlyBird Solutions</title>
+<!-- Design system shipped beside this file (fonts load from Google via @import in the CSS). -->
+<link rel="stylesheet" href="earlybird-design.css" />
+<style>
+  /* Per-document print tuning only (tokens/components stay in the linked CSS):
+     the design system's 820px responsive breakpoint otherwise fires at print
+     page width and collapses the 3-up stat grid to one column; and the colophon
+     is kept from splitting across a page boundary. */
+  @media print {
+    .eb-cards.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .eb-colophon { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="eb-sheet">
+
+  <!-- ===== Masthead ===== -->
+  <header class="eb-masthead">
+    <p class="eb-kicker"><span class="dot"></span> Reference application · Capability brief</p>
+    <h1>Ask the Wizard anything about a pinball machine — every answer cites the manufacturer's own manual, <span class="accent">or refuses rather than guess</span>.</h1>
+    <p class="lede">PinballWizard is a live, customer-facing reference application. The pinball domain is the vehicle; the engineering is the point — proof that EarlyBird can architect, ship, and operate an enterprise-class AI system on Azure, end to end.</p>
+    <div class="eb-meta">
+      <div class="item"><span class="label">Prepared by</span><span class="value">EarlyBird Solutions</span></div>
+      <div class="item"><span class="label">For</span><span class="value">Prospective clients</span></div>
+      <div class="item"><span class="label">Live at</span><span class="value">pinwiz.ai</span></div>
+      <div class="item"><span class="label">Date</span><span class="value">July 1, 2026</span></div>
+    </div>
+  </header>
+
+  <div class="eb-body">
+
+    <!-- ===== What it is ===== -->
+    <section class="eb-section">
+      <p class="eb-eyebrow">The system</p>
+      <h2>A polite scraper feeding a source-citing RAG Wizard</h2>
+      <p class="eb-intro">Ten polite scrapers crawl eight pinball manufacturers plus the canonical OPDB catalog and persist to Cosmos with full provenance. An event-driven pipeline turns those documents into a searchable corpus, and a tool-using agent answers questions over it — grounded, cited, and honest about its limits.</p>
+      <div class="eb-principle">
+        <div class="mark">&ldquo;</div>
+        <p class="text">Every answer ends with a clickable citation back to the original manufacturer source — <em>or it refuses, rather than fabricate</em>.</p>
+      </div>
+    </section>
+
+    <!-- ===== The differentiator: provenance ===== -->
+    <section class="eb-section">
+      <p class="eb-eyebrow">The differentiator</p>
+      <h2>Provenance, not plausibility</h2>
+      <p class="eb-intro">The failure mode of a generic RAG demo is a confident, plausible-sounding answer with no way to check it. PinballWizard is built the other way around: the citation chain is the product.</p>
+      <div class="eb-compare">
+        <div class="eb-cmp">
+          <div class="was"><div class="tag">Generic RAG</div><p>Retrieves some text, generates a fluent answer, and can hallucinate a source — or invent one — with nothing to verify against.</p></div>
+          <div class="now"><div class="tag">PinballWizard</div><p>Every claim resolves through a deterministic <code>document_id</code> back to the exact page and file it came from; below a confidence threshold it refuses instead of guessing.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== What it demonstrates ===== -->
+    <section class="eb-section">
+      <p class="eb-eyebrow">Capabilities</p>
+      <h2>What a prospect can verify in the repository</h2>
+      <p class="eb-intro">Each of these is inspectable in code, tests, and Architecture Decision Records — not just described in a slide.</p>
+      <ul class="eb-checklist">
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>Cloud-native architecture</b> — Azure Container Apps, Cosmos DB, AI Search, and Azure OpenAI / Microsoft Foundry, orchestrated locally with .NET Aspire mirroring production.</span></li>
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>AI engineering</b> — event-driven RAG (Change Feed → chunk → embed → index), a four-agent Foundry surface with function tools, two-stage re-ranking, and confidence-threshold refusal.</span></li>
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>Real-time streaming UI</b> — a Blazor front end streaming answers over Server-Sent Events with source-citation strips and honest refusal panels.</span></li>
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>Engineering discipline</b> — Clean Architecture enforced by fitness tests, 47 ADRs for non-obvious decisions, a behavior-asserting test suite, and a zero-warning build.</span></li>
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>Infrastructure-as-code &amp; operability</b> — two-tier Bicep, OpenTelemetry throughout, health checks, metric alerts, and operational runbooks.</span></li>
+        <li><span class="ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.5 2.5L10 3"/></svg></span><span><b>Polite integration</b> — <code>robots.txt</code> honored unconditionally, machine-consumer metadata preferred over DOM scraping, identifying user-agents, throttled by construction.</span></li>
+      </ul>
+    </section>
+
+    <!-- ===== How it's built ===== -->
+    <section class="eb-section">
+      <p class="eb-eyebrow">The delivery model</p>
+      <h2>AI-authored, human-governed</h2>
+      <p class="eb-intro">Nearly all of the code is written by AI — and held to an enterprise bar by a process where a human owns intent, judgment, and the merge button. Nothing merges on faith.</p>
+      <div class="eb-pillars">
+        <div class="eb-pillar ai">
+          <span class="p-tag">AI · authors</span>
+          <h3>Speed and consistency</h3>
+          <p>Spec &rarr; plan &rarr; test-first implementation, applied consistently across the codebase.</p>
+          <ul><li>Behavior-asserting tests as documentation of intent</li><li>Standards and invariants bound every change</li></ul>
+        </div>
+        <div class="eb-pillar code">
+          <span class="p-tag">Human · governs</span>
+          <h3>Judgment and accountability</h3>
+          <p>Every change passes the same gates regardless of who typed it.</p>
+          <ul><li>First-party review, CI gates, independent CodeQL</li><li>Whole-branch senior review, then a human merge</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== The numbers ===== -->
+    <section class="eb-section">
+      <p class="eb-eyebrow">At a glance</p>
+      <h2>The envelope</h2>
+      <div class="eb-cards cols-3">
+        <div class="eb-infocard data"><div class="lt">Sources</div><h4>8 + OPDB</h4><p>Manufacturers scraped politely, plus the canonical machine catalog.</p></div>
+        <div class="eb-infocard ai"><div class="lt">Agents</div><h4>Four</h4><p>Wizard, Valuation, Rules, and Repair — a tool-using surface, not single-pass RAG.</p></div>
+        <div class="eb-infocard code"><div class="lt">Decisions</div><h4>47 ADRs</h4><p>Every non-obvious choice recorded, traceable, and append-only.</p></div>
+        <div class="eb-infocard go"><div class="lt">Cost cap</div><h4>$300–$400/mo</h4><p>Steady-state budget with cost-per-feature attribution — cheap to evaluate.</p></div>
+        <div class="eb-infocard data"><div class="lt">Tests</div><h4>2,900+</h4><p>Behavior-asserting, across seven per-layer projects; zero-warning build.</p></div>
+        <div class="eb-infocard go"><div class="lt">Status</div><h4>Live</h4><p>Running on Azure at <b>pinwiz.ai</b>; the repository is the showcase artifact.</p></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ===== Colophon ===== -->
+  <footer class="eb-colophon">
+    <span class="brand">EarlyBird<span>·</span>Solutions</span>
+    <span class="fmeta">Capability brief · PinballWizard reference application · 2026-07-01</span>
+  </footer>
+
+</div>
+</body>
+</html>

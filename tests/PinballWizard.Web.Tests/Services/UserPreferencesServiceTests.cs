@@ -39,7 +39,7 @@ public sealed class UserPreferencesServiceTests
     }
 
     [Fact]
-    public async Task InitializeAsync_DefaultsToModernLcd_WhenLocalStorageReturnsEmpty()
+    public async Task InitializeAsync_ReadsModernLcdTheme_WhenStorageReturnsModernLcd()
     {
         using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;

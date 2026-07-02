@@ -1,0 +1,21 @@
+# PinballWizard machine synonym seed — ADR-0049 phase 2a.
+# Format: Azure AI Search synonym map (https://learn.microsoft.com/en-us/azure/search/search-synonyms).
+#
+# VERIFICATION: every pair below is drawn from the OPDB live catalog and confirmed
+# against actual machine titles (StreamAllAsync + manual verification 2026-07-01).
+# Equivalency mappings (A, B => A, B): bidirectional. Explicit mappings (A => B):
+# expand the abbreviation at query time to its full title.
+#
+# Add new pairs here and re-run --rebuild-machine-index to deploy.
+# Do NOT add speculative or unverified nicknames — every entry must match
+# an actual title in the live catalog.
+#
+mm => medieval madness
+afm => attack from mars
+taf => the addams family
+tmnt => teenage mutant ninja turtles
+tz => twilight zone
+mb => monster bash
+wonka => willy wonka & the chocolate factory
+lotb => iron maiden legacy of the beast
+d&d, dnd => dungeons & dragons

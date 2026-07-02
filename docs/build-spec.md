@@ -21,6 +21,33 @@ Each phase has the same structure:
 
 Detailed PR-by-PR history for shipped phases lives in memory under `session_handoff_*.md`. This doc is the durable artifact; memory is the running journal.
 
+The diagram below shows the phase progression at a glance; the master table that follows contains the full names and statuses.
+
+```mermaid
+flowchart LR
+    P0[Phase 0<br/>Foundation]
+    P1[Phase 1<br/>Content Ingestion]
+    P2[Phase 2<br/>Runtime Validation]
+    P3["Phase 3<br/>AI + Integration"]
+    P4[Phase 4<br/>Event-driven RAG]
+    P45[Phase 4.5<br/>Corpus Expansion]
+    P5[Phase 5<br/>Blazor Frontend]
+    P6([Phase 6<br/>Launch Readiness])
+    P7[Phase 7+<br/>Post-launch]
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P45
+    P4 --> P5
+    P45 --> P6
+    P5 --> P6
+    P6 --> P7
+
+    classDef done fill:#d9ead3,stroke:#4a8a3a,color:#000
+    classDef future fill:#ececec,stroke:#8a8a8a,color:#000
+
+    class P0,P1,P2,P3,P4,P45,P5,P6 done
+    class P7 future
+```
+
 ## Master phase timeline
 
 | Phase | Name | Status |
@@ -30,9 +57,9 @@ Detailed PR-by-PR history for shipped phases lives in memory under `session_hand
 | 2 | Runtime validation — `ingestion_sources` seeded, OPDB sync against deployed Cosmos, Phase 2 Bicep gating decisions, operational metrics groundwork | ✅ Complete |
 | 3 | AI & Integration layer — Microsoft Foundry orchestration, sub-agents, threshold-driven refusal, evaluation harness, Pinball Map external API client (IFPA + PinballPrices deferred); reference architecture for client engagements | ✅ Complete |
 | 4 | Event-driven RAG — full architecture against a curated 7-machine subset; hybrid chunking; AI Search index with semantic ranker + page-anchor citations; tool-call-trace citation extraction; citation-required guardrail | ✅ Complete |
-| 4.5 | Manuals corpus expansion — same architecture, all Phase 1 manuals; long-tail PDF edge cases + OCR decision | ⏳ Not started |
-| 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ⏳ Not started |
-| 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ⏳ Not started |
+| 4.5 | Manuals corpus expansion — full Phase 1 manuals corpus; Azure Document Intelligence OCR fallback; metadata-card synthesis; non-Stern bulletin discovery; Cohere reranker deployed (off by documented decision, ADR-0024) | ✅ Complete |
+| 5 | Blazor + MudBlazor frontend — public Wizard chat, faceted browse, game detail, Entra External ID, admin control plane, traffic-attribution middleware | ✅ Complete |
+| 6 | Operability + launch readiness — SLOs / SLIs, dashboards, alert routing, runbooks, DR drill, threat model review, accessibility audit, performance audit, content moderation policy | ✅ Complete (H-chain + code; 3 launch gates pending Phase 7 sign-off) |
 | 7+ | Post-launch features — Strategy Tracker, OCR score capture, Dream Game generator, Trade Matchmaker, tournament push | ⏳ Deferred to post-launch decision |
 
 ---
@@ -135,8 +162,8 @@ None — this is the foundation phase.
 
 - [ADR 0007](adr/0007-ingestion-sources-as-cosmos-data.md) — IngestionSources as runtime Cosmos data, not Bicep config (locked the per-host politeness-overrides pattern)
 - [ADR 0011](adr/0011-scraper-machine-reconciliation.md) — Scraper-to-Machine reconciliation strategy (two-pass match: slug fast path + title-normalize bootstrap)
-- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
-- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
+- [`feedback_polite_scraping.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_polite_scraping.md) (memory) — politeness > performance, visibly enforced, never traded for parallelism within a single origin
+- [`feedback_machine_consumer_metadata_first.md`](../../C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/feedback_machine_consumer_metadata_first.md) (memory) — exhaust OG / JSON-LD / sitemap before writing DOM selectors
 - **Cross-origin parallelism allowed; within-origin parallelism explicitly disabled.** Politeness is per-origin, so different manufacturers can run concurrently without violating the principle.
 - **OPDB is the canonical key authority.** `OpdbId` becomes the canonical key on `Machine`; manufacturer slugs become alternate keys.
 
@@ -926,7 +953,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 
 ## Phase 4.5 — Manuals corpus expansion
 
-**Status:** 🔵 In progress — W0–W4 implemented (H5 eval ran, `citation_precision=0.478`, ADR-0024 Cohere Rerank gate triggered and `CohereRerankReranker` wired, PR #292); the post-rerank **H5b confirmation eval is outstanding** (needs live Azure access) — Phase 4.5 closes only once H5b shows `citation_precision ≥ 0.50` per ADR-0024.
+**Status:** ✅ Complete — W0–W4 shipped; H5b ran the Cohere reranker live (2026-06-30) and the ADR-0024 gate (`citation_precision ≥ 0.50`) is comfortably met (0.96 on `wizard.v2.jsonl`, reranker off **or** on). The H5b A/B was near-ceiling on precision and could not isolate the reranker, so a **reranker-sensitive hard eval + retrieval-rank probe** (`data/eval/wizard.hard.v1.jsonl`, PR #587) was built to measure it directly. Outcome: **no measurable citation-recall benefit** from the reranker on the current corpus — first-stage retrieval already lands the right machine in the agent's top-5 for 94% of hard questions, and on the rare reranker-sensitive rows recall is dominated by sub-agent routing, not retrieval order. `Rag:CrossEncoder:Enabled` stays **false** in production by documented decision (ADR-0024 § Phase 4.5 H5b-hard outcome); the deployment is provisioned and verified working end-to-end (keyless `Cohere-rerank-v4.0-pro`) for a future evidence-driven re-enable.
 **Sequence position:** Sequenced after Phase 4 closes (architecture proven on the curated subset). Independent of Phase 5 (Blazor frontend) — they ran concurrently. Unblocks the public Wizard's full-corpus retrieval surface.
 **Demonstrable artifact:** Every Phase 1 manual successfully ingested into the AI Search index with bounded long-tail failure rate (target: ≥95% of `document_type=manual` records produce ≥1 chunk; remainder logged with `ExtractionStatus` reason and triaged). H5 eval baseline demonstrates a meaningful lift from the all-refused H4 floor.
 
@@ -939,7 +966,7 @@ The eval ground-truth (`data/eval/wizard.v1.jsonl`) was written in Phase 3 again
 | W2 — Corpus expansion | ✅ Complete (PR #268) | Remove `CuratedSubsetMachineIds` filter; full-corpus backfill |
 | W3a — Metadata-card synthesis | ✅ Complete (PR #269) | Machine records → `metadata_card` chunks → AI Search |
 | W3b — Bulletin discovery pass | ✅ Complete (PR #289) | Extend bulletin ingestion to non-Stern manufacturers |
-| W4 — Phase exit + H5 eval | 🔵 Implemented; H5b confirmation pending | H5 eval ran (`citation_precision=0.478`, PR #291) → ADR-0024 gate triggered → `CohereRerankReranker` wired (PR #292). Outstanding: run post-rerank **H5b** eval to confirm `citation_precision ≥ 0.50` and formally close the phase (needs live Azure). |
+| W4 — Phase exit + H5 eval | ✅ Complete | H5 eval ran (`citation_precision=0.478`, PR #291) → ADR-0024 gate triggered → `CohereRerankReranker` wired (PR #292). H5b ran the reranker live (2026-06-30): gate met (0.96, off or on). H5b-hard (PR #587 + `wizard.hard.v1.jsonl`) measured the reranker on a reranker-sensitive set — no measurable recall benefit; `Rag:CrossEncoder:Enabled=false` by documented decision (ADR-0024). Phase closed. |
 
 ### W0: Eval set realignment (PR #265, complete)
 
@@ -973,8 +1000,8 @@ Learnings:
 
 ## Phase 5 — Blazor + MudBlazor frontend
 
-**Status:** ✅ Complete — all PRs merged; ACA deployment pending live image (Phase 6 scope)
-**Sequence position:** Ran concurrently with Phase 4.5. Depends on Phase 4 for real Wizard answers on the chat surface. Admin and landing surfaces completed against stubs; Wizard chat surface integrated against the live API. Unblocks Phase 6 (operability work requires the real app deployed to ACA).
+**Status:** ✅ Complete — all PRs merged; ACA deployed with real app image (live behind Cloudflare since 2026-06-12); admin control plane fully complete (PRs #477–#484 merged 2026-06-22–2026-06-24)
+**Sequence position:** Ran concurrently with Phase 4.5. Depends on Phase 4 for real Wizard answers on the chat surface. Admin and landing surfaces completed against stubs in Phase 5; full admin control plane shipped in post-Phase-5 PRs (see § Post-Phase-5 admin capabilities below). Wizard chat surface integrated against the live API. Unblocks Phase 6 (operability work requires the real app deployed to ACA).
 **Demonstrable artifact:** A fully functional Blazor Web App (`PinballWizard.Web`) with SSE streaming Wizard chat, MudBlazor chrome, per-category refusal recovery with plural community-resource cards, pinball-themed error pages, a self-hosted font stack, three BETA sibling themes, and a settings page backed by `localStorage`. A companion `PinballWizard.Api` exposes `/api/wizard/ask:stream` (SSE) and `/api/wizard/landing`. 308 bUnit + Playwright Web tests green.
 
 ### What shipped
@@ -1023,9 +1050,13 @@ The self-hosted font decision (Wave F) was operationally correct but added 2–3
 
 Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist analogous to the Phase 4 exit criteria table was not written at phase close. The work was done; the spec section was not updated. This is the gap the current PR corrects.
 
+#### Post-Phase-5 admin capabilities (PRs merged 2026-06-22–2026-06-24)
+
+Six admin capabilities shipped after Phase 5 closed, completing the admin control plane scope item that Phase 5 listed but did not fully deliver: AdminDashboard with live source metrics (showcase public-read / gated-write split, PR #477); AdminSources with per-source enable/disable toggle and drilldown detail page (PRs #478, #479); corpus/RAG stats panel at `/admin/corpus` backed by live AI Search (PR #480); per-source scrape-run history timeline writing to a `scrape_runs` Cosmos container with per-source aggregation (PRs #481, #483); and AdminManufacturers catalog page at `/admin/manufacturers` (PR #484). All six capabilities are public-read with gated mutations, follow ADR-0034 static-SSR-by-default render-mode doctrine, and pass the full bUnit + contract + axe-route test suite. The full admin control plane is now complete as of 2026-06-24.
+
 ### Phase 5 follow-ups inherited by Phase 6
 
-- Live `pinwiz.ai` ACA deployment with the real Web image (currently placeholder) — Phase 6 H-chain scope.
+- Live `pinwiz.ai` ACA deployment with the real Web image — deployed (Phase 6 H-chain; real app live behind Cloudflare as of 2026-06-12).
 - Lighthouse CI score validation against the live deployed app (CI gate passes on the test build; live-surface validation deferred).
 - axe-core accessibility validation on the live deployed app (CI gate passes; live-surface validation deferred).
 - `NullTokenUsageReader` real impl — pending agent-framework#2688; cost tile on the ops dashboard shows $0 until resolved.
@@ -1034,7 +1065,7 @@ Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist anal
 
 ## Phase 6 — Operability + launch readiness
 
-**Status:** 🟡 H-chain complete; 3 gates deferred to Phase 7 — Lighthouse on live surface, axe-core on live surface, ≥ 30-day cost burn (all blocked on deploying the real app image)
+**Status:** 🟡 H-chain complete; 3 gates deferred to Phase 7 — Lighthouse on live surface, axe-core on live surface, ≥ 30-day cost burn (real app now deployed and live since 2026-06-12; gates unblocked but formal pass/sign-off not yet captured)
 **Sequence position:** Final phase before public launch. Depends on Phase 5 (the live system to operate). Phase 5's Wave 3 CI gates (axe-core accessibility, Lighthouse performance) are already in place and count as complete here — Phase 6 executes the launch-gate checklist against the live deployed system, it does not re-implement the gates.
 **Demonstrable artifact:** A prospect who lands on `pinwiz.ai` and on the GitHub repo can verify within five minutes: (1) the site is up and answering questions; (2) Application Insights dashboards are live and populated with real signal; (3) all 11 items in `guardrails.md` § Pre-public-launch gate are checked; (4) every runbook listed in `docs/runbooks/` exists, was walked through at least once, and is dated. The repo's `README.md` and `docs/vision.md` reflect the live state without aspirational language.
 

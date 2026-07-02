@@ -29,8 +29,11 @@ public sealed class CliOptionsContractTests
         "--ensure-ai-search",
         "--ensure-rag-index",
         "--rebuild-rag-index",
+        "--ensure-machine-index",
+        "--rebuild-machine-index",
         "--ask",
         "--eval",
+        "--probe-retrieval",
         "--run-rag-backfill",
         "--sync-metadata-cards",
         "--link-documents",
@@ -124,8 +127,11 @@ public sealed class CliOptionsContractTests
         root.Options.Add(new Option<bool>("--ensure-ai-search"));
         root.Options.Add(new Option<bool>("--ensure-rag-index"));
         root.Options.Add(new Option<bool>("--rebuild-rag-index"));
+        root.Options.Add(new Option<bool>("--ensure-machine-index"));
+        root.Options.Add(new Option<bool>("--rebuild-machine-index"));
         root.Options.Add(new Option<string?>("--ask"));
         root.Options.Add(new Option<bool>("--eval"));
+        root.Options.Add(new Option<string?>("--probe-retrieval"));
         root.Options.Add(new Option<bool>("--run-rag-backfill"));
         root.Options.Add(new Option<bool>("--sync-metadata-cards"));
         root.Options.Add(new Option<bool>("--link-documents"));

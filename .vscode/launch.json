@@ -34,6 +34,17 @@
       "type": "aspire",
       "request": "launch",
       "program": "${workspaceFolder}/src/PinballWizard.AppHost/PinballWizard.AppHost.csproj",
+      // Open the Aspire dashboard auto-logged-in once the process starts.
+      // VS Code's serverReadyAction captures the base URL from Kestrel's
+      // "Now listening on:" startup line and appends the login path + token
+      // via uriFormat. Pattern matches both http and https. Token (pinwiz-dev)
+      // mirrors DOTNET_DASHBOARD_FRONTEND_BROWSERTOKEN in launchSettings.json.
+      // Same mechanism used by Neighborli's AppHost (proven approach).
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Now listening on:\\s+(https?://\\S+)",
+        "uriFormat": "%s/login?t=pinwiz-dev"
+      },
       // Belt-and-suspenders for the passphrase: `aspire run` already applies the
       // launchSettings https profile (Development), but set it explicitly so a
       // future launchSettings change can't silently drop user-secrets loading.

@@ -2,7 +2,7 @@
 **Trigger:** `pinwiz-alert-daily-cost` fires (daily `pinwiz.ai.cost_usd_cents` sum > ~1 500 cents / day, i.e., ($300/mo ÷ 30) × 1.5)
 **Alert rule:** `pinwiz-alert-daily-cost`
 **Time budget:** First 60 minutes
-**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill deferred to Phase 7 when real app image is running)
+**Last walked:** 2026-05-15 (pre-launch procedure review — steps verified against deployed dev infrastructure; live-incident drill against the deployed pinwiz.ai app remains an open Phase 7 task)
 
 ---
 
@@ -82,7 +82,7 @@ az containerapp update --name pinwiz-web --resource-group pinwiz-shared-dev-<suf
 If `pinwiz.rag.*` metrics are the cost source (embedding runs are expensive at scale):
 
 ```powershell
-az containerapp scale --name pinwiz-rag-worker `
+az containerapp update --name pinwiz-rag-worker `
   --resource-group pinwiz-shared-dev-<suffix> `
   --min-replicas 0 --max-replicas 0
 ```
@@ -91,7 +91,7 @@ az containerapp scale --name pinwiz-rag-worker `
 Only if cost is escalating out of the $15/day range with no sign of stopping:
 
 ```powershell
-az containerapp scale --name pinwiz-web `
+az containerapp update --name pinwiz-web `
   --resource-group pinwiz-shared-dev-<suffix> `
   --min-replicas 0 --max-replicas 0
 ```

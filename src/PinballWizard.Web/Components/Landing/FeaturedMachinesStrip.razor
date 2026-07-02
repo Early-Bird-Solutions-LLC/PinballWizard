@@ -2,8 +2,9 @@
  *
  * Renders a "Try asking about…" section between the seed question grid and
  * the architecture strip. Displays 4–6 machine cards. Clicking a card
- * navigates to /wizard?q=tell+me+about+{slug} so the Wizard auto-fills
- * the question input.
+ * navigates to /wizard?q=tell+me+about+{Title} so the Wizard auto-fills
+ * the question input with the catalog-resolvable machine title (never the
+ * internal slug — see OnMachineClick).
  *
  * Null machines = show skeletons. Empty list = renders nothing (hidden via
  * display:none) so there's no jarring blank section if FeaturedMachines
@@ -30,7 +31,7 @@
                 <div class="featured-strip__cell"
                      data-testid="@($"featured-machine-{slug}")">
                     <MudCard Class="featured-card mud-clickable" Elevation="1"
-                             @onclick="@(() => OnMachineClick(slug))"
+                             @onclick="@(() => OnMachineClick(machine))"
                              role="button"
                              tabindex="0"
                              aria-label="@($"Ask about {machine.Title}")">
@@ -78,8 +79,14 @@ else if (Machines is null)
     [Parameter]
     public IReadOnlyList<FeaturedMachine>? Machines { get; set; }
 
-    private void OnMachineClick(string slug)
+    // Build the Wizard query from the human-readable Title, never the slug.
+    // The slug (machine.MachineId, e.g. "jjp-wonka") is an internal identifier
+    // that getMachineByTitle cannot resolve — sending it produced the
+    // "I could not find a direct match for 'JJP Wonka'" refusal. The Title is
+    // the curated, catalog-resolvable text the prospect expects to ask about.
+    private void OnMachineClick(FeaturedMachine machine)
     {
-        Nav.NavigateTo($"/wizard?q=tell+me+about+{Uri.EscapeDataString(slug)}");
+        var query = $"tell me about {machine.Title}";
+        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(query)}");
     }
 }

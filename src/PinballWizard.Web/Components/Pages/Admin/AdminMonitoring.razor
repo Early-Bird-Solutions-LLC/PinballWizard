@@ -1,24 +1,34 @@
 @page "/admin/monitoring"
 @layout AdminLayout
-@attribute [StreamRendering]
+@rendermode InteractiveServer
+@inherits AdminPageBase
+@using System.Globalization
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Monitoring
 @using PinballWizard.Web.Components.Shared
 @attribute [AllowAnonymous]
+@inject IMonitoringStatsReader MonitoringReader
+@inject ILogger<AdminMonitoring> Logger
 
 @* AdminMonitoring — /admin/monitoring SLO health and pipeline signals.
  *
- * Static SSR + [StreamRendering] (ADR-0034 — read-only display, no
- * interactive need). All tiles show representative placeholder values;
- * the OTel binds are identified but the live aggregation endpoint is
- * not yet wired. pinwiz.ai.cost_usd_cents legitimately reads $0.00
- * until upstream #2688 lands — tile renders "Eval-only" to convey that.
- * Page is auth-gated by Cloudflare Zero Trust; [AllowAnonymous] at the
- * Blazor level matches the other static admin pages (Dashboard, Sources).
+ * Interactive (@rendermode InteractiveServer, ADR-0034 amendment). Tiles are
+ * driven by IMonitoringStatsReader.GetSnapshotAsync via OnAfterRenderAsync so
+ * the loading shell reaches the client immediately (no prerender double-load).
+ * Each metric is nullable; null renders a visible "unavailable" marker —
+ * never 0 or silent blank (Invariant #17). Cost tile remains Eval-only until
+ * token-usage instrumentation lands in #2688. D4 "now" values for latency,
+ * 5xx, and dead-letters are live from the snapshot (Task 7).
+ *
+ * Window buttons (1h / 24h / 7d) re-query the reader on click, setting
+ * _window and re-running LoadAsync.
  *
  * ADR-0008  — MudBlazor strict for chrome; var(--pw-*) for panels
  * ADR-0009  — Entra External ID (Zero Trust gate)
  * ADR-0026  § 1 — routing inventory (/admin/monitoring)
- * ADR-0034  — render-mode doctrine (static SSR default)
+ * ADR-0034  — render-mode doctrine (interactive admin pages)
+ * Invariant #17 — degrade visibly; never fabricate metric values
  *@
 
 <PageTitle>Monitoring — PinballWizard Admin</PageTitle>
@@ -28,32 +38,74 @@
                    Subtitle="Live SLO health and pipeline signals from the OpenTelemetry stream."
                    Breadcrumbs="@_breadcrumbs" />
 
-    @* Toolbar — refresh stamp + time-period segmented control *@
+    @* Toolbar — refresh stamp + time-period window buttons *@
     <div class="mon-toolbar" data-testid="monitoring-toolbar">
         <span class="mon-toolbar__stamp" data-testid="monitoring-stamp">
-            Refreshed @_renderedAt UTC
+            @if (_snapshot is not null)
+            {
+                @:Refreshed @_snapshot.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC
+            }
+            else if (_loading)
+            {
+                @:Loading…
+            }
+            else
+            {
+                @:— UTC
+            }
         </span>
-        <div class="mon-toolbar__periods" aria-label="Time period (decorative — static SSR)">
-            <span class="mon-period" data-testid="mon-period-1h">1h</span>
-            <span class="mon-period mon-period--active" aria-current="true"
-                  data-testid="mon-period-active">24h</span>
-            <span class="mon-period" data-testid="mon-period-7d">7d</span>
+        <div class="mon-toolbar__periods" aria-label="Time period">
+            <button type="button"
+                    class="mon-period @(_window == MonitoringWindow.OneHour ? "mon-period--active" : "")"
+                    aria-current="@(_window == MonitoringWindow.OneHour ? "true" : null)"
+                    data-testid="mon-period-1h"
+                    @onclick="() => SetWindowAsync(MonitoringWindow.OneHour)">1h</button>
+            <button type="button"
+                    class="mon-period @(_window == MonitoringWindow.TwentyFourHours ? "mon-period--active" : "")"
+                    aria-current="@(_window == MonitoringWindow.TwentyFourHours ? "true" : null)"
+                    data-testid="mon-period-24h"
+                    @onclick="() => SetWindowAsync(MonitoringWindow.TwentyFourHours)">24h</button>
+            <button type="button"
+                    class="mon-period @(_window == MonitoringWindow.SevenDays ? "mon-period--active" : "")"
+                    aria-current="@(_window == MonitoringWindow.SevenDays ? "true" : null)"
+                    data-testid="mon-period-7d"
+                    @onclick="() => SetWindowAsync(MonitoringWindow.SevenDays)">7d</button>
         </div>
     </div>
+
+    @if (_loadFailed)
+    {
+        <AppErrorAlert data-testid="mon-load-failed">
+            Monitoring snapshot could not be loaded. Check Application Insights connectivity
+            and that the reader is correctly registered.
+        </AppErrorAlert>
+    }
 
     @* D1 — Health ribbon *@
     <div class="mon-ribbon" data-testid="mon-d1-ribbon">
 
         @* Tile 1: Answer latency p95 *@
-        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-latency">
+        <div class="mon-tile @TileClass(LatencyP95State())" data-testid="mon-tile-latency">
             <div class="mon-tile__header">
                 <span class="mon-tile__label">Answer latency p95</span>
-                <span class="mon-state mon-state--ok" data-testid="mon-tile-latency-state">
-                    <span class="mon-state__dot" aria-hidden="true"></span>OK
+                <span class="mon-state @StateClass(LatencyP95State())" data-testid="mon-tile-latency-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>@LatencyP95State()
                 </span>
             </div>
             <span class="mon-tile__value" data-testid="mon-tile-latency-value">
-                2,310 <span class="mon-tile__unit">ms</span>
+                @if (_loading)
+                {
+                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                }
+                else if (_snapshot?.LatencyP95Ms is { } latency)
+                {
+                    @latency.ToString("N0", CultureInfo.InvariantCulture)
+                    <span class="mon-tile__unit">ms</span>
+                }
+                else
+                {
+                    <span class="mon-tile__value--unavailable">unavailable</span>
+                }
             </span>
             <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
                  aria-hidden="true" focusable="false">
@@ -69,15 +121,27 @@
         </div>
 
         @* Tile 2: 5xx error rate *@
-        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-5xx">
+        <div class="mon-tile @TileClass(FivexxState())" data-testid="mon-tile-5xx">
             <div class="mon-tile__header">
                 <span class="mon-tile__label">5xx error rate</span>
-                <span class="mon-state mon-state--ok" data-testid="mon-tile-5xx-state">
-                    <span class="mon-state__dot" aria-hidden="true"></span>OK
+                <span class="mon-state @StateClass(FivexxState())" data-testid="mon-tile-5xx-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>@FivexxState()
                 </span>
             </div>
             <span class="mon-tile__value" data-testid="mon-tile-5xx-value">
-                0.4<span class="mon-tile__unit">%</span>
+                @if (_loading)
+                {
+                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                }
+                else if (_snapshot?.FivexxRatePercent is { } rate)
+                {
+                    @rate.ToString("G", CultureInfo.InvariantCulture)
+                    <span class="mon-tile__unit">%</span>
+                }
+                else
+                {
+                    <span class="mon-tile__value--unavailable">unavailable</span>
+                }
             </span>
             <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
                  aria-hidden="true" focusable="false">
@@ -92,7 +156,7 @@
             </div>
         </div>
 
-        @* Tile 3: Daily AI cost — eval-only until #2688 *@
+        @* Tile 3: Daily AI cost — eval-only until #2688 (unchanged by design) *@
         <div class="mon-tile mon-tile--eval" data-testid="mon-tile-cost">
             <div class="mon-tile__header">
                 <span class="mon-tile__label">Daily AI cost</span>
@@ -114,15 +178,27 @@
         </div>
 
         @* Tile 4: Refusal rate *@
-        <div class="mon-tile mon-tile--ok" data-testid="mon-tile-refusal">
+        <div class="mon-tile @TileClass(RefusalState())" data-testid="mon-tile-refusal">
             <div class="mon-tile__header">
                 <span class="mon-tile__label">Refusal rate</span>
-                <span class="mon-state mon-state--ok" data-testid="mon-tile-refusal-state">
-                    <span class="mon-state__dot" aria-hidden="true"></span>In band
+                <span class="mon-state @StateClass(RefusalState())" data-testid="mon-tile-refusal-state">
+                    <span class="mon-state__dot" aria-hidden="true"></span>@RefusalState()
                 </span>
             </div>
             <span class="mon-tile__value" data-testid="mon-tile-refusal-value">
-                6.2<span class="mon-tile__unit">%</span>
+                @if (_loading)
+                {
+                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                }
+                else if (_snapshot?.RefusalRatePercent is { } refRate)
+                {
+                    @refRate.ToString("G", CultureInfo.InvariantCulture)
+                    <span class="mon-tile__unit">%</span>
+                }
+                else
+                {
+                    <span class="mon-tile__value--unavailable">unavailable</span>
+                }
             </span>
             <svg class="mon-sparkline" viewBox="0 0 120 40" preserveAspectRatio="none"
                  aria-hidden="true" focusable="false">
@@ -133,7 +209,16 @@
             </svg>
             <div class="mon-tile__footer">
                 <span class="mon-tile__instrument">pinwiz.ai.refusals</span>
-                <span class="mon-tile__threshold">103 / 1,652</span>
+                <span class="mon-tile__threshold">
+                    @if (_snapshot?.RefusalCount is { } rc && _snapshot?.AnsweredCount is { } ac)
+                    {
+                        @($"{rc:N0} / {ac:N0}")
+                    }
+                    else
+                    {
+                        @("— / —")
+                    }
+                </span>
             </div>
         </div>
 
@@ -147,7 +232,9 @@
             <div class="mon-panel" data-testid="mon-d2-refusals">
                 <div class="mon-panel__header">
                     <span class="mon-panel__title">Refusals by category</span>
-                    <span class="mon-panel__meta">last 24h · 103 total</span>
+                    <span class="mon-panel__meta">
+                        last @WindowLabel() · @(_snapshot?.RefusalCount?.ToString("N0", CultureInfo.InvariantCulture) ?? "—") total
+                    </span>
                 </div>
                 <p class="mon-panel__sub">
                     Refusal is the safety invariant — category mix is the diagnostic.
@@ -156,9 +243,10 @@
                     <div class="mon-bar-row" data-testid="mon-refusal-outofscope">
                         <span class="mon-bar__label">OutOfScope</span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:100%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--primary"
+                                 style="width:@RefusalBarWidth("OutOfScope")"></div>
                         </div>
-                        <span class="mon-bar__count">47</span>
+                        <span class="mon-bar__count">@RefusalBarCount("OutOfScope")</span>
                     </div>
                     <div class="mon-bar-row" data-testid="mon-refusal-insufficientgrounding">
                         <span class="mon-bar__label">
@@ -166,9 +254,10 @@
                             <span class="mon-bar__tag">retrieval</span>
                         </span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--retrieval" style="width:72%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--retrieval"
+                                 style="width:@RefusalBarWidth("InsufficientGrounding")"></div>
                         </div>
-                        <span class="mon-bar__count">34</span>
+                        <span class="mon-bar__count">@RefusalBarCount("InsufficientGrounding")</span>
                     </div>
                     <div class="mon-bar-row" data-testid="mon-refusal-nocitation">
                         <span class="mon-bar__label">
@@ -176,30 +265,34 @@
                             <span class="mon-bar__tag">retrieval</span>
                         </span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--retrieval" style="width:26%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--retrieval"
+                                 style="width:@RefusalBarWidth("NoCitation")"></div>
                         </div>
-                        <span class="mon-bar__count">12</span>
+                        <span class="mon-bar__count">@RefusalBarCount("NoCitation")</span>
                     </div>
                     <div class="mon-bar-row" data-testid="mon-refusal-lowmodelconfidence">
                         <span class="mon-bar__label">LowModelConfidence</span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:19%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--primary"
+                                 style="width:@RefusalBarWidth("LowModelConfidence")"></div>
                         </div>
-                        <span class="mon-bar__count">9</span>
+                        <span class="mon-bar__count">@RefusalBarCount("LowModelConfidence")</span>
                     </div>
                     <div class="mon-bar-row" data-testid="mon-refusal-harmfulcontent">
                         <span class="mon-bar__label">HarmfulContent</span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:2%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--primary"
+                                 style="width:@RefusalBarWidth("HarmfulContent")"></div>
                         </div>
-                        <span class="mon-bar__count">1</span>
+                        <span class="mon-bar__count">@RefusalBarCount("HarmfulContent")</span>
                     </div>
                     <div class="mon-bar-row" data-testid="mon-refusal-costceilinghit">
                         <span class="mon-bar__label">CostCeilingHit</span>
                         <div class="mon-bar__track">
-                            <div class="mon-bar__fill mon-bar__fill--primary" style="width:0%"></div>
+                            <div class="mon-bar__fill mon-bar__fill--primary"
+                                 style="width:@RefusalBarWidth("CostCeilingHit")"></div>
                         </div>
-                        <span class="mon-bar__count">0</span>
+                        <span class="mon-bar__count">@RefusalBarCount("CostCeilingHit")</span>
                     </div>
                 </div>
             </div>
@@ -218,27 +311,34 @@
                             <span class="mon-pipeline__name">Lease lag</span>
                             <span class="mon-pipeline__sub">changefeed_lease_lag</span>
                         </div>
-                        <span class="mon-pipeline__count">0</span>
-                        <span class="mon-pip-state mon-pip-state--ok"
-                              data-testid="mon-pipeline-lease-state">caught up</span>
+                        <span class="mon-pipeline__count @(_snapshot?.LeaseLag is null ? "mon-pipeline__count--unavailable" : "")">
+                            @PipelineCount(_snapshot?.LeaseLag)
+                        </span>
+                        <span class="mon-pip-state @LeaseStateClass()" data-testid="mon-pipeline-lease-state">
+                            @LeaseStateText()
+                        </span>
                     </div>
                     <div class="mon-pipeline__row" data-testid="mon-pipeline-deadletter">
                         <div class="mon-pipeline__info">
                             <span class="mon-pipeline__name">Dead letters (24h)</span>
                             <span class="mon-pipeline__sub">RequestFailed · Cosmos</span>
                         </div>
-                        <span class="mon-pipeline__count">2</span>
-                        <span class="mon-pip-state mon-pip-state--warn"
-                              data-testid="mon-pipeline-deadletter-state">review</span>
+                        <span class="mon-pipeline__count @(_snapshot?.DeadLetters is null ? "mon-pipeline__count--unavailable" : "")">
+                            @PipelineCount(_snapshot?.DeadLetters)
+                        </span>
+                        <span class="mon-pip-state @DeadLetterStateClass()" data-testid="mon-pipeline-deadletter-state">
+                            @DeadLetterStateText()
+                        </span>
                     </div>
                     <div class="mon-pipeline__row" data-testid="mon-pipeline-shortcircuit">
                         <div class="mon-pipeline__info">
                             <span class="mon-pipeline__name">Short-circuits</span>
-                            <span class="mon-pipeline__sub">over_budget: 1 · empty_id: 0</span>
+                            <span class="mon-pipeline__sub">over_budget: @(_snapshot?.ShortCircuits?.ToString() ?? "—") · empty_id: 0</span>
                         </div>
-                        <span class="mon-pipeline__count">1</span>
-                        <span class="mon-pip-state mon-pip-state--faint"
-                              data-testid="mon-pipeline-shortcircuit-state">expected</span>
+                        <span class="mon-pipeline__count @(_snapshot?.ShortCircuits is null ? "mon-pipeline__count--unavailable" : "")">
+                            @PipelineCount(_snapshot?.ShortCircuits)
+                        </span>
+                        <span class="mon-pip-state mon-pip-state--faint" data-testid="mon-pipeline-shortcircuit-state">expected</span>
                     </div>
                     <div class="mon-pipeline__row mon-pipeline__row--canary"
                          data-testid="mon-pipeline-drift">
@@ -246,9 +346,12 @@
                             <span class="mon-pipeline__name mon-pipeline__name--canary">Reconcile drift</span>
                             <span class="mon-pipeline__sub">the durability canary</span>
                         </div>
-                        <span class="mon-pipeline__count mon-pipeline__count--canary">0</span>
-                        <span class="mon-pip-state mon-pip-state--ok"
-                              data-testid="mon-pipeline-drift-state">no loss</span>
+                        <span class="mon-pipeline__count mon-pipeline__count--canary @(_snapshot?.ReconcileDrift is null ? "mon-pipeline__count--unavailable" : "")">
+                            @PipelineCount(_snapshot?.ReconcileDrift)
+                        </span>
+                        <span class="mon-pip-state @DriftStateClass()" data-testid="mon-pipeline-drift-state">
+                            @DriftStateText()
+                        </span>
                     </div>
                 </div>
             </div>
@@ -256,17 +359,24 @@
 
     </MudGrid>
 
-    @* D4 — Active alert rules *@
+    @* D4 — Configured alert rules. Panel title updated (Task 7); "now" values for
+     * latency, 5xx, and dead-letters wired to the live snapshot (Task 7).
+     * State chips (OK / Suppressed) are configuration-derived; authoritative
+     * firing state lives in Azure Monitor.
+     *@
     <div class="mon-panel" data-testid="mon-d4-alerts">
         <div class="mon-panel__header">
-            <span class="mon-panel__title">Active alert rules</span>
+            <span class="mon-panel__title">Configured alert rules</span>
             <span class="mon-panel__meta">infra/modules/shared.bicep</span>
         </div>
+        <p class="mon-panel__sub">
+            State chips are configuration-derived; authoritative firing state lives in Azure Monitor.
+        </p>
         <div class="mon-alerts" data-testid="mon-alert-rows">
             <div class="mon-alert-row" data-testid="mon-alert-latency">
                 <span class="mon-alert__name">pinwiz-alert-latency-p95</span>
                 <span class="mon-alert__condition">
-                    p95 &gt; 5,000 ms · 5 periods — now 2,310 ms
+                    p95 &gt; 5,000 ms · 5 periods — now @AlertLatencyNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-latency-state">OK</span>
@@ -274,7 +384,7 @@
             <div class="mon-alert-row" data-testid="mon-alert-5xx">
                 <span class="mon-alert__name">pinwiz-alert-5xx-rate</span>
                 <span class="mon-alert__condition">
-                    5xx &gt; 5% · 10-min window — now 0.4%
+                    5xx &gt; 5% · 10-min window — now @AlertFivexxNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-5xx-state">OK</span>
@@ -290,7 +400,7 @@
             <div class="mon-alert-row" data-testid="mon-alert-deadletter">
                 <span class="mon-alert__name">pinwiz-alert-dead-letters</span>
                 <span class="mon-alert__condition">
-                    dead-letter rate &gt; 0 · 15-min — now 2 (under burst cap)
+                    dead-letter rate &gt; 0 · 15-min — now @AlertDeadLettersNow()
                 </span>
                 <span class="mon-alert-state mon-alert-state--ok"
                       data-testid="mon-alert-deadletter-state">OK</span>
@@ -309,7 +419,10 @@
 </MudContainer>
 
 @code {
-    private readonly string _renderedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
+    private MonitoringWindow _window = MonitoringWindow.TwentyFourHours;
+    private MonitoringSnapshot? _snapshot;
+    private bool _loading = true;
+    private bool _loadFailed;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
@@ -317,4 +430,164 @@
         new BreadcrumbItem("Monitoring", href: "/admin/monitoring",
             icon: Icons.Material.Filled.Monitor),
     ];
+
+    // Load once on the interactive circuit (OnAfterRenderAsync so the loading shell
+    // reaches the client before the reader round-trip — same prerender-safe pattern as
+    // AdminJobs / AdminSourceDetail).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadFailed = false;
+        _loading = true;
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
+        try
+        {
+            _snapshot = await MonitoringReader.GetSnapshotAsync(_window, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("/admin/monitoring snapshot load timed out after 30 s (window={Window}).", _window);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "/admin/monitoring snapshot load failed (window={Window}).", _window);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+            SafeStateHasChanged();
+        }
+    }
+
+    private async Task SetWindowAsync(MonitoringWindow window)
+    {
+        _window = window;
+        await LoadAsync();
+    }
+
+    // ── Window helpers ────────────────────────────────────────────────────────
+
+    private string WindowLabel() => _window switch
+    {
+        MonitoringWindow.OneHour => "1h",
+        MonitoringWindow.TwentyFourHours => "24h",
+        MonitoringWindow.SevenDays => "7d",
+        _ => "?",
+    };
+
+    // ── D1 tile state helpers ─────────────────────────────────────────────────
+
+    // State label displayed in the state pill for each live tile.
+    private string LatencyP95State() =>
+        _loading ? "—" :
+        _snapshot?.LatencyP95Ms switch
+        {
+            null => "unavailable",
+            <= 5000 => "OK",
+            _ => "ALERT",
+        };
+
+    private string FivexxState() =>
+        _loading ? "—" :
+        _snapshot?.FivexxRatePercent switch
+        {
+            null => "unavailable",
+            <= 5.0 => "OK",
+            _ => "ALERT",
+        };
+
+    private string RefusalState() =>
+        _loading ? "—" :
+        _snapshot?.RefusalRatePercent is not null ? "In band" : "unavailable";
+
+    // CSS class for the state pill (ok = grounded green, warn = primary blue alert, eval = primary blue eval-only).
+    private static string StateClass(string stateText) => stateText switch
+    {
+        "OK" or "In band" => "mon-state--ok",
+        "ALERT" => "mon-state--warn",
+        _ => "mon-state--eval",
+    };
+
+    // CSS class for the tile top border.
+    private static string TileClass(string stateText) => stateText switch
+    {
+        "OK" or "In band" => "mon-tile--ok",
+        "ALERT" => "mon-tile--warn",
+        _ => "mon-tile--eval",
+    };
+
+    // ── D2 Refusal bar helpers ────────────────────────────────────────────────
+
+    private string RefusalBarWidth(string category)
+    {
+        var breakdown = _snapshot?.RefusalBreakdown;
+        if (breakdown is null || breakdown.Count == 0) return "0%";
+        var max = breakdown.Max(r => r.Count);
+        if (max == 0) return "0%";
+        var count = breakdown.FirstOrDefault(r => r.Category == category)?.Count ?? 0;
+        return $"{(int)(count * 100.0 / max)}%";
+    }
+
+    private string RefusalBarCount(string category)
+    {
+        var breakdown = _snapshot?.RefusalBreakdown;
+        if (breakdown is null) return "—";
+        var entry = breakdown.FirstOrDefault(r => r.Category == category);
+        return entry is not null ? entry.Count.ToString() : "0";
+    }
+
+    // ── D3 Ingestion pipeline helpers ─────────────────────────────────────────
+
+    private string PipelineCount(long? value) =>
+        _loading ? "…" : value?.ToString() ?? "—";
+
+    private string LeaseStateText() =>
+        _loading ? "—" :
+        _snapshot?.LeaseLag switch { null => "—", 0 => "caught up", _ => "lagging" };
+
+    private string LeaseStateClass() =>
+        _snapshot?.LeaseLag switch { null => "mon-pip-state--faint", 0 => "mon-pip-state--ok", _ => "mon-pip-state--warn" };
+
+    private string DeadLetterStateText() =>
+        _loading ? "—" :
+        _snapshot?.DeadLetters switch { null => "—", 0 => "ok", _ => "review" };
+
+    private string DeadLetterStateClass() =>
+        _snapshot?.DeadLetters switch { null => "mon-pip-state--faint", 0 => "mon-pip-state--ok", _ => "mon-pip-state--warn" };
+
+    private string DriftStateText() =>
+        _loading ? "—" :
+        _snapshot?.ReconcileDrift switch { null => "—", 0 => "no loss", _ => "drift!" };
+
+    private string DriftStateClass() =>
+        _snapshot?.ReconcileDrift switch { null => "mon-pip-state--faint", 0 => "mon-pip-state--ok", _ => "mon-pip-state--warn" };
+
+    // ── D4 Alert rule "now" helpers ────────────────────────────────────────────
+    // Return the live metric value formatted for the condition text, or "unavailable"
+    // when the backing metric is null (Invariant #17 — never render 0 for missing data).
+
+    private string AlertLatencyNow() =>
+        _loading ? "…" :
+        _snapshot?.LatencyP95Ms is { } lat
+            ? $"{lat.ToString("N0", CultureInfo.InvariantCulture)} ms"
+            : "unavailable";
+
+    private string AlertFivexxNow() =>
+        _loading ? "…" :
+        _snapshot?.FivexxRatePercent is { } rate
+            ? $"{rate.ToString("G", CultureInfo.InvariantCulture)}%"
+            : "unavailable";
+
+    private string AlertDeadLettersNow() =>
+        _loading ? "…" :
+        _snapshot?.DeadLetters is { } dl
+            ? dl.ToString(CultureInfo.InvariantCulture)
+            : "unavailable";
 }

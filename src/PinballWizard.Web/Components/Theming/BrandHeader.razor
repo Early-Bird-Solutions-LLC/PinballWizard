@@ -1,22 +1,12 @@
 @* BrandHeader — chrome content rendered inside MudAppBar by MainLayout.
  *
- * Spec authority: docs/ui/screens/answer-with-citations.md § Screen zones
- * #1 ("Brand mark on the left, 'What we cover' link on the right").
- * The chrome is intentionally minimal — one outbound link that surfaces
- * the coverage-transparency posture immediately.
- *
- * Rationale (per docs/PHASE5-DRIFT-AUDIT.md § 3): a 4-link nav reads as a
- * generic SaaS site. "Home" is internally redundant with the brand mark
- * (brand → /). "Wizard" is the same destination as / once landing renders
- * the Wizard surface (ADR-0026 § 1: / = landing, /wizard = primary surface).
- * "Status" belongs in the footer per ADR-0027 § 1 (no captive-UI status
- * surfaces in the prospect-facing chrome).
+ * The header is now brand-mark-only. Navigation links (What we cover,
+ * Documents, Behind the Scenes) moved to AppNavRail as of the public
+ * left-nav redesign (docs/superpowers/specs/2026-07-01-public-left-nav-design.md).
  *
  * Logo: text-only placeholder. SVG/PNG asset arrives as a follow-up.
- * The read-only admin showcase is surfaced here ('Behind the Scenes' → /admin);
- * mutations there are gated to signed-in admins.
  *
- * ADR-0008 — MudBlazor strict (uses MudLink + MudButton + MudSpacer)
+ * ADR-0008 — MudBlazor strict (uses MudLink + MudSpacer)
  * ADR-0026 § 1 — routing inventory
  * ADR-0027 § 1 — community-resource posture (no captive UI)
  *@
@@ -31,27 +21,3 @@
 </MudLink>
 
 <MudSpacer />
-
-<nav aria-label="Main navigation">
-    <MudButton Href="/about"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="What we cover">
-        What we cover
-    </MudButton>
-    <MudButton Href="/documents"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="Documents">
-        Documents
-    </MudButton>
-    <MudButton Href="/admin"
-               Variant="Variant.Text"
-               Color="Color.Inherit"
-               Class="nav-link"
-               aria-label="Behind the Scenes — admin showcase">
-        Behind the Scenes
-    </MudButton>
-</nav>

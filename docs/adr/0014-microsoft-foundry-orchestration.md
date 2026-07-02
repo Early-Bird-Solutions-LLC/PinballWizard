@@ -12,7 +12,7 @@ Rules, Repair), grounds each against the catalog (OPDB in Phase 3,
 RAG corpus in Phase 4), and returns a cited answer or a refusal.
 
 The original architecture lock in
-[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--projects-PinballWizard/memory/project_phase2_architecture_decisions.md)
+[`project_phase2_architecture_decisions.md`](C:/Users/JimKeeley/.claude/projects/c--earlybird-PinballWizard/memory/project_phase2_architecture_decisions.md)
 (memory, 2026-05-02) named **Semantic Kernel** as the orchestration
 framework. That decision was revisited at the start of Phase 3.
 
@@ -60,6 +60,47 @@ the **Responses Agent pattern** (code-first agent definitions) plus
 function tools for catalog grounding.
 
 ### Architecture
+
+The diagram below traces the orchestration path from question to answer; detailed agent roles and tool assignments follow in the table.
+
+```mermaid
+flowchart TD
+    U([User question]):::ext
+    Router[IAiRouter]:::svc
+    Cache[(Semantic cache)]:::data
+    Wizard["Wizard AIAgent<br/>orchestrator"]:::svc
+    Val[Valuation sub-agent]:::svc
+    Rules[Rules sub-agent]:::svc
+    Repair[Repair sub-agent]:::svc
+    GMT[getMachineByTitle]:::svc
+    SC[searchCorpus]:::svc
+    GMV[getMarketValue]:::svc
+    Cosmos[("Cosmos<br/>IMachineRepository")]:::data
+    AISearch[("AI Search<br/>RAG corpus")]:::data
+    OPDB(OPDB catalog):::ext
+    SBL(Silverball Labs API):::ext
+
+    U --> Router
+    Router -- cache miss --> Wizard
+    Router -- cache hit --> Cache
+    Wizard -- sub-agent call --> Val
+    Wizard -- sub-agent call --> Rules
+    Wizard -- sub-agent call --> Repair
+    Wizard -- tool call --> GMT
+    Wizard -- tool call --> SC
+    Wizard -- tool call --> GMV
+    Val -- tool call --> GMT
+    Rules -- tool call --> GMT
+    Repair -- tool call --> GMT
+    GMT --> Cosmos
+    Cosmos -. OPDB sync .-> OPDB
+    SC --> AISearch
+    GMV --> SBL
+
+    classDef ext fill:#fde8c4,stroke:#c77d1a,color:#000
+    classDef svc fill:#dbe9ff,stroke:#3a6fd0,color:#000
+    classDef data fill:#ececec,stroke:#8a8a8a,color:#000
+```
 
 Four `AIAgent` instances are constructed in code on process startup
 from embedded-resource Markdown prompts compiled into the

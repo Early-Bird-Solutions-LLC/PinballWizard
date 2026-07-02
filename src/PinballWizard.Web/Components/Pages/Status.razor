@@ -50,15 +50,22 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    <div class="status-card__indicator" data-testid="status-indicator-cosmos">
-                        <span class="@DotClass(_status?.CosmosHealthy)"
-                              role="img"
-                              aria-label="@StatusLabel(_status?.CosmosHealthy)">
-                        </span>
-                        <MudText Typo="Typo.body2" Class="status-card__label">
-                            @StatusLabel(_status?.CosmosHealthy)
-                        </MudText>
-                    </div>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1"
+                              data-testid="status-indicator-cosmos">
+                        <MudIcon Icon="@Icons.Material.Filled.Storage"
+                                 Size="Size.Small"
+                                 Color="Color.Secondary" />
+                        @if (_isLoading)
+                        {
+                            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="120px" Height="20px" />
+                        }
+                        else
+                        {
+                            <span class="@DotClass(_status?.CosmosHealthy)"
+                                  aria-hidden="true"></span>
+                            <MudText Typo="Typo.body2">Cosmos DB — @StatusLabel(_status?.CosmosHealthy)</MudText>
+                        }
+                    </MudStack>
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -72,15 +79,22 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    <div class="status-card__indicator" data-testid="status-indicator-foundry">
-                        <span class="@DotClass(_status?.FoundryHealthy)"
-                              role="img"
-                              aria-label="@StatusLabel(_status?.FoundryHealthy)">
-                        </span>
-                        <MudText Typo="Typo.body2" Class="status-card__label">
-                            @StatusLabel(_status?.FoundryHealthy)
-                        </MudText>
-                    </div>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1"
+                              data-testid="status-indicator-foundry">
+                        <MudIcon Icon="@Icons.Material.Filled.SmartToy"
+                                 Size="Size.Small"
+                                 Color="Color.Secondary" />
+                        @if (_isLoading)
+                        {
+                            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="120px" Height="20px" />
+                        }
+                        else
+                        {
+                            <span class="@DotClass(_status?.FoundryHealthy)"
+                                  aria-hidden="true"></span>
+                            <MudText Typo="Typo.body2">Azure AI Foundry — @StatusLabel(_status?.FoundryHealthy)</MudText>
+                        }
+                    </MudStack>
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -94,15 +108,22 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    <div class="status-card__indicator" data-testid="status-indicator-search">
-                        <span class="@DotClass(_status?.AiSearchHealthy)"
-                              role="img"
-                              aria-label="@StatusLabel(_status?.AiSearchHealthy)">
-                        </span>
-                        <MudText Typo="Typo.body2" Class="status-card__label">
-                            @StatusLabel(_status?.AiSearchHealthy)
-                        </MudText>
-                    </div>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1"
+                              data-testid="status-indicator-search">
+                        <MudIcon Icon="@Icons.Material.Filled.Search"
+                                 Size="Size.Small"
+                                 Color="Color.Secondary" />
+                        @if (_isLoading)
+                        {
+                            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="120px" Height="20px" />
+                        }
+                        else
+                        {
+                            <span class="@DotClass(_status?.AiSearchHealthy)"
+                                  aria-hidden="true"></span>
+                            <MudText Typo="Typo.body2">AI Search — @StatusLabel(_status?.AiSearchHealthy)</MudText>
+                        }
+                    </MudStack>
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -123,15 +144,25 @@
     // null → "Unknown" (amber) on all cards — the probe is in flight or the endpoint is down.
     private SystemStatus? _status;
 
+    // True on first render — cards show MudSkeleton until OnInitializedAsync completes.
+    private bool _isLoading = true;
+
     protected override async Task OnInitializedAsync()
     {
-        var landing = await LandingClient
-            .GetLandingAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        try
+        {
+            var landing = await LandingClient
+                .GetLandingAsync(CancellationToken.None)
+                .ConfigureAwait(false);
 
-        // Pull SystemStatus from the landing payload; leave null if the
-        // endpoint is unavailable — cards render "Unknown" (amber) gracefully.
-        _status = landing?.SystemStatus;
+            // Pull SystemStatus from the landing payload; leave null if the
+            // endpoint is unavailable — cards render "Unknown" (amber) gracefully.
+            _status = landing?.SystemStatus;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

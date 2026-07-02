@@ -1,5 +1,7 @@
 # The Pinball Wizard — System Architecture v2
 
+> **Forward-direction document.** This document describes the target architecture, not current shipped state. The shipped implementation is described in [`docs/build-spec.md`](build-spec.md). Where this document references "Phase 2," our build-spec phasing has Phase 2 closed and Phases 5–6 complete — read the phase labels here as forward-direction markers past the current build-spec edge, not as build-spec phases.
+
 ## 1. Purpose
 
 This document describes the system architecture for The Pinball Wizard. It supersedes the RAG-only assumptions of `infra_analysis.md` (whose Azure infrastructure reference architecture remains valid) and corresponds directly to the knowledge domains catalogued in `knowledge-sources.md`.
@@ -396,7 +398,7 @@ Acknowledged trade-offs:
 
 ## 16. ADR Proposal
 
-A future ADR will be filed at the next available number (currently the highest committed ADR is 0024; the agent-orchestrated-architecture ADR will land as **0025** or higher when it's drafted).
+This document is the working draft for the agent-orchestrated-architecture ADR. A dedicated ADR formalising this decision has not yet been filed; when it is, it will reference this document as context. The ADR index is at [`docs/adr/README.md`](adr/README.md).
 
 **Title:** Agent-orchestrated polymorphic knowledge layer over pure RAG
 

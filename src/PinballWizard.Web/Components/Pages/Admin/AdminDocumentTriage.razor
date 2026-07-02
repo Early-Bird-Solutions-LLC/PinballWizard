@@ -5,6 +5,7 @@
 @using Microsoft.Extensions.Logging
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminDocumentTriage — /admin/document-triage unlinked/failed document triage view.
  *
@@ -148,7 +149,7 @@
 
     private async Task LoadAsync()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             _isAdmin = await Guard.IsAdminAsync(AuthState);
@@ -185,7 +186,7 @@
         finally
         {
             _loading = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -197,7 +198,7 @@
             return;
         }
         row.ActionBusy = true;
-        StateHasChanged();
+        SafeStateHasChanged();
         try
         {
             await DocumentLinker.InitializeAsync(CancellationToken.None);
@@ -227,7 +228,7 @@
         finally
         {
             row.ActionBusy = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 
@@ -239,7 +240,7 @@
             return;
         }
         row.ActionBusy = true;
-        StateHasChanged();
+        SafeStateHasChanged();
         try
         {
             await RawDocRepo.UpdateLinkStatusAsync(
@@ -259,7 +260,7 @@
         finally
         {
             row.ActionBusy = false;
-            StateHasChanged();
+            SafeStateHasChanged();
         }
     }
 

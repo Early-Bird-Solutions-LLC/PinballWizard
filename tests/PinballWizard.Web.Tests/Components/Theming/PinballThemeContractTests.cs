@@ -159,6 +159,7 @@ public sealed class UserPreferencesContractTests
     [InlineData(ThemeNames.DaytimeRoute, "daytime-route")]
     [InlineData(ThemeNames.DmdClassic,   "dmd-classic")]
     [InlineData(ThemeNames.ModernLcd,    "modern-lcd")]
+    [InlineData(ThemeNames.Paper,        "paper")]
     public void ThemeName_MatchesExpected(string actual, string expected)
         => Assert.Equal(expected, actual);
 
@@ -273,4 +274,111 @@ public sealed class DmdClassicThemeContractTests
     [InlineData(DmdClassicTheme.BorderQuiet,    "#2a1500")]
     public void Token_MatchesSpec(string actual, string expected)
         => Assert.Equal(expected, actual, ignoreCase: true);
+}
+
+// Pins the Paper sibling-theme token values. Paper has a full MudTheme companion
+// (CreatePaper()) unlike the CSS-variable-only sibling themes above.
+// Spec authority: docs/ui/themes/sibling-themes-overview.md § Paper.
+//
+// Any palette change must update both CreatePaper() AND these constants together.
+public static class PaperTheme
+{
+    public const string CssClass            = "theme-paper";
+    public const string BgBase              = "#f4f1ea";
+    public const string BgSurface           = "#faf8f2";
+    public const string AppbarBackground    = "#1a1410";
+    public const string TextPrimary         = "#1a1408";
+    public const string TextSecondary       = "#5c5042";
+    public const string AccentPrimary       = "#b8763e";
+    public const string AccentGrounded      = "#1f6f54";
+    public const string BorderQuiet         = "#d8cdb5";
+    public const string Success             = "#1a8a45";
+    public const string Error               = "#c0200e";
+}
+
+public sealed class PaperThemeContractTests
+{
+    [Fact]
+    public void CssClass_IsPaperSelector()
+        => Assert.Equal("theme-paper", PaperTheme.CssClass);
+
+    [Theory]
+    [InlineData(PaperTheme.BgBase,           "#f4f1ea")]
+    [InlineData(PaperTheme.BgSurface,        "#faf8f2")]
+    [InlineData(PaperTheme.AppbarBackground, "#1a1410")]
+    [InlineData(PaperTheme.TextPrimary,      "#1a1408")]
+    [InlineData(PaperTheme.AccentPrimary,    "#b8763e")]
+    [InlineData(PaperTheme.AccentGrounded,   "#1f6f54")]
+    [InlineData(PaperTheme.BorderQuiet,      "#d8cdb5")]
+    [InlineData(PaperTheme.Success,          "#1a8a45")]
+    [InlineData(PaperTheme.Error,            "#c0200e")]
+    public void Token_MatchesSpec(string actual, string expected)
+        => Assert.Equal(expected, actual, ignoreCase: true);
+
+    [Theory]
+    [InlineData("AppbarBackground", "#1a1410")]
+    [InlineData("Background",       "#f4f1ea")]
+    [InlineData("Surface",          "#faf8f2")]
+    [InlineData("Primary",          "#b8763e")]
+    [InlineData("Success",          "#1a8a45")]
+    [InlineData("Error",            "#c0200e")]
+    [InlineData("TextPrimary",      "#1a1408")]
+    [InlineData("TextSecondary",    "#5c5042")]
+    [InlineData("Divider",          "#d8cdb5")]
+    public void PaletteLight_Pins_PaperSpecValue(string slot, string expectedHex)
+    {
+        var theme = PinballTheme.CreatePaper();
+        var actual = slot switch
+        {
+            "AppbarBackground" => theme.PaletteLight.AppbarBackground.Value,
+            "Background"       => theme.PaletteLight.Background.Value,
+            "Surface"          => theme.PaletteLight.Surface.Value,
+            "Primary"          => theme.PaletteLight.Primary.Value,
+            "Success"          => theme.PaletteLight.Success.Value,
+            "Error"            => theme.PaletteLight.Error.Value,
+            "TextPrimary"      => theme.PaletteLight.TextPrimary.Value,
+            "TextSecondary"    => theme.PaletteLight.TextSecondary.Value,
+            "Divider"          => theme.PaletteLight.Divider.Value,
+            _ => throw new ArgumentOutOfRangeException(nameof(slot)),
+        };
+        Assert.Equal(expectedHex, actual[..7], ignoreCase: true);
+    }
+}
+
+public sealed class PinballThemeShapeAndElevationTests
+{
+    [Fact]
+    public void Create_DefaultBorderRadius_Is2px()
+    {
+        var theme = PinballTheme.Create();
+        Assert.Equal("2px", theme.LayoutProperties.DefaultBorderRadius);
+    }
+
+    [Fact]
+    public void Create_Elevation1_IsNone()
+    {
+        var theme = PinballTheme.Create();
+        Assert.Equal("none", theme.Shadows.Elevation[1]);
+    }
+
+    [Fact]
+    public void Create_Elevation8_IsNone()
+    {
+        var theme = PinballTheme.Create();
+        Assert.Equal("none", theme.Shadows.Elevation[8]);
+    }
+
+    [Fact]
+    public void CreatePaper_DefaultBorderRadius_Is2px()
+    {
+        var theme = PinballTheme.CreatePaper();
+        Assert.Equal("2px", theme.LayoutProperties.DefaultBorderRadius);
+    }
+
+    [Fact]
+    public void CreatePaper_Elevation1_IsNone()
+    {
+        var theme = PinballTheme.CreatePaper();
+        Assert.Equal("none", theme.Shadows.Elevation[1]);
+    }
 }

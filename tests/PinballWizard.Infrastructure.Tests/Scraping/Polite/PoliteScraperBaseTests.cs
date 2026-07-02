@@ -43,7 +43,6 @@ public sealed class PoliteScraperBaseTests
     public async Task SendPolitelyAsync_BeforeSend_AcquiresPolitenessLease()
     {
         // Arrange
-        var requestedUrls = new List<Uri>();
         int acquireCallCount = 0;
         int httpSendCallCount = 0;
 
@@ -53,8 +52,7 @@ public sealed class PoliteScraperBaseTests
         gate.AcquireForRequestAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                requestedUrls.Add(callInfo.Arg<Uri>());
-                acquireCallCount = ++acquireCallCount; // captured in closure
+                acquireCallCount++;
                 return Task.FromResult<IAsyncDisposable>(new NoOpLease());
             });
         gate.ReportResponseAsync(Arg.Any<Uri>(), Arg.Any<HttpStatusCode>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
