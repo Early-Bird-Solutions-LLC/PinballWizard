@@ -609,10 +609,12 @@ public sealed class MachineGroundingTool
 
                 if (machine is null)
                 {
-                    // Stale lookup-row entry — skip without counting as a failure.
-                    // The null-match path in the caller will trigger the fallback.
-                    _logger.LogDebug(
-                        "MachineGroundingTool: tie-break candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping.",
+                    // Stale lookup-row entry — skip. Warning (not Debug) to match the
+                    // invariant #17 audit level in ResolveTitleCollisionsAsync for the
+                    // identical stale-candidate scenario: a missing row is a degraded
+                    // path operators should see on dashboards. Self-heals on next OPDB sync.
+                    _logger.LogWarning(
+                        "MachineGroundingTool: tie-break candidate opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' not found — skipping. Stale lookup will self-correct on the next OPDB sync.",
                         opdbId, manufacturer);
                     continue;
                 }
@@ -625,10 +627,18 @@ public sealed class MachineGroundingTool
             }
             catch (Exception ex)
             {
-                // Cosmos failure on a single candidate — degrade, log, skip.
+                // Cosmos failure on a single candidate — degrade, log, meter, skip.
+                // Metered like ResolveSiblingsAsync / ResolveFuzzyByTitleAsync so the
+                // degraded tie-break path is visible on dashboards (invariant #17),
+                // not just the aggregate all-failed case.
                 _logger.LogWarning(ex,
                     "MachineGroundingTool: tie-break fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
                     opdbId, manufacturer);
+
+                PinballWizardTelemetry.AiToolErrors.Add(
+                    1,
+                    new KeyValuePair<string, object?>("tool", ToolTagValue),
+                    new KeyValuePair<string, object?>("reason", "tie_break_unavailable"));
             }
         }
 

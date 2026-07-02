@@ -522,18 +522,19 @@ public sealed class MachineGroundingToolTests
     public async Task GetMachineByTitleAsync_CollisionNoQualifier_ContentIntrinsic_HigherCompletenessWins()
     {
         // Bare "Godzilla" — no manufacturer/year tokens — all entries score 0.
-        // The content-intrinsic tie-break (ADR-0049) fetches both candidates
-        // and compares MachineCompleteness.Score. Sega (index 0) has Themes and
-        // Designers populated (score=4); Stern (index 1) has neither (score=2).
-        // Sega wins by higher completeness despite being the older machine.
-        // This proves the tie-break is completeness-first, not insertion-order.
+        // The content-intrinsic tie-break (ADR-0049) fetches both candidates and
+        // compares MachineCompleteness.Score. CRITICAL for isolating the signal:
+        // the SPARSER Stern (score=2) is at index 0 and the RICHER Sega (Themes +
+        // Designers, score=4) is at index 1. The OLD insertion-order tie-break
+        // would return Stern (index 0); the new completeness-first tie-break
+        // returns Sega — so this fixture actually distinguishes new from old.
         var lookup = new MachineTitleLookup
         {
             Id = MachineTitleLookup.NormalizeTitle("Godzilla"),
             PartitionKey = MachineTitleLookup.NormalizeTitle("Godzilla"),
         };
-        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);
-        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);
+        lookup.UpsertEntry("GweeP-MW95j", "stern", ["stern"]);   // index 0 — sparser; insertion-order would pick this
+        lookup.UpsertEntry("G5po2-MeP6B", "sega", ["sega"]);     // index 1 — richer; only completeness picks this
 
         var lookups = Substitute.For<IMachineTitleLookupRepository>();
         lookups.GetByTitleAsync("Godzilla", Arg.Any<CancellationToken>()).Returns(lookup);
