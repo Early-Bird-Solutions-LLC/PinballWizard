@@ -14,12 +14,13 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // bUnit tests for AdminSources.razor (/admin/sources).
 //
 // AdminSources is @rendermode InteractiveServer (ADR-0034 amendment: its
-// AppDataGrid pager needs a live circuit). It loads
-// IIngestionSourceRepository.StreamAllAsync in OnInitializedAsync; bUnit runs
-// that synchronously, so WaitForAssertion sees the final state. Tests assert the
-// real load path: rows render, the empty-state still fires on no sources, and a
-// throwing repo surfaces the visible error state (Invariant #17), not a silent
-// empty grid.
+// AppDataGrid pager needs a live circuit) and inherits AdminPageBase, loading
+// IIngestionSourceRepository.StreamAllAsync in OnAfterRenderAsync (spinner-before-
+// data, mirroring AdminMachines). bUnit fires the after-render load and pumps the
+// dispatcher, so WaitForAssertion sees the final state. Tests assert the real load
+// path: rows render, the empty-state still fires on no sources, and a throwing repo
+// surfaces the visible error state (Invariant #17), not a silent empty grid. The
+// AdminSourcesLoadingStateTests context below locks the spinner-before-data contract.
 public sealed class AdminSourcesTests : AsyncBunitContext
 {
     private static IngestionSource MakeSource(
@@ -233,5 +234,70 @@ public sealed class AdminSourcesTests : AsyncBunitContext
 
         cut.WaitForAssertion(() =>
             cut.Find("a[href='https://stern.example.com']"));
+    }
+}
+
+// Behavioral parity with AdminMachinesLoadingStateTests: the page shell + spinner
+// render BEFORE data arrives, and the spinner clears AFTER. This is the
+// instant-navigation contract that OnAfterRenderAsync + AdminPageBase.SafeStateHasChanged
+// provide — the alignment issue #635 brings /admin/sources to match /admin/machines.
+//
+// Pattern: hold the repository call with a TaskCompletionSource so we can assert the
+// loading state between render and data arrival. Under a blocking OnInitializedAsync
+// load, holding the gate stalls the render; OnAfterRenderAsync kicks LoadAsync off
+// after the first render so the spinner is visible immediately.
+public sealed class AdminSourcesLoadingStateTests : AsyncBunitContext
+{
+    private readonly TaskCompletionSource _dataGate = new();
+
+    private async IAsyncEnumerable<IngestionSource> SlowStream(
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        // Hold until the test releases the gate — simulates a slow Cosmos query.
+        await _dataGate.Task.WaitAsync(ct);
+        yield break;
+    }
+
+    public AdminSourcesLoadingStateTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var slowRepo = Substitute.For<IIngestionSourceRepository>();
+        slowRepo.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(callInfo => SlowStream(callInfo.Arg<CancellationToken>()));
+        Services.AddSingleton(slowRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminSources_ShowsSpinner_BeforeDataArrives()
+    {
+        // Render without releasing the slow data — the loading bar must be present
+        // immediately after the first render, before the gate is released.
+        var cut = RenderWithPopover<AdminSources>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        // Release so teardown doesn't hang.
+        _dataGate.SetResult();
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task AdminSources_HidesSpinner_AfterDataArrives()
+    {
+        var cut = RenderWithPopover<AdminSources>();
+
+        Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
+
+        // Release the gate — the load completes and SafeStateHasChanged re-renders.
+        _dataGate.SetResult();
+        cut.WaitForAssertion(() =>
+            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+
+        await Task.CompletedTask;
     }
 }

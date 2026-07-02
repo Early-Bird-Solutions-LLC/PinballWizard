@@ -4,6 +4,7 @@
 @using PinballWizard.Application.Persistence
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 @inject IIngestionSourceRepository SourceRepo
 @inject ILogger<AdminSources> Logger
 
@@ -12,9 +13,11 @@
  * Interactive (@rendermode InteractiveServer, ADR-0034 amendment): the AppDataGrid
  * pager (page navigation + rows-per-page selector) is interactive by construction
  * and needs a live Blazor circuit — under static SSR those controls render but are
- * inert (the pager buttons do nothing). Mirrors AdminManufacturers. Data loads once
- * in OnInitializedAsync. Failure degrades visibly via MudAlert (Invariant #17), not
- * a silent empty grid.
+ * inert (the pager buttons do nothing). Mirrors AdminMachines: inherits AdminPageBase
+ * and loads in OnAfterRenderAsync so the page shell (with the loading bar) reaches the
+ * client before the Cosmos read, and a navigate-away disposal cancels the in-flight
+ * query (lifetime-linked CTS) without a StateHasChanged on a disposed circuit (#615).
+ * Failure degrades visibly via AppErrorAlert (Invariant #17), not a silent empty grid.
  *
  * Category: admin surface — uses AdminLayout. MudDataGrid per ADR-0008.
  * Auth: public-read showcase surface ([AllowAnonymous]). Read-only grid; no mutations.
@@ -149,11 +152,25 @@
         new BreadcrumbItem("Sources", href: "/admin/sources", icon: Icons.Material.Filled.Source),
     ];
 
-    // Interactive circuit: the loading bar shows on first render, then the grid
-    // populates when this single-partition StreamAllAsync read completes.
-    protected override async Task OnInitializedAsync()
+    // Load in OnAfterRenderAsync (not OnInitializedAsync) so the page shell — with
+    // the loading bar — is sent to the client on first render instead of blocking the
+    // pre-render pass until the single-partition StreamAllAsync read returns. Mirrors
+    // AdminMachines.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
+    {
+        // CreateLoadCts (AdminPageBase) links the 30 s timeout to component lifetime,
+        // so navigating away cancels the in-flight read.
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
         try
         {
             var rows = new List<IngestionSourceRow>();
@@ -189,6 +206,7 @@
         finally
         {
             _loading = false;
+            SafeStateHasChanged();
         }
     }
 }
