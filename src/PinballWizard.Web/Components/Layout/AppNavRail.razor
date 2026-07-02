@@ -2,8 +2,9 @@
  *
  * The entire interactive surface of the nav lives in ONE island: the MudDrawer
  * (Mini variant — collapsed shows an icon rail, expanded shows labels) plus the
- * in-rail toggle button. Host it with @rendermode="InteractiveServer" so the
- * toggle's @onclick is live even inside a statically-rendered layout.
+ * in-rail toggle button. The host layout must set @rendermode="InteractiveServer"
+ * on the <AppNavRail> tag so the toggle's @onclick is live; this component cannot
+ * self-enforce that — the rendermode directive must be applied at the call site.
  *
  * Design: docs/superpowers/specs/2026-07-01-public-left-nav-design.md
  * ADR-0008 — MudBlazor strict.

@@ -42,15 +42,16 @@ public sealed class AdminLayoutTests : AsyncBunitContext
             }));
 
     [Fact]
-    public void AdminLayout_Renders_AllSixNavLinks()
+    public void AdminLayout_Renders_AllNineNavLinks()
     {
         var cut = RenderWithBody();
 
-        // The six admin nav destinations must all be reachable as anchors.
+        // All nine admin nav destinations must be reachable as anchors.
         string[] hrefs =
         [
             "/admin", "/admin/sources", "/admin/machines",
             "/admin/document-triage", "/admin/link-overrides", "/admin/settings",
+            "/admin/documents", "/admin/jobs", "/admin/monitoring",
         ];
         foreach (var href in hrefs)
         {
@@ -81,14 +82,20 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     }
 
     [Fact]
-    public void AdminLayout_HasNo_HamburgerToggle()
+    public void AdminLayout_NavRail_RendersLiveToggle()
     {
         var cut = RenderWithBody();
 
-        // The toggle button carried aria-label="Toggle navigation drawer".
-        // A permanent drawer needs no toggle; assert it is gone so the dead-on-
-        // static OnClick can't creep back.
+        // The OLD hamburger carried aria-label="Toggle navigation drawer" and had
+        // a dead-on-static @onclick. That element is gone; guard against it creeping
+        // back by asserting it is absent.
         Assert.Empty(cut.FindAll("[aria-label='Toggle navigation drawer']"));
+
+        // The NEW rail owns a live in-island toggle (Open="true" on admin, so the
+        // toggle starts with aria-label="Collapse navigation"). bUnit doesn't respect
+        // @rendermode — it renders all components in one synchronous pass, so the rail
+        // renders fully here regardless of the InteractiveServer island boundary.
+        Assert.NotNull(cut.Find("[aria-label='Collapse navigation']"));
     }
 
     [Fact]

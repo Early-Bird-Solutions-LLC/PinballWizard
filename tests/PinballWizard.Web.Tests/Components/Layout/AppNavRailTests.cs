@@ -58,6 +58,23 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
+    public void Toggle_StartsExpanded_WhenOpenTrue()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        var toggle = cut.Find("[data-testid='nav-rail-toggle']");
+        Assert.Equal("Collapse navigation", toggle.GetAttribute("aria-label"));
+    }
+
+    [Fact]
     public async Task Toggle_FlipsState_OnClick()
     {
         var cut = Render(builder =>

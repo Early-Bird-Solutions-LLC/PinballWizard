@@ -109,8 +109,9 @@ public sealed class MainLayoutTests : AsyncBunitContext
     public void MainLayout_RendersPublicNavRail_WithAllReadDestinations()
     {
         // AppNavRail is hosted as an interactive island inside the static MainLayout.
-        // Even in bUnit (which ignores @rendermode), the component must render its
-        // anchor elements for each nav item so the rail is structurally correct.
+        // bUnit doesn't respect @rendermode — it renders all components in one
+        // synchronous pass, so the rail's anchor elements are always available for
+        // assertion regardless of the InteractiveServer island boundary.
         var cut = Render<MainLayout>(parameters => parameters
             .Add(p => p.Body, builder =>
             {
