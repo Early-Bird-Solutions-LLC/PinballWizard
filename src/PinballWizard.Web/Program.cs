@@ -33,6 +33,7 @@ using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Jobs;
+using PinballWizard.Infrastructure.Monitoring;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.ServiceDefaults;
 using Polly;
@@ -294,6 +295,7 @@ builder.AddWebCosmosPersistence();
 // RAG corpus stats for /admin/corpus — narrow AI Search read-only registration
 // (no Foundry, no ValidateOnStart; degrades visibly if AI Search is unconfigured).
 builder.Services.AddRagCorpusStatsRead(builder.Configuration);
+builder.Services.AddMonitoringStatsRead(builder.Configuration);
 
 // ACA Jobs admin service for /admin/jobs — gated on Cosmos:AccountResourceId
 // being set (subscription + resource group are parsed from it), which is only

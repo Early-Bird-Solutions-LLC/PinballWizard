@@ -39,6 +39,11 @@
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <!-- Azure.Monitor.Query 1.7.1 — Log Analytics query client for live telemetry reads.
+         Resolved via `dotnet add package Azure.Monitor.Query` 2026-07-01 (latest stable).
+         Used by the AdminMonitoring feature (#606) to query Log Analytics workspaces
+         with DefaultAzureCredential — no API key in code or config. -->
+    <PackageVersion Include="Azure.Monitor.Query" Version="1.7.1" />
     <!-- Azure.ResourceManager.AppContainers 1.5.0 — ARM control-plane SDK for
          Microsoft.App/jobs (list, read executions, trigger). GA stable.
          Source: https://www.nuget.org/packages/Azure.ResourceManager.AppContainers -->

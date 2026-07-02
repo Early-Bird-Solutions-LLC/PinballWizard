@@ -116,6 +116,7 @@ the general doctrine.
 | `AdminMachineDetail` (`/admin/machines/{OpdbId}`) | interactive | sortable linked-docs grid |
 | `AdminDocumentTriage` (`/admin/document-triage`) | interactive | Relink / MarkGeneric `OnClick` actions |
 | `AdminLinkOverrides` (`/admin/link-overrides`) | interactive | create dialog + delete |
+| `AdminMonitoring` (`/admin/monitoring`) | interactive | interactive 1h/24h/7d window toggle over live telemetry |
 | `AdminSettings` (`/admin/settings`) | interactive | `@bind` form controls |
 
 ### Provider pinning

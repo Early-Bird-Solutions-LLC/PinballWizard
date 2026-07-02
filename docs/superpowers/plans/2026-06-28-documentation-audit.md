@@ -363,7 +363,7 @@ Key fix: if Phase 5 "What shipped" section refers to admin as skeleton/placehold
 ```markdown
 #### Post-Phase-5 admin capabilities (PRs merged 2026-06-24)
 
-Six admin capabilities shipped after Phase 5 close: AdminDashboard with live source metrics, AdminSources with per-source enable/disable toggle and detail drilldown, AdminMachines catalog browser, AdminManufacturers, AdminMonitoring (OTel + logs surface), and per-source scrape run history with corpus/RAG stats. Full admin control plane is now complete.
+Six admin capabilities shipped after Phase 5 close: AdminDashboard with live source metrics, AdminSources with per-source enable/disable toggle and detail drilldown, AdminMachines catalog browser, AdminManufacturers, AdminMonitoring (latency/5xx/alert-rules tiles live-wired via `IMonitoringStatsReader`; cost tile eval-only pending `agent-framework#2688`), and per-source scrape run history with corpus/RAG stats. Full admin control plane is now complete.
 ```
 
 - [ ] **Step 5: Commit**
