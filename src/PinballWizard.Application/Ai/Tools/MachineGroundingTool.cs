@@ -621,16 +621,14 @@ public sealed class MachineGroundingTool
 
                 candidates.Add((idx, machine, MachineCompleteness.Score(machine)));
             }
-            catch (OperationCanceledException)
-            {
-                throw; // propagate cancellation — never swallow it
-            }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Cosmos failure on a single candidate — degrade, log, meter, skip.
-                // Metered like ResolveSiblingsAsync / ResolveFuzzyByTitleAsync so the
-                // degraded tie-break path is visible on dashboards (invariant #17),
-                // not just the aggregate all-failed case.
+                // The exception filter re-raises OperationCanceledException (never
+                // swallow cancellation) while catching transient faults — the same
+                // best-effort pattern as ResolveSiblingsAsync / ResolveFuzzyByTitleAsync.
+                // Metered so the degraded tie-break path is visible on dashboards
+                // (invariant #17), not just the aggregate all-failed case.
                 _logger.LogWarning(ex,
                     "MachineGroundingTool: tie-break fetch failed for opdb_id '{OpdbId}' / manufacturer '{Manufacturer}' — skipping.",
                     opdbId, manufacturer);
