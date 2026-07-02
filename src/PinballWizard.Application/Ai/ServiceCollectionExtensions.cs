@@ -7,6 +7,7 @@ using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
 using PinballWizard.Application.Ai.Refusal;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Ai.Evaluation.Findability;
 
 namespace PinballWizard.Application.Ai;
 
@@ -107,6 +108,16 @@ public static class ServiceCollectionExtensions
         // Grounding-integrity evaluator (issue #532): Rules/Repair answers
         // must carry ≥1 corpus chunk citation — not only a MachineRecord.
         services.TryAddSingleton<GroundingIntegrityEvaluator>();
+
+        // Findability retrieval-quality evaluators (Recall@k, MRR, NDCG@k).
+        // Architecture-agnostic offline infrastructure — no dependency on any
+        // specific AI Search or Phase 2 implementation. Pure deterministic
+        // logic — singletons. FindabilityEvalRunner is NOT registered here
+        // because it depends on IFindabilityLookup, which callers supply when
+        // they configure a concrete retrieval backend for evaluation.
+        services.TryAddSingleton<RecallAtKEvaluator>();
+        services.TryAddSingleton<MrrEvaluator>();
+        services.TryAddSingleton<NdcgAtKEvaluator>();
 
         return services;
     }
