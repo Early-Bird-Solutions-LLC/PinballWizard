@@ -94,6 +94,27 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
+    public void ShowToggleFalse_RendersNoToggle_ButStillRendersLinks()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.AddAttribute(4, nameof(AppNavRail.ShowToggle), false);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        // Static always-expanded mode: no toggle button (no @onclick), but the
+        // nav links still render as anchors.
+        Assert.Empty(cut.FindAll("[data-testid='nav-rail-toggle']"));
+        Assert.NotNull(cut.Find("a[href='/']"));
+        Assert.NotNull(cut.Find("a[href='/about']"));
+    }
+
+    [Fact]
     public void NavLink_UsesMatchAll_ForMatchAllItems()
     {
         var cut = Render(builder =>
