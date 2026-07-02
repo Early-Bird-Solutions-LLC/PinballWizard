@@ -227,6 +227,26 @@ public sealed class MachineSuggestEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Suggest_TopZero_ClampsToOne_PassesOneToService()
+    {
+        // Locks the LOWER clamp: top=0 must forward 1 (not 0) to the service, so a
+        // future switch from Math.Clamp to e.g. Math.Min would be caught.
+        int? capturedTop = null;
+        var service = Substitute.For<IMachineSuggestService>();
+        service.SuggestAsync(
+                Arg.Any<string>(),
+                Arg.Do<int>(t => capturedTop = t),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
+        using var server = BuildServer(service);
+        using var client = server.CreateClient();
+
+        await client.GetAsync("/api/machines/suggest?q=godzilla&top=0");
+
+        Assert.Equal(1, capturedTop); // MinTop = 1 per contract
+    }
+
     // ── Empty result set ──────────────────────────────────────────────────────
 
     [Fact]

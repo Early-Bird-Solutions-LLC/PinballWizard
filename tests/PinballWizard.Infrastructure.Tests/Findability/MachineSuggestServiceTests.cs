@@ -78,11 +78,31 @@ public sealed class MachineSuggestServiceTests
     [Fact]
     public async Task SuggestAsync_IndexIsNull_ReturnsEmpty()
     {
-        var service = BuildService(index: null);
+        // Construct DIRECTLY with a null index (BuildService's `?? _index` would
+        // otherwise resolve to the mock and never exercise the null-index branch —
+        // the invariant #17 "AI Search unconfigured → honest empty" path).
+        var service = new MachineSuggestService(null, NullLogger<MachineSuggestService>.Instance);
 
         var result = await service.SuggestAsync("godzilla", top: 8, CancellationToken.None);
 
         Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task SuggestAsync_IndexThrows_DegradesToEmpty()
+    {
+        // A transient index failure on a public typeahead must degrade to an empty
+        // dropdown (invariant #17 — logged + metered, never a 500, never fabricated).
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<MachineSearchHit>>>(_ =>
+                throw new InvalidOperationException("simulated transient index failure"));
+        var service = BuildService();
+
+        var result = await service.SuggestAsync("godzilla", top: 8, CancellationToken.None);
+
+        Assert.Empty(result);
+        // The index WAS attempted (degrade, not skip).
+        await _index.Received(1).SearchAsync("godzilla", Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     // ── Edition collapse / dedup ──────────────────────────────────────────────

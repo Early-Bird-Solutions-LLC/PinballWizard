@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Findability;
+using PinballWizard.Application.Observability;
 
 namespace PinballWizard.Infrastructure.Findability;
 
@@ -77,9 +78,25 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         }
 
         var rawTop = Math.Min(top * OverfetchMultiplier, MaxRawHits);
-        var hits = await _index.SearchAsync(query, rawTop, cancellationToken).ConfigureAwait(false);
 
-        return CollapseEditions(hits, top);
+        // A transient index failure (throttle / 503 / timeout) on a PUBLIC typeahead
+        // must degrade to an empty dropdown, never a 500 — the user keeps typing and
+        // can still submit free text. Honest degrade, logged + metered (invariant #17);
+        // no fabricated suggestions. Cancellation propagates normally.
+        try
+        {
+            var hits = await _index.SearchAsync(query, rawTop, cancellationToken).ConfigureAwait(false);
+            return CollapseEditions(hits, top);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex,
+                "MachineSuggestService: machine index search failed for query '{Query}' — degrading to empty suggestions.",
+                query);
+            PinballWizardTelemetry.MachineSearchErrors.Add(
+                1, new KeyValuePair<string, object?>("reason", "suggest_unavailable"));
+            return [];
+        }
     }
 
     // Groups ranked hits into one suggestion per distinct machine, preserving rank order.
