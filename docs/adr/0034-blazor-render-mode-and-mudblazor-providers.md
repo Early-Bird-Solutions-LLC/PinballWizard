@@ -111,7 +111,7 @@ the general doctrine.
 | Page | Mode | Rationale |
 | --- | --- | --- |
 | `AdminDashboard` (`/admin`) | static | link cards only |
-| `AdminSources` (`/admin/sources`) | static | read-only grid, no data transport yet |
+| `AdminSources` (`/admin/sources`) | interactive | AppDataGrid pager (page nav + rows-per-page) needs a live circuit; static SSR left it inert (2026-07-02) |
 | `AdminMachines` (`/admin/machines`) | interactive | sortable/filterable/groupable grid, native client-side grouping (no reloads) |
 | `AdminMachineDetail` (`/admin/machines/{OpdbId}`) | interactive | sortable linked-docs grid |
 | `AdminDocumentTriage` (`/admin/document-triage`) | interactive | Relink / MarkGeneric `OnClick` actions |
