@@ -176,6 +176,30 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task HoverToPeek_PinnedOpen_PointerEnterIsNoOp()
+    {
+        // When the rail is already pinned open, pointer-enter must be a no-op.
+        // The !_pinned guard in OnPointerEnter prevents _peek from being set,
+        // so the toggle label stays "Collapse navigation" throughout.
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.AddAttribute(4, nameof(AppNavRail.HoverToPeek), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+
+        await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerEnter());
+
+        Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+    }
+
+    [Fact]
     public async Task HoverToPeek_Off_PointerEnterDoesNothing()
     {
         var cut = Render(builder =>
