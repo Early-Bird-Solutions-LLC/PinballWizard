@@ -210,7 +210,7 @@
             <div class="mon-tile__footer">
                 <span class="mon-tile__instrument">pinwiz.ai.refusals</span>
                 <span class="mon-tile__threshold">
-                    @if (_snapshot?.RefusalCount is { } rc && _snapshot?.AnsweredCount is { } ac)
+                    @if (_snapshot is { RefusalCount: { } rc, AnsweredCount: { } ac })
                     {
                         @($"{rc:N0} / {ac:N0}")
                     }

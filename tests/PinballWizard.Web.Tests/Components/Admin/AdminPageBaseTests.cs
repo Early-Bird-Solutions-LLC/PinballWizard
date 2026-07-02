@@ -32,7 +32,7 @@ public sealed class AdminPageBaseTests
         // The core guard: _disposed=true must short-circuit before StateHasChanged()
         // is called. On a real disposed component attached to a disposed renderer,
         // calling StateHasChanged() would throw ObjectDisposedException (#615).
-        var page = new TestPage();
+        using var page = new TestPage();
         page.Dispose();
 
         page.PublicSafeStateHasChanged(); // must not throw
@@ -50,7 +50,7 @@ public sealed class AdminPageBaseTests
     [Fact]
     public void ComponentDisposalToken_CancelsOnDispose()
     {
-        var page = new TestPage();
+        using var page = new TestPage();
         // Capture the token before disposal to observe the cancellation signal.
         var token = page.PublicComponentDisposalToken;
 
@@ -76,7 +76,7 @@ public sealed class AdminPageBaseTests
         // Verifies that the linked source: disposing the component cancels any
         // in-flight CTS produced by CreateLoadCts, which cancels Task.Delay(Infinity, ct)
         // in LoadAsync — the core mechanism that unblocks a blocked load on navigation-away.
-        var page = new TestPage();
+        using var page = new TestPage();
         using var cts = page.PublicCreateLoadCts(TimeSpan.FromMinutes(5));
 
         page.Dispose();
