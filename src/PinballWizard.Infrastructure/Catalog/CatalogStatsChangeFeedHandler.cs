@@ -2,6 +2,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Ingestion;
+using PinballWizard.Infrastructure.Integrations.Opdb;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 
@@ -76,8 +77,17 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
             return null;
         }
 
-        var entry = await ComputeMachineEntryAsync(change, cancellationToken).ConfigureAwait(false);
-        await UpsertEntryWithRetryAsync(manufacturer, entry, cancellationToken).ConfigureAwait(false);
+        // The change record carries the manufacturer in DISPLAY case (e.g. "Stern"),
+        // but machines are partitioned under the normalized lowercase key ("stern") —
+        // the SAME key CatalogStatsRebuildService writes (machine.PartitionKey). Using
+        // the raw display case here both missed the machine point-read (→ null Year)
+        // and minted a DUPLICATE rollup doc under the wrong casing. Normalize once and
+        // use the result for BOTH the machine lookup and the rollup partition key so
+        // the change-feed and the rebuild converge on one document.
+        var manufacturerKey = OpdbMachineMapper.NormalizeManufacturerKey(manufacturer);
+
+        var entry = await ComputeMachineEntryAsync(change, manufacturerKey, cancellationToken).ConfigureAwait(false);
+        await UpsertEntryWithRetryAsync(manufacturerKey, entry, cancellationToken).ConfigureAwait(false);
 
         return null;
     }
@@ -87,6 +97,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
     // a MachineStatEntry with doc counts and type distribution.
     internal async Task<MachineStatEntry> ComputeMachineEntryAsync(
         RagSourceDocument change,
+        string manufacturerKey,
         CancellationToken cancellationToken)
     {
         var machineId = change.MachineId;
@@ -133,7 +144,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
         // forward any previously-stored values as a fallback, but this read
         // makes the change-feed handler self-correcting on first write.
         var machine = await _machineRepo
-            .GetByIdAsync(machineId, change.Manufacturer, cancellationToken)
+            .GetByIdAsync(machineId, manufacturerKey, cancellationToken)
             .ConfigureAwait(false);
 
         if (machine is not null)
