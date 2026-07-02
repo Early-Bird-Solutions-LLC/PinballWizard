@@ -23,6 +23,7 @@ using PinballWizard.Api.Middleware;
 using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Landing;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Findability;
 using PinballWizard.Infrastructure.Integrations.AiSearch;
 using PinballWizard.Infrastructure.Integrations.Foundry;
 using PinballWizard.Infrastructure.Integrations.SilverballLabs;
@@ -68,6 +69,13 @@ builder.Services.TryAddSingleton<IDegradationContext, AmbientDegradationContext>
 // system status composition. ISystemStatusProvider degrades gracefully to
 // null fields when Foundry / AI Search / Cosmos are not configured.
 builder.Services.AddLandingService();
+
+// ── Machine suggest service (ADR-0049 phase 3) ────────────────────────────
+// IMachineSuggestService (unconditional): typeahead suggestions from the AI
+// Search machine findability index. MachineSuggestService takes
+// IMachineSearchIndex? (default null) so it degrades to [] when AI Search
+// is not configured — no gate required here.
+builder.Services.AddMachineSuggestService();
 builder.Services.AddSystemStatusProvider(builder.Configuration);
 
 var foundryEndpoint = builder.Configuration["AiFoundry:ProjectEndpoint"];
@@ -137,6 +145,9 @@ app.MapWizardStreamingEndpoints();
 
 // Wave 2 PR-L3: GET /api/wizard/landing
 app.MapWizardLandingEndpoint();
+
+// ADR-0049 phase 3: GET /api/machines/suggest?q={query}&top={n}
+app.MapMachineSuggestEndpoint();
 
 await app.RunAsync().ConfigureAwait(false);
 
