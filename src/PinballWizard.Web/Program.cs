@@ -206,6 +206,27 @@ builder.Services
     // above is the effective bound. The asymmetry is deliberate.
     .AddStandardResilienceHandler();
 
+// ── Machine typeahead suggest client ──────────────────────────────────────
+// Typed HttpClient for GET /api/machines/suggest?q=...  Powers the
+// MudAutocomplete on the landing hero (ADR-0049 Phase 3).  Returns [] on
+// any non-200 or transport failure — the hero degrades silently to the
+// pre-Phase-3 free-text-only UX; it never blocks the user.
+//
+// Timeout: 2s.  Typeahead must feel instant; if the suggest endpoint is
+// slow or unreachable the dropdown is simply empty, which is indistinguishable
+// from "no matching machines" from the user's perspective.
+//
+// Resilience: same AddStandardResilienceHandler posture as the landing
+// client — the endpoint is idempotent and cheap, so retries are safe.
+// The 2s HttpClient.Timeout is the effective budget ceiling.
+builder.Services
+    .AddHttpClient<IMachineSuggestClient, MachineSuggestClient>(client =>
+    {
+        client.BaseAddress = new Uri("https+http://pinwiz-api");
+        client.Timeout = TimeSpan.FromSeconds(2);
+    })
+    .AddStandardResilienceHandler();
+
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
 // Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")

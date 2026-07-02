@@ -80,6 +80,14 @@ public sealed class IndexPageTests
         // ILogger<Index> — Index is the component class name; IndexPage is the
         // test alias only. Register NullLogger under the real component type.
         ctx.Services.AddSingleton<ILogger<IndexPage>>(_ => NullLogger<IndexPage>.Instance);
+        // IMachineSuggestClient — LandingHero (child of IndexPage) injects this
+        // for the MudAutocomplete typeahead (ADR-0049 Phase 3).  Index-level tests
+        // don't exercise suggestion behavior, so a no-op stub returning [] is
+        // sufficient.
+        var noOpSuggestClient = Substitute.For<IMachineSuggestClient>();
+        noOpSuggestClient.GetSuggestionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                         .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
+        ctx.Services.AddScoped<IMachineSuggestClient>(_ => noOpSuggestClient);
         ctx.Renderer.SetRendererInfo(new RendererInfo("Server", isInteractive: true));
 
         // Resolve store after all registrations so the DI container is built once.

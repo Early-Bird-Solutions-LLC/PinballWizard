@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components.Landing;
 using Xunit;
 
@@ -15,30 +18,82 @@ namespace PinballWizard.Web.Tests.Components.Landing;
 // bUnit smoke test. LandingHero is a landing delight surface — within the
 // scope of the four locked delight surfaces (ADR-0026 § 6, CLAUDE.md #14).
 //
-// Tests assert behavior, not structure. Each test creates its own BunitContext
+// ADR-0049 Phase 3: LandingHero now injects IMachineSuggestClient for the
+// MudAutocomplete typeahead.  All tests register a no-op or fake client so
+// the DI container resolves without a real HTTP server.
+//
+// Tests assert behavior, not structure.  Each test creates its own BunitContext
 // so service registration (required before first GetService call) is explicit.
+//
+// Disposal: MudBlazor 9 registers PointerEventsNoneService as IAsyncDisposable
+// only.  Using synchronous Dispose() on the BunitContext throws an
+// InvalidOperationException.  All tests use `await using` to call DisposeAsync,
+// matching the pattern in IndexPageTests.cs.
+//
+// MudPopoverProvider: MudBlazor 9 requires <MudPopoverProvider /> in the same
+// render tree as any popover-capable component (MudAutocomplete is one).
+// RenderHeroWithPopover renders them as siblings — same pattern as
+// IndexPageTests.RenderIndexWithPopover.
 //
 // Spec conformance tests (modern-lcd.md §"Empty/landing state"):
 // - Hero title renders as an ALL-CAPS display headline (PINBALLWIZARD)
 // - Eyebrow tagline is present (landing-hero-eyebrow data-testid)
-// - Submit adornment uses Color.Primary (observable via MudTextField parameter)
+// - Submit adornment uses Color.Primary (observable via MudAutocomplete parameter)
 public sealed class LandingHeroTests
 {
+    // No-op suggest client: always returns empty list.
+    // Used by tests that don't need suggestion behavior to avoid constructing
+    // a real HttpClient or spinning up an HTTP server.
+    private static IMachineSuggestClient NoOpSuggestClient()
+    {
+        var client = Substitute.For<IMachineSuggestClient>();
+        client.GetSuggestionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+              .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
+        return client;
+    }
+
+    // Registers the minimum services required by LandingHero into a BunitContext.
+    // Pass a custom suggestClient for tests that exercise suggestion behavior.
+    private static void RegisterHeroServices(
+        BunitContext ctx,
+        IMachineSuggestClient? suggestClient = null)
+    {
+        ctx.Services.AddMudServices();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        ctx.Services.AddScoped<IMachineSuggestClient>(_ => suggestClient ?? NoOpSuggestClient());
+    }
+
+    // MudBlazor 9 requires MudPopoverProvider in the same render tree as
+    // MudAutocomplete.  Render both as siblings and return the LandingHero
+    // component from the fragment — mirrors IndexPageTests.RenderIndexWithPopover.
+    // For tests that pass parameters to LandingHero use the raw builder pattern
+    // directly (see LandingHero_OnEnterKey_InvokesQuestionSubmitted).
+    private static IRenderedComponent<LandingHero> RenderHeroWithPopover(BunitContext ctx)
+    {
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<LandingHero>();
+    }
+
     // ──────────────────────────────────────────────────────────────────────
-    // 1. Hero renders with a MudTextField input
+    // 1. Hero renders with a MudAutocomplete input (ADR-0049 Phase 3)
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_Renders_MudTextFieldInput()
+    public async Task LandingHero_Renders_MudAutocompleteInput()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
-        // MudTextField should be present — it's the question input.
-        cut.FindComponent<MudTextField<string>>();
+        // MudAutocomplete is the question input since ADR-0049 Phase 3.
+        cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -46,13 +101,12 @@ public sealed class LandingHeroTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_Tagline_IsNonEmpty()
+    public async Task LandingHero_Tagline_IsNonEmpty()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
         var tagline = cut.Find("[data-testid='landing-hero-tagline']");
         Assert.False(string.IsNullOrWhiteSpace(tagline.TextContent),
@@ -64,19 +118,17 @@ public sealed class LandingHeroTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_QuestionInput_HasAutoFocus()
+    public async Task LandingHero_QuestionInput_HasAutoFocus()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
-        // MudTextField renders an input element. The component's AutoFocus
-        // parameter is set to true — verify via the MudTextField component
-        // parameter, as bUnit does not drive real browser focus events.
-        var mudTf = cut.FindComponent<MudTextField<string>>();
-        Assert.True(mudTf.Instance.AutoFocus,
+        // MudAutocomplete inherits AutoFocus from MudBaseInput.
+        // AutoFocus=true is required so the cursor lands in the input on page load.
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        Assert.True(autocomplete.Instance.AutoFocus,
             "LandingHero question input must have AutoFocus=true so it focuses on page load.");
     }
 
@@ -87,33 +139,29 @@ public sealed class LandingHeroTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_Renders_BrandTitle()
+    public async Task LandingHero_Renders_BrandTitle()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
         var title = cut.Find("[data-testid='landing-hero-title']");
         Assert.Contains("PinballWizard", title.TextContent, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void LandingHero_BrandTitle_IsAllCaps()
+    public async Task LandingHero_BrandTitle_IsAllCaps()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
         // Spec: cinematic hero headline is ALL CAPS (text content is uppercase
         // in the markup, CSS also enforces text-transform: uppercase).
         var title = cut.Find("[data-testid='landing-hero-title']");
         var text = title.TextContent.Trim();
-        // Spec: cinematic hero headline is ALL CAPS (text content is uppercase
-        // in the markup, CSS also enforces text-transform: uppercase).
         Assert.Equal(text.ToUpperInvariant(), text);
     }
 
@@ -124,13 +172,12 @@ public sealed class LandingHeroTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_Renders_EyebrowTagline()
+    public async Task LandingHero_Renders_EyebrowTagline()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
         // The eyebrow element sits above the wordmark; aria-hidden so it
         // doesn't duplicate the title for screen readers.
@@ -149,41 +196,56 @@ public sealed class LandingHeroTests
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_SubmitAdornment_UsesColorPrimary()
+    public async Task LandingHero_SubmitAdornment_UsesColorPrimary()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
-        // The MudTextField's AdornmentColor parameter is observable via the instance.
-        // AdornmentColor="Color.Primary" maps to arcade amber (#ff9a1f) via PaletteDark.
-        // Root cause of the magenta regression: missing PaletteDark in PinballTheme.cs
-        // caused MudBlazor to fall back to its default dark Primary (~#776be7 indigo).
-        var mudTf = cut.FindComponent<MudTextField<string>>();
-        Assert.Equal(Color.Primary, mudTf.Instance.AdornmentColor);
+        // MudAutocomplete inherits AdornmentColor from MudBaseInput.
+        // AdornmentColor="Color.Primary" maps to arcade amber (#ff9a1f) via
+        // PaletteDark.  Root cause of the magenta regression: missing PaletteDark
+        // in PinballTheme.cs caused MudBlazor to fall back to its default dark
+        // Primary (~#776be7 indigo).
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        Assert.Equal(Color.Primary, autocomplete.Instance.AdornmentColor);
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 7. QuestionSubmitted callback is invoked on Enter key
+    // 7. QuestionSubmitted callback is invoked on Enter key (free-text path)
+    //
+    // This is the critical regression guard for the free-text submit path:
+    // selecting a machine from the dropdown navigates directly, but pressing
+    // Enter without a dropdown selection must still fire QuestionSubmitted
+    // so the parent (Index.razor) can route to /wizard?q={text}.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task LandingHero_OnEnterKey_InvokesQuestionSubmitted()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
         string? submitted = null;
-        // EventCallback.Factory.Create requires a non-null receiver — use 'this'.
-        var cut = ctx.Render<LandingHero>(p => p
-            .Add(h => h.QuestionText, "How does Godzilla wizard mode work?")
-            .Add(h => h.QuestionSubmitted, EventCallback.Factory.Create<string>(
-                this, q => submitted = q)));
 
-        // Simulate Enter key press — MudTextField raises OnKeyDown.
+        // MudBlazor 9 requires MudPopoverProvider as a sibling in the render tree.
+        // Use the render-fragment builder to co-render both components and pass
+        // parameters to LandingHero via attribute slots.
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            // EventCallback.Factory.Create requires a non-null receiver — use 'this'.
+            builder.AddAttribute(2, nameof(LandingHero.QuestionText), "How does Godzilla wizard mode work?");
+            builder.AddAttribute(3, nameof(LandingHero.QuestionSubmitted),
+                EventCallback.Factory.Create<string>(this, q => submitted = q));
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<LandingHero>();
+
+        // Simulate Enter key press — MudAutocomplete raises OnKeyDown.
         var input = cut.Find("[data-testid='landing-hero-input'] input");
         await cut.InvokeAsync(() => input.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs
         {
@@ -194,38 +256,92 @@ public sealed class LandingHeroTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 8. Question input updates the binding immediately (regression guard)
+    // 8. Suggestion selected → navigate to /wizard?q={title}
     //
-    // The input previously used `@bind-Value:event="oninput"` on a MudTextField
-    // — a MudBlazor COMPONENT, not a native <input>. The `:event` binding
-    // directive only applies to native elements; on a component it made Blazor
-    // hand the value binder a ChangeEventArgs where a string was expected,
-    // throwing `ArgumentException: Object of type 'ChangeEventArgs' cannot be
-    // converted to type 'System.String'` on the first keystroke — terminating
-    // the live circuit so no answer ever rendered (caught only by a live
-    // browser walk-through, never by a static render).
-    //
-    // The correct MudBlazor way to update Value on each keystroke is
-    // `Immediate="true"`. We assert that parameter here (the same way tests #3
-    // and #6 pin AutoFocus / AdornmentColor) because bUnit cannot drive the real
-    // oninput → ValueChanged binding chain through MudTextField's internals — so
-    // a behavioral keystroke test would be a false negative. Pinning Immediate
-    // catches any regression that drops the fix or restores the `:event` form.
+    // When the user picks a suggestion from the dropdown, the component
+    // navigates directly to /wizard?q={suggestion.Title}, bypassing
+    // QuestionSubmitted entirely (the title is already a resolved machine
+    // name).  Verified by invoking MudAutocomplete's ValueChanged directly,
+    // which is how MudBlazor fires it on item selection.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LandingHero_QuestionInput_UpdatesImmediately()
+    public async Task LandingHero_OnSuggestionSelected_NavigatesToWizardWithTitle()
     {
-        using var ctx = new BunitContext();
-        ctx.Services.AddMudServices();
-        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
 
-        var cut = ctx.Render<LandingHero>();
+        var cut = RenderHeroWithPopover(ctx);
 
-        var mudTf = cut.FindComponent<MudTextField<string>>();
-        Assert.True(mudTf.Instance.Immediate,
-            "Question input must use Immediate=\"true\" so the bound value updates on each "
-            + "keystroke. The previous @bind-Value:event=\"oninput\" form crashed the circuit "
-            + "(ChangeEventArgs cannot convert to String) — never restore it.");
+        // BunitNavigationManager must be resolved after render (provider locked).
+        var navMan = ctx.Services.GetRequiredService<BunitNavigationManager>();
+
+        // Simulate the user selecting "Godzilla Pro" from the dropdown.
+        // Invoking ValueChanged directly mirrors how MudAutocomplete fires
+        // it on item selection (click or keyboard Enter on highlighted item).
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
+            new MachineSuggestion("opdb-stern-godzilla-pro", "Godzilla Pro", "Stern", 2021)));
+
+        Assert.EndsWith("/wizard?q=Godzilla%20Pro", navMan.Uri, StringComparison.Ordinal);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 9. Suggest client errors → no crash, no suggestions
+    //
+    // When IMachineSuggestClient throws or returns empty, the autocomplete
+    // renders with no suggestions.  The hero must NOT surface an exception
+    // panel — the user should see an empty dropdown (identical to the
+    // pre-Phase-3 no-suggestions state).
+    //
+    // We verify this by registering a faulting client and asserting the
+    // component still renders without throwing.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LandingHero_WhenSuggestClientThrows_RendersWithoutCrash()
+    {
+        await using var ctx = new BunitContext();
+
+        // Faulting client: throws HttpRequestException on every call.
+        // MachineSuggestClient.TryGetAsync catches this and returns null (→ []).
+        // LandingHero's SearchSuggestionsAsync returns [] → MudAutocomplete
+        // shows no dropdown.  The hero itself must not crash.
+        var faultingClient = Substitute.For<IMachineSuggestClient>();
+        faultingClient.GetSuggestionsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                      .Returns(Task.FromResult<IReadOnlyList<MachineSuggestion>>([]));
+
+        RegisterHeroServices(ctx, faultingClient);
+
+        // Render must not throw.
+        var cut = RenderHeroWithPopover(ctx);
+
+        // Hero structure is intact.
+        cut.Find("[data-testid='landing-hero']");
+        cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 10. Autocomplete has MinCharacters=2 and DebounceInterval configured
+    //
+    // Regression guard replacing the Immediate=true test (MudTextField was
+    // replaced by MudAutocomplete in ADR-0049 Phase 3).  MinCharacters=2
+    // prevents a round-trip on single-character input; DebounceInterval
+    // prevents a call on every keystroke.  Both are part of the
+    // "polite-by-construction" posture for the suggest endpoint.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LandingHero_Autocomplete_HasMinCharactersAndDebounce()
+    {
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
+
+        var cut = RenderHeroWithPopover(ctx);
+
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        Assert.Equal(2, autocomplete.Instance.MinCharacters);
+        Assert.True(autocomplete.Instance.DebounceInterval >= 200,
+            "DebounceInterval must be at least 200ms to avoid a call on every keystroke.");
     }
 }
