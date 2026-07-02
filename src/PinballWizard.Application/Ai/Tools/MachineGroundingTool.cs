@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
@@ -36,10 +37,20 @@ public sealed class MachineGroundingTool
     private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly ILogger<MachineGroundingTool> _logger;
 
+    // IMachineSearchIndex? is optional: it is null when AI Search is not configured
+    // (local dev without AI Search endpoint, or hosts that only wire Cosmos). When
+    // null the forgiving-resolution step falls straight through to the Cosmos
+    // SearchByTitleContainsAsync fallback — same behavior as before phase 2b.
+    // When non-null the AI Search path runs first; Cosmos CONTAINS is retained as
+    // a safety net only for transport failures (never for honest misses). Mirrors
+    // the IAgentPromptOverrideRepository? optional-injection pattern.
+    private readonly IMachineSearchIndex? _machineSearchIndex;
+
     public MachineGroundingTool(
         IMachineRepository machines,
         IMachineTitleLookupRepository titleLookups,
-        ILogger<MachineGroundingTool> logger)
+        ILogger<MachineGroundingTool> logger,
+        IMachineSearchIndex? machineSearchIndex = null)
     {
         ArgumentNullException.ThrowIfNull(machines);
         ArgumentNullException.ThrowIfNull(titleLookups);
@@ -47,6 +58,7 @@ public sealed class MachineGroundingTool
         _machines = machines;
         _titleLookups = titleLookups;
         _logger = logger;
+        _machineSearchIndex = machineSearchIndex;
     }
 
     // Tool tag value emitted on `pinwiz.ai.tool_duration_ms` and (when the
@@ -710,13 +722,164 @@ public sealed class MachineGroundingTool
         Machine Primary,
         IReadOnlyList<MachineSiblingGroundingDto> Collisions);
 
-    // Substring-search machine titles by the query's most distinctive tokens,
-    // score the candidates by token overlap, and pick a primary. Same-group
-    // candidates collapse to the primary (siblings handle editions); distinct
-    // groups become TitleCollisions. Returns null when nothing overlaps.
-    // Best-effort: a repository failure logs at Warning and returns null so the
-    // caller falls through to its honest "no match" refusal (invariant #17).
+    // ADR-0049 phase 2b: resolve via AI Search machine index when configured,
+    // falling back to Cosmos SearchByTitleContainsAsync on transport failure or
+    // when AI Search is not configured.
+    //
+    // AI Search path: single simple query across title / title_prefix /
+    // title_phonetic with the machine-content-intrinsic scoring profile. The
+    // index covers synonyms, prefix, phonetic typos, and content-intrinsic
+    // ranking in one round-trip — replacing the multi-probe CONTAINS strategy.
+    //
+    // Degrade rules (invariant #17 — never silent, never fabricate):
+    //   • AI Search not configured (_machineSearchIndex is null) → Cosmos CONTAINS
+    //   • AI Search throws transport/service error → log + meter + Cosmos CONTAINS
+    //   • AI Search returns zero hits → honest null (no further fallback — the
+    //     index answer is authoritative; Cosmos CONTAINS is not a tie-breaker for
+    //     misses, only a safety net for availability failures)
     private async Task<FuzzyMatch?> ResolveFuzzyByTitleAsync(
+        string title,
+        CancellationToken cancellationToken)
+    {
+        if (_machineSearchIndex is not null)
+        {
+            // AI Search primary path.
+            try
+            {
+                // Request enough hits to populate the primary + MaxFuzzyCollisionGroups
+                // distinct groups, with headroom for same-group duplicates that get
+                // filtered. Top=MaxFuzzyCollisionGroups+4 keeps the request bounded.
+                var top = MaxFuzzyCollisionGroups + 4;
+                var hits = await _machineSearchIndex
+                    .SearchAsync(title, top, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (hits.Count == 0)
+                {
+                    // Authoritative miss from the index — do NOT fall through to Cosmos
+                    // CONTAINS (that would fabricate a result the index says doesn't exist).
+                    _logger.LogDebug(
+                        "MachineGroundingTool: AI Search machine index returned 0 hits for '{Title}'.",
+                        title);
+                    return null;
+                }
+
+                return await MapSearchHitsToFuzzyMatchAsync(hits, title, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Transport / service failure — degrade visibly, meter, fall through
+                // to the Cosmos CONTAINS safety net so availability issues don't
+                // silently refuse otherwise-answerable queries.
+                _logger.LogWarning(ex,
+                    "MachineGroundingTool: AI Search machine index query for '{Title}' failed. Degrading to Cosmos CONTAINS fallback.",
+                    title);
+                PinballWizardTelemetry.MachineSearchErrors.Add(
+                    1,
+                    new KeyValuePair<string, object?>("reason", "query_failed"));
+                PinballWizardTelemetry.AiToolErrors.Add(
+                    1,
+                    new KeyValuePair<string, object?>("tool", ToolTagValue),
+                    new KeyValuePair<string, object?>("reason", "machine_search_unavailable"));
+            }
+        }
+
+        // Cosmos CONTAINS fallback — the pre-phase-2b path. Reached when:
+        //   (a) AI Search is not configured (_machineSearchIndex is null), or
+        //   (b) AI Search threw a transport / service error above.
+        // Behavior is unchanged from pre-phase-2b: probes the most distinctive
+        // query tokens via unindexed CONTAINS, scores candidates by token overlap,
+        // and surfaces distinct OPDB groups as TitleCollisions.
+        return await ResolveViaCosmosContainsAsync(title, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Builds a FuzzyMatch from ranked AI Search hits. The first hit is the
+    // primary; subsequent hits from DIFFERENT OPDB groups become TitleCollisions
+    // (same-group machines are already reachable via Siblings). Each collision
+    // candidate requires a Cosmos point-read to retrieve Editions / EditionLabel /
+    // EditionTokens that the index does not store.
+    //
+    // A stale index entry (hit present but machine missing from Cosmos) is skipped
+    // with a Warning (invariant #17) — does not abort the primary result.
+    private async Task<FuzzyMatch?> MapSearchHitsToFuzzyMatchAsync(
+        IReadOnlyList<MachineSearchHit> hits,
+        string title,
+        CancellationToken cancellationToken)
+    {
+        var primaryHit = hits[0];
+        var primaryMachine = await _machines
+            .GetByOpdbIdAsync(primaryHit.OpdbId, primaryHit.ManufacturerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (primaryMachine is null)
+        {
+            // Stale index entry — the machine row is gone from Cosmos. Log at Warning
+            // (invariant #17: stale state is a degraded path, not a Debug-level event).
+            // Return null so the caller refusals honestly rather than fabricating.
+            _logger.LogWarning(
+                "MachineGroundingTool: AI Search top hit opdb_id='{OpdbId}' manufacturer_key='{ManufacturerKey}' (title='{HitTitle}') not found in Cosmos — stale index entry. Returning no fuzzy match.",
+                primaryHit.OpdbId, primaryHit.ManufacturerKey, primaryHit.Title);
+            return null;
+        }
+
+        _logger.LogDebug(
+            "MachineGroundingTool: AI Search resolved '{Title}' → '{ResolvedTitle}' ({OpdbId}, score={Score:F3}).",
+            title, primaryMachine.Title, primaryMachine.Id, primaryHit.Score);
+
+        var primaryGroup = GroupKeyOf(primaryMachine);
+        var seenGroups = new HashSet<string>(StringComparer.Ordinal) { primaryGroup };
+        var collisions = new List<MachineSiblingGroundingDto>();
+
+        foreach (var hit in hits.Skip(1))
+        {
+            // Group-key deduplication — same-group hits are already reachable via
+            // Siblings and must not appear in TitleCollisions (duplication makes
+            // the agent's clarifying question redundant).
+            var hitGroupKey = string.IsNullOrEmpty(hit.GroupId) ? hit.OpdbId : hit.GroupId;
+            if (!seenGroups.Add(hitGroupKey))
+                continue;
+
+            try
+            {
+                var candidate = await _machines
+                    .GetByOpdbIdAsync(hit.OpdbId, hit.ManufacturerKey, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (candidate is null)
+                {
+                    _logger.LogWarning(
+                        "MachineGroundingTool: AI Search TitleCollisions candidate opdb_id='{OpdbId}' manufacturer_key='{ManufacturerKey}' not found in Cosmos — stale index entry. Skipping.",
+                        hit.OpdbId, hit.ManufacturerKey);
+                    continue;
+                }
+
+                collisions.Add(new MachineSiblingGroundingDto(
+                    OpdbId: candidate.Id,
+                    Title: candidate.Title,
+                    Year: candidate.Year,
+                    Editions: ProjectEditions(candidate.Editions),
+                    EditionLabel: candidate.EditionLabel,
+                    EditionTokens: candidate.EditionTokens.AsReadOnly()));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex,
+                    "MachineGroundingTool: TitleCollisions Cosmos fetch failed for opdb_id='{OpdbId}' — skipping.",
+                    hit.OpdbId);
+            }
+
+            if (collisions.Count >= MaxFuzzyCollisionGroups)
+                break;
+        }
+
+        return new FuzzyMatch(primaryMachine, collisions);
+    }
+
+    // Cosmos CONTAINS fallback — pre-phase-2b substring resolution. Retained as
+    // the safety net for AI Search transport failures and unconfigured environments.
+    // Behavior is identical to the original ResolveFuzzyByTitleAsync logic.
+    private async Task<FuzzyMatch?> ResolveViaCosmosContainsAsync(
         string title,
         CancellationToken cancellationToken)
     {
@@ -751,7 +914,7 @@ public sealed class MachineGroundingTool
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex,
-                "MachineGroundingTool: forgiving substring search for '{Title}' failed. Returning no fuzzy match.",
+                "MachineGroundingTool: Cosmos CONTAINS fallback for '{Title}' failed. Returning no fuzzy match.",
                 title);
             PinballWizardTelemetry.AiToolErrors.Add(
                 1,

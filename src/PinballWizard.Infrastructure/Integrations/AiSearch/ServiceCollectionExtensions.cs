@@ -7,12 +7,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using PinballWizard.Application.Ai.Evaluation.Findability;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Findability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Infrastructure.Ai.Evaluation;
 using PinballWizard.Infrastructure.Rag.Indexing;
 using PinballWizard.Infrastructure.Rag.Ingestion;
 using PinballWizard.Infrastructure.Rag.Reranking;
@@ -108,6 +110,24 @@ public static class ServiceCollectionExtensions
         // The projector's SearchClient targets the machine index specifically.
         services.TryAddSingleton<MachineSearchIndexBootstrapper>();
         services.TryAddSingleton<IMachineSearchIndexProjector>(BuildMachineIndexProjector);
+
+        // ADR-0049 phase 2b: machine findability index query client. Registered
+        // here (alongside the projector) so the same AiSearch:Endpoint gate
+        // applies. AddAiRouter deliberately does NOT register IMachineSearchIndex;
+        // MachineGroundingTool takes IMachineSearchIndex? (nullable) and .NET DI
+        // injects null when the service is absent — which routes the tool to the
+        // Cosmos SearchByTitleContainsAsync safety net. When this integration IS
+        // configured, TryAddSingleton registers AiSearchMachineIndex as the sole
+        // IMachineSearchIndex, and the grounding tool uses AI Search instead.
+        services.TryAddSingleton<IMachineSearchIndex>(BuildMachineSearchIndex);
+
+        // Phase 0 eval seam (ADR-0049): wraps IMachineSearchIndex as
+        // IFindabilityLookup so FindabilityEvalRunner can measure Recall@k / MRR /
+        // NDCG@k against the live AI Search machine index. Registered here so it
+        // resolves the real AiSearchMachineIndex (not the null-object). When AI
+        // Search is not configured, IFindabilityLookup remains unregistered — eval
+        // runs cannot be conducted without an index.
+        services.TryAddSingleton<IFindabilityLookup, MachineSearchFindabilityLookup>();
 
         // Orphan garbage collector (--gc-rag-index). The pair source
         // enumerates the index; the collector reconciles it against the
@@ -242,6 +262,25 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IMachineRepository>(),
             sp.GetRequiredService<IOptions<AiSearchOptions>>(),
             sp.GetRequiredService<ILogger<MachineSearchIndexProjector>>());
+    }
+
+    // Constructs the AiSearchMachineIndex with a SearchClient targeted at the
+    // machine index (AiSearchOptions.MachineIndexName). The client is built
+    // inline — same pattern as BuildRagRetriever — so the machine-index and
+    // corpus-index clients share the same credential but address different
+    // index names. Keeping them separate avoids SearchOptions from one client
+    // accidentally targeting the other index's fields.
+    private static AiSearchMachineIndex BuildMachineSearchIndex(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.MachineIndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new AiSearchMachineIndex(
+            searchClient,
+            sp.GetRequiredService<ILogger<AiSearchMachineIndex>>());
     }
 
     // Foundry's project endpoint URL has the shape

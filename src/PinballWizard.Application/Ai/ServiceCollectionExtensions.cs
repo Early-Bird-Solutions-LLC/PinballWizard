@@ -5,9 +5,10 @@ using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Evaluation.Evaluators;
+using PinballWizard.Application.Ai.Evaluation.Findability;
 using PinballWizard.Application.Ai.Refusal;
 using PinballWizard.Application.Ai.Tools;
-using PinballWizard.Application.Ai.Evaluation.Findability;
+using PinballWizard.Application.Findability;
 
 namespace PinballWizard.Application.Ai;
 
@@ -54,6 +55,20 @@ public static class ServiceCollectionExtensions
         // root-captured as a de-facto singleton in Production). See the sink's own
         // remarks for why a shared store is correct and bounded here.
         services.TryAddSingleton<IRetrievalCitationMetadataSink, RetrievalCitationMetadataSink>();
+
+        // IMachineSearchIndex is intentionally NOT registered here. The nullable
+        // parameter pattern is used instead: MachineGroundingTool takes
+        // IMachineSearchIndex? (nullable) and .NET DI injects null when the service
+        // is not registered (same pattern as IAgentPromptOverrideRepository? in
+        // OverridingAgentPromptProvider). When null, the tool degrades immediately
+        // to the Cosmos SearchByTitleContainsAsync safety net — identical to
+        // pre-phase-2b behavior.
+        //
+        // AddAzureAiSearchIntegration registers AiSearchMachineIndex when AI Search
+        // is configured. Because AddAzureFoundryIntegration (which calls AddAiRouter)
+        // runs before AddAzureAiSearchIntegration in CLI Program.cs, TryAddSingleton
+        // in AiSearch integration sees no prior IMachineSearchIndex registration and
+        // adds AiSearchMachineIndex as the sole registration.
 
         services.TryAddSingleton<MachineGroundingTool>();
         services.TryAddSingleton<SearchCorpusTool>();
