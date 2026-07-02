@@ -1,0 +1,41 @@
+{"query":"Wonka","category":"nickname","difficulty":"normal","expectedOpdbIds":["GYWBZ-MkPrr","GYWBZ-MW9B0"],"note":"nickname of 'Willy Wonka & The Chocolate Factory'"}
+{"query":"AFM","category":"abbreviation","difficulty":"normal","expectedOpdbIds":["G4do5-MDlN7","G4do5-MkPnV","G4do5-MW9z8","G4do5-MjBp2"],"note":"Attack from Mars"}
+{"query":"MM","category":"abbreviation","difficulty":"hard","expectedOpdbIds":["G5pe4-MePZv","G5pe4-MkPRV","G5pe4-MyNkp","G5pe4-MrR1B","G5pe4-M61y6","G5pe4-MrRrv"],"note":"Medieval Madness; 2-char abbrev is intentionally hard"}
+{"query":"TAF","category":"abbreviation","difficulty":"normal","expectedOpdbIds":["G4ODR-MDXEy","G4ODR-MLzY7"],"note":"The Addams Family"}
+{"query":"TMNT","category":"abbreviation","difficulty":"normal","expectedOpdbIds":["Gr8xn-MKN66","Gd2Xb-Mq1qv","Gd2Xb-MRjpZ"],"note":"Teenage Mutant Ninja Turtles"}
+{"query":"TZ","category":"abbreviation","difficulty":"hard","expectedOpdbIds":["GrXzD-MjBPX"],"note":"Twilight Zone; well-known 2-char abbrev in the hobby"}
+{"query":"MB","category":"abbreviation","difficulty":"hard","expectedOpdbIds":["Gr3EW-MD3Nj","Gr3EW-M3dBn","Gr3EW-MXryE","Gr3EW-M1r9Y"],"note":"Monster Bash"}
+{"query":"Godzila","category":"typo","difficulty":"normal","expectedOpdbIds":["G5po2-MeP6B","GweeP-MW95j","GweeP-Ml9pZ"],"note":"one-edit typo (missing l)"}
+{"query":"Houdinni","category":"typo","difficulty":"normal","expectedOpdbIds":["GvBQX-M0ody"],"note":"one-edit typo (doubled n)"}
+{"query":"Metalica","category":"typo","difficulty":"normal","expectedOpdbIds":["GRBE4-MJ9rE","GRBE4-MQK1Z","GRBE4-MOE4l","GO0q3-MOEy8"],"note":"one-edit typo (single l)"}
+{"query":"Jurasic Park","category":"typo","difficulty":"normal","expectedOpdbIds":["G4ZVB-MJ5lE","GK17D-MdEqz","GK17D-MKNKd","GxvvB-MOEKX"],"note":"one-edit typo (single s)"}
+{"query":"Medival Madness","category":"typo","difficulty":"normal","expectedOpdbIds":["G5pe4-MePZv","G5pe4-MkPRV","G5pe4-MyNkp","G5pe4-MrR1B","G5pe4-M61y6","G5pe4-MrRrv"],"note":"one-edit typo (dropped e)"}
+{"query":"Attack form Mars","category":"transposition","difficulty":"hard","expectedOpdbIds":["G4do5-MDlN7","G4do5-MkPnV","G4do5-MW9z8","G4do5-MjBp2"],"note":"from->form transposition typo"}
+{"query":"Chocolate Factory","category":"partial","difficulty":"normal","expectedOpdbIds":["GYWBZ-MkPrr","GYWBZ-MW9B0"],"note":"trailing fragment of the full title"}
+{"query":"Legacy of the Beast","category":"subtitle","difficulty":"normal","expectedOpdbIds":["G4dOQ-MyNbb","G4dOQ-MkPxr","G4dOQ-MW970"],"note":"subtitle-only of 'Iron Maiden: Legacy of the Beast'"}
+{"query":"Tyrant's Eye","category":"subtitle","difficulty":"normal","expectedOpdbIds":["GK1Ej-MwNZr","GK1Ej-MePok"],"note":"subtitle-only of 'Dungeons & Dragons: The Tyrant's Eye'"}
+{"query":"Party Monsters","category":"partial","difficulty":"normal","expectedOpdbIds":["Grlxp-MVKBW"],"note":"fragment of 'Elvira and the Party Monsters'"}
+{"query":"House of Horrors","category":"partial","difficulty":"normal","expectedOpdbIds":["GZVOd-MwNxZ"],"note":"fragment of \"Elvira's House of Horrors\""}
+{"query":"Fall of the Empire","category":"subtitle","difficulty":"normal","expectedOpdbIds":["Gxv81-M610r","Gxv81-Mo1rp"],"note":"subtitle-only of 'Star Wars: Fall of the Empire'"}
+{"query":"Dungeons and Dragons","category":"and-ampersand","difficulty":"normal","expectedOpdbIds":["G4JBP-MJ6jr","GK1Ej-MwNZr","GK1Ej-MePok"],"note":"catalog stores '&'; both the Bally classic and the Stern subtitle game are acceptable surfaces"}
+{"query":"Willy Wonka and the Chocolate Factory","category":"and-ampersand","difficulty":"normal","expectedOpdbIds":["GYWBZ-MkPrr","GYWBZ-MW9B0"],"note":"'and' spelled out vs stored '&'"}
+{"query":"Elvira and the Party Monsters","category":"and-ampersand","difficulty":"normal","expectedOpdbIds":["Grlxp-MVKBW"],"note":"full title with 'and'"}
+{"query":"Dragons and Dungeons","category":"word-order","difficulty":"hard","expectedOpdbIds":["G4JBP-MJ6jr","GK1Ej-MwNZr","GK1Ej-MePok"],"note":"reversed word order"}
+{"query":"Godzilla","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G5po2-MeP6B","GweeP-MW95j","GweeP-Ml9pZ"],"note":"Sega 1998 vs Stern 2021; ranking-sensitive (which era first)"}
+{"query":"Attack from Mars","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G4do5-MDlN7","G4do5-MkPnV","G4do5-MW9z8","G4do5-MjBp2"],"note":"Bally 1995 vs CGC 2017 remake"}
+{"query":"Star Wars","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G5w67-MDe1k","G420r-MLedz","G5vLR-MZebq","G5vLR-ME049","G5vLR-MwNwy","GpePX-MnKq5"],"note":"multiple exact 'Star Wars' titles across eras (excludes Episode I / Trilogy / Fall of the Empire subtitles)"}
+{"query":"James Bond","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G4PXJ-MQPlw","GQKyP-Mx0O4","GQKyP-MP3OK","Ge1Dy-M9Rrp"],"note":"Gottlieb 1980 vs Stern 2022"}
+{"query":"Metallica","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["GRBE4-MJ9rE","GRBE4-MQK1Z","GRBE4-MOE4l","GO0q3-MOEy8"],"note":"2013 original vs 2024 Remastered"}
+{"query":"Iron Maiden","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G4yZN-MDEP7","G4dOQ-MyNbb","G4dOQ-MkPxr","G4dOQ-MW970"],"note":"1981 Stern Electronics vs 2018 Legacy of the Beast (subtitle-superset)"}
+{"query":"Jurassic Park","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["G4ZVB-MJ5lE","GK17D-MdEqz","GK17D-MKNKd","GxvvB-MOEKX"],"note":"Data East 1993 vs Stern 2019"}
+{"query":"Monster Bash","category":"franchise-collision","difficulty":"normal","expectedOpdbIds":["Gr3EW-MD3Nj","Gr3EW-M3dBn","Gr3EW-MXryE","Gr3EW-M1r9Y"],"note":"Williams 1998 vs CGC 2018 remake"}
+{"query":"The Addams Family","category":"exact","difficulty":"easy","expectedOpdbIds":["G4ODR-MDXEy","G4ODR-MLzY7"],"note":"control: exact title should already resolve"}
+{"query":"Godzilla Premium","category":"edition","difficulty":"normal","expectedOpdbIds":["GweeP-Ml9pZ"],"note":"edition-qualified; should resolve to the Stern Premium/LE base"}
+{"query":"Medieval Madness Remake","category":"edition","difficulty":"normal","expectedOpdbIds":["G5pe4-MkPRV","G5pe4-MyNkp","G5pe4-MrR1B","G5pe4-M61y6","G5pe4-MrRrv"],"note":"CGC remake group only (excludes Williams original G5pe4-MePZv)"}
+{"query":"Stern Godzilla","category":"manufacturer-qualified","difficulty":"easy","expectedOpdbIds":["GweeP-MW95j","GweeP-Ml9pZ"],"note":"control: mfr-qualified should resolve to Stern, not Sega"}
+{"query":"Metallica Remastered","category":"edition","difficulty":"normal","expectedOpdbIds":["GO0q3-MOEy8"],"note":"edition/variant title"}
+{"query":"monster pinball","category":"theme","difficulty":"hard","expectedOpdbIds":["Gr3EW-MD3Nj","Gr3EW-M3dBn","Gr3EW-MXryE","Gr3EW-M1r9Y","G5po2-MeP6B"],"note":"theme=monster (Monster Bash, Sega Godzilla); theme search, multi-answer"}
+{"query":"music pinball","category":"theme","difficulty":"hard","expectedOpdbIds":["GRBE4-MJ9rE","GRBE4-MQK1Z","GRBE4-MOE4l","GpeoL-MyNPq","GpeoL-MkPz1","Gweel-M9Rk0","Gweel-ME0pP"],"note":"theme=music (Metallica, Foo Fighters, Led Zeppelin)"}
+{"query":"Foo Fighters","category":"exact","difficulty":"easy","expectedOpdbIds":["GpeoL-MyNPq","GpeoL-MkPz1"],"note":"control: exact"}
+{"query":"Deadpool","category":"exact","difficulty":"easy","expectedOpdbIds":["G6lnq-Mq1kv","G6lnq-MRj7Z","G6lnq-M6153"],"note":"control: exact"}
+{"query":"Twilight Zone","category":"exact","difficulty":"easy","expectedOpdbIds":["GrXzD-MjBPX"],"note":"control: exact"}
