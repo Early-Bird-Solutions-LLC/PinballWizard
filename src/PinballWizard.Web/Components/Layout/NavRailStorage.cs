@@ -5,6 +5,12 @@ namespace PinballWizard.Web.Components.Layout;
 // Thin wrapper over the window.pinwiz.navRail JS helpers. Nav preference is
 // auxiliary — JS-interop failures (prerender, private-mode storage) degrade to a
 // no-op rather than surfacing, but never fabricate a "true" preference.
+//
+// Design note: this is intentionally a static helper rather than a DI-registered
+// INavRailPreferenceStore. Keeping it static avoids forcing service registration into
+// Program.cs and into every bUnit context that renders AppNavRail. The JS-interop key
+// strings are still encapsulated here; swapping the storage mechanism later means
+// changing this one file only.
 internal static class NavRailStorage
 {
     public static async Task<bool?> GetPinnedAsync(IJSRuntime js, string key)

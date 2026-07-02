@@ -218,6 +218,31 @@ public sealed class AppNavRailTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task HoverToPeek_PinThenLeave_StaysOpen()
+    {
+        // Sequence: start collapsed, hover (peek-open), click toggle (pin while peeking),
+        // then pointer-leave — the rail must STAY open because it is now pinned.
+        // Persist is off (default false) so no JS set() calls occur; Loose JSInterop handles
+        // any incidental interop from the constructor.
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), false);
+            builder.AddAttribute(4, nameof(AppNavRail.HoverToPeek), true);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerEnter());
+        await cut.InvokeAsync(() => cut.Find("[data-testid='nav-rail-toggle']").Click());
+        await cut.InvokeAsync(() => cut.Find(".app-nav-rail").PointerLeave());
+
+        Assert.Equal("Collapse navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label"));
+    }
+
+    [Fact]
     public void Persist_ReadsStoredPinned_OnFirstRender()
     {
         JSInterop.Setup<bool?>("pinwiz.navRail.get", "pinwiz.nav.pinned").SetResult(true);
@@ -240,7 +265,8 @@ public sealed class AppNavRailTests : AsyncBunitContext
     [Fact]
     public async Task Persist_WritesPinned_OnToggle()
     {
-        JSInterop.Mode = JSRuntimeMode.Loose; // get() returns null; set() is a no-op sink we assert on
+        // Constructor already sets JSInterop.Mode = Loose; get() returns null by default.
+        // Assert Toggle() fires exactly one set() call with the correct (key, value) args.
 
         var cut = Render(builder =>
         {
