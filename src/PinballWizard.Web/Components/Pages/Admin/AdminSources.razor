@@ -193,6 +193,9 @@
             }
             _sources = rows;
         }
+        // Unlike AdminMachines, this page raises no Snackbar on failure — the
+        // AppErrorAlert gated on _loadFailed is the sole, sufficient failure signal
+        // (Invariant #17). Do not add a Snackbar here in the name of "alignment".
         catch (OperationCanceledException)
         {
             Logger.LogWarning("Admin ingestion-sources load timed out after 30 s.");

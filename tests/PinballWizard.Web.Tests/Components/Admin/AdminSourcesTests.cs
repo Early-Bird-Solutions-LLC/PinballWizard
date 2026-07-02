@@ -243,9 +243,12 @@ public sealed class AdminSourcesTests : AsyncBunitContext
 // provide — the alignment issue #635 brings /admin/sources to match /admin/machines.
 //
 // Pattern: hold the repository call with a TaskCompletionSource so we can assert the
-// loading state between render and data arrival. Under a blocking OnInitializedAsync
-// load, holding the gate stalls the render; OnAfterRenderAsync kicks LoadAsync off
-// after the first render so the spinner is visible immediately.
+// loading state between render and data arrival. OnAfterRenderAsync kicks LoadAsync off
+// after the first render, so the spinner is present immediately after that render.
+// NOTE: bUnit cannot distinguish the two lifecycles — the spinner also shows before the
+// gate under OnInitializedAsync; OnAfterRenderAsync's real benefit is not blocking the
+// SSR pre-render pass, which is not bUnit-observable. These are parity/regression guards
+// (matching AdminMachines' coverage), not a lifecycle RED.
 public sealed class AdminSourcesLoadingStateTests : AsyncBunitContext
 {
     private readonly TaskCompletionSource _dataGate = new();
