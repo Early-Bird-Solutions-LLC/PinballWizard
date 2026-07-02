@@ -45,8 +45,19 @@ public abstract class AdminPageBase : ComponentBase, IDisposable
         }
 
         _disposed = true;
-        _disposalCts.Cancel();
-        _disposalCts.Dispose();
+        Dispose(disposing: true);
         GC.SuppressFinalize(this);
+    }
+
+    // Extension point for derived admin pages that own disposable resources.
+    // Base cancels + disposes the component-lifetime CTS; override and call
+    // base.Dispose(disposing) to add cleanup.
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _disposalCts.Cancel();
+            _disposalCts.Dispose();
+        }
     }
 }
