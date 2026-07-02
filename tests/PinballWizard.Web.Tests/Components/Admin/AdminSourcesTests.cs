@@ -116,6 +116,28 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     }
 
     [Fact]
+    public void NoSourceRow_WithoutDate_RendersReasonWithoutAssessedSuffix()
+    {
+        RegisterSources(ct => Stream([
+            MakeSource("jjp_bulletins", false,
+                sourceGroup: "Jersey Jack Pinball",
+                discoveryStatus: "NoSource",
+                discoveryNotes: "No bulletin section exists here.")
+                // discoveryDate intentionally left null
+        ], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() =>
+        {
+            var reason = cut.Find("[data-testid='source-reason']");
+            Assert.Contains("No bulletin section exists here.", reason.TextContent, StringComparison.Ordinal);
+            Assert.DoesNotContain("assessed", reason.TextContent, StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public void ActiveRow_RendersNoReasonCaption()
     {
         RegisterSources(ct => Stream([
