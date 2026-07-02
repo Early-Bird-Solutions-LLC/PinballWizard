@@ -9,10 +9,11 @@ using Xunit;
 namespace PinballWizard.Web.Tests.Components.Layout;
 
 // Per ADR-0026 PR self-audit item 9(d): AdminLayout is the chrome wrapper for
-// all /admin/* pages. Navigation is delegated to the shared AppNavRail component
-// (Open="true", HeaderText="Admin Navigation") hosted as an InteractiveServer
-// island so the toggle's @onclick is live even inside a statically-rendered layout.
-// AppNavRail uses DrawerVariant.Mini (collapsed = icon rail, expanded = labels).
+// all /admin/* pages. Per the ADR-0034 amendment (2026-06-17) the drawer is
+// always-open (DrawerVariant.Persistent in MudBlazor 8.x) and the hamburger
+// toggle is removed — a toggle OnClick is dead on the static admin pages, and
+// an always-open drawer's nav links are plain anchors that work regardless of
+// each page's render mode.
 //
 // AdminLayout now contains AuthorizeView, so all render paths need AddAuthorization().
 // Anonymous baseline (NotAuthorized branch) is the default state used by the
@@ -42,16 +43,15 @@ public sealed class AdminLayoutTests : AsyncBunitContext
             }));
 
     [Fact]
-    public void AdminLayout_Renders_AllNineNavLinks()
+    public void AdminLayout_Renders_AllSixNavLinks()
     {
         var cut = RenderWithBody();
 
-        // All nine admin nav destinations must be reachable as anchors.
+        // The six admin nav destinations must all be reachable as anchors.
         string[] hrefs =
         [
             "/admin", "/admin/sources", "/admin/machines",
             "/admin/document-triage", "/admin/link-overrides", "/admin/settings",
-            "/admin/documents", "/admin/jobs", "/admin/monitoring",
         ];
         foreach (var href in hrefs)
         {
@@ -60,16 +60,12 @@ public sealed class AdminLayoutTests : AsyncBunitContext
     }
 
     [Fact]
-    public void AdminLayout_NavRail_IsOpenAndMini()
+    public void AdminLayout_Drawer_IsPersistent()
     {
         var cut = RenderWithBody();
 
-        // AdminLayout delegates navigation to AppNavRail (DrawerVariant.Mini).
-        // Mini variant: collapsed shows icon rail, expanded shows labels.
-        // Open="true" ensures all nine links are visible on load.
-        var navRail = cut.FindComponent<AppNavRail>();
-        var drawer = navRail.FindComponent<MudDrawer>();
-        Assert.Equal(DrawerVariant.Mini, drawer.Instance.Variant);
+        var drawer = cut.FindComponent<MudDrawer>();
+        Assert.Equal(DrawerVariant.Persistent, drawer.Instance.Variant);
         // MudBlazor 9 turned Open into a ParameterState property. The MUD0012 analyzer
         // steers component authors to GetState(x => x.Open), but GetState is protected —
         // reachable only from MudBlazor's own InternalsVisibleTo tests, not an external
@@ -77,25 +73,19 @@ public sealed class AdminLayoutTests : AsyncBunitContext
         // (we're asserting the value AdminLayout passes in), so the authoring analyzer
         // is suppressed for this single external-inspection assertion.
 #pragma warning disable MUD0012
-        Assert.True(drawer.Instance.Open, "Admin nav rail must be open on load so all nine links are visible.");
+        Assert.True(drawer.Instance.Open, "Persistent (always-open) admin drawer must be open.");
 #pragma warning restore MUD0012
     }
 
     [Fact]
-    public void AdminLayout_NavRail_RendersLiveToggle()
+    public void AdminLayout_HasNo_HamburgerToggle()
     {
         var cut = RenderWithBody();
 
-        // The OLD hamburger carried aria-label="Toggle navigation drawer" and had
-        // a dead-on-static @onclick. That element is gone; guard against it creeping
-        // back by asserting it is absent.
+        // The toggle button carried aria-label="Toggle navigation drawer".
+        // A permanent drawer needs no toggle; assert it is gone so the dead-on-
+        // static OnClick can't creep back.
         Assert.Empty(cut.FindAll("[aria-label='Toggle navigation drawer']"));
-
-        // The NEW rail owns a live in-island toggle (Open="true" on admin, so the
-        // toggle starts with aria-label="Collapse navigation"). bUnit doesn't respect
-        // @rendermode — it renders all components in one synchronous pass, so the rail
-        // renders fully here regardless of the InteractiveServer island boundary.
-        Assert.NotNull(cut.Find("[aria-label='Collapse navigation']"));
     }
 
     [Fact]

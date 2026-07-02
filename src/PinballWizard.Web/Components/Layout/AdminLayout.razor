@@ -1,10 +1,10 @@
 @* AdminLayout — admin chrome with drawer navigation.
  *
  * Used exclusively by /admin/* pages that declare @layout AdminLayout.
- * Navigation is handled by the shared AppNavRail component (Open="true" so all
- * nine admin links are visible on load). The rail is pinned to InteractiveServer
- * so the toggle's @onclick is live even inside a statically-rendered layout
- * (mirrors the MudBlazor provider islands already in this file).
+ * Drawer is permanent (always visible) — its MudNavLinks are plain anchors that
+ * navigate correctly on every admin page regardless of that page's render mode
+ * (ADR-0034 amendment, 2026-06-17). The former hamburger toggle was a dead-on-
+ * static OnClick and has been removed.
  *
  * [Authorize] is present here and on /admin/* pages. The AzureAd
  * appsettings are intentionally empty in Wave 1 — real tenant config
@@ -12,7 +12,7 @@
  * admin route will fail the auth challenge (which is correct behavior).
  *
  * Category: chrome wrapper — all layout primitives are MudBlazor (MudLayout,
- * MudAppBar, MudMainContent) plus the shared AppNavRail. Not a custom delight
+ * MudAppBar, MudDrawer, MudNavMenu, MudMainContent). Not a custom delight
  * surface in the ADR-0026 § 6 sense.
  *
  * ADR-0008  — MudBlazor strict for all chrome
@@ -55,7 +55,61 @@
         </MudButton>
     </MudAppBar>
 
-    <AppNavRail @rendermode="InteractiveServer" Open="true" HeaderText="Admin Navigation" Items="@AdminNav" />
+    <MudDrawer Open="true"
+               Variant="DrawerVariant.Persistent"
+               Elevation="2">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.subtitle1" Class="mt-1">Admin Navigation</MudText>
+        </MudDrawerHeader>
+
+        <MudNavMenu>
+            <MudNavLink Href="/admin"
+                        Match="NavLinkMatch.All"
+                        Icon="@Icons.Material.Filled.Dashboard">
+                Dashboard
+            </MudNavLink>
+            <MudNavLink Href="/admin/sources"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Source">
+                Sources
+            </MudNavLink>
+            <MudNavLink Href="/admin/machines"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.SportsBaseball">
+                Machines
+            </MudNavLink>
+            <MudNavLink Href="/admin/documents"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Article">
+                Documents
+            </MudNavLink>
+            <MudNavLink Href="/admin/document-triage"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.RuleFolder">
+                Document Triage
+            </MudNavLink>
+            <MudNavLink Href="/admin/link-overrides"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.LinkOff">
+                Link Overrides
+            </MudNavLink>
+            <MudNavLink Href="/admin/jobs"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Schedule">
+                Jobs
+            </MudNavLink>
+            <MudNavLink Href="/admin/monitoring"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Monitor">
+                Monitoring
+            </MudNavLink>
+            <MudNavLink Href="/admin/settings"
+                        Match="NavLinkMatch.Prefix"
+                        Icon="@Icons.Material.Filled.Tune">
+                Settings
+            </MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
 
     <MudMainContent>
         <AuthorizeView>
@@ -72,22 +126,8 @@
             @Body
         </TiltErrorBoundary>
     </MudMainContent>
-    @* No <BrandFooter /> — admin is a utility/console surface; the public brand footer is not part of admin chrome. *@
 </MudLayout>
 
 @code {
     private readonly MudTheme _theme = PinballTheme.Create();
-
-    private static readonly IReadOnlyList<NavRailItem> AdminNav =
-    [
-        new NavRailItem("/admin",                 "Dashboard",       Icons.Material.Filled.Dashboard,    MatchAll: true),
-        new NavRailItem("/admin/sources",         "Sources",         Icons.Material.Filled.Source),
-        new NavRailItem("/admin/machines",        "Machines",        Icons.Material.Filled.SportsBaseball),
-        new NavRailItem("/admin/documents",       "Documents",       Icons.Material.Filled.Article),
-        new NavRailItem("/admin/document-triage", "Document Triage", Icons.Material.Filled.RuleFolder),
-        new NavRailItem("/admin/link-overrides",  "Link Overrides",  Icons.Material.Filled.LinkOff),
-        new NavRailItem("/admin/jobs",            "Jobs",            Icons.Material.Filled.Schedule),
-        new NavRailItem("/admin/monitoring",      "Monitoring",      Icons.Material.Filled.Monitor),
-        new NavRailItem("/admin/settings",        "Settings",        Icons.Material.Filled.Tune),
-    ];
 }
