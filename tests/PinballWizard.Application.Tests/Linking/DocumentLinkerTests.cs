@@ -29,7 +29,8 @@ public class DocumentLinkerTests
         DocumentType docType = DocumentType.Manual,
         List<CrossReference>? crossRefs = null,
         DownloadedFileInfo? file = null,
-        SourceType sourceType = SourceType.ManualsPage)
+        SourceType sourceType = SourceType.ManualsPage,
+        string? linkText = null)
         => new()
         {
             DocumentId = documentId,
@@ -42,6 +43,7 @@ public class DocumentLinkerTests
                 FileUrl = fileUrl,
                 ScrapedAt = DateTime.UtcNow,
                 SourceType = sourceType,
+                LinkText = linkText,
             },
             Timeline = new TimelineInfo
             {
@@ -444,6 +446,149 @@ public class DocumentLinkerTests
         Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
         Assert.Null(result.ResolutionStrategy);
         Assert.NotNull(result.FailureReason);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tier 1 — Edition-aware xref resolution (regression: Batman '66 / Guardians of
+    // the Galaxy edition-specific docs went NotInCatalog because the game slug maps
+    // to multiple same-manufacturer editions and Tier 1 bailed instead of resolving
+    // the edition. Live-confirmed 2026-07-02.)
+    // -------------------------------------------------------------------------
+
+    // Two Stern editions of one game sharing the slug + group + year — the shape
+    // that made Tier 1 bail. (Batman '66 Premium GRoz4-MjBV6 + LE GRoz4-MrRPw.)
+    private static (Machine premium, Machine le) MakeBatman66Family()
+    {
+        var premium = MakeMachine(id: "GRoz4-MjBV6", title: "Batman 66", slug: "batman-66");
+        premium.GroupId = "GRoz4"; premium.Year = 2016; premium.EditionTokens = ["premium"];
+        var le = MakeMachine(id: "GRoz4-MrRPw", title: "Batman 66", slug: "batman-66");
+        le.GroupId = "GRoz4"; le.Year = 2016; le.EditionTokens = ["le"];
+        return (premium, le);
+    }
+
+    private static CrossReference GamePageXref(string slug) => new()
+    {
+        AlsoFoundAt = $"https://sternpinball.com/game/{slug}/",
+        DiscoveryContext = "Game Page → Specs & Manual tab",
+        DiscoveredAt = DateTime.UtcNow,
+    };
+
+    [Fact]
+    public async Task LinkAsync_Tier1EditionFamily_FilenameToken_LinksToEdition()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var (premium, le) = MakeBatman66Family();
+        // Filename carries "-Premium-"; the slug ("batman66") does NOT word-boundary
+        // match "bmpremiumflyer65", so only the xref-slug tier can resolve this.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/BM-Premium-Flyer_65.pdf",
+            docType: DocumentType.Flyer,
+            crossRefs: [GamePageXref("batman-66")],
+            linkText: "Batman '66 Premium Flyer",
+            sourceType: SourceType.GamePage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [premium, le]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("xref_slug_edition", result.ResolutionStrategy);
+        Assert.Equal(["GRoz4-MjBV6"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1EditionFamily_LinkTextToken_LinksToEdition()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // Guardians of the Galaxy Pro flyer: abbreviated filename "GOTG-Pro.pdf" has
+        // an UNDELIMITED "-pro." the filename markers miss; the edition must come from
+        // the anchor text ("… Pro Flyer"). Verifies the link-text token fallback.
+        var pro = MakeMachine(id: "GRWvz-Mp4yl", title: "Guardians of the Galaxy", slug: "guardians-of-the-galaxy");
+        pro.GroupId = "GRWvz"; pro.Year = 2017; pro.EditionTokens = ["pro"];
+        var le = MakeMachine(id: "GRWvz-Mx0eb", title: "Guardians of the Galaxy", slug: "guardians-of-the-galaxy");
+        le.GroupId = "GRWvz"; le.Year = 2017; le.EditionTokens = ["le"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/09/GOTG-Pro.pdf",
+            docType: DocumentType.Flyer,
+            crossRefs: [GamePageXref("guardians-of-the-galaxy")],
+            linkText: "Guardians of the Galaxy Pro Flyer",
+            sourceType: SourceType.GamePage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [pro, le]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("xref_slug_edition", result.ResolutionStrategy);
+        Assert.Equal(["GRWvz-Mp4yl"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1EditionFamily_GroupLevelDoc_FansOutToAllEditions()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var (premium, le) = MakeBatman66Family();
+        // A group-level doc (feature matrix) applies to every edition → fan out.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/BM-Feature-Matrix.pdf",
+            docType: DocumentType.Flyer,
+            crossRefs: [GamePageXref("batman-66")],
+            linkText: "Batman '66 Feature Matrix",
+            sourceType: SourceType.GamePage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [premium, le]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("xref_slug_edition_group", result.ResolutionStrategy);
+        Assert.Equal(2, result.LinkedMachineIds.Count);
+        Assert.Contains("GRoz4-MjBV6", result.LinkedMachineIds);
+        Assert.Contains("GRoz4-MrRPw", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1EditionFamily_NoEditionSignal_StaysNotInCatalog()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var (premium, le) = MakeBatman66Family();
+        // No edition signal anywhere (opaque filename, no anchor edition word). The
+        // family can't be disambiguated → the doc must degrade visibly to
+        // NotInCatalog, NOT be mis-linked to an arbitrary edition.
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/flyer.pdf",
+            docType: DocumentType.Flyer,
+            crossRefs: [GamePageXref("batman-66")],
+            linkText: "Batman '66 Flyer",
+            sourceType: SourceType.GamePage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [premium, le]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Empty(result.LinkedMachineIds);
     }
 
     // -------------------------------------------------------------------------
