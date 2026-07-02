@@ -77,6 +77,24 @@ public sealed class IngestionSource : IEntity
     /// <summary>Cosmos system-managed _etag.</summary>
     [JsonPropertyName("_etag")]
     public string? ETag { get; set; }
+
+    // Manufacturer grouping key shared by a primary source and its sub-feeds
+    // (e.g. "Jersey Jack Pinball"). Populated from the seed; non-required so a
+    // read of a not-yet-reseeded Cosmos doc never throws.
+    [JsonPropertyName("sourceGroup")]
+    public string SourceGroup { get; set; } = "";
+
+    // Discovery assessment: "Active" / "NoSource" / "Deferred". Null => Active.
+    [JsonPropertyName("discoveryStatus")]
+    public string? DiscoveryStatus { get; set; }
+
+    // Human explanation for a non-Active discovery status (shown in the admin UI).
+    [JsonPropertyName("discoveryNotes")]
+    public string? DiscoveryNotes { get; set; }
+
+    // Date the discovery assessment was made.
+    [JsonPropertyName("discoveryDate")]
+    public DateOnly? DiscoveryDate { get; set; }
 }
 
 /// <summary>

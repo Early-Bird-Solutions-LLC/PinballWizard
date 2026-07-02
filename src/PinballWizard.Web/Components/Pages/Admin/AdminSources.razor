@@ -48,9 +48,20 @@
 
     <AppDataGrid T="IngestionSourceRow"
                  Items="@_sources"
+                 Groupable="@true"
+                 GroupExpanded="@true"
                  data-testid="admin-sources-grid">
 
         <Columns>
+            <PropertyColumn Property="x => x.SourceGroup" Title="Manufacturer" Grouping="true" Hidden="true">
+                <GroupTemplate>
+                    <MudText Typo="Typo.body2"
+                             data-testid="source-group-header"
+                             Style="color: var(--mud-palette-text-primary)">
+                        @context.Grouping.Key
+                    </MudText>
+                </GroupTemplate>
+            </PropertyColumn>
             <TemplateColumn Title="Name">
                 <CellTemplate>
                     <MudLink Href="@($"/admin/sources/{context.Item.Id}")">
@@ -65,9 +76,21 @@
             </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
-                    <AppStatusChip Color="@(context.Item.Enabled ? Color.Success : Color.Default)">
-                        @(context.Item.Enabled ? "Enabled" : "Disabled")
-                    </AppStatusChip>
+                    @{
+                        var view = SourceStatusView.Derive(context.Item.Enabled, context.Item.DiscoveryStatus);
+                    }
+                    <AppStatusChip Color="@view.Color" Icon="@view.Icon">@view.Label</AppStatusChip>
+                    @if (view.Status != SourceStatus.Active
+                         && !string.IsNullOrWhiteSpace(context.Item.DiscoveryNotes))
+                    {
+                        <MudText Typo="Typo.caption"
+                                 Color="Color.Secondary"
+                                 Class="d-block mt-1"
+                                 data-testid="source-reason">
+                            @context.Item.DiscoveryNotes@(context.Item.DiscoveryDate is { } d
+                                ? $" (assessed {d:yyyy-MM-dd})" : "")
+                        </MudText>
+                    }
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.Cadence" Title="Cadence" />
@@ -110,7 +133,11 @@
         string LastRun,
         string LastSuccess,
         long DocsDiscovered,
-        long RunFailures);
+        long RunFailures,
+        string SourceGroup,
+        string? DiscoveryStatus,
+        string? DiscoveryNotes,
+        DateOnly? DiscoveryDate);
 
     private List<IngestionSourceRow> _sources = [];
     private bool _loading = true;
@@ -133,15 +160,19 @@
             await foreach (var s in SourceRepo.StreamAllAsync(cts.Token))
             {
                 rows.Add(new IngestionSourceRow(
-                    Id:             s.Id,
-                    Name:           s.DisplayName,
-                    SourceUrl:      s.BaseUrl,
-                    Enabled:        s.Enabled,
-                    Cadence:        s.Cadence,
-                    LastRun:        s.LastRunAt?.ToString("u") ?? "—",
-                    LastSuccess:    s.LastSuccessAt?.ToString("u") ?? "—",
-                    DocsDiscovered: s.TotalDocumentsDiscovered,
-                    RunFailures:    s.TotalRunFailures));
+                    Id:              s.Id,
+                    Name:            s.DisplayName,
+                    SourceUrl:       s.BaseUrl,
+                    Enabled:         s.Enabled,
+                    Cadence:         s.Cadence,
+                    LastRun:         s.LastRunAt?.ToString("u") ?? "—",
+                    LastSuccess:     s.LastSuccessAt?.ToString("u") ?? "—",
+                    DocsDiscovered:  s.TotalDocumentsDiscovered,
+                    RunFailures:     s.TotalRunFailures,
+                    SourceGroup:     s.SourceGroup,
+                    DiscoveryStatus: s.DiscoveryStatus,
+                    DiscoveryNotes:  s.DiscoveryNotes,
+                    DiscoveryDate:   s.DiscoveryDate));
             }
             _sources = rows;
         }
