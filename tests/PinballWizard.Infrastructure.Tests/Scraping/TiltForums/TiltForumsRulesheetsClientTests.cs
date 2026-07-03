@@ -188,6 +188,24 @@ public sealed class TiltForumsRulesheetsClientTests
         Assert.Equal(2, urls.Count);
     }
 
+    [Fact]
+    public async Task DiscoverSubcategoryTopicUrlsAsync_NonNotFoundHttpError_StopsPaginationGracefully_ReturnsAccumulated()
+    {
+        // Page 0 succeeds and yields 2 URLs; page 1 returns a 500 (server error).
+        // The method must not throw — it should stop pagination and return the 2
+        // URLs already collected from page 0, losing no data already gathered.
+        var (client, _, _) = BuildClient(h => h
+            .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
+            .Map(SubcategoryPageUrl(1), _ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+
+        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+
+        // Must not throw; must return the 2 URLs from page 0, not 0.
+        Assert.Equal(2, urls.Count);
+        Assert.Contains("https://tiltforums.com/t/rulesheet-master-list/7230", urls);
+        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
+    }
+
     // Shape verified against the live "Transformers" topic page 2026-07-03:
     // #post_1 > div.post[itemprop='text'] holds h1/p/ul content; author and
     // timestamp live in #post_1's crawler-post-meta block.

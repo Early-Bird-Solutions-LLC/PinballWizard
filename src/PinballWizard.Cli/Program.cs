@@ -1316,6 +1316,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
         Console.WriteLine($"Found {listings.Count} rulesheet listing(s) in the master list.");
 
+        if (listings.Count == 0)
+        {
+            Console.Error.WriteLine(
+                "Tilt Forums master list returned 0 rulesheets — this likely indicates a fetch failure rather than a genuinely empty list; check the warning/error logs above.");
+            Environment.ExitCode = 1;
+            return;
+        }
+
         Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
         var subcategoryUrls = await tiltForumsClient.DiscoverSubcategoryTopicUrlsAsync(cancellationToken);
         var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);

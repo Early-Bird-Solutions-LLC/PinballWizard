@@ -132,9 +132,18 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
             {
                 html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false);
             }
-            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            catch (HttpRequestException ex)
             {
-                Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} returned 404; pagination exhausted.", page);
+                if (ex.StatusCode == HttpStatusCode.NotFound)
+                {
+                    Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} returned 404; pagination exhausted.", page);
+                }
+                else
+                {
+                    Logger.LogWarning(ex,
+                        "TiltForumsRulesheetsClient: subcategory page {Page} fetch failed ({StatusCode}); stopping pagination with {Collected} URL(s) collected so far.",
+                        page, ex.StatusCode, urls.Count);
+                }
                 break;
             }
 
