@@ -48,6 +48,8 @@
 
         <MudSpacer />
 
+        <AdminIdentityControl />
+
         <MudButton Href="/"
                    Variant="Variant.Text"
                    Color="Color.Inherit"
@@ -64,16 +66,6 @@
     <AppNavRail Open="true" ShowToggle="false" HeaderText="Admin Navigation" Items="@AdminNav" />
 
     <MudMainContent>
-        <AuthorizeView>
-            <Authorized>
-                <MudStack Row="true" AlignItems="AlignItems.Center" Class="ma-2" Spacing="2">
-                    <MudText Typo="Typo.caption" data-testid="admin-identity">
-                        Signed in as @context.User.Identity?.Name
-                    </MudText>
-                    <MudLink Href="/MicrosoftIdentity/Account/SignOut" Typo="Typo.caption">Sign out</MudLink>
-                </MudStack>
-            </Authorized>
-        </AuthorizeView>
         <TiltErrorBoundary>
             @Body
         </TiltErrorBoundary>
