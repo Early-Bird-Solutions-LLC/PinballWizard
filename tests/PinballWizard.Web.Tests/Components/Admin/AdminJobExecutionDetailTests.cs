@@ -117,4 +117,27 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
 
         cut.Find("[data-testid='exec-not-found']");
     }
+
+    [Fact]
+    public async Task Admin_Filter_NarrowsLines()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+            [
+                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info),
+                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Metallica", JobLogSeverity.Info),
+            ], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var input = cut.Find("[data-testid='exec-log-filter'] input");
+        await cut.InvokeAsync(() => input.Input("Godzilla"));
+
+        var lines = cut.Find("[data-testid='exec-log-lines']");
+        Assert.Contains("Godzilla", lines.InnerHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Metallica", lines.InnerHtml, StringComparison.Ordinal);
+    }
 }
