@@ -174,6 +174,6 @@ public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
     {
         var cut = RenderWithBody();
 
-        Assert.Empty(cut.FindAll("a[href='/MicrosoftIdentity/Account/SignIn']"));
+        Assert.Empty(cut.FindAll("[data-testid='admin-signin']"));
     }
 }

@@ -24,8 +24,21 @@ public static class AdminSignIn
 
     // Sign-in URL that returns to `returnUrl` (a LOCAL relative path such as
     // "/admin/jobs/..."). Bare path when returnUrl is null/whitespace.
-    public static string Href(string? returnUrl) =>
-        string.IsNullOrWhiteSpace(returnUrl)
-            ? SignInPath
-            : $"{SignInPath}?{ReturnUrlParam}={Uri.EscapeDataString(returnUrl)}";
+    // Local-path guard: rejects absolute URIs and protocol-relative paths so
+    // a future caller cannot turn this into an open redirect.
+    public static string Href(string? returnUrl)
+    {
+        if (string.IsNullOrWhiteSpace(returnUrl))
+            return SignInPath;
+
+        // Defense in depth: only a local relative path may become a post-sign-in
+        // redirect target, so a future caller cannot turn this into an open redirect.
+        if (!Uri.IsWellFormedUriString(returnUrl, UriKind.Relative)
+            || returnUrl.StartsWith("//", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("returnUrl must be a local relative path.", nameof(returnUrl));
+        }
+
+        return $"{SignInPath}?{ReturnUrlParam}={Uri.EscapeDataString(returnUrl)}";
+    }
 }

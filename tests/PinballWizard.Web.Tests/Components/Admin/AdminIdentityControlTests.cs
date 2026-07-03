@@ -38,7 +38,9 @@ public sealed class AdminIdentityControlTests : AsyncBunitContext
         this.AddAuthorization().SetNotAuthorized();
         var cut = RenderControl();
         var link = cut.Find("[data-testid='admin-signin']");
-        Assert.StartsWith(AdminSignIn.SignInPath, link.GetAttribute("href"));
+        var href = link.GetAttribute("href")!;
+        Assert.StartsWith(AdminSignIn.SignInPath, href);
+        Assert.Contains("redirectUri=", href, System.StringComparison.Ordinal);
         Assert.Empty(cut.FindAll("[data-testid='admin-identity']"));
         Assert.Empty(cut.FindAll("[data-testid='admin-signout']"));
     }
@@ -48,7 +50,8 @@ public sealed class AdminIdentityControlTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("jim@example.com");
         var cut = RenderControl();
-        cut.Find("[data-testid='admin-identity']");
+        var identity = cut.Find("[data-testid='admin-identity']");
+        Assert.Contains("jim@example.com", identity.TextContent, System.StringComparison.Ordinal);
         var signOut = cut.Find("[data-testid='admin-signout']");
         Assert.Equal(AdminSignIn.SignOutPath, signOut.GetAttribute("href"));
         Assert.Empty(cut.FindAll("[data-testid='admin-signin']"));

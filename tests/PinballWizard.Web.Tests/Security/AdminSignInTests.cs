@@ -21,6 +21,13 @@ public sealed class AdminSignInTests
             href);
     }
 
+    [Theory]
+    [InlineData("https://evil.example")]
+    [InlineData("http://evil.example/path")]
+    [InlineData("//evil.example")]
+    public void Href_NonLocalReturnUrl_Throws(string returnUrl) =>
+        Assert.Throws<System.ArgumentException>(() => AdminSignIn.Href(returnUrl));
+
     [Fact]
     public void Paths_AreTheMicrosoftIdentityAccountEndpoints()
     {
