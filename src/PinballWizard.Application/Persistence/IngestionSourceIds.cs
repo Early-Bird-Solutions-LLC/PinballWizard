@@ -29,4 +29,5 @@ public static class IngestionSourceIds
     public const string Twip = "twip";
     public const string JjpSupportDocs = "jjp_support";
     public const string MultimorphicP3Sdk = "multimorphic_p3_sdk";
+    public const string PinballBrothersFreshdesk = "pb_freshdesk";
 }

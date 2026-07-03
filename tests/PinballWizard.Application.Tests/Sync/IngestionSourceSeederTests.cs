@@ -213,7 +213,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
         var seeds = JsonSerializer.Deserialize<List<IngestionSourceSeed>>(json);
 
         Assert.NotNull(seeds);
-        Assert.Equal(20, seeds!.Count);
+        Assert.Equal(21, seeds!.Count);
 
         // Canonical manufacturer keys per ScraperManufacturerKey,
         // OpdbMachineMapper normalization, and ScraperOrchestrator.SourceAliases.
@@ -226,6 +226,8 @@ public sealed class IngestionSourceSeederTests : IDisposable
         // "pb_docs" adds Pinball Brothers per-game document PDFs (rulesheet-class).
         // "twip" adds This Week in Pinball newsletter indexing (ADR-0043, Domain-2).
         // "jjp_support" adds JJP per-edition support page PDFs (manuals, rules).
+        // "pb_freshdesk" adds Pinball Brothers Freshdesk support portal (2026-07-03);
+        // "pb_bulletins" is superseded by it and remains as a Superseded discovery entry.
         var expectedIds = new[]
         {
             "stern", "jjp", "jjp_support", "ap", "spooky", "spooky_support", "pinballbrothers",
@@ -234,6 +236,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
             "pb_docs",
             "kineticist_tutorials",
             "twip",
+            "pb_freshdesk",
         };
         Assert.Equal(expectedIds.OrderBy(x => x), seeds.Select(s => s.Id).OrderBy(x => x));
     }
@@ -254,7 +257,7 @@ public sealed class IngestionSourceSeederTests : IDisposable
                 $"Entry '{id}' is missing a non-empty sourceGroup.");
 
             Assert.True(entry.TryGetProperty("discoveryStatus", out var status)
-                && status.GetString() is "Active" or "NoSource" or "Deferred",
+                && status.GetString() is "Active" or "NoSource" or "Deferred" or "Superseded",
                 $"Entry '{id}' has an invalid or missing discoveryStatus.");
 
             // No display-name mojibake or leftover status suffixes.
@@ -264,11 +267,12 @@ public sealed class IngestionSourceSeederTests : IDisposable
             Assert.DoesNotContain("(Deferred)", name, StringComparison.Ordinal);
         }
 
-        // The four disabled sub-feeds must carry an explanation.
+        // The disabled sub-feeds (NoSource/Deferred) must carry an explanation.
+        // pb_bulletins moved to Superseded (2026-07-03), so the count is 3.
         var disabledWithReason = doc.RootElement.EnumerateArray()
             .Where(e => e.GetProperty("discoveryStatus").GetString() is "NoSource" or "Deferred")
             .ToList();
-        Assert.Equal(4, disabledWithReason.Count);
+        Assert.Equal(3, disabledWithReason.Count);
         Assert.All(disabledWithReason, e =>
         {
             var id = e.GetProperty("id").GetString();

@@ -314,6 +314,12 @@ public sealed class ScraperOrchestrator
         if (ctx.Contains("game code")) return DocumentType.Firmware;
         if (ctx.Contains("promotional")) return DocumentType.Flyer;
 
+        // Pinball Brothers Freshdesk "*- Electronics" folders hold
+        // schematics/wiring diagrams. Folder-name context is the reliable
+        // signal here — link text varies per article and isn't guaranteed
+        // to mention "schematic".
+        if (ctx.Contains("electronics")) return DocumentType.Schematic;
+
         if (text.Contains("manual")) return DocumentType.Manual;
         if (text.Contains("schematic")) return DocumentType.Schematic;
         if (text.Contains("firmware") || text.Contains("game code")) return DocumentType.Firmware;
@@ -326,7 +332,10 @@ public sealed class ScraperOrchestrator
         // "Rules Manual" or "Owner's Manual & Rules" has already returned Manual
         // above. We only catch standalone rules PDFs (e.g. "Spooky Rules",
         // "Game Rules PDF") that would otherwise fall to Other.
-        if (text.Contains("rulesheet") || text.Contains("rule sheet") ||
+        // "rulebook" (Pinball Brothers Freshdesk's exact article title) is a
+        // separate keyword since "rulebook" does not contain the substring
+        // "rules".
+        if (text.Contains("rulesheet") || text.Contains("rule sheet") || text.Contains("rulebook") ||
             (text.Contains("rules") && !text.Contains("manual")))
             return DocumentType.Rulesheet;
 
@@ -381,6 +390,7 @@ public sealed class ScraperOrchestrator
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
         ["multimorphic"] = "Multimorphic",
+        ["pb_freshdesk"] = "Pinball Brothers Freshdesk Documents",
         // OPDB is special-cased: it doesn't yield ScrapedItems via ISourceScraper —
         // it writes directly to IMachineRepository via IOpdbSyncService. The CLI's
         // --source opdb branch dispatches to the sync service before ScrapeAsync is
