@@ -140,4 +140,32 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         Assert.Contains("Godzilla", lines.InnerHtml, StringComparison.Ordinal);
         Assert.DoesNotContain("Metallica", lines.InnerHtml, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Admin_RunningExecution_ShowsLiveIndicator()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _svc.GetExecutionAsync(Job, Exec, Arg.Any<CancellationToken>())
+            .Returns(new JobExecution(Exec, "Running", DateTimeOffset.UtcNow.AddMinutes(-1), null));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-log-live']");
+    }
+
+    [Fact]
+    public async Task Admin_TerminalExecution_NoLiveIndicator()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.Empty(cut.FindAll("[data-testid='exec-log-live']"));
+    }
 }
