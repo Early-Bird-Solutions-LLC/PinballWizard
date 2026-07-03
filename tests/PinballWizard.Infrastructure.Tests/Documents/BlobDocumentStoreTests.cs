@@ -98,6 +98,59 @@ public sealed class BlobDocumentStoreTests
     }
 
     [RequiresAzuriteFact]
+    public async Task GetSizeAsync_ExistingBlob_ReturnsContentLength()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
+
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerName = $"test-{Guid.NewGuid():N}";
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var bytes = new byte[] { 1, 2, 3, 4, 5, 6, 7 };
+            const string blobName = "sized.bin";
+            using var writeStream = new MemoryStream(bytes);
+            await sut.WriteAsync(blobName, writeStream, CancellationToken.None);
+
+            var size = await sut.GetSizeAsync(blobName, CancellationToken.None);
+
+            Assert.Equal(bytes.Length, size);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+
+    [RequiresAzuriteFact]
+    public async Task GetSizeAsync_AbsentBlob_ReturnsNull()
+    {
+        var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
+
+        var serviceClient = new BlobServiceClient(azuriteUrl);
+        var containerName = $"test-{Guid.NewGuid():N}";
+        var containerClient = serviceClient.GetBlobContainerClient(containerName);
+        await containerClient.CreateIfNotExistsAsync();
+
+        try
+        {
+            var sut = new BlobDocumentStore(containerClient, NullLogger<BlobDocumentStore>.Instance);
+
+            var size = await sut.GetSizeAsync("does-not-exist.bin", CancellationToken.None);
+
+            Assert.Null(size);
+        }
+        finally
+        {
+            await containerClient.DeleteIfExistsAsync();
+        }
+    }
+
+    [RequiresAzuriteFact]
     public async Task OpenReadAsync_AbsentBlob_ThrowsRequestFailedException404()
     {
         var azuriteUrl = Environment.GetEnvironmentVariable(RequiresAzuriteFactAttribute.EnvVar)!;
