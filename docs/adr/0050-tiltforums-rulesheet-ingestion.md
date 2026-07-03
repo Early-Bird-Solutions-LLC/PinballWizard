@@ -43,12 +43,14 @@ our specific use case was drafted the same day as a courtesy follow-up; per
 
 ## Decision
 
-Ingest Tilt Forums' Wiki Rulesheets subcategory into the PinballWizard corpus
-via a new `TiltForumsRulesheetScraper` (design:
-`docs/superpowers/specs/2026-07-03-tiltforums-rulesheet-scraper-design.md`),
-classified `DocumentType.Rulesheet` (already an AI-Search-accepted type per
-ADR-0042), subject to two non-negotiable constraints that hold regardless of
-what permission is eventually confirmed in writing:
+Ingest Tilt Forums' Wiki Rulesheets subcategory into the PinballWizard RAG
+index via a synthesis pipeline (design:
+`docs/superpowers/specs/2026-07-03-tiltforums-rulesheet-scraper-design.md` —
+same shape as the existing Kineticist tutorials ingestion, not the
+PDF-oriented scraper/download/linker pipeline), classified
+`DocumentType.Rulesheet` (already proven in production via Kineticist),
+subject to two non-negotiable constraints that hold regardless of what
+permission is eventually confirmed in writing:
 
 1. **Every answer built from this source cites and links back to the specific
    Tilt Forums topic** — never presented as PinballWizard's own content.
@@ -72,11 +74,15 @@ pass to assess whether they contain ingestion-worthy content.
   invitation, the affected content must be pulled from the index and this ADR
   updated or superseded. The pending confirmation message is not withdrawn —
   it still gets sent as a courtesy and a paper-trail backstop.
-- Because the content is community wiki text rather than manufacturer-
-  official documentation, citations for this source read differently in the
-  UI (e.g. "via Tilt Forums community wiki") than manufacturer-sourced
-  citations — implemented via a new `SourceType.TiltForumsRulesheetPage`
-  enum member rather than overloading an existing manufacturer `SourceType`.
+- Because ingestion goes through the synthesis pipeline (no Cosmos
+  `DocumentRecord`), these citations render identically to today's Kineticist
+  citations: the external "open file ↗" link to the Tilt Forums topic works
+  correctly, while the internal `/documents/{id}` page shows "Document not
+  found" (there's no Cosmos record to look up). This is the established
+  precedent for synthesis-path content, not a gap introduced by this
+  decision. The codebase has no per-source-type citation styling at all, so
+  Tilt Forums content is not visually distinguished from manufacturer
+  content in the citation card — attribution lives in the link itself.
 - This does not change the standing posture toward Pinside, IPDB, or PinWiki
   (`docs/superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md`) —
   those remain hard-no regardless of this decision; Tilt Forums' founder
