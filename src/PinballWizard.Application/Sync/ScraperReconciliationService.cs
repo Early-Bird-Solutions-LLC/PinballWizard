@@ -175,18 +175,29 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         if (matches.Count == 1) return (matches, MatchOutcome.Title);
 
         // Multiple franchise-title matches. This is an EDITION FAMILY — not a
-        // true ambiguity — only when the matches share manufacturer (always true
-        // here: one partition) AND one OPDB group segment AND one release year.
-        // That conjunction is the reliable edition signal: Godzilla Pro
-        // (GweeP-MW95j) + Premium/LE (GweeP-Ml9pZ), both group "GweeP", both
-        // 2021. The OPDB group segment ALONE is NOT an edition key (it clusters
-        // unrelated games); the year guard separates genuine reissues/remakes
-        // (e.g. Big Ben 1954 vs 1975) which must stay distinct → ambiguous.
+        // true ambiguity — when the matches all share one OPDB group segment.
+        // Example: Godzilla Pro (GweeP-MW95j) + Premium/LE (GweeP-Ml9pZ),
+        // both group "GweeP". The group segment is the OPDB family identifier
+        // within a manufacturer partition, reliably capturing all editions of
+        // the same franchise.
+        //
+        // Year is intentionally NOT part of this check for the reconciler.
+        // The scraper's slug is franchise-level (e.g. "medieval-madness" covers
+        // every CGC Medieval Madness edition regardless of release year), so
+        // same-GroupId machines from different years (2015 Remake vs 2021 Cosmic
+        // Edition) SHOULD all receive the same slug. A year guard here caused
+        // those cross-year families to be classified as Ambiguous and left with
+        // empty ManufacturerSlugs (issue #655 Gap 1).
+        //
+        // Genuine "same title, different franchise" cases (e.g. Big Ben 1954
+        // vs 1975) have DIFFERENT OPDB group segments ("G5QBX" vs "GRBo3") so
+        // the segment count check rejects them correctly without needing the
+        // year to discriminate. The DocumentLinker's IsEditionFamily (a separate
+        // method) retains the year guard because edition-resolution for document
+        // linking does need to distinguish cross-year reissues.
         var segments = matches.Select(m => m.GroupId).Distinct().ToList();
-        var years = matches.Select(m => m.Year).Distinct().ToList();
         var isEditionFamily =
-            segments.Count == 1 && segments[0] is not null
-            && years.Count == 1 && years[0] is not null;
+            segments.Count == 1 && segments[0] is not null;
 
         if (isEditionFamily)
         {

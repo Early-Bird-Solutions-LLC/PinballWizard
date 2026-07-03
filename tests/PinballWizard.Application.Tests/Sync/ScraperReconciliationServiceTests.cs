@@ -349,6 +349,69 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(0, result.Upserts);
     }
 
+    [Fact]
+    public async Task SameGroupDifferentYears_WritesSlugToAllBasesInGroup()
+    {
+        // CGC Medieval Madness pattern (issue #655 Gap 1): 6 editions share
+        // GroupId "G5pe4" but span multiple OPDB manufacture years (Remake 2015,
+        // Cosmic Edition 2021, etc.). The old year guard in isEditionFamily
+        // classified this as Ambiguous → no slug written. The fix: same GroupId
+        // is sufficient — year is NOT required for franchise-slug-stamping because
+        // the scraper's slug covers the whole franchise regardless of release year.
+        // The genuine "different franchise, same title" case (Big Ben 1954 vs 1975)
+        // always has DIFFERENT GroupIds and stays Ambiguous correctly.
+        var remake = MakeMachine("G5pe4-MePZv", "cgc", "Medieval Madness");
+        remake.GroupId = "G5pe4"; remake.Year = 2015;
+        var cosmic = MakeMachine("G5pe4-MkPRV", "cgc", "Medieval Madness");
+        cosmic.GroupId = "G5pe4"; cosmic.Year = 2021;
+        StubPartition("cgc", remake, cosmic);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_medieval-madness",
+            Title = "Medieval Madness",
+            Slug = "medieval-madness",
+            GamePageUrl = "https://www.chicago-gaming.com/coinop/medieval-madness/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByGroup);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.Equal(2, result.Upserts);
+        Assert.Equal("medieval-madness", remake.ManufacturerSlugs["cgc"]);
+        Assert.Equal("medieval-madness", cosmic.ManufacturerSlugs["cgc"]);
+    }
+
+    [Fact]
+    public async Task SameGroupNullYear_WritesSlugToAllBasesInGroup()
+    {
+        // Same GroupId + null Year: OPDB sometimes lacks manufacture-date data
+        // for newer machines. A null year must NOT block slug-stamping when
+        // GroupId already identifies the franchise unambiguously.
+        var a = MakeMachine("G5pe4-MePZv", "cgc", "Medieval Madness");
+        a.GroupId = "G5pe4"; a.Year = null;
+        var b = MakeMachine("G5pe4-MkPRV", "cgc", "Medieval Madness");
+        b.GroupId = "G5pe4"; b.Year = null;
+        StubPartition("cgc", a, b);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_medieval-madness",
+            Title = "Medieval Madness",
+            Slug = "medieval-madness",
+            GamePageUrl = "https://www.chicago-gaming.com/coinop/medieval-madness/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByGroup);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.Equal(2, result.Upserts);
+        Assert.Equal("medieval-madness", a.ManufacturerSlugs["cgc"]);
+        Assert.Equal("medieval-madness", b.ManufacturerSlugs["cgc"]);
+    }
+
     // ── Decoration-stripped title match ──────────────────────────────────
 
     [Fact]
