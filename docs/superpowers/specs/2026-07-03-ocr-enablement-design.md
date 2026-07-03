@@ -58,7 +58,7 @@ The OCR capability was scaffolded ("Phase 4.5 W1") and never turned on:
   `principalId` = `ragIndexerApp` system-assigned identity, `principalType`
   `ServicePrincipal`. Gate: `deployPhase2 && deployAiSearch`. Mirrors the existing
   `ragIndexer*` role-assignment pattern (Cosmos data, storage-blob reader, etc.).
-- **Deploy** via the deployment stack (`az stack group create` — Deployment Stacks only,
+- **Deploy** via the deployment stack (`az stack sub create` — Deployment Stacks only,
   invariant #16) using the committed `main-shared.dev.local.bicepparam`.
 
 ### 2. Operational backfill (index the 6)

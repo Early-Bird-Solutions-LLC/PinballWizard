@@ -1171,6 +1171,7 @@ resource ragIndexerAppDiag 'Microsoft.Insights/diagnosticSettings@2021-05-01-pre
 //   Storage Blob Data Contributor    — ba92f5b4-2d11-453d-a403-e96b0029c9fe
 //   Azure AI User                    — 53ca6127-db72-4b80-b1b0-d745d6d5456d
 //   Azure AI Project Manager         — eadc314b-1a2d-4efa-be10-5d325db5065e
+//   Cognitive Services User          — a97b65f3-24c7-4388-baec-2e87135dc908
 // Cosmos DB data-plane role uses a SEPARATE namespace (sqlRoleAssignments under
 // the database account, not Microsoft.Authorization). The well-known
 // 'Cosmos DB Built-in Data Contributor' definition is 00000000-0000-0000-0000-000000000002
@@ -1276,6 +1277,18 @@ resource storageBlobContrib 'Microsoft.Authorization/roleAssignments@2022-04-01'
   name: guid(storage.id, developerObjectId, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: developerObjectId
+    principalType: roleAssignmentPrincipalType
+  }
+}
+
+// Document Intelligence: developer needs Cognitive Services User for local
+// --run-rag-backfill runs to exercise the ADI OCR fallback (Phase 4.5 W1).
+resource developerDocIntUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(developerObjectId)) {
+  scope: documentIntelligence
+  name: guid(documentIntelligence.id, developerObjectId, 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
     principalId: developerObjectId
     principalType: roleAssignmentPrincipalType
   }
