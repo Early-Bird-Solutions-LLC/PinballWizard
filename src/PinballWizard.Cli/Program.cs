@@ -1370,8 +1370,20 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            var topicId = new Uri(listing.TopicUrl).Segments[^1].TrimEnd('/');
-            var documentId = $"tiltforums_{topicId}_{matchResult.MachineId}";
+            string topicId;
+            string documentId;
+            try
+            {
+                topicId = new Uri(listing.TopicUrl).Segments[^1].TrimEnd('/');
+                documentId = $"tiltforums_{topicId}_{matchResult.MachineId}";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: failed to parse topic URL for '{listing.GameTitle}' ({listing.TopicUrl}): {ex.Message}");
+                tiltForumsFailed++;
+                continue;
+            }
 
             var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
                 MachineId: matchResult.MachineId!,
