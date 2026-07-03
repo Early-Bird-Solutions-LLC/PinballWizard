@@ -296,6 +296,12 @@ public static class OpdbMachineMapper
         existing.EditionLabel = ExtractEditionLabel(dto.Name, dto.Features);
         existing.EditionTokens = DeriveEditionTokens(existing.EditionLabel);
 
+        // OPDB-sourced provenance fields — always overwrite from the fresh DTO
+        // so existing machines pick up IpdbId/IpdbReferenceUrl on their first
+        // re-sync after this field was added (null → value transition).
+        existing.IpdbId = dto.IpdbId;
+        existing.IpdbReferenceUrl = BuildIpdbReferenceUrl(dto.IpdbId);
+
         existing.LastSeenAt = now;
     }
 
