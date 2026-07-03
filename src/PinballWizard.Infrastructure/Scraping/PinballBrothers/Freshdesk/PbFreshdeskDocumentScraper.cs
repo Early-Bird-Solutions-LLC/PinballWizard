@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Persistence;
@@ -123,10 +124,6 @@ public sealed class PbFreshdeskDocumentScraper : PoliteScraperBase, ISourceScrap
     private static string? MatchGameSlug(string categoryName)
     {
         var lower = categoryName.ToLowerInvariant();
-        foreach (var slug in KnownGameSlugs)
-        {
-            if (lower.Contains(slug, StringComparison.Ordinal)) return slug;
-        }
-        return null;
+        return KnownGameSlugs.FirstOrDefault(slug => lower.Contains(slug, StringComparison.Ordinal));
     }
 }
