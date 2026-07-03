@@ -36,7 +36,7 @@ public sealed class DocumentDetailTests : AsyncBunitContext
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
-    private static DocumentDetailRecord MakeDetail(string? linkStatus = null) =>
+    private static DocumentDetailRecord MakeDetail(string? linkStatus = null, string? mfrKey = "stern") =>
         new(FakeDocId, "Godzilla Pro Manual", "Manual", "pdf",
             PageCount: 150, SizeBytes: 5_200_000,
             FileUrl: "https://sternpinball.com/docs/godzilla-pro-manual.pdf",
@@ -54,7 +54,8 @@ public sealed class DocumentDetailTests : AsyncBunitContext
             LinkStatus: linkStatus,
             LinkFailureReason: linkStatus is "failed" ? "No match found" : null,
             ResolutionStrategy: linkStatus is "linked" ? "title match" : null,
-            LinkedMachineIds: linkStatus is "linked" ? ["G4do5-MkPnV"] : null);
+            LinkedMachineIds: linkStatus is "linked" ? ["G4do5-MkPnV"] : null)
+        { ManufacturerKey = mfrKey };
 
     private IRenderedComponent<PinballWizard.Web.Components.Shared.DocumentDetail> RenderDetail(
         string documentId, bool isAdmin = false)
@@ -83,6 +84,33 @@ public sealed class DocumentDetailTests : AsyncBunitContext
         Assert.Contains("Godzilla Pro Manual", cut.Markup);
         Assert.Contains("Game Page → Specs &amp; Manual tab", cut.Markup);
         Assert.Contains("Stern", cut.Markup);
+    }
+
+    [Fact]
+    public async Task Manufacturer_LinksToManufacturerDetailPage()
+    {
+        _repo.GetDocumentDetailAsync(FakeDocId, false, Arg.Any<CancellationToken>())
+             .Returns(MakeDetail());
+
+        var cut = RenderDetail(FakeDocId);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var link = cut.Find("[data-testid='doc-detail-manufacturer'] a[href='/manufacturers/stern']");
+        Assert.Contains("Stern", link.TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Manufacturer_NullKey_DegradesToTextWithNoLink()
+    {
+        _repo.GetDocumentDetailAsync(FakeDocId, false, Arg.Any<CancellationToken>())
+             .Returns(MakeDetail(mfrKey: null));
+
+        var cut = RenderDetail(FakeDocId);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var mfr = cut.Find("[data-testid='doc-detail-manufacturer']");
+        Assert.Empty(mfr.QuerySelectorAll("a[href='/manufacturers/stern']"));
+        Assert.Contains("Stern", mfr.TextContent, StringComparison.Ordinal);
     }
 
     [Fact]

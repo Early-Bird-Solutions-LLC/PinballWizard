@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
@@ -424,6 +425,70 @@ public sealed class CosmosRawDocumentRepositoryTests
         await _repository.UpsertRawAsync(record, CancellationToken.None);
 
         Assert.Equal("preserved-hash", captured?.ContentHash);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // ManufacturerKey derivation (issue #643) — the read projections derive the
+    // manufacturer partition key from the stored display name so /documents can link
+    // to /manufacturers/{key}. Same normalization OpdbMachineMapper uses for machines.
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamDocumentsAsync_DerivesManufacturerKeyFromDisplayName()
+    {
+        var raw = MakeCosmosRecord("doc_stern", manufacturer: "Stern");
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[raw]]));
+
+        var items = new List<DocumentListItem>();
+        await foreach (var i in _repository.StreamDocumentsAsync(
+            null, null, null, includeAdminFields: false, CancellationToken.None))
+        {
+            items.Add(i);
+        }
+
+        var item = Assert.Single(items);
+        Assert.Equal("Stern", item.Manufacturer);      // display name preserved
+        Assert.Equal("stern", item.ManufacturerKey);   // derived partition key for the link
+    }
+
+    [Fact]
+    public async Task GetDocumentDetailAsync_DerivesManufacturerKeyFromDisplayName()
+    {
+        var raw = MakeCosmosRecord("doc_jjp", manufacturer: "Jersey Jack");
+        _container
+            .ReadItemAsync<RawDocumentCosmosRecord>(
+                "doc_jjp", Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(MakeItemResponse(raw, HttpStatusCode.OK));
+
+        var detail = await _repository.GetDocumentDetailAsync(
+            "doc_jjp", includeAdminFields: false, CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("Jersey Jack", detail!.Manufacturer);  // display name preserved
+        Assert.Equal("jjp", detail.ManufacturerKey);         // "Jersey Jack" → "jjp"
+    }
+
+    [Fact]
+    public async Task StreamDocumentsAsync_BlankManufacturer_YieldsNullKey()
+    {
+        var raw = MakeCosmosRecord("doc_none", manufacturer: null);
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Any<QueryDefinition>(), Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[raw]]));
+
+        var items = new List<DocumentListItem>();
+        await foreach (var i in _repository.StreamDocumentsAsync(
+            null, null, null, includeAdminFields: false, CancellationToken.None))
+        {
+            items.Add(i);
+        }
+
+        var item = Assert.Single(items);
+        Assert.Null(item.ManufacturerKey);   // blank manufacturer → no key (link degrades to text)
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -1058,7 +1123,8 @@ public sealed class CosmosRawDocumentRepositoryTests
         string? resolutionStrategy = null,
         List<string>? linkedMachineIds = null,
         string documentType = "Manual",
-        string documentUrl = "https://example.com/file.pdf")
+        string documentUrl = "https://example.com/file.pdf",
+        string? manufacturer = null)
     {
         return new RawDocumentCosmosRecord
         {
@@ -1069,6 +1135,7 @@ public sealed class CosmosRawDocumentRepositoryTests
             LinkStatus = linkStatus,
             ResolutionStrategy = resolutionStrategy,
             LinkedMachineIds = linkedMachineIds ?? [],
+            Manufacturer = manufacturer,
             Source = new RawSourceInfo
             {
                 DiscoveryUrl = "https://example.com/discover",

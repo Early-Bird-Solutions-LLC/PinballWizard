@@ -1,0 +1,32 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using PinballWizard.Web.Security
+@inject NavigationManager Nav
+
+@* Admin app-bar identity control. Anchor-only (no @onclick / @rendermode) so it
+ * never perturbs admin page circuits (interactive-island-in-static-layout).
+ * Sign-in/out route through the Microsoft.Identity.Web AccountController via AdminSignIn. *@
+
+<AuthorizeView>
+    <Authorized>
+        <MudText Typo="Typo.caption" Class="mr-2" data-testid="admin-identity">
+            Signed in as @context.User.Identity?.Name
+        </MudText>
+        <MudButton Href="@AdminSignIn.SignOutPath"
+                   Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Logout" data-testid="admin-signout">
+            Sign out
+        </MudButton>
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Href="@AdminSignIn.Href(ReturnUrl)"
+                   Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Login" data-testid="admin-signin">
+            Sign in
+        </MudButton>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    // Current local path so sign-in returns the user to the page they were on.
+    private string ReturnUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri);
+}

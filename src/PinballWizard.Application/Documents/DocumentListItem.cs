@@ -17,4 +17,10 @@ public sealed record DocumentListItem(
     string? LinkStatus,
     string? LinkFailureReason,
     string? ResolutionStrategy
-);
+)
+{
+    // Manufacturer partition key (e.g. "stern") derived from Manufacturer at
+    // projection time so the list can link to /manufacturers/{key}. Null when the
+    // manufacturer is blank/unknown; consumers degrade to plain text.
+    public string? ManufacturerKey { get; init; }
+}

@@ -60,6 +60,10 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         cut.Find("[data-testid='exec-log-signin']");            // notice present
+        var signInLink = cut.Find("[data-testid='exec-log-signin'] a");
+        var signInHref = signInLink.GetAttribute("href")!;
+        Assert.StartsWith(AdminSignIn.SignInPath, signInHref);
+        Assert.Contains("redirectUri=", signInHref, StringComparison.Ordinal); // returns to this run page after sign-in
         Assert.Empty(cut.FindAll("[data-testid='exec-log-lines']")); // logs NOT rendered
         await _logs.DidNotReceive().GetExecutionLogsAsync(       // and never queried
             Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());

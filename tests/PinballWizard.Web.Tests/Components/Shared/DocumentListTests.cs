@@ -47,10 +47,11 @@ public sealed class DocumentListTests : AsyncBunitContext
     }
 
     private static DocumentListItem MakeItem(string id = "doc_abc", string game = "Godzilla",
-        string mfr = "Stern") =>
+        string mfr = "Stern", string? mfrKey = "stern") =>
         new(id, $"{game} Manual", "Manual", game, "Pro", mfr,
             "pdf", 150, 5_200_000, DateTimeOffset.UtcNow,
-            null, null, null);
+            null, null, null)
+        { ManufacturerKey = mfrKey };
 
     [Fact]
     public async Task ShowsDocumentsFromRepository()
@@ -66,6 +67,38 @@ public sealed class DocumentListTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.Contains("Godzilla Manual", cut.Markup);
+    }
+
+    [Fact]
+    public async Task ManufacturerCell_LinksToManufacturerDetailPage()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([MakeItem()]));
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo("/documents");
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var link = cut.Find("a[href='/manufacturers/stern']");
+        Assert.Contains("Stern", link.TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManufacturerCell_NullKey_DegradesToTextWithNoLink()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([MakeItem(mfrKey: null)]));
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo("/documents");
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.Empty(cut.FindAll("a[href='/manufacturers/stern']"));
+        Assert.Contains("Stern", cut.Markup, StringComparison.Ordinal);
     }
 
     [Fact]

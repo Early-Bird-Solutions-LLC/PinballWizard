@@ -86,8 +86,8 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
         // the change-feed and the rebuild converge on one document.
         var manufacturerKey = OpdbMachineMapper.NormalizeManufacturerKey(manufacturer);
 
-        var entry = await ComputeMachineEntryAsync(change, manufacturerKey, cancellationToken).ConfigureAwait(false);
-        await UpsertEntryWithRetryAsync(manufacturerKey, entry, cancellationToken).ConfigureAwait(false);
+        var (entry, manufacturerDisplayName) = await ComputeMachineEntryAsync(change, manufacturerKey, cancellationToken).ConfigureAwait(false);
+        await UpsertEntryWithRetryAsync(manufacturerKey, entry, manufacturerDisplayName, cancellationToken).ConfigureAwait(false);
 
         return null;
     }
@@ -95,7 +95,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
     // Enumerates all scraped docs for the machine's partition (Tier 1 —
     // single-partition StreamAsync, no direct GetItemQueryIterator). Builds
     // a MachineStatEntry with doc counts and type distribution.
-    internal async Task<MachineStatEntry> ComputeMachineEntryAsync(
+    internal async Task<(MachineStatEntry Entry, string? ManufacturerDisplayName)> ComputeMachineEntryAsync(
         RagSourceDocument change,
         string manufacturerKey,
         CancellationToken cancellationToken)
@@ -165,7 +165,9 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
                 machineId);
         }
 
-        return entry;
+        // Surface the machine's display name (null when the machine wasn't found) so the
+        // caller can stamp it on the manufacturer-level rollup doc without a second read.
+        return (entry, machine?.ManufacturerDisplayName);
     }
 
     // Pure merge: finds the existing entry for entry.MachineId (if any),
@@ -201,6 +203,7 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
     private async Task UpsertEntryWithRetryAsync(
         string manufacturer,
         MachineStatEntry entry,
+        string? manufacturerDisplayName,
         CancellationToken cancellationToken)
     {
         var partitionKey = new PartitionKey(manufacturer);
@@ -231,6 +234,10 @@ internal sealed class CatalogStatsChangeFeedHandler : ICosmosChangeFeedHandler<R
                 };
                 matchEtag = null;
             }
+
+            // Stamp the manufacturer-level display name (preserve the existing value when
+            // this change's machine wasn't found, so a transient miss never nulls it out).
+            doc.ManufacturerDisplayName = manufacturerDisplayName ?? doc.ManufacturerDisplayName;
 
             MergeEntry(doc, entry, _clock.GetUtcNow());
 

@@ -64,7 +64,9 @@
         @if (!_isAdmin)
         {
             <MudAlert Severity="Severity.Info" data-testid="exec-log-signin">
-                Sign in as an admin to view this run's console logs.
+                <MudLink Href="@AdminSignIn.Href($"/admin/jobs/{JobName}/executions/{ExecutionName}")">
+                    Sign in as an admin
+                </MudLink> to view this run's console logs.
             </MudAlert>
         }
         else
