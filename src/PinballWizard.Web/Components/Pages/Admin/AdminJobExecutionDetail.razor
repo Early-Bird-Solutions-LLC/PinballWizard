@@ -93,48 +93,68 @@
                     <em>Log Analytics Reader</em> role on the workspace, then refresh.
                 </AppErrorAlert>
             }
-            else if (_logResult.Lines.Count == 0)
-            {
-                <AppEmptyState Heading="No console output captured for this run"
-                               Icon="@Icons.Material.Outlined.Terminal"
-                               data-testid="exec-log-empty" />
-            }
             else
             {
-                @if (_logResult.Truncated)
+                @if (_logResult.Lines.Count > 0 || HasSearch)
                 {
-                    <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="exec-log-truncated">
-                        Showing the first @_maxLines lines — output was truncated.
-                    </MudAlert>
-                }
-                <div data-testid="exec-log-filter">
-                    <MudTextField @bind-Value="_filter" @bind-Value:after="StateHasChanged"
-                                  Placeholder="Filter lines…" Immediate="true"
-                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                                  Class="mb-2" />
-                </div>
-                <MudPaper Elevation="0" Outlined="true" Class="pa-2"
-                          Style="max-height:60vh;overflow:auto;font-family:monospace"
-                          data-testid="exec-log-lines">
-                    @foreach (var line in VisibleLines)
+                    <div data-testid="exec-log-search">
+                        <MudTextField T="string" @bind-Value="_search" DebounceInterval="400"
+                                      OnDebounceIntervalElapsed="@(_ => OnSearchAsync())" Immediate="true"
+                                      Placeholder="Search this run's logs…"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                      Class="mb-2" />
+                    </div>
+                    @if (_logBusy)
                     {
-                        <div>
-                            <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="mr-2">
-                                @FormatLocalTime(line.Timestamp)
-                            </MudText>
-                            <MudText Inline="true" Typo="Typo.body2" Color="@SeverityColor(line.Severity)">
-                                @line.Message
-                            </MudText>
-                        </div>
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
                     }
-                </MudPaper>
-                @if (_logResult.Truncated)
+                }
+                @if (_logResult.Lines.Count == 0)
                 {
-                    <MudButton OnClick="LoadMoreAsync" Disabled="@(_logBusy || _maxLines >= LogMaxLines)"
-                               StartIcon="@Icons.Material.Filled.ExpandMore" Variant="Variant.Text"
-                               Size="Size.Small" Class="mt-2" data-testid="exec-log-loadmore">
-                        @(_maxLines >= LogMaxLines ? "Maximum lines shown" : "Load more")
-                    </MudButton>
+                    @if (HasSearch)
+                    {
+                        <AppEmptyState Heading="@($"No lines match \"{_search}\"")"
+                                       Icon="@Icons.Material.Outlined.SearchOff" data-testid="exec-log-nomatch" />
+                    }
+                    else
+                    {
+                        <AppEmptyState Heading="No console output captured for this run"
+                                       Icon="@Icons.Material.Outlined.Terminal" data-testid="exec-log-empty" />
+                    }
+                }
+                else
+                {
+                    @if (_logResult.Truncated)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="exec-log-truncated">
+                            @(string.IsNullOrWhiteSpace(_search)
+                                ? $"Showing the first {_maxLines} lines — output was truncated."
+                                : $"Showing the first {_maxLines} matches — refine your search or load more.")
+                        </MudAlert>
+                    }
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-2"
+                              Style="max-height:60vh;overflow:auto;font-family:monospace"
+                              data-testid="exec-log-lines">
+                        @foreach (var line in _logResult.Lines)
+                        {
+                            <div>
+                                <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="mr-2">
+                                    @FormatLocalTime(line.Timestamp)
+                                </MudText>
+                                <MudText Inline="true" Typo="Typo.body2" Color="@SeverityColor(line.Severity)">
+                                    @line.Message
+                                </MudText>
+                            </div>
+                        }
+                    </MudPaper>
+                    @if (_logResult.Truncated)
+                    {
+                        <MudButton OnClick="LoadMoreAsync" Disabled="@(_logBusy || _maxLines >= LogMaxLines)"
+                                   StartIcon="@Icons.Material.Filled.ExpandMore" Variant="Variant.Text"
+                                   Size="Size.Small" Class="mt-2" data-testid="exec-log-loadmore">
+                            @(_maxLines >= LogMaxLines ? "Maximum lines shown" : "Load more")
+                        </MudButton>
+                    }
                 }
             }
         }
@@ -277,12 +297,14 @@
         _refreshCts.Dispose();
     }
 
-    private string _filter = "";
+    private bool HasSearch => !string.IsNullOrWhiteSpace(_search);
 
-    private IEnumerable<JobLogLine> VisibleLines =>
-        _logResult is null ? []
-        : string.IsNullOrWhiteSpace(_filter) ? _logResult.Lines
-        : _logResult.Lines.Where(l => l.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+    // Debounced server search: reset the budget and re-query the whole run.
+    private async Task OnSearchAsync()
+    {
+        _maxLines = LogPageSize;
+        await ReloadLogsAsync();
+    }
 
     private const int LogPageSize = 1000;
     private const int LogMaxLines = 10000;

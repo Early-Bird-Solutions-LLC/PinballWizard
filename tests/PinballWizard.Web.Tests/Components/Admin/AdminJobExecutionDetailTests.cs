@@ -124,26 +124,44 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task Admin_Filter_NarrowsLines()
+    public async Task Admin_Search_RequeriesServerWithTerm()
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
             Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(JobLogResult.Ok(
-            [
-                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info),
-                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Metallica", JobLogSeverity.Info),
-            ], false));
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info)], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        var input = cut.Find("[data-testid='exec-log-filter'] input");
+        var input = cut.Find("[data-testid='exec-log-search'] input");
         await cut.InvokeAsync(() => input.Input("Godzilla"));
 
-        var lines = cut.Find("[data-testid='exec-log-lines']");
-        Assert.Contains("Godzilla", lines.InnerHtml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Metallica", lines.InnerHtml, StringComparison.Ordinal);
+        // Debounced server re-query fires within a few hundred ms.
+        await cut.WaitForAssertionAsync(() =>
+            _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), "Godzilla", Arg.Any<CancellationToken>()),
+            TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task Admin_Search_NoMatches_ShowsNoMatchState()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        // Initial load returns a line; the searched query returns none.
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "zzz", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("zzz"));
+
+        await cut.WaitForAssertionAsync(() => cut.Find("[data-testid='exec-log-nomatch']"), TimeSpan.FromSeconds(3));
     }
 
     [Fact]
