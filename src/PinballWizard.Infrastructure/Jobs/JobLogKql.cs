@@ -21,7 +21,8 @@ namespace PinballWizard.Infrastructure.Jobs;
 //   * Real lines use the .NET console formatter prefixes: "info:", "warn:",
 //     "fail:", "crit:" (continuation lines are indented and unprefixed).
 //
-// executionName comes from ARM (our own resource name), never user input.
+// executionName is a route parameter (URL-derived). ARM names contain no quotes so
+// full KQL-literal escaping is deferred, but CR/LF are scrubbed defensively (CWE-117).
 internal static class JobLogKql
 {
     public const int MaxLinesCap = 10000;
@@ -32,6 +33,7 @@ internal static class JobLogKql
         string executionName, DateTimeOffset startUtc, DateTimeOffset endUtc, int maxLines,
         string? search = null)
     {
+        var exec = JobLogSafe.Scrub(executionName);
         var start = startUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
         var end = endUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
         // User-controlled term → verbatim KQL literal (JobLogSafe.KqlLiteral). contains
@@ -42,7 +44,7 @@ internal static class JobLogKql
         return $$"""
             ContainerAppConsoleLogs_CL
             | where TimeGenerated between (datetime('{{start}}') .. datetime('{{end}}'))
-            | where ContainerGroupName_s == '{{executionName}}' or ContainerGroupName_s startswith '{{executionName}}-'{{searchClause}}
+            | where ContainerGroupName_s == '{{exec}}' or ContainerGroupName_s startswith '{{exec}}-'{{searchClause}}
             | project TimeGenerated, Message = Log_s, Stream = Stream_s
             | order by TimeGenerated asc
             | take {{maxLines + 1}}

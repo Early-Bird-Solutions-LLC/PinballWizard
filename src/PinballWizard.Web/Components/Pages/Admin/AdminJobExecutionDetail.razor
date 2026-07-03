@@ -95,14 +95,14 @@
             }
             else
             {
-                @if (_logResult.Lines.Count > 0 || HasSearch)
+                @if (_logResult.Lines.Count > 0 || HasSearch || _logBusy)
                 {
                     <div data-testid="exec-log-search">
                         <MudTextField T="string" @bind-Value="_search" DebounceInterval="400"
                                       OnDebounceIntervalElapsed="@(_ => OnSearchAsync())" Immediate="true"
                                       Placeholder="Search this run's logs…"
                                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
-                                      Class="mb-2" />
+                                      Class="mb-2" aria-label="Search this run's logs" />
                     </div>
                     @if (_logBusy)
                     {
@@ -127,7 +127,7 @@
                     @if (_logResult.Truncated)
                     {
                         <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="exec-log-truncated">
-                            @(string.IsNullOrWhiteSpace(_search)
+                            @(!HasSearch
                                 ? $"Showing the first {_maxLines} lines — output was truncated."
                                 : $"Showing the first {_maxLines} matches — refine your search or load more.")
                         </MudAlert>

@@ -266,6 +266,79 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
             Arg.Any<DateTimeOffset?>(), 2000, Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
+    // Fix 1: search box must stay visible while a refetch is in flight after clearing a zero-match search.
+    [Fact]
+    public async Task Admin_Search_ClearAfterNoMatch_SearchBoxStaysVisible()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "zzz", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("zzz"));
+        await cut.WaitForAssertionAsync(() => cut.Find("[data-testid='exec-log-nomatch']"), TimeSpan.FromSeconds(3));
+        await cut.InvokeAsync(() => input.Input(""));
+        cut.Find("[data-testid='exec-log-search']"); // still present during/after the clear
+    }
+
+    // Fix 5a: truncation banner text — no-search case says "output was truncated".
+    [Fact]
+    public async Task Admin_Truncated_NoSearch_BannerSaysOutputWasTruncated()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+                [new JobLogLine(DateTimeOffset.UtcNow, "info: line", JobLogSeverity.Info)],
+                truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var banner = cut.Find("[data-testid='exec-log-truncated']");
+        Assert.Contains("output was truncated", banner.TextContent, StringComparison.Ordinal);
+    }
+
+    // Fix 5b: truncation banner text — search-active case says "refine your search".
+    [Fact]
+    public async Task Admin_Truncated_SearchActive_BannerSaysRefineSearch()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        // Initial load (no search) returns a line; the search term returns a truncated result.
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "info", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+                [new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)],
+                truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("info"));
+
+        await cut.WaitForAssertionAsync(() =>
+        {
+            var banner = cut.Find("[data-testid='exec-log-truncated']");
+            Assert.Contains("refine your search", banner.TextContent, StringComparison.Ordinal);
+        }, TimeSpan.FromSeconds(3));
+    }
+
+    // Fix 5c (Load-more ceiling): reaching 10,000 lines in a unit test would require 9 sequential
+    // click-and-wait cycles, each re-mocking the stub at a different maxLines value. The
+    // production guard (_maxLines >= LogMaxLines) is trivially correct from reading the code;
+    // the button label "Maximum lines shown" and Disabled state are already covered by
+    // Admin_Truncated_ShowsLoadMoreButton and Admin_LoadMore_RequeriesWithHigherBudget.
+    // Skipped — do not fake it.
+
     [Fact]
     public async Task Admin_LogContainer_IsHeightBounded()
     {

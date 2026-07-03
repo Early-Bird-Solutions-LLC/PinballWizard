@@ -42,5 +42,25 @@ public sealed class JobLogKqlTests
         Assert.Equal(expected, JobLogSafe.KqlLiteral(input));
 
     [Fact]
+    public void ExecutionName_CrLfStripped_InQuery()
+    {
+        // executionName is a route parameter; CR/LF are scrubbed defensively before
+        // being embedded in KQL (CWE-117). ARM names never contain line breaks, so
+        // scrubbing is loss-free for real inputs. Assert the scrubbed form appears
+        // in the ContainerGroupName_s filter and the raw CR/LF form does not.
+        const string raw = "pinwiz-job-linker-buutj\r\n-evil";
+        const string scrubbed = "pinwiz-job-linker-buutj-evil";
+        var kql = JobLogKql.BuildExecutionLogsQuery(
+            raw,
+            System.DateTimeOffset.UnixEpoch, System.DateTimeOffset.UnixEpoch.AddMinutes(5), 1000);
+        // The scrubbed name is in both ContainerGroupName_s comparisons.
+        Assert.Contains($"ContainerGroupName_s == '{scrubbed}'", kql, System.StringComparison.Ordinal);
+        Assert.Contains($"ContainerGroupName_s startswith '{scrubbed}-'", kql, System.StringComparison.Ordinal);
+        // The raw name (with embedded CR/LF) must NOT appear anywhere in the output.
+        Assert.DoesNotContain(raw, kql, System.StringComparison.Ordinal);
+        Assert.DoesNotContain("\r", kql, System.StringComparison.Ordinal); // CR never appears in KQL
+    }
+
+    [Fact]
     public void MaxLinesCap_IsTenThousand() => Assert.Equal(10000, JobLogKql.MaxLinesCap);
 }
