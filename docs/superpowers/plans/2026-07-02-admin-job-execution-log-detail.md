@@ -406,7 +406,9 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         // Buffer absorbs boundary ingestion lag: 1 min before start, 3 min after end.
         var startUtc = (startOn ?? DateTimeOffset.UtcNow.AddHours(-1)).AddMinutes(-1);
         var endUtc = (endOn ?? DateTimeOffset.UtcNow).AddMinutes(3);
-        var kql = JobLogKql.BuildExecutionLogsQuery(jobName, executionName, startUtc, endUtc, cap);
+        // NOTE (verified Task 1): scope is by executionName via ContainerGroupName_s;
+        // jobName is NOT a query filter (ACA job logs have empty ContainerAppName_s).
+        var kql = JobLogKql.BuildExecutionLogsQuery(executionName, startUtc, endUtc, cap);
 
         try
         {
