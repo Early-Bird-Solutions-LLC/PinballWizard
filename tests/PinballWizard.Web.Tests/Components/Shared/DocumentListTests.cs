@@ -219,6 +219,29 @@ public sealed class DocumentListTests : AsyncBunitContext
     }
 
     [Fact]
+    public async Task ManufacturerQueryParam_PassesManufacturerFilterToRepository()
+    {
+        // Regression coverage for the manufacturer filter (the control that surfaced the
+        // null-manufacturer live-data bug). The ?manufacturer=… query param must forward
+        // to the repository unchanged so the exact-match Cosmos filter can run.
+        var apItem = MakeItem("doc_ap", "Legends of Valhalla", "American Pinball");
+        _repo.StreamDocumentsAsync(Arg.Any<string?>(), "American Pinball", Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([apItem]));
+
+        var nav = Services.GetRequiredService<BunitNavigationManager>();
+        nav.NavigateTo("/documents?manufacturer=American Pinball");
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Repository received the manufacturer arg forwarded from the query param.
+        _repo.Received(1).StreamDocumentsAsync(Arg.Any<string?>(), "American Pinball", Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
+
+        // The matching document is rendered.
+        Assert.Contains("Legends of Valhalla Manual", cut.Markup);
+    }
+
+    [Fact]
     public async Task TypeFilterChipStrip_RendersUserFacingDocumentTypes()
     {
         _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
