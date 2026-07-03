@@ -628,6 +628,15 @@ internal sealed class CosmosRawDocumentRepository
                     DiscoveredAt = x.DiscoveredAt,
                 })
                 .ToList(),
+            Game = cosmos.Game is { } g
+                ? new GameReference
+                {
+                    Title = g.Title,
+                    Slug = g.Slug,
+                    Edition = g.Edition,
+                    GamePageUrl = g.GamePageUrl,
+                }
+                : null,
             RunId = cosmos.RunId,
             Manufacturer = cosmos.Manufacturer,
         };
