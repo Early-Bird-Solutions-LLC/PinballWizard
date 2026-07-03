@@ -97,16 +97,9 @@ starts generous and shrinks once data exists).
 **Env vars:** `Cosmos__AccountEndpoint`, `Cosmos__AccountResourceId`,
 `Scraper__DataPath=/tmp/pinwiz` (the non-root job user can't write to `/app`
 — every existing job sets this), `Scraper__Trigger=scheduled`. No OPDB API
-token — that's `opdbSyncJob`'s own concern via `--source opdb`, unaffected
-by this job's `--source all` (which still includes OPDB in principle, but
-in practice OPDB already has its own dedicated, better-tuned job with the
-6-hour full-catalog-pass timeout and its own token wiring; `--source all`
-would attempt OPDB again redundantly unless excluded — see Open Question
-below, resolved as: exclude `opdb` from this sweep by using an explicit
-comma-joined list of the 10 non-OPDB source ids rather than the literal
-string `"all"`, since `--source all` would otherwise duplicate `opdbSyncJob`'s
-work weekly at a different time with a shorter timeout that could
-legitimately time out mid-pass).
+token — that's `opdbSyncJob`'s own concern via `--source opdb`, and this
+job's `--source all` does not reach OPDB at all (OPDB is not reachable via
+this path — see "Open questions resolved" below).
 
 ### 2. `pbFreshdeskArticlesJob` — the synthesizer verb, matching Kineticist/TWIP exactly
 
