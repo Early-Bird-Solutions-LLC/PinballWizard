@@ -1065,6 +1065,14 @@ resource ragIndexerApp 'Microsoft.App/containerApps@2025-01-01' = if (deployPhas
               value: foundryEmbeddingDeploymentName
             }
             {
+              // OCR fallback endpoint (Phase 4.5 W1). Presence of this key is
+              // what AddPdfDocumentTextExtractor uses to register
+              // FallbackDocumentTextExtractor -> AzureDocumentIntelligenceExtractor;
+              // absent, PdfPig-only behavior is unchanged (OcrRequired docs skipped).
+              name: 'DocumentIntelligence__Endpoint'
+              value: documentIntelligence.?properties.endpoint ?? ''
+            }
+            {
               // ADR-0024 cross-encoder reranker. Disabled by default (Null
               // reranker); operator flips Enabled=true after the H5b gate
               // passes (see the Cohere MaaS deployment comment above).
@@ -1329,6 +1337,16 @@ resource ragIndexerFoundryOpenAiUser 'Microsoft.Authorization/roleAssignments@20
   name: guid(foundry.id, ragIndexerApp.id, '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd', 'rag-indexer')
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: ragIndexerApp.?identity.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource ragIndexerDocIntUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: documentIntelligence
+  name: guid(documentIntelligence.id, ragIndexerApp.id, 'a97b65f3-24c7-4388-baec-2e87135dc908')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'a97b65f3-24c7-4388-baec-2e87135dc908')
     principalId: ragIndexerApp.?identity.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
