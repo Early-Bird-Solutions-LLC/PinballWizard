@@ -135,6 +135,11 @@
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
+        // Route param is user-controlled — strip line breaks before it reaches any log
+        // sink to prevent log-forging (CodeQL cs/log-forging). The raw Key still drives
+        // the Cosmos reads; only its logged rendering is sanitized.
+        var logKey = Key.Replace("\r", string.Empty).Replace("\n", string.Empty);
+
         // Read 1 — authoritative games list (single-partition by manufacturer key).
         List<Machine> machines = [];
         try
@@ -144,14 +149,14 @@
         }
         catch (OperationCanceledException)
         {
-            Logger.LogWarning("Manufacturer page: machine stream timed out for '{Key}'.", Key);
+            Logger.LogWarning("Manufacturer page: machine stream timed out for '{Key}'.", logKey);
             _loadFailed = true;
             _loading = false;
             return;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Manufacturer page: machine stream failed for '{Key}'.", Key);
+            Logger.LogError(ex, "Manufacturer page: machine stream failed for '{Key}'.", logKey);
             _loadFailed = true;
             _loading = false;
             return;
@@ -178,12 +183,12 @@
         }
         catch (OperationCanceledException)
         {
-            Logger.LogWarning("Manufacturer page: catalog-stats read timed out for '{Key}'.", Key);
+            Logger.LogWarning("Manufacturer page: catalog-stats read timed out for '{Key}'.", logKey);
             _statsFailed = true;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Manufacturer page: catalog-stats read failed for '{Key}'.", Key);
+            Logger.LogError(ex, "Manufacturer page: catalog-stats read failed for '{Key}'.", logKey);
             _statsFailed = true;
         }
 
