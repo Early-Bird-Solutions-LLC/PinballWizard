@@ -29,6 +29,13 @@ public sealed class LogAnalyticsJobLogReaderTests
         Assert.Throws<ArgumentNullException>(() =>
             new LogAnalyticsJobLogReader(null!, NullLogger<LogAnalyticsJobLogReader>.Instance));
 
+    [Fact]
+    public void Ctor_NullLogger_Throws() =>
+        Assert.Throws<ArgumentNullException>(() =>
+            new LogAnalyticsJobLogReader(
+                Options.Create(new MonitoringOptions { LogAnalyticsWorkspaceId = "ws-id" }),
+                null!));
+
     [Theory]
     [InlineData("info: PinballWizard.Cli.Linker[0]", "stdout", JobLogSeverity.Info)]
     [InlineData("warn: something degraded", "stdout", JobLogSeverity.Warning)]

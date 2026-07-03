@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MudBlazor.Services;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Application.Jobs;
 using PinballWizard.Web.Components.Pages.Admin;
 using PinballWizard.Web.Security;
@@ -167,5 +168,48 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         Assert.Empty(cut.FindAll("[data-testid='exec-log-live']"));
+    }
+
+    [Fact]
+    public async Task Admin_LoadFailed_ShowsLoadFailedAlert()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _svc.GetExecutionAsync(Job, Exec, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-load-failed']");
+    }
+
+    [Fact]
+    public async Task Admin_LogsUnconfigured_ShowsUnconfiguredNotice()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Unconfigured());
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-log-unconfigured']");
+    }
+
+    [Fact]
+    public async Task Admin_Truncated_ShowsTruncatedBannerAndLines()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+                [new JobLogLine(DateTimeOffset.UtcNow, "info: line", JobLogSeverity.Info)],
+                truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-log-truncated']");
+        cut.Find("[data-testid='exec-log-lines']");
     }
 }

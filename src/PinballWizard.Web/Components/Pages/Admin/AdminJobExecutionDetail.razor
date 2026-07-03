@@ -69,7 +69,7 @@
         }
         else
         {
-            @if (_isAdmin && IsRunning)
+            @if (IsRunning)
             {
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2" data-testid="exec-log-live">
                     <MudProgressCircular Size="Size.Small" Indeterminate="true" />
@@ -161,11 +161,9 @@
     [
         new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
         new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
-        new BreadcrumbItem(ArmDisplay(JobName), href: $"/admin/jobs/{JobName}"),
+        new BreadcrumbItem(JobName, href: $"/admin/jobs/{JobName}"),
         new BreadcrumbItem(AbbreviatedExec, href: null, disabled: true),
     ];
-
-    private static string ArmDisplay(string jobName) => jobName; // full name is fine in the crumb
 
     protected override async Task OnInitializedAsync() =>
         _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
@@ -253,6 +251,7 @@
             }
         }
         catch (OperationCanceledException) { /* disposed / navigated away */ }
+        catch (ObjectDisposedException) { }
         catch (Exception ex) { Logger.LogWarning(ex, "Auto-refresh loop stopped for {Execution}.", ExecutionName); }
     }
 
