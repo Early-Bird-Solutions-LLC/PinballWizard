@@ -33,6 +33,7 @@ public static class LinkingUtilities
             SourceType.SpookyPinballSupportPage => ScraperManufacturerKey.Spooky,
             SourceType.PinballBrothersGamePage => ScraperManufacturerKey.PinballBrothers,
             SourceType.PinballBrothersDocumentPage => ScraperManufacturerKey.PinballBrothers,
+            SourceType.PinballBrothersFreshdeskArticle => ScraperManufacturerKey.PinballBrothers,
             SourceType.BarrelsOfFunProductPage => ScraperManufacturerKey.BarrelsOfFun,
             SourceType.ChicagoGamingGamePage => ScraperManufacturerKey.ChicagoGaming,
             SourceType.MultimorphicProductPage => ScraperManufacturerKey.Multimorphic,

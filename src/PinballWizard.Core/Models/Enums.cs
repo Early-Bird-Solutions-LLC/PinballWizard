@@ -18,6 +18,7 @@ public enum SourceType
     ChicagoGamingGamePage,
     MultimorphicProductPage,
     JjpSupportPage,
+    PinballBrothersFreshdeskArticle,
 }
 
 /// <summary>
@@ -76,6 +77,14 @@ public enum DocumentType
     // routed. Added to RagIngestionOptions.AcceptedDocumentTypes so the
     // Wizard can answer P3 developer questions.
     SdkGuide,
+
+    // A Freshdesk knowledge-base article with no downloadable attachment
+    // (troubleshooting Q&A, "how to" guides, update/changelog notes). Indexed
+    // via the PbFreshdeskArticleSynthesizer bypass path (--sync-pb-freshdesk-articles),
+    // like NewsDigest/SdkGuide — not PDF-derived, not change-feed routed, and
+    // deliberately excluded from RagIngestionOptions.AcceptedDocumentTypes
+    // since it never flows through the Cosmos scraped_documents_raw pipeline.
+    SupportArticle,
 }
 
 /// <summary>

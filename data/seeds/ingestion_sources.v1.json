@@ -209,9 +209,22 @@
     "cadence": "none",
     "politenessOverrides": null,
     "sourceGroup": "Pinball Brothers",
-    "discoveryStatus": "Deferred",
-    "discoveryNotes": "Service bulletins exist at pinballbrothers.freshdesk.com/support/solutions (General > Service Bulletins folder, 4 confirmed notices). Freshdesk REST API available at {subdomain}.freshdesk.com/api/v2/solutions/folders/{id}/articles returns JSON but requires API key even for public portals. Deferred pending API key acquisition.",
-    "discoveryDate": "2026-05-26"
+    "discoveryStatus": "Superseded",
+    "discoveryNotes": "Superseded by pb_freshdesk (2026-07-03), which covers Service Bulletins plus Manuals, Rulebooks, Schematics, and support articles across all four Freshdesk-hosted machines (Alien, Queen, ABBA, Predator). The 2026-05-26 API-key blocker was a red herring — the REST API needs a key, but a plain HTML scrape of /support/solutions/* does not (robots.txt verified to allow it).",
+    "discoveryDate": "2026-07-03"
+  },
+  {
+    "id": "pb_freshdesk",
+    "displayName": "Freshdesk Support Portal",
+    "scraperImplKey": "pb_freshdesk",
+    "baseUrl": "https://pinballbrothers.freshdesk.com/",
+    "enabled": true,
+    "cadence": "weekly",
+    "politenessOverrides": null,
+    "sourceGroup": "Pinball Brothers",
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Covers Manuals, Rulebooks, Schematics, and Service Bulletins (attachment-bearing articles, via --source pb_freshdesk) plus troubleshooting Q&A / How-To / Update notes (text-only articles, via --sync-pb-freshdesk-articles) across all Freshdesk categories: General, FAQs ALIEN, FAQs QUEEN, FAQs ABBA, FAQ PREDATOR. robots.txt allows /support/solutions/* and explicitly carves out Allow: /helpdesk/attachments from the broader Disallow: /helpdesk/.",
+    "discoveryDate": "2026-07-03"
   },
   {
     "id": "kineticist_tutorials",
