@@ -188,6 +188,125 @@ public sealed class TiltForumsRulesheetsClientTests
         Assert.Equal(2, urls.Count);
     }
 
+    // Shape verified against the live "Transformers" topic page 2026-07-03:
+    // #post_1 > div.post[itemprop='text'] holds h1/p/ul content; author and
+    // timestamp live in #post_1's crawler-post-meta block.
+    private const string TopicPageHtml = """
+        <html><body>
+        <div id='post_1' class='topic-body crawler-post'>
+          <div class='crawler-post-meta'>
+            <span class="creator" itemprop="author">
+              <a itemprop="url" href='https://tiltforums.com/u/CaptainBZarre'><span itemprop='name'>CaptainBZarre</span></a>
+            </span>
+            <span class="crawler-post-infos">
+              <time datetime='2026-05-21T15:03:35Z' class='post-time'>May 21, 2026, 3:03pm</time>
+            </span>
+          </div>
+          <div class='post' itemprop='text'>
+            <h1>Quick Links:</h1>
+            <ul><li><a href="#heading--gameinfo">Game Information</a></li></ul>
+            <h1 id="heading--gameinfo">Game Information &amp; Overview:</h1>
+            <ul>
+              <li>Lead Designer: Elliot Eismin</li>
+              <li>Wiki Rulesheet based on Code Rev: 0.87
+                <ul><li><em>Edit the Code revision, if applicable, when you make changes</em></li></ul>
+              </li>
+            </ul>
+            <p><em>Transformers: More Than Meets the Eye</em> is Elliot Eismin's first machine as lead designer.</p>
+            <h1 id="heading--modes">Main Modes:</h1>
+            <p>Knock down the drop targets in front of Megatron, then shoot the scoop.</p>
+          </div>
+        </div>
+        <div id='post_2' itemprop='comment' class='topic-body crawler-post'>
+          <div class='post' itemprop='text'><p>Nice writeup!</p></div>
+        </div>
+        </body></html>
+        """;
+
+    private static TiltForumsRulesheetListing TransformersListing() => new()
+    {
+        GameTitle = "Transformers: More Than Meets The Eye",
+        ManufacturerHeaderText = "Stern Pinball",
+        TopicUrl = "https://tiltforums.com/t/transformers-more-than-meets-the-eye-rulesheet/10229",
+    };
+
+    [Fact]
+    public async Task FetchRulesheetAsync_TransformersFixture_ParsesAllFields()
+    {
+        var (client, gate, _) = BuildClient(h => h.MapHtml(TransformersListing().TopicUrl, TopicPageHtml));
+
+        var article = await client.FetchRulesheetAsync(TransformersListing(), CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Equal("Transformers: More Than Meets The Eye", article!.GameTitle);
+        Assert.Equal("CaptainBZarre", article.Author);
+        Assert.Equal("0.87", article.CodeRevision);
+        Assert.NotNull(article.PublishedAt);
+        Assert.Equal(2026, article.PublishedAt!.Value.Year);
+        Assert.Equal(5, article.PublishedAt!.Value.Month);
+
+        // Body text includes wiki OP content, heading-prefixed.
+        Assert.Contains("Megatron", article.BodyText, StringComparison.Ordinal);
+        Assert.Contains("## Quick Links:", article.BodyText, StringComparison.Ordinal);
+        Assert.Contains("## Main Modes:", article.BodyText, StringComparison.Ordinal);
+
+        // Reply post ("Nice writeup!") must NOT leak into the wiki OP body.
+        Assert.DoesNotContain("Nice writeup", article.BodyText, StringComparison.Ordinal);
+
+        Assert.Single(gate.Acquired);
+        Assert.Single(gate.Reported);
+    }
+
+    [Fact]
+    public async Task FetchRulesheetAsync_HttpFailure_ReturnsNull()
+    {
+        var (client, gate, _) = BuildClient(h => h
+            .Map(TransformersListing().TopicUrl, _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+
+        var article = await client.FetchRulesheetAsync(TransformersListing(), CancellationToken.None);
+
+        Assert.Null(article);
+        Assert.Single(gate.Acquired);
+        Assert.Single(gate.Reported);
+    }
+
+    [Fact]
+    public async Task FetchRulesheetAsync_NoPostOneContent_ReturnsNull()
+    {
+        const string html = "<html><body><p>Not a Discourse topic page.</p></body></html>";
+        var (client, _, _) = BuildClient(h => h.MapHtml(TransformersListing().TopicUrl, html));
+
+        var article = await client.FetchRulesheetAsync(TransformersListing(), CancellationToken.None);
+
+        Assert.Null(article);
+    }
+
+    [Fact]
+    public async Task FetchRulesheetAsync_NoCodeRevMarker_CodeRevisionIsNull()
+    {
+        const string html = """
+            <html><body>
+            <div id='post_1' class='topic-body crawler-post'>
+              <div class='crawler-post-meta'>
+                <span class="creator" itemprop="author"><span itemprop='name'>SomeUser</span></span>
+              </div>
+              <div class='post' itemprop='text'>
+                <h1>Overview</h1>
+                <p>No code revision marker in this fixture.</p>
+              </div>
+            </div>
+            </body></html>
+            """;
+
+        var (client, _, _) = BuildClient(h => h.MapHtml(TransformersListing().TopicUrl, html));
+
+        var article = await client.FetchRulesheetAsync(TransformersListing(), CancellationToken.None);
+
+        Assert.NotNull(article);
+        Assert.Null(article!.CodeRevision);
+        Assert.Null(article.PublishedAt);
+    }
+
     private static (TiltForumsRulesheetsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)
     {

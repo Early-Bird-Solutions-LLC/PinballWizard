@@ -1,5 +1,7 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using AngleSharp;
+using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -24,7 +26,7 @@ namespace PinballWizard.Infrastructure.Scraping.TiltForums;
 /// <c>KineticistTutorialsClient</c>'s precedent — not the PDF-oriented
 /// <c>ScraperOrchestrator</c>/download/<c>DocumentLinker</c> pipeline.
 /// </remarks>
-public sealed class TiltForumsRulesheetsClient : PoliteScraperBase
+public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
 {
     private readonly HttpClient _http;
 
@@ -158,5 +160,105 @@ public sealed class TiltForumsRulesheetsClient : PoliteScraperBase
 
         Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} total topic URL(s).", urls.Count);
         return [.. urls];
+    }
+
+    [GeneratedRegex(@"Code Rev:\s*([\d.]+)", RegexOptions.IgnoreCase)]
+    private static partial Regex CodeRevisionRegex();
+
+    /// <summary>
+    /// Fetches a single rulesheet topic page and extracts the wiki OP
+    /// (post_1) content. Returns <see langword="null"/> when the page
+    /// cannot be fetched or has no recognizable wiki-post content (logged +
+    /// skipped — degrades visibly, never fabricates content).
+    /// </summary>
+    public async Task<TiltForumsRulesheetArticle?> FetchRulesheetAsync(
+        TiltForumsRulesheetListing listing, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(listing);
+
+        string html;
+        try
+        {
+            html = await GetStringPolitelyAsync(_http, new Uri(listing.TopicUrl), cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.LogWarning(ex,
+                "TiltForumsRulesheetsClient: failed to fetch topic '{Title}' at {Url}; skipping.",
+                listing.GameTitle, listing.TopicUrl);
+            return null;
+        }
+
+        using var browsingContext = BrowsingContext.New(Configuration.Default);
+        var parser = browsingContext.GetService<IHtmlParser>()!;
+        using var document = await parser.ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
+
+        // #post_1 is always the wiki OP; reply posts additionally carry
+        // itemprop='comment', but scoping to the id alone is sufficient and
+        // simpler — post_1 never has that attribute.
+        var postContent = document.QuerySelector("#post_1 .post");
+        if (postContent is null)
+        {
+            Logger.LogWarning(
+                "TiltForumsRulesheetsClient: no wiki post content found for '{Title}' at {Url}; skipping.",
+                listing.GameTitle, listing.TopicUrl);
+            return null;
+        }
+
+        var bodyText = ExtractBodyText(postContent);
+        if (string.IsNullOrWhiteSpace(bodyText))
+        {
+            Logger.LogWarning(
+                "TiltForumsRulesheetsClient: empty wiki post body for '{Title}' at {Url}; skipping.",
+                listing.GameTitle, listing.TopicUrl);
+            return null;
+        }
+
+        var author = document.QuerySelector("#post_1 .creator [itemprop='name']")?.TextContent.Trim()
+            ?? "Tilt Forums community";
+
+        DateTimeOffset? publishedAt = null;
+        var timeAttr = document.QuerySelector("#post_1 time.post-time")?.GetAttribute("datetime");
+        if (timeAttr is not null && DateTimeOffset.TryParse(timeAttr, out var parsed))
+        {
+            publishedAt = parsed;
+        }
+
+        var codeRevMatch = CodeRevisionRegex().Match(bodyText);
+        var codeRevision = codeRevMatch.Success ? codeRevMatch.Groups[1].Value : null;
+
+        return new TiltForumsRulesheetArticle
+        {
+            GameTitle = listing.GameTitle,
+            ManufacturerHeaderText = listing.ManufacturerHeaderText,
+            TopicUrl = listing.TopicUrl,
+            Author = author,
+            BodyText = bodyText,
+            CodeRevision = codeRevision,
+            PublishedAt = publishedAt,
+        };
+    }
+
+    // Flattens the wiki post's child elements into heading-prefixed plain
+    // text (h1 -> "## ", h2 -> "### ", h3 -> "#### ") so downstream chunking
+    // preserves section boundaries. Live content uses h1 for all section
+    // headings (verified 2026-07-03) — h2/h3 handling is defensive.
+    private static string ExtractBodyText(IElement postContent)
+    {
+        var parts = new List<string>();
+        foreach (var el in postContent.Children)
+        {
+            var text = el.TextContent.Trim();
+            if (string.IsNullOrWhiteSpace(text)) continue;
+
+            parts.Add(el.TagName.ToUpperInvariant() switch
+            {
+                "H1" => $"## {text}",
+                "H2" => $"### {text}",
+                "H3" => $"#### {text}",
+                _ => text,
+            });
+        }
+        return string.Join("\n\n", parts).Trim();
     }
 }
