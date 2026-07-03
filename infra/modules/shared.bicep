@@ -91,6 +91,9 @@ param twipNewsletterCronExpression string = '0 8 * * 0'
 @description('Cron schedule expression (UTC) for the weekly manufacturer scraper-sweep ACA Job. Default is 1 am Sunday (before opdbSyncCronExpression at 3 am and the Sunday content-sync jobs). Runs --source all, which ScraperOrchestrator.FilterScrapers resolves to every registered ISourceScraper (all manufacturer scrapers, including pb_freshdesk). Has no effect when deployPhase2=false.')
 param scraperSweepCronExpression string = '0 1 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Pinball Brothers Freshdesk articles-sync ACA Job. Default is 9 am Sunday (between twipNewsletterCronExpression at 8 am and sternRefreshCronExpression at 10 am). Runs --sync-pb-freshdesk-articles which indexes text-only Freshdesk support articles as SupportArticle chunks in AI Search. Has no effect when deployPhase2=false or deployAiSearch=false.')
+param pbFreshdeskArticlesCronExpression string = '0 9 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -2658,6 +2661,104 @@ resource scraperSweepJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts
 }
 
 // -----------------------------------------------------------------------------
+// Pinball Brothers Freshdesk articles sync ACA Job (weekly Sunday 9am UTC)
+// -----------------------------------------------------------------------------
+// Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
+// Runs --sync-pb-freshdesk-articles which crawls the Pinball Brothers Freshdesk
+// support portal for text-only articles (no PDF attachment — troubleshooting
+// Q&A, How-To guides, Update notes, general FAQ) and indexes them as
+// SupportArticle chunks in AI Search (mirrors the TWIP/Kineticist synthesizer
+// pattern — see PR #663). Attachment-bearing articles are a separate concern,
+// covered by scraperSweepJob's --source all (which includes pb_freshdesk).
+// Independent of scraperSweepJob — this job re-crawls Freshdesk directly via
+// FreshdeskSolutionsClient, not from anything scraperSweepJob wrote to Cosmos.
+// Scheduled between TWIP (8am) and Stern refresh (10am). Three RBAC assignments
+// mirror the kineticistSyncJob pattern exactly.
+
+module pbFreshdeskArticlesJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2 && deployAiSearch) {
+  name: 'pb-freshdesk-articles-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-pb-freshdesk-articles-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: pbFreshdeskArticlesCronExpression
+    // 2 hours — the Freshdesk portal is a small corpus (~90 articles as of
+    // 2026-07-03), so this mirrors kineticistSyncJob/sternRefreshJob's bound
+    // with headroom for corpus growth.
+    replicaTimeout: 7200
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--sync-pb-freshdesk-articles' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        name: 'AiSearch__Endpoint'
+        value: 'https://${searchService.?name ?? ''}.search.windows.net'
+      }
+      {
+        name: 'AiSearch__IndexName'
+        value: 'pinwiz-rag-v1'
+      }
+      {
+        name: 'AiFoundry__ProjectEndpoint'
+        value: 'https://${foundry.?name ?? ''}.services.ai.azure.com/api/projects/${foundryProjectName}'
+      }
+      {
+        name: 'AiFoundry__EmbeddingDeploymentName'
+        value: foundryEmbeddingDeploymentName
+      }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the pb_freshdesk articles job's managed
+// identity. Mirrors twipJobCosmosDataContrib: the CLI's DI gate (cosmosWired)
+// requires a live Cosmos connection to register IChunker even though this verb
+// doesn't itself write to Cosmos — the RBAC lets DefaultAzureCredential
+// authenticate to Cosmos at startup.
+resource pbFreshdeskArticlesJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2 && deployAiSearch) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'pb-freshdesk-articles-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: pbFreshdeskArticlesJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// AI Search: Search Index Data CONTRIBUTOR (8ebe5a00-...) — the pb_freshdesk
+// articles job upserts SupportArticle chunks into the index, so it needs
+// Contributor (not the Reader role the serving UAMI carries). Shape mirrors
+// kineticistSyncJobSearchContrib.
+resource pbFreshdeskArticlesJobSearchContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: searchService
+  name: guid(searchService.id, 'pb-freshdesk-articles-job-${environment}', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
+    principalId: pbFreshdeskArticlesJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Foundry: Cognitive Services OpenAI User (5e0bd9bd-...) for embedding inference
+// during the SupportArticle chunk-indexing phase. Shape mirrors
+// kineticistSyncJobOpenAiUser.
+resource pbFreshdeskArticlesJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && deployAiSearch) {
+  scope: foundry
+  name: guid(foundry.id, 'pb-freshdesk-articles-job-${environment}', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd')
+    principalId: pbFreshdeskArticlesJob.?outputs.jobPrincipalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2734,6 +2835,9 @@ output twipNewsletterJobPrincipalId string = twipNewsletterJob.?outputs.jobPrinc
 
 output scraperSweepJobName string = scraperSweepJob.?outputs.jobName ?? ''
 output scraperSweepJobPrincipalId string = scraperSweepJob.?outputs.jobPrincipalId ?? ''
+
+output pbFreshdeskArticlesJobName string = pbFreshdeskArticlesJob.?outputs.jobName ?? ''
+output pbFreshdeskArticlesJobPrincipalId string = pbFreshdeskArticlesJob.?outputs.jobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:

@@ -96,6 +96,9 @@ param kineticistSyncCronExpression string = '0 11 * * 0'
 @description('Cron schedule expression (UTC) for the weekly manufacturer scraper-sweep ACA Job. Default is 1 am Sunday. Has no effect when deployPhase2=false.')
 param scraperSweepCronExpression string = '0 1 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Pinball Brothers Freshdesk articles-sync ACA Job. Default is 9 am Sunday. Has no effect when deployPhase2=false or deployAiSearch=false.')
+param pbFreshdeskArticlesCronExpression string = '0 9 * * 0'
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -151,6 +154,7 @@ module shared 'modules/shared.bicep' = {
     sternRefreshCronExpression: sternRefreshCronExpression
     kineticistSyncCronExpression: kineticistSyncCronExpression
     scraperSweepCronExpression: scraperSweepCronExpression
+    pbFreshdeskArticlesCronExpression: pbFreshdeskArticlesCronExpression
   }
 }
 
