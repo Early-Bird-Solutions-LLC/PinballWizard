@@ -56,8 +56,11 @@
 
         <MudStack Row="true" Spacing="2" Class="mb-4">
             <AppStatusChip Color="Color.Default">@_rows.Count machines</AppStatusChip>
-            <AppStatusChip Color="Color.Default">@_totalDocs documents</AppStatusChip>
-            <AppStatusChip Color="Color.Default">@_manuals with manuals</AppStatusChip>
+            @if (!_statsFailed)
+            {
+                <AppStatusChip Color="Color.Default">@_totalDocs documents</AppStatusChip>
+                <AppStatusChip Color="Color.Default">@_manuals with manuals</AppStatusChip>
+            }
         </MudStack>
 
         @if (_totalDocs > 0)

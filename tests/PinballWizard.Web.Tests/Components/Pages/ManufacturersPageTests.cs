@@ -113,6 +113,8 @@ public sealed class ManufacturersPageTests : AsyncBunitContext
 
         var table = cut.Find("[data-testid='manufacturer-games-table']");
         Assert.Contains("Medieval Madness", table.TextContent, StringComparison.Ordinal);
+        // OPDB-only: no stats failure, rollup is null → honest zero in the Documents cell.
+        Assert.Contains("0", table.TextContent, StringComparison.Ordinal);
         Assert.Empty(cut.FindAll("[data-testid='manufacturer-browse-docs']"));
     }
 
@@ -159,5 +161,7 @@ public sealed class ManufacturersPageTests : AsyncBunitContext
         Assert.Contains("Godzilla", table.TextContent, StringComparison.Ordinal);
         Assert.Contains("—", table.TextContent, StringComparison.Ordinal);
         Assert.Empty(cut.FindAll("[data-testid='manufacturer-browse-docs']"));
+        // Invariant #17: fabricated "0 documents" chip must NOT appear when stats read fails.
+        Assert.DoesNotContain("0 documents", cut.Markup, StringComparison.Ordinal);
     }
 }
