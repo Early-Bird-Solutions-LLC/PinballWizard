@@ -1775,16 +1775,32 @@ static IHost CreateHost(string[] args)
         builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
     }
 
+    // PDF text extractor — gated on Cosmos (cosmosWired) only.
+    // PdfPigDocumentTextExtractor is a pure local PDF-parsing library with no
+    // dependency on AI Search or Foundry. Registering it whenever Cosmos is
+    // wired ensures DocumentLinker can exercise Tiers 3/4 (page-text matching)
+    // whenever --link-documents / --relink-all is run with Cosmos configured —
+    // regardless of whether the full RAG backfill stack (AI Search + Foundry) is
+    // also present. Absent this registration, IDocumentTextExtractor is null,
+    // Tiers 3/4 silently skip, and previously page-text-matched documents regress
+    // to NotInCatalog with no operator warning (GitHub issue #654 / OBS-01).
+    // The ADI-fallback upgrade path (FallbackDocumentTextExtractor) is governed
+    // internally by DocumentIntelligence:Endpoint presence inside the method itself.
+    if (cosmosWired)
+    {
+        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
+    }
+
     // RAG backfill service — gated on all three backend services being present.
-    // Registers the full ingestion stack (pipeline + chunker + extractor +
-    // Cosmos-backed IIndexState + backfill service) so `--run-rag-backfill`
-    // can populate the AI Search index from existing scraped_documents without
-    // running the Change Feed Processor.
+    // Registers the full ingestion stack (pipeline + chunker + Cosmos-backed
+    // IIndexState + backfill service) so `--run-rag-backfill` can populate the
+    // AI Search index from existing scraped_documents without running the Change
+    // Feed Processor. IDocumentTextExtractor is already registered above (cosmosWired
+    // gate), so there is no double-registration risk (TryAddSingleton is idempotent).
     if (cosmosWired && aiSearchWired && foundryWired)
     {
         builder.Services.AddRagIngestionPipeline();
         builder.Services.AddHybridChunker();
-        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
         builder.Services.AddRagBackfillService(builder.Configuration);
         builder.Services.AddMetadataCardSynthesizer();
         builder.Services.AddGameOverviewSynthesizer();

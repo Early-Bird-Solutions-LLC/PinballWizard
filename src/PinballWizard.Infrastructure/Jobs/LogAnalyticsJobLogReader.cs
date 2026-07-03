@@ -45,7 +45,7 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
 
     public async Task<JobLogResult> GetExecutionLogsAsync(
         string jobName, string executionName,
-        DateTimeOffset? startOn, DateTimeOffset? endOn, int maxLines, CancellationToken ct)
+        DateTimeOffset? startOn, DateTimeOffset? endOn, int maxLines, string? search, CancellationToken ct)
     {
         if (_client is null)
         {
@@ -60,7 +60,7 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         var endUtc = (endOn ?? DateTimeOffset.UtcNow).AddMinutes(3);
         // NOTE (verified Task 1): scope is by executionName via ContainerGroupName_s;
         // jobName is NOT a query filter (ACA job logs have empty ContainerAppName_s).
-        var kql = JobLogKql.BuildExecutionLogsQuery(executionName, startUtc, endUtc, cap);
+        var kql = JobLogKql.BuildExecutionLogsQuery(executionName, startUtc, endUtc, cap, NormalizeSearch(search));
 
         try
         {
@@ -117,5 +117,15 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         if (string.Equals(stream, "stderr", StringComparison.OrdinalIgnoreCase))
             return JobLogSeverity.Error;
         return JobLogSeverity.Unknown;
+    }
+
+    private const int MaxSearchLength = 200;
+
+    // Normalizes a user search term: trim, empty/whitespace => null, cap length.
+    internal static string? NormalizeSearch(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search)) return null;
+        var trimmed = search.Trim();
+        return trimmed.Length > MaxSearchLength ? trimmed[..MaxSearchLength] : trimmed;
     }
 }

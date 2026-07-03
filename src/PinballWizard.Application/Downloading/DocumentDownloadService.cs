@@ -50,7 +50,7 @@ public sealed class DocumentDownloadService
     /// </param>
     public async Task<DownloadSummary> RunAsync(bool force, CancellationToken cancellationToken)
     {
-        int downloaded = 0, skipped = 0, failed = 0;
+        int downloaded = 0, skipped = 0, failed = 0, backfilled = 0;
 
         // Origins the politeness gate has told us to stop asking (robots disallow or
         // 429 streak). Once an origin is poisoned we skip its remaining documents but
@@ -75,14 +75,49 @@ public sealed class DocumentDownloadService
 
             if (!force)
             {
-                // Primary skip: Cosmos record already carries a LocalPath (blob name)
-                // AND the blob is confirmed durable in pinwiz-raw. Either alone could
-                // be stale (record set but blob deleted, or blob present but record
-                // not yet stamped); checking both guards against both cases without
-                // requiring a network call when LocalPath is null (fast path).
-                var alreadyStored = raw.File?.LocalPath is not null
-                    || await _blobStore.ExistsAsync(blobName, cancellationToken).ConfigureAwait(false);
-                if (alreadyStored) { skipped++; continue; }
+                // Fast path: Cosmos record already carries a LocalPath — genuinely
+                // nothing to do.
+                if (raw.File?.LocalPath is not null) { skipped++; continue; }
+
+                // Durability check: the blob may already exist in pinwiz-raw even
+                // though Cosmos was never stamped (e.g. an earlier run wrote the
+                // blob then crashed/was interrupted before the Cosmos write). This
+                // is a desync, not a "nothing to do" — self-heal it here, mirroring
+                // the DownloadStatus.NotModified branch below (which also stamps
+                // Cosmos without new bytes). Without this, the record stays
+                // permanently desynced: every future run re-hits this same check
+                // and skips again, silently blocking the linker's page-text tiers
+                // for a document whose content is right there in storage (issue #661).
+                if (await _blobStore.ExistsAsync(blobName, cancellationToken).ConfigureAwait(false))
+                {
+                    var size = await _blobStore.GetSizeAsync(blobName, cancellationToken).ConfigureAwait(false);
+                    if (size is null)
+                    {
+                        // TOCTOU: the blob answered Exists=true but is gone (or errored)
+                        // by the time we asked for its properties. Stamping SizeBytes=0
+                        // and moving on is the least-bad outcome (still better than
+                        // leaving the record desynced forever), but it must be visible —
+                        // a future --force re-download is the recovery path.
+                        _logger.LogWarning(
+                            "DocumentDownload: backfill for {DocId} — GetSizeAsync returned null for " +
+                            "'{BlobName}' immediately after ExistsAsync=true; stamping SizeBytes=0. " +
+                            "Use --force-redownload to recover if the blob is genuinely gone.",
+                            raw.DocumentId, blobName);
+                    }
+
+                    // Only the File field is written back (provenance invariant); Sha256
+                    // is intentionally omitted — computing it would require reading the
+                    // full blob, defeating the point of a backfill that avoids a re-download.
+                    await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
+                    {
+                        LocalPath = blobName,
+                        Filename = Path.GetFileName(blobName),
+                        SizeBytes = size ?? 0,
+                    }, cancellationToken).ConfigureAwait(false);
+                    backfilled++;
+                    skipped++;
+                    continue;
+                }
             }
 
             var host = TryGetHost(fileUrl);
@@ -154,9 +189,9 @@ public sealed class DocumentDownloadService
         }
 
         _logger.LogInformation(
-            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} poisonedOrigins={Poisoned}",
-            downloaded, skipped, failed, poisonedHosts.Count);
-        return new DownloadSummary(downloaded, skipped, failed);
+            "DocumentDownload complete: downloaded={Downloaded} skipped={Skipped} failed={Failed} backfilled={Backfilled} poisonedOrigins={Poisoned}",
+            downloaded, skipped, failed, backfilled, poisonedHosts.Count);
+        return new DownloadSummary(downloaded, skipped, failed, backfilled);
     }
 
     private static string? TryGetHost(string url) =>
@@ -174,5 +209,10 @@ public sealed class DocumentDownloadService
     }
 }
 
-/// <summary>Result counts from a <see cref="DocumentDownloadService"/> run.</summary>
-public sealed record DownloadSummary(int Downloaded, int Skipped, int Failed);
+/// <summary>
+/// Result counts from a <see cref="DocumentDownloadService"/> run.
+/// <paramref name="Backfilled"/> counts records whose Cosmos <c>File</c> field
+/// was stamped from an already-existing blob (self-heal) rather than a fresh
+/// download — a subset of <paramref name="Skipped"/>, not a separate total.
+/// </summary>
+public sealed record DownloadSummary(int Downloaded, int Skipped, int Failed, int Backfilled = 0);

@@ -21,22 +21,31 @@ namespace PinballWizard.Infrastructure.Jobs;
 //   * Real lines use the .NET console formatter prefixes: "info:", "warn:",
 //     "fail:", "crit:" (continuation lines are indented and unprefixed).
 //
-// executionName comes from ARM (our own resource name), never user input.
+// executionName is a route parameter (URL-derived). It is escaped as a verbatim KQL
+// literal via JobLogSafe.KqlLiteral (single quotes doubled, CR/LF stripped) —
+// defense-in-depth consistent with the search term escaping below.
 internal static class JobLogKql
 {
-    public const int MaxLinesCap = 1000;
+    public const int MaxLinesCap = 10000;
 
     // Ascending by time; take (maxLines + 1) so the caller can detect truncation
     // (maxLines+1 rows back => cap to maxLines and flag Truncated).
     public static string BuildExecutionLogsQuery(
-        string executionName, DateTimeOffset startUtc, DateTimeOffset endUtc, int maxLines)
+        string executionName, DateTimeOffset startUtc, DateTimeOffset endUtc, int maxLines,
+        string? search = null)
     {
+        var exec = JobLogSafe.KqlLiteral(executionName);
         var start = startUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
         var end = endUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture);
+        // User-controlled term → verbatim KQL literal (JobLogSafe.KqlLiteral). contains
+        // is case-insensitive. Filter on the raw Log_s column before the project.
+        var searchClause = string.IsNullOrEmpty(search)
+            ? ""
+            : $"\n            | where Log_s contains @'{JobLogSafe.KqlLiteral(search)}'";
         return $$"""
             ContainerAppConsoleLogs_CL
             | where TimeGenerated between (datetime('{{start}}') .. datetime('{{end}}'))
-            | where ContainerGroupName_s == '{{executionName}}' or ContainerGroupName_s startswith '{{executionName}}-'
+            | where ContainerGroupName_s == @'{{exec}}' or ContainerGroupName_s startswith @'{{exec}}-'{{searchClause}}
             | project TimeGenerated, Message = Log_s, Stream = Stream_s
             | order by TimeGenerated asc
             | take {{maxLines + 1}}
