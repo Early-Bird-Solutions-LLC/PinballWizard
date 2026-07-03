@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using PinballWizard.Application.Linking;
+using PinballWizard.Application.Rag.Extraction;
 
 namespace PinballWizard.Cli.Commands;
 
@@ -18,6 +19,17 @@ internal static class LinkDocumentsCommand
                 "(Aspire-injected) or Cosmos:AccountEndpoint (Managed Identity against a deployed account).");
             Environment.ExitCode = 2;
             return;
+        }
+
+        // Tier 3/4 of the linking algorithm (page-text matching) requires IDocumentTextExtractor.
+        // With the current DI wiring it is registered whenever cosmosWired, but guard here so
+        // a future misconfiguration is loud rather than silent (OBS-01 / issue #654).
+        if (services.GetService<IDocumentTextExtractor>() is null)
+        {
+            Console.Error.WriteLine(
+                "WARNING: IDocumentTextExtractor is not registered — Tiers 3/4 (page-text " +
+                "matching) will be skipped for this run. If Cosmos is configured, ensure " +
+                "AddPdfDocumentTextExtractor is called in the DI composition root.");
         }
 
         await linker.InitializeAsync(cancellationToken);

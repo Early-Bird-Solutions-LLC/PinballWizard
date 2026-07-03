@@ -20,6 +20,7 @@ using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Documents;
@@ -46,6 +47,7 @@ using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 using PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 using PinballWizard.Infrastructure.Scraping.Multimorphic;
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
+using PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
@@ -176,6 +178,11 @@ var twipSinceOption = new Option<string?>("--twip-since")
     Description = "ISO-8601 date (e.g. 2026-06-01). Limits --sync-twip-newsletter to articles published on or after this date. Defaults to Twip:DefaultLookbackDays (14) days ago. Accepts date portion only.",
 };
 
+var syncPbFreshdeskArticlesOption = new Option<bool>("--sync-pb-freshdesk-articles")
+{
+    Description = "Fetch and index text-only Pinball Brothers Freshdesk support articles (troubleshooting Q&A, \"how to\" guides, update notes with no PDF attachment) as SupportArticle documents in AI Search. Attachment-bearing articles (Manuals, Rulebooks, Schematics, Service Bulletins) are handled separately by --source pb_freshdesk, not this verb. Machine linking uses IMachineTitleLookupRepository keyed on the Freshdesk category name (Alien/Queen/ABBA/Predator); General-category articles index under a synthetic 'pb_support' machine id. Idempotent: safe to re-run.",
+};
+
 var syncP3SdkDocsOption = new Option<bool>("--sync-p3-sdk-docs")
 {
     Description = "Index Multimorphic P3 SDK developer documents (per-module UsageInstructions + INSTALL.txt + ReleaseNotes.txt) as SdkGuide chunks in AI Search. Reads from the local SDK zip or an already-extracted directory specified by --sdk-path. Skips the 1,032 Doxygen HTML files (low narrative RAG value). Idempotent: document_id is a stable hash of the file path. Requires Azure AI Search and Azure AI Foundry to be configured.",
@@ -259,6 +266,7 @@ rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(syncKineticistTutorialsOption);
 rootCommand.Options.Add(syncTwipNewsletterOption);
 rootCommand.Options.Add(twipSinceOption);
+rootCommand.Options.Add(syncPbFreshdeskArticlesOption);
 rootCommand.Options.Add(syncP3SdkDocsOption);
 rootCommand.Options.Add(sdkPathOption);
 rootCommand.Options.Add(refreshGameOverviewsOption);
@@ -296,6 +304,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
     var syncTwipNewsletter = parseResult.GetValue(syncTwipNewsletterOption);
     var twipSince = parseResult.GetValue(twipSinceOption);
+    var syncPbFreshdeskArticles = parseResult.GetValue(syncPbFreshdeskArticlesOption);
     var syncP3SdkDocs = parseResult.GetValue(syncP3SdkDocsOption);
     var sdkPath = parseResult.GetValue(sdkPathOption);
     var refreshGameOverviews = parseResult.GetValue(refreshGameOverviewsOption);
@@ -1378,6 +1387,188 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --sync-pb-freshdesk-articles: text-only Pinball Brothers
+    // Freshdesk support articles (no PDF attachment) as SupportArticle chunks
+    // in AI Search. Shares FreshdeskSolutionsClient's live crawl with
+    // PbFreshdeskDocumentScraper (--source pb_freshdesk) but only processes
+    // articles with zero attachments — attachment-bearing articles are that
+    // scraper's job. Idempotent: chunk_id hash is stable per article URL.
+    if (syncPbFreshdeskArticles)
+    {
+        var freshdeskClient = host.Services.GetService<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskSolutionsClient>();
+        var freshdeskSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.PbFreshdeskArticleSynthesizer>();
+        var freshdeskTitleLookups = host.Services.GetService<IMachineTitleLookupRepository>();
+        var freshdeskIndexer = host.Services.GetService<IRagIndexer>();
+
+        if (freshdeskClient is null || freshdeskSynthesizer is null || freshdeskTitleLookups is null || freshdeskIndexer is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-pb-freshdesk-articles requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Discovering Pinball Brothers Freshdesk support folders...");
+
+        IReadOnlyList<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskFolder> freshdeskFolders;
+        try
+        {
+            freshdeskFolders = await freshdeskClient.DiscoverFoldersAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"--sync-pb-freshdesk-articles: folder discovery failed: {ex.Message}");
+            Environment.ExitCode = 1;
+            return;
+        }
+        Console.WriteLine($"Found {freshdeskFolders.Count} folder(s). Discovering articles...");
+
+        var freshdeskIndexed = 0;
+        var freshdeskSkippedAttachment = 0;
+        var freshdeskSkippedNoContent = 0;
+        var freshdeskSkippedNoMachine = 0;
+        var freshdeskFailed = 0;
+        var freshdeskIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
+        var freshdeskKnownGameSlugs = PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.PbFreshdeskDocumentScraper.KnownGameSlugs;
+
+        foreach (var folder in freshdeskFolders)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            IReadOnlyList<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskArticleSummary> summaries;
+            try
+            {
+                summaries = await freshdeskClient.DiscoverArticlesInFolderAsync(folder, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Freshdesk: article discovery failed for folder '{folder.FolderName}': {ex.Message}; skipping folder.");
+                freshdeskFailed++;
+                continue;
+            }
+
+            foreach (var summary in summaries)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var article = await freshdeskClient.FetchArticleAsync(summary, cancellationToken);
+                if (article is null)
+                {
+                    freshdeskSkippedNoContent++;
+                    continue;
+                }
+
+                // Attachment-bearing articles are PbFreshdeskDocumentScraper's
+                // job (--source pb_freshdesk) — this verb only handles the
+                // text-only remainder.
+                if (article.Attachments.Count > 0)
+                {
+                    freshdeskSkippedAttachment++;
+                    continue;
+                }
+
+                var categoryLower = folder.CategoryName.ToLowerInvariant();
+                var matchedSlug = freshdeskKnownGameSlugs.FirstOrDefault(s => categoryLower.Contains(s, StringComparison.Ordinal));
+
+                string machineId, machineTitle, manufacturer;
+                if (matchedSlug is not null)
+                {
+                    // Pinball Brothers' own game pages title themselves "<Name> Pinball"
+                    // (e.g. "Queen Pinball", "Alien Pinball" — confirmed from this project's
+                    // PbGamePageScraper fixtures), while the catalog's canonical OPDB title
+                    // may or may not carry that suffix. Try both forms rather than a single
+                    // guess, since MachineTitleLookup.NormalizeTitle does no suffix-stripping
+                    // of its own — a bare-slug lookup would otherwise risk silently matching
+                    // nothing for every article.
+                    var displayName = matchedSlug switch
+                    {
+                        "abba" => "ABBA",
+                        _ => char.ToUpperInvariant(matchedSlug[0]) + matchedSlug[1..],
+                    };
+                    string[] titleCandidates = [displayName, $"{displayName} Pinball"];
+
+                    MachineTitleLookup? lookup = null;
+                    foreach (var candidate in titleCandidates)
+                    {
+                        lookup = await freshdeskTitleLookups.GetByTitleAsync(candidate, cancellationToken);
+                        if (lookup is not null && lookup.OpdbIds.Count > 0) break;
+                    }
+
+                    if (lookup is null || lookup.OpdbIds.Count == 0)
+                    {
+                        Console.Error.WriteLine(
+                            $"  Freshdesk: no machine in catalog for '{matchedSlug}' (tried: {string.Join(", ", titleCandidates)}); article '{article.Title}' skipped.");
+                        freshdeskSkippedNoMachine++;
+                        continue;
+                    }
+                    machineId = lookup.OpdbIds[0];
+                    machineTitle = displayName;
+                    manufacturer = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Pinball Brothers";
+                }
+                else
+                {
+                    // General-category article (FAQ, Getting Started, Warranty
+                    // Terms) — not tied to a specific machine. Synthetic id
+                    // mirrors TWIP's "pinball_news" pattern.
+                    machineId = "pb_support";
+                    machineTitle = "Pinball Brothers Support";
+                    manufacturer = "Pinball Brothers";
+                }
+
+                var articleId = summary.Url.Split('/').Last().Split('-', 2)[0];
+                var documentId = $"pb_freshdesk_{articleId}";
+
+                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                    MachineId: machineId,
+                    MachineTitle: machineTitle,
+                    Manufacturer: manufacturer,
+                    DocumentId: documentId,
+                    DocumentUrl: article.Url,
+                    DocumentType: PinballWizard.Core.Models.DocumentType.SupportArticle,
+                    LastScrapedUtc: DateTimeOffset.UtcNow);
+
+                var chunks = freshdeskSynthesizer.Synthesize(article, chunkRequest);
+                if (chunks.Count == 0)
+                {
+                    freshdeskSkippedNoContent++;
+                    continue;
+                }
+
+                try
+                {
+                    var result = await freshdeskIndexer.UpsertAsync(chunkRequest, chunks, freshdeskIndexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
+                    {
+                        foreach (var failure in result.Failures)
+                        {
+                            Console.Error.WriteLine(
+                                $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.Title}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        }
+                        freshdeskFailed++;
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  Indexed '{article.Title}' ({folder.FolderName}) → {chunks.Count} chunk(s)");
+                        freshdeskIndexed++;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index '{article.Title}': {ex.Message}");
+                    freshdeskFailed++;
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"--sync-pb-freshdesk-articles complete: indexed={freshdeskIndexed} skipped_attachment={freshdeskSkippedAttachment} skipped_no_content={freshdeskSkippedNoContent} skipped_no_machine={freshdeskSkippedNoMachine} failed={freshdeskFailed}");
+        if (freshdeskFailed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
     // Handle --sync-p3-sdk-docs (Multimorphic P3 SDK developer guides — SdkGuide
     // chunks in AI Search). Reads high-value text files from the local SDK zip
     // or extracted directory and synthesizes chunks via P3SdkDocsSynthesizer.
@@ -1584,16 +1775,32 @@ static IHost CreateHost(string[] args)
         builder.Services.AddAzureAiSearchIntegration(builder.Configuration);
     }
 
+    // PDF text extractor — gated on Cosmos (cosmosWired) only.
+    // PdfPigDocumentTextExtractor is a pure local PDF-parsing library with no
+    // dependency on AI Search or Foundry. Registering it whenever Cosmos is
+    // wired ensures DocumentLinker can exercise Tiers 3/4 (page-text matching)
+    // whenever --link-documents / --relink-all is run with Cosmos configured —
+    // regardless of whether the full RAG backfill stack (AI Search + Foundry) is
+    // also present. Absent this registration, IDocumentTextExtractor is null,
+    // Tiers 3/4 silently skip, and previously page-text-matched documents regress
+    // to NotInCatalog with no operator warning (GitHub issue #654 / OBS-01).
+    // The ADI-fallback upgrade path (FallbackDocumentTextExtractor) is governed
+    // internally by DocumentIntelligence:Endpoint presence inside the method itself.
+    if (cosmosWired)
+    {
+        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
+    }
+
     // RAG backfill service — gated on all three backend services being present.
-    // Registers the full ingestion stack (pipeline + chunker + extractor +
-    // Cosmos-backed IIndexState + backfill service) so `--run-rag-backfill`
-    // can populate the AI Search index from existing scraped_documents without
-    // running the Change Feed Processor.
+    // Registers the full ingestion stack (pipeline + chunker + Cosmos-backed
+    // IIndexState + backfill service) so `--run-rag-backfill` can populate the
+    // AI Search index from existing scraped_documents without running the Change
+    // Feed Processor. IDocumentTextExtractor is already registered above (cosmosWired
+    // gate), so there is no double-registration risk (TryAddSingleton is idempotent).
     if (cosmosWired && aiSearchWired && foundryWired)
     {
         builder.Services.AddRagIngestionPipeline();
         builder.Services.AddHybridChunker();
-        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
         builder.Services.AddRagBackfillService(builder.Configuration);
         builder.Services.AddMetadataCardSynthesizer();
         builder.Services.AddGameOverviewSynthesizer();
@@ -1676,6 +1883,7 @@ static IHost CreateHost(string[] args)
     // discovers games via the WP REST API and identifies them by the
     // `-pinball` slug suffix on top-level pages).
     builder.Services.AddPinballBrothersScraping(builder.Configuration);
+    builder.Services.AddPinballBrothersFreshdeskScraping(builder.Configuration);
 
     // Barrels of Fun scraper (Phase 1.3 — WooCommerce on shop.kollectfun.com,
     // discovers machines via the /product-category/machines/ category page

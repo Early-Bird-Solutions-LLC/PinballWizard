@@ -25,7 +25,8 @@ internal static class DownloadDocumentsCommand
 
         Console.WriteLine();
         Console.WriteLine($"--download-documents complete: " +
-            $"downloaded={summary.Downloaded} skipped={summary.Skipped} failed={summary.Failed}");
+            $"downloaded={summary.Downloaded} skipped={summary.Skipped} failed={summary.Failed} " +
+            $"backfilled={summary.Backfilled}");
 
         if (summary.Failed > 0)
             Environment.ExitCode = 1;

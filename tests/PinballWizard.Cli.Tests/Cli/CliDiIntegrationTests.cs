@@ -7,10 +7,12 @@ using PinballWizard.Application;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
+using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Downloading;
+using PinballWizard.Infrastructure.Rag.Extraction;
 using PinballWizard.Infrastructure.Scraping.Ap;
 using PinballWizard.Infrastructure.Scraping.Jjp;
 using PinballWizard.Infrastructure.Scraping.Playwright;
@@ -138,6 +140,24 @@ public sealed class CliDiIntegrationTests : IDisposable
         Assert.NotNull(factory);
     }
 
+    [Fact]
+    public void Host_DocumentTextExtractorPresent_WhenCosmosConfiguredWithoutFullRagStack()
+    {
+        // Regression guard for GitHub issue #654:
+        // AddPdfDocumentTextExtractor was gated on cosmosWired && aiSearchWired &&
+        // foundryWired. With only Cosmos configured, IDocumentTextExtractor was never
+        // registered, silently skipping Tier 3/4 page-text matching in --link-documents
+        // / --relink-all (OBS-01/OBS-04 violation — degrade visibly, never silently).
+        // After the fix it is registered whenever cosmosWired, independent of the full
+        // RAG stack — PdfPigDocumentTextExtractor is a pure local library with no Azure
+        // Search or Foundry dependency.
+        using var host = BuildTestHostWithCosmosWiring();
+
+        var extractor = host.Services.GetService<IDocumentTextExtractor>();
+
+        Assert.NotNull(extractor);
+    }
+
     // ── host builder ───────────────────────────────────────────────────────────
 
     /// <summary>
@@ -228,6 +248,36 @@ public sealed class CliDiIntegrationTests : IDisposable
         Directory.CreateDirectory(pathsForBootstrap.LogsPath);
         Directory.CreateDirectory(pathsForBootstrap.SnapshotsPath);
         Directory.CreateDirectory(pathsForBootstrap.HistoryPath);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds a minimal host that mirrors Program.cs when cosmosWired=true but
+    /// aiSearchWired=false and foundryWired=false — the scenario where an operator
+    /// runs <c>--link-documents</c> with only Cosmos configured.
+    ///
+    /// The Cosmos layer itself is not needed to resolve <see cref="IDocumentTextExtractor"/>;
+    /// the host builder just verifies that <c>AddPdfDocumentTextExtractor</c> is called
+    /// in the cosmosWired gate (not the fuller cosmosWired&amp;&amp;aiSearchWired&amp;&amp;foundryWired
+    /// gate that governed it before the fix for issue #654).
+    /// </summary>
+    private static IHost BuildTestHostWithCosmosWiring()
+    {
+        var builder = Host.CreateApplicationBuilder([]);
+
+        // Suppress logging noise; ILogger<T> infrastructure still resolves.
+        builder.Logging.ClearProviders();
+
+        // Register the PDF text extractor on the cosmosWired path only — no AI
+        // Search or Foundry config present. PdfPigDocumentTextExtractor is a pure
+        // local library that only needs IOptions<PdfExtractionOptions> + ILogger<T>,
+        // both provided by the host infrastructure.
+        //
+        // This mirrors the FIXED Program.cs gate (cosmosWired only), not the
+        // original buggy gate (cosmosWired && aiSearchWired && foundryWired).
+        // See GitHub issue #654.
+        builder.Services.AddPdfDocumentTextExtractor(builder.Configuration);
 
         return builder.Build();
     }

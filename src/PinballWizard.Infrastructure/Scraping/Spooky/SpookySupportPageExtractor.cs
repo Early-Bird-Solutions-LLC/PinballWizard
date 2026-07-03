@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Text.RegularExpressions;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
@@ -172,7 +172,105 @@ public static partial class SpookySupportPageExtractor
         return wpPageSlug;
     }
 
-    // ── Private helpers ──────────────────────────────────────────────────────
+    /// <summary>
+    /// Extracts PDF links from the Game Support hub page's raw HTML.
+    /// Used for Spooky's newer-title (2022+) pattern where manuals are
+    /// linked directly on the hub rather than on WP child pages.
+    /// Game slug is derived from the PDF filename.
+    /// </summary>
+    /// <param name="html">Raw HTML of the /game-support/ hub page.</param>
+    /// <param name="hubPageUrl">Hub page URL used as the DiscoveryContext.</param>
+    public static List<DiscoveredLink> ExtractHubPagePdfLinks(string html, string hubPageUrl)
+    {
+        ArgumentNullException.ThrowIfNull(html);
+        ArgumentException.ThrowIfNullOrWhiteSpace(hubPageUrl);
+
+        if (string.IsNullOrEmpty(html)) return [];
+
+        var links = new List<DiscoveredLink>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            using var doc = Parser.ParseDocument(html);
+            foreach (var anchor in doc.QuerySelectorAll("a[href]"))
+            {
+                var href = anchor.GetAttribute("href");
+                if (string.IsNullOrWhiteSpace(href)) continue;
+                if (!IsSupportPdfHref(href)) continue;
+
+                var absoluteUrl = AbsolutizeUrl(href);
+                if (!seenUrls.Add(absoluteUrl)) continue;
+
+                // Derive slug from the filename — e.g. "Rick-and-Morty-Manual.pdf"
+                // → "rick-and-morty". This is best-effort; the linker will
+                // fuzzy-match it to the Machine record later.
+                var filename = Path.GetFileNameWithoutExtension(
+                    Uri.TryCreate(absoluteUrl, UriKind.Absolute, out var uri)
+                        ? uri.AbsolutePath
+                        : absoluteUrl);
+                var gameSlug = DeriveSlugFromFilename(filename);
+
+                var linkText = anchor.TextContent?.Trim();
+
+                links.Add(new DiscoveredLink
+                {
+                    FileUrl = absoluteUrl,
+                    LinkText = string.IsNullOrWhiteSpace(linkText) ? null : WebUtility.HtmlDecode(linkText),
+                    DiscoveryContext = "Spooky Pinball Game Support Hub",
+                    GameSlug = gameSlug,
+                });
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NullReferenceException
+                                       or FormatException or System.Text.Json.JsonException)
+        {
+            // HTML parse failure is best-effort; caller logs the per-page result.
+            _ = ex; // suppress IDE unused-variable warning
+        }
+
+        return links;
+    }
+
+    /// <summary>
+    /// Derives a best-effort game slug from a PDF filename. Strips common
+    /// suffixes like "-Manual", "-Maintenance-Manual", "-Update-Process"
+    /// and converts to lowercase-hyphenated form.
+    /// </summary>
+    /// <example>
+    /// "Rick-and-Morty-Manual" → "rick-and-morty"
+    /// "ACNC-Manual" → "acnc"
+    /// "Halloween-and-Ultraman-Manual" → "halloween"
+    /// "Beetlejuice-Manual_05162026" → "beetlejuice"
+    /// </example>
+    public static string DeriveSlugFromFilename(string? filename)
+    {
+        if (string.IsNullOrWhiteSpace(filename)) return "unknown";
+
+        // Strip date stamps like "_04262025" at the end.
+        var clean = Regex.Replace(filename, @"_\d{6,8}$", string.Empty, RegexOptions.CultureInvariant);
+
+        // Strip common manual-related suffixes (case-insensitive).
+        string[] suffixes =
+        [
+            "-Maintenance-Manual", "-Game-Manual", "-Manual",
+            "-Update-Process", "-Switch-Positions", "-Coil-Chart", "-Board-Layout",
+        ];
+        foreach (var suffix in suffixes)
+        {
+            if (clean.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                clean = clean[..^suffix.Length];
+                break;
+            }
+        }
+
+        // "Halloween-and-Ultraman" → "halloween" (use first game when shared page).
+        var andIdx = clean.IndexOf("-and-", StringComparison.OrdinalIgnoreCase);
+        if (andIdx > 0) clean = clean[..andIdx];
+
+        return clean.ToLowerInvariant().Trim('-');
+    }
 
     private static void ExtractShortcodePdfs(
         string rawContent,

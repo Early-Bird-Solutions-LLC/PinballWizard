@@ -30,7 +30,8 @@ public class DocumentLinkerTests
         List<CrossReference>? crossRefs = null,
         DownloadedFileInfo? file = null,
         SourceType sourceType = SourceType.ManualsPage,
-        string? linkText = null)
+        string? linkText = null,
+        GameReference? game = null)
         => new()
         {
             DocumentId = documentId,
@@ -51,6 +52,7 @@ public class DocumentLinkerTests
             },
             CrossReferences = crossRefs ?? [],
             File = file,
+            Game = game,
         };
 
     private static Machine MakeMachine(
@@ -261,6 +263,135 @@ public class DocumentLinkerTests
         var result = await linker.LinkAsync(raw, CancellationToken.None);
 
         // Ambiguous Tier 1 should fall through — NotInCatalog (Tier 2 also misses).
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Null(result.ResolutionStrategy);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tier 1 — Game reference slug (raw.Game, stamped by the scraper at
+    // discovery time — the strongest available provenance signal, since it's
+    // the manufacturer scraper's own game-page context rather than a heuristic
+    // parse of a filename or cross-reference URL). Docs whose filename is
+    // generic ("Manual.pdf", "Warranty Card") and carry no cross-reference
+    // still resolve via this signal instead of falling to NotInCatalog.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_GenericFilenameNoXref_LinksToMachine()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machine = MakeMachine(manufacturer: "chicago-gaming", title: "Medieval Madness", slug: "medieval-madness");
+        // Filename is generic and carries no slug; no cross-reference either —
+        // Tiers 0/1(xref)/2 all miss. Only Game.Slug can resolve this.
+        var raw = MakeRaw(
+            fileUrl: "https://chicago-gaming.com/coinop/wp-content/uploads/manual.pdf",
+            game: new GameReference
+            {
+                Title = "Medieval Madness",
+                Slug = "medieval-madness",
+                GamePageUrl = "https://chicago-gaming.com/coinop/medieval-madness/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("game_slug", result.ResolutionStrategy);
+        Assert.Equal([machine.Id], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_ManufacturerCollision_ResolvesBySource()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machines = new[] { SegaGodzilla(), SternGodzilla() };
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/manual.pdf",
+            sourceType: SourceType.GamePage, // Stern owns GamePage
+            game: new GameReference
+            {
+                Title = "Godzilla",
+                Slug = "godzilla",
+                GamePageUrl = "https://sternpinball.com/game/godzilla/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: machines);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("game_slug", result.ResolutionStrategy);
+        Assert.Equal(["GweeP-Ml9pZ"], result.LinkedMachineIds); // Stern, not Sega
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_EditionFamily_FilenameToken_LinksToEdition()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var (premium, le) = MakeBatman66Family();
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2018/10/BM-Premium-Flyer_65.pdf",
+            docType: DocumentType.Flyer,
+            sourceType: SourceType.GamePage,
+            game: new GameReference
+            {
+                Title = "Batman '66",
+                Slug = "batman-66",
+                GamePageUrl = "https://sternpinball.com/game/batman-66/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [premium, le]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("game_slug_edition", result.ResolutionStrategy);
+        Assert.Equal(["GRoz4-MjBV6"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_ConflictsWithDistinctXrefSlug_FallsThrough()
+    {
+        // Game.Slug resolves to one machine and a distinct cross-reference slug
+        // resolves to a different machine — genuinely ambiguous, same guard as
+        // the existing multi-xref ambiguity case.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var machineA = MakeMachine(id: "AAAA-0001", title: "Deadpool", slug: "deadpool");
+        var machineB = MakeMachine(id: "BBBB-0002", title: "Godzilla", slug: "godzilla");
+
+        var raw = MakeRaw(
+            fileUrl: "https://example.com/files/service_bulletin.pdf",
+            crossRefs: [GamePageXref("godzilla")],
+            game: new GameReference
+            {
+                Title = "Deadpool",
+                Slug = "deadpool",
+                GamePageUrl = "https://sternpinball.com/game/deadpool/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machineA, machineB]);
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
         Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
         Assert.Null(result.ResolutionStrategy);
     }

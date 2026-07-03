@@ -9,7 +9,7 @@
 <AuthorizeView>
     <Authorized>
         <MudText Typo="Typo.caption" Class="mr-2" data-testid="admin-identity">
-            Signed in as @context.User.Identity?.Name
+            Signed in as @DisplayName(context)
         </MudText>
         <MudButton Href="@AdminSignIn.SignOutPath"
                    Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
@@ -29,4 +29,16 @@
 @code {
     // Current local path so sign-in returns the user to the page they were on.
     private string ReturnUrl => "/" + Nav.ToBaseRelativePath(Nav.Uri);
+
+    // Microsoft.Identity.Web maps Identity.Name to the preferred_username claim
+    // (non-B2C default), which Entra External ID (CIAM, ADR-0009) doesn't always
+    // populate for every account — leaving Identity.Name null/empty even though
+    // the user is authenticated. AdminSettings.ResolveUpdatedByAsync already
+    // anticipates this same gap for the audit-trail field; mirror its fallback
+    // here so the app bar never renders "Signed in as" with nothing after it.
+    private static string DisplayName(AuthenticationState state)
+    {
+        var name = state.User.Identity?.Name;
+        return string.IsNullOrWhiteSpace(name) ? "admin (authenticated, no name claim)" : name;
+    }
 }

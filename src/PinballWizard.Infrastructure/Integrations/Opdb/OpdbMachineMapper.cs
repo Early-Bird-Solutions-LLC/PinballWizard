@@ -66,10 +66,22 @@ public static class OpdbMachineMapper
             // data can produce. Provenance is sacred — the citation link
             // must actually land.
             OpdbSourceUrl = OpdbWebUrl(dto.OpdbId),
+            IpdbId = dto.IpdbId,
+            IpdbReferenceUrl = BuildIpdbReferenceUrl(dto.IpdbId),
             FirstSeenAt = now,
             LastSeenAt = now,
         };
     }
+
+    /// <summary>
+    /// Builds the canonical IPDB machine page reference URL from an IPDB numeric ID.
+    /// Returns null when the id is null. The machine.cgi?id= pattern is the only
+    /// stable IPDB deep link — IPDB has no slug-based or opdb-id-based routing.
+    /// </summary>
+    private static string? BuildIpdbReferenceUrl(int? ipdbId)
+        => ipdbId.HasValue
+            ? $"https://www.ipdb.org/machine.cgi?id={ipdbId.Value}"
+            : null;
 
     /// <summary>
     /// The canonical opdb.org web link for an OPDB ID. opdb.org's machine
@@ -283,6 +295,12 @@ public static class OpdbMachineMapper
         // accumulate and break the reset/idempotency contract.
         existing.EditionLabel = ExtractEditionLabel(dto.Name, dto.Features);
         existing.EditionTokens = DeriveEditionTokens(existing.EditionLabel);
+
+        // OPDB-sourced provenance fields — always overwrite from the fresh DTO
+        // so existing machines pick up IpdbId/IpdbReferenceUrl on their first
+        // re-sync after this field was added (null → value transition).
+        existing.IpdbId = dto.IpdbId;
+        existing.IpdbReferenceUrl = BuildIpdbReferenceUrl(dto.IpdbId);
 
         existing.LastSeenAt = now;
     }

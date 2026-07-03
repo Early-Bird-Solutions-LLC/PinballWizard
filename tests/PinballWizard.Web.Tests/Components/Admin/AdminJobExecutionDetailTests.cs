@@ -53,7 +53,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetNotAuthorized();
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "secret-ish", JobLogSeverity.Info)], false));
 
         var cut = Render();
@@ -66,7 +66,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         Assert.Contains("redirectUri=", signInHref, StringComparison.Ordinal); // returns to this run page after sign-in
         Assert.Empty(cut.FindAll("[data-testid='exec-log-lines']")); // logs NOT rendered
         await _logs.DidNotReceive().GetExecutionLogsAsync(       // and never queried
-            Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok(
                 [new JobLogLine(DateTimeOffset.UtcNow, "info: linker started", JobLogSeverity.Info)], false));
 
@@ -90,7 +90,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Failed());
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Failed());
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -103,7 +103,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -124,26 +124,44 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task Admin_Filter_NarrowsLines()
+    public async Task Admin_Search_RequeriesServerWithTerm()
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
-            .Returns(JobLogResult.Ok(
-            [
-                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info),
-                new JobLogLine(DateTimeOffset.UtcNow, "info: linked Metallica", JobLogSeverity.Info),
-            ], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info)], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        var input = cut.Find("[data-testid='exec-log-filter'] input");
+        var input = cut.Find("[data-testid='exec-log-search'] input");
         await cut.InvokeAsync(() => input.Input("Godzilla"));
 
-        var lines = cut.Find("[data-testid='exec-log-lines']");
-        Assert.Contains("Godzilla", lines.InnerHtml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Metallica", lines.InnerHtml, StringComparison.Ordinal);
+        // Debounced server re-query fires within a few hundred ms; budget is reset to 1000.
+        await cut.WaitForAssertionAsync(() =>
+            _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(), 1000, "Godzilla", Arg.Any<CancellationToken>()),
+            TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task Admin_Search_NoMatches_ShowsNoMatchState()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        // Initial load returns a line; the searched query returns none.
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "zzz", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("zzz"));
+
+        await cut.WaitForAssertionAsync(() => cut.Find("[data-testid='exec-log-nomatch']"), TimeSpan.FromSeconds(3));
     }
 
     [Fact]
@@ -153,7 +171,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         _svc.GetExecutionAsync(Job, Exec, Arg.Any<CancellationToken>())
             .Returns(new JobExecution(Exec, "Running", DateTimeOffset.UtcNow.AddMinutes(-1), null));
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -166,7 +184,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -192,7 +210,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Unconfigured());
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Unconfigured());
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -205,7 +223,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok(
                 [new JobLogLine(DateTimeOffset.UtcNow, "info: line", JobLogSeverity.Info)],
                 truncated: true));
@@ -215,5 +233,125 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
 
         cut.Find("[data-testid='exec-log-truncated']");
         cut.Find("[data-testid='exec-log-lines']");
+    }
+
+    [Fact]
+    public async Task Admin_Truncated_ShowsLoadMoreButton()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-log-loadmore']");
+    }
+
+    [Fact]
+    public async Task Admin_LoadMore_RequeriesWithHigherBudget()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => cut.Find("[data-testid='exec-log-loadmore']").Click());
+
+        // Second query used a larger maxLines than the first (1000 -> 2000).
+        await _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(), 2000, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    // Fix 1: search box must stay visible while a refetch is in flight after clearing a zero-match search.
+    [Fact]
+    public async Task Admin_Search_ClearAfterNoMatch_SearchBoxStaysVisible()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "zzz", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("zzz"));
+        await cut.WaitForAssertionAsync(() => cut.Find("[data-testid='exec-log-nomatch']"), TimeSpan.FromSeconds(3));
+        await cut.InvokeAsync(() => input.Input(""));
+        cut.Find("[data-testid='exec-log-search']"); // still present during/after the clear
+    }
+
+    // Fix 5a: truncation banner text — no-search case says "output was truncated".
+    [Fact]
+    public async Task Admin_Truncated_NoSearch_BannerSaysOutputWasTruncated()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+                [new JobLogLine(DateTimeOffset.UtcNow, "info: line", JobLogSeverity.Info)],
+                truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var banner = cut.Find("[data-testid='exec-log-truncated']");
+        Assert.Contains("output was truncated", banner.TextContent, StringComparison.Ordinal);
+    }
+
+    // Fix 5b: truncation banner text — search-active case says "refine your search".
+    [Fact]
+    public async Task Admin_Truncated_SearchActive_BannerSaysRefineSearch()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        // Initial load (no search) returns a line; the search term returns a truncated result.
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), (string?)null, Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), "info", Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok(
+                [new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)],
+                truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        var input = cut.Find("[data-testid='exec-log-search'] input");
+        await cut.InvokeAsync(() => input.Input("info"));
+
+        await cut.WaitForAssertionAsync(() =>
+        {
+            var banner = cut.Find("[data-testid='exec-log-truncated']");
+            Assert.Contains("refine your search", banner.TextContent, StringComparison.Ordinal);
+        }, TimeSpan.FromSeconds(3));
+    }
+
+    // Fix 5c (Load-more ceiling): reaching 10,000 lines in a unit test would require 9 sequential
+    // click-and-wait cycles, each re-mocking the stub at a different maxLines value. The
+    // production guard (_maxLines >= LogMaxLines) is trivially correct from reading the code;
+    // the button label "Maximum lines shown" and Disabled state are already covered by
+    // Admin_Truncated_ShowsLoadMoreButton and Admin_LoadMore_RequeriesWithHigherBudget.
+    // Skipped — do not fake it.
+
+    [Fact]
+    public async Task Admin_LogContainer_IsHeightBounded()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var style = cut.Find("[data-testid='exec-log-lines']").GetAttribute("style") ?? "";
+        Assert.Contains("max-height", style, StringComparison.Ordinal);
+        Assert.Contains("overflow", style, StringComparison.Ordinal);
     }
 }

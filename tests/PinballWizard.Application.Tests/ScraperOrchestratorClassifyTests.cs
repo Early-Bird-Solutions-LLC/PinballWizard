@@ -59,4 +59,55 @@ public sealed class ScraperOrchestratorClassifyTests
                 Link("https://x/foo-manual.pdf", "Owner's Manual"),
                 "Manuals Page"));
     }
+
+    // Pinball Brothers Freshdesk: "QUEEN Pinball - Rulebook" is the exact
+    // article title Pinball Brothers uses — "rulebook" does not contain the
+    // substring "rules", so it needs its own keyword (verified against real
+    // Freshdesk content 2026-07-03).
+    [Fact]
+    public void ClassifyDocumentType_Rulebook_ReturnsRulesheet()
+    {
+        Assert.Equal(DocumentType.Rulesheet,
+            ScraperOrchestrator.ClassifyDocumentType(
+                Link("https://pinballbrothers.freshdesk.com/helpdesk/attachments/1", "QUEEN Pinball - Rulebook"),
+                "Freshdesk Support Portal — Queen - General"));
+    }
+
+    // Pinball Brothers Freshdesk "Electronics" folders (e.g. "QUEEN -
+    // Electronics", "ALIEN - Electronics") hold schematics/wiring diagrams.
+    // The folder-name context is the reliable signal — link text varies
+    // per article and isn't guaranteed to say "schematic".
+    [Fact]
+    public void ClassifyDocumentType_ElectronicsFolderContext_ReturnsSchematic()
+    {
+        Assert.Equal(DocumentType.Schematic,
+            ScraperOrchestrator.ClassifyDocumentType(
+                Link("https://pinballbrothers.freshdesk.com/helpdesk/attachments/2", "Alien - Schematics"),
+                "Freshdesk Support Portal — ALIEN - Electronics"));
+    }
+
+    [Fact]
+    public void ClassifyDocumentType_ElectronicsFolderContext_OverridesGenericLinkText()
+    {
+        // Even when the link text gives no hint at all, the folder-name
+        // context alone must be enough to classify as Schematic.
+        Assert.Equal(DocumentType.Schematic,
+            ScraperOrchestrator.ClassifyDocumentType(
+                Link("https://pinballbrothers.freshdesk.com/helpdesk/attachments/3", "Wiring diagram v2"),
+                "Freshdesk Support Portal — QUEEN - Electronics"));
+    }
+
+    // Both Freshdesk Service Bulletin folder-name variants ("Service
+    // Bulletin" and "SERVICE BULLETINS") classify identically via the
+    // existing case-insensitive "service bulletin" context substring match.
+    [Theory]
+    [InlineData("Freshdesk Support Portal — Service Bulletin")]
+    [InlineData("Freshdesk Support Portal — SERVICE BULLETINS")]
+    public void ClassifyDocumentType_FreshdeskServiceBulletinFolders_ReturnsServiceBulletin(string context)
+    {
+        Assert.Equal(DocumentType.ServiceBulletin,
+            ScraperOrchestrator.ClassifyDocumentType(
+                Link("https://pinballbrothers.freshdesk.com/helpdesk/attachments/4", "#001 Drop target bank coil short circuit"),
+                context));
+    }
 }

@@ -60,12 +60,26 @@ public sealed class SpookyOptions
 
     /// <summary>
     /// WordPress page id of the "Game Support" hub page (slug: game-support).
-    /// Child pages of this hub are the per-game support pages that host
-    /// rule/manual/chart PDFs in wp-content/uploads.  Verified 2026-06-25
-    /// via WP REST: https://www.spookypinball.com/wp-json/wp/v2/pages?slug=game-support
-    /// returns id=476 which is the parent of halloween (1450), ultraman (1467),
-    /// hwn-um-manual (1456), and hwn-um-update-process (1453).
+    /// Child pages of this hub host per-game support PDFs in wp-content/uploads.
+    /// Verified 2026-06-25 via WP REST: id=476 is the parent of halloween (1450),
+    /// ultraman (1467), hwn-um-manual (1456), hwn-um-update-process (1453).
     /// </summary>
+    /// <remarks>
+    /// As of 2026-07, Spooky has migrated newer game manuals (Rick and Morty,
+    /// ACNC, Scooby-Doo, Texas Chainsaw Massacre, Looney Tunes, Evil Dead,
+    /// Beetlejuice) to PDF links embedded directly on the hub page rather than
+    /// creating new WP child pages. Both discovery paths run on every scrape:
+    /// WP REST child-page discovery (this ID) + direct hub-page HTML fetch
+    /// (see <see cref="GameSupportHubPath"/>).
+    /// </remarks>
     [Range(1, int.MaxValue)]
     public int GameSupportParentPageId { get; set; } = 476;
+
+    /// <summary>
+    /// Relative path of the Game Support hub page. Fetched directly on every
+    /// scrape run to discover PDF links embedded on the hub page itself —
+    /// Spooky's current pattern for newer-title manuals (2022+). Complements
+    /// the WP REST child-page discovery driven by <see cref="GameSupportParentPageId"/>.
+    /// </summary>
+    public string GameSupportHubPath { get; set; } = "/game-support/";
 }

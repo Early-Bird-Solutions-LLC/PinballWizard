@@ -60,6 +60,25 @@ public sealed class BlobDocumentStore : IDocumentBlobStore
         return response.Value;
     }
 
+    public async Task<long?> GetSizeAsync(
+        string blobName,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(blobName);
+
+        try
+        {
+            var properties = await _container.GetBlobClient(blobName)
+                .GetPropertiesAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return properties.Value.ContentLength;
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
     public async Task<Stream> OpenReadAsync(
         string blobName,
         CancellationToken cancellationToken)

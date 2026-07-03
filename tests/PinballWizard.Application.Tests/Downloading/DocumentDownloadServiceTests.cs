@@ -108,27 +108,60 @@ public sealed class DocumentDownloadServiceTests
 
         Assert.Equal(1, summary.Skipped);
         Assert.Equal(0, summary.Downloaded);
+        Assert.Equal(0, summary.Backfilled);
         await _downloader.DidNotReceive().DownloadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
         // No blob write and no blob write check needed when LocalPath is already set.
         await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        // Cosmos already correct — no redundant self-heal write.
+        await _repo.DidNotReceive().UpdateFileAsync(Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task Skips_WhenBlobExists_EvenWithoutLocalPath()
+    public async Task Skips_WhenBlobExists_ButBackfillsCosmosRecord_SoItSelfHeals()
     {
         // Durability check: LocalPath not set but blob already in pinwiz-raw
-        // (e.g. a prior run wrote the blob but Cosmos update failed) → skip.
+        // (e.g. a prior run wrote the blob but Cosmos update failed). This must
+        // NOT be a silent no-op forever — a re-download would always re-hit this
+        // same skip check, so the record must be self-healed here (issue #661).
         var raw = MakeRaw("doc_c", "https://sternpinball.com/x/z.pdf", file: null);
         StubStream(raw);
         _blobStore.ExistsAsync("manualspage/z.pdf", Arg.Any<CancellationToken>()).Returns(true);
+        _blobStore.GetSizeAsync("manualspage/z.pdf", Arg.Any<CancellationToken>()).Returns(4321L);
 
         var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
 
         Assert.Equal(1, summary.Skipped);
         Assert.Equal(0, summary.Downloaded);
+        Assert.Equal(1, summary.Backfilled);
         await _downloader.DidNotReceive().DownloadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        // No network download, but Cosmos IS stamped from the existing blob.
+        await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpdateFileAsync("doc_c",
+            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/z.pdf"
+                && f.Filename == "z.pdf"
+                && f.SizeBytes == 4321L),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Skips_WhenBlobExists_AndSizeLookupMisses_BackfillsWithZeroSize()
+    {
+        // A race between ExistsAsync and GetSizeAsync (blob deleted in between) must
+        // not throw or abandon the backfill — fall back to SizeBytes = 0 rather than
+        // leave the record desynced.
+        var raw = MakeRaw("doc_g", "https://sternpinball.com/x/w.pdf", file: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync("manualspage/w.pdf", Arg.Any<CancellationToken>()).Returns(true);
+        _blobStore.GetSizeAsync("manualspage/w.pdf", Arg.Any<CancellationToken>()).Returns((long?)null);
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Backfilled);
+        await _repo.Received(1).UpdateFileAsync("doc_g",
+            Arg.Is<DownloadedFileInfo>(f => f.SizeBytes == 0),
+            Arg.Any<CancellationToken>());
     }
 
     // ── Force (--force-redownload) semantics ─────────────────────────────
