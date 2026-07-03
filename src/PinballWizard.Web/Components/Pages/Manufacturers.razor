@@ -1,0 +1,213 @@
+@page "/manufacturers/{Key}"
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+
+@* Manufacturers — /manufacturers/{key} public catalog-by-brand detail page.
+ *
+ * Public (MainLayout default, [AllowAnonymous]) so every manufacturer mention in the
+ * app can link here without bouncing anonymous users to sign-in. Two reads in
+ * OnInitializedAsync (mirrors the sibling AdminManufacturers lifecycle):
+ *   1. IMachineRepository.StreamByManufacturerAsync(key) — authoritative games list,
+ *      single-partition, works for EVERY manufacturer incl. OPDB-only ones.
+ *   2. ICatalogStatsReadRepository.GetByManufacturerAsync(key) — per-manufacturer
+ *      rollup point read; left-joined by MachineDocStats.MachineId == Machine.Id for
+ *      per-machine doc counts. Null rollup = OPDB-only (zero docs, honest). A throw is
+ *      section-scoped: doc counts degrade to "—", the games list still renders (#17).
+ *
+ * Documents are shown as grouped-by-machine counts + a link out to the already
+ * leak-safe public /documents?manufacturer= surface — NO operational internals
+ * (scraper status, run history, politeness, raw/untriaged docs) are exposed here.
+ *
+ * ADR-0008 — MudBlazor strict   ADR-0034 — interactive (sortable grid)
+ * ADR-0036 — Cosmos read-access (single-partition stream + point read)
+ *@
+
+@inject IMachineRepository Machines
+@inject ICatalogStatsReadRepository Stats
+@inject ILogger<Manufacturers> Logger
+
+<PageTitle>@(_displayName ?? Key) — PinballWizard</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading manufacturer" />
+    }
+    else if (_loadFailed)
+    {
+        <AppErrorAlert data-testid="manufacturer-load-failed">
+            This manufacturer could not be loaded. Please refresh the page or try again shortly.
+        </AppErrorAlert>
+    }
+    else if (_notFound)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="manufacturer-not-found">
+            No manufacturer found for <code>@Key</code>.
+            <MudLink Href="/documents">Browse all documents</MudLink>
+        </MudAlert>
+    }
+    else
+    {
+        <AppPageHeader Title="@_displayName"
+                       Subtitle="@($"{_rows.Count} machine{(_rows.Count == 1 ? "" : "s")} in the catalog.")" />
+
+        <MudStack Row="true" Spacing="2" Class="mb-4">
+            <AppStatusChip Color="Color.Default">@_rows.Count machines</AppStatusChip>
+            @if (!_statsFailed)
+            {
+                <AppStatusChip Color="Color.Default">@_totalDocs documents</AppStatusChip>
+                <AppStatusChip Color="Color.Default">@_manuals with manuals</AppStatusChip>
+            }
+        </MudStack>
+
+        @if (_totalDocs > 0)
+        {
+            <MudLink Href="@($"/documents?manufacturer={Uri.EscapeDataString(_displayName!)}")"
+                     Class="d-block mb-4" data-testid="manufacturer-browse-docs">
+                Browse all @_totalDocs documents for @_displayName →
+            </MudLink>
+        }
+
+        <AppDataGrid T="GameRow" Items="@_rows" data-testid="manufacturer-games-table">
+            <Columns>
+                <TemplateColumn Title="Game" Sortable="true"
+                                SortBy="@(new Func<GameRow, object>(r => r.Title))"
+                                InitialDirection="SortDirection.Ascending">
+                    <CellTemplate>@context.Item.Title</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Year" Sortable="true"
+                                SortBy="@(new Func<GameRow, object>(r => r.Year ?? 0))">
+                    <CellTemplate>@(context.Item.Year?.ToString() ?? "—")</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Edition">
+                    <CellTemplate>@(context.Item.Edition ?? "—")</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Documents" Sortable="true"
+                                SortBy="@(new Func<GameRow, object>(r => r.DocCount))">
+                    <CellTemplate>
+                        @if (context.Item.DocCount > 0)
+                        {
+                            <MudLink Href="@($"/documents?manufacturer={Uri.EscapeDataString(_displayName!)}&game={Uri.EscapeDataString(context.Item.Title)}")">
+                                @context.Item.DocCount
+                            </MudLink>
+                        }
+                        else if (_statsFailed)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">0</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Manual">
+                    <CellTemplate>
+                        @if (context.Item.HasManual)
+                        {
+                            <AppStatusChip Color="Color.Success">Yes</AppStatusChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </AppDataGrid>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string Key { get; set; } = default!;
+
+    private sealed record GameRow(string Title, int? Year, string? Edition, int DocCount, bool HasManual);
+
+    private List<GameRow> _rows = [];
+    private string? _displayName;
+    private int _totalDocs;
+    private int _manuals;
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _notFound;
+    private bool _statsFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        // Route param is user-controlled — strip line breaks before it reaches any log
+        // sink to prevent log-forging (CodeQL cs/log-forging). The raw Key still drives
+        // the Cosmos reads; only its logged rendering is sanitized.
+        var logKey = Key.Replace("\r", string.Empty).Replace("\n", string.Empty);
+
+        // Read 1 — authoritative games list (single-partition by manufacturer key).
+        List<Machine> machines = [];
+        try
+        {
+            await foreach (var m in Machines.StreamByManufacturerAsync(Key, cts.Token))
+                machines.Add(m);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Manufacturer page: machine stream timed out for '{Key}'.", logKey);
+            _loadFailed = true;
+            _loading = false;
+            return;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Manufacturer page: machine stream failed for '{Key}'.", logKey);
+            _loadFailed = true;
+            _loading = false;
+            return;
+        }
+
+        if (machines.Count == 0)
+        {
+            _notFound = true;
+            _loading = false;
+            return;
+        }
+
+        _displayName = machines[0].ManufacturerDisplayName;
+
+        // Read 2 — per-machine doc counts (section-scoped). Null rollup = OPDB-only
+        // (zero counts); a throw degrades counts to "—" without blanking the list.
+        IReadOnlyDictionary<string, MachineDocStats> statsByMachine =
+            new Dictionary<string, MachineDocStats>();
+        try
+        {
+            var rollup = await Stats.GetByManufacturerAsync(Key, cts.Token);
+            if (rollup is not null)
+                statsByMachine = rollup.Machines.ToDictionary(m => m.MachineId);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Manufacturer page: catalog-stats read timed out for '{Key}'.", logKey);
+            _statsFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Manufacturer page: catalog-stats read failed for '{Key}'.", logKey);
+            _statsFailed = true;
+        }
+
+        _rows = machines
+            .Select(m =>
+            {
+                statsByMachine.TryGetValue(m.Id, out var s);
+                return new GameRow(
+                    Title:     m.Title,
+                    Year:      m.Year,
+                    Edition:   m.EditionLabel,
+                    DocCount:  s?.DocCount ?? 0,
+                    HasManual: s?.HasManual ?? false);
+            })
+            .OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _totalDocs = _rows.Sum(r => r.DocCount);
+        _manuals = _rows.Count(r => r.HasManual);
+        _loading = false;
+    }
+}
