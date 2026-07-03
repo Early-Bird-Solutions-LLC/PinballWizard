@@ -88,6 +88,9 @@ param kineticistSyncCronExpression string = '0 11 * * 0'
 @description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param twipNewsletterCronExpression string = '0 8 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly manufacturer scraper-sweep ACA Job. Default is 1 am Sunday (before opdbSyncCronExpression at 3 am and the Sunday content-sync jobs). Runs --source all, which ScraperOrchestrator.FilterScrapers resolves to every registered ISourceScraper (all manufacturer scrapers, including pb_freshdesk). Has no effect when deployPhase2=false.')
+param scraperSweepCronExpression string = '0 1 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -2588,6 +2591,73 @@ resource twipJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 }
 
 // -----------------------------------------------------------------------------
+// Manufacturer scraper sweep ACA Job (weekly Sunday 1am UTC)
+// -----------------------------------------------------------------------------
+// Calls deploy/scheduled-cli-job/scheduled-cli-job.bicep (reusable module).
+// Runs --source all, which ScraperOrchestrator.FilterScrapers resolves to every
+// registered ISourceScraper (all manufacturer scrapers, including pb_freshdesk).
+// OPDB is NOT included despite the "all" name: Program.cs special-cases the
+// literal string "opdb" and dispatches to IOpdbSyncService before
+// ScraperOrchestrator.ScrapeAsync is ever called, and OpdbSyncService never
+// implements ISourceScraper — so this job cannot duplicate opdbSyncJob's work.
+// Runs before opdbSyncJob (3am) and the Sunday content-sync jobs (TWIP 8am,
+// Stern refresh 10am, Kineticist 11am), and well before Monday's 2am linkerJob
+// run, so newly-discovered documents get downloaded+linked promptly. Gated on
+// deployPhase2 only — writes to scraped_documents_raw, no AI Search/Foundry
+// dependency (the always-on RAG indexer Change Feed worker picks documents up
+// from there, same as every manufacturer's documents do today).
+
+module scraperSweepJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'scraper-sweep-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-scraper-sweep-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: scraperSweepCronExpression
+    // 6 hours — mirrors opdbSyncJob's bound. A full sweep across all 9
+    // manufacturer scrapers plus pb_freshdesk, each individually
+    // politeness-throttled (PoliteScraperBase — locked invariant), has no
+    // prior execution to measure against; this ceiling is a generous
+    // runaway guard, not a target. ACA Jobs bill by actual execution time,
+    // so it costs nothing unless genuinely needed. Tighten once the first
+    // real run's observed duration is known.
+    replicaTimeout: 21600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'all' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      {
+        // The CLI's host builder creates data/log dirs under DataPath
+        // (default 'data' → /app/data) on startup, before any command runs.
+        // /app is not writable by the non-root job user, so the job dies
+        // with "Access to the path '/app/data' is denied" before doing any
+        // work. Point DataPath at a writable ephemeral location.
+        name: 'Scraper__DataPath'
+        value: '/tmp/pinwiz'
+      }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+// Cosmos DB Built-in Data Contributor for the scraper sweep job's system-assigned MI.
+// Identical pattern to opdbSyncJobCosmosDataContrib — every manufacturer scraper
+// writes discovered documents through IRawDocumentRepository (data-plane CRUD).
+resource scraperSweepJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'scraper-sweep-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: scraperSweepJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2661,6 +2731,9 @@ output kineticistSyncJobPrincipalId string = kineticistSyncJob.?outputs.jobPrinc
 
 output twipNewsletterJobName string = twipNewsletterJob.?outputs.jobName ?? ''
 output twipNewsletterJobPrincipalId string = twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+
+output scraperSweepJobName string = scraperSweepJob.?outputs.jobName ?? ''
+output scraperSweepJobPrincipalId string = scraperSweepJob.?outputs.jobPrincipalId ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:

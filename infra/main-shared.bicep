@@ -93,6 +93,9 @@ param sternRefreshCronExpression string = '0 10 * * 0'
 @description('Cron schedule expression (UTC) for the weekly Kineticist tutorials-sync ACA Job. Default is 11 am Sunday (after the Stern refresh, so the OPDB-synced machine catalog used for title linking is current). Has no effect when deployPhase2=false or deployAiSearch=false.')
 param kineticistSyncCronExpression string = '0 11 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly manufacturer scraper-sweep ACA Job. Default is 1 am Sunday. Has no effect when deployPhase2=false.')
+param scraperSweepCronExpression string = '0 1 * * 0'
+
 // -----------------------------------------------------------------------------
 // Variables
 // -----------------------------------------------------------------------------
@@ -147,6 +150,7 @@ module shared 'modules/shared.bicep' = {
     opdbSyncCronExpression: opdbSyncCronExpression
     sternRefreshCronExpression: sternRefreshCronExpression
     kineticistSyncCronExpression: kineticistSyncCronExpression
+    scraperSweepCronExpression: scraperSweepCronExpression
   }
 }
 
