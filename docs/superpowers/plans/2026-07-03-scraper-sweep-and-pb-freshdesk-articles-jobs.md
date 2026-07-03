@@ -76,13 +76,21 @@ module scraperSweepJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' 
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
     cronExpression: scraperSweepCronExpression
-    // 6 hours — mirrors opdbSyncJob's bound. A full sweep across all 9
-    // manufacturer scrapers plus pb_freshdesk, each individually
-    // politeness-throttled (PoliteScraperBase — locked invariant), has no
-    // prior execution to measure against; this ceiling is a generous
-    // runaway guard, not a target. ACA Jobs bill by actual execution time,
-    // so it costs nothing unless genuinely needed. Tighten once the first
-    // real run's observed duration is known.
+    // 6 hours — mirrors opdbSyncJob's bound. A full sweep across every
+    // registered ISourceScraper (all manufacturer scrapers, including
+    // pb_freshdesk), each individually politeness-throttled
+    // (PoliteScraperBase — locked invariant), has no prior execution to
+    // measure against; this ceiling is a generous runaway guard, not a
+    // target. ACA Jobs bill by actual execution time, so it costs nothing
+    // unless genuinely needed. Tighten once the first real run's observed
+    // duration is known.
+    //
+    // ScraperOrchestrator runs scrapers sequentially with per-scraper
+    // exception isolation (one scraper's exception is logged and the run
+    // continues to the next scraper) — but a scraper that HANGS rather
+    // than throws consumes the full timeout window with no intermediate
+    // output. Post-deploy, validate via the ACA Job execution logs (Admin
+    // > Jobs) rather than assuming a clean run from the schedule alone.
     replicaTimeout: 21600
     command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'all' ]
     env: [

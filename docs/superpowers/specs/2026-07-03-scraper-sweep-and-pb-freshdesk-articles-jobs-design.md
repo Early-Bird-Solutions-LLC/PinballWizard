@@ -44,8 +44,9 @@ pattern the five existing jobs already establish.
 Runs `dotnet PinballWizard.Cli.dll --source all`, which already exists as
 the CLI's built-in mode (`ScraperOrchestrator.FilterScrapers` treats a null/
 `"all"` source filter as "run every registered `ISourceScraper`"). This
-covers all 9 manufacturers plus `pb_freshdesk` in one process, with zero new
-code and zero new Bicep duplication.
+covers every registered `ISourceScraper` (all manufacturer scrapers, including
+the newly-added `pb_freshdesk`) in one process, with zero new code and zero
+new Bicep duplication.
 
 **Why one combined job, not one job per manufacturer:** `ScraperOrchestrator.ScrapeAsync`
 already groups scrapers by `SourceId` and iterates them sequentially
