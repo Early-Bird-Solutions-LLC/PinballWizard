@@ -1,216 +1,315 @@
-{
-  "schema_version": 1,
-  "resources": [
-    {
-      "category": "forums",
-      "name": "Pinside",
-      "url": "https://pinside.com",
-      "description": "A large online community where collectors and players discuss machines, share tips, and post reviews. Covers a broad range of manufacturers and eras.",
-      "covers_question_types": ["rules", "repair", "valuation", "general"]
-    },
-    {
-      "category": "forums",
-      "name": "Tilt Forums",
-      "url": "https://tiltforums.com",
-      "description": "Community forum with in-depth rules breakdowns, strategy discussions, and repair guides across a wide range of titles. Content is licensed CC-BY-NC-SA (NonCommercial) — route outward only; never ingest.",
-      "covers_question_types": ["rules", "repair", "general"]
-    },
-    {
-      "category": "machine_reference",
-      "name": "IPDB",
-      "url": "https://www.ipdb.org",
-      "description": "The Internet Pinball Machine Database — a volunteer-maintained encyclopedia of pinball machines dating from the earliest electromechanical era to modern solid-state titles. Covers serial numbers, production counts, and historical notes.",
-      "covers_question_types": ["machine_reference", "valuation"]
-    },
-    {
-      "category": "machine_reference",
-      "name": "OPDB",
-      "url": "https://opdb.org",
-      "description": "The Open Pinball Database — a community-maintained registry of pinball machines with canonical identifiers, manufacturer records, and edition data. Used by operators and collectors as a reference catalog.",
-      "covers_question_types": ["machine_reference", "valuation"]
-    },
-    {
-      "category": "machine_reference",
-      "name": "Kineticist",
-      "url": "https://kineticist.com",
-      "description": "Structured per-game rules and strategy guides covering mode objectives, scoring, and wizard-mode paths across a curated library of titles. AI-friendly (robots.txt ai-train=yes). Partnership confirmed — ADR-0043 (Accepted, 2026-06-25); founder Colin Alsheimer granted API access and interim tutorial-indexing permission. Route outward only in this seed; data-partner integration is governed by ADR-0043.",
-      "covers_question_types": ["rules", "strategy", "general"]
-    },
-    {
-      "category": "machine_reference",
-      "name": "Pinside Pulse",
-      "url": "https://pinside.com/pinball/machine",
-      "description": "Pinside's machine directory with community ratings, owner counts, and user-contributed game information for a broad library of titles.",
-      "covers_question_types": ["machine_reference", "valuation"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "American Pinball",
-      "url": "https://american-pinball.com",
-      "description": "Official site for American Pinball — manufacturer support, game pages, and news directly from the manufacturer.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "Barrels of Fun (Spooky)",
-      "url": "https://spookypinball.com",
-      "description": "Official site for Spooky Pinball (a Barrels of Fun brand) — game information, support resources, and manufacturer news.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "Chicago Gaming Company",
-      "url": "https://chicago-gaming.com",
-      "description": "Official site for Chicago Gaming Company — game pages and manufacturer information for their coin-op lineup.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "Jersey Jack Pinball",
-      "url": "https://jerseyjackpinball.com",
-      "description": "Official site for Jersey Jack Pinball — game details, support, and news directly from the manufacturer.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "Multimorphic",
-      "url": "https://multimorphic.com",
-      "description": "Official site for Multimorphic — modular P3 platform game pages and developer resources.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "manufacturer_pages",
-      "name": "Stern Pinball",
-      "url": "https://sternpinball.com",
-      "description": "Official site for Stern Pinball — game pages, service bulletins, manuals, and manufacturer support.",
-      "covers_question_types": ["rules", "repair", "manufacturer"]
-    },
-    {
-      "category": "marketplace",
-      "name": "Facebook Marketplace",
-      "url": "https://www.facebook.com/marketplace/category/pinball-machines",
-      "description": "Local and national pinball machine listings on Facebook Marketplace. Useful for finding machines nearby and negotiating directly with sellers.",
-      "covers_question_types": ["marketplace", "valuation"]
-    },
-    {
-      "category": "marketplace",
-      "name": "Mr. Pinball",
-      "url": "https://mrpinball.com",
-      "description": "A long-running pinball classifieds site with both dealer and private-party listings. Covers new, used, and restored machines.",
-      "covers_question_types": ["marketplace", "valuation"]
-    },
-    {
-      "category": "marketplace",
-      "name": "Pinside Market",
-      "url": "https://pinside.com/pinball/market",
-      "description": "Pinside's buy/sell section for pinball machines and parts, with listings from community members. Covers a broad range of titles and conditions.",
-      "covers_question_types": ["marketplace", "valuation"]
-    },
-    {
-      "category": "news_and_culture",
-      "name": "Pinball News",
-      "url": "https://www.pinballnews.com",
-      "description": "Coverage of pinball industry news, game announcements, and show reports from a collector-focused perspective.",
-      "covers_question_types": ["news", "general"]
-    },
-    {
-      "category": "tournament_and_play",
-      "name": "IFPA",
-      "url": "https://www.ifpapinball.com",
-      "description": "The International Flipper Pinball Association — the governing body for competitive pinball. Hosts player rankings, tournament calendars, and official rules.",
-      "covers_question_types": ["tournament", "competitive"]
-    },
-    {
-      "category": "tournament_and_play",
-      "name": "Match Play Events",
-      "url": "https://matchplay.events",
-      "description": "Tournament management platform used by organizers worldwide. Browse upcoming events and results, or run your own bracket.",
-      "covers_question_types": ["tournament", "competitive"]
-    },
-    {
-      "category": "tournament_and_play",
-      "name": "Pinball Map",
-      "url": "https://pinballmap.com",
-      "description": "A community-maintained map of publicly accessible pinball machines at arcades, bars, and venues. Useful for finding a specific title to play near you.",
-      "covers_question_types": ["location", "play"]
-    },
-    {
-      "category": "parts_and_repair",
-      "name": "The Pinball Resource (PBResource)",
-      "url": "https://www.pbresource.com",
-      "description": "The licensed rights holder for Gottlieb factory documentation. Go-to source for Gottlieb SS-era manuals, schematics, and high-quality reprints. Also carries parts, the Pinball Price Guide (1931–2012), and multi-manufacturer repair resources. Link-to only — commercially licensed content.",
-      "covers_question_types": ["repair", "machine_reference"]
-    },
-    {
-      "category": "machine_reference",
-      "name": "PinWiki",
-      "url": "https://pinwiki.com",
-      "description": "Community repair wiki organized by hardware platform and manufacturer era. Covers Williams, Bally, Gottlieb, Data East, Sega, and solid-state Stern repair guides, rubber ring charts, part datasheets, and troubleshooting walkthroughs. Content licensed CC-BY-NC-SA — link-to only.",
-      "covers_question_types": ["repair", "machine_reference"]
-    },
-    {
-      "category": "parts_and_repair",
-      "name": "PinballRebel",
-      "url": "https://pinballrebel.com",
-      "description": "Hosts schematics and wiring diagrams for Stern Electronics era and Williams games. A useful supplement to IPDB documentation for solid-state classics.",
-      "covers_question_types": ["repair", "machine_reference"]
-    },
-    {
-      "category": "parts_and_repair",
-      "name": "Planetary Pinball Supply",
-      "url": "https://planetarypinball.com",
-      "description": "Holds Williams, Bally, and Midway IP for parts and documentation reprints. Offers Color Master Catalogs, game manuals with schematics (Bally 1969–1980; Williams 1966–1995), and parts catalogs. Link-to only — commercially licensed content.",
-      "covers_question_types": ["repair", "machine_reference"]
-    },
-    {
-      "category": "archives",
-      "name": "Internet Archive (Pinball)",
-      "url": "https://archive.org/search?query=pinball+manual",
-      "description": "The Internet Archive hosts community-uploaded scans of pinball manuals, schematics, and parts catalogs across all eras and manufacturers. Particularly useful for legacy manufacturers (Gottlieb, Capcom, Zaccaria) where official digital documentation is scarce. Content quality varies — verify completeness before citing.",
-      "covers_question_types": ["machine_reference", "repair"]
-    },
-    {
-      "category": "tournament_and_play",
-      "name": "Scorbit",
-      "url": "https://scorbit.io",
-      "description": "Connected pinball platform with open SDK and Achievement API. Provides score tracking and achievements as an alternative to Stern Insider Connected. Open platform with GitHub SDK (scorbit-io organization).",
-      "covers_question_types": ["tournament", "competitive"]
-    },
-    {
-      "category": "podcasts",
-      "name": "Silverball Chronicles",
-      "url": "https://silverballchronicles.com",
-      "description": "History-focused pinball podcast hosted by David Dennis and Ron Hallett. Deep-dive episodes on specific machines, companies, and designers with extensive research.",
-      "covers_question_types": ["general", "news"]
-    },
-    {
-      "category": "podcasts",
-      "name": "Special When Lit",
-      "url": "https://specialwhenlitpodcast.com",
-      "description": "Long-running industry podcast covering pinball news, interviews, and community topics. Patreon-supported; episode archive available on the website.",
-      "covers_question_types": ["general", "news"]
-    },
-    {
-      "category": "tutorials",
-      "name": "PAPApinball",
-      "url": "https://youtube.com/@PAPApinball",
-      "description": "The definitive per-game rule walkthrough library. Hundreds of tutorial videos covering mode objectives, scoring strategy, and wizard-mode paths — produced by PAPA and Bowen Kerins. The canonical video reference for rules and strategy questions.",
-      "covers_question_types": ["rules", "strategy"]
-    },
-    {
-      "category": "tutorials",
-      "name": "Abe Flips",
-      "url": "https://abeflips.com",
-      "description": "Gold standard for physical technique instruction — micro flips, nudging, Rosa Shimmy, and detailed mechanical skill guides by Abraham Siedler. Also produced the 'Mastering Pinball' documentary film.",
-      "covers_question_types": ["strategy", "general"]
-    },
-    {
-      "category": "news_and_culture",
-      "name": "Pinball Magazine",
-      "url": "https://pinball-magazine.com",
-      "description": "In-depth long-form pinball journalism by Jonathan Joosten. Non-periodic issues covering designer retrospectives, manufacturer histories, and the competitive scene. Paired with the PINcast podcast.",
-      "covers_question_types": ["news", "general"]
-    }
-  ]
+﻿{
+    "schema_version":  1,
+    "resources":  [
+                      {
+                          "category":  "forums",
+                          "name":  "Pinside",
+                          "url":  "https://pinside.com",
+                          "description":  "A large online community where collectors and players discuss machines, share tips, and post reviews. Covers a broad range of manufacturers and eras.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "valuation",
+                                                        "general"
+                                                    ]
+                      },
+                      {
+                          "category":  "forums",
+                          "name":  "Tilt Forums",
+                          "url":  "https://tiltforums.com",
+                          "description":  "Community forum with in-depth rules breakdowns, strategy discussions, and repair guides across a wide range of titles. Content is licensed CC-BY-NC-SA (NonCommercial) â€” route outward only; never ingest.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "general"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "IPDB",
+                          "url":  "https://www.ipdb.org",
+                          "description":  "The Internet Pinball Machine Database â€” a volunteer-maintained encyclopedia of pinball machines dating from the earliest electromechanical era to modern solid-state titles. Covers serial numbers, production counts, and historical notes.",
+                          "covers_question_types":  [
+                                                        "machine_reference",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "OPDB",
+                          "url":  "https://opdb.org",
+                          "description":  "The Open Pinball Database â€” a community-maintained registry of pinball machines with canonical identifiers, manufacturer records, and edition data. Used by operators and collectors as a reference catalog.",
+                          "covers_question_types":  [
+                                                        "machine_reference",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "Kineticist",
+                          "url":  "https://kineticist.com",
+                          "description":  "Structured per-game rules and strategy guides covering mode objectives, scoring, and wizard-mode paths across a curated library of titles. AI-friendly (robots.txt ai-train=yes). Partnership confirmed â€” ADR-0043 (Accepted, 2026-06-25); founder Colin Alsheimer granted API access and interim tutorial-indexing permission. Route outward only in this seed; data-partner integration is governed by ADR-0043.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "strategy",
+                                                        "general"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "Pinside Pulse",
+                          "url":  "https://pinside.com/pinball/machine",
+                          "description":  "Pinside\u0027s machine directory with community ratings, owner counts, and user-contributed game information for a broad library of titles.",
+                          "covers_question_types":  [
+                                                        "machine_reference",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "American Pinball",
+                          "url":  "https://american-pinball.com",
+                          "description":  "Official site for American Pinball â€” manufacturer support, game pages, and news directly from the manufacturer.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "Barrels of Fun (Spooky)",
+                          "url":  "https://spookypinball.com",
+                          "description":  "Official site for Spooky Pinball (a Barrels of Fun brand) â€” game information, support resources, and manufacturer news.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "Chicago Gaming Company",
+                          "url":  "https://chicago-gaming.com",
+                          "description":  "Official site for Chicago Gaming Company â€” game pages and manufacturer information for their coin-op lineup.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "Jersey Jack Pinball",
+                          "url":  "https://jerseyjackpinball.com",
+                          "description":  "Official site for Jersey Jack Pinball â€” game details, support, and news directly from the manufacturer.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "Multimorphic",
+                          "url":  "https://multimorphic.com",
+                          "description":  "Official site for Multimorphic â€” modular P3 platform game pages and developer resources.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "manufacturer_pages",
+                          "name":  "Stern Pinball",
+                          "url":  "https://sternpinball.com",
+                          "description":  "Official site for Stern Pinball â€” game pages, service bulletins, manuals, and manufacturer support.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "repair",
+                                                        "manufacturer"
+                                                    ]
+                      },
+                      {
+                          "category":  "marketplace",
+                          "name":  "Facebook Marketplace",
+                          "url":  "https://www.facebook.com/marketplace/category/pinball-machines",
+                          "description":  "Local and national pinball machine listings on Facebook Marketplace. Useful for finding machines nearby and negotiating directly with sellers.",
+                          "covers_question_types":  [
+                                                        "marketplace",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "marketplace",
+                          "name":  "Mr. Pinball",
+                          "url":  "https://mrpinball.com",
+                          "description":  "A long-running pinball classifieds site with both dealer and private-party listings. Covers new, used, and restored machines.",
+                          "covers_question_types":  [
+                                                        "marketplace",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "marketplace",
+                          "name":  "Pinside Market",
+                          "url":  "https://pinside.com/pinball/market",
+                          "description":  "Pinside\u0027s buy/sell section for pinball machines and parts, with listings from community members. Covers a broad range of titles and conditions.",
+                          "covers_question_types":  [
+                                                        "marketplace",
+                                                        "valuation"
+                                                    ]
+                      },
+                      {
+                          "category":  "news_and_culture",
+                          "name":  "Pinball News",
+                          "url":  "https://www.pinballnews.com",
+                          "description":  "Coverage of pinball industry news, game announcements, and show reports from a collector-focused perspective.",
+                          "covers_question_types":  [
+                                                        "news",
+                                                        "general"
+                                                    ]
+                      },
+                      {
+                          "category":  "tournament_and_play",
+                          "name":  "IFPA",
+                          "url":  "https://www.ifpapinball.com",
+                          "description":  "The International Flipper Pinball Association â€” the governing body for competitive pinball. Hosts player rankings, tournament calendars, and official rules.",
+                          "covers_question_types":  [
+                                                        "tournament",
+                                                        "competitive"
+                                                    ]
+                      },
+                      {
+                          "category":  "tournament_and_play",
+                          "name":  "Match Play Events",
+                          "url":  "https://matchplay.events",
+                          "description":  "Tournament management platform used by organizers worldwide. Browse upcoming events and results, or run your own bracket.",
+                          "covers_question_types":  [
+                                                        "tournament",
+                                                        "competitive"
+                                                    ]
+                      },
+                      {
+                          "category":  "tournament_and_play",
+                          "name":  "Pinball Map",
+                          "url":  "https://pinballmap.com",
+                          "description":  "A community-maintained map of publicly accessible pinball machines at arcades, bars, and venues. Useful for finding a specific title to play near you.",
+                          "covers_question_types":  [
+                                                        "location",
+                                                        "play"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "The Pinball Resource (PBResource)",
+                          "url":  "https://www.pbresource.com",
+                          "description":  "The licensed rights holder for Gottlieb factory documentation. Go-to source for Gottlieb SS-era manuals, schematics, and high-quality reprints. Also carries parts, the Pinball Price Guide (1931â€“2012), and multi-manufacturer repair resources. Link-to only â€” commercially licensed content.",
+                          "covers_question_types":  [
+                                                        "repair",
+                                                        "machine_reference"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "PinWiki",
+                          "url":  "https://pinwiki.com",
+                          "description":  "Community repair wiki organized by hardware platform and manufacturer era. Covers Williams, Bally, Gottlieb, Data East, Sega, and solid-state Stern repair guides, rubber ring charts, part datasheets, and troubleshooting walkthroughs. Content licensed CC-BY-NC-SA â€” link-to only.",
+                          "covers_question_types":  [
+                                                        "repair",
+                                                        "machine_reference"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "PinballRebel",
+                          "url":  "https://pinballrebel.com",
+                          "description":  "Hosts schematics and wiring diagrams for Stern Electronics era and Williams games. A useful supplement to IPDB documentation for solid-state classics.",
+                          "covers_question_types":  [
+                                                        "repair",
+                                                        "machine_reference"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "Planetary Pinball Supply",
+                          "url":  "https://planetarypinball.com",
+                          "description":  "Holds Williams, Bally, and Midway IP for parts and documentation reprints. Offers Color Master Catalogs, game manuals with schematics (Bally 1969â€“1980; Williams 1966â€“1995), and parts catalogs. Link-to only â€” commercially licensed content.",
+                          "covers_question_types":  [
+                                                        "repair",
+                                                        "machine_reference"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "Internet Archive (Pinball)",
+                          "url":  "https://archive.org/search?query=pinball+manual",
+                          "description":  "The Internet Archive hosts community-uploaded scans of pinball manuals, schematics, and parts catalogs across all eras and manufacturers. Particularly useful for legacy manufacturers (Gottlieb, Capcom, Zaccaria) where official digital documentation is scarce. Content quality varies â€” verify completeness before citing.",
+                          "covers_question_types":  [
+                                                        "machine_reference",
+                                                        "repair"
+                                                    ]
+                      },
+                      {
+                          "category":  "tournament_and_play",
+                          "name":  "Scorbit",
+                          "url":  "https://scorbit.io",
+                          "description":  "Connected pinball platform with open SDK and Achievement API. Provides score tracking and achievements as an alternative to Stern Insider Connected. Open platform with GitHub SDK (scorbit-io organization).",
+                          "covers_question_types":  [
+                                                        "tournament",
+                                                        "competitive"
+                                                    ]
+                      },
+                      {
+                          "category":  "news_and_culture",
+                          "name":  "Silverball Chronicles",
+                          "url":  "https://silverballchronicles.com",
+                          "description":  "History-focused pinball podcast hosted by David Dennis and Ron Hallett. Deep-dive episodes on specific machines, companies, and designers with extensive research.",
+                          "covers_question_types":  [
+                                                        "general",
+                                                        "news"
+                                                    ]
+                      },
+                      {
+                          "category":  "news_and_culture",
+                          "name":  "Special When Lit",
+                          "url":  "https://specialwhenlitpodcast.com",
+                          "description":  "Long-running industry podcast covering pinball news, interviews, and community topics. Patreon-supported; episode archive available on the website.",
+                          "covers_question_types":  [
+                                                        "general",
+                                                        "news"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "PAPApinball",
+                          "url":  "https://youtube.com/@PAPApinball",
+                          "description":  "The definitive per-game rule walkthrough library. Hundreds of tutorial videos covering mode objectives, scoring strategy, and wizard-mode paths â€” produced by PAPA and Bowen Kerins. The canonical video reference for rules and strategy questions.",
+                          "covers_question_types":  [
+                                                        "rules",
+                                                        "strategy"
+                                                    ]
+                      },
+                      {
+                          "category":  "machine_reference",
+                          "name":  "Abe Flips",
+                          "url":  "https://abeflips.com",
+                          "description":  "Gold standard for physical technique instruction â€” micro flips, nudging, Rosa Shimmy, and detailed mechanical skill guides by Abraham Siedler. Also produced the \u0027Mastering Pinball\u0027 documentary film.",
+                          "covers_question_types":  [
+                                                        "strategy",
+                                                        "general"
+                                                    ]
+                      },
+                      {
+                          "category":  "news_and_culture",
+                          "name":  "Pinball Magazine",
+                          "url":  "https://pinball-magazine.com",
+                          "description":  "In-depth long-form pinball journalism by Jonathan Joosten. Non-periodic issues covering designer retrospectives, manufacturer histories, and the competitive scene. Paired with the PINcast podcast.",
+                          "covers_question_types":  [
+                                                        "news",
+                                                        "general"
+                                                    ]
+                      }
+                  ]
 }
-
