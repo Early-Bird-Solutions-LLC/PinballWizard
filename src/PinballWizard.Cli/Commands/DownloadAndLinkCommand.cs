@@ -8,10 +8,14 @@ namespace PinballWizard.Cli.Commands;
 // Runs DocumentDownloadService.RunAsync (incremental blob download) first,
 // then IDocumentLinker (link from raw → reads page-1 from blob), so the
 // nightly ACA job has page-1 content available for edition resolution at
-// link time. Non-zero exit if either stage fails: download failure sets
-// exit code 1, link failure sets exit code 1, missing-service sets exit
-// code 2. If download is missing (Cosmos not wired), we stop before
-// attempting the link stage.
+// link time. Missing-service sets exit code 2 and skips the link stage —
+// IDocumentLinker resolves from the same Cosmos wiring, so it would fail
+// identically. A per-document download failure sets exit code 1 but does
+// NOT skip linking: the linker degrades gracefully when a file is absent
+// (2026-07-03 reload: 74 expected per-doc download failures skipped the
+// entire link stage, leaving the corpus unlinked until a manual
+// --link-documents recovery run). Exit code 1 still propagates from
+// whichever stage last reports a failure.
 internal static class DownloadAndLinkCommand
 {
     internal static async Task RunAsync(
@@ -19,9 +23,9 @@ internal static class DownloadAndLinkCommand
     {
         await DownloadDocumentsCommand.RunAsync(services, cancellationToken, force);
 
-        // If the download stage failed due to missing service (exit code 2)
-        // or a download error (exit code 1), propagate and skip the link stage.
-        if (Environment.ExitCode != 0)
+        // Only a missing service (exit code 2) makes the link stage skip —
+        // it would resolve the same missing Cosmos wiring and fail the same way.
+        if (Environment.ExitCode == 2)
             return;
 
         await LinkDocumentsCommand.RunAsync(services, cancellationToken, relinkAll: false);
