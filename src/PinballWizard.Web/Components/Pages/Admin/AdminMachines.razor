@@ -119,7 +119,7 @@
                     @if (!string.IsNullOrWhiteSpace(context.Item.ManufacturerDisplayName))
                     {
                         <ManufacturerLink ManufacturerKey="@context.Item.Manufacturer"
-                                          DisplayName="@context.Item.ManufacturerDisplayName" />
+                                          DisplayName="@(context.Item.ManufacturerDisplayName!)" />
                     }
                     else
                     {
