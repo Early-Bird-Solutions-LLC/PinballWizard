@@ -249,13 +249,13 @@ internal sealed class ArmJobAdminService : IJobAdminService
         {
             _logger.LogError(ex,
                 "ARM request failed getting execution {Execution} of job {JobName}: {Status} {Code}.",
-                executionName, jobName, ex.Status, ex.ErrorCode);
+                JobLogSafe.Scrub(executionName), JobLogSafe.Scrub(jobName), ex.Status, ex.ErrorCode);
             throw new ArmJobAdminException(
                 $"Could not get execution '{executionName}': {ex.ErrorCode ?? ex.Message} (HTTP {ex.Status})", ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Unexpected error getting execution {Execution} of job {JobName}.", executionName, jobName);
+            _logger.LogError(ex, "Unexpected error getting execution {Execution} of job {JobName}.", JobLogSafe.Scrub(executionName), JobLogSafe.Scrub(jobName));
             throw new ArmJobAdminException($"Unexpected error getting execution '{executionName}'.", ex);
         }
     }

@@ -211,7 +211,7 @@
         catch (ArmJobAdminException ex) when (ex.IsNotFound) { _notFound = true; }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed loading execution {Execution} of {JobName}.", ExecutionName, JobName);
+            Logger.LogError(ex, "Failed loading execution {Execution} of {JobName}.", Scrub(ExecutionName), Scrub(JobName));
             _loadFailed = true;
         }
         finally { _loading = false; SafeStateHasChanged(); }
@@ -251,8 +251,12 @@
             }
         }
         catch (OperationCanceledException) { /* disposed / navigated away */ }
-        catch (ObjectDisposedException) { }
-        catch (Exception ex) { Logger.LogWarning(ex, "Auto-refresh loop stopped for {Execution}.", ExecutionName); }
+        catch (ObjectDisposedException)
+        {
+            // Timer disposed mid-tick during navigation-away — expected, benign.
+            Logger.LogTrace("Auto-refresh loop stopped: timer disposed.");
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Auto-refresh loop stopped for {Execution}.", Scrub(ExecutionName)); }
     }
 
     public async ValueTask DisposeAsync()
@@ -297,4 +301,8 @@
         JobLogSeverity.Warning => Color.Warning,
         _ => Color.Default,
     };
+
+    // Strip CR/LF from route-derived names before logging (CWE-117).
+    private static string Scrub(string? value) =>
+        string.IsNullOrEmpty(value) ? "" : value.Replace("\r", "").Replace("\n", "");
 }

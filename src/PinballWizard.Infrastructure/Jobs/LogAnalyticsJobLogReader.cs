@@ -84,7 +84,7 @@ internal sealed class LogAnalyticsJobLogReader : IJobLogReader
         {
             _logger.LogWarning(ex,
                 "Log Analytics query failed for job {JobName} execution {Execution}; logs shown unavailable.",
-                jobName, executionName);
+                JobLogSafe.Scrub(jobName), JobLogSafe.Scrub(executionName));
             return JobLogResult.Failed();
         }
     }
