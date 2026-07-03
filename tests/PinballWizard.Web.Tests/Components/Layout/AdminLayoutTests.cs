@@ -114,6 +114,14 @@ public sealed class AdminLayoutTests : AsyncBunitContext
         cut.Find("[data-testid='admin-body-sentinel']");
     }
 
+    [Fact]
+    public void AdminNav_IncludesManufacturersLink()
+    {
+        var cut = RenderWithBody();
+
+        cut.Find("a[href='/admin/manufacturers']");
+    }
+
     // ── Anonymous path — identity block must not appear ────────────────────
     // Unauthenticated users are redirected by [Authorize] on each page before
     // the layout renders in practice; the AuthorizeView here is a belt-and-
