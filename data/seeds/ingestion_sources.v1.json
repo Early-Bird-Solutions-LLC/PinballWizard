@@ -256,15 +256,15 @@
   },
   {
     "id": "kineticist_downloads",
-    "displayName": "Pinball Manual Downloads",
-    "scraperImplKey": "kineticist_downloads",
-    "baseUrl": "https://www.kineticist.com/downloads/",
+    "displayName": "Kineticist — Pinball Files (API)",
+    "scraperImplKey": "kineticist_files_api",
+    "baseUrl": "https://api.kineticist.com/",
     "enabled": false,
     "cadence": "none",
     "politenessOverrides": null,
     "sourceGroup": "Kineticist",
-    "discoveryStatus": "Deferred",
-    "discoveryNotes": "ADR-0043 grants permission to index kineticist.com published tutorials and TWIP content. The /downloads/ section hosts an indexed library of Williams (231+ files), Bally (217+ files), and Data East (50+ files) manuals with download links. A free kineticist.com account is required to download; the listing page itself may be publicly accessible. Deferred pending explicit confirmation from Colin Alsheimer that ADR-0043 scope extends to the downloads section (tutorials-only vs. whole-site). High value for Williams/Bally legacy manual gap-fill once confirmed.",
+    "discoveryStatus": "UseApi",
+    "discoveryNotes": "ADR-0043 Tier A grants access to the Kineticist API 'files' endpoint (keyed by OPDB id) which already serves manuals/ROMs/schematics with signed download URLs. The /downloads/ web page is the same data as a human-readable listing — scraping the web page is the wrong approach. Correct path: use the API GET /games/{opdb_id}?include=files and follow the signed URL for each file. Requires KineticistOptions.ApiKey (Key Vault-backed). This covers Williams (231+ files), Bally (217+ files), and Data East (50+ files) manuals for which no manufacturer scraper exists. Authorization: explicit written permission from Colin Alsheimer 2026-06-25 (ADR-0043). Implementation gated on KineticistSyncService build-out under Tier A.",
     "discoveryDate": "2026-07-03"
   },
   {
