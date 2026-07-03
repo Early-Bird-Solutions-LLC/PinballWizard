@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
+using PinballWizard.Infrastructure.Integrations.Opdb;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
@@ -387,7 +388,10 @@ internal sealed class CosmosRawDocumentRepository
             LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
             LinkedMachineIds: includeAdminFields ? raw.LinkedMachineIds?.AsReadOnly() : null
-        );
+        )
+        {
+            ManufacturerKey = DeriveManufacturerKey(raw.Manufacturer),
+        };
     }
 
     private static DocumentListItem MapToListItem(RawDocumentCosmosRecord r, bool includeAdminFields)
@@ -412,10 +416,22 @@ internal sealed class CosmosRawDocumentRepository
             LinkStatus: includeAdminFields ? r.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? r.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? r.ResolutionStrategy : null
-        );
+        )
+        {
+            ManufacturerKey = DeriveManufacturerKey(r.Manufacturer),
+        };
     }
 
     // ── Mapping helpers ──────────────────────────────────────────────────────
+
+    // Derives the manufacturer partition key from the stored display name using the
+    // SAME normalization OpdbMachineMapper applies when setting Machine.PartitionKey,
+    // so the key always matches an existing /manufacturers/{key}. Null for a blank
+    // manufacturer → consumers degrade to plain text (no link).
+    private static string? DeriveManufacturerKey(string? manufacturer) =>
+        string.IsNullOrWhiteSpace(manufacturer)
+            ? null
+            : OpdbMachineMapper.NormalizeManufacturerKey(manufacturer);
 
     private static RawDocumentCosmosRecord MapToCosmosRecord(DocumentRecord record)
     {

@@ -53,7 +53,15 @@ else
                     }
 
                     <MudText Typo="Typo.body2" Class="mb-3" data-testid="doc-detail-manufacturer">
-                        @_doc.Manufacturer
+                        @if (!string.IsNullOrWhiteSpace(_doc.ManufacturerKey))
+                        {
+                            <ManufacturerLink ManufacturerKey="@(_doc.ManufacturerKey!)"
+                                              DisplayName="@_doc.Manufacturer" />
+                        }
+                        else
+                        {
+                            @_doc.Manufacturer
+                        }
                     </MudText>
 
                     <MudDivider Class="my-3" />
