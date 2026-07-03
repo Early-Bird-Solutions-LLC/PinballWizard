@@ -104,7 +104,7 @@
                 @if (_logResult.Truncated)
                 {
                     <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="exec-log-truncated">
-                        Showing the first @JobLogMaxLines lines — output was truncated.
+                        Showing the first @_maxLines lines — output was truncated.
                     </MudAlert>
                 }
                 <div data-testid="exec-log-filter">
@@ -113,7 +113,8 @@
                                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
                                   Class="mb-2" />
                 </div>
-                <MudPaper Elevation="0" Outlined="true" Class="pa-2" Style="font-family:monospace;overflow-x:auto"
+                <MudPaper Elevation="0" Outlined="true" Class="pa-2"
+                          Style="max-height:60vh;overflow:auto;font-family:monospace"
                           data-testid="exec-log-lines">
                     @foreach (var line in VisibleLines)
                     {
@@ -127,6 +128,14 @@
                         </div>
                     }
                 </MudPaper>
+                @if (_logResult.Truncated)
+                {
+                    <MudButton OnClick="LoadMoreAsync" Disabled="@(_logBusy || _maxLines >= LogMaxLines)"
+                               StartIcon="@Icons.Material.Filled.ExpandMore" Variant="Variant.Text"
+                               Size="Size.Small" Class="mt-2" data-testid="exec-log-loadmore">
+                        @(_maxLines >= LogMaxLines ? "Maximum lines shown" : "Load more")
+                    </MudButton>
+                }
             }
         }
     }
@@ -204,9 +213,7 @@
             // not just a hidden element (defense in depth).
             if (_isAdmin && LogReader is not null)
             {
-                _logResult = await LogReader.GetExecutionLogsAsync(
-                    JobName, ExecutionName, _execution.StartOn, _execution.EndOn,
-                    JobLogMaxLines, null, cts.Token).ConfigureAwait(true);
+                await FetchLogsAsync(cts.Token).ConfigureAwait(true);
                 StartAutoRefreshIfRunning();
             }
         }
@@ -245,9 +252,7 @@
                 if (JobService is null || LogReader is null) break;
                 _execution = await JobService.GetExecutionAsync(JobName, ExecutionName, ct).ConfigureAwait(false)
                     ?? _execution;
-                _logResult = await LogReader.GetExecutionLogsAsync(
-                    JobName, ExecutionName, _execution?.StartOn, _execution?.EndOn, JobLogMaxLines, null, ct)
-                    .ConfigureAwait(false);
+                await FetchLogsAsync(ct).ConfigureAwait(false);
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
                 if (!IsRunning) break; // execution reached a terminal state — stop polling
             }
@@ -279,7 +284,40 @@
         : string.IsNullOrWhiteSpace(_filter) ? _logResult.Lines
         : _logResult.Lines.Where(l => l.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase));
 
-    private const int JobLogMaxLines = 1000;
+    private const int LogPageSize = 1000;
+    private const int LogMaxLines = 10000;
+    private int _maxLines = LogPageSize;
+    private bool _logBusy;
+    private string _search = "";
+
+    // Single log fetch used by initial load, load-more, search, and auto-refresh.
+    private async Task FetchLogsAsync(CancellationToken ct)
+    {
+        if (!_isAdmin || LogReader is null || _execution is null) return;
+        _logResult = await LogReader.GetExecutionLogsAsync(
+            JobName, ExecutionName, _execution.StartOn, _execution.EndOn,
+            _maxLines, string.IsNullOrWhiteSpace(_search) ? null : _search, ct).ConfigureAwait(false);
+    }
+
+    // UI-triggered reload (load-more / search): own CTS, busy flag, state flush.
+    private async Task ReloadLogsAsync()
+    {
+        _logBusy = true; await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
+        try { await FetchLogsAsync(cts.Token).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Logger.LogWarning(ex, "Log reload failed for {Execution}.", Scrub(ExecutionName));
+        }
+        finally { _logBusy = false; await InvokeAsync(StateHasChanged).ConfigureAwait(false); }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_maxLines >= LogMaxLines) return;
+        _maxLines = Math.Min(_maxLines + LogPageSize, LogMaxLines);
+        await ReloadLogsAsync();
+    }
 
     private string FormatLocalTime(DateTimeOffset? utc) =>
         AdminTimeFormat.LocalTime(_timeZoneInfo, utc);

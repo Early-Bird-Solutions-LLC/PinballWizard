@@ -216,4 +216,51 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         cut.Find("[data-testid='exec-log-truncated']");
         cut.Find("[data-testid='exec-log-lines']");
     }
+
+    [Fact]
+    public async Task Admin_Truncated_ShowsLoadMoreButton()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='exec-log-loadmore']");
+    }
+
+    [Fact]
+    public async Task Admin_LoadMore_RequeriesWithHigherBudget()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], truncated: true));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => cut.Find("[data-testid='exec-log-loadmore']").Click());
+
+        // Second query used a larger maxLines than the first (1000 -> 2000).
+        await _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
+            Arg.Any<DateTimeOffset?>(), 2000, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Admin_LogContainer_IsHeightBounded()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "info: a", JobLogSeverity.Info)], false));
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var style = cut.Find("[data-testid='exec-log-lines']").GetAttribute("style") ?? "";
+        Assert.Contains("max-height", style, StringComparison.Ordinal);
+        Assert.Contains("overflow", style, StringComparison.Ordinal);
+    }
 }
