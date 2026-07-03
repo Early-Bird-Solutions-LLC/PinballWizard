@@ -240,6 +240,18 @@
     "discoveryDate": "2026-06-25"
   },
   {
+    "id": "tiltforums_rulesheets",
+    "displayName": "Tilt Forums Rulesheets",
+    "scraperImplKey": "tiltforums_rulesheets",
+    "baseUrl": "https://tiltforums.com/",
+    "enabled": true,
+    "cadence": "manual",
+    "politenessOverrides": null,
+    "sourceGroup": "Tilt Forums",
+    "discoveryStatus": "Active",
+    "discoveryDate": "2026-07-03"
+  },
+  {
     "id": "twip",
     "displayName": "This Week in Pinball (TWIP)",
     "scraperImplKey": "twip",
