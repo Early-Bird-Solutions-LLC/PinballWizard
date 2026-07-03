@@ -20,6 +20,7 @@ using PinballWizard.Application.Documents;
 using PinballWizard.Application.Downloading;
 using PinballWizard.Application.Sync;
 using PinballWizard.Core.Configuration;
+using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
 using PinballWizard.Core.Scraping;
 using PinballWizard.Infrastructure.Documents;
@@ -1453,16 +1454,36 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 string machineId, machineTitle, manufacturer;
                 if (matchedSlug is not null)
                 {
-                    var lookup = await freshdeskTitleLookups.GetByTitleAsync(matchedSlug, cancellationToken);
+                    // Pinball Brothers' own game pages title themselves "<Name> Pinball"
+                    // (e.g. "Queen Pinball", "Alien Pinball" — confirmed from this project's
+                    // PbGamePageScraper fixtures), while the catalog's canonical OPDB title
+                    // may or may not carry that suffix. Try both forms rather than a single
+                    // guess, since MachineTitleLookup.NormalizeTitle does no suffix-stripping
+                    // of its own — a bare-slug lookup would otherwise risk silently matching
+                    // nothing for every article.
+                    var displayName = matchedSlug switch
+                    {
+                        "abba" => "ABBA",
+                        _ => char.ToUpperInvariant(matchedSlug[0]) + matchedSlug[1..],
+                    };
+                    string[] titleCandidates = [displayName, $"{displayName} Pinball"];
+
+                    MachineTitleLookup? lookup = null;
+                    foreach (var candidate in titleCandidates)
+                    {
+                        lookup = await freshdeskTitleLookups.GetByTitleAsync(candidate, cancellationToken);
+                        if (lookup is not null && lookup.OpdbIds.Count > 0) break;
+                    }
+
                     if (lookup is null || lookup.OpdbIds.Count == 0)
                     {
                         Console.Error.WriteLine(
-                            $"  Freshdesk: no machine in catalog for slug '{matchedSlug}'; article '{article.Title}' skipped.");
+                            $"  Freshdesk: no machine in catalog for '{matchedSlug}' (tried: {string.Join(", ", titleCandidates)}); article '{article.Title}' skipped.");
                         freshdeskSkippedNoMachine++;
                         continue;
                     }
                     machineId = lookup.OpdbIds[0];
-                    machineTitle = matchedSlug;
+                    machineTitle = displayName;
                     manufacturer = lookup.Manufacturers.Count > 0 ? lookup.Manufacturers[0] : "Pinball Brothers";
                 }
                 else
