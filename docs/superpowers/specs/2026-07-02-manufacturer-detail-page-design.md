@@ -81,8 +81,10 @@ New `Components/Pages/Manufacturers.razor` (public), route `/manufacturers/{Key}
 - `@layout MainLayout` (default), `[AllowAnonymous]`, `@rendermode InteractiveServer`
   (games grid sorts client-side; MainLayout MudBlazor providers are already
   interactive per `project_mudblazor_provider_rendermode`).
-- Load once in `OnAfterRenderAsync(firstRender)` (avoids prerender double-read),
-  30 s CTS, matching `AdminMachineDetail` / `AdminSourceDetail`.
+- Load once in `OnInitializedAsync` with a local 30 s CTS, mirroring the sibling
+  `AdminManufacturers` lifecycle (its cross-partition stream is heavier and accepts
+  the same prerender read; this page's two reads are lighter — one single-partition
+  stream + one point read).
 
 **Data flow:**
 
