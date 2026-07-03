@@ -125,6 +125,34 @@ public sealed class CatalogStatsRebuildServiceTests
     }
 
     // -------------------------------------------------------------------------
+    // BuildRollups — rollup carries the manufacturer DISPLAY name (distinct from
+    // the partition key) so consumers can render/link without a machine read.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void BuildRollups_CarriesManufacturerDisplayName_DistinctFromKey()
+    {
+        var machine = new Machine
+        {
+            Id                      = "GRBN-A",
+            PartitionKey            = "stern",           // key
+            ManufacturerDisplayName = "Stern Pinball",   // display name (distinct from key)
+            Title                   = "Godzilla Pro",
+            ManufacturerSlugs       = new(StringComparer.OrdinalIgnoreCase) { ["stern"] = "godzilla-pro" },
+            FirstSeenAt             = DateTimeOffset.UnixEpoch,
+            LastSeenAt              = DateTimeOffset.UnixEpoch,
+        };
+
+        var rollups = CatalogStatsRebuildService.BuildRollups(
+            [(machine, new Dictionary<string, int>())],
+            FixedAsOf);
+
+        var record = rollups.Single();
+        Assert.Equal("stern", record.PartitionKey);                     // key unchanged
+        Assert.Equal("Stern Pinball", record.ManufacturerDisplayName);  // display name carried
+    }
+
+    // -------------------------------------------------------------------------
     // BuildRollups — IsOpdbOnly is true when ManufacturerSlugs is empty.
     // -------------------------------------------------------------------------
 

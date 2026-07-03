@@ -22,6 +22,11 @@ internal sealed class CatalogStatsCosmosRecord : IEntity
     [JsonPropertyName("manufacturer")]
     public required string PartitionKey { get; set; }
 
+    // Human-readable manufacturer name (e.g. "Stern Pinball"). Nullable so rollup docs
+    // written before this field existed round-trip cleanly until a rebuild backfills it.
+    [JsonPropertyName("manufacturer_display_name")]
+    public string? ManufacturerDisplayName { get; set; }
+
     [JsonPropertyName("as_of_utc")]
     public DateTimeOffset AsOfUtc { get; set; }
 

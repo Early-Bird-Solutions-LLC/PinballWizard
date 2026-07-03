@@ -57,7 +57,10 @@ internal sealed class CosmosCatalogStatsRepository
         new(
             Manufacturer: rec.PartitionKey,
             AsOfUtc:      rec.AsOfUtc,
-            Machines:     rec.Machines.Select(MapMachine).ToList());
+            Machines:     rec.Machines.Select(MapMachine).ToList())
+        {
+            ManufacturerDisplayName = rec.ManufacturerDisplayName,
+        };
 
     private static MachineDocStats MapMachine(MachineStatEntry e) =>
         new(
