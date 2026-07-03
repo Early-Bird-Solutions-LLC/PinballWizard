@@ -56,4 +56,16 @@ public sealed class AdminIdentityControlTests : AsyncBunitContext
         Assert.Equal(AdminSignIn.SignOutPath, signOut.GetAttribute("href"));
         Assert.Empty(cut.FindAll("[data-testid='admin-signin']"));
     }
+
+    // Reproduces the blank "Signed in as" bar: Microsoft.Identity.Web maps
+    // Identity.Name to the preferred_username claim, which Entra External ID
+    // (CIAM) doesn't always populate — authenticated but nameless.
+    [Fact]
+    public void Authenticated_WithNoNameClaim_ShowsFallbackText()
+    {
+        this.AddAuthorization().SetAuthorized(string.Empty);
+        var cut = RenderControl();
+        var identity = cut.Find("[data-testid='admin-identity']");
+        Assert.Contains("admin (authenticated, no name claim)", identity.TextContent, System.StringComparison.Ordinal);
+    }
 }
