@@ -240,6 +240,19 @@
     "discoveryDate": "2026-06-25"
   },
   {
+    "id": "tiltforums_rulesheets",
+    "displayName": "Tilt Forums Rulesheets",
+    "scraperImplKey": "tiltforums_rulesheets",
+    "baseUrl": "https://tiltforums.com/",
+    "enabled": true,
+    "cadence": "manual",
+    "politenessOverrides": null,
+    "sourceGroup": "Tilt Forums",
+    "discoveryStatus": "Active",
+    "discoveryNotes": "Founder Greg Dunlap's 2026-06-30 public invitation ('Mine the data, train your models') is the licensing basis — see ADR-0050. Ingested via the --sync-tiltforums-rulesheets CLI verb (synthesis path, no Cosmos scraped_documents_raw record, no change-feed). robots.txt verified 2026-07-03: no Crawl-delay, /t/ and /c/ paths allowed for all crawlers. Cadence is manual (operator-initiated) rather than automated because the master list is human-maintained and may lag newly published wikis.",
+    "discoveryDate": "2026-07-03"
+  },
+  {
     "id": "twip",
     "displayName": "This Week in Pinball (TWIP)",
     "scraperImplKey": "twip",

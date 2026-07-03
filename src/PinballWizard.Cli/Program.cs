@@ -52,6 +52,7 @@ using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
 using PinballWizard.Infrastructure.Scraping.Kineticist;
+using PinballWizard.Infrastructure.Scraping.TiltForums;
 using PinballWizard.Infrastructure.Scraping.Twip;
 using PinballWizard.ServiceDefaults;
 using Polly;
@@ -168,6 +169,11 @@ var syncKineticistTutorialsOption = new Option<bool>("--sync-kineticist-tutorial
     Description = "Fetch and index all Kineticist pinball tutorial articles as Rulesheet documents in AI Search (ADR-0043 / Domain-2). Each article is fetched as clean Markdown via the .md URL suffix — no PDF extraction. Machine linking uses IMachineTitleLookupRepository; unresolvable slugs are logged and skipped. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
 };
 
+var syncTiltForumsRulesheetsOption = new Option<bool>("--sync-tiltforums-rulesheets")
+{
+    Description = "Fetch and index Tilt Forums community rulesheets as Rulesheet documents in AI Search (ADR-0050 / Domain-2). Discovers rulesheets from the manufacturer-grouped master list wiki page, resolves each to a catalog machine scoped to its manufacturer (never guessing on cross-manufacturer title collisions), and indexes the wiki post content. Idempotent: safe to re-run. Requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured.",
+};
+
 var syncTwipNewsletterOption = new Option<bool>("--sync-twip-newsletter")
 {
     Description = "Fetch and index recent TWIP (This Week in Pinball) newsletter issues as NewsDigest documents in AI Search. Discovers articles from twip.kineticist.com/sitemap.xml, extracts content via AngleSharp (JSON-LD + body), and synthesizes chunks for indexing. Idempotent: safe to re-run. Use --twip-since to control the lookback window. Requires Cosmos, AI Search, and AI Foundry to be configured. ADR-0043.",
@@ -264,6 +270,7 @@ rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
 rootCommand.Options.Add(syncGameOverviewsOption);
 rootCommand.Options.Add(syncKineticistTutorialsOption);
+rootCommand.Options.Add(syncTiltForumsRulesheetsOption);
 rootCommand.Options.Add(syncTwipNewsletterOption);
 rootCommand.Options.Add(twipSinceOption);
 rootCommand.Options.Add(syncPbFreshdeskArticlesOption);
@@ -302,6 +309,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
     var syncGameOverviews = parseResult.GetValue(syncGameOverviewsOption);
     var syncKineticistTutorials = parseResult.GetValue(syncKineticistTutorialsOption);
+    var syncTiltForumsRulesheets = parseResult.GetValue(syncTiltForumsRulesheetsOption);
     var syncTwipNewsletter = parseResult.GetValue(syncTwipNewsletterOption);
     var twipSince = parseResult.GetValue(twipSinceOption);
     var syncPbFreshdeskArticles = parseResult.GetValue(syncPbFreshdeskArticlesOption);
@@ -1281,6 +1289,171 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --sync-tiltforums-rulesheets (Domain-2 — index Tilt Forums
+    // community rulesheets as Rulesheet docs in AI Search, ADR-0050).
+    // Mirrors --sync-kineticist-tutorials: no Cosmos scraped_documents_raw
+    // record, no change-feed, direct IRagIndexer.UpsertAsync. Game matching
+    // is manufacturer-scoped (TiltForumsGameMatcher) rather than unscoped,
+    // because Tilt Forums is cross-manufacturer, unlike every existing
+    // single-manufacturer scraper.
+    if (syncTiltForumsRulesheets)
+    {
+        var tiltForumsClient = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient>();
+        var tiltForumsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsSynthesizer>();
+        var tiltForumsIndexer = host.Services.GetService<IRagIndexer>();
+        var tiltForumsMachineRepo = host.Services.GetService<IMachineRepository>();
+
+        if (tiltForumsClient is null || tiltForumsSynthesizer is null || tiltForumsIndexer is null || tiltForumsMachineRepo is null)
+        {
+            Console.Error.WriteLine(
+                "--sync-tiltforums-rulesheets requires Cosmos, Azure AI Search, and Azure AI Foundry to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos), AiSearch:Endpoint, and AiFoundry:ProjectEndpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
+        var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
+        Console.WriteLine($"Found {listings.Count} rulesheet listing(s) in the master list.");
+
+        if (listings.Count == 0)
+        {
+            Console.Error.WriteLine(
+                "Tilt Forums master list returned 0 rulesheets — this likely indicates a fetch failure rather than a genuinely empty list; check the warning/error logs above.");
+            Environment.ExitCode = 1;
+            return;
+        }
+
+        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
+        var subcategoryUrls = await tiltForumsClient.DiscoverSubcategoryTopicUrlsAsync(cancellationToken);
+        var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tiltForumsGaps = subcategoryUrls
+            .Where(u => !masterListUrls.Contains(u) && !u.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (tiltForumsGaps.Count > 0)
+        {
+            Console.WriteLine($"  {tiltForumsGaps.Count} topic(s) in the subcategory are not in the master list (not ingested this run):");
+            foreach (var gap in tiltForumsGaps)
+            {
+                Console.WriteLine($"    {gap}");
+            }
+        }
+
+        var tiltForumsIndexed = 0;
+        var tiltForumsSkippedNoContent = 0;
+        var tiltForumsUnmatched = 0;
+        var tiltForumsFailed = 0;
+        var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
+
+        foreach (var listing in listings)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchResult matchResult;
+            try
+            {
+                matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
+                    tiltForumsMachineRepo, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText}): {ex.Message}");
+                tiltForumsFailed++;
+                continue;
+            }
+
+            if (matchResult.Status != PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.Resolved)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
+                tiltForumsUnmatched++;
+                continue;
+            }
+
+            PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
+            try
+            {
+                article = await tiltForumsClient.FetchRulesheetAsync(listing, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: fetch failed for '{listing.GameTitle}' ({listing.TopicUrl}): {ex.Message}");
+                tiltForumsFailed++;
+                continue;
+            }
+
+            if (article is null)
+            {
+                tiltForumsSkippedNoContent++;
+                continue;
+            }
+
+            string topicId;
+            string documentId;
+            try
+            {
+                topicId = new Uri(listing.TopicUrl).Segments[^1].TrimEnd('/');
+                documentId = $"tiltforums_{topicId}_{matchResult.MachineId}";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: failed to parse topic URL for '{listing.GameTitle}' ({listing.TopicUrl}): {ex.Message}");
+                tiltForumsFailed++;
+                continue;
+            }
+
+            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                MachineId: matchResult.MachineId!,
+                MachineTitle: matchResult.MachineTitle!,
+                Manufacturer: matchResult.ManufacturerDisplayName!,
+                DocumentId: documentId,
+                DocumentUrl: article.TopicUrl,
+                DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
+                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+
+            var chunks = tiltForumsSynthesizer.Synthesize(article, chunkRequest);
+            if (chunks.Count == 0)
+            {
+                tiltForumsSkippedNoContent++;
+                continue;
+            }
+
+            try
+            {
+                var result = await tiltForumsIndexer.UpsertAsync(chunkRequest, chunks, tiltForumsIndexerOptions, cancellationToken);
+                if (result.Failures.Count > 0)
+                {
+                    foreach (var failure in result.Failures)
+                    {
+                        Console.Error.WriteLine(
+                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.GameTitle}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                    }
+                    tiltForumsFailed++;
+                }
+                else
+                {
+                    Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {matchResult.MachineId} ({chunks.Count} chunk(s))");
+                    tiltForumsIndexed++;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine($"  Failed to index '{article.GameTitle}': {ex.Message}");
+                tiltForumsFailed++;
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine(
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
+        if (tiltForumsFailed > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
     // Handle --sync-twip-newsletter (Domain-2 — index TWIP newsletter issues as
     // NewsDigest docs in AI Search, ADR-0043). Discovers articles from the TWIP
     // sitemap (twip.kineticist.com/sitemap.xml) filtered by --twip-since date.
@@ -1811,6 +1984,7 @@ static IHost CreateHost(string[] args)
         // Inside the RAG gate because KineticistTutorialsSynthesizer depends on
         // IChunker, which AddHybridChunker() registers (line above).
         builder.Services.AddKineticistScraping(builder.Configuration);
+        builder.Services.AddTiltForumsScraping();
 
         // TWIP newsletter client + synthesizer (Domain-2 — ADR-0043). Fetches
         // newsletter articles via AngleSharp HTML parse and synthesizes NewsDigest
