@@ -33,6 +33,11 @@ public sealed class RawDocumentRecord
 
     public List<CrossReference> CrossReferences { get; set; } = [];
 
+    // Game-page provenance stamped by the scraper at discovery time (e.g. which
+    // manufacturer game page this document was found on). Independent of catalog
+    // linking — present even when LinkStatus is NotInCatalog.
+    public GameReference? Game { get; set; }
+
     public string? ContentHash { get; init; }
 
     public string? RunId { get; set; }
