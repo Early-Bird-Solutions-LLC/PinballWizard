@@ -27,4 +27,10 @@ public sealed record DocumentDetailRecord(
     string? LinkFailureReason,
     string? ResolutionStrategy,
     IReadOnlyList<string>? LinkedMachineIds
-);
+)
+{
+    // Manufacturer partition key (e.g. "stern") derived from Manufacturer at
+    // projection time so the detail page can link to /manufacturers/{key}. Null
+    // when the manufacturer is blank/unknown; the view degrades to plain text.
+    public string? ManufacturerKey { get; init; }
+}
