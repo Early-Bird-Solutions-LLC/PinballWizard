@@ -14,5 +14,6 @@ public interface IJobLogReader
         DateTimeOffset? startOn,
         DateTimeOffset? endOn,
         int maxLines,
+        string? search,
         CancellationToken ct);
 }
