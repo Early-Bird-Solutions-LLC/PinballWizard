@@ -376,22 +376,10 @@
         return idx >= 0 ? fullName[(idx + sep.Length)..] : fullName;
     }
 
-    private string FormatLocalTime(DateTimeOffset? utcTime)
-    {
-        if (utcTime is null) return "—";
-        if (_timeZoneInfo is null)
-            return utcTime.Value.UtcDateTime.ToString("MMM d, yyyy h:mm tt") + " UTC";
-        var local = TimeZoneInfo.ConvertTime(utcTime.Value, _timeZoneInfo);
-        return local.ToString("MMM d, yyyy h:mm tt zzz");
-    }
+    private string FormatLocalTime(DateTimeOffset? utcTime) =>
+        AdminTimeFormat.LocalTime(_timeZoneInfo, utcTime);
 
-    private static string FormatDuration(DateTimeOffset? startOn, DateTimeOffset? endOn)
-    {
-        if (startOn is null || endOn is null) return "—";
-        var d = endOn.Value - startOn.Value;
-        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}h {d.Minutes}m";
-        if (d.TotalMinutes >= 1) return $"{d.Minutes}m {d.Seconds}s";
-        return $"{d.Seconds}s";
-    }
+    private static string FormatDuration(DateTimeOffset? startOn, DateTimeOffset? endOn) =>
+        AdminTimeFormat.Duration(startOn, endOn);
 
 }
