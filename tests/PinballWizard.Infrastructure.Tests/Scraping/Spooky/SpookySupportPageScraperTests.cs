@@ -53,7 +53,8 @@ public sealed class SpookySupportPageScraperTests
             """;
 
         var (scraper, gate, handler) = BuildScraper(h => h
-            .MapJson(BuildSupportPagesUrl(), supportPagesJson));
+            .MapJson(BuildSupportPagesUrl(), supportPagesJson)
+            .MapHtml($"{BaseUrl}/game-support/", "<html><body>no hub PDFs</body></html>"));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -91,6 +92,88 @@ public sealed class SpookySupportPageScraperTests
         Assert.Equal(handler.Requests.Count, gate.Reported.Count);
         Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
         Assert.All(gate.Reported, r => Assert.Equal(System.Net.HttpStatusCode.OK, r.Status));
+    }
+
+    // ── Hub-page direct discovery (Path 2) ───────────────────────────────────
+
+    [Fact]
+    public async Task ScrapeAsync_HubPageWithPdfs_YieldsLinksWithHubPageProvenance()
+    {
+        // No WP child pages — only the hub page itself carries PDFs, matching
+        // Spooky's 2026-07 pattern for newer titles (Beetlejuice, Rick and
+        // Morty, etc. — see SpookySupportPageScraper's Path 2 doc comment).
+        var hubHtml = """
+            <html><body>
+            <a href="/wp-content/uploads/2026/07/Beetlejuice-Manual.pdf">Owner's Manual</a>
+            </body></html>
+            """;
+
+        var (scraper, gate, handler) = BuildScraper(h => h
+            .MapJson(BuildSupportPagesUrl(), "[]")
+            .MapHtml($"{BaseUrl}/game-support/", hubHtml));
+
+        var items = await ScrapeAllAsync(scraper);
+
+        Assert.Single(items);
+        var item = items[0];
+        Assert.NotNull(item.Link);
+        Assert.Null(item.Game);
+        Assert.Equal(SourceType.SpookyPinballSupportPage, item.SourceType);
+        Assert.Equal("Spooky Pinball Game Support Hub", item.DiscoveryContext);
+        Assert.Equal($"{BaseUrl}/game-support/", item.DiscoveryUrl);
+        Assert.Equal(
+            "https://www.spookypinball.com/wp-content/uploads/2026/07/Beetlejuice-Manual.pdf",
+            item.Link!.FileUrl);
+
+        // Game slug is derived from the filename, per
+        // SpookySupportPageExtractor.DeriveSlugFromFilename: strips "-Manual".
+        Assert.Equal("beetlejuice", item.Link!.GameSlug);
+        Assert.Equal("Owner's Manual", item.Link!.LinkText);
+
+        // Politeness invariants: WP-REST discovery (empty) + hub-page fetch,
+        // both succeed, so every request is reported.
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal(handler.Requests.Count, gate.Acquired.Count);
+        Assert.Equal(handler.Requests.Count, gate.Reported.Count);
+        Assert.Equal(handler.Requests.Count, gate.LeasesDisposed);
+    }
+
+    [Fact]
+    public async Task ScrapeAsync_HubPageFetchFails_NonFatal_ChildPagePdfsStillYielded()
+    {
+        // The hub-page fetch (Path 2) is deliberately left unmapped in this
+        // fixture, so QueueingHttpMessageHandler throws UnexpectedRequestException
+        // when the scraper attempts it. Per SpookySupportPageScraper.ScrapeAsync's
+        // Path 2 catch block, this is non-fatal: the run continues and the
+        // Path 1 (WP child-page) results still yield in full.
+        var supportPagesJson = $$"""
+            [
+              {
+                "id": 1456,
+                "slug": "hwn-um-manual",
+                "link": "{{BaseUrl}}/game-support/hwn-um-manual/",
+                "parent": {{GameSupportParentId}},
+                "modified": "2023-09-15T12:00:00",
+                "title": { "rendered": "HWN/UM Manual" },
+                "content": {
+                  "rendered": "<a href=\"/wp-content/uploads/2023/09/rules.pdf\">Rules</a>"
+                }
+              }
+            ]
+            """;
+
+        var (scraper, _, _) = BuildScraper(h => h
+            .MapJson(BuildSupportPagesUrl(), supportPagesJson));
+            // Deliberately no .MapHtml for the hub page — simulates a hub-page
+            // fetch failure (network error, 5xx, etc. all surface the same way
+            // through PoliteScraperBase: an exception out of GetStringPolitelyAsync).
+
+        var items = await ScrapeAllAsync(scraper);
+
+        // Path 1's single PDF still yields despite Path 2 failing entirely.
+        Assert.Single(items);
+        Assert.Equal($"{BaseUrl}/game-support/hwn-um-manual/", items[0].DiscoveryUrl);
+        Assert.Equal("Spooky Pinball Support Page", items[0].DiscoveryContext);
     }
 
     [Fact]
