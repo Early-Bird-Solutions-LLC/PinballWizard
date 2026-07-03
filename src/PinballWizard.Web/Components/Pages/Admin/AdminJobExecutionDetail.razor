@@ -206,7 +206,7 @@
             {
                 _logResult = await LogReader.GetExecutionLogsAsync(
                     JobName, ExecutionName, _execution.StartOn, _execution.EndOn,
-                    JobLogMaxLines, cts.Token).ConfigureAwait(true);
+                    JobLogMaxLines, null, cts.Token).ConfigureAwait(true);
                 StartAutoRefreshIfRunning();
             }
         }
@@ -246,7 +246,7 @@
                 _execution = await JobService.GetExecutionAsync(JobName, ExecutionName, ct).ConfigureAwait(false)
                     ?? _execution;
                 _logResult = await LogReader.GetExecutionLogsAsync(
-                    JobName, ExecutionName, _execution?.StartOn, _execution?.EndOn, JobLogMaxLines, ct)
+                    JobName, ExecutionName, _execution?.StartOn, _execution?.EndOn, JobLogMaxLines, null, ct)
                     .ConfigureAwait(false);
                 await InvokeAsync(StateHasChanged).ConfigureAwait(false);
                 if (!IsRunning) break; // execution reached a terminal state — stop polling

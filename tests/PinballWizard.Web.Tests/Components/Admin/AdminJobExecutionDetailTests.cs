@@ -53,7 +53,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetNotAuthorized();
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok([new JobLogLine(DateTimeOffset.UtcNow, "secret-ish", JobLogSeverity.Info)], false));
 
         var cut = Render();
@@ -66,7 +66,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         Assert.Contains("redirectUri=", signInHref, StringComparison.Ordinal); // returns to this run page after sign-in
         Assert.Empty(cut.FindAll("[data-testid='exec-log-lines']")); // logs NOT rendered
         await _logs.DidNotReceive().GetExecutionLogsAsync(       // and never queried
-            Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok(
                 [new JobLogLine(DateTimeOffset.UtcNow, "info: linker started", JobLogSeverity.Info)], false));
 
@@ -90,7 +90,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Failed());
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Failed());
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -103,7 +103,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -128,7 +128,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok(
             [
                 new JobLogLine(DateTimeOffset.UtcNow, "info: linked Godzilla", JobLogSeverity.Info),
@@ -153,7 +153,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         _svc.GetExecutionAsync(Job, Exec, Arg.Any<CancellationToken>())
             .Returns(new JobExecution(Exec, "Running", DateTimeOffset.UtcNow.AddMinutes(-1), null));
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -166,7 +166,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Ok([], false));
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -192,7 +192,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Unconfigured());
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(JobLogResult.Unconfigured());
 
         var cut = Render();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -205,7 +205,7 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
     {
         this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
         _logs.GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(), Arg.Any<DateTimeOffset?>(),
-            Arg.Any<int>(), Arg.Any<CancellationToken>())
+            Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(JobLogResult.Ok(
                 [new JobLogLine(DateTimeOffset.UtcNow, "info: line", JobLogSeverity.Info)],
                 truncated: true));
