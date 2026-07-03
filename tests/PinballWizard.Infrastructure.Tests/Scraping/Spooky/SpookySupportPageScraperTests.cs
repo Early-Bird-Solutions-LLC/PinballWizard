@@ -162,11 +162,11 @@ public sealed class SpookySupportPageScraperTests
             ]
             """;
 
+        // Deliberately no .MapHtml for the hub page — simulates a hub-page
+        // fetch failure (network error, 5xx, etc. all surface the same way
+        // through PoliteScraperBase: an exception out of GetStringPolitelyAsync).
         var (scraper, _, _) = BuildScraper(h => h
             .MapJson(BuildSupportPagesUrl(), supportPagesJson));
-            // Deliberately no .MapHtml for the hub page — simulates a hub-page
-            // fetch failure (network error, 5xx, etc. all surface the same way
-            // through PoliteScraperBase: an exception out of GetStringPolitelyAsync).
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -209,7 +209,8 @@ public sealed class SpookySupportPageScraperTests
             """;
 
         var (scraper, gate, _) = BuildScraper(h => h
-            .MapJson(BuildSupportPagesUrl(), supportPagesJson));
+            .MapJson(BuildSupportPagesUrl(), supportPagesJson)
+            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -228,7 +229,8 @@ public sealed class SpookySupportPageScraperTests
         // WP REST returns empty array — no child pages under the Game Support hub.
         // This is the graceful-empty case; no error, no items.
         var (scraper, gate, _) = BuildScraper(h => h
-            .MapJson(BuildSupportPagesUrl(), "[]"));
+            .MapJson(BuildSupportPagesUrl(), "[]")
+            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
 
         var items = await ScrapeAllAsync(scraper);
 
@@ -300,7 +302,8 @@ public sealed class SpookySupportPageScraperTests
             """;
 
         var (scraper, _, _) = BuildScraper(h => h
-            .MapJson(BuildSupportPagesUrl(), supportPagesJson));
+            .MapJson(BuildSupportPagesUrl(), supportPagesJson)
+            .MapHtml($"{BaseUrl}/game-support/", "<html><body></body></html>"));
 
         var items = await ScrapeAllAsync(scraper);
 
