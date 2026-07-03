@@ -119,6 +119,75 @@ public sealed class TiltForumsRulesheetsClientTests
         Assert.Equal("Godzilla", listings[0].GameTitle);
     }
 
+    private const string SubcategoryPageUrl0 = $"{BaseUrl}/c/game-specific/rulesheet-wikis/18";
+    private static string SubcategoryPageUrl(int page) => $"{SubcategoryPageUrl0}?page={page}";
+
+    // Shape verified against the live page 2026-07-03: table.topic-list >
+    // tr.topic-list-item, each with a.title.raw-link.raw-topic-link[href].
+    private const string SubcategoryPage0Html = """
+        <html><body>
+        <table class='topic-list'>
+        <tbody>
+        <tr class="topic-list-item">
+          <td class="main-link">
+            <a itemprop='url' href='https://tiltforums.com/t/rulesheet-master-list/7230' class='title raw-link raw-topic-link'>Rulesheet Master List</a>
+          </td>
+        </tr>
+        <tr class="topic-list-item">
+          <td class="main-link">
+            <a itemprop='url' href='https://tiltforums.com/t/godzilla-rulesheet/1' class='title raw-link raw-topic-link'>Godzilla Rulesheet</a>
+          </td>
+        </tr>
+        </tbody>
+        </table>
+        </body></html>
+        """;
+
+    private const string SubcategoryPage1Html = """
+        <html><body>
+        <table class='topic-list'>
+        <tbody>
+        <tr class="topic-list-item">
+          <td class="main-link">
+            <a itemprop='url' href='https://tiltforums.com/t/jaws-rulesheet/2' class='title raw-link raw-topic-link'>Jaws Rulesheet</a>
+          </td>
+        </tr>
+        </tbody>
+        </table>
+        </body></html>
+        """;
+
+    [Fact]
+    public async Task DiscoverSubcategoryTopicUrlsAsync_TwoPages_ReturnsAllUrls()
+    {
+        var (client, gate, _) = BuildClient(h => h
+            .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
+            .MapHtml(SubcategoryPageUrl(1), SubcategoryPage1Html)
+            .Map(SubcategoryPageUrl(2), _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+
+        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+
+        Assert.Equal(3, urls.Count);
+        Assert.Contains("https://tiltforums.com/t/rulesheet-master-list/7230", urls);
+        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
+        Assert.Contains("https://tiltforums.com/t/jaws-rulesheet/2", urls);
+        Assert.Equal(gate.Acquired.Count, gate.Reported.Count);
+    }
+
+    [Fact]
+    public async Task DiscoverSubcategoryTopicUrlsAsync_EmptyPage_StopsPagination()
+    {
+        const string emptyPage = "<html><body><table class='topic-list'><tbody></tbody></table></body></html>";
+
+        var (client, _, _) = BuildClient(h => h
+            .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
+            .MapHtml(SubcategoryPageUrl(1), emptyPage));
+
+        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+
+        Assert.Equal(2, urls.Count);
+    }
+
     private static (TiltForumsRulesheetsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)
     {

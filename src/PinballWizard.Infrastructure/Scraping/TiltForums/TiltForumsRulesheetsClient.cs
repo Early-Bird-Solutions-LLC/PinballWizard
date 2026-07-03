@@ -1,3 +1,4 @@
+using System.Net;
 using AngleSharp;
 using AngleSharp.Html.Parser;
 using Microsoft.Extensions.Logging;
@@ -103,5 +104,59 @@ public sealed class TiltForumsRulesheetsClient : PoliteScraperBase
 
         Logger.LogInformation("TiltForumsRulesheetsClient: master list yielded {Count} rulesheet listing(s).", listings.Count);
         return listings;
+    }
+
+    private const string SubcategoryPath = "/c/game-specific/rulesheet-wikis/18";
+
+    /// <summary>
+    /// Discovers every topic URL listed in the "Wiki Rulesheets" subcategory,
+    /// for cross-checking against <see cref="DiscoverRulesheetsAsync"/>'s
+    /// master-list results — the master list is human-maintained and may lag
+    /// a newly-added rulesheet.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> DiscoverSubcategoryTopicUrlsAsync(CancellationToken cancellationToken)
+    {
+        var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var page = 0;
+
+        while (true)
+        {
+            var pageUrl = page == 0
+                ? new Uri($"{BaseUrl}{SubcategoryPath}")
+                : new Uri($"{BaseUrl}{SubcategoryPath}?page={page}");
+
+            string html;
+            try
+            {
+                html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} returned 404; pagination exhausted.", page);
+                break;
+            }
+
+            using var browsingContext = BrowsingContext.New(Configuration.Default);
+            var parser = browsingContext.GetService<IHtmlParser>()!;
+            using var document = await parser.ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
+
+            var newCount = 0;
+            foreach (var link in document.QuerySelectorAll("a.raw-topic-link[href]"))
+            {
+                var href = link.GetAttribute("href");
+                if (string.IsNullOrWhiteSpace(href)) continue;
+                if (urls.Add(href)) newCount++;
+            }
+
+            Logger.LogDebug(
+                "TiltForumsRulesheetsClient: subcategory page {Page} yielded {New} new topic URL(s) (total {Total}).",
+                page, newCount, urls.Count);
+
+            if (newCount == 0) break;
+            page++;
+        }
+
+        Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} total topic URL(s).", urls.Count);
+        return [.. urls];
     }
 }
