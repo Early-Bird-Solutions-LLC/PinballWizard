@@ -17,8 +17,11 @@ public sealed class PbFreshdeskDocumentScraper : PoliteScraperBase, ISourceScrap
     // Category-name substrings that identify a specific machine. Matched
     // against category names like "FAQs QUEEN" / "FAQ PREDATOR" — deliberately
     // substring-based since Pinball Brothers is inconsistent about the
-    // "FAQ" vs "FAQs" prefix and singular/plural.
-    private static readonly string[] KnownGameSlugs = ["alien", "queen", "abba", "predator"];
+    // "FAQ" vs "FAQs" prefix and singular/plural. Public so the
+    // --sync-pb-freshdesk-articles CLI verb (Program.cs) can reuse the same
+    // list rather than maintaining its own copy that could drift out of sync
+    // when Pinball Brothers adds a machine.
+    public static readonly string[] KnownGameSlugs = ["alien", "queen", "abba", "predator"];
 
     private readonly FreshdeskSolutionsClient _client;
 

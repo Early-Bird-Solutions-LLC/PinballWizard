@@ -1411,7 +1411,17 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine("Discovering Pinball Brothers Freshdesk support folders...");
 
-        var freshdeskFolders = await freshdeskClient.DiscoverFoldersAsync(cancellationToken);
+        IReadOnlyList<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskFolder> freshdeskFolders;
+        try
+        {
+            freshdeskFolders = await freshdeskClient.DiscoverFoldersAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Console.Error.WriteLine($"--sync-pb-freshdesk-articles: folder discovery failed: {ex.Message}");
+            Environment.ExitCode = 1;
+            return;
+        }
         Console.WriteLine($"Found {freshdeskFolders.Count} folder(s). Discovering articles...");
 
         var freshdeskIndexed = 0;
@@ -1420,13 +1430,24 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var freshdeskSkippedNoMachine = 0;
         var freshdeskFailed = 0;
         var freshdeskIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
-        string[] freshdeskKnownGameSlugs = ["alien", "queen", "abba", "predator"];
+        var freshdeskKnownGameSlugs = PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.PbFreshdeskDocumentScraper.KnownGameSlugs;
 
         foreach (var folder in freshdeskFolders)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
-            var summaries = await freshdeskClient.DiscoverArticlesInFolderAsync(folder, cancellationToken);
+            IReadOnlyList<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskArticleSummary> summaries;
+            try
+            {
+                summaries = await freshdeskClient.DiscoverArticlesInFolderAsync(folder, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Freshdesk: article discovery failed for folder '{folder.FolderName}': {ex.Message}; skipping folder.");
+                freshdeskFailed++;
+                continue;
+            }
 
             foreach (var summary in summaries)
             {
