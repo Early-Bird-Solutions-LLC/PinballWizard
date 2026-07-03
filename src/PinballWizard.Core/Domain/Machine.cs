@@ -108,6 +108,23 @@ public sealed class Machine : IEntity
     [JsonPropertyName("opdbSourceUrl")]
     public string? OpdbSourceUrl { get; set; }
 
+    /// <summary>
+    /// IPDB numeric machine ID sourced from the OPDB export <c>ipdb_id</c> field.
+    /// Null when OPDB has no IPDB cross-reference for this machine (rare).
+    /// </summary>
+    [JsonPropertyName("ipdbId")]
+    public int? IpdbId { get; set; }
+
+    /// <summary>
+    /// Canonical IPDB machine page URL, derived from <see cref="IpdbId"/> at
+    /// OPDB sync time. Pattern: <c>https://www.ipdb.org/machine.cgi?id={ipdbId}</c>.
+    /// Used as the provenance reference for legacy machine documentation — IPDB
+    /// is linked to, never scraped (HTTP 403; see ingestion_sources.v1.json entry
+    /// for id="ipdb"). Null when <see cref="IpdbId"/> is null.
+    /// </summary>
+    [JsonPropertyName("ipdbReferenceUrl")]
+    public string? IpdbReferenceUrl { get; set; }
+
     /// <summary>When the machine record was first seen by our ingestion.</summary>
     [JsonPropertyName("firstSeenAt")]
     public DateTimeOffset FirstSeenAt { get; set; }

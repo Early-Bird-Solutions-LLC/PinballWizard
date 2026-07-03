@@ -133,6 +133,84 @@
       "url": "https://pinballmap.com",
       "description": "A community-maintained map of publicly accessible pinball machines at arcades, bars, and venues. Useful for finding a specific title to play near you.",
       "covers_question_types": ["location", "play"]
+    },
+    {
+      "category": "parts_and_repair",
+      "name": "The Pinball Resource (PBResource)",
+      "url": "https://www.pbresource.com",
+      "description": "The licensed rights holder for Gottlieb factory documentation. Go-to source for Gottlieb SS-era manuals, schematics, and high-quality reprints. Also carries parts, the Pinball Price Guide (1931–2012), and multi-manufacturer repair resources. Link-to only — commercially licensed content.",
+      "covers_question_types": ["repair", "machine_reference"]
+    },
+    {
+      "category": "machine_reference",
+      "name": "PinWiki",
+      "url": "https://pinwiki.com",
+      "description": "Community repair wiki organized by hardware platform and manufacturer era. Covers Williams, Bally, Gottlieb, Data East, Sega, and solid-state Stern repair guides, rubber ring charts, part datasheets, and troubleshooting walkthroughs. Content licensed CC-BY-NC-SA — link-to only.",
+      "covers_question_types": ["repair", "machine_reference"]
+    },
+    {
+      "category": "parts_and_repair",
+      "name": "PinballRebel",
+      "url": "https://pinballrebel.com",
+      "description": "Hosts schematics and wiring diagrams for Stern Electronics era and Williams games. A useful supplement to IPDB documentation for solid-state classics.",
+      "covers_question_types": ["repair", "machine_reference"]
+    },
+    {
+      "category": "parts_and_repair",
+      "name": "Planetary Pinball Supply",
+      "url": "https://planetarypinball.com",
+      "description": "Holds Williams, Bally, and Midway IP for parts and documentation reprints. Offers Color Master Catalogs, game manuals with schematics (Bally 1969–1980; Williams 1966–1995), and parts catalogs. Link-to only — commercially licensed content.",
+      "covers_question_types": ["repair", "machine_reference"]
+    },
+    {
+      "category": "archives",
+      "name": "Internet Archive (Pinball)",
+      "url": "https://archive.org/search?query=pinball+manual",
+      "description": "The Internet Archive hosts community-uploaded scans of pinball manuals, schematics, and parts catalogs across all eras and manufacturers. Particularly useful for legacy manufacturers (Gottlieb, Capcom, Zaccaria) where official digital documentation is scarce. Content quality varies — verify completeness before citing.",
+      "covers_question_types": ["machine_reference", "repair"]
+    },
+    {
+      "category": "tournament_and_play",
+      "name": "Scorbit",
+      "url": "https://scorbit.io",
+      "description": "Connected pinball platform with open SDK and Achievement API. Provides score tracking and achievements as an alternative to Stern Insider Connected. Open platform with GitHub SDK (scorbit-io organization).",
+      "covers_question_types": ["tournament", "competitive"]
+    },
+    {
+      "category": "podcasts",
+      "name": "Silverball Chronicles",
+      "url": "https://silverballchronicles.com",
+      "description": "History-focused pinball podcast hosted by David Dennis and Ron Hallett. Deep-dive episodes on specific machines, companies, and designers with extensive research.",
+      "covers_question_types": ["general", "news"]
+    },
+    {
+      "category": "podcasts",
+      "name": "Special When Lit",
+      "url": "https://specialwhenlitpodcast.com",
+      "description": "Long-running industry podcast covering pinball news, interviews, and community topics. Patreon-supported; episode archive available on the website.",
+      "covers_question_types": ["general", "news"]
+    },
+    {
+      "category": "tutorials",
+      "name": "PAPApinball",
+      "url": "https://youtube.com/@PAPApinball",
+      "description": "The definitive per-game rule walkthrough library. Hundreds of tutorial videos covering mode objectives, scoring strategy, and wizard-mode paths — produced by PAPA and Bowen Kerins. The canonical video reference for rules and strategy questions.",
+      "covers_question_types": ["rules", "strategy"]
+    },
+    {
+      "category": "tutorials",
+      "name": "Abe Flips",
+      "url": "https://abeflips.com",
+      "description": "Gold standard for physical technique instruction — micro flips, nudging, Rosa Shimmy, and detailed mechanical skill guides by Abraham Siedler. Also produced the 'Mastering Pinball' documentary film.",
+      "covers_question_types": ["strategy", "general"]
+    },
+    {
+      "category": "news_and_culture",
+      "name": "Pinball Magazine",
+      "url": "https://pinball-magazine.com",
+      "description": "In-depth long-form pinball journalism by Jonathan Joosten. Non-periodic issues covering designer retrospectives, manufacturer histories, and the competitive scene. Paired with the PINcast podcast.",
+      "covers_question_types": ["news", "general"]
     }
   ]
 }
+

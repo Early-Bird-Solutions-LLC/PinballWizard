@@ -86,6 +86,16 @@ public sealed class OpdbMachineDto
     /// <summary>Last update timestamp.</summary>
     [JsonPropertyName("updated_at")]
     public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// IPDB numeric machine ID — present when OPDB has matched this machine to
+    /// the Internet Pinball Machine Database. Used to compute
+    /// <c>ipdbReferenceUrl</c> on the <see cref="PinballWizard.Core.Domain.Machine"/>
+    /// Cosmos record. Null for machines with no IPDB entry (rare; mostly
+    /// non-English-market or unlicensed titles).
+    /// </summary>
+    [JsonPropertyName("ipdb_id")]
+    public int? IpdbId { get; init; }
 }
 
 /// <summary>
