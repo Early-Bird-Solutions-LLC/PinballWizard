@@ -1371,7 +1371,19 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            var article = await tiltForumsClient.FetchRulesheetAsync(listing, cancellationToken);
+            PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
+            try
+            {
+                article = await tiltForumsClient.FetchRulesheetAsync(listing, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Console.Error.WriteLine(
+                    $"  Tilt Forums: fetch failed for '{listing.GameTitle}' ({listing.TopicUrl}): {ex.Message}");
+                tiltForumsFailed++;
+                continue;
+            }
+
             if (article is null)
             {
                 tiltForumsSkippedNoContent++;

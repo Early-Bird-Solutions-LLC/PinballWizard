@@ -325,6 +325,70 @@ public sealed class TiltForumsRulesheetsClientTests
         Assert.Null(article.PublishedAt);
     }
 
+    [Fact]
+    public async Task FetchRulesheetAsync_EmptyBodyText_ReturnsNull()
+    {
+        // #post_1 .post exists but has no element children with non-whitespace
+        // text — ExtractBodyText yields "", which must degrade to null rather
+        // than indexing an empty rulesheet.
+        const string html = """
+            <html><body>
+            <div id='post_1' class='topic-body crawler-post'>
+              <div class='crawler-post-meta'>
+                <span class="creator" itemprop="author"><span itemprop='name'>SomeUser</span></span>
+              </div>
+              <div class='post' itemprop='text'>
+                <p>   </p>
+              </div>
+            </div>
+            </body></html>
+            """;
+
+        var (client, _, _) = BuildClient(h => h.MapHtml(TransformersListing().TopicUrl, html));
+
+        var article = await client.FetchRulesheetAsync(TransformersListing(), CancellationToken.None);
+
+        Assert.Null(article);
+    }
+
+    [Fact]
+    public async Task DiscoverSubcategoryTopicUrlsAsync_DuplicateUrlAcrossPages_DedupedAndStopsPagination()
+    {
+        // Page 1 repeats a URL already seen on page 0. newCount == 0 for page 1
+        // must stop pagination via the dedup path (HashSet.Add returns false),
+        // not the empty-page path (this page is NOT empty — it has one <a>).
+        const string page0 = """
+            <html><body>
+            <table class='topic-list'><tbody>
+            <tr class="topic-list-item"><td class="main-link">
+              <a itemprop='url' href='https://tiltforums.com/t/godzilla-rulesheet/1' class='title raw-link raw-topic-link'>Godzilla Rulesheet</a>
+            </td></tr>
+            </tbody></table>
+            </body></html>
+            """;
+        const string page1Duplicate = """
+            <html><body>
+            <table class='topic-list'><tbody>
+            <tr class="topic-list-item"><td class="main-link">
+              <a itemprop='url' href='https://tiltforums.com/t/godzilla-rulesheet/1' class='title raw-link raw-topic-link'>Godzilla Rulesheet</a>
+            </td></tr>
+            </tbody></table>
+            </body></html>
+            """;
+
+        var (client, _, handler) = BuildClient(h => h
+            .MapHtml($"{BaseUrl}/c/game-specific/rulesheet-wikis/18", page0)
+            .MapHtml($"{BaseUrl}/c/game-specific/rulesheet-wikis/18?page=1", page1Duplicate));
+
+        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+
+        Assert.Single(urls);
+        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
+        // Both pages were fetched (dedup happens after fetch, not before) —
+        // page 2 was never requested since page 1 yielded 0 NEW urls.
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
     private static (TiltForumsRulesheetsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)
     {
