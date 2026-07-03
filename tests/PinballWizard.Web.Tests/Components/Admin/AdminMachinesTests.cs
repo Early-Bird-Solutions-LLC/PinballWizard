@@ -53,7 +53,8 @@ public sealed class AdminMachinesTests : AsyncBunitContext
                 DocCount:      0,
                 DocTypeCounts: new Dictionary<string, int>(),
                 HasManual:     false),
-        ]);
+        ])
+        { ManufacturerDisplayName = "Stern Pinball" };
 
     private static readonly ManufacturerCatalogStats FakeJjp = new(
         Manufacturer: "jjp",
@@ -80,7 +81,8 @@ public sealed class AdminMachinesTests : AsyncBunitContext
                 DocCount:      1,
                 DocTypeCounts: new Dictionary<string, int> { ["Manual"] = 1 },
                 HasManual:     true),
-        ]);
+        ])
+        { ManufacturerDisplayName = "Jersey Jack Pinball" };
 
     private static async IAsyncEnumerable<ManufacturerCatalogStats> FakeStream(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
@@ -265,6 +267,83 @@ public sealed class AdminMachinesTests : AsyncBunitContext
 
         var adminLink = cut.Find("a[href='/admin']");
         Assert.NotNull(adminLink);
+    }
+
+    // ── Manufacturer detail link (issue #642) ───────────────────────────────────
+
+    [Fact]
+    public async Task AdminMachines_ManufacturerCell_LinksToManufacturerDetailPage()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Group by a non-manufacturer axis so the Manufacturer column renders as
+        // normal data cells (not folded into a group header).
+        await ClickAxisAsync(cut, "Year");
+
+        // Stern's rollup carries a display name → its cell links to the public
+        // manufacturer detail page with the display text (not the raw key).
+        var link = cut.Find("a[href='/manufacturers/stern']");
+        Assert.Contains("Stern Pinball", link.TextContent, StringComparison.Ordinal);
+    }
+}
+
+// Separate context: a pre-backfill rollup that carries the manufacturer KEY but
+// no display name. The manufacturer cell must degrade to plain key text with NO
+// detail link (Invariant #17 — never an empty/blank link), until a rebuild
+// backfills ManufacturerDisplayName.
+public sealed class AdminMachinesNullDisplayNameTests : AsyncBunitContext
+{
+    private static readonly DateTimeOffset FakeAsOf = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private static readonly ManufacturerCatalogStats FakeNoDisplay = new(
+        Manufacturer: "williams",
+        AsOfUtc: FakeAsOf,
+        Machines:
+        [
+            new MachineDocStats(
+                MachineId:     "mch_williams_mm",
+                Title:         "Medieval Madness",
+                EditionLabel:  null,
+                GroupId:       null,
+                Year:          1997,
+                IsOpdbOnly:    true,
+                DocCount:      0,
+                DocTypeCounts: new Dictionary<string, int>(),
+                HasManual:     false),
+        ]);   // ManufacturerDisplayName intentionally unset (null) — pre-backfill state
+
+    private static async IAsyncEnumerable<ManufacturerCatalogStats> Stream(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        yield return FakeNoDisplay;
+    }
+
+    public AdminMachinesNullDisplayNameTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var repo = Substitute.For<ICatalogStatsReadRepository>();
+        repo.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(ci => Stream(ci.Arg<CancellationToken>()));
+        Services.AddSingleton(repo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task AdminMachines_NullDisplayName_DegradesToKeyTextWithNoLink()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // No detail link is rendered when the rollup lacks a display name.
+        Assert.Empty(cut.FindAll("a[href='/manufacturers/williams']"));
+        // The key still renders as text so the column is never blank.
+        Assert.Contains("williams", cut.Markup, StringComparison.Ordinal);
     }
 }
 

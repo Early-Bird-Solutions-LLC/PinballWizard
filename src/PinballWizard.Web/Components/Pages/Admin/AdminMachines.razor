@@ -112,8 +112,24 @@
                             Title="Manufacturer"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
+                <CellTemplate>
+                    @* Link to the public manufacturer detail page. ManufacturerLink needs a
+                     * display name; pre-backfill rollup docs may lack one, so degrade to the
+                     * plain key text rather than render an empty link (Invariant #17). *@
+                    @if (!string.IsNullOrWhiteSpace(context.Item.ManufacturerDisplayName))
+                    {
+                        <ManufacturerLink ManufacturerKey="@context.Item.Manufacturer"
+                                          DisplayName="@(context.Item.ManufacturerDisplayName!)" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.Item.Manufacturer</MudText>
+                    }
+                </CellTemplate>
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @context.Grouping.Key</MudText>
+                    @* Prefer the group's display name (shared by every row in the group); fall
+                     * back to the partition key on pre-backfill data. *@
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())</MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.HealthLabel"
@@ -205,6 +221,7 @@
     private sealed record MachineCatalogRow(
         string MachineId,
         string Manufacturer,
+        string? ManufacturerDisplayName,
         string Title,
         string Edition,
         string YearLabel,       // string so it groups as "2024" not int bucket
@@ -267,6 +284,7 @@
                     rows.Add(new MachineCatalogRow(
                         MachineId:   machine.MachineId,
                         Manufacturer: mfr.Manufacturer,
+                        ManufacturerDisplayName: mfr.ManufacturerDisplayName,
                         Title:       machine.Title,
                         Edition:     machine.EditionLabel ?? string.Empty,
                         YearLabel:   machine.Year?.ToString() ?? "Unknown",

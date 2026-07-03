@@ -82,7 +82,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
 
         // Act
-        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
+        var (entry, _) = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         // Assert
         Assert.Equal(MachineId, entry.MachineId);
@@ -176,7 +176,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
         var change = MakeChange(MachineId, Manufacturer, null);
 
-        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
+        var (entry, _) = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         Assert.Equal(MachineId, entry.MachineId);
         Assert.Equal(0, entry.DocCount);
@@ -226,7 +226,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var sut = CreateSut();
 
         // Act
-        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
+        var (entry, displayName) = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         // Assert — title and identity fields populated from machine record
         Assert.Equal("Godzilla", entry.Title);  // machine.Title beats last-scraped-doc title
@@ -234,6 +234,7 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         Assert.Equal("Pro",   entry.EditionLabel);
         Assert.Equal("GweeP", entry.GroupId);
         Assert.False(entry.IsOpdbOnly); // ManufacturerSlugs is non-empty
+        Assert.Equal("Stern Pinball", displayName); // surfaced for the manufacturer-level rollup
     }
 
     // -------------------------------------------------------------------------
@@ -259,12 +260,13 @@ public sealed class CatalogStatsChangeFeedHandlerTests
         var change = MakeChange(MachineId, Manufacturer, null);
         var sut = CreateSut();
 
-        var entry = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
+        var (entry, displayName) = await sut.ComputeMachineEntryAsync(change, Manufacturer, CancellationToken.None);
 
         Assert.Null(entry.Year);
         Assert.Null(entry.EditionLabel);
         Assert.Null(entry.GroupId);
         Assert.False(entry.IsOpdbOnly);
+        Assert.Null(displayName); // machine not found → no display name to surface
     }
 
     // -------------------------------------------------------------------------

@@ -74,7 +74,19 @@ else
                     @context.Item.GameTitle@(context.Item.Edition is not null ? $" {context.Item.Edition}" : "")
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer" />
+            <TemplateColumn Title="Manufacturer" SortBy="@(new Func<DocumentListItem, object>(x => x.Manufacturer))">
+                <CellTemplate>
+                    @if (!string.IsNullOrWhiteSpace(context.Item.ManufacturerKey))
+                    {
+                        <ManufacturerLink ManufacturerKey="@(context.Item.ManufacturerKey!)"
+                                          DisplayName="@context.Item.Manufacturer" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.Item.Manufacturer</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
             <PropertyColumn Property="x => x.FileFormat" Title="Format" />
             <PropertyColumn Property="x => x.PageCount" Title="Pages" />
             <TemplateColumn Title="Discovered">
