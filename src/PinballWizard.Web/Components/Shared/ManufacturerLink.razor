@@ -1,0 +1,13 @@
+@namespace PinballWizard.Web.Components.Shared
+
+@* ManufacturerLink — the single owner of the /manufacturers/{key} URL shape.
+ * Every call-site that shows a manufacturer name links through this component so
+ * the route contract lives in one place (ADR-0046 shared-component doctrine). *@
+
+<MudLink Href="@($"/manufacturers/{ManufacturerKey}")" Typo="@Typo" data-testid="manufacturer-link">@DisplayName</MudLink>
+
+@code {
+    [Parameter, EditorRequired] public string ManufacturerKey { get; set; } = default!;
+    [Parameter, EditorRequired] public string DisplayName { get; set; } = default!;
+    [Parameter] public Typo Typo { get; set; } = Typo.body2;
+}
