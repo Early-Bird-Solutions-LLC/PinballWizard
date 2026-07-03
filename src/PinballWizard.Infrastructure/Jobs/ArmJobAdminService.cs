@@ -206,6 +206,60 @@ internal sealed class ArmJobAdminService : IJobAdminService
         }
     }
 
+    public async Task<JobExecution?> GetExecutionAsync(
+        string jobName, string executionName, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(executionName);
+        try
+        {
+            var rg = await GetResourceGroupAsync(cancellationToken).ConfigureAwait(false);
+
+            ContainerAppJobResource job;
+            try
+            {
+                var response = await rg.GetContainerAppJobAsync(jobName, cancellationToken).ConfigureAwait(false);
+                job = response.Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                throw new ArmJobAdminException($"Job '{jobName}' not found.", ex, isNotFound: true);
+            }
+
+            await foreach (var exec in job.GetContainerAppJobExecutions()
+                .GetAllAsync(filter: null, cancellationToken).ConfigureAwait(false))
+            {
+                if (string.Equals(exec.Data.Name, executionName, StringComparison.Ordinal))
+                {
+                    return new JobExecution(
+                        ExecutionName: exec.Data.Name,
+                        Status:        exec.Data.Status?.ToString() ?? "Unknown",
+                        StartOn:       exec.Data.StartOn,
+                        EndOn:         exec.Data.EndOn);
+                }
+            }
+
+            return null; // execution not found (visible not-found state on the page)
+        }
+        catch (ArmJobAdminException)
+        {
+            throw;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex,
+                "ARM request failed getting execution {Execution} of job {JobName}: {Status} {Code}.",
+                executionName, jobName, ex.Status, ex.ErrorCode);
+            throw new ArmJobAdminException(
+                $"Could not get execution '{executionName}': {ex.ErrorCode ?? ex.Message} (HTTP {ex.Status})", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Unexpected error getting execution {Execution} of job {JobName}.", executionName, jobName);
+            throw new ArmJobAdminException($"Unexpected error getting execution '{executionName}'.", ex);
+        }
+    }
+
     private Task<ResourceGroupResource> GetResourceGroupAsync(CancellationToken cancellationToken)
     {
         // Construct the resource group reference from its known ID without making a GET call.
