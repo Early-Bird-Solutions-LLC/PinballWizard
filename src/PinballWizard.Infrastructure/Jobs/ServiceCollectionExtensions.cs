@@ -1,9 +1,12 @@
 using Azure.Core;
 using Azure.ResourceManager;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Jobs;
+using PinballWizard.Infrastructure.Monitoring;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 
 namespace PinballWizard.Infrastructure.Jobs;
@@ -52,6 +55,22 @@ public static class ServiceCollectionExtensions
         });
 
         return true;
+    }
+
+    // Registers IJobLogReader (Log-Analytics-backed). Self-gates: when
+    // Monitoring:LogAnalyticsWorkspaceId is empty the reader returns Unconfigured
+    // without touching the wire, so this is safe to call unconditionally.
+    public static IServiceCollection AddJobLogReader(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // Idempotent: AddMonitoringStatsRead also binds this section.
+        services.AddOptions<MonitoringOptions>()
+            .Bind(configuration.GetSection(MonitoringOptions.SectionName));
+        services.TryAddSingleton<IJobLogReader, LogAnalyticsJobLogReader>();
+        return services;
     }
 
     // Parse SubscriptionId and ResourceGroup from a Cosmos ARM resource ID.
