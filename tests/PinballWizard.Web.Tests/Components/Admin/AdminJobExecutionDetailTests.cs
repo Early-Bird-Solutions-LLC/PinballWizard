@@ -137,10 +137,10 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         var input = cut.Find("[data-testid='exec-log-search'] input");
         await cut.InvokeAsync(() => input.Input("Godzilla"));
 
-        // Debounced server re-query fires within a few hundred ms.
+        // Debounced server re-query fires within a few hundred ms; budget is reset to 1000.
         await cut.WaitForAssertionAsync(() =>
             _logs.Received().GetExecutionLogsAsync(Job, Exec, Arg.Any<DateTimeOffset?>(),
-                Arg.Any<DateTimeOffset?>(), Arg.Any<int>(), "Godzilla", Arg.Any<CancellationToken>()),
+                Arg.Any<DateTimeOffset?>(), 1000, "Godzilla", Arg.Any<CancellationToken>()),
             TimeSpan.FromSeconds(3));
     }
 

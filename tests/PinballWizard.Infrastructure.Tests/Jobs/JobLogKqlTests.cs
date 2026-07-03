@@ -53,12 +53,23 @@ public sealed class JobLogKqlTests
         var kql = JobLogKql.BuildExecutionLogsQuery(
             raw,
             System.DateTimeOffset.UnixEpoch, System.DateTimeOffset.UnixEpoch.AddMinutes(5), 1000);
-        // The scrubbed name is in both ContainerGroupName_s comparisons.
-        Assert.Contains($"ContainerGroupName_s == '{scrubbed}'", kql, System.StringComparison.Ordinal);
-        Assert.Contains($"ContainerGroupName_s startswith '{scrubbed}-'", kql, System.StringComparison.Ordinal);
+        // The scrubbed name is in both ContainerGroupName_s comparisons (verbatim literals).
+        Assert.Contains($"ContainerGroupName_s == @'{scrubbed}'", kql, System.StringComparison.Ordinal);
+        Assert.Contains($"ContainerGroupName_s startswith @'{scrubbed}-'", kql, System.StringComparison.Ordinal);
         // The raw name (with embedded CR/LF) must NOT appear anywhere in the output.
         Assert.DoesNotContain(raw, kql, System.StringComparison.Ordinal);
         Assert.DoesNotContain("\r", kql, System.StringComparison.Ordinal); // CR never appears in KQL
+    }
+
+    [Fact]
+    public void ExecutionName_SingleQuote_IsDoubledInVerbatimLiteral()
+    {
+        // executionName is escaped via KqlLiteral → verbatim literal (@'…'); single quotes
+        // inside the name are doubled so they can't break out of the literal (OBS-03 fix).
+        var kql = JobLogKql.BuildExecutionLogsQuery(
+            "evil'name",
+            System.DateTimeOffset.UnixEpoch, System.DateTimeOffset.UnixEpoch.AddMinutes(5), 1000);
+        Assert.Contains("@'evil''name'", kql, System.StringComparison.Ordinal);
     }
 
     [Fact]
