@@ -27,4 +27,8 @@ public interface IJobAdminService
     // On ARM failure, throws ArmJobAdminException.
     // Throws ArmJobAdminException { IsNotFound = true } when jobName is not found.
     Task<JobDetail> GetJobDetailAsync(string jobName, int count, CancellationToken cancellationToken);
+
+    // Return a single execution by name (status + start/end window), or null
+    // when the execution is not found. On ARM failure, throws ArmJobAdminException.
+    Task<JobExecution?> GetExecutionAsync(string jobName, string executionName, CancellationToken cancellationToken);
 }

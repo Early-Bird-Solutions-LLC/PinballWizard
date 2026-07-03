@@ -125,7 +125,10 @@
                 <TemplateColumn Title="Execution">
                     <CellTemplate>
                         <MudTooltip Text="@context.Item.ExecutionName">
-                            <code>@AbbreviateExecutionName(context.Item.ExecutionName)</code>
+                            <MudLink Href="@($"/admin/jobs/{JobName}/executions/{context.Item.ExecutionName}")"
+                                     data-testid="execution-link">
+                                <code>@AbbreviateExecutionName(context.Item.ExecutionName)</code>
+                            </MudLink>
                         </MudTooltip>
                     </CellTemplate>
                 </TemplateColumn>

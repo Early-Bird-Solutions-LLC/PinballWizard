@@ -317,6 +317,7 @@ builder.AddWebCosmosPersistence();
 // (no Foundry, no ValidateOnStart; degrades visibly if AI Search is unconfigured).
 builder.Services.AddRagCorpusStatsRead(builder.Configuration);
 builder.Services.AddMonitoringStatsRead(builder.Configuration);
+builder.Services.AddJobLogReader(builder.Configuration);
 
 // ACA Jobs admin service for /admin/jobs — gated on Cosmos:AccountResourceId
 // being set (subscription + resource group are parsed from it), which is only
