@@ -390,6 +390,7 @@ public sealed class ScraperOrchestrator
         ["barrelsoffun"] = "Barrels of Fun",
         ["cgc"] = "Chicago Gaming",
         ["multimorphic"] = "Multimorphic",
+        ["pb_freshdesk"] = "Pinball Brothers Freshdesk Documents",
         // OPDB is special-cased: it doesn't yield ScrapedItems via ISourceScraper —
         // it writes directly to IMachineRepository via IOpdbSyncService. The CLI's
         // --source opdb branch dispatches to the sync service before ScrapeAsync is

@@ -46,6 +46,7 @@ using PinballWizard.Infrastructure.Scraping.BarrelsOfFun;
 using PinballWizard.Infrastructure.Scraping.ChicagoGaming;
 using PinballWizard.Infrastructure.Scraping.Multimorphic;
 using PinballWizard.Infrastructure.Scraping.PinballBrothers;
+using PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk;
 using PinballWizard.Infrastructure.Scraping.Polite;
 using PinballWizard.Infrastructure.Scraping.Spooky;
 using PinballWizard.Infrastructure.Scraping.Stern;
@@ -1676,6 +1677,7 @@ static IHost CreateHost(string[] args)
     // discovers games via the WP REST API and identifies them by the
     // `-pinball` slug suffix on top-level pages).
     builder.Services.AddPinballBrothersScraping(builder.Configuration);
+    builder.Services.AddPinballBrothersFreshdeskScraping(builder.Configuration);
 
     // Barrels of Fun scraper (Phase 1.3 — WooCommerce on shop.kollectfun.com,
     // discovers machines via the /product-category/machines/ category page
