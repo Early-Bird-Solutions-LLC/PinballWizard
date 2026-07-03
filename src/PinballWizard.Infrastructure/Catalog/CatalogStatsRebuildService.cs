@@ -136,12 +136,19 @@ internal sealed class CatalogStatsRebuildService : ICatalogStatsRebuildService
             {
                 record = new CatalogStatsCosmosRecord
                 {
-                    Id           = manufacturer,
-                    PartitionKey = manufacturer,
-                    AsOfUtc      = asOf,
-                    Machines     = [],
+                    Id                      = manufacturer,
+                    PartitionKey            = manufacturer,
+                    ManufacturerDisplayName = machine.ManufacturerDisplayName,
+                    AsOfUtc                 = asOf,
+                    Machines                = [],
                 };
                 byManufacturer[manufacturer] = record;
+            }
+            else
+            {
+                // All machines in a partition share the display name; fill it if a
+                // prior machine in this group lacked one (defensive — normally set above).
+                record.ManufacturerDisplayName ??= machine.ManufacturerDisplayName;
             }
 
             var docCount  = typeCounts.Values.Sum();
