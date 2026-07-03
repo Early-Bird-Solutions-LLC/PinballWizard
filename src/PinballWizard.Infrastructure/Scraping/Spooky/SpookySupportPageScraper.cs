@@ -11,34 +11,30 @@ namespace PinballWizard.Infrastructure.Scraping.Spooky;
 /// <summary>
 /// Spooky Pinball support-page scraper. Discovers per-game PDF documents
 /// (rule sheets, manuals, coil/switch charts, board-layout diagrams) from
-/// Spooky's game-support sub-pages via the WordPress REST API.
+/// Spooky's game-support sub-pages and hub page via the WordPress REST API
+/// and direct HTML fetch.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Spooky publishes a "Game Support" hub at /game-support/ (WP page id
-/// configured via <see cref="SpookyOptions.GameSupportParentPageId"/>).
-/// Child pages of that hub host wp-content/uploads PDFs for each game
-/// (e.g. /game-support/hwn-um-manual/ contains switch-positions, coil,
-/// and board-layout PDFs for Halloween and Ultraman).
+/// Two complementary discovery paths run on every scrape:
 /// </para>
+/// <list type="number">
+///   <item><description>
+///     <b>WP REST child-page path</b>: fetches all child pages of the Game Support
+///     hub (parent=<see cref="SpookyOptions.GameSupportParentPageId"/>) via the
+///     WP REST API. Covers Halloween, Ultraman, and any future WP sub-pages.
+///   </description></item>
+///   <item><description>
+///     <b>Hub page direct path</b>: fetches <see cref="SpookyOptions.GameSupportHubPath"/>
+///     as raw HTML and extracts PDF links from it. Covers Rick and Morty, ACNC,
+///     Scooby-Doo, Texas Chainsaw Massacre, Looney Tunes, Evil Dead, Beetlejuice,
+///     and future titles that Spooky now embeds directly on the hub page rather
+///     than creating new WP child pages (pattern observed 2026-07).
+///   </description></item>
+/// </list>
 /// <para>
-/// Discovery strategy: WP REST <c>/wp-json/wp/v2/pages?parent=&lt;id&gt;</c>
-/// returns all sub-pages of the Game Support hub as structured JSON —
-/// machine-consumer-metadata-first per the locked project invariant.
-/// Each sub-page's <c>content.rendered</c> field is parsed by
-/// <see cref="SpookySupportPageExtractor"/> to extract PDF anchor hrefs.
-/// </para>
-/// <para>
-/// Politeness: inherits <see cref="PoliteScraperBase"/>; every request
-/// flows through <see cref="IPolitenessGate"/>; Crawl-delay: 10 per
-/// robots.txt (verified 2026-06-25).  No bare <c>HttpClient.GetAsync</c>
-/// anywhere in this class.
-/// </para>
-/// <para>
-/// Provenance: every <see cref="ScrapedItem"/> carries full attribution —
-/// <c>DiscoveryUrl</c>, <c>DiscoveryContext</c>, <c>SourceType</c>,
-/// and a <see cref="DiscoveredLink"/> with <c>FileUrl</c>, <c>LinkText</c>,
-/// and <c>GameSlug</c>.
+/// Both paths use <see cref="PoliteScraperBase"/> for all HTTP; deduplication
+/// is handled by the Cosmos upsert (same PDF URL → same DocumentId).
 /// </para>
 /// </remarks>
 public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
@@ -76,6 +72,7 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
         Logger.LogInformation("Spooky support-page scraper starting (parent page id={ParentId})",
             _options.GameSupportParentPageId);
 
+        // --- Path 1: WP REST child-page discovery ---
         List<SpookyPageRaw> supportPages;
         try
         {
@@ -119,6 +116,51 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
             }
         }
 
+        // --- Path 2: Hub page direct HTML fetch ---
+        // Spooky now embeds PDF links for newer titles directly on the hub page
+        // rather than creating WP child pages (observed 2026-07). This pass
+        // catches Rick & Morty, ACNC, Scooby-Doo, Texas Chainsaw, Looney Tunes,
+        // Evil Dead, Beetlejuice, and any future titles added the same way.
+        if (cancellationToken.IsCancellationRequested) yield break;
+
+        var hubUrl = new Uri(new Uri(_options.BaseUrl), _options.GameSupportHubPath);
+        List<DiscoveredLink> hubLinks;
+        try
+        {
+            hubLinks = await ScrapeHubPageAsync(hubUrl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PolitenessException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Spooky support-page: hub-page HTML fetch failed ({Url}); hub-page PDFs skipped for this run.",
+                hubUrl);
+            hubLinks = [];
+        }
+
+        Logger.LogInformation(
+            "Spooky support-page: {Count} PDF link(s) found on hub page {Url}",
+            hubLinks.Count, hubUrl);
+
+        foreach (var link in hubLinks)
+        {
+            if (cancellationToken.IsCancellationRequested) yield break;
+            yield return new ScrapedItem
+            {
+                Link = link,
+                SourceType = SourceType.SpookyPinballSupportPage,
+                DiscoveryUrl = hubUrl.ToString(),
+                DiscoveryContext = "Spooky Pinball Game Support Hub",
+            };
+        }
+
         Logger.LogInformation("Spooky support-page scraper complete");
     }
 
@@ -135,6 +177,20 @@ public sealed class SpookySupportPageScraper : PoliteScraperBase, ISourceScraper
 
         Logger.LogInformation("Spooky support-page: {Count} WP child pages retrieved", pages.Count);
         return pages;
+    }
+
+    /// <summary>
+    /// Fetches the Game Support hub page as raw HTML and extracts PDF links
+    /// directly from it. Spooky's newer-title manuals (2022+) are embedded
+    /// directly on the hub rather than on WP child pages.
+    /// The game slug is inferred from the PDF filename using
+    /// <see cref="SpookySupportPageExtractor.DeriveSlugFromFilename"/>.
+    /// </summary>
+    private async Task<List<DiscoveredLink>> ScrapeHubPageAsync(Uri hubUrl, CancellationToken cancellationToken)
+    {
+        Logger.LogInformation("Spooky support-page: fetching hub-page HTML {Url}", hubUrl);
+        var html = await GetStringPolitelyAsync(_httpClient, hubUrl, cancellationToken).ConfigureAwait(false);
+        return SpookySupportPageExtractor.ExtractHubPagePdfLinks(html, hubUrl.ToString());
     }
 
     private List<DiscoveredLink> TryExtractLinks(SpookyPageRaw page)
