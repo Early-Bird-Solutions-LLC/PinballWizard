@@ -1,0 +1,308 @@
+@page "/admin/jobs/{JobName}/executions/{ExecutionName}"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
+@using Microsoft.JSInterop
+@using PinballWizard.Application.Jobs
+@using PinballWizard.Web.Components.Shared
+@using PinballWizard.Web.Security
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@inherits AdminPageBase
+@implements IAsyncDisposable
+
+@* AdminJobExecutionDetail — /admin/jobs/{JobName}/executions/{ExecutionName}.
+ * Public run header (status/times/duration); admin-gated console-log panel.
+ * Logs come from Log Analytics via IJobLogReader; every non-happy state renders
+ * a distinct message (Invariant #17). Spec: 2026-07-02-admin-job-execution-log-detail. *@
+
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+@inject ILogger<AdminJobExecutionDetail> Logger
+@inject AdminActionGuard Guard
+
+<PageTitle>Run @AbbreviatedExec — Jobs — PinballWizard Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading execution details" />
+    }
+    else if (_notFound)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="exec-not-found">
+            Execution <code>@ExecutionName</code> was not found for job <code>@JobName</code>.
+            <MudLink Href="@($"/admin/jobs/{JobName}")" Class="ml-2">Back to job</MudLink>
+        </MudAlert>
+    }
+    else if (_loadFailed)
+    {
+        <AppErrorAlert data-testid="exec-load-failed">
+            Execution details could not be loaded from Azure. Refresh or check ARM connectivity.
+        </AppErrorAlert>
+    }
+    else if (_execution is not null)
+    {
+        <MudPaper Elevation="2" Class="pa-6 mb-6" data-testid="exec-header">
+            <MudText Typo="Typo.h5" GutterBottom="true">Run @AbbreviatedExec</MudText>
+            <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                <AppStatusChip Color="@JobStatusColor.For(_execution.Status)" data-testid="exec-status">
+                    @_execution.Status
+                </AppStatusChip>
+                <MudText Typo="Typo.body2">Started: @FormatLocalTime(_execution.StartOn)</MudText>
+                <MudText Typo="Typo.body2">Ended: @FormatLocalTime(_execution.EndOn)</MudText>
+                <MudText Typo="Typo.body2">Duration: @FormatDuration(_execution.StartOn, _execution.EndOn)</MudText>
+            </MudStack>
+        </MudPaper>
+
+        <MudText Typo="Typo.h6" Class="mb-3">Console Logs</MudText>
+
+        @if (!_isAdmin)
+        {
+            <MudAlert Severity="Severity.Info" data-testid="exec-log-signin">
+                Sign in as an admin to view this run's console logs.
+            </MudAlert>
+        }
+        else
+        {
+            @if (IsRunning)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-2" data-testid="exec-log-live">
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Live — may lag ~1–2 min (Log Analytics ingestion)
+                    </MudText>
+                </MudStack>
+            }
+            @if (_logResult is null || _logResult.Availability == JobLogAvailability.Unconfigured)
+            {
+                <MudAlert Severity="Severity.Info" data-testid="exec-log-unconfigured">
+                    Logs are available only against live Azure (Log Analytics workspace not configured).
+                </MudAlert>
+            }
+            else if (_logResult.Availability == JobLogAvailability.Failed)
+            {
+                <AppErrorAlert data-testid="exec-log-error">
+                    Logs could not be loaded from Log Analytics. Verify the app identity has the
+                    <em>Log Analytics Reader</em> role on the workspace, then refresh.
+                </AppErrorAlert>
+            }
+            else if (_logResult.Lines.Count == 0)
+            {
+                <AppEmptyState Heading="No console output captured for this run"
+                               Icon="@Icons.Material.Outlined.Terminal"
+                               data-testid="exec-log-empty" />
+            }
+            else
+            {
+                @if (_logResult.Truncated)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="exec-log-truncated">
+                        Showing the first @JobLogMaxLines lines — output was truncated.
+                    </MudAlert>
+                }
+                <div data-testid="exec-log-filter">
+                    <MudTextField @bind-Value="_filter" @bind-Value:after="StateHasChanged"
+                                  Placeholder="Filter lines…" Immediate="true"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                                  Class="mb-2" />
+                </div>
+                <MudPaper Elevation="0" Outlined="true" Class="pa-2" Style="font-family:monospace;overflow-x:auto"
+                          data-testid="exec-log-lines">
+                    @foreach (var line in VisibleLines)
+                    {
+                        <div>
+                            <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="mr-2">
+                                @FormatLocalTime(line.Timestamp)
+                            </MudText>
+                            <MudText Inline="true" Typo="Typo.body2" Color="@SeverityColor(line.Severity)">
+                                @line.Message
+                            </MudText>
+                        </div>
+                    }
+                </MudPaper>
+            }
+        }
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string JobName { get; set; } = "";
+    [Parameter] public string ExecutionName { get; set; } = "";
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private IJobAdminService? JobService => ServiceProvider.GetService<IJobAdminService>();
+    private IJobLogReader? LogReader => ServiceProvider.GetService<IJobLogReader>();
+
+    private JobExecution? _execution;
+    private JobLogResult? _logResult;
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _notFound;
+    private bool _isAdmin;
+    private TimeZoneInfo? _timeZoneInfo;
+
+    private string AbbreviatedExec
+    {
+        get
+        {
+            const string sep = "-";
+            var idx = ExecutionName.LastIndexOf(sep, StringComparison.Ordinal);
+            return idx >= 0 ? ExecutionName[(idx + sep.Length)..] : ExecutionName;
+        }
+    }
+
+    private List<BreadcrumbItem> Breadcrumbs =>
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
+        new BreadcrumbItem(JobName, href: $"/admin/jobs/{JobName}"),
+        new BreadcrumbItem(AbbreviatedExec, href: null, disabled: true),
+    ];
+
+    protected override async Task OnInitializedAsync() =>
+        _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await ResolveTimezoneAsync();
+        await LoadAsync();
+    }
+
+    private async Task ResolveTimezoneAsync()
+    {
+        try
+        {
+            var ianaId = await JS.InvokeAsync<string>("pinwiz.getTimezone");
+            if (!string.IsNullOrWhiteSpace(ianaId))
+                _timeZoneInfo = TimeZoneInfo.FindSystemTimeZoneById(ianaId);
+        }
+        catch (Exception ex) { Logger.LogDebug(ex, "Timezone resolve failed; using UTC."); }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (JobService is null)
+        {
+            _loadFailed = true; _loading = false; SafeStateHasChanged(); return;
+        }
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
+        try
+        {
+            _execution = await JobService.GetExecutionAsync(JobName, ExecutionName, cts.Token).ConfigureAwait(true);
+            if (_execution is null) { _notFound = true; return; }
+
+            // Only query logs for an authenticated admin — the gate is server-side,
+            // not just a hidden element (defense in depth).
+            if (_isAdmin && LogReader is not null)
+            {
+                _logResult = await LogReader.GetExecutionLogsAsync(
+                    JobName, ExecutionName, _execution.StartOn, _execution.EndOn,
+                    JobLogMaxLines, cts.Token).ConfigureAwait(true);
+                StartAutoRefreshIfRunning();
+            }
+        }
+        catch (ArmJobAdminException ex) when (ex.IsNotFound) { _notFound = true; }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed loading execution {Execution} of {JobName}.", Scrub(ExecutionName), Scrub(JobName));
+            _loadFailed = true;
+        }
+        finally { _loading = false; SafeStateHasChanged(); }
+    }
+
+    // Only genuinely-in-flight statuses poll. "Unknown" is treated as terminal so a
+    // stuck/never-run execution never auto-refreshes indefinitely.
+    private static readonly string[] NonTerminal = ["Running", "Processing"];
+    private bool IsRunning => _execution is not null
+        && NonTerminal.Contains(_execution.Status, StringComparer.OrdinalIgnoreCase);
+
+    private PeriodicTimer? _refreshTimer;
+    private Task? _refreshLoop;
+    private readonly CancellationTokenSource _refreshCts = new();
+
+    private void StartAutoRefreshIfRunning()
+    {
+        if (!_isAdmin || !IsRunning || _refreshTimer is not null) return;
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        _refreshLoop = RefreshLoopAsync(_refreshCts.Token);
+    }
+
+    private async Task RefreshLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _refreshTimer!.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                if (JobService is null || LogReader is null) break;
+                _execution = await JobService.GetExecutionAsync(JobName, ExecutionName, ct).ConfigureAwait(false)
+                    ?? _execution;
+                _logResult = await LogReader.GetExecutionLogsAsync(
+                    JobName, ExecutionName, _execution?.StartOn, _execution?.EndOn, JobLogMaxLines, ct)
+                    .ConfigureAwait(false);
+                await InvokeAsync(StateHasChanged).ConfigureAwait(false);
+                if (!IsRunning) break; // execution reached a terminal state — stop polling
+            }
+        }
+        catch (OperationCanceledException) { /* disposed / navigated away */ }
+        catch (ObjectDisposedException)
+        {
+            // Timer disposed mid-tick during navigation-away — expected, benign.
+            Logger.LogTrace("Auto-refresh loop stopped: timer disposed.");
+        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Auto-refresh loop stopped for {Execution}.", Scrub(ExecutionName)); }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _refreshCts.Cancel();
+        _refreshTimer?.Dispose();
+        if (_refreshLoop is not null)
+        {
+            try { await _refreshLoop.ConfigureAwait(false); } catch { /* already handled */ }
+        }
+        _refreshCts.Dispose();
+    }
+
+    private string _filter = "";
+
+    private IEnumerable<JobLogLine> VisibleLines =>
+        _logResult is null ? []
+        : string.IsNullOrWhiteSpace(_filter) ? _logResult.Lines
+        : _logResult.Lines.Where(l => l.Message.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    private const int JobLogMaxLines = 1000;
+
+    private string FormatLocalTime(DateTimeOffset? utc)
+    {
+        if (utc is null) return "—";
+        if (_timeZoneInfo is null) return utc.Value.UtcDateTime.ToString("MMM d, yyyy h:mm tt") + " UTC";
+        return TimeZoneInfo.ConvertTime(utc.Value, _timeZoneInfo).ToString("MMM d, yyyy h:mm tt zzz");
+    }
+
+    private static string FormatDuration(DateTimeOffset? s, DateTimeOffset? e)
+    {
+        if (s is null || e is null) return "—";
+        var d = e.Value - s.Value;
+        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}h {d.Minutes}m";
+        if (d.TotalMinutes >= 1) return $"{d.Minutes}m {d.Seconds}s";
+        return $"{d.Seconds}s";
+    }
+
+    private static Color SeverityColor(JobLogSeverity s) => s switch
+    {
+        JobLogSeverity.Error => Color.Error,
+        JobLogSeverity.Warning => Color.Warning,
+        _ => Color.Default,
+    };
+
+    // Strip CR/LF from route-derived names before logging (CWE-117).
+    private static string Scrub(string? value) =>
+        string.IsNullOrEmpty(value) ? "" : value.Replace("\r", "").Replace("\n", "");
+}

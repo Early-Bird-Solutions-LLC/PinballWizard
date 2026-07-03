@@ -448,6 +448,20 @@ html, body {
     font-family: var(--pw-font-body);
 }
 
+/* ── Admin dashboard summary cards (AppSummaryCard) ───────────────────── */
+
+/* Every AppSummaryCard tile in a MudGrid row is the same height regardless of
+   whether it has a caption or its text wraps. MudGrid is display:flex with the
+   default align-items:stretch, so each grid cell already stretches to the
+   tallest sibling; giving the card height:100% makes it fill that cell.
+   .mud-card is already a flex column with .mud-card-content at flex-grow:1, so
+   the count/label area absorbs the extra height and the action row stays pinned
+   to the bottom — no per-card CSS needed. Global (not scoped) because the class
+   rides on the MudCard child component, which Blazor CSS isolation can't reach. */
+.admin-summary-card {
+    height: 100%;
+}
+
 /* ── CitationStrip delight surface (ADR-0026 § 4, § 6) ────────────────── */
 
 /* Freshness badge color variants — behavioral contract pinned by

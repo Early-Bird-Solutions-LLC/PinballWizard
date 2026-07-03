@@ -202,4 +202,25 @@ public sealed class AdminJobDetailTests : AsyncBunitContext
         cut.Find("[data-testid='job-detail-service-unavailable']");
         Assert.Empty(cut.FindAll("[data-testid='job-detail-header']"));
     }
+
+    // ── Execution row linking ─────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecutionRow_LinksToExecutionDetail()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new JobDetail("pinwiz-job-linker-buutj", "Linker", "0 2 * * *", "Schedule",
+                "Succeeded", "img:tag",
+                [new JobExecution("pinwiz-job-linker-buutj-29715960", "Succeeded",
+                    DateTimeOffset.UtcNow.AddMinutes(-3), DateTimeOffset.UtcNow)],
+                HasMore: false));
+
+        var cut = RenderPage(svc, "pinwiz-job-linker-buutj");
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var link = cut.Find("[data-testid='execution-link']");
+        Assert.Equal("/admin/jobs/pinwiz-job-linker-buutj/executions/pinwiz-job-linker-buutj-29715960",
+            link.GetAttribute("href"));
+    }
 }

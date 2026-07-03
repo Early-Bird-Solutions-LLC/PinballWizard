@@ -141,9 +141,20 @@
                     var isEmpty = sib.DocCount == 0;
                     <MudPaper Elevation="2" Class="pa-3">
                         <MudStack Spacing="1" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.subtitle2">
-                                @(sib.EditionLabel ?? sib.Title)
-                            </MudText>
+                            @* Lead with the machine Title — it is the sibling's true
+                               identity and is always distinct within a group. Showing
+                               EditionLabel alone collapsed distinct machines to
+                               identical cards whenever the label was a shared OPDB
+                               feature rather than a unique edition suffix (e.g. Gottlieb
+                               group G4xlK: Free Fall / Sky Star / Sky Dive all carry the
+                               "Add-a-ball" feature, so all three rendered "Add-a-ball").
+                               EditionLabel (Pro / Premium/LE for modern editions) is now
+                               a secondary caption. *@
+                            <MudText Typo="Typo.subtitle2" Align="Align.Center">@sib.Title</MudText>
+                            @if (!string.IsNullOrWhiteSpace(sib.EditionLabel))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@sib.EditionLabel</MudText>
+                            }
                             <AppStatusChip Color="@(isEmpty ? Color.Error : Color.Success)">
                                 @sib.DocCount doc@(sib.DocCount == 1 ? "" : "s")
                             </AppStatusChip>
