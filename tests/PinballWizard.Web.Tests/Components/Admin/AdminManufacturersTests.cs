@@ -79,7 +79,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task Populated_RendersRowWithNameStatusCountAndSourceLink()
+    public async Task Populated_RendersRowWithNameStatusCountAndManufacturerLink()
     {
         _machines.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(M("stern", "Stern Pinball"), M("stern", "Stern Pinball")));
@@ -93,7 +93,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         Assert.Contains("Stern Pinball", cells[0].TextContent, StringComparison.Ordinal);
         Assert.Contains("Enabled", cells[1].TextContent, StringComparison.Ordinal);
         Assert.Equal("2", cells[2].TextContent.Trim());
-        cut.Find("a[href='/admin/sources/stern']");
+        cut.Find("a[href='/manufacturers/stern']");   // now links to the detail page
     }
 
     [Fact]
@@ -160,10 +160,10 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task NoSourceForKey_PlainTextDisplayName_NoSourceLink()
+    public async Task NoSourceForKey_StillLinksToManufacturerDetail()
     {
         // Machine exists but no matching ingestion source → display name from machine,
-        // status "—", no source link (OPDB-only manufacturer).
+        // status "—", but manufacturer detail page link still renders (OPDB-only manufacturer).
         _machines.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(M("williams", "Williams")));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>())
@@ -174,7 +174,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
 
         var table = cut.Find("[data-testid='manufacturers-table']");
         Assert.Contains("Williams", table.TextContent, StringComparison.Ordinal);
-        Assert.Empty(cut.FindAll("a[href='/admin/sources/williams']"));
+        cut.Find("a[href='/manufacturers/williams']");   // detail page works for OPDB-only too
     }
 
     [Fact]
