@@ -66,14 +66,7 @@
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
                                 InitialDirection="SortDirection.Ascending">
                     <CellTemplate>
-                        @if (context.Item.HasSource)
-                        {
-                            <MudLink Href="@($"/admin/sources/{context.Item.Key}")">@context.Item.DisplayName</MudLink>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.body2">@context.Item.DisplayName</MudText>
-                        }
+                        <ManufacturerLink ManufacturerKey="@context.Item.Key" DisplayName="@context.Item.DisplayName" />
                     </CellTemplate>
                 </TemplateColumn>
                 <TemplateColumn Title="Status" Sortable="true"

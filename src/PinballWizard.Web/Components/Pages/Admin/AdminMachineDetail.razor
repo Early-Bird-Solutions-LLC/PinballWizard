@@ -107,7 +107,7 @@
                            data-testid="detail-health-chip">
                 @HealthLabel(_healthFlags)
             </AppStatusChip>
-            <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.ManufacturerDisplayName</MudText>
+            <ManufacturerLink ManufacturerKey="@_machine.PartitionKey" DisplayName="@_machine.ManufacturerDisplayName" />
             @if (_machine.Year.HasValue)
             {
                 <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.Year</MudText>
