@@ -1103,8 +1103,9 @@ public sealed class CosmosRawDocumentRepositoryTests
 
         var result = await _repository.GetAsync(docId, CancellationToken.None);
 
-        Assert.NotNull(result?.Game);
-        Assert.Equal("Medieval Madness", result!.Game!.Title);
+        Assert.NotNull(result);
+        Assert.NotNull(result.Game);
+        Assert.Equal("Medieval Madness", result.Game.Title);
         Assert.Equal("medieval-madness", result.Game.Slug);
         Assert.Equal("https://chicago-gaming.com/coinop/medieval-madness/", result.Game.GamePageUrl);
     }
