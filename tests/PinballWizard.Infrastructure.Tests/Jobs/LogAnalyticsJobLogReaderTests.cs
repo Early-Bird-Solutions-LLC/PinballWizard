@@ -20,7 +20,7 @@ public sealed class LogAnalyticsJobLogReaderTests
     {
         var result = await Reader(ws).GetExecutionLogsAsync(
             "pinwiz-job-linker-buutj", "pinwiz-job-linker-buutj-29715960",
-            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddMinutes(5), 1000, CancellationToken.None);
+            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddMinutes(5), 1000, null, CancellationToken.None);
         Assert.Equal(JobLogAvailability.Unconfigured, result.Availability);
     }
 
@@ -78,5 +78,20 @@ public sealed class LogAnalyticsJobLogReaderTests
         var r = LogAnalyticsJobLogReader.BuildResult([], maxLines: 1000);
         Assert.Equal(JobLogAvailability.Ok, r.Availability);
         Assert.Empty(r.Lines);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("  hi  ", "hi")]
+    public void NormalizeSearch_TrimsAndNullsEmpty(string? input, string? expected) =>
+        Assert.Equal(expected, LogAnalyticsJobLogReader.NormalizeSearch(input));
+
+    [Fact]
+    public void NormalizeSearch_CapsLengthAt200()
+    {
+        var result = LogAnalyticsJobLogReader.NormalizeSearch(new string('x', 500));
+        Assert.Equal(200, result!.Length);
     }
 }
