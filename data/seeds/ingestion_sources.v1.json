@@ -240,5 +240,71 @@
     "discoveryStatus": "Active",
     "discoveryNotes": "Colin Alsheimer / Kineticist granted explicit permission to index TWIP newsletter content per ADR-0043 (June 2026). robots.txt (verified 2026-06-26) allows all crawlers on /p/* paths. No API key required — content is publicly accessible.",
     "discoveryDate": "2026-06-26"
+  },
+  {
+    "id": "ipdb",
+    "displayName": "Internet Pinball Machine Database (IPDB)",
+    "scraperImplKey": "ipdb",
+    "baseUrl": "https://www.ipdb.org/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "sourceGroup": "IPDB",
+    "discoveryStatus": "NoScrape",
+    "discoveryNotes": "HTTP 403 Forbidden on all programmatic fetch attempts; robots.txt review pending. IPDB is registered as a link-to community resource (community_resources.v1.json) — the machine page URL pattern https://www.ipdb.org/machine.cgi?id={ipdb_id} is used as a provenance reference on Machine records (via ipdbReferenceUrl field) but no content is ingested. Terms of service review required before any scraping can be considered.",
+    "discoveryDate": "2026-07-03"
+  },
+  {
+    "id": "kineticist_downloads",
+    "displayName": "Kineticist — Pinball Files (API)",
+    "scraperImplKey": "kineticist_files_api",
+    "baseUrl": "https://api.kineticist.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "sourceGroup": "Kineticist",
+    "discoveryStatus": "UseApi",
+    "discoveryNotes": "ADR-0043 Tier A grants access to the Kineticist API 'files' endpoint (keyed by OPDB id) which already serves manuals/ROMs/schematics with signed download URLs. The /downloads/ web page is the same data as a human-readable listing — scraping the web page is the wrong approach. Correct path: use the API GET /games/{opdb_id}?include=files and follow the signed URL for each file. Requires KineticistOptions.ApiKey (Key Vault-backed). This covers Williams (231+ files), Bally (217+ files), and Data East (50+ files) manuals for which no manufacturer scraper exists. Authorization: explicit written permission from Colin Alsheimer 2026-06-25 (ADR-0043). Implementation gated on KineticistSyncService build-out under Tier A.",
+    "discoveryDate": "2026-07-03"
+  },
+  {
+    "id": "pbresource",
+    "displayName": "The Pinball Resource (PBResource)",
+    "scraperImplKey": "pbresource",
+    "baseUrl": "https://www.pbresource.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "sourceGroup": "PBResource",
+    "discoveryStatus": "NoScrape",
+    "discoveryNotes": "The Pinball Resource is the licensed rights holder for Gottlieb factory documentation. Their manuals section at pbresource.com/manuals.html is the canonical source for Gottlieb SS-era manuals. Content is commercially licensed — scraping is not permitted. Link-to posture only: cite pbresource.com/manuals.html as the reference for any Gottlieb manual question. Note: IPDB often enforces Gottlieb copyright more aggressively than for Williams/Bally — direct IPDB documentation links for Gottlieb games are frequently unavailable or broken.",
+    "discoveryDate": "2026-07-03"
+  },
+  {
+    "id": "planetary_pinball",
+    "displayName": "Planetary Pinball Supply",
+    "scraperImplKey": "planetary_pinball",
+    "baseUrl": "https://www.planetarypinball.com/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "sourceGroup": "Planetary Pinball",
+    "discoveryStatus": "NoScrape",
+    "discoveryNotes": "Planetary Pinball holds Williams/Bally/Midway IP for parts and documentation reprints. Their catalog includes Color Master Catalogs, game manuals with schematics (Bally 1969–1980, Williams 1966–1995), and parts catalogs. Commercial licensing — link-to only; no scraping permitted. Used as a reference citation for Williams/Bally era documentation questions alongside IPDB.",
+    "discoveryDate": "2026-07-03"
+  },
+  {
+    "id": "internet_archive_pinball",
+    "displayName": "Internet Archive (Pinball Manuals)",
+    "scraperImplKey": "internet_archive_pinball",
+    "baseUrl": "https://archive.org/",
+    "enabled": false,
+    "cadence": "none",
+    "politenessOverrides": null,
+    "sourceGroup": "Internet Archive",
+    "discoveryStatus": "KnownGap",
+    "discoveryNotes": "Quality assessment performed 2026-07-03 (samples: Victory 1987, Hollywood Heat 1986, Wild Life 1972). Findings: (1) PROSE QUALITY GOOD — setup/operation/adjustment prose sections are 90%+ char accuracy at 200-300 DPI; DjVuTXT files are freely downloadable and IA has already run Tesseract 5.3 — no re-OCR needed. (2) SCHEMATICS UNUSABLE — wiring diagram pages produce character garbage; must filter pages with word count < 30. (3) COVERAGE IS THIN — ~25 Gottlieb items total on IA, heavily skewed to EM era (pre-1977); SS gap (1977-1996, ~120 games) has only ~10-15 items. Not a complete solution. (4) IP RISK UNRESOLVED — PBResource claims factory documentation ownership for Gottlieb/Premier; whether community-scanned IA uploads are outside that claim is not established. DECISION: Leave Gottlieb as a documented known gap. Revisit only if IP clearance is confirmed and ROI justifies the effort. Correct consumption path if ever revisited: IA Search API + DjVuTXT (plain text) with page-word-count filter, not PDF/OCR. Search pattern: https://archive.org/advancedsearch.php?q=subject:gottlieb+AND+subject:pinball+AND+subject:manual&mediatype=texts",
+    "discoveryDate": "2026-07-03",
+    "qualityAssessmentDate": "2026-07-03"
   }
 ]
