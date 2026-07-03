@@ -43,14 +43,14 @@ public sealed class AdminLayoutTests : AsyncBunitContext
             }));
 
     [Fact]
-    public void AdminLayout_Renders_AllNineNavLinks()
+    public void AdminLayout_Renders_AllCoreNavLinks()
     {
         var cut = RenderWithBody();
 
-        // All nine admin nav destinations must be reachable as anchors.
+        // All ten admin nav destinations must be reachable as anchors.
         string[] hrefs =
         [
-            "/admin", "/admin/sources", "/admin/machines", "/admin/documents",
+            "/admin", "/admin/sources", "/admin/manufacturers", "/admin/machines", "/admin/documents",
             "/admin/document-triage", "/admin/link-overrides", "/admin/jobs",
             "/admin/monitoring", "/admin/settings",
         ];
