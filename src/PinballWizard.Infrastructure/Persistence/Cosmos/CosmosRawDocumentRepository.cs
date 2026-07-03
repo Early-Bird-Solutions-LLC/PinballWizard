@@ -81,6 +81,18 @@ internal sealed class CosmosRawDocumentRepository
                 existing.ContentHash = newHash;
             }
 
+            // Self-heal the denormalized manufacturer. The scraper is authoritative for
+            // it (a document_id is deterministic from its URL, so a record always comes
+            // from the same source), so a non-blank incoming value repairs a legacy null —
+            // the field was added in #564 and never backfilled onto the existing corpus,
+            // and this update path previously left it untouched, so re-scraping could not
+            // heal it — and refreshes a corrected label. A blank incoming value never
+            // nulls out a good stored one.
+            if (!string.IsNullOrWhiteSpace(record.Manufacturer))
+            {
+                existing.Manufacturer = record.Manufacturer;
+            }
+
             cosmos = existing;
             await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
             return new RawDocumentUpsertResult(MapToDomain(cosmos), UpsertOutcome.Updated);

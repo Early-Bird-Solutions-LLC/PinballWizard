@@ -180,6 +180,81 @@ public sealed class CosmosRawDocumentRepositoryTests
         Assert.Equal("ovr_1", result.Record.OverrideId);
     }
 
+    // ────────────────────────────────────────────────────────────────
+    // UpsertRawAsync — manufacturer denorm self-heal (update path)
+    //
+    // The `manufacturer` denorm field was introduced in #564 (Documents page)
+    // and never backfilled onto the pre-existing corpus, and the update path
+    // did not refresh it — so 100% of live documents had a null manufacturer
+    // and the Documents-page filter (LOWER(c.manufacturer) = @mfr) matched
+    // nothing. These pin the self-heal: the scraper-stamped incoming value
+    // repairs/refreshes the stored one, without ever nulling a good value.
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpsertRawAsync_ExistingDocument_NullManufacturer_BackfilledFromIncomingScraper()
+    {
+        const string docId = "doc_mfr_backfill";
+        var existing = MakeCosmosRecord(docId);
+        Assert.Null(existing.Manufacturer);   // premise: legacy record predates the denorm field
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        var incoming = MakeDocumentRecord(docId, manufacturer: "American Pinball");
+        await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.Equal("American Pinball", captured?.Manufacturer);
+    }
+
+    [Fact]
+    public async Task UpsertRawAsync_ExistingDocument_RefreshesManufacturerFromIncomingScraper()
+    {
+        // A document_id is deterministic from its URL, so it always comes from the same
+        // scraper; a corrected scraper label must propagate to the stored record.
+        const string docId = "doc_mfr_refresh";
+        var existing = MakeCosmosRecord(docId);
+        existing.Manufacturer = "Wrong Manufacturer";
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        var incoming = MakeDocumentRecord(docId, manufacturer: "American Pinball");
+        await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.Equal("American Pinball", captured?.Manufacturer);
+    }
+
+    [Fact]
+    public async Task UpsertRawAsync_ExistingDocument_BlankIncomingManufacturer_PreservesExisting()
+    {
+        // Defensive: an incoming record with no manufacturer must never null out a good
+        // stored value.
+        const string docId = "doc_mfr_preserve";
+        var existing = MakeCosmosRecord(docId);
+        existing.Manufacturer = "Stern";
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        var incoming = MakeDocumentRecord(docId, manufacturer: null);
+        await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.Equal("Stern", captured?.Manufacturer);
+    }
+
     [Fact]
     public async Task UpsertRawAsync_ExistingDocument_UpdatesLastCheckedAt()
     {
@@ -854,6 +929,36 @@ public sealed class CosmosRawDocumentRepositoryTests
     }
 
     // ────────────────────────────────────────────────────────────────
+    // StreamDocumentsAsync — Documents-page browse filter binding
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StreamDocumentsAsync_BindsGameManufacturerTypeFilters_WithExactManufacturerMatch()
+    {
+        // Documents the browse-filter contract: the manufacturer filter is an EXACT
+        // (case-insensitive) match on c.manufacturer. This is precisely why documents
+        // missing the denorm field are invisible to a manufacturer filter — the bug this
+        // work fixed by backfilling + self-healing that field.
+        QueryDefinition? captured = null;
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Do<QueryDefinition>(q => captured = q),
+                Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[]]));
+
+        await foreach (var _ in _repository.StreamDocumentsAsync(
+            game: "godzilla", manufacturer: "American Pinball", type: "Manual",
+            includeAdminFields: false, CancellationToken.None)) { }
+
+        Assert.NotNull(captured);
+        var p = captured!.GetQueryParameters();
+        Assert.Contains(p, x => x.Name == "@game" && (string)x.Value == "godzilla");
+        Assert.Contains(p, x => x.Name == "@manufacturer" && (string)x.Value == "American Pinball");
+        Assert.Contains(p, x => x.Name == "@type" && (string)x.Value == "Manual");
+        Assert.Contains("LOWER(c.manufacturer) = LOWER(@manufacturer)", captured.QueryText);
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // MapToDomain — null nested-object fallbacks (via GetAsync)
     // ────────────────────────────────────────────────────────────────
 
@@ -985,7 +1090,8 @@ public sealed class CosmosRawDocumentRepositoryTests
     private static DocumentRecord MakeDocumentRecord(
         string documentId = "doc_test",
         DownloadedFileInfo? file = null,
-        List<CrossReference>? crossReferences = null)
+        List<CrossReference>? crossReferences = null,
+        string? manufacturer = null)
     {
         return new DocumentRecord
         {
@@ -1007,6 +1113,7 @@ public sealed class CosmosRawDocumentRepositoryTests
                 FirstDiscoveredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             },
             CrossReferences = crossReferences ?? [],
+            Manufacturer = manufacturer,
         };
     }
 
