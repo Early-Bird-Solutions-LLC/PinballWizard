@@ -1083,6 +1083,44 @@ public sealed class CosmosRawDocumentRepositoryTests
         Assert.Contains("mch_bbb", result.LinkedMachineIds);
     }
 
+    // The scraper stamps every discovered document with the game-page it was
+    // found on (RawGameInfo), so the linker can trust that provenance instead
+    // of relying only on filename/cross-reference heuristics. MapToDomain must
+    // carry that field across — a prior gap here left the linker blind to it
+    // even though the admin UI reads game.slug directly for display.
+    [Fact]
+    public async Task GetAsync_WithGameReference_MapsToGame()
+    {
+        const string docId = "doc_game_ref";
+        var cosmosRecord = MakeCosmosRecord(docId, game: new RawGameInfo
+        {
+            Title = "Medieval Madness",
+            Slug = "medieval-madness",
+            Edition = null,
+            GamePageUrl = "https://chicago-gaming.com/coinop/medieval-madness/",
+        });
+        SetupGetByIdFound(docId, cosmosRecord);
+
+        var result = await _repository.GetAsync(docId, CancellationToken.None);
+
+        Assert.NotNull(result?.Game);
+        Assert.Equal("Medieval Madness", result!.Game!.Title);
+        Assert.Equal("medieval-madness", result.Game.Slug);
+        Assert.Equal("https://chicago-gaming.com/coinop/medieval-madness/", result.Game.GamePageUrl);
+    }
+
+    [Fact]
+    public async Task GetAsync_NullGame_MapsToNullGame()
+    {
+        const string docId = "doc_no_game";
+        var cosmosRecord = MakeCosmosRecord(docId);
+        SetupGetByIdFound(docId, cosmosRecord);
+
+        var result = await _repository.GetAsync(docId, CancellationToken.None);
+
+        Assert.Null(result?.Game);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // Helpers
     // ────────────────────────────────────────────────────────────────
@@ -1124,7 +1162,8 @@ public sealed class CosmosRawDocumentRepositoryTests
         List<string>? linkedMachineIds = null,
         string documentType = "Manual",
         string documentUrl = "https://example.com/file.pdf",
-        string? manufacturer = null)
+        string? manufacturer = null,
+        RawGameInfo? game = null)
     {
         return new RawDocumentCosmosRecord
         {
@@ -1136,6 +1175,7 @@ public sealed class CosmosRawDocumentRepositoryTests
             ResolutionStrategy = resolutionStrategy,
             LinkedMachineIds = linkedMachineIds ?? [],
             Manufacturer = manufacturer,
+            Game = game,
             Source = new RawSourceInfo
             {
                 DiscoveryUrl = "https://example.com/discover",

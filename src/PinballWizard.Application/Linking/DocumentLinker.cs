@@ -12,7 +12,8 @@ namespace PinballWizard.Application.Linking;
 // Tiered document-to-machine linker.
 //
 // Tier 0 — Admin override lookup: source_pattern key.
-// Tier 1 — Cross-reference slug: /game/{slug}/ in xref URLs.
+// Tier 1 — Provenance slug: raw.Game.Slug (the scraper's own game-page
+//          classification, tried first) or a cross-reference /game/{slug}/ URL.
 // Tier 2 — Filename word-boundary: normalized filename ⊃ normalized machine slug.
 // Tier 3 — Page-1 text: extract first page text, word-boundary match against slug index.
 // Tier 4 — Page-2 fallback: same as Tier 3 but on page index 1 (covers letterhead-only p.1).
@@ -208,7 +209,7 @@ public sealed class DocumentLinker : IDocumentLinker
         }
 
         // Tier 1: cross-reference slug.
-        var xrefResult = TryTier1XrefSlug(raw);
+        var xrefResult = TryTier1ProvenanceSlug(raw);
         if (xrefResult is not null)
         {
             await FanOutAndUpdateAsync(raw, xrefResult, cancellationToken).ConfigureAwait(false);
@@ -529,17 +530,31 @@ public sealed class DocumentLinker : IDocumentLinker
             && years.Count == 1 && years[0] is not null;
     }
 
-    private LinkingResult? TryTier1XrefSlug(RawDocumentRecord raw)
+    private LinkingResult? TryTier1ProvenanceSlug(RawDocumentRecord raw)
     {
         var mfrHint = LinkingUtilities.InferManufacturerKey(raw.Source);
         var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
 
-        // Resolve each DISTINCT xref game-slug independently. Keying on distinct
-        // slugs (not machine IDs) lets an edition fan-out — one slug resolving to
+        // Resolve each DISTINCT slug independently. Keying on distinct slugs
+        // (not machine IDs) lets an edition fan-out — one slug resolving to
         // several editions of one game — stay a SINGLE resolution rather than
         // tripping the cross-game ambiguity guard below.
         LinkingResult? resolved = null;
         var seenSlugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Game reference slug: the scraper's own game-page provenance, stamped
+        // at discovery time. Tried first — it's a stronger signal than a
+        // cross-reference URL (which is a heuristic parse of a link found
+        // elsewhere on the site), since it's the manufacturer scraper's direct
+        // classification of which game's page produced this document.
+        if (raw.Game?.Slug is { Length: > 0 } gameSlug
+            && seenSlugs.Add(gameSlug)
+            && _machinesBySlug.TryGetValue(gameSlug, out var gameCandidates))
+        {
+            resolved = ResolveSlugToResult(
+                raw, gameCandidates, filename, mfrHint,
+                "game_slug", "game_slug_edition", "game_slug_edition_group");
+        }
 
         foreach (var xref in raw.CrossReferences)
         {
@@ -547,14 +562,16 @@ public sealed class DocumentLinker : IDocumentLinker
             if (slug is null || !seenSlugs.Add(slug)) continue;
             if (!_machinesBySlug.TryGetValue(slug, out var candidates)) continue;
 
-            var result = ResolveSlugToResult(raw, candidates, filename, mfrHint);
+            var result = ResolveSlugToResult(
+                raw, candidates, filename, mfrHint,
+                "xref_slug", "xref_slug_edition", "xref_slug_edition_group");
             if (result is null) continue;
 
             if (resolved is not null)
             {
                 // A second, different game-slug also resolved — genuinely ambiguous.
                 _logger.LogDebug(
-                    "Tier1 xref_slug: {DocumentId} → ambiguous (multiple distinct game slugs resolved).",
+                    "Tier1 provenance_slug: {DocumentId} → ambiguous (multiple distinct game slugs resolved).",
                     raw.DocumentId);
                 return null;
             }
@@ -564,12 +581,15 @@ public sealed class DocumentLinker : IDocumentLinker
         return resolved;
     }
 
-    // Resolves one xref slug's candidate set to a link result: narrow to the source
+    // Resolves one slug's candidate set to a link result: narrow to the source
     // manufacturer, then resolve within a same-franchise edition family by the doc's
     // edition signal (filename / link text) or pick the single / manufacturer-preferred
     // machine. Returns null when nothing resolves (caller tries the next slug / tier).
+    // strategy/editionStrategy/groupStrategy let callers tag the result by which slug
+    // source resolved it (raw.Game vs. a cross-reference URL) for observability.
     private LinkingResult? ResolveSlugToResult(
-        RawDocumentRecord raw, List<Machine> candidates, string filename, string? mfrHint)
+        RawDocumentRecord raw, List<Machine> candidates, string filename, string? mfrHint,
+        string strategy, string editionStrategy, string groupStrategy)
     {
         // Narrow to the source manufacturer as a PREFERENCE, not a hard filter: if no
         // candidate matches (e.g. a Stern-sourced doc whose slug resolves only to a
@@ -585,15 +605,15 @@ public sealed class DocumentLinker : IDocumentLinker
         if (narrowed.Count > 1 && IsEditionFamily(narrowed))
         {
             return ResolveEditionFamily(
-                raw, narrowed, filename, page1Text: null, "xref_slug_edition", "xref_slug_edition_group");
+                raw, narrowed, filename, page1Text: null, editionStrategy, groupStrategy);
         }
 
         var machine = narrowed.Count == 1 ? narrowed[0] : PreferByManufacturer(narrowed, mfrHint);
         if (machine is null) return null;
 
-        _logger.LogDebug("Tier1 xref_slug: {DocumentId} → {MachineId}.", raw.DocumentId, machine.Id);
+        _logger.LogDebug("Tier1 {Strategy}: {DocumentId} → {MachineId}.", strategy, raw.DocumentId, machine.Id);
         return new LinkingResult(
-            raw.DocumentId, LinkStatus.Linked, "xref_slug", [machine.Id], FailureReason: null);
+            raw.DocumentId, LinkStatus.Linked, strategy, [machine.Id], FailureReason: null);
     }
 
     // Shared edition-family dispatch used by Tier 1 (xref_slug) and Tier 2 (filename):
