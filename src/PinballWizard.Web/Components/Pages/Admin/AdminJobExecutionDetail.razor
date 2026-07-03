@@ -279,21 +279,11 @@
 
     private const int JobLogMaxLines = 1000;
 
-    private string FormatLocalTime(DateTimeOffset? utc)
-    {
-        if (utc is null) return "—";
-        if (_timeZoneInfo is null) return utc.Value.UtcDateTime.ToString("MMM d, yyyy h:mm tt") + " UTC";
-        return TimeZoneInfo.ConvertTime(utc.Value, _timeZoneInfo).ToString("MMM d, yyyy h:mm tt zzz");
-    }
+    private string FormatLocalTime(DateTimeOffset? utc) =>
+        AdminTimeFormat.LocalTime(_timeZoneInfo, utc);
 
-    private static string FormatDuration(DateTimeOffset? s, DateTimeOffset? e)
-    {
-        if (s is null || e is null) return "—";
-        var d = e.Value - s.Value;
-        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}h {d.Minutes}m";
-        if (d.TotalMinutes >= 1) return $"{d.Minutes}m {d.Seconds}s";
-        return $"{d.Seconds}s";
-    }
+    private static string FormatDuration(DateTimeOffset? s, DateTimeOffset? e) =>
+        AdminTimeFormat.Duration(s, e);
 
     private static Color SeverityColor(JobLogSeverity s) => s switch
     {
