@@ -302,8 +302,9 @@
     "cadence": "none",
     "politenessOverrides": null,
     "sourceGroup": "Internet Archive",
-    "discoveryStatus": "Deferred",
-    "discoveryNotes": "The Internet Archive hosts community-uploaded pinball manual scans across all manufacturers. Content is CC-licensed or public domain where donated. Technically scrapeable (robots.txt allows; no rate-limiting beyond politeness). Deferred because: (1) ROI is lower than manufacturer-direct sources which have already run, (2) scan quality and accuracy is unverified — many community uploads are incomplete or incorrectly labeled, (3) best used for gap-fill only (Gottlieb, Capcom, Zaccaria, defunct manufacturers) rather than as a primary source. Revisit when Gottlieb gap-fill is prioritized. Search pattern: https://archive.org/search?query=pinball+manual+{manufacturer}",
-    "discoveryDate": "2026-07-03"
+    "discoveryStatus": "KnownGap",
+    "discoveryNotes": "Quality assessment performed 2026-07-03 (samples: Victory 1987, Hollywood Heat 1986, Wild Life 1972). Findings: (1) PROSE QUALITY GOOD — setup/operation/adjustment prose sections are 90%+ char accuracy at 200-300 DPI; DjVuTXT files are freely downloadable and IA has already run Tesseract 5.3 — no re-OCR needed. (2) SCHEMATICS UNUSABLE — wiring diagram pages produce character garbage; must filter pages with word count < 30. (3) COVERAGE IS THIN — ~25 Gottlieb items total on IA, heavily skewed to EM era (pre-1977); SS gap (1977-1996, ~120 games) has only ~10-15 items. Not a complete solution. (4) IP RISK UNRESOLVED — PBResource claims factory documentation ownership for Gottlieb/Premier; whether community-scanned IA uploads are outside that claim is not established. DECISION: Leave Gottlieb as a documented known gap. Revisit only if IP clearance is confirmed and ROI justifies the effort. Correct consumption path if ever revisited: IA Search API + DjVuTXT (plain text) with page-word-count filter, not PDF/OCR. Search pattern: https://archive.org/advancedsearch.php?q=subject:gottlieb+AND+subject:pinball+AND+subject:manual&mediatype=texts",
+    "discoveryDate": "2026-07-03",
+    "qualityAssessmentDate": "2026-07-03"
   }
 ]
