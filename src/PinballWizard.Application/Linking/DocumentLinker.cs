@@ -516,12 +516,15 @@ public sealed class DocumentLinker : IDocumentLinker
     }
 
     // An edition family: multiple base machines sharing one non-null OPDB group
-    // segment AND one non-null release year (e.g. Godzilla Pro + Premium/LE,
-    // both "GweeP"/2021). Matches the reconciler's edition-family definition —
-    // the group segment alone is not an edition key; the year guard separates
-    // genuine reissues/remakes. A slug collision that is NOT an edition family
-    // (different makers/years) is left to the manufacturer-preference path.
-    private static bool IsEditionFamily(List<Machine> candidates) => EditionFamily.IsEditionFamily(candidates);
+    // segment (e.g. Godzilla Pro + Premium/LE, both "GweeP"; AC/DC's 2012 bases
+    // and its 2017 Vault Edition reissues, all "G43W4"). GroupId-only, no year
+    // check — see issue #677: a year guard here only blocked EditionResolver
+    // from ever running against cross-year reissue families, since GroupId is
+    // an OPDB relational key, not a coincidental string collision. Matches the
+    // reconciler's own edition-family definition (EditionFamily.IsEditionFamilyByGroup,
+    // issue #655 Gap 1). A slug collision that is NOT an edition family
+    // (genuinely different GroupIds) is left to the manufacturer-preference path.
+    private static bool IsEditionFamily(List<Machine> candidates) => EditionFamily.IsEditionFamilyByGroup(candidates);
 
     private LinkingResult? TryTier1ProvenanceSlug(RawDocumentRecord raw)
     {
@@ -591,8 +594,8 @@ public sealed class DocumentLinker : IDocumentLinker
         var narrowed = NarrowToSourceManufacturer(candidates, mfrHint);
         if (narrowed.Count == 0) narrowed = candidates;
 
-        // Same-franchise edition family (multiple bases sharing one group segment +
-        // year, e.g. Batman '66 Premium GRoz4-MjBV6 + LE GRoz4-MrRPw) — resolve by the
+        // Same-franchise edition family (multiple bases sharing one group segment,
+        // e.g. Batman '66 Premium GRoz4-MjBV6 + LE GRoz4-MrRPw) — resolve by the
         // doc's edition signal instead of bailing on multiplicity, which is what left
         // every Batman '66 / Guardians of the Galaxy edition-specific doc NotInCatalog.
         if (narrowed.Count > 1 && IsEditionFamily(narrowed))
@@ -685,13 +688,13 @@ public sealed class DocumentLinker : IDocumentLinker
         var candidates = NarrowToSourceManufacturer(bestMatches, mfrKey);
 
         // Same-franchise edition family (multiple bases sharing one group
-        // segment + year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
+        // segment, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
         // GweeP-Ml9pZ) → resolve by the filename token via the shared dispatch.
         // Page text isn't available at Tier 2; the page tiers add page-1 authority
         // later. Unresolved → null (falls through to the page tiers, which can
         // read page-1 text).
         //
-        // If we only have one candidate but it belongs to a group (segment + year),
+        // If we only have one candidate but it belongs to a group (segment),
         // we still run it through ResolveEditionFamily to ensure the correct
         // EditionScope is set (SingleEdition vs FranchiseWide).
         if (candidates.Count > 0 && IsEditionFamily(candidates))

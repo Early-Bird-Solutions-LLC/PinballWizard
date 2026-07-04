@@ -200,4 +200,76 @@ public sealed class EditionResolverTests
 
         Assert.Equal(EditionScope.SingleEdition, result.Scope);
     }
+
+    // ── Cross-year token collision (issue #677) ──────────────────────────
+    // AC/DC's 2012 "Pro" base (EditionTokens=["pro"]) and its 2017 "Pro Vault
+    // Edition" reissue (EditionTokens=["pro","vault"]) both answer to the bare
+    // "pro" token once DocumentLinker.IsEditionFamily stops requiring a shared
+    // year. A document whose only signal is "pro" must resolve to the base
+    // that ISN'T carrying an unsignaled extra qualifier.
+
+    private static readonly Machine AcdcPro2012 = Base2("G43W4-MKNW0", 2012, "pro");
+    private static readonly Machine AcdcProVault2017 = Base2("G43W4-MKNX0", 2017, "pro", "vault");
+    private static readonly Machine AcdcPremium2012 = Base2("G43W4-MXrPx", 2012, "premium");
+    private static readonly Machine AcdcPremiumVault2017 = Base2("G43W4-MdEjy", 2017, "premium", "vault");
+
+    private static Machine Base2(string id, int year, params string[] editionTokens) => new()
+    {
+        Id = id, PartitionKey = "stern", ManufacturerDisplayName = "Stern Pinball",
+        Title = "AC/DC", GroupId = "G43W4", Year = year,
+        EditionTokens = [.. editionTokens],
+    };
+
+    [Fact]
+    public void Resolve_BareToken_PrefersBaseOverUnsignaledVaultReissue()
+    {
+        // "ACDC_Pro_web.pdf" has no "vault" marker — must resolve to the 2012
+        // Pro base, not nondeterministically to the 2017 Pro Vault Edition.
+        var result = EditionResolver.Resolve(
+            "ACDC_Pro_web.pdf", page1Text: null, [AcdcPro2012, AcdcProVault2017]);
+
+        Assert.False(result.IsUnresolved);
+        Assert.Single(result.Machines);
+        Assert.Equal("G43W4-MKNW0", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_BareToken_AcrossFullFiveEditionAcdcFamily_StillPicksBase()
+    {
+        var acdcLe2012 = Base2("G43W4-MrRpw", 2012, "le");
+        var result = EditionResolver.Resolve(
+            "ACDC_Pro_web.pdf", page1Text: null,
+            [AcdcPro2012, AcdcPremium2012, acdcLe2012, AcdcPremiumVault2017, AcdcProVault2017]);
+
+        Assert.False(result.IsUnresolved);
+        Assert.Single(result.Machines);
+        Assert.Equal("G43W4-MKNW0", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_VaultToken_PicksVaultReissueOverBase()
+    {
+        // A doc that DOES signal "vault" (e.g. filename carries "_vault_")
+        // must resolve to the 2017 reissue, not the 2012 base.
+        var result = EditionResolver.Resolve(
+            "ACDC_Pro_Vault_web.pdf", page1Text: null, [AcdcPro2012, AcdcProVault2017]);
+
+        Assert.False(result.IsUnresolved);
+        Assert.Single(result.Machines);
+        Assert.Equal("G43W4-MKNX0", result.Machines[0].Id);
+    }
+
+    [Fact]
+    public void Resolve_TokenTiesAcrossEquallySpecificCandidates_StaysUnresolved()
+    {
+        // Neither candidate is more specific than the other for this token —
+        // never guess between two equally-plausible bases.
+        var vaultA = Base2("G43W4-AAAA", 2017, "pro", "vault");
+        var vaultB = Base2("G43W4-BBBB", 2019, "pro", "vault");
+
+        var result = EditionResolver.Resolve("ACDC_Pro_web.pdf", page1Text: null, [vaultA, vaultB]);
+
+        Assert.True(result.IsUnresolved);
+        Assert.Empty(result.Machines);
+    }
 }
