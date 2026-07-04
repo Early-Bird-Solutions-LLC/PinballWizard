@@ -1230,6 +1230,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 // the same game don't collide on the same chunk id.
                 var documentId = $"kineticist_{slug}_{machineId}";
 
+                // Kineticist tutorials are gameplay rulesheets — edition-agnostic
+                // per ADR-0032 — regardless of whether this article resolved to
+                // one machine or fanned out to every sibling edition.
                 var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
                     MachineId: machineId,
                     MachineTitle: machineTitle,
@@ -1237,7 +1240,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     DocumentId: documentId,
                     DocumentUrl: article.CanonicalUrl,
                     DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow,
+                    EditionScope: "franchise-wide");
 
                 var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
                 if (chunks.Count == 0)
