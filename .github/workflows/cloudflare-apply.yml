@@ -105,10 +105,5 @@ jobs:
           tofu force-unlock -force "$LOCK_ID"
           tofu apply -input=false -lock-timeout=120s -auto-approve
 
-  drift-detection:
-    # Separate from apply — runs weekly on a schedule via a sister workflow.
-    # See cloudflare-drift.yml (not yet created).
-    if: false
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "see cloudflare-drift.yml"
+  # drift-detection runs on a weekly schedule via a dedicated cloudflare-drift.yml
+  # workflow (not yet created). See infra/README.md for the planned design.

@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: bicep-${{ github.workflow }}-${{ github.ref }}
@@ -33,7 +32,11 @@ jobs:
 
       - name: Install Bicep CLI
         run: |
-          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          # Pin to a specific release — update this version via Dependabot or manually
+          # when a new Bicep release is needed. Using 'latest' risks silent breakage
+          # on a Bicep breaking change or a compromised release.
+          BICEP_VERSION=v0.29.47
+          curl -Lo bicep "https://github.com/Azure/bicep/releases/download/${BICEP_VERSION}/bicep-linux-x64"
           chmod +x ./bicep
           sudo mv ./bicep /usr/local/bin/bicep
           bicep --version

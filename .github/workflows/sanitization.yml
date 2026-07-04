@@ -22,6 +22,7 @@ jobs:
   scan:
     name: Scan committed files for forbidden tokens
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
