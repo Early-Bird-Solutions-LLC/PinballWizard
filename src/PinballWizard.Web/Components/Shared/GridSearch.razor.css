@@ -1,0 +1,87 @@
+.grid-search {
+    width: 100%;
+    margin-bottom: 1.5rem;
+}
+
+.grid-search__container {
+    position: relative;
+    border-radius: var(--mud-container-border-radius, 8px);
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(var(--mud-palette-divider-rgb), 0.1);
+}
+
+.grid-search.is-thinking .grid-search__container {
+    box-shadow: 0 0 20px rgba(var(--mud-palette-primary-rgb), 0.15);
+    border-color: rgba(var(--mud-palette-primary-rgb), 0.3);
+}
+
+.grid-search__input {
+    background: transparent !important;
+}
+
+::deep .grid-search__input .mud-input-outlined-border {
+    border-color: rgba(var(--mud-palette-divider-rgb), 0.2) !important;
+    transition: border-color 0.3s ease;
+}
+
+.grid-search:hover .grid-search__input .mud-input-outlined-border {
+    border-color: rgba(var(--mud-palette-divider-rgb), 0.4) !important;
+}
+
+::deep .grid-search__input.mud-input-focus .mud-input-outlined-border {
+    border-color: var(--mud-palette-primary) !important;
+    border-width: 2px !important;
+}
+
+.grid-search__loader {
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 0 0 8px 8px;
+    z-index: 2;
+}
+
+::deep .grid-search__progress {
+    height: 3px !important;
+    background-color: transparent !important;
+}
+
+::deep .grid-search__progress .mud-progress-linear-bar {
+    background-color: var(--mud-palette-primary) !important;
+    box-shadow: 0 0 10px var(--mud-palette-primary);
+}
+
+.grid-search__alert {
+    background: rgba(var(--mud-palette-primary-rgb), 0.05) !important;
+    color: var(--mud-palette-text-primary) !important;
+    border: 1px solid rgba(var(--mud-palette-primary-rgb), 0.1) !important;
+    backdrop-filter: blur(5px);
+    animation: gridSearchFadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes gridSearchFadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(-8px) scale(0.98); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0) scale(1); 
+    }
+}
+
+/* AI Glow effect */
+.grid-search__input .mud-adornment-start {
+    filter: drop-shadow(0 0 2px rgba(var(--mud-palette-primary-rgb), 0.5));
+    animation: aiPulse 3s infinite ease-in-out;
+}
+
+@keyframes aiPulse {
+    0%, 100% { filter: drop-shadow(0 0 2px rgba(var(--mud-palette-primary-rgb), 0.3)); }
+    50% { filter: drop-shadow(0 0 6px rgba(var(--mud-palette-primary-rgb), 0.7)); }
+}

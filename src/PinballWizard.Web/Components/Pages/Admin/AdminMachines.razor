@@ -85,9 +85,9 @@
 
     <AppDataGrid T="MachineCatalogRow"
                  Items="@_machines"
-                 RowsPerPage="50"
                  Groupable="@true"
                  GroupExpanded="@true"
+                 SearchContext="admin-machines"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
                  data-testid="admin-machines-grid">
 

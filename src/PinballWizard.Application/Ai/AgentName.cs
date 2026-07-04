@@ -14,6 +14,7 @@ public static class AgentName
     public const string Valuation = "Valuation";
     public const string Rules = "Rules";
     public const string Repair = "Repair";
+    public const string GridSearch = "GridSearch";
 
-    public static readonly IReadOnlyList<string> All = [Wizard, Valuation, Rules, Repair];
+    public static readonly IReadOnlyList<string> All = [Wizard, Valuation, Rules, Repair, GridSearch];
 }

@@ -1,0 +1,121 @@
+@namespace PinballWizard.Web.Components.Shared
+@using PinballWizard.Web.Clients
+@using PinballWizard.Application.Ai.GridSearch
+@implements IDisposable
+@inject IGridSearchClient SearchClient
+
+<div class="grid-search @(IsThinking ? "is-thinking" : "")">
+    <div class="grid-search__container">
+        <MudTextField @bind-Value="_query"
+                      Placeholder="@_currentPlaceholder"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.AutoAwesome"
+                      AdornmentColor="Color.Primary"
+                      Variant="Variant.Outlined"
+                      OnAdornmentClick="ExecuteSearch"
+                      OnKeyDown="OnKeyDown"
+                      Immediate="true"
+                      Class="grid-search__input"
+                      data-testid="grid-search-input" />
+        
+        @if (IsThinking)
+        {
+            <div class="grid-search__loader">
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="grid-search__progress" />
+            </div>
+        }
+    </div>
+
+    @if (_lastResponse is not null && !string.IsNullOrWhiteSpace(_lastResponse.Explanation))
+    {
+        <div class="grid-search__feedback mt-2">
+            <MudAlert Severity="Severity.Info" 
+                      Variant="Variant.Outlined" 
+                      Dense="true" 
+                      Icon="@Icons.Material.Filled.AutoAwesome"
+                      Class="grid-search__alert"
+                      data-testid="grid-search-feedback">
+                <div class="d-flex align-center gap-2">
+                    <MudText Typo="Typo.body2">@_lastResponse.Explanation</MudText>
+                    @if (_lastResponse.IsSemanticSearch)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text" Class="ma-0">AI Semantic</MudChip>
+                    }
+                    <MudSpacer />
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="ClearFeedback" />
+                </div>
+            </MudAlert>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Context { get; set; } = "default";
+    [Parameter] public EventCallback<GridSearchResponse> OnFiltersApplied { get; set; }
+
+    private string _query = "";
+    private string _currentPlaceholder = "Ask the AI to filter...";
+    private bool IsThinking { get; set; }
+    private GridSearchResponse? _lastResponse;
+
+    private static readonly string[] _placeholders = [
+        "Show me Bally machines from the 90s",
+        "Jobs that failed recently",
+        "Games with a sci-fi theme",
+        "Machines with high doc count",
+        "Failed document triage",
+        "Williams games from 1992"
+    ];
+    private int _placeholderIndex = 0;
+    private System.Timers.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _currentPlaceholder = _placeholders[0];
+        _timer = new System.Timers.Timer(5000);
+        _timer.Elapsed += async (s, e) => {
+            _placeholderIndex = (_placeholderIndex + 1) % _placeholders.Length;
+            _currentPlaceholder = _placeholders[_placeholderIndex];
+            await InvokeAsync(StateHasChanged);
+        };
+        _timer.Start();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ExecuteSearch();
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+
+        IsThinking = true;
+        StateHasChanged();
+
+        _lastResponse = await SearchClient.SearchAsync(_query, Context, CancellationToken.None);
+        
+        IsThinking = false;
+        await OnFiltersApplied.InvokeAsync(_lastResponse);
+        StateHasChanged();
+    }
+
+    private void ClearFeedback()
+    {
+        _lastResponse = null;
+        _query = "";
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        if (_timer is not null)
+        {
+            _timer.Stop();
+            _timer.Dispose();
+        }
+    }
+}
