@@ -119,12 +119,12 @@ public sealed class UiReviewPass : IDisposable
         return ParseResponse(url, viewportLabel, responseText);
     }
 
-    private static string BuildPrompt(string url, string viewportLabel) => $"""
+    private static string BuildPrompt(string url, string viewportLabel) => $$"""
         You are a senior UI/UX engineer performing a professional quality audit of a pinball 
         machine reference web application called PinWiz.
 
-        You are reviewing a screenshot of the page at URL: {url}
-        Viewport: {viewportLabel}
+        You are reviewing a screenshot of the page at URL: {{url}}
+        Viewport: {{viewportLabel}}
 
         Evaluate the screenshot and identify any of the following issues if present:
         1. Layout problems: overflow, clipping, elements overlapping, misalignment
@@ -146,18 +146,19 @@ public sealed class UiReviewPass : IDisposable
         If the page looks polished and professional with no notable issues, say so briefly.
 
         Respond ONLY with valid JSON in this exact format (no markdown fences):
-        {{
+        {
           "pageVerdict": "pass" | "fail" | "warn",
           "viewportNotes": "brief overall impression",
           "issues": [
-            {{
+            {
               "severity": "Critical" | "High" | "Medium" | "Low",
               "element": "element or area name",
               "summary": "one-sentence description of the issue"
-            }}
+            }
           ]
-        }}
+        }
         """;
+
 
     private static List<BugFinding> ParseResponse(string url, string viewportLabel, string json)
     {
