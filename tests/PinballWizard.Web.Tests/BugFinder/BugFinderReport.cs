@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace PinballWizard.Web.Tests.BugFinder;
@@ -48,7 +49,7 @@ public sealed class BugFinderReport
 
     public void RecordCrawlError(string url, string message)
     {
-        _errors.Add($"- [{url}] {message}");
+        _errors.Add(string.Create(CultureInfo.InvariantCulture, $"- [{url}] {message}"));
     }
 
     public void Finish()
@@ -60,6 +61,7 @@ public sealed class BugFinderReport
 
     public string ToMarkdown()
     {
+        var ic = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
         var byLevel = _findings.GroupBy(f => f.Severity)
             .OrderBy(g => g.Key)
@@ -73,20 +75,20 @@ public sealed class BugFinderReport
 
         sb.AppendLine("# PinWiz Bug Finder Report");
         sb.AppendLine();
-        sb.AppendLine($"| | |");
-        sb.AppendLine($"|---|---|");
-        sb.AppendLine($"| **Run** | {StartedAt:yyyy-MM-ddTHH:mm:ssZ} |");
-        sb.AppendLine($"| **Target** | {TargetBaseUrl} |");
-        sb.AppendLine($"| **Pages crawled** | {PagesVisited} |");
-        sb.AppendLine($"| **Duration** | {Duration:m\\:ss\\.f}s |");
-        sb.AppendLine($"| **Total issues** | {total} ({critical} critical · {high} high · {medium} medium · {low} low) |");
+        sb.AppendLine("| | |");
+        sb.AppendLine("|---|---|");
+        sb.AppendLine(ic, $"| **Run** | {StartedAt:yyyy-MM-ddTHH:mm:ssZ} |");
+        sb.AppendLine(ic, $"| **Target** | {TargetBaseUrl} |");
+        sb.AppendLine(ic, $"| **Pages crawled** | {PagesVisited} |");
+        sb.AppendLine(ic, $"| **Duration** | {Duration.Minutes}m {Duration.Seconds}.{Duration.Milliseconds / 100}s |");
+        sb.AppendLine(ic, $"| **Total issues** | {total} ({critical} critical · {high} high · {medium} medium · {low} low) |");
         sb.AppendLine();
 
         if (total == 0)
         {
             sb.AppendLine("## ✅ No issues found");
             sb.AppendLine();
-            sb.AppendLine($"All {PagesVisited} pages passed functional checks and UI review.");
+            sb.AppendLine(ic, $"All {PagesVisited} pages passed functional checks and UI review.");
             return sb.ToString();
         }
 
@@ -97,11 +99,11 @@ public sealed class BugFinderReport
 
         if (_cleanPages.Count > 0)
         {
-            sb.AppendLine($"## ✅ Clean Pages ({_cleanPages.Count})");
+            sb.AppendLine(ic, $"## ✅ Clean Pages ({_cleanPages.Count})");
             sb.AppendLine();
             foreach (var url in _cleanPages.OrderBy(u => u))
             {
-                sb.AppendLine($"- `{url}`");
+                sb.AppendLine(ic, $"- `{url}`");
             }
             sb.AppendLine();
         }
@@ -129,21 +131,23 @@ public sealed class BugFinderReport
         if (!byLevel.TryGetValue(severity, out var findings) || findings.Count == 0)
             return;
 
-        sb.AppendLine($"## {header} ({findings.Count})");
+        var ic = CultureInfo.InvariantCulture;
+
+        sb.AppendLine(ic, $"## {header} ({findings.Count})");
         sb.AppendLine();
 
         foreach (var group in findings.GroupBy(f => f.Url).OrderBy(g => g.Key))
         {
-            sb.AppendLine($"### `{group.Key}`");
+            sb.AppendLine(ic, $"### `{group.Key}`");
             sb.AppendLine();
             foreach (var f in group)
             {
                 var tag = f.Source == BugSource.Functional ? "Functional" : "UI Review";
-                sb.AppendLine($"**[{tag}]** {f.Summary}");
+                sb.AppendLine(ic, $"**[{tag}]** {f.Summary}");
                 if (!string.IsNullOrWhiteSpace(f.Detail))
                 {
                     sb.AppendLine();
-                    sb.AppendLine($"> {f.Detail.Replace("\n", "\n> ")}");
+                    sb.AppendLine(ic, $"> {f.Detail.Replace("\n", "\n> ", StringComparison.Ordinal)}");
                 }
                 sb.AppendLine();
             }
@@ -173,7 +177,7 @@ public sealed class BugFinderReport
     public string WriteToFile()
     {
         var dir = ResolveReportDirectory();
-        var filename = $"bug-report-{StartedAt:yyyyMMddTHHmmss}.md";
+        var filename = string.Create(CultureInfo.InvariantCulture, $"bug-report-{StartedAt:yyyyMMddTHHmmss}.md");
         var path = Path.Combine(dir, filename);
         File.WriteAllText(path, ToMarkdown());
         return path;

@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using PinballWizard.Web.Tests.E2E;
 using Xunit;
 using Xunit.Abstractions;
 
