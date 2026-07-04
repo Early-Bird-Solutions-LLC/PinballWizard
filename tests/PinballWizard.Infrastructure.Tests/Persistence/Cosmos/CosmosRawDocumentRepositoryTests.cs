@@ -1023,6 +1023,28 @@ public sealed class CosmosRawDocumentRepositoryTests
         Assert.Contains("LOWER(c.manufacturer) = LOWER(@manufacturer)", captured.QueryText);
     }
 
+    [Fact]
+    public async Task StreamDocumentsAsync_MatchesBidirectionalSubstrings_WhenGameParameterIsFullTitle()
+    {
+        // Issue #BUG-REPT: clicking "Houdini: Master of Mystery" (full title) on the mfr
+        // page leads to 0 results on the documents page because the document is tagged
+        // with only "Houdini" (short title). Bidirectional CONTAINS check fixes this.
+        QueryDefinition? captured = null;
+        _container
+            .GetItemQueryIterator<RawDocumentCosmosRecord>(
+                Arg.Do<QueryDefinition>(q => captured = q),
+                Arg.Any<string>(), Arg.Any<QueryRequestOptions>())
+            .Returns(new FakeFeedIterator<RawDocumentCosmosRecord>([[]]));
+
+        await foreach (var _ in _repository.StreamDocumentsAsync(
+            game: "Houdini: Master of Mystery", manufacturer: null, type: null,
+            includeAdminFields: false, CancellationToken.None)) { }
+
+        Assert.NotNull(captured);
+        // Bidirectional check: stored title contains search term OR search term contains stored title
+        Assert.Contains("CONTAINS(LOWER(c.game.title), LOWER(@game)) OR CONTAINS(LOWER(@game), LOWER(c.game.title))", captured!.QueryText);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // MapToDomain — null nested-object fallbacks (via GetAsync)
     // ────────────────────────────────────────────────────────────────
