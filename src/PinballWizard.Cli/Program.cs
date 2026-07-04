@@ -1343,6 +1343,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
+        var tiltForumsEditionFamilyFanouts = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var listing in listings)
@@ -1363,12 +1364,19 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            if (matchResult.Status != PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.Resolved)
+            var isResolved = matchResult.Status is PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.Resolved
+                or PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.ResolvedEditionFamily;
+            if (!isResolved)
             {
                 Console.Error.WriteLine(
                     $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
                 tiltForumsUnmatched++;
                 continue;
+            }
+
+            if (matchResult.Status == PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.ResolvedEditionFamily)
+            {
+                tiltForumsEditionFamilyFanouts++;
             }
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
@@ -1391,11 +1399,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
 
             string topicId;
-            string documentId;
             try
             {
                 topicId = new Uri(listing.TopicUrl).Segments[^1].TrimEnd('/');
-                documentId = $"tiltforums_{topicId}_{matchResult.MachineId}";
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1405,50 +1411,77 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
-                MachineId: matchResult.MachineId!,
-                MachineTitle: matchResult.MachineTitle!,
-                Manufacturer: matchResult.ManufacturerDisplayName!,
-                DocumentId: documentId,
-                DocumentUrl: article.TopicUrl,
-                DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+            // Per-rulesheet flags, mirroring --sync-kineticist-tutorials's
+            // articleIndexed/articleHadContent pattern: `indexed` counts once
+            // per rulesheet that landed on at least one machine, not once per
+            // sibling edition, so the two twin verbs' summary counters mean
+            // the same thing.
+            var rulesheetIndexed = false;
+            var rulesheetHadContent = false;
 
-            var chunks = tiltForumsSynthesizer.Synthesize(article, chunkRequest);
-            if (chunks.Count == 0)
+            foreach (var machineMatch in matchResult.Machines)
             {
-                tiltForumsSkippedNoContent++;
-                continue;
-            }
+                var documentId = $"tiltforums_{topicId}_{machineMatch.MachineId}";
 
-            try
-            {
-                var result = await tiltForumsIndexer.UpsertAsync(chunkRequest, chunks, tiltForumsIndexerOptions, cancellationToken);
-                if (result.Failures.Count > 0)
+                // Rulesheets describe gameplay rules, which are edition-agnostic
+                // (ADR-0032) — every chunk gets the franchise-wide tag regardless
+                // of whether this listing resolved to one machine or fanned out
+                // to several sibling editions.
+                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                    MachineId: machineMatch.MachineId,
+                    MachineTitle: machineMatch.MachineTitle,
+                    Manufacturer: machineMatch.ManufacturerDisplayName,
+                    DocumentId: documentId,
+                    DocumentUrl: article.TopicUrl,
+                    DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
+                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow,
+                    EditionScope: "franchise-wide");
+
+                var chunks = tiltForumsSynthesizer.Synthesize(article, chunkRequest);
+                if (chunks.Count == 0)
                 {
-                    foreach (var failure in result.Failures)
+                    continue;
+                }
+                rulesheetHadContent = true;
+
+                try
+                {
+                    var result = await tiltForumsIndexer.UpsertAsync(chunkRequest, chunks, tiltForumsIndexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
                     {
-                        Console.Error.WriteLine(
-                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.GameTitle}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        foreach (var failure in result.Failures)
+                        {
+                            Console.Error.WriteLine(
+                                $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.GameTitle}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        }
+                        tiltForumsFailed++;
                     }
+                    else
+                    {
+                        Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
+                        rulesheetIndexed = true;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index '{article.GameTitle}' -> machine {machineMatch.MachineId}: {ex.Message}");
                     tiltForumsFailed++;
                 }
-                else
-                {
-                    Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {matchResult.MachineId} ({chunks.Count} chunk(s))");
-                    tiltForumsIndexed++;
-                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            if (rulesheetIndexed)
             {
-                Console.Error.WriteLine($"  Failed to index '{article.GameTitle}': {ex.Message}");
-                tiltForumsFailed++;
+                tiltForumsIndexed++;
+            }
+            else if (!rulesheetHadContent)
+            {
+                tiltForumsSkippedNoContent++;
             }
         }
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
