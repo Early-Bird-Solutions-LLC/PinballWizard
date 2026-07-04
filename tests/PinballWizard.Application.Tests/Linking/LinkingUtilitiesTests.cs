@@ -61,6 +61,14 @@ public class LinkingUtilitiesTests
     // the classic Bally D&D because '&' text never matched the '-' slug).
     [InlineData("Dungeons & Dragons", "dungeons dragons")]
     [InlineData("dungeons-dragons", "dungeons dragons")]
+    // Colon, slash, parentheses, and exclamation marks are separators.
+    [InlineData("Batman: The Dark Knight", "batman the dark knight")]
+    [InlineData("AC/DC Luci", "ac dc luci")]
+    [InlineData("The Avengers (Pro)", "the avengers pro")]
+    [InlineData("Star Wars!", "star wars")]
+    // Apostrophes are stripped.
+    [InlineData("Batman '66", "batman 66")]
+    [InlineData("Elvira's", "elviras")]
     public void NormalizeForMatch_stripsAndLowers(string input, string expected)
         => Assert.Equal(expected, LinkingUtilities.NormalizeForMatch(input));
 
@@ -72,6 +80,11 @@ public class LinkingUtilitiesTests
     // camelCase-concatenated filename title now matches the separator slug (bug 1a).
     [InlineData("JamesBond007_Pro_web.pdf", "james-bond-007")]
     [InlineData("JurassicPark_Pro_web.pdf", "jurassic-park")]
+    // Punctuation titles match cleaned filenames.
+    [InlineData("Batman_The_Dark_Knight_Manual.pdf", "Batman: The Dark Knight")]
+    [InlineData("AC_DC_Luci_Manual.pdf", "AC/DC Luci")]
+    [InlineData("The_Avengers_Pro_Manual.pdf", "The Avengers (Pro)")]
+    [InlineData("Batman_66_Manual.pdf", "Batman '66")]
     public void IsWordBoundaryMatch_matchesWholeSlug(string filename, string slug)
         => Assert.True(LinkingUtilities.IsWordBoundaryMatch(
             LinkingUtilities.NormalizeForMatch(filename),

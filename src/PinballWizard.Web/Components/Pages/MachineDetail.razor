@@ -1,0 +1,126 @@
+@page "/machines/{ManufacturerKey}/{OpdbId}"
+@page "/machines/resolve/{OpdbId}"
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+
+@* MachineDetail — /machines/{mfr}/{id} public game detail page.
+ *
+ * Wraps the shared MachineDetail component with IsAdmin="false".
+ * Includes a /machines/resolve/{id} fallback that performs a cross-partition
+ * lookup when the manufacturer is unknown (e.g. from citations).
+ *@
+
+@inject IMachineRepository Machines
+@inject NavigationManager Nav
+@inject ILogger<MachineDetail> Logger
+
+<PageTitle>@(_title ?? OpdbId) — PinballWizard</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+
+    @if (_resolving)
+    {
+        <AdminLoadingBar Label="Resolving machine..." />
+    }
+    else if (_resolveFailed)
+    {
+        <AppErrorAlert data-testid="resolve-failed">
+            Could not find machine with OPDB ID <code>@OpdbId</code>.
+        </AppErrorAlert>
+    }
+    else
+    {
+        <PinballWizard.Web.Components.Shared.MachineDetail OpdbId="@OpdbId" 
+                                                          ManufacturerKey="@ManufacturerKey" 
+                                                          IsAdmin="false" />
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string? ManufacturerKey { get; set; }
+    [Parameter] public string OpdbId { get; set; } = null!;
+
+    private string? _title;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+    private bool _resolving;
+    private bool _resolveFailed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _title = null;
+        _resolveFailed = false;
+        _breadcrumbs = [new BreadcrumbItem("Catalog", href: "/documents")];
+
+        if (string.IsNullOrWhiteSpace(ManufacturerKey))
+        {
+            await ResolveManufacturerAsync();
+        }
+        else
+        {
+            _breadcrumbs.Add(new BreadcrumbItem(ManufacturerKey, href: $"/manufacturers/{ManufacturerKey}"));
+            await LoadTitleAsync();
+        }
+    }
+
+    private async Task LoadTitleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ManufacturerKey)) return;
+
+        var machine = await Machines.GetByOpdbIdAsync(OpdbId, ManufacturerKey, CancellationToken.None);
+        if (machine is not null)
+        {
+            _title = machine.Title;
+            _breadcrumbs.Add(new BreadcrumbItem(machine.Title, href: null, disabled: true));
+        }
+        else
+        {
+            _breadcrumbs.Add(new BreadcrumbItem(OpdbId, href: null, disabled: true));
+        }
+    }
+
+    private async Task ResolveManufacturerAsync()
+    {
+        _resolving = true;
+        try
+        {
+            // Cross-partition lookup by OPDB ID. We use StreamAllAsync but filter locally, 
+            // or we could add a specific method. For now, since OPDB ID is unique, 
+            // we can use a query.
+            // Actually, I'll use SearchByTitleContainsAsync as a proxy or just implement 
+            // a proper cross-partition query here if I can.
+            // Wait, I have StreamAllAsync in IMachineRepository.
+            
+            Machine? found = null;
+            await foreach (var m in Machines.StreamAllAsync(CancellationToken.None))
+            {
+                if (m.Id == OpdbId)
+                {
+                    found = m;
+                    break;
+                }
+            }
+
+            if (found is not null)
+            {
+                // Redirect to the canonical URL.
+                Nav.NavigateTo($"/machines/{found.PartitionKey}/{found.Id}", replace: true);
+            }
+            else
+            {
+                _resolveFailed = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to resolve machine {OpdbId}", OpdbId);
+            _resolveFailed = true;
+        }
+        finally
+        {
+            _resolving = false;
+        }
+    }
+}

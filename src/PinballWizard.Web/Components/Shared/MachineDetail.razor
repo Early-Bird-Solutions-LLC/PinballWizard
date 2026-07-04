@@ -1,0 +1,370 @@
+@namespace PinballWizard.Web.Components.Shared
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Domain
+@using PinballWizard.Web.Components.Pages.Admin
+@implements IDisposable
+
+@* MachineDetail — shared per-game detail view.
+ *
+ * Used by both the public /machines/{mfr}/{id} page and the admin diagnostic view.
+ *
+ * Visual anatomy:
+ *   - Header (Title, Edition, Year, OPDB Link)
+ *   - Edition-sibling strip (ADR-0029)
+ *   - Linked documents grid
+ *   - Admin actions (only when IsAdmin=true)
+ *   - "Ask the Wizard" primary CTA (Public delight)
+ *@
+
+@inject IMachineRepository Machines
+@inject IMachineDocumentReadRepository Docs
+@inject ICatalogStatsReadRepository Stats
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+@inject ILogger<MachineDetail> Logger
+
+@if (_loading)
+{
+    <AdminLoadingBar Label="Loading machine details" />
+}
+else if (_loadFailed)
+{
+    <AppErrorAlert data-testid="detail-load-failed">
+        Machine details could not be loaded. Please refresh the page or try again shortly.
+    </AppErrorAlert>
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4" data-testid="detail-not-found">
+        No machine found for OPDB ID <code>@OpdbId</code> in manufacturer
+        <code>@ManufacturerKey</code>.
+    </MudAlert>
+}
+else if (_machine is not null)
+{
+    @* Header *@
+    <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="2" Class="mb-1">
+        <MudText Typo="Typo.h4" data-testid="detail-title">@_machine.Title</MudText>
+        @if (!string.IsNullOrWhiteSpace(_machine.EditionLabel))
+        {
+            <MudText Typo="Typo.h6" Color="Color.Secondary" data-testid="detail-edition">@_machine.EditionLabel</MudText>
+        }
+    </MudStack>
+
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-4" AlignItems="AlignItems.Center">
+        @if (IsAdmin)
+        {
+            <AppStatusChip Color="@HealthFlagColor(_healthFlags)"
+                           data-testid="detail-health-chip">
+                @HealthLabel(_healthFlags)
+            </AppStatusChip>
+        }
+        <ManufacturerLink ManufacturerKey="@_machine.PartitionKey" DisplayName="@_machine.ManufacturerDisplayName" />
+        @if (_machine.Year.HasValue)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@_machine.Year</MudText>
+        }
+        <MudText Typo="Typo.caption" Color="Color.Tertiary" data-testid="detail-opdb-id">
+            OPDB: @_machine.Id
+        </MudText>
+        @if (!string.IsNullOrWhiteSpace(_machine.OpdbSourceUrl))
+        {
+            <MudLink Href="@_machine.OpdbSourceUrl" Target="_blank" Typo="Typo.caption">
+                View on OPDB
+            </MudLink>
+        }
+    </MudStack>
+
+    @* ── Ask the Wizard (Primary Public CTA) ────────────────────────────────── *@
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.AutoAwesome"
+               OnClick="@OnAskWizardClick"
+               Class="mb-6"
+               Size="Size.Large"
+               data-testid="detail-ask-wizard">
+        Ask the Wizard about this machine
+    </MudButton>
+
+    @* ── Edition-sibling strip ─────────────────────────────────────────────── *@
+    @if (_siblings.Count > 1) @* Only show if there are actual siblings *@
+    {
+        <MudText Typo="Typo.h6" Class="mb-2">Other Editions</MudText>
+
+        @if (IsAdmin && _siblings.Any(s => s.DocCount == 0) && _siblings.Any(s => s.DocCount > 0))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-2" data-testid="detail-edition-gap-callout">
+                Edition doc gap detected — one or more editions have no documents while others do.
+            </MudAlert>
+        }
+
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-6" data-testid="edition-sibling-strip">
+            @foreach (var sib in _siblings)
+            {
+                var isCurrent = sib.MachineId == _machine.Id;
+                var isEmpty = sib.DocCount == 0;
+                
+                <MudPaper Elevation="@(isCurrent ? 4 : 1)" 
+                          Class="@(isCurrent ? "pa-3 border-2 border-solid mud-border-primary" : "pa-3")"
+                          Style="@(isCurrent ? "border-width: 2px;" : "")">
+                    <MudStack Spacing="1" AlignItems="AlignItems.Center">
+                        @if (isCurrent)
+                        {
+                            <MudText Typo="Typo.subtitle2" Align="Align.Center" Color="Color.Primary">@sib.Title</MudText>
+                        }
+                        else
+                        {
+                            <MudLink Href="@($"/machines/{ManufacturerKey}/{sib.MachineId}")" Typo="Typo.subtitle2">@sib.Title</MudLink>
+                        }
+                        
+                        @if (!string.IsNullOrWhiteSpace(sib.EditionLabel))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@sib.EditionLabel</MudText>
+                        }
+                        <AppStatusChip Color="@(isEmpty ? Color.Error : Color.Success)">
+                            @sib.DocCount doc@(sib.DocCount == 1 ? "" : "s")
+                        </AppStatusChip>
+                    </MudStack>
+                </MudPaper>
+            }
+        </MudStack>
+    }
+
+    @* ── Linked-documents table ─────────────────────────────────────────────── *@
+    <MudText Typo="Typo.h6" Class="mb-2">Documents</MudText>
+
+    @if (_docs.Count == 0)
+    {
+        <AppEmptyState Heading="No documents linked to this machine"
+                       Detail="We haven't indexed any documents for this specific machine yet."
+                       Icon="@Icons.Material.Outlined.FolderOff"
+                       data-testid="detail-no-docs" />
+    }
+    else
+    {
+        <MudDataGrid T="MachineDocumentLink"
+                      Items="@_docs"
+                      ShowPager="false"
+                      Class="mb-6"
+                      data-testid="detail-docs-grid">
+            <Columns>
+                <PropertyColumn Property="d => d.DocumentType" Title="Type" Sortable="true" />
+                <TemplateColumn Title="Document">
+                    <CellTemplate>
+                        <MudStack Spacing="0">
+                            <MudLink Href="@($"/documents/{context.Item.DocumentId}")"
+                                     data-testid="detail-doc-link">
+                                @(context.Item.LinkText ?? FileNameFromUrl(context.Item.DocumentUrl))
+                            </MudLink>
+                            <MudLink Href="@context.Item.DocumentUrl" Target="_blank" Typo="Typo.caption"
+                                     Color="Color.Secondary">
+                                Open file ↗
+                            </MudLink>
+                        </MudStack>
+                    </CellTemplate>
+                </TemplateColumn>
+                @if (IsAdmin)
+                {
+                    <PropertyColumn Property="d => d.EditionScope" Title="Edition Scope" />
+                    <TemplateColumn Title="Status">
+                        <CellTemplate>
+                            @if (!string.IsNullOrWhiteSpace(context.Item.LinkStatus))
+                            {
+                                <AppStatusChip Color="@LinkStatusColor(context.Item.LinkStatus)">
+                                    @context.Item.LinkStatus
+                                </AppStatusChip>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="d => d.ResolutionStrategy" Title="How Linked" />
+                }
+                <TemplateColumn Title="Downloaded">
+                    <CellTemplate>
+                        @if (context.Item.LastDownloadedUtc.HasValue)
+                        {
+                            <MudText Typo="Typo.body2">
+                                @context.Item.LastDownloadedUtc.Value.ToString("yyyy-MM-dd")
+                            </MudText>
+                            @if (context.Item.SizeBytes.HasValue || context.Item.PageCount.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @FormatSize(context.Item.SizeBytes) @(context.Item.PageCount.HasValue ? $"· {context.Item.PageCount} pp" : "")
+                                </MudText>
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Tertiary">—</MudText>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    }
+
+    @if (IsAdmin)
+    {
+        @* ── Admin Actions ──────────────────────────────────────────────────────── *@
+        <MudDivider Class="my-4" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Admin Actions</MudText>
+        <MudStack Row="true" Spacing="2" Class="mb-2" data-testid="detail-actions">
+            <MudButton Href="/admin/document-triage"
+                       Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Build">
+                Document Triage
+            </MudButton>
+            <MudButton Href="/admin/link-overrides"
+                       Variant="Variant.Outlined"
+                       Color="Color.Default"
+                       StartIcon="@Icons.Material.Filled.Link">
+                Link Overrides
+            </MudButton>
+        </MudStack>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public string OpdbId { get; set; } = null!;
+    [Parameter, EditorRequired] public string ManufacturerKey { get; set; } = null!;
+    [Parameter] public bool IsAdmin { get; set; }
+
+    private Machine? _machine;
+    private IReadOnlyList<CatalogHealthFlag> _healthFlags = [CatalogHealthFlag.Ok];
+    private List<SiblingEntry> _siblings = [];
+    private List<MachineDocumentLink> _docs = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+    private bool _notFound;
+    private CancellationTokenSource _cts = new();
+
+    private sealed record SiblingEntry(string MachineId, string Title, string? EditionLabel, int DocCount);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+
+        _loading = true;
+        _loadFailed = false;
+        _notFound = false;
+        _machine = null;
+        _siblings.Clear();
+        _docs.Clear();
+
+        try
+        {
+            // 1. Point read for the machine.
+            _machine = await Machines.GetByOpdbIdAsync(OpdbId, ManufacturerKey, token);
+            if (_machine is null)
+            {
+                _notFound = true;
+                return;
+            }
+
+            // 2. Manufacturer rollup — single point read used for both this machine's
+            //    stats AND every sibling's DocCount (avoids per-sibling queries).
+            var rollup = await Stats.GetByManufacturerAsync(ManufacturerKey, token);
+
+            // 3. Build sibling list (all editions in the same GroupId family).
+            if (_machine.GroupId is not null)
+            {
+                var siblingMachines = new List<Machine>();
+                await foreach (var s in Machines.GetSiblingsByGroupIdAsync(_machine.GroupId, token))
+                    siblingMachines.Add(s);
+
+                _siblings = siblingMachines
+                    .OrderBy(s => s.EditionLabel, StringComparer.OrdinalIgnoreCase)
+                    .Select(s =>
+                    {
+                        var docCount = rollup?.Machines
+                            .FirstOrDefault(m => m.MachineId == s.Id)?.DocCount ?? 0;
+                        return new SiblingEntry(s.Id, s.Title, s.EditionLabel, docCount);
+                    })
+                    .ToList();
+            }
+
+            // 4. Compute health for this machine (Admin only).
+            if (IsAdmin && rollup is not null)
+            {
+                var thisStat = rollup.Machines.FirstOrDefault(m => m.MachineId == _machine.Id);
+                if (thisStat is not null)
+                {
+                    var siblingStats = rollup.Machines
+                        .Where(m => m.MachineId != _machine.Id && m.GroupId == _machine.GroupId)
+                        .ToList();
+                    _healthFlags = CatalogHealth.Evaluate(thisStat, siblingStats);
+                }
+            }
+
+            // 5. Linked documents (single-partition stream).
+            await foreach (var d in Docs.StreamByMachineIdAsync(_machine.Id, token))
+                _docs.Add(d);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load machine detail for {OpdbId} / {Mfr}.", OpdbId, ManufacturerKey);
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+                _loading = false;
+        }
+    }
+
+    private void OnAskWizardClick()
+    {
+        if (_machine is null) return;
+        var query = $"tell me about {_machine.Title}";
+        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(query)}");
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
+    private static Color HealthFlagColor(IReadOnlyList<CatalogHealthFlag> flags) =>
+        CatalogHealthColors.ForFlags(flags);
+
+    private static string HealthLabel(IReadOnlyList<CatalogHealthFlag> flags) =>
+        flags.Count == 0 || (flags.Count == 1 && flags[0] == CatalogHealthFlag.Ok)
+            ? "OK"
+            : flags[0] switch
+            {
+                CatalogHealthFlag.Empty      => "Empty",
+                CatalogHealthFlag.NoManual   => "No manual",
+                CatalogHealthFlag.EditionGap => "Edition gap",
+                _                            => "OK",
+            };
+
+    private static Color LinkStatusColor(string? status) => status switch
+    {
+        "Linked" or "linked"         => Color.Success,
+        "PlatformGeneric" or "platform_generic" => Color.Warning,
+        "Failed" or "failed"         => Color.Error,
+        "NotInCatalog" or "not_in_catalog"   => Color.Error,
+        _                            => Color.Default,
+    };
+
+    private static string FileNameFromUrl(string url)
+    {
+        try { return Path.GetFileName(new Uri(url).LocalPath); }
+        catch { return url; }
+    }
+
+    private static string FormatSize(long? bytes)
+    {
+        if (bytes is null) return string.Empty;
+        if (bytes < 1024)       return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024):F1} MB";
+    }
+}

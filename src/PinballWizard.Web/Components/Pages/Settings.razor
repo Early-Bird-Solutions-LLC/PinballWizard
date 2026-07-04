@@ -84,6 +84,22 @@
         </section>
     </MudPaper>
 
+    @* ── Display ─────────────────────────────────────────────────────────── *@
+    <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
+        <section aria-labelledby="display-heading">
+            <MudText id="display-heading" Typo="Typo.h5" Class="settings-section__heading mb-1">DISPLAY</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Set the default number of items shown per page in tables across the site.
+            </MudText>
+            <MudRadioGroup T="int" Value="@Prefs.PageSize" ValueChanged="OnPageSizeChanged">
+                <MudRadio T="int" Value="10" Dense="true">10 rows</MudRadio>
+                <MudRadio T="int" Value="25" Dense="true">25 rows</MudRadio>
+                <MudRadio T="int" Value="50" Dense="true">50 rows</MudRadio>
+                <MudRadio T="int" Value="100" Dense="true">100 rows</MudRadio>
+            </MudRadioGroup>
+        </section>
+    </MudPaper>
+
     @* ── Motion ──────────────────────────────────────────────────────────── *@
     <MudPaper Class="pa-5 mb-5 settings-section" Elevation="1">
         <section aria-labelledby="motion-heading">
@@ -171,4 +187,7 @@
 
     private async Task OnSoundChanged(bool on)
         => await Prefs.SetSoundAsync(on ? "on" : "muted").ConfigureAwait(false);
+
+    private async Task OnPageSizeChanged(int pageSize)
+        => await Prefs.SetPageSizeAsync(pageSize).ConfigureAwait(false);
 }

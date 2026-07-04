@@ -13,10 +13,11 @@ public sealed record DocumentListItem(
     int? PageCount,
     long? SizeBytes,
     DateTimeOffset FirstDiscoveredAt,
+    string? MachineId = null,
     // Admin-only — null on public projection:
-    string? LinkStatus,
-    string? LinkFailureReason,
-    string? ResolutionStrategy
+    string? LinkStatus = null,
+    string? LinkFailureReason = null,
+    string? ResolutionStrategy = null
 )
 {
     // Manufacturer partition key (e.g. "stern") derived from Manufacturer at

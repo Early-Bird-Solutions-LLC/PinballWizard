@@ -15,5 +15,6 @@ public sealed record FeaturedMachine(
     string MachineId,
     string Title,
     string? OpdbId,
+    string? ManufacturerKey = null,
     int DisplayOrder = 0,
     string? Tagline = null);

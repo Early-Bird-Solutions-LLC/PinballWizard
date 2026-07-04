@@ -41,7 +41,16 @@ else
                     @if (_doc.GameTitle is not null)
                     {
                         <MudText Typo="Typo.body1" Class="mb-1" data-testid="doc-detail-game">
-                            @_doc.GameTitle@(_doc.Edition is not null ? $" {_doc.Edition}" : "")
+                            @if (!string.IsNullOrWhiteSpace(_doc.MachineId) && !string.IsNullOrWhiteSpace(_doc.ManufacturerKey))
+                            {
+                                <MachineLink MachineId="@_doc.MachineId" 
+                                             ManufacturerKey="@_doc.ManufacturerKey" 
+                                             Title="@($"{_doc.GameTitle}{(_doc.Edition is not null ? $" {_doc.Edition}" : "")}")" />
+                            }
+                            else
+                            {
+                                @($"{_doc.GameTitle}{(_doc.Edition is not null ? $" {_doc.Edition}" : "")}")
+                            }
                         </MudText>
                     }
 

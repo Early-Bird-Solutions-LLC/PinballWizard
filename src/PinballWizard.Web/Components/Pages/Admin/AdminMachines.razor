@@ -87,7 +87,6 @@
                  Items="@_machines"
                  Groupable="@true"
                  GroupExpanded="@true"
-                 SearchContext="admin-machines"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
                  data-testid="admin-machines-grid">
 
@@ -111,12 +110,10 @@
             <PropertyColumn Property="x => x.Manufacturer"
                             Title="Manufacturer"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
+                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)"
+                            Hidden="@(_activeAxis != GroupByAxis.Manufacturer)">
                 <CellTemplate>
-                    @* Link to the public manufacturer detail page. ManufacturerLink needs a
-                     * display name; pre-backfill rollup docs may lack one, so degrade to the
-                     * plain key text rather than render an empty link (Invariant #17). *@
-                    @if (!string.IsNullOrWhiteSpace(context.Item.ManufacturerDisplayName))
+                    @if (context.Item.ManufacturerDisplayName is not null)
                     {
                         <ManufacturerLink ManufacturerKey="@context.Item.Manufacturer"
                                           DisplayName="@(context.Item.ManufacturerDisplayName!)" />
@@ -127,9 +124,10 @@
                     }
                 </CellTemplate>
                 <GroupTemplate>
-                    @* Prefer the group's display name (shared by every row in the group); fall
-                     * back to the partition key on pre-backfill data. *@
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Manufacturer:</span>
+                        @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.HealthLabel"
@@ -138,7 +136,9 @@
                             Grouping="@(_activeAxis == GroupByAxis.Health)"
                             Hidden="@(_activeAxis != GroupByAxis.Health)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Health Group: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Health Group:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Franchise"
@@ -147,16 +147,20 @@
                             Grouping="@(_activeAxis == GroupByAxis.Franchise)"
                             Hidden="@(_activeAxis != GroupByAxis.Franchise)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Franchise: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Franchise:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.YearLabel"
                             Title="Year"
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Year)"
-                            Sortable="true">
+                            Hidden="@(_activeAxis != GroupByAxis.Year)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Year: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Year:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Source"
@@ -165,12 +169,14 @@
                             Grouping="@(_activeAxis == GroupByAxis.Source)"
                             Hidden="@(_activeAxis != GroupByAxis.Source)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Source: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Source:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
             <PropertyColumn Property="x => x.Edition" Title="Edition" />
-            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" />
+            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" HeaderClass="text-right" CellClass="text-right" />
             <TemplateColumn Title="Health">
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)

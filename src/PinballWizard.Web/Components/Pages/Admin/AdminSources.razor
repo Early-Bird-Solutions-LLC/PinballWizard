@@ -58,10 +58,10 @@
         <Columns>
             <PropertyColumn Property="x => x.SourceGroup" Title="Manufacturer" Grouping="true" Hidden="true">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2"
+                    <MudText Typo="Typo.subtitle2"
                              data-testid="source-group-header"
-                             Style="color: var(--mud-palette-text-primary)">
-                        @context.Grouping.Key
+                             Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Manufacturer:</span> @context.Grouping.Key
                     </MudText>
                 </GroupTemplate>
             </PropertyColumn>

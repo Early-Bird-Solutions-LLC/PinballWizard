@@ -76,7 +76,11 @@
                 <TemplateColumn Title="Game" Sortable="true"
                                 SortBy="@(new Func<GameRow, object>(r => r.Title))"
                                 InitialDirection="SortDirection.Ascending">
-                    <CellTemplate>@context.Item.Title</CellTemplate>
+                    <CellTemplate>
+                        <MachineLink MachineId="@context.Item.Id" 
+                                     ManufacturerKey="@Key" 
+                                     Title="@context.Item.Title" />
+                    </CellTemplate>
                 </TemplateColumn>
                 <TemplateColumn Title="Year" Sortable="true"
                                 SortBy="@(new Func<GameRow, object>(r => r.Year ?? 0))">
@@ -120,7 +124,7 @@
 @code {
     [Parameter] public string Key { get; set; } = default!;
 
-    private sealed record GameRow(string Title, int? Year, string? Edition, int DocCount, bool HasManual);
+    private sealed record GameRow(string Id, string Title, int? Year, string? Edition, int DocCount, bool HasManual);
 
     private List<GameRow> _rows = [];
     private string? _displayName;
@@ -197,6 +201,7 @@
             {
                 statsByMachine.TryGetValue(m.Id, out var s);
                 return new GameRow(
+                    Id:        m.Id,
                     Title:     m.Title,
                     Year:      m.Year,
                     Edition:   m.EditionLabel,
