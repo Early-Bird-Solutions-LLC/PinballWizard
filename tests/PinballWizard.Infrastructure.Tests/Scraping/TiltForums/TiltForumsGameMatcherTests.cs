@@ -121,6 +121,7 @@ public sealed class TiltForumsGameMatcherTests
 
         Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
         Assert.Empty(result.Machines);
+        repo.DidNotReceive().GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
