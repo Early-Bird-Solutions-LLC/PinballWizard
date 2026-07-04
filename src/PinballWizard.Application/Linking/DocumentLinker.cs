@@ -521,14 +521,7 @@ public sealed class DocumentLinker : IDocumentLinker
     // the group segment alone is not an edition key; the year guard separates
     // genuine reissues/remakes. A slug collision that is NOT an edition family
     // (different makers/years) is left to the manufacturer-preference path.
-    private static bool IsEditionFamily(List<Machine> candidates)
-    {
-        if (candidates.Count == 0) return false;
-        var segments = candidates.Select(m => m.GroupId).Distinct().ToList();
-        var years = candidates.Select(m => m.Year).Distinct().ToList();
-        return segments.Count == 1 && segments[0] is not null
-            && years.Count == 1 && years[0] is not null;
-    }
+    private static bool IsEditionFamily(List<Machine> candidates) => EditionFamily.IsEditionFamily(candidates);
 
     private LinkingResult? TryTier1ProvenanceSlug(RawDocumentRecord raw)
     {
