@@ -117,9 +117,8 @@
         </MudPaper>
 
         <MudText Typo="Typo.h6" Class="mb-3">Execution History</MudText>
-        <AppDataGrid T="JobExecution"
+        <MudDataGrid T="JobExecution"
                      Items="@_detail.Executions"
-                     ShowPager="false"
                      data-testid="execution-table">
             <Columns>
                 <TemplateColumn Title="Execution">
@@ -156,7 +155,7 @@
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>
-        </AppDataGrid>
+        </MudDataGrid>
 
         @if (_detail.HasMore)
         {

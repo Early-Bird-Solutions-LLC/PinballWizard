@@ -83,7 +83,7 @@
         </AppErrorAlert>
     }
 
-    <AppDataGrid T="MachineCatalogRow"
+    <MudDataGrid T="MachineCatalogRow"
                  Items="@_machines"
                  Groupable="@true"
                  GroupExpanded="@true"
@@ -110,8 +110,7 @@
             <PropertyColumn Property="x => x.Manufacturer"
                             Title="Manufacturer"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)"
-                            Hidden="@(_activeAxis != GroupByAxis.Manufacturer)">
+                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
                 <CellTemplate>
                     @if (context.Item.ManufacturerDisplayName is not null)
                     {
@@ -133,8 +132,7 @@
             <PropertyColumn Property="x => x.HealthLabel"
                             Title="Health Group"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Health)"
-                            Hidden="@(_activeAxis != GroupByAxis.Health)">
+                            Grouping="@(_activeAxis == GroupByAxis.Health)">
                 <GroupTemplate>
                     <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
                         <span class="pw-grid-group-label">Health Group:</span> @context.Grouping.Key
@@ -144,8 +142,7 @@
             <PropertyColumn Property="x => x.Franchise"
                             Title="Franchise"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Franchise)"
-                            Hidden="@(_activeAxis != GroupByAxis.Franchise)">
+                            Grouping="@(_activeAxis == GroupByAxis.Franchise)">
                 <GroupTemplate>
                     <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
                         <span class="pw-grid-group-label">Franchise:</span> @context.Grouping.Key
@@ -155,8 +152,7 @@
             <PropertyColumn Property="x => x.YearLabel"
                             Title="Year"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Year)"
-                            Hidden="@(_activeAxis != GroupByAxis.Year)">
+                            Grouping="@(_activeAxis == GroupByAxis.Year)">
                 <GroupTemplate>
                     <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
                         <span class="pw-grid-group-label">Year:</span> @context.Grouping.Key
@@ -166,8 +162,7 @@
             <PropertyColumn Property="x => x.Source"
                             Title="Source"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Source)"
-                            Hidden="@(_activeAxis != GroupByAxis.Source)">
+                            Grouping="@(_activeAxis == GroupByAxis.Source)">
                 <GroupTemplate>
                     <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
                         <span class="pw-grid-group-label">Source:</span> @context.Grouping.Key
@@ -189,6 +184,9 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
+        <PagerContent>
+            <MudDataGridPager T="MachineCatalogRow" />
+        </PagerContent>
 
         <NoRecordsContent>
             @if (!_loadFailed)
@@ -204,7 +202,7 @@
             }
         </NoRecordsContent>
 
-    </AppDataGrid>
+    </MudDataGrid>
 </MudContainer>
 
 @code {

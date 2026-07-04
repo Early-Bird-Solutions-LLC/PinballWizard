@@ -49,10 +49,10 @@
         </AppErrorAlert>
     }
 
-    <AppDataGrid T="IngestionSourceRow"
+    <MudDataGrid T="IngestionSourceRow"
                  Items="@_sources"
-                 Groupable="@true"
-                 GroupExpanded="@true"
+                 Groupable="true"
+                 GroupExpanded="true"
                  data-testid="admin-sources-grid">
 
         <Columns>
@@ -120,7 +120,7 @@
             }
         </NoRecordsContent>
 
-    </AppDataGrid>
+    </MudDataGrid>
 </MudContainer>
 
 @code {

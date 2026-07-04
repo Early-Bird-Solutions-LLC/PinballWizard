@@ -60,7 +60,7 @@
     }
     else
     {
-        <AppDataGrid T="ManufacturerRow" Items="@_rows" data-testid="manufacturers-table">
+        <MudDataGrid T="ManufacturerRow" Items="@_rows" RowsPerPage="25" data-testid="manufacturers-table">
             <Columns>
                 <TemplateColumn Title="Manufacturer" Sortable="true"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
@@ -91,7 +91,10 @@
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>
-        </AppDataGrid>
+            <PagerContent>
+                <MudDataGridPager T="ManufacturerRow" />
+            </PagerContent>
+        </MudDataGrid>
     }
 </MudContainer>
 

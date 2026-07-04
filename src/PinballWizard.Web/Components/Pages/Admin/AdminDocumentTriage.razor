@@ -49,9 +49,8 @@
         </AppErrorAlert>
     }
 
-    <AppDataGrid T="DocumentTriageRow"
+    <MudDataGrid T="DocumentTriageRow"
                  Items="@_documents"
-                 SearchContext="admin-document-triage"
                  data-testid="admin-document-triage-grid">
 
         <Columns>
@@ -107,7 +106,7 @@
             }
         </NoRecordsContent>
 
-    </AppDataGrid>
+    </MudDataGrid>
 </MudContainer>
 
 @code {

@@ -59,7 +59,7 @@
         </AppErrorAlert>
     }
 
-    <AppDataGrid T="LinkOverrideRow"
+    <MudDataGrid T="LinkOverrideRow"
                  Items="@_overrides"
                  data-testid="admin-link-overrides-grid">
 
@@ -100,7 +100,7 @@
             }
         </NoRecordsContent>
 
-    </AppDataGrid>
+    </MudDataGrid>
 </MudContainer>
 
 @* Create Override dialog — gated: only renders for admins *@
