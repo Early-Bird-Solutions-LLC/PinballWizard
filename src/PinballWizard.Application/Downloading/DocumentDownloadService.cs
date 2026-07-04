@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
 using PinballWizard.Application.Persistence;
@@ -75,9 +76,37 @@ public sealed class DocumentDownloadService
 
             if (!force)
             {
-                // Fast path: Cosmos record already carries a LocalPath — genuinely
-                // nothing to do.
-                if (raw.File?.LocalPath is not null) { skipped++; continue; }
+                var hasLocalPath = raw.File?.LocalPath is not null;
+                // Whitespace-checked, not null-checked, to match the exact guard
+                // CosmosRawDocumentRepository.UpdateFileAsync uses before copying
+                // Sha256 into ContentHash. A mismatched check here (e.g. treating
+                // Sha256 = "" as "known") would make this branch fire every run
+                // without ever satisfying hasContentHash — a permanent backfill loop.
+                var hasSha256 = !string.IsNullOrWhiteSpace(raw.File?.Sha256);
+                var hasContentHash = !string.IsNullOrWhiteSpace(raw.ContentHash);
+
+                // Fast path: LocalPath, Sha256, AND the top-level ContentHash all
+                // already set — genuinely nothing to do.
+                if (hasLocalPath && hasSha256 && hasContentHash) { skipped++; continue; }
+
+                // Denormalization-only self-heal (issue #664, second layer): Sha256 is
+                // already known (a prior download or the self-heal branch below
+                // computed it), but the top-level ContentHash was never copied from
+                // it — the only other writer of ContentHash is UpsertRawAsync (the
+                // scraper's re-discovery path), so a document downloaded but not yet
+                // re-scraped a second time stays stuck here. No blob read needed: the
+                // hash is already known. Uses DenormalizeContentHashAsync (not
+                // UpdateFileAsync) so Timeline.LastDownloadedAt is NOT touched — no
+                // bytes were transferred, so stamping "now" would misrepresent when
+                // this document was actually last fetched.
+                if (hasLocalPath && hasSha256 && !hasContentHash)
+                {
+                    await _repo.DenormalizeContentHashAsync(raw.DocumentId, raw.File!.Sha256!, cancellationToken)
+                        .ConfigureAwait(false);
+                    backfilled++;
+                    skipped++;
+                    continue;
+                }
 
                 // Durability check: the blob may already exist in pinwiz-raw even
                 // though Cosmos was never stamped (e.g. an earlier run wrote the
@@ -105,14 +134,47 @@ public sealed class DocumentDownloadService
                             raw.DocumentId, blobName);
                     }
 
-                    // Only the File field is written back (provenance invariant); Sha256
-                    // is intentionally omitted — computing it would require reading the
-                    // full blob, defeating the point of a backfill that avoids a re-download.
+                    // Only the File field is written back (provenance invariant).
+                    // Sha256 IS computed here — from the already-stored blob, not by
+                    // re-downloading from the source — because this branch stamps
+                    // LocalPath, and every future run hits the fast-path skip above
+                    // (raw.File?.LocalPath is not null) without ever revisiting this
+                    // document. If Sha256 stayed null here it would stay permanently
+                    // null: ContentHash would never be set, so RAG's rag_index_state
+                    // hash short-circuit could never engage for this document, and it
+                    // would be fully re-embedded on every future --run-rag-backfill run,
+                    // forever (issue #664). Reading our own blob storage to hash it is
+                    // cheap (no external HTTP call to the source) — unlike a real
+                    // re-download, which this self-heal path exists specifically to avoid.
+                    string? sha256 = null;
+                    await using (var blobStream = await _blobStore
+                        .TryOpenReadAsync(blobName, cancellationToken).ConfigureAwait(false))
+                    {
+                        if (blobStream is not null)
+                        {
+                            var hashBytes = await SHA256.HashDataAsync(blobStream, cancellationToken)
+                                .ConfigureAwait(false);
+                            sha256 = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                        }
+                        else
+                        {
+                            // Same TOCTOU window as the GetSizeAsync race above: the blob
+                            // answered Exists=true but is gone by the time we read it.
+                            // Degrade to a null Sha256 rather than throw — --force-redownload
+                            // remains the recovery path.
+                            _logger.LogWarning(
+                                "DocumentDownload: backfill for {DocId} — TryOpenReadAsync returned null for " +
+                                "'{BlobName}' immediately after ExistsAsync=true; leaving Sha256 unset.",
+                                raw.DocumentId, blobName);
+                        }
+                    }
+
                     await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
                     {
                         LocalPath = blobName,
                         Filename = Path.GetFileName(blobName),
                         SizeBytes = size ?? 0,
+                        Sha256 = sha256,
                     }, cancellationToken).ConfigureAwait(false);
                     backfilled++;
                     skipped++;

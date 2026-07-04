@@ -837,6 +837,122 @@ public sealed class CosmosRawDocumentRepositoryTests
     }
 
     // ────────────────────────────────────────────────────────────────
+    // UpdateFileAsync
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpdateFileAsync_WithSha256_DenormalizesIntoTopLevelContentHash()
+    {
+        // Issue #664 root cause: UpdateFileAsync wrote File.Sha256 but never
+        // denormalized it into the top-level ContentHash field — the ONLY place
+        // that copy previously happened was UpsertRawAsync (the scraper's
+        // re-discovery path). A document downloaded but not yet re-scraped a
+        // second time kept ContentHash permanently empty, so the RAG pipeline's
+        // rag_index_state hash short-circuit could never engage for it (it reads
+        // ContentHash, not File.Sha256). UpdateFileAsync must self-heal the same
+        // way UpsertRawAsync already does.
+        const string docId = "doc_hash";
+        var existing = MakeCosmosRecord(docId);
+        existing.ContentHash = null;
+        SetupGetByIdFound(docId, existing);
+        SetupUpsert(existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.UpdateFileAsync(docId,
+            new DownloadedFileInfo { LocalPath = "manualspage/x.pdf", Filename = "x.pdf", Sha256 = "abc123" },
+            CancellationToken.None);
+
+        Assert.Equal("abc123", captured?.File?.Sha256);
+        Assert.Equal("abc123", captured?.ContentHash);
+    }
+
+    [Fact]
+    public async Task UpdateFileAsync_NullSha256_LeavesExistingContentHashUntouched()
+    {
+        // The TOCTOU-degrade case (blob vanished between ExistsAsync and the hash
+        // read): a null incoming Sha256 must not clobber a ContentHash the
+        // document already had from an earlier successful run.
+        const string docId = "doc_keep";
+        var existing = MakeCosmosRecord(docId);
+        existing.ContentHash = "already-set";
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.UpdateFileAsync(docId,
+            new DownloadedFileInfo { LocalPath = "manualspage/x.pdf", Filename = "x.pdf", Sha256 = null },
+            CancellationToken.None);
+
+        Assert.Null(captured?.File?.Sha256);
+        Assert.Equal("already-set", captured?.ContentHash);
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // DenormalizeContentHashAsync
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task DenormalizeContentHashAsync_SetsContentHash_WithoutTouchingFileOrTimeline()
+    {
+        // No bytes were transferred for this call (the caller already knows the
+        // hash) — File and Timeline (including LastDownloadedAt) must be left
+        // exactly as they were. Only the hash-tracking field changes.
+        const string docId = "doc_denorm";
+        var existing = MakeCosmosRecord(docId);
+        existing.ContentHash = null;
+        existing.File = new RawFileInfo { LocalPath = "manualspage/existing.pdf", Filename = "existing.pdf", Sha256 = "known-hash" };
+        existing.Timeline = new RawTimelineInfo
+        {
+            FirstDiscoveredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            LastDownloadedAt = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+        };
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.DenormalizeContentHashAsync(docId, "known-hash", CancellationToken.None);
+
+        Assert.Equal("known-hash", captured?.ContentHash);
+        Assert.Equal("manualspage/existing.pdf", captured?.File?.LocalPath);
+        Assert.Equal(new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc), captured?.Timeline?.LastDownloadedAt);
+    }
+
+    [Fact]
+    public async Task DenormalizeContentHashAsync_BlankSha256_IsNoOp()
+    {
+        // A blank hash has nothing to denormalize — must not read or write the
+        // record at all, and must not throw even if the document doesn't exist.
+        await _repository.DenormalizeContentHashAsync("doc_blank", "", CancellationToken.None);
+
+        await _container.DidNotReceiveWithAnyArgs()
+            .ReadItemAsync<RawDocumentCosmosRecord>(default!, default, default, default);
+        await _container.DidNotReceiveWithAnyArgs()
+            .UpsertItemAsync<RawDocumentCosmosRecord>(default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task DenormalizeContentHashAsync_DocumentNotFound_ThrowsInvalidOperationException()
+    {
+        SetupGetByIdNotFound("doc_missing");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _repository.DenormalizeContentHashAsync("doc_missing", "known-hash", CancellationToken.None));
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // GetAsync
     // ────────────────────────────────────────────────────────────────
 
