@@ -397,6 +397,145 @@ public class DocumentLinkerTests
     }
 
     // -------------------------------------------------------------------------
+    // Tier 1 — Cross-year edition family (issue #677): a franchise whose OPDB
+    // editions span multiple release years under one GroupId (an original
+    // release plus a later Vault Edition reissue) must still resolve via
+    // EditionResolver, not silently fail on the year-gated family check that
+    // let a "pro" doc resolve nowhere despite a correct, backfilled slug.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_CrossYearAcdcFamily_ProDocLinksToProBase()
+    {
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        // AC/DC (GroupId "G43W4"): 3 bases from the 2012 release plus 2
+        // "Vault Edition" reissue bases from 2017 — one franchise, two years.
+        var pro2012 = MakeMachine(id: "G43W4-MKNW0", title: "AC/DC (Pro)", slug: "ac-dc");
+        pro2012.GroupId = "G43W4"; pro2012.Year = 2012; pro2012.EditionTokens = ["pro"];
+        var premium2012 = MakeMachine(id: "G43W4-MXrPx", title: "AC/DC (Premium)", slug: "ac-dc");
+        premium2012.GroupId = "G43W4"; premium2012.Year = 2012; premium2012.EditionTokens = ["premium"];
+        var le2012 = MakeMachine(id: "G43W4-MrRpw", title: "AC/DC (LE)", slug: "ac-dc");
+        le2012.GroupId = "G43W4"; le2012.Year = 2012; le2012.EditionTokens = ["le"];
+        var premiumVault2017 = MakeMachine(id: "G43W4-MdEjy", title: "AC/DC (Premium Vault Edition)", slug: "ac-dc");
+        premiumVault2017.GroupId = "G43W4"; premiumVault2017.Year = 2017; premiumVault2017.EditionTokens = ["premium", "vault"];
+        var proVault2017 = MakeMachine(id: "G43W4-MKNX0", title: "AC/DC (Pro Vault Edition)", slug: "ac-dc");
+        proVault2017.GroupId = "G43W4"; proVault2017.Year = 2017; proVault2017.EditionTokens = ["pro", "vault"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2015/03/ACDC_Pro_web.pdf",
+            sourceType: SourceType.ManualsPage,
+            game: new GameReference
+            {
+                Title = "AC/DC",
+                Slug = "ac-dc",
+                GamePageUrl = "https://sternpinball.com/game/ac-dc/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [pro2012, premium2012, le2012, premiumVault2017, proVault2017]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Must link to the 2012 Pro base — NOT NotInCatalog (the pre-fix bug),
+        // and NOT the 2017 Pro Vault Edition (the naive-fix regression: the doc
+        // never signals "vault", so the plain Pro base is the correct match).
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("game_slug_edition", result.ResolutionStrategy);
+        Assert.Equal(["G43W4-MKNW0"], result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier1GameSlug_CrossYearAcdcFamily_RulesheetFansOutToAllFiveEditions()
+    {
+        // A group-level doc (rulesheet) applies to the WHOLE franchise, not
+        // just one release year — must fan out across all 5 AC/DC bases
+        // (2012 + 2017 Vault Edition), not just the 3 same-year ones.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var pro2012 = MakeMachine(id: "G43W4-MKNW0", title: "AC/DC (Pro)", slug: "ac-dc");
+        pro2012.GroupId = "G43W4"; pro2012.Year = 2012; pro2012.EditionTokens = ["pro"];
+        var premium2012 = MakeMachine(id: "G43W4-MXrPx", title: "AC/DC (Premium)", slug: "ac-dc");
+        premium2012.GroupId = "G43W4"; premium2012.Year = 2012; premium2012.EditionTokens = ["premium"];
+        var le2012 = MakeMachine(id: "G43W4-MrRpw", title: "AC/DC (LE)", slug: "ac-dc");
+        le2012.GroupId = "G43W4"; le2012.Year = 2012; le2012.EditionTokens = ["le"];
+        var premiumVault2017 = MakeMachine(id: "G43W4-MdEjy", title: "AC/DC (Premium Vault Edition)", slug: "ac-dc");
+        premiumVault2017.GroupId = "G43W4"; premiumVault2017.Year = 2017; premiumVault2017.EditionTokens = ["premium", "vault"];
+        var proVault2017 = MakeMachine(id: "G43W4-MKNX0", title: "AC/DC (Pro Vault Edition)", slug: "ac-dc");
+        proVault2017.GroupId = "G43W4"; proVault2017.Year = 2017; proVault2017.EditionTokens = ["pro", "vault"];
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2015/03/AC-DC-Rulesheet.pdf",
+            sourceType: SourceType.ManualsPage,
+            game: new GameReference
+            {
+                Title = "AC/DC",
+                Slug = "ac-dc",
+                GamePageUrl = "https://sternpinball.com/game/ac-dc/",
+            });
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [pro2012, premium2012, le2012, premiumVault2017, proVault2017]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.Linked, result.FinalStatus);
+        Assert.Equal("game_slug_edition_group", result.ResolutionStrategy);
+        Assert.Equal(5, result.LinkedMachineIds.Count);
+        Assert.Contains("G43W4-MKNW0", result.LinkedMachineIds);
+        Assert.Contains("G43W4-MXrPx", result.LinkedMachineIds);
+        Assert.Contains("G43W4-MrRpw", result.LinkedMachineIds);
+        Assert.Contains("G43W4-MdEjy", result.LinkedMachineIds);
+        Assert.Contains("G43W4-MKNX0", result.LinkedMachineIds);
+    }
+
+    [Fact]
+    public async Task LinkAsync_Tier2_CrossYearFamilyNoEditionSignal_FallsThroughCleanly_NotHardAmbiguousFail()
+    {
+        // Iron Man (GroupId "GRVq4"): 2 bases from 2010 + 1 Vault Edition
+        // reissue base from 2014, all slug-less (title-index fallback only,
+        // matching the corpus state in issue #677). The manual's filename
+        // carries no edition token at all, so there is genuinely no signal to
+        // resolve on — but the linker must now recognize this as ONE edition
+        // family it can't disambiguate (falls through to later tiers) rather
+        // than misreporting a slug collision as an "ambiguous filename match",
+        // which is what the year-gated family check produced before this fix.
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var overrideRepo = Substitute.For<ILinkOverrideRepository>();
+        var machineRepo = Substitute.For<IMachineRepository>();
+        var docWriter = Substitute.For<IScrapedDocumentRepository>();
+
+        var ironMan2010A = MakeMachine(id: "GRVq4-MLyxq", title: "Iron Man", slug: "");
+        ironMan2010A.GroupId = "GRVq4"; ironMan2010A.Year = 2010; ironMan2010A.ManufacturerSlugs.Clear();
+        var ironMan2010B = MakeMachine(id: "GRVq4-MDRKr", title: "Iron Man", slug: "");
+        ironMan2010B.GroupId = "GRVq4"; ironMan2010B.Year = 2010; ironMan2010B.ManufacturerSlugs.Clear();
+        var ironMan2014Vault = MakeMachine(id: "GRVq4-M4oNp", title: "Iron Man", slug: "");
+        ironMan2014Vault.GroupId = "GRVq4"; ironMan2014Vault.Year = 2014; ironMan2014Vault.ManufacturerSlugs.Clear();
+
+        var raw = MakeRaw(
+            fileUrl: "https://sternpinball.com/wp-content/uploads/2010/01/IronMan-Manual.pdf",
+            sourceType: SourceType.ManualsPage);
+
+        var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter,
+            machines: [ironMan2010A, ironMan2010B, ironMan2014Vault]);
+
+        await linker.InitializeAsync(CancellationToken.None);
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.NotNull(result.FailureReason);
+        Assert.DoesNotContain("Ambiguous filename match", result.FailureReason);
+    }
+
+    // -------------------------------------------------------------------------
     // FanOut: partial-link → Failed
     // -------------------------------------------------------------------------
 
