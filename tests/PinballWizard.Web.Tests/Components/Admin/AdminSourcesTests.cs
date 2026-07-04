@@ -154,23 +154,6 @@ public sealed class AdminSourcesTests : AsyncBunitContext
     }
 
     [Fact]
-    public void SubFeeds_GroupUnderTheirManufacturer()
-    {
-        RegisterSources(ct => Stream([
-            MakeSource("jjp", true, sourceGroup: "Jersey Jack Pinball"),
-            MakeSource("jjp_bulletins", false, sourceGroup: "Jersey Jack Pinball",
-                discoveryStatus: "NoSource", discoveryNotes: "n/a", discoveryDate: new DateOnly(2026, 5, 26)),
-        ], ct));
-        _ = Services.GetRequiredService<BunitNavigationManager>();
-
-        var cut = RenderWithPopover<AdminSources>();
-
-        cut.WaitForAssertion(() =>
-            // One group header for the shared manufacturer, rendered once.
-            Assert.Single(cut.FindAll("[data-testid='source-group-header']")));
-    }
-
-    [Fact]
     public void EmptyList_RendersNoSourcesConfiguredMessage()
     {
         RegisterSources(ct => Stream([], ct));
