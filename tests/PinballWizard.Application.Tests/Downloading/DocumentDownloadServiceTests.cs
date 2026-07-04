@@ -121,7 +121,7 @@ public sealed class DocumentDownloadServiceTests
     }
 
     [Fact]
-    public async Task Skips_WhenSha256Set_ButContentHashMissing_DenormalizesWithoutReadingBlob()
+    public async Task Skips_WhenSha256Set_ButContentHashMissing_DenormalizesWithoutReadingBlobOrTouchingTimeline()
     {
         // Issue #664, second layer: File.Sha256 was already computed (by a prior
         // download or by the self-heal-from-blob branch), but the top-level
@@ -129,8 +129,9 @@ public sealed class DocumentDownloadServiceTests
         // ContentHash is UpsertRawAsync (the scraper's re-discovery path), so a
         // document downloaded but not yet re-scraped a second time stays stuck
         // here forever without this branch. No blob read is needed — the hash is
-        // already known — just re-stamp the record so CosmosRawDocumentRepository's
-        // UpdateFileAsync denormalizes it into ContentHash.
+        // already known. Uses DenormalizeContentHashAsync, NOT UpdateFileAsync —
+        // no bytes were transferred, so UpdateFileAsync's Timeline.LastDownloadedAt
+        // stamp would misrepresent when this document was actually last fetched.
         var raw = MakeRaw("doc_h", "https://sternpinball.com/x/h.pdf",
             file: new DownloadedFileInfo
             {
@@ -149,10 +150,39 @@ public sealed class DocumentDownloadServiceTests
         await _blobStore.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _blobStore.DidNotReceive().TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
-        await _repo.Received(1).UpdateFileAsync("doc_h",
-            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/h.pdf"
-                && f.SizeBytes == 555
-                && f.Sha256 == "known-hash"),
+        await _repo.DidNotReceive().UpdateFileAsync(
+            Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).DenormalizeContentHashAsync("doc_h", "known-hash", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Skips_WhenSha256IsEmptyString_TreatsAsUnknownAndFallsThroughToBlobCheck()
+    {
+        // hasSha256 must use the SAME whitespace check CosmosRawDocumentRepository.
+        // UpdateFileAsync uses before copying Sha256 into ContentHash. If this check
+        // instead treated Sha256 = "" as "known" (a bare null check), the Tier 2
+        // denormalize-only branch would fire every run, call UpdateFileAsync with
+        // an empty Sha256, which correctly declines to touch ContentHash (it uses
+        // the same whitespace guard) — so hasContentHash would never become true,
+        // and backfilled would increment forever without ever fixing the record.
+        // An empty Sha256 must instead fall through to the self-heal-from-blob
+        // branch, which computes a REAL hash.
+        var raw = MakeRaw("doc_empty", "https://sternpinball.com/x/empty.pdf",
+            file: new DownloadedFileInfo { LocalPath = "manualspage/empty.pdf", Filename = "empty.pdf", Sha256 = "" },
+            contentHash: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync("manualspage/empty.pdf", Arg.Any<CancellationToken>()).Returns(true);
+        _blobStore.GetSizeAsync("manualspage/empty.pdf", Arg.Any<CancellationToken>()).Returns(100L);
+        var blobBytes = new byte[] { 1, 2, 3 };
+        var expectedSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(blobBytes)).ToLowerInvariant();
+        _blobStore.TryOpenReadAsync("manualspage/empty.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream(blobBytes)));
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Backfilled);
+        await _repo.Received(1).UpdateFileAsync("doc_empty",
+            Arg.Is<DownloadedFileInfo>(f => f.Sha256 == expectedSha256),
             Arg.Any<CancellationToken>());
     }
 

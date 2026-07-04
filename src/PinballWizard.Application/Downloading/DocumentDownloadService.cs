@@ -77,7 +77,12 @@ public sealed class DocumentDownloadService
             if (!force)
             {
                 var hasLocalPath = raw.File?.LocalPath is not null;
-                var hasSha256 = raw.File?.Sha256 is not null;
+                // Whitespace-checked, not null-checked, to match the exact guard
+                // CosmosRawDocumentRepository.UpdateFileAsync uses before copying
+                // Sha256 into ContentHash. A mismatched check here (e.g. treating
+                // Sha256 = "" as "known") would make this branch fire every run
+                // without ever satisfying hasContentHash — a permanent backfill loop.
+                var hasSha256 = !string.IsNullOrWhiteSpace(raw.File?.Sha256);
                 var hasContentHash = !string.IsNullOrWhiteSpace(raw.ContentHash);
 
                 // Fast path: LocalPath, Sha256, AND the top-level ContentHash all
@@ -90,19 +95,14 @@ public sealed class DocumentDownloadService
                 // it — the only other writer of ContentHash is UpsertRawAsync (the
                 // scraper's re-discovery path), so a document downloaded but not yet
                 // re-scraped a second time stays stuck here. No blob read needed: the
-                // hash is already known, just re-stamp so CosmosRawDocumentRepository.
-                // UpdateFileAsync denormalizes it into ContentHash.
+                // hash is already known. Uses DenormalizeContentHashAsync (not
+                // UpdateFileAsync) so Timeline.LastDownloadedAt is NOT touched — no
+                // bytes were transferred, so stamping "now" would misrepresent when
+                // this document was actually last fetched.
                 if (hasLocalPath && hasSha256 && !hasContentHash)
                 {
-                    await _repo.UpdateFileAsync(raw.DocumentId, new DownloadedFileInfo
-                    {
-                        LocalPath = raw.File!.LocalPath,
-                        Filename = raw.File.Filename,
-                        SizeBytes = raw.File.SizeBytes,
-                        Sha256 = raw.File.Sha256,
-                        MimeType = raw.File.MimeType,
-                        PageCount = raw.File.PageCount,
-                    }, cancellationToken).ConfigureAwait(false);
+                    await _repo.DenormalizeContentHashAsync(raw.DocumentId, raw.File!.Sha256!, cancellationToken)
+                        .ConfigureAwait(false);
                     backfilled++;
                     skipped++;
                     continue;

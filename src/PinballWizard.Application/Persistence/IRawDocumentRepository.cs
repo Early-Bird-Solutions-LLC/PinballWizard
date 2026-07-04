@@ -38,6 +38,16 @@ public interface IRawDocumentRepository
     // are untouched. Throws if the document does not exist.
     Task UpdateFileAsync(string documentId, DownloadedFileInfo file, CancellationToken cancellationToken);
 
+    // Copies an already-known File.Sha256 into the top-level ContentHash field
+    // ONLY — no File, Timeline, or other field is touched. For the case where
+    // Sha256 was already computed (a prior download, or UpdateFileAsync's own
+    // self-heal) but ContentHash was never denormalized from it (issue #664):
+    // using UpdateFileAsync here would incorrectly stamp Timeline.LastDownloadedAt
+    // to "now" even though no bytes were transferred, misleading operators about
+    // when the document was actually last fetched. A blank sha256 is a no-op.
+    // Throws if the document does not exist.
+    Task DenormalizeContentHashAsync(string documentId, string sha256, CancellationToken cancellationToken);
+
     // Set link_status and linker metadata on an existing record.
     Task UpdateLinkStatusAsync(
         string documentId,

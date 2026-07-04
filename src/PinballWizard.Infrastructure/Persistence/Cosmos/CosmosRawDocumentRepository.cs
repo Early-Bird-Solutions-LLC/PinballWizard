@@ -189,6 +189,39 @@ internal sealed class CosmosRawDocumentRepository
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
+    // IRawDocumentRepository.DenormalizeContentHashAsync
+    public async Task DenormalizeContentHashAsync(
+        string documentId,
+        string sha256,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        // A blank hash has nothing to denormalize — no-op rather than clobber
+        // whatever ContentHash already holds.
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            return;
+        }
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"DenormalizeContentHashAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        // ONLY ContentHash changes — File and Timeline (including
+        // LastDownloadedAt) are left exactly as they were. Unlike UpdateFileAsync,
+        // no bytes were transferred here, so stamping a fresh LastDownloadedAt
+        // would misrepresent when the document was actually last fetched.
+        existing.ContentHash = sha256;
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
     // IRawDocumentRepository.UpdateLinkStatusAsync
     public async Task UpdateLinkStatusAsync(
         string documentId,
