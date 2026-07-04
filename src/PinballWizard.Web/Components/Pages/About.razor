@@ -49,12 +49,13 @@
     <MudText Typo="Typo.body1" Class="mb-3">
         Built on Clean Architecture with .NET 10 and .NET Aspire, the system separates
         domain logic (Core), orchestration (Application), and infrastructure concerns
-        (scrapers, Cosmos DB, Azure AI Search) across four layers. Polite scrapers harvest
-        first-party manufacturer documents into Cosmos DB; a Change-Feed-driven RAG Ingestion
-        Worker chunks and embeds them into an Azure AI Search vector index. Azure AI Foundry
-        orchestrates multi-agent reasoning (Wizard, Repair, Grounding, and Search agents) over
-        those tools — every answer carries a clickable citation that deep-links to the source
-        document in the browseable corpus.
+        (scrapers, community rulesheets, Cosmos DB, Azure AI Search) across four layers.
+        Polite scrapers and community rulesheet synthesizers harvest first-party and
+        community strategy documents into the RAG corpus; a Change-Feed-driven RAG
+        Ingestion Worker chunks and embeds the manufacturer data into an Azure AI Search
+        vector index. Azure AI Foundry orchestrates multi-agent reasoning (Wizard, Repair,
+        Grounding, and Search agents) over those tools — every answer carries a clickable
+        citation that deep-links to the source document or community guide.
     </MudText>
 
     <MudText Typo="Typo.body1" Class="mb-4">
@@ -65,11 +66,12 @@
     </MudText>
 
     @* ── Architecture diagram ─────────────────────────────────────────────── *@
-    <div class="about-diagram mb-6" data-testid="about-diagram">
+    <div class="about-diagram-container mb-6" data-testid="about-diagram">
         <MudImage Src="img/about-architecture.svg"
-                  Alt="Architecture diagram showing four layers: Public Interface (Blazor Web App and Admin Panel) connects over HTTPS and SSE to the API and Application Layer (ASP.NET Core streaming endpoint and Azure AI Foundry with Microsoft Agent Framework). The AI Foundry calls tools against the Data Layer (Cosmos DB Serverless, AI Search Basic, Azure OpenAI). The offline Data Ingestion layer (10 polite scrapers, OPDB sync, and RAG Ingestion Worker) feeds Cosmos via scrapers and pumps AI Search via Change Feed."
+                  Alt="Architecture diagram showing four layers: Public Interface (Blazor Web App and Admin Panel) connects over HTTPS and SSE to the API and Application Layer (ASP.NET Core streaming endpoint and Azure AI Foundry with Microsoft Agent Framework). The AI Foundry calls tools against the Data Layer (Cosmos DB Serverless, AI Search Basic, Azure OpenAI). The offline Data Ingestion layer (10 polite scrapers, OPDB sync, community rulesheets, and RAG Ingestion Worker) feeds Cosmos and AI Search."
                   Fluid="true"
-                  data-testid="about-diagram-svg" />
+                  data-testid="about-diagram-svg"
+                  Class="about-diagram-image" />
     </div>
 
     @* ── Tech stack ───────────────────────────────────────────────────────── *@
@@ -198,6 +200,9 @@
         <AppBulletItem>
             <MudText Typo="Typo.body2">OPDB — Open Pinball Database (canonical machine catalog)</MudText>
         </AppBulletItem>
+        <AppBulletItem>
+            <MudText Typo="Typo.body2">Tilt Forums — community Wiki Rulesheets (~80-90 modern machines)</MudText>
+        </AppBulletItem>
     </AppBulletList>
 
     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -228,6 +233,11 @@
                          Href="https://kineticist.com"
                          Description="Gameplay-rules depth and catalog enrichment via API access and rules-guide permission (Colin Alsheimer, Jun 2026)."
                          StatusText="API + rules · Jun 2026" />
+        <DataPartnerCard Role="Rules"
+                         Name="Tilt Forums"
+                         Href="https://tiltforums.com"
+                         Description="Community-maintained Wiki Rulesheets — deep strategy guides for modern machines (Greg Dunlap, Jul 2026)."
+                         StatusText="Community · Jul 2026" />
         <DataPartnerCard Role="Pricing"
                          Name="Silverball Labs"
                          Href="https://silverballlabs.com"
@@ -255,3 +265,62 @@
     </MudText>
 
 </MudContainer>
+
+<style>
+    .about-diagram-container {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        animation: diagramEntry 1s ease-out;
+        overflow: hidden;
+    }
+
+    .about-diagram-container:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 12px 48px 0 rgba(0, 0, 0, 0.4);
+        transform: translateY(-4px);
+    }
+
+    .about-diagram-image {
+        filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+        transition: transform 0.4s ease;
+    }
+
+    .about-diagram-container:hover .about-diagram-image {
+        transform: scale(1.01);
+    }
+
+    @@keyframes diagramEntry {
+        from { 
+            opacity: 0; 
+            transform: translateY(30px) scale(0.98); 
+            filter: blur(10px);
+        }
+        to { 
+            opacity: 1; 
+            transform: translateY(0) scale(1); 
+            filter: blur(0);
+        }
+    }
+
+    .about-section-heading {
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        background: linear-gradient(90deg, #fff 0%, #aaa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* Adjust the partners grid for 4 items */
+    .about-partners-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+    }
+</style>

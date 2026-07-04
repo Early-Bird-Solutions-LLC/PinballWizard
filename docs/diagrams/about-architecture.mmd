@@ -15,30 +15,31 @@
 %% where <HASH> = lowercase hex SHA-256 of this file's bytes (LF endings).
 %% The failing test prints the expected value.
 graph TD
-    subgraph FE["Public Interface  ·  Azure Container Apps"]
+    subgraph FE["🌐 Public Interface  ·  Azure Container Apps"]
         direction LR
-        PUB["Blazor Web App\nAsk · Machines · Documents · About"]
-        ADM["Admin Panel\n/admin/*"]
+        PUB["💻 Blazor Web App\nAsk · Machines · Documents · About"]
+        ADM["🛠️ Admin Panel\n/admin/*"]
     end
 
-    subgraph APIAPP["API + Application Layer"]
+    subgraph APIAPP["🚀 API + Application Layer"]
         direction LR
-        SSE["ASP.NET Core\nStreaming endpoint\n(text/event-stream)"]
-        FOUNDRY["Azure AI Foundry\nMicrosoft Agent Framework\nWizard · Repair · Grounding · Search"]
+        SSE["📡 ASP.NET Core\nStreaming endpoint\n(text/event-stream)"]
+        FOUNDRY["🤖 Azure AI Foundry\nMicrosoft Agent Framework\nWizard · Repair · Grounding · Search"]
     end
 
-    subgraph DATA["Data Layer  ·  Azure"]
+    subgraph DATA["🗄️ Data Layer  ·  Azure"]
         direction LR
-        COS["Cosmos DB Serverless\nmachines · documents · catalog_stats"]
-        SRCH["AI Search Basic\nvector + BM25 index"]
-        OAI["Azure OpenAI\ngpt-4o · text-embedding-3-small"]
+        COS["📂 Cosmos DB Serverless\nmachines · docs · stats"]
+        SRCH["🔍 AI Search Basic\nvector + BM25 index"]
+        OAI["🧠 Azure OpenAI\ngpt-4o · embeddings"]
     end
 
-    subgraph INGEST["Data Ingestion  ·  offline pipeline"]
+    subgraph INGEST["📥 Data Ingestion  ·  offline pipeline"]
         direction LR
-        SC["10 Polite Scrapers\nStern · JJP · AP · Spooky · PBros\nBoF · Multimorphic · CGC"]
-        OPDB["OPDB Sync\ncanonical machine catalog"]
-        RAG["RAG Ingestion Worker\nChange Feed → chunk → embed"]
+        SC["🕷️ 10 Polite Scrapers\nStern · JJP · AP · Spooky · PBros\nBoF · Multimorphic · CGC"]
+        OPDB["📑 OPDB Sync\ncanonical machine catalog"]
+        TILT["💬 Tilt Forums\nCommunity rulesheets"]
+        RAG["⚙️ RAG Ingestion Worker\nChange Feed → chunk → embed"]
     end
 
     PUB -->|"HTTPS / SSE"| SSE
@@ -50,6 +51,19 @@ graph TD
     FOUNDRY --> OAI
     SC --> COS
     OPDB --> COS
+    TILT --> SRCH
+    TILT --> OAI
     COS -.->|"Change Feed"| RAG
     RAG --> SRCH
     RAG --> OAI
+
+    classDef fe fill:#e3f2fd,stroke:#1e88e5,stroke-width:2px,color:#0d47a1;
+    classDef api fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#4a148c;
+    classDef data fill:#e8f5e9,stroke:#43a047,stroke-width:2px,color:#1b5e20;
+    classDef ingest fill:#fff3e0,stroke:#fb8c00,stroke-width:2px,color:#e65100;
+    
+    class PUB,ADM fe;
+    class SSE,FOUNDRY api;
+    class COS,SRCH,OAI data;
+    class SC,OPDB,TILT,RAG ingest;
+
