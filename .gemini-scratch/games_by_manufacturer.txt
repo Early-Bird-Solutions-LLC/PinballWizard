@@ -1,0 +1,458 @@
+﻿=== WILLIAMS SS/DMD GAMES ===
+1975  IPDB:  306  Black Gold
+1975  IPDB: 2714  Valencia
+1976  IPDB: 4828  Aztec (SS)
+1977  IPDB: 3163  Hot Tip
+1978  IPDB:  558  Contact
+1978  IPDB:  686  Disco Fever
+1978  IPDB: 1491  Lucky Seven
+1978  IPDB: 1780  Phoenix
+1978  IPDB: 1839  Pokerino
+1978  IPDB: 2810  World Cup
+1979  IPDB:  871  Flash
+1979  IPDB: 1062  Gorgar
+1979  IPDB: 1413  Laser Ball
+1979  IPDB: 2372  Stellar Wars
+1979  IPDB: 2568  Time Warp
+1979  IPDB: 2641  Tri Zone
+1980  IPDB:   42  Algar
+1980  IPDB:   48  Alien Poker
+1980  IPDB:  310  Black Knight
+1980  IPDB:  317  Blackout
+1980  IPDB:  856  Firepower
+1980  IPDB: 2067  Scorpion
+1981  IPDB:  177  Barracora
+1981  IPDB: 3799  Black Knight (LE)
+1981  IPDB: 1338  Jungle Lord
+1981  IPDB: 1778  Pharaoh
+1981  IPDB: 2238  Solar Fire
+1982  IPDB:  571  Cosmic Gunfight
+1982  IPDB:  651  Defender
+1982  IPDB: 2554  Thunderball
+1982  IPDB: 2721  Varkon
+1982  IPDB: 2754  Warlok
+1983  IPDB:  857  Firepower II
+1983  IPDB: 1316  Joust
+1983  IPDB: 2563  Time Fantasy
+1984  IPDB: 1414  Laser Cue
+1984  IPDB: 2260  Space Shuttle
+1984  IPDB: 2362  Star Light
+1985  IPDB:  548  Comet
+1985  IPDB: 2242  Sorcerer
+1986  IPDB: 1070  Grand Lizard
+1986  IPDB: 1176  High Speed
+1986  IPDB: 1796  Pinbot
+1986  IPDB: 1970  Road Kings
+1987  IPDB:  250  Big Guns
+1987  IPDB:  804  F-14 Tomcat
+1987  IPDB:  859  Fire!
+1987  IPDB:  860  Fire! Champagne Edition
+1987  IPDB: 1597  Millionaire
+1987  IPDB: 2261  Space Station
+1988  IPDB:  175  Banzai Run
+1988  IPDB:  617  Cyclone
+1988  IPDB: 1308  Jokerz!
+1988  IPDB: 2486  Swords of Fury
+1988  IPDB: 2505  Taxi
+1989  IPDB:  127  Bad Cats
+1989  IPDB:  311  Black Knight 2000
+1989  IPDB:  753  Earthshaker
+1989  IPDB: 1841  Police Force
+1990  IPDB:  681  Diner
+1990  IPDB:  966  Funhouse
+1990  IPDB: 1966  Riverboat Gambler
+1990  IPDB: 2006  Rollergames
+1990  IPDB: 2765  Whirlwind
+1991  IPDB: 1502  Bride of Pinbot
+1991  IPDB: 1257  Hurricane
+1991  IPDB: 2524  Terminator 2: Judgment Day
+1992  IPDB:  861  Fish Tales
+1992  IPDB: 1000  The Getaway: High Speed II
+1993  IPDB: 3072  Bram Stoker's Dracula
+1993  IPDB: 1267  Indiana Jones: The Pinball Adventure
+1993  IPDB: 2357  Star Trek: The Next Generation
+1993  IPDB: 2768  White Water
+1994  IPDB:  662  Demolition Man
+1994  IPDB: 1972  Red & Ted's Road Show
+1994  IPDB:  888  The Flintstones
+1995  IPDB: 3780  Congo
+1995  IPDB:  684  Dirty Harry
+1995  IPDB: 3619  JackBot
+1995  IPDB: 3683  Johnny Mnemonic
+1995  IPDB: 2852  No Fear: Dangerous Sports
+1996  IPDB: 4014  Junk Yard
+1996  IPDB: 3824  Tales of the Arabian Nights
+1997  IPDB: 4032  Medieval Madness
+1997  IPDB: 4338  No Good Gofers
+1998  IPDB: 4441  Monster Bash
+1999  IPDB: 4458  Star Wars Episode I
+2013  IPDB: 5478  Metallica (Retheme)
+
+=== BALLY SS/DMD GAMES ===
+1976  IPDB: 4116  Fireball (Home Model)
+1976  IPDB: 4500  Freedom
+1976  IPDB: 4497  Night Rider
+1977  IPDB:  309  Black Jack
+1977  IPDB: 1858  Bobby Orr's Power Play
+1977  IPDB:  439  Captain Fantastic and the Brown Dirt Cowboy (Home Model)
+1977  IPDB:  760  Eight Ball
+1977  IPDB: 4499  Evel Knievel
+1977  IPDB: 4501  Mata Hari
+1977  IPDB: 2165  Six Million Dollar Man
+1978  IPDB:  698  Dolly Parton
+1978  IPDB: 1125  Harlem Globetrotters On Tour
+1978  IPDB: 1476  Lost World
+1978  IPDB: 1823  Playboy
+1978  IPDB: 2156  Silverball Mania
+1978  IPDB: 2406  Strikes and Spares
+1978  IPDB: 2744  Voltan Escapes Cosmic Doom
+1979  IPDB:  974  Future Spa
+1979  IPDB: 1243  Hotdoggin'
+1979  IPDB: 1386  KISS
+1979  IPDB: 1650  Mystic
+1979  IPDB: 1755  Paragon
+1979  IPDB: 2010  Rolling Stones
+1979  IPDB: 2355  Star Trek
+1979  IPDB: 2455  Supersonic
+1979  IPDB: 2737  Viking
+1980  IPDB:  854  Fireball II
+1980  IPDB:  874  Flash Gordon
+1980  IPDB:  959  Frontier
+1980  IPDB: 1682  Nitro Ground Shaker
+1980  IPDB: 2170  Skateball
+1980  IPDB: 2252  Space Invaders
+1980  IPDB: 2821  Xenon
+1981  IPDB:  476  Centaur
+1981  IPDB:  762  Eight Ball Deluxe
+1981  IPDB:  778  Elektra
+1981  IPDB:  783  Embryon
+1981  IPDB:  829  Fathom
+1981  IPDB: 1565  Medusa
+1981  IPDB: 2723  Vector
+1982  IPDB:  125  Baby Pac-Man
+1982  IPDB:  335  BMX
+1982  IPDB:  763  Eight Ball Deluxe (LE)
+1982  IPDB: 1639  Mr. & Mrs. Pac-Man
+1982  IPDB: 2270  Speakeasy
+1982  IPDB: 2274  Spectrum
+1983  IPDB:  477  Centaur II
+1983  IPDB: 1024  Gold Ball
+1983  IPDB: 1079  Grand Slam
+1983  IPDB: 2822  X's & O's
+1984  IPDB:  312  Black Pyramid
+1984  IPDB: 1083  Granny and the Gators
+1984  IPDB: 1382  Kings of Steel
+1984  IPDB: 2328  Spy Hunter
+1985  IPDB:  212  Beat the Clock
+1985  IPDB:  614  Cybernaut
+1985  IPDB:  761  Eight Ball Champ
+1985  IPDB:  853  Fireball Classic
+1986  IPDB:  303  Black Belt
+1986  IPDB: 1346  Karate Fight
+1986  IPDB: 1402  Lady Luck
+1986  IPDB: 1633  Motordome
+1986  IPDB: 2272  Special Force
+1986  IPDB: 2396  Strange Science
+1987  IPDB:  527  City Slicker
+1987  IPDB:  743  Dungeons & Dragons
+1987  IPDB: 1122  Hardbody
+1987  IPDB: 1150  Heavy Metal Meltdown
+1987  IPDB: 1763  Party Animal
+1988  IPDB:  319  Blackwater 100
+1988  IPDB:  789  Escape from the Lost World
+1988  IPDB: 3521  Ramp Warrior
+1988  IPDB: 2667  Truck Stop
+1989  IPDB:  106  Atlantis
+1989  IPDB:  782  Elvira and the Party Monsters
+1989  IPDB: 1635  Mousin' Around!
+1989  IPDB: 2630  Transporter the Rescue
+1990  IPDB:  737  Dr. Dude And His Excellent Ray
+1990  IPDB: 1848  Pool Sharks
+1990  IPDB: 1904  Radical!
+1990  IPDB:  985  The Bally Game Show
+1991  IPDB:  396  Bugs Bunny's Birthday Ball
+1991  IPDB: 1004  Gilligan's Island
+1991  IPDB: 1126  Harley Davidson
+1991  IPDB: 1764  The Party Zone
+1992  IPDB:  313  Black Rose
+1992  IPDB:  588  Creature from the Black Lagoon
+1992  IPDB:  738  Doctor Who
+1992  IPDB:   20  The Addams Family
+1993  IPDB: 1322  Judge Dredd
+1993  IPDB: 2684  Twilight Zone
+1994  IPDB:  570  Corvette
+1994  IPDB: 4354  Pinball Circus
+1994  IPDB: 1851  Popeye Saves the Earth
+1994  IPDB:   21  The Addams Family Gold
+1994  IPDB: 2528  The Shadow
+1994  IPDB: 2811  World Cup Soccer
+1995  IPDB: 3781  Attack from Mars
+1995  IPDB: 2853  Indianapolis 500
+1995  IPDB: 2845  Theatre of Magic
+1995  IPDB: 3685  WHO dunnit
+1996  IPDB: 3782  Safe Cracker
+1996  IPDB: 3915  Scared Stiff
+1997  IPDB: 4059  Cirqus Voltaire
+1997  IPDB: 4023  NBA Fastbreak
+1998  IPDB: 4445  Cactus Canyon
+1998  IPDB: 4358  Champion Pub
+1999  IPDB: 4446  Revenge From Mars
+
+=== GOTTLIEB SS/DMD GAMES ===
+1976  IPDB:  426  Canada Dry
+1977  IPDB:  532  Cleopatra
+1977  IPDB: 1485  Lucky Card
+1978  IPDB:  492  Charlie's Angels
+1978  IPDB:  536  Close Encounters of the Third Kind
+1978  IPDB:  729  Dragon
+1978  IPDB: 1306  Joker Poker
+1978  IPDB: 1983  Rock Star
+1978  IPDB: 2159  Sinbad
+1979  IPDB:  573  Count-Down
+1979  IPDB:  997  Genie
+1979  IPDB: 1795  Pinball Pool
+1979  IPDB: 2239  Solar Ride
+1979  IPDB: 1266  The Incredible Hulk
+1979  IPDB: 2607  Totem
+1980  IPDB:   98  Asteroid Annie and the Aliens
+1980  IPDB:  392  Buck Rogers
+1980  IPDB:  515  Circus
+1980  IPDB:  575  Counterforce
+1980  IPDB: 1286  James Bond 007
+1980  IPDB: 1745  Panthera
+1980  IPDB: 2005  Roller Disco
+1980  IPDB: 2353  Star Race
+1980  IPDB: 2285  The Amazing Spider-Man
+1980  IPDB: 2564  Time Line
+1980  IPDB: 2595  Torch
+1981  IPDB:  307  Black Hole
+1981  IPDB:  916  Force II
+1981  IPDB: 1549  Mars God of War
+1981  IPDB: 1800  Pink Panther
+1981  IPDB: 2742  Volcano
+1982  IPDB:  475  Caveman
+1982  IPDB:  673  Devil's Dare
+1982  IPDB:  756  Eclipse
+1982  IPDB: 1133  Haunted House
+1982  IPDB: 1877  Punk!
+1982  IPDB: 1993  Rocky
+1982  IPDB: 2292  Spirit
+1982  IPDB: 2405  Striker
+1983  IPDB:   66  Amazon Hunt
+1983  IPDB: 1021  Goin' Nuts
+1983  IPDB: 1397  Krull
+1983  IPDB: 1885  Q*Bert's Quest
+1983  IPDB: 1902  Rack 'Em Up
+1983  IPDB: 1924  Ready...Aim...Fire!
+1983  IPDB: 2036  Royal Flush Deluxe
+1983  IPDB: 2437  Super Orbit
+1984  IPDB:   49  Alien Star
+1984  IPDB:  767  El Dorado City of Gold
+1984  IPDB: 1282  Jacks to Open
+1984  IPDB: 3391  The Games
+1984  IPDB: 2610  Touchdown
+1985  IPDB:  361  Bounty Hunter
+1985  IPDB:  502  Chicago Cubs 'Triple Play'
+1985  IPDB: 1260  Ice Fever
+1985  IPDB: 1978  Rock
+1985  IPDB: 2489  Tag-Team Pinball
+1986  IPDB:  996  Genesis
+1986  IPDB: 1043  Gold Wings
+1986  IPDB: 1219  Hollywood Heat
+1986  IPDB: 1922  Raven
+1986  IPDB: 1979  Rock Encore
+1987  IPDB: 3975  Amazon Hunt II
+1987  IPDB:   82  Arena
+1987  IPDB: 1622  Monte Carlo
+1987  IPDB: 2324  Spring Break
+1987  IPDB: 2733  Victory
+1988  IPDB:  128  Bad Girls
+1988  IPDB:  678  Diamond Lady
+1988  IPDB:  795  Excalibur
+1988  IPDB: 1975  Robo-War
+1988  IPDB: 2699  TX-Sector
+1989  IPDB:  256  Big House
+1989  IPDB:  347  Bone Busters Inc.
+1989  IPDB: 1248  Hot Shots
+1989  IPDB: 1445  Lights...Camera...Action!
+1990  IPDB:  645  Deadly Weapon
+1990  IPDB: 2152  Silver Slugger
+1990  IPDB: 2573  Title Fight
+1990  IPDB: 2724  Vegas
+1991  IPDB: 4432  Amazon Hunt III
+1991  IPDB:  416  Cactus Jack's
+1991  IPDB: 3676  Car Hop
+1991  IPDB:  528  Class of 1812
+1991  IPDB: 1235  Hoops
+1991  IPDB: 2461  Surf 'n Safari
+1992  IPDB:  610  Cue Ball Wizard
+1992  IPDB: 1721  Operation: Thunder
+1992  IPDB: 2435  Super Mario Bros.
+1992  IPDB: 3427  Super Mario Bros. Mushroom World
+1993  IPDB: 1011  Gladiators
+1993  IPDB: 2403  Street Fighter II
+1993  IPDB: 2508  Tee'd Off
+1993  IPDB: 2799  Wipe Out
+1994  IPDB:  948  Freddy: A Nightmare On Elm Street
+1994  IPDB: 1951  Rescue 911
+1994  IPDB: 2808  World Challenge Soccer
+1995  IPDB: 3591  Frank Thomas' Big Hurt
+1995  IPDB: 3794  Mario Andretti
+1995  IPDB: 2874  Shaq Attaq
+1995  IPDB: 2847  Stargate
+1995  IPDB: 3793  Waterworld
+1996  IPDB: 3795  Barb Wire
+
+=== DATA EAST SS/DMD GAMES ===
+1987  IPDB: 1415  Laser War
+1988  IPDB: 2090  Secret Service
+1988  IPDB: 2565  Time Machine
+1988  IPDB: 2603  Torpedo Alley
+1989  IPDB: 1616  Monday Night Football
+1989  IPDB: 1822  Playboy 35th Anniversary
+1989  IPDB: 1976  Robocop
+1990  IPDB:  126  Back to the Future
+1990  IPDB: 3194  King Kong
+1990  IPDB: 1777  Phantom of the Opera
+1990  IPDB: 2158  The Simpsons
+1991  IPDB:  195  Batman
+1991  IPDB:  498  Checkpoint
+1991  IPDB: 2356  Star Trek
+1991  IPDB: 2509  Teenage Mutant Ninja Turtles
+1992  IPDB: 1233  Hook
+1992  IPDB: 1433  Lethal Weapon 3
+1992  IPDB: 3425  Michael Jordan
+1992  IPDB: 2358  Star Wars
+1993  IPDB:   23  Adventures of Rocky and Bullwinkle and Friends
+1993  IPDB: 1343  Jurassic Park
+1993  IPDB: 1416  Last Action Hero
+1993  IPDB: 2493  Tales from the Crypt
+1994  IPDB: 1100  Guns N' Roses
+1994  IPDB: 1561  Maverick
+1994  IPDB: 2579  The Who's Tommy Pinball Wizard
+1994  IPDB: 2820  WWF Royal Rumble
+
+=== SEGA SS/DMD GAMES ===
+1977  IPDB: 4556  Big Kick
+1977  IPDB: 4557  Big Together
+1977  IPDB: 3416  Monte Rosa
+1977  IPDB: 4564  Nostalgia
+1977  IPDB: 1997  Rodeo
+1977  IPDB: 2513  Temptation
+1978  IPDB: 4559  Cha Cha Cha
+1978  IPDB: 4560  Mikoshi
+1978  IPDB: 3408  Miss Nessie
+1995  IPDB: 3592  Apollo 13
+1995  IPDB: 3593  Batman Forever
+1995  IPDB: 2848  Baywatch
+1995  IPDB:  947  Mary Shelley's Frankenstein
+1996  IPDB: 3792  Goldeneye
+1996  IPDB: 3878  Independence Day
+1996  IPDB: 3879  Space Jam
+1996  IPDB: 3976  Twister
+1997  IPDB: 4054  Star Wars Trilogy
+1997  IPDB: 4341  Starship Troopers
+1997  IPDB: 4136  The Lost World Jurassic Park
+1997  IPDB: 4137  The X Files
+1998  IPDB: 4443  Godzilla
+1998  IPDB: 4383  Golden Cue
+1998  IPDB: 4442  Lost In Space
+1998  IPDB: 4359  Viper Night Drivin'
+1999  IPDB: 4453  Harley Davidson
+1999  IPDB: 4444  South Park
+
+=== CAPCOM SS/DMD GAMES ===
+1995  IPDB: 3596  Pinball Magic
+1996  IPDB: 3783  Airborne
+1996  IPDB: 4001  Big Bang Bar
+1996  IPDB: 3784  Breakshot
+1996  IPDB: 3945  Flipper Football
+1996  IPDB: 4000  Kingpin
+
+=== JJP/SPOOKY/AP/CGC/BARRELS (Modern) SS/DMD GAMES NOT IN CATALOG ===
+American Pinball | 2018  IPDB: 6576  Oktoberfest
+American Pinball | 2020  IPDB: 6661  Hot Wheels
+American Pinball | 2021  IPDB:       Legends of Valhalla (Classic/Deluxe)
+American Pinball | 2023  IPDB:       Galactic Tank Force (Classic)
+American Pinball | 2024  IPDB:       Barry O's Barbecue Challenge
+Bandai Namco | 2019  IPDB:       Super Panic Ball
+Barrels of Fun | 2023  IPDB:       Jim Henson's Labyrinth
+Barrels of Fun | 2025  IPDB:       Dune
+Barrels of Fun | 2025  IPDB:       Winchester Mystery House
+Chicago Gaming | 2015  IPDB:       Medieval Madness (Remake LE)
+Chicago Gaming | 2015  IPDB: 6264  Medieval Madness (Remake Royal Edition)
+Chicago Gaming | 2016  IPDB:       Medieval Madness (Remake Special Edition)
+Chicago Gaming | 2016  IPDB: 6263  Medieval Madness (Remake)
+Chicago Gaming | 2017  IPDB: 6385  Attack From Mars (Remake LE)
+Chicago Gaming | 2017  IPDB: 6384  Attack From Mars (Remake Special)
+Chicago Gaming | 2017  IPDB:       Attack From Mars (Remake)
+Chicago Gaming | 2018  IPDB: 6572  Monster Bash (Remake LE)
+Chicago Gaming | 2018  IPDB: 6571  Monster Bash (Remake Special)
+Chicago Gaming | 2018  IPDB: 6570  Monster Bash (Remake)
+Chicago Gaming | 2021  IPDB:       Cactus Canyon (Remake)
+Chicago Gaming | 2023  IPDB:       Pulp Fiction
+Chicago Gaming | 2025  IPDB:       Medieval Madness (Remake Merlin Edition)
+deeproot | 2019  IPDB:       Retro Atomic Zombie Adventureland
+Dutch Pinball | 2014  IPDB: 6319  Bride of Pinbot 2.0
+Dutch Pinball | 2015  IPDB: 6320  The Big Lebowski
+Dutch Pinball | 2025  IPDB:       Alice's Adventures in Wonderland
+Haggis Pinball | 2020  IPDB: 6824  Celts
+Haggis Pinball | 2022  IPDB:       Fathom (Mermaid)
+Heighway Pinball | 2015  IPDB: 6301  Full Throttle
+Heighway Pinball | 2016  IPDB: 6419  Alien (Pro)
+Heighway Pinball | 2017  IPDB:       Alien (LE)
+Jersey Jack Pinball | 2013  IPDB: 5800  The Wizard of Oz
+Jersey Jack Pinball | 2015  IPDB: 6222  The Hobbit
+Jersey Jack Pinball | 2017  IPDB: 6350  Dialed In!
+Jersey Jack Pinball | 2018  IPDB: 6492  Pirates of the Caribbean
+Jersey Jack Pinball | 2018  IPDB: 6494  Pirates of the Caribbean (CE)
+Jersey Jack Pinball | 2019  IPDB: 6647  Willy Wonka & The Chocolate Factory
+Jersey Jack Pinball | 2019  IPDB: 6648  Willy Wonka & The Chocolate Factory (LE)
+Jersey Jack Pinball | 2020  IPDB: 6764  Guns N' Roses
+Jersey Jack Pinball | 2020  IPDB: 6766  Guns N' Roses (CE)
+Jersey Jack Pinball | 2020  IPDB: 6765  Guns N' Roses (LE)
+Jersey Jack Pinball | 2022  IPDB:       Toy Story 4
+Jersey Jack Pinball | 2023  IPDB:       Elton John
+Jersey Jack Pinball | 2023  IPDB:       The Godfather
+Jersey Jack Pinball | 2024  IPDB:       Avatar: The Battle for Pandora
+Jersey Jack Pinball | 2025  IPDB:       Harry Potter
+Multimorphic | 2017  IPDB: 6452  Barnyard
+Multimorphic | 2017  IPDB: 6450  Cannon Lagoon
+Multimorphic | 2017  IPDB: 6449  Lexy Lightspeed - Escape From Earth
+Multimorphic | 2017  IPDB: 6453  Lexy Lightspeed - Secret Agent Showdown
+Multimorphic | 2018  IPDB: 6665  Cosmic Cart Racing
+Multimorphic | 2018  IPDB:       Grand Slam Rally
+Multimorphic | 2019  IPDB:       Hoopin' It Up
+Multimorphic | 2020  IPDB: 6667  Heist
+Multimorphic | 2020  IPDB: 6451  ROCs
+Multimorphic | 2020  IPDB:       Shoot 'n Scoot
+Multimorphic | 2021  IPDB:       Heads Up!
+Multimorphic | 2021  IPDB:       Sorcerer's Apprentice
+Multimorphic | 2022  IPDB:       Weird Al's Museum of Natural Hilarity
+Multimorphic | 2023  IPDB:       Final Resistance
+Multimorphic | 2024  IPDB:       The Princess Bride
+Multimorphic | 2025  IPDB:       Portal (Extended)
+Multimorphic | 2025  IPDB:       Portal (Standard)
+Pedretti Gaming | 2021  IPDB:       Funhouse 2.0 (Rudy's Nightmare)
+Pedretti Gaming | 2023  IPDB:       Whirlwind 2.0
+Pedretti Gaming | 2024  IPDB:       Funhouse (Remake)
+Pedretti Gaming | 2026  IPDB:       Tales of the Arabian Nights (Remake)
+Pinball Brothers | 2021  IPDB:       Alien (Remake)
+Pinball Brothers | 2022  IPDB:       Queen
+Pinball Brothers | 2024  IPDB:       ABBA
+Pinball Brothers | 2025  IPDB:       Predator
+Riot Pinball | 2015  IPDB: 6468  Wrath of Olympus
+Riot Pinball | 2020  IPDB:       Legends of Valhalla
+Spooky Pinball | 2014  IPDB: 6161  America's Most Haunted
+Spooky Pinball | 2016  IPDB: 6418  Domino's Spectacular Pinball Adventure
+Spooky Pinball | 2016  IPDB: 6416  Rob Zombie's Spookshow International
+Spooky Pinball | 2016  IPDB: 6417  Rob Zombie's Spookshow International (LE)
+Spooky Pinball | 2017  IPDB: 6577  The Jetsons
+Spooky Pinball | 2017  IPDB: 6444  Total Nuclear Annihilation
+Spooky Pinball | 2018  IPDB: 6445  Alice Cooper's Nightmare Castle
+Spooky Pinball | 2019  IPDB: 6640  Rick and Morty (SE)
+Spooky Pinball | 2021  IPDB:       Halloween (SE)
+Spooky Pinball | 2021  IPDB:       Ultraman: Kaiju Rumble (SE)
+Spooky Pinball | 2023  IPDB:       Scooby-Doo (SE)
+Spooky Pinball | 2024  IPDB:       Looney Tunes (SE)
+Spooky Pinball | 2024  IPDB:       The Texas Chainsaw Massacre (SE)

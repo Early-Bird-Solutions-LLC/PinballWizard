@@ -37,10 +37,13 @@ public sealed class BrandFooterTests : AsyncBunitContext
     {
         var cut = Render<BrandFooter>();
 
-        var coverage = cut.Find(".footer-coverage").TextContent;
+        var coverage = cut.Find(".brand-footer__coverage-text").TextContent;
         // Copy locked from docs/ui/screens/empty-landing.md § Section 4.
         // Updated when Kineticist (ADR-0043) and Silverball Labs (ADR-0045) were named.
-        Assert.Contains("first-party data on 8 active manufacturers, OPDB, Kineticist, and Silverball Labs", coverage);
+        Assert.Contains("first-party data on 8 active manufacturers", coverage);
+        Assert.Contains("OPDB", coverage);
+        Assert.Contains("Kineticist", coverage);
+        Assert.Contains("Silverball Labs", coverage);
         Assert.Contains("Everything else routes to community resources", coverage);
     }
 
@@ -49,7 +52,7 @@ public sealed class BrandFooterTests : AsyncBunitContext
     {
         var cut = Render<BrandFooter>();
 
-        var link = cut.Find("a.footer-coverage-link");
+        var link = cut.Find("a.brand-footer__coverage-link");
         Assert.Equal("/about", link.GetAttribute("href"));
         Assert.Contains("What we cover", link.TextContent);
         Assert.Equal("What we cover", link.GetAttribute("aria-label"));
@@ -60,7 +63,7 @@ public sealed class BrandFooterTests : AsyncBunitContext
     {
         var cut = Render<BrandFooter>();
 
-        var link = cut.Find("a.footer-github-link");
+        var link = cut.Find("a[aria-label='PinballWizard on GitHub']");
         Assert.Equal(
             "https://github.com/Early-Bird-Solutions-LLC/PinballWizard",
             link.GetAttribute("href"));
@@ -79,7 +82,7 @@ public sealed class BrandFooterTests : AsyncBunitContext
     {
         var cut = Render<BrandFooter>();
 
-        var link = cut.Find("a.footer-status-link");
+        var link = cut.Find("a[aria-label='System status']");
         Assert.Equal("/status", link.GetAttribute("href"));
         Assert.Equal("System status", link.GetAttribute("aria-label"));
     }

@@ -80,7 +80,7 @@
     }
     else
     {
-        <AppDataGrid T="JobStatus" Items="@_jobs"
+        <MudDataGrid T="JobStatus" Items="@_jobs"
                      RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<JobStatus>>(this, HandleRowClick))"
                      data-testid="jobs-table">
             <Columns>
@@ -135,7 +135,7 @@
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>
-        </AppDataGrid>
+        </MudDataGrid>
     }
 </MudContainer>
 

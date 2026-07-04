@@ -60,7 +60,7 @@
     }
     else
     {
-        <AppDataGrid T="ManufacturerRow" Items="@_rows" data-testid="manufacturers-table">
+        <MudDataGrid T="ManufacturerRow" Items="@_rows" RowsPerPage="25" data-testid="manufacturers-table">
             <Columns>
                 <TemplateColumn Title="Manufacturer" Sortable="true"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
@@ -84,17 +84,17 @@
                         }
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="Machines" Sortable="true"
+                <TemplateColumn Title="Machines" Sortable="true" HeaderClass="text-right" CellClass="text-right"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.Machines))">
-                    <HeaderTemplate>
-                        <MudText Style="text-align:right;width:100%">Machines</MudText>
-                    </HeaderTemplate>
                     <CellTemplate>
-                        <MudText Style="text-align:right;display:block">@context.Item.Machines</MudText>
+                        @context.Item.Machines
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>
-        </AppDataGrid>
+            <PagerContent>
+                <MudDataGridPager T="ManufacturerRow" />
+            </PagerContent>
+        </MudDataGrid>
     }
 </MudContainer>
 

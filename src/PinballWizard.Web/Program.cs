@@ -227,6 +227,14 @@ builder.Services
     })
     .AddStandardResilienceHandler();
 
+builder.Services
+    .AddHttpClient<IGridSearchClient, GridSearchClient>(client =>
+    {
+        client.BaseAddress = new Uri("https+http://pinwiz-api");
+        client.Timeout = TimeSpan.FromSeconds(10);
+    })
+    .AddStandardResilienceHandler();
+
 // ── Wizard SSE streaming client ───────────────────────────────────────────
 // Typed HttpClient that connects to PinballWizard.Api's SSE endpoint.
 // Base address uses Aspire service-discovery notation ("https+http://pinwiz-api")

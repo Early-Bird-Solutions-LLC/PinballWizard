@@ -71,7 +71,16 @@ else
             </TemplateColumn>
             <TemplateColumn Title="Game">
                 <CellTemplate>
-                    @context.Item.GameTitle@(context.Item.Edition is not null ? $" {context.Item.Edition}" : "")
+                    @if (!string.IsNullOrWhiteSpace(context.Item.MachineId) && !string.IsNullOrWhiteSpace(context.Item.ManufacturerKey))
+                    {
+                        <MachineLink MachineId="@context.Item.MachineId" 
+                                     ManufacturerKey="@context.Item.ManufacturerKey" 
+                                     Title="@($"{context.Item.GameTitle}{(context.Item.Edition is not null ? $" {context.Item.Edition}" : "")}")" />
+                    }
+                    else
+                    {
+                        @context.Item.GameTitle@(context.Item.Edition is not null ? $" {context.Item.Edition}" : "")
+                    }
                 </CellTemplate>
             </TemplateColumn>
             <TemplateColumn Title="Manufacturer" SortBy="@(new Func<DocumentListItem, object>(x => x.Manufacturer))">

@@ -98,6 +98,7 @@ public static class ServiceCollectionExtensions
         // (curated per-category resource cards) on refusal answers. Singleton.
         // Registered before IAiRouter so the router resolves it on first construction.
         services.TryAddSingleton<IRefusalRecoveryService, RefusalRecoveryService>();
+        services.TryAddSingleton<PinballWizard.Application.Ai.GridSearch.IGridSearchService, PinballWizard.Application.Ai.GridSearch.GridSearchService>();
 
         services.TryAddSingleton<IAiRouter, AiRouter>();
 

@@ -25,6 +25,7 @@ public sealed class SettingsTests : AsyncBunitContext
         _prefs.CurrentTheme.Returns(ThemeNames.ModernLcd);
         _prefs.CurrentMotion.Returns("match");
         _prefs.CurrentSound.Returns("muted");
+        _prefs.PageSize.Returns(10);
         _prefs.StorageAvailable.Returns(true);
 
         Services.AddMudServices();
@@ -107,16 +108,17 @@ public sealed class SettingsTests : AsyncBunitContext
     }
 
     [Fact]
-    public void Settings_ThreeMotionSections_Present()
+    public void Settings_FourSections_Present()
     {
         var cut = Render<Settings>();
 
-        // Three sections identified by headings
+        // Four sections identified by headings
         var headings = cut.FindAll("h5, h6")
             .Select(h => h.TextContent.Trim())
             .ToArray();
 
         Assert.Contains("THEME", headings);
+        Assert.Contains("DISPLAY", headings);
         Assert.Contains("MOTION", headings);
         Assert.Contains("SOUND", headings);
     }

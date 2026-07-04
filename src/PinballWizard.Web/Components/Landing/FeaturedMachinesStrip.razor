@@ -86,7 +86,14 @@ else if (Machines is null)
     // the curated, catalog-resolvable text the prospect expects to ask about.
     private void OnMachineClick(FeaturedMachine machine)
     {
-        var query = $"tell me about {machine.Title}";
-        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(query)}");
+        if (!string.IsNullOrWhiteSpace(machine.ManufacturerKey) && !string.IsNullOrWhiteSpace(machine.OpdbId))
+        {
+            Nav.NavigateTo($"/machines/{machine.ManufacturerKey}/{machine.OpdbId}");
+        }
+        else
+        {
+            var query = $"tell me about {machine.Title}";
+            Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(query)}");
+        }
     }
 }

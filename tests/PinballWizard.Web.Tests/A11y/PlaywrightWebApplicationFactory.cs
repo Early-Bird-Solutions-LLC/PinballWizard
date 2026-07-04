@@ -13,6 +13,7 @@ using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 using PinballWizard.Web.Security;
+using PinballWizard.Web.Services;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.A11y;
@@ -77,6 +78,7 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
 
         // Scoped services depended on by Blazor components.
         builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+        builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
 
         // Stub HTTP clients: base addresses point nowhere but the Index page
         // has a compiled-in fallback for when the landing endpoint is down.

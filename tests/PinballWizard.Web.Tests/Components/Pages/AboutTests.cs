@@ -197,13 +197,13 @@ public sealed class AboutTests : AsyncBunitContext
     }
 
     [Fact]
-    public void About_DataPartners_RendersThreeCards()
+    public void About_DataPartners_RendersFourCards()
     {
-        // The partner section renders exactly 3 DataPartnerCard components
-        // (OPDB / Kineticist / Silverball Labs) — contract test for the grid count.
+        // The partner section renders exactly 4 DataPartnerCard components
+        // (OPDB / Kineticist / Silverball Labs / Internet Pinball Database) — contract test for the grid count.
         var cut = Render<About>();
 
         var cards = cut.FindAll("[data-testid^='data-partner-card-']").ToList();
-        Assert.Equal(3, cards.Count);
+        Assert.Equal(4, cards.Count);
     }
 }

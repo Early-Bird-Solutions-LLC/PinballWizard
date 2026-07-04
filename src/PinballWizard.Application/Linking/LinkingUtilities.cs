@@ -68,12 +68,14 @@ public static class LinkingUtilities
         var lastWasSeparator = false;
         foreach (var c in lower)
         {
-            // '&' is a separator so a title with an ampersand normalizes like its
-            // hyphenated slug: "Dungeons & Dragons" → "dungeons dragons" matches
-            // slug "dungeons-dragons". (Apostrophes are deliberately NOT separators
-            // — OPDB slugs drop them without a space, e.g. "Elvira's" → "elviras",
-            // so treating "'" as a separator would break those matches.)
-            var isSeparator = c == '_' || c == '-' || c == '.' || c == '&' || char.IsWhiteSpace(c);
+            // Apostrophes are stripped entirely so "Elvira's" matches "elviras" and
+            // "Batman '66" matches "batman 66".
+            if (c == '\'') continue;
+
+            // ':' and '/' and '()' and '!' are separators so titles like "AC/DC" or
+            // "Batman: The Dark Knight" or "The Avengers (Pro)" normalize like their
+            // hyphenated/spaced slugs.
+            var isSeparator = c == '_' || c == '-' || c == '.' || c == '&' || c == ':' || c == '/' || c == '(' || c == ')' || c == '!' || char.IsWhiteSpace(c);
             if (isSeparator)
             {
                 if (!lastWasSeparator)

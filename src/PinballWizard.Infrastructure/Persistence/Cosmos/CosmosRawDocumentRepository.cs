@@ -386,8 +386,8 @@ internal sealed class CosmosRawDocumentRepository
         const string query =
             "SELECT * FROM c " +
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
-            "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
-            "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
+            "       AND (CONTAINS(LOWER(c.game.title), LOWER(@game)) OR CONTAINS(LOWER(@game), LOWER(c.game.title))))) " +
+            "AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
             "  AND (@type = '' OR LOWER(c.classification.document_type) = LOWER(@type)) " +
             "ORDER BY c.timeline.first_discovered_at DESC";
 
@@ -443,6 +443,7 @@ internal sealed class CosmosRawDocumentRepository
             Manufacturer: raw.Manufacturer ?? "",
             FirstDiscoveredAt: raw.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
             LastDownloadedAt: raw.Timeline?.LastDownloadedAt,
+            MachineId: raw.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? raw.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
@@ -472,6 +473,7 @@ internal sealed class CosmosRawDocumentRepository
             PageCount: r.File?.PageCount,
             SizeBytes: r.File?.SizeBytes,
             FirstDiscoveredAt: r.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
+            MachineId: r.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? r.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? r.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? r.ResolutionStrategy : null

@@ -523,7 +523,7 @@ public sealed class DocumentLinker : IDocumentLinker
     // (different makers/years) is left to the manufacturer-preference path.
     private static bool IsEditionFamily(List<Machine> candidates)
     {
-        if (candidates.Count < 2) return false;
+        if (candidates.Count == 0) return false;
         var segments = candidates.Select(m => m.GroupId).Distinct().ToList();
         var years = candidates.Select(m => m.Year).Distinct().ToList();
         return segments.Count == 1 && segments[0] is not null
@@ -693,14 +693,15 @@ public sealed class DocumentLinker : IDocumentLinker
 
         // Same-franchise edition family (multiple bases sharing one group
         // segment + year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE
-        // GweeP-Ml9pZ) → resolve by edition from the filename token. Page text
-        // isn't available at Tier 2; the page tiers add page-1 authority later.
-        // Same-franchise edition family (multiple bases sharing one group segment +
-        // year, e.g. Godzilla Pro GweeP-MW95j + Premium/LE GweeP-Ml9pZ) → resolve by
-        // the filename token via the shared dispatch. Page text isn't available at
-        // Tier 2; the page tiers add page-1 authority later. Unresolved → null (falls
-        // through to the page tiers, which can read page-1 text).
-        if (candidates.Count > 1 && IsEditionFamily(candidates))
+        // GweeP-Ml9pZ) → resolve by the filename token via the shared dispatch.
+        // Page text isn't available at Tier 2; the page tiers add page-1 authority
+        // later. Unresolved → null (falls through to the page tiers, which can
+        // read page-1 text).
+        //
+        // If we only have one candidate but it belongs to a group (segment + year),
+        // we still run it through ResolveEditionFamily to ensure the correct
+        // EditionScope is set (SingleEdition vs FranchiseWide).
+        if (candidates.Count > 0 && IsEditionFamily(candidates))
         {
             return ResolveEditionFamily(
                 raw, candidates, filename, page1Text: null, "filename_edition", "filename_edition_group");

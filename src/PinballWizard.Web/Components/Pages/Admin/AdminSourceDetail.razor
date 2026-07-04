@@ -39,6 +39,8 @@
 
 <PageTitle>Source Detail — PinballWizard Admin</PageTitle>
 
+@inject IUserPreferencesService Prefs
+
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
 
     @if (_loading)
@@ -176,6 +178,7 @@
                 @* AppDataGrid not used: ChildRowContent requires typed RenderFragment<CellContext<T>> which cannot splat through AdditionalAttributes — ADR-0046 documented exception *@
                 <MudDataGrid T="ScrapeRunRecord" Items="@_runs"
                              Dense="true" Hover="true" Striped="true" Elevation="2"
+                             RowsPerPage="@Prefs.PageSize"
                              data-testid="run-history-table">
                     <Columns>
                         <HierarchyColumn T="ScrapeRunRecord" />

@@ -79,8 +79,8 @@ public sealed class LandingServiceTests
         // This is the load-bearing test for PR-L2.
         var machines = new List<FeaturedMachine>
         {
-            new("stern-godzilla", "Godzilla Pro", null, 1, "King of the monsters"),
-            new("jjp-wonka", "Wonka", null, 2, "Pure imagination"),
+            new("stern-godzilla", "Godzilla Pro", null, "stern", 1, "King of the monsters"),
+            new("jjp-wonka", "Wonka", null, "jjp", 2, "Pure imagination"),
         };
 
         _loader.LoadAsync(Arg.Any<CancellationToken>())

@@ -83,9 +83,8 @@
         </AppErrorAlert>
     }
 
-    <AppDataGrid T="MachineCatalogRow"
+    <MudDataGrid T="MachineCatalogRow"
                  Items="@_machines"
-                 RowsPerPage="50"
                  Groupable="@true"
                  GroupExpanded="@true"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
@@ -113,10 +112,7 @@
                             Groupable="true"
                             Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
                 <CellTemplate>
-                    @* Link to the public manufacturer detail page. ManufacturerLink needs a
-                     * display name; pre-backfill rollup docs may lack one, so degrade to the
-                     * plain key text rather than render an empty link (Invariant #17). *@
-                    @if (!string.IsNullOrWhiteSpace(context.Item.ManufacturerDisplayName))
+                    @if (context.Item.ManufacturerDisplayName is not null)
                     {
                         <ManufacturerLink ManufacturerKey="@context.Item.Manufacturer"
                                           DisplayName="@(context.Item.ManufacturerDisplayName!)" />
@@ -127,50 +123,55 @@
                     }
                 </CellTemplate>
                 <GroupTemplate>
-                    @* Prefer the group's display name (shared by every row in the group); fall
-                     * back to the partition key on pre-backfill data. *@
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Manufacturer: @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Manufacturer:</span>
+                        @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.HealthLabel"
                             Title="Health Group"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Health)"
-                            Hidden="@(_activeAxis != GroupByAxis.Health)">
+                            Grouping="@(_activeAxis == GroupByAxis.Health)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Health Group: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Health Group:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Franchise"
                             Title="Franchise"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Franchise)"
-                            Hidden="@(_activeAxis != GroupByAxis.Franchise)">
+                            Grouping="@(_activeAxis == GroupByAxis.Franchise)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Franchise: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Franchise:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.YearLabel"
                             Title="Year"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Year)"
-                            Sortable="true">
+                            Grouping="@(_activeAxis == GroupByAxis.Year)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Year: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Year:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Source"
                             Title="Source"
                             Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Source)"
-                            Hidden="@(_activeAxis != GroupByAxis.Source)">
+                            Grouping="@(_activeAxis == GroupByAxis.Source)">
                 <GroupTemplate>
-                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-primary)">Source: @context.Grouping.Key</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
+                        <span class="pw-grid-group-label">Source:</span> @context.Grouping.Key
+                    </MudText>
                 </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
             <PropertyColumn Property="x => x.Edition" Title="Edition" />
-            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" />
+            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" HeaderClass="text-right" CellClass="text-right" />
             <TemplateColumn Title="Health">
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)
@@ -183,6 +184,9 @@
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
+        <PagerContent>
+            <MudDataGridPager T="MachineCatalogRow" />
+        </PagerContent>
 
         <NoRecordsContent>
             @if (!_loadFailed)
@@ -198,7 +202,7 @@
             }
         </NoRecordsContent>
 
-    </AppDataGrid>
+    </MudDataGrid>
 </MudContainer>
 
 @code {

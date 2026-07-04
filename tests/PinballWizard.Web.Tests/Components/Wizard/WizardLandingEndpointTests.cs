@@ -260,7 +260,7 @@ public sealed class WizardLandingEndpointTests : IDisposable
     {
         return new LandingResponse(
             SeedQuestions: [new SeedQuestion("slug-rules", "A rules question?", "Rules", "Description")],
-            FeaturedMachines: [new FeaturedMachine("stern-godzilla", "Godzilla Pro", null, 1, "King of the monsters")],
+            FeaturedMachines: [new FeaturedMachine("stern-godzilla", "Godzilla Pro", null, null, 1, "King of the monsters")],
             SystemStatus: new SystemStatus(CosmosHealthy: true, FoundryHealthy: true, AiSearchHealthy: true));
     }
 }

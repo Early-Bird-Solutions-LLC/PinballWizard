@@ -97,6 +97,15 @@ window.pinwiz.getSound = function () {
     try { return localStorage.getItem('pinwiz.sound') || 'muted'; } catch (_) { return 'muted'; }
 };
 
+// ── Page Size ─────────────────────────────────────────────────────────────
+// Default: 10 per user request.
+window.pinwiz.setPageSize = function (value) {
+    try { localStorage.setItem('pinwiz.pageSize', value); } catch (_) { }
+};
+window.pinwiz.getPageSize = function () {
+    try { return localStorage.getItem('pinwiz.pageSize') || '10'; } catch (_) { return '10'; }
+};
+
 // ── Timezone ──────────────────────────────────────────────────────────────
 // Returns the browser's IANA timezone ID (e.g. "America/New_York").
 // Called by AdminJobDetail via JS interop to display local timestamps.
