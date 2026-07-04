@@ -46,6 +46,7 @@ public sealed class CliOptionsContractTests
         "--sync-game-overviews",
         "--refresh-game-overviews",
         "--reclassify-documents",
+        "--backfill-manufacturer-slugs",
     };
 
     [Fact]
@@ -144,6 +145,7 @@ public sealed class CliOptionsContractTests
         root.Options.Add(new Option<bool>("--sync-game-overviews"));
         root.Options.Add(new Option<bool>("--refresh-game-overviews"));
         root.Options.Add(new Option<bool>("--reclassify-documents"));
+        root.Options.Add(new Option<bool>("--backfill-manufacturer-slugs"));
 
         return root;
     }

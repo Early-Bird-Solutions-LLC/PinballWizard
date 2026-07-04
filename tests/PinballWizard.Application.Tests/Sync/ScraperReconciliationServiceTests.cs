@@ -551,6 +551,198 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal(2021, machine.Year);
     }
 
+    // ── Cross-reference slug backfill (issue #672) ───────────────────────
+    //
+    // Root cause: Machine.ManufacturerSlugs is populated only by ReconcileAsync,
+    // driven by a scraper run's own GameCatalog. Stern titles retired from the
+    // currently-marketed lineup (Iron Man, Spider-Man, AC/DC, etc.) never appear
+    // in a fresh GameCatalog, so their slug stays empty forever — even though
+    // scraped_documents_raw already carries a cross-reference to their game page
+    // (captured when a manual's "Specs & Manual tab" was scraped). This backfill
+    // recovers the slug from that already-stored provenance instead of re-scraping.
+
+    [Fact]
+    public async Task BackfillSlugs_CrossReferenceMatchesOneMachine_SetsSlugAndUpserts()
+    {
+        var machine = MakeMachine("G43W4-MKNW0", "stern", "AC/DC");
+        StubPartition("stern", machine);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/ac-dc/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedSingle);
+        Assert.Equal(0, result.Ambiguous);
+        Assert.Equal(0, result.Unmatched);
+        Assert.Equal(1, result.Upserts);
+        Assert.Equal("ac-dc", machine.ManufacturerSlugs["stern"]);
+        await _repo.Received(1).UpsertAsync(machine, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_SlugAlreadyPresentOnSomeMachine_IsNoOp()
+    {
+        var machine = MakeMachine("G43W4-MKNW0", "stern", "AC/DC");
+        machine.ManufacturerSlugs["stern"] = "ac-dc";
+        StubPartition("stern", machine);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/ac-dc/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.AlreadyPresent);
+        Assert.Equal(0, result.Upserts);
+        await _repo.DidNotReceive().UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_EditionFamilyMultiMatch_SetsSlugOnAllBases()
+    {
+        // Two Stern Iron Man base machines sharing one GroupId — an edition
+        // family (mirrors SameGroupTitleCollision_WritesSlugToAllBasesInGroup).
+        var pro = MakeMachine("GRVq4-MLyxq", "stern", "Iron Man");
+        pro.GroupId = "GRVq4";
+        var vault = MakeMachine("GRVq4-MDRKr", "stern", "Iron Man");
+        vault.GroupId = "GRVq4";
+        StubPartition("stern", pro, vault);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/iron-man/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedGroup);
+        Assert.Equal(0, result.Ambiguous);
+        Assert.Equal(2, result.Upserts);
+        Assert.Equal("iron-man", pro.ManufacturerSlugs["stern"]);
+        Assert.Equal("iron-man", vault.ManufacturerSlugs["stern"]);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_AmbiguousNonFamilyMultiMatch_IsSkipped()
+    {
+        // Same title, DIFFERENT GroupId — a genuine cross-year/cross-game title
+        // collision (the Big Ben 1954-vs-1975 pattern), not an edition family.
+        var older = MakeMachine("OPDB-A", "stern", "Mystery");
+        older.GroupId = "AAAA";
+        var newer = MakeMachine("OPDB-B", "stern", "Mystery");
+        newer.GroupId = "BBBB";
+        StubPartition("stern", older, newer);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/mystery/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.Ambiguous);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(older.ManufacturerSlugs);
+        Assert.Empty(newer.ManufacturerSlugs);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_NoMachineMatchesTitle_IsCountedUnmatched()
+    {
+        var machine = MakeMachine("OPDB-X", "stern", "Some Other Game");
+        StubPartition("stern", machine);
+
+        var raw = MakeRaw(crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://sternpinball.com/game/totally-different-title/",
+                DiscoveryContext = "Game Page → Specs & Manual tab",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(1, result.Unmatched);
+        Assert.Equal(0, result.Upserts);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_UnrecognisedSourceType_ContributesNoCandidates()
+    {
+        // SourceType.ActionType default (Unknown mapping) → InferManufacturerKey
+        // returns null, so this document contributes zero backfill candidates
+        // rather than guessing a manufacturer.
+        var raw = MakeRaw(sourceType: (SourceType)(-1), crossRefs:
+        [
+            new CrossReference
+            {
+                AlsoFoundAt = "https://example.com/game/whatever/",
+                DiscoveryContext = "Unknown",
+                DiscoveredAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(raw), CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesConsidered);
+        Assert.Equal(0, result.Upserts);
+    }
+
+    [Fact]
+    public async Task BackfillSlugs_SameSlugFromMultipleDocs_IsDeduplicated()
+    {
+        var machine = MakeMachine("G43W4-MKNW0", "stern", "AC/DC");
+        StubPartition("stern", machine);
+
+        var xref = new CrossReference
+        {
+            AlsoFoundAt = "https://sternpinball.com/game/ac-dc/",
+            DiscoveryContext = "Game Page → Specs & Manual tab",
+            DiscoveredAt = DateTime.UtcNow,
+        };
+        var docA = MakeRaw(documentId: "doc_a", crossRefs: [xref]);
+        var docB = MakeRaw(documentId: "doc_b", crossRefs: [xref]);
+
+        var result = await _service.BackfillSlugsFromCrossReferencesAsync(ToAsyncRaw(docA, docB), CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesConsidered);
+        Assert.Equal(1, result.Upserts);
+        await _repo.Received(1).UpsertAsync(machine, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task BackfillSlugsFromCrossReferencesAsync_NullArgument_Throws()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => _service.BackfillSlugsFromCrossReferencesAsync(null!, CancellationToken.None));
+    }
+
     // ── Constructor null-checks ──────────────────────────────────────────
 
     [Fact]
@@ -587,6 +779,40 @@ public sealed class ScraperReconciliationServiceTests
             await Task.Yield();
         }
     }
+
+    private static async IAsyncEnumerable<RawDocumentRecord> ToAsyncRaw(params RawDocumentRecord[] docs)
+    {
+        foreach (var d in docs)
+        {
+            yield return d;
+            await Task.Yield();
+        }
+    }
+
+    private static RawDocumentRecord MakeRaw(
+        string documentId = "doc_aabbccddeeff0011",
+        string fileUrl = "https://sternpinball.com/wp-content/uploads/manual.pdf",
+        SourceType sourceType = SourceType.ManualsPage,
+        List<CrossReference>? crossRefs = null)
+        => new()
+        {
+            DocumentId = documentId,
+            DocumentUrl = fileUrl,
+            DocumentType = DocumentType.Manual,
+            Source = new SourceInfo
+            {
+                DiscoveryUrl = "https://sternpinball.com/manuals/",
+                DiscoveryContext = "Manuals Page",
+                FileUrl = fileUrl,
+                ScrapedAt = DateTime.UtcNow,
+                SourceType = sourceType,
+            },
+            Timeline = new TimelineInfo
+            {
+                FirstDiscoveredAt = DateTime.UtcNow,
+            },
+            CrossReferences = crossRefs ?? [],
+        };
 
     private static Machine MakeMachine(
         string id, string manufacturer, string title, string? manufacturerDisplayName = null) => new()
