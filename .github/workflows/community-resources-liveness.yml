@@ -29,6 +29,13 @@ on:
     paths:
       - "data/seeds/community_resources.v1.json"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: community-liveness-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   liveness:
     name: Probe community resource URLs

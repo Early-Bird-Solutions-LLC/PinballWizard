@@ -20,6 +20,13 @@
   semanticCommits: "disabled",
   commitMessagePrefix: "chore(deps) ",
 
+  // Pin GitHub Actions to their exact commit SHA (supply-chain hardening).
+  // Renovate will open a one-time PR converting every floating @vN tag to
+  // @<sha> # vN, then keep the SHAs current as each action releases new tags.
+  // Applies only to github-actions — NuGet packages are version-tagged not
+  // SHA-pinned (SHAs are not meaningful for NuGet restore).
+  pinDigests: true,
+
   schedule: ["before 5am on monday"],
   prConcurrentLimit: 5,
   prHourlyLimit: 2,
@@ -88,8 +95,12 @@
       groupName: "test dependencies",
     },
     {
+      // Group all GitHub Actions version + digest bumps into a single weekly PR.
+      // SHA pinning (digest type) is auto-merged once required checks pass;
+      // major action version bumps are held for explicit dashboard approval.
       matchManagers: ["github-actions"],
       addLabels: ["github-actions"],
+      groupName: "GitHub Actions",
       automerge: true,
       platformAutomerge: true,
     },
