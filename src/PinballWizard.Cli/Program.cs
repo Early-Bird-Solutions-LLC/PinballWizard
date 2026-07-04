@@ -249,6 +249,11 @@ var auditCatalogOption = new Option<bool>("--audit-catalog")
     Description = "Proactive catalog-quality audit. Streams all machines and reports title-superset collisions — games whose title is BOTH an exact game and a subtitle-prefix of a different OPDB group (e.g. 'Iron Maiden' 1981 vs 'Iron Maiden: Legacy of the Beast' 2018). These are the catalog shape behind the #532 mis-grounding class; surfacing them lets us add eval coverage per collision before a prospect finds the gap. Read-only (no external HTTP, no writes). Exit code 0 = no collisions, 3 = collisions found (so CI/cron can alert). Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var backfillManufacturerSlugsOption = new Option<bool>("--backfill-manufacturer-slugs")
+{
+    Description = "Backfills Machine.ManufacturerSlugs from /game/{slug}/ cross-reference URLs already captured in scraped_documents_raw, for machines a scraper reconciliation run never reached (issue #672). A --source games run's reconciliation only covers games discoverable in that run — e.g. Stern's currently-marketed lineup — so titles retired from that listing keep an empty ManufacturerSlugs entry forever, even though their documents already carry a valid cross-reference to the game page (captured e.g. when a manual's 'Specs & Manual tab' was scraped). Reuses the same franchise-title matching as scraper reconciliation. No external HTTP calls — operates entirely on already-stored Cosmos data. Idempotent: a slug already present on any machine in the partition is left untouched. Run --relink-all afterward so the linker's Tier 1 (xref_slug) re-resolves documents against the newly-backfilled slugs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -286,6 +291,7 @@ rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
 rootCommand.Options.Add(reclassifyDocumentsOption);
 rootCommand.Options.Add(auditCatalogOption);
+rootCommand.Options.Add(backfillManufacturerSlugsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -325,6 +331,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
     var reclassifyDocuments  = parseResult.GetValue(reclassifyDocumentsOption);
     var auditCatalog         = parseResult.GetValue(auditCatalogOption);
+    var backfillManufacturerSlugs = parseResult.GetValue(backfillManufacturerSlugsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -1778,6 +1785,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (reclassifyDocuments)
     {
         await ReclassifyDocumentsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --backfill-manufacturer-slugs (issue #672: recover ManufacturerSlugs
+    // from cross-reference provenance already in scraped_documents_raw; no HTTP
+    // calls). Resolves IScraperReconciliationService + IRawDocumentRepository from
+    // DI; both are only registered when Cosmos is configured.
+    if (backfillManufacturerSlugs)
+    {
+        await BackfillManufacturerSlugsCommand.RunAsync(host.Services, cancellationToken);
         return;
     }
 

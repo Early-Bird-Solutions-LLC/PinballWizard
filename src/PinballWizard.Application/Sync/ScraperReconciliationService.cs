@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Core.Models;
@@ -123,6 +124,112 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         };
     }
 
+    /// <inheritdoc />
+    public async Task<SlugBackfillResult> BackfillSlugsFromCrossReferencesAsync(
+        IAsyncEnumerable<RawDocumentRecord> rawDocuments,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rawDocuments);
+
+        // Distinct (manufacturer, slug) candidates from provenance already
+        // captured in scraped_documents_raw — no scraping, no HTTP calls.
+        var candidates = new HashSet<(string Manufacturer, string Slug)>();
+
+        await foreach (var raw in rawDocuments.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
+            if (mfrKey is null) continue;
+
+            foreach (var xref in raw.CrossReferences)
+            {
+                var slug = LinkingUtilities.ExtractGameSlugFromUrl(xref.AlsoFoundAt);
+                if (slug is { Length: > 0 })
+                {
+                    candidates.Add((mfrKey, slug));
+                }
+            }
+        }
+
+        var partitionCache = new Dictionary<string, List<Machine>>(StringComparer.OrdinalIgnoreCase);
+        var alreadyPresent = 0;
+        var matchedSingle = 0;
+        var matchedGroup = 0;
+        var unmatched = 0;
+        var ambiguous = 0;
+        var upserts = 0;
+
+        foreach (var (manufacturer, slug) in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var partition = await GetOrLoadPartitionAsync(manufacturer, partitionCache, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (partition.Any(m => m.ManufacturerSlugs.TryGetValue(manufacturer, out var existing)
+                && string.Equals(existing, slug, StringComparison.OrdinalIgnoreCase)))
+            {
+                alreadyPresent++;
+                continue;
+            }
+
+            var target = NormalizeFranchiseTitle(slug);
+            var matches = target.Length == 0
+                ? []
+                : partition.Where(m => NormalizeFranchiseTitle(m.Title) == target).ToList();
+
+            if (matches.Count == 0)
+            {
+                _logger.LogInformation(
+                    "SlugBackfill: cross-reference slug '{Slug}' (manufacturer={Manufacturer}) matches no known Machine title; OPDB may not have this machine yet.",
+                    slug, manufacturer);
+                unmatched++;
+                continue;
+            }
+
+            if (matches.Count == 1)
+            {
+                matches[0].ManufacturerSlugs[manufacturer] = slug;
+                await _repository.UpsertAsync(matches[0], cancellationToken).ConfigureAwait(false);
+                matchedSingle++;
+                upserts++;
+                continue;
+            }
+
+            if (IsEditionFamilyByGroup(matches))
+            {
+                foreach (var machine in matches)
+                {
+                    machine.ManufacturerSlugs[manufacturer] = slug;
+                    await _repository.UpsertAsync(machine, cancellationToken).ConfigureAwait(false);
+                    upserts++;
+                }
+                matchedGroup++;
+                continue;
+            }
+
+            _logger.LogWarning(
+                "SlugBackfill: cross-reference slug '{Slug}' (manufacturer={Manufacturer}) matches multiple Machines that are NOT a single edition family; manual triage required. Candidates: {Candidates}",
+                slug, manufacturer,
+                string.Join(", ", matches.Select(m => $"{m.Id}(group={m.GroupId ?? "null"})")));
+            ambiguous++;
+        }
+
+        _logger.LogInformation(
+            "SlugBackfill complete: candidates={Candidates} alreadyPresent={AlreadyPresent} matchedSingle={MatchedSingle} matchedGroup={MatchedGroup} unmatched={Unmatched} ambiguous={Ambiguous} upserts={Upserts}",
+            candidates.Count, alreadyPresent, matchedSingle, matchedGroup, unmatched, ambiguous, upserts);
+
+        return new SlugBackfillResult
+        {
+            CandidatesConsidered = candidates.Count,
+            AlreadyPresent = alreadyPresent,
+            MatchedSingle = matchedSingle,
+            MatchedGroup = matchedGroup,
+            Unmatched = unmatched,
+            Ambiguous = ambiguous,
+            Upserts = upserts,
+        };
+    }
+
     private async Task<List<Machine>> GetOrLoadPartitionAsync(
         string manufacturer,
         Dictionary<string, List<Machine>> cache,
@@ -195,11 +302,7 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         // year to discriminate. The DocumentLinker's IsEditionFamily (a separate
         // method) retains the year guard because edition-resolution for document
         // linking does need to distinguish cross-year reissues.
-        var segments = matches.Select(m => m.GroupId).Distinct().ToList();
-        var isEditionFamily =
-            segments.Count == 1 && segments[0] is not null;
-
-        if (isEditionFamily)
+        if (IsEditionFamilyByGroup(matches))
         {
             return (matches, MatchOutcome.Group);
         }
@@ -308,6 +411,16 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             trimmed = trimmed[..open];
         }
         return NormalizeTitle(trimmed);
+    }
+
+    // Shared by FindMatch's Pass 2 and BackfillSlugsFromCrossReferencesAsync:
+    // multiple same-franchise-title matches are an edition family (not a true
+    // ambiguity) when they all share one non-null OPDB group segment. See the
+    // year-guard rationale in FindMatch (issue #655 Gap 1).
+    private static bool IsEditionFamilyByGroup(List<Machine> matches)
+    {
+        var segments = matches.Select(m => m.GroupId).Distinct().ToList();
+        return segments.Count == 1 && segments[0] is not null;
     }
 
     private enum MatchOutcome { None, Slug, Title, Group, Ambiguous }
