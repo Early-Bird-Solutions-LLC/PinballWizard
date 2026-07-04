@@ -24,4 +24,24 @@ public static class EditionFamily
         return groupIds.Count == 1 && groupIds[0] is not null
             && years.Count == 1 && years[0] is not null;
     }
+
+    /// <summary>
+    /// True when every candidate shares a single non-null <see cref="Machine.GroupId"/>,
+    /// with no year requirement — a franchise whose OPDB editions span multiple release
+    /// years under one GroupId (an original release plus a later Vault Edition/reissue,
+    /// e.g. AC/DC 2012 vs. 2017) is still one edition family. Per issue #677: the year
+    /// guard in <see cref="IsEditionFamily"/> was meant to separate genuine reissues from
+    /// an unrelated game that happens to reuse a group segment, but that can't happen —
+    /// GroupId is an OPDB-assigned relational key, not a coincidental string — so the
+    /// guard only blocked <see cref="EditionResolver"/> from ever running against
+    /// cross-year families. Mirrors the reconciler's own GroupId-only check
+    /// (<c>ScraperReconciliationService.IsEditionFamilyByGroup</c>, added for issue #655
+    /// Gap 1) so document-linking and machine-reconciliation agree on what a family is.
+    /// </summary>
+    public static bool IsEditionFamilyByGroup(IReadOnlyList<Machine> candidates)
+    {
+        if (candidates.Count == 0) return false;
+        var groupIds = candidates.Select(m => m.GroupId).Distinct().ToList();
+        return groupIds.Count == 1 && groupIds[0] is not null;
+    }
 }
