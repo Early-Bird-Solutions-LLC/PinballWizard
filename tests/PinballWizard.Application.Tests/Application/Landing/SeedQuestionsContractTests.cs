@@ -52,7 +52,11 @@ public sealed class SeedQuestionsContractTests
             .OrderBy(s => s)
             .ToList();
 
-        var expected = AgentName.All
+        // PublicWizardSubAgents, not All — the landing page only ever shows
+        // customer-facing sub-agents a seed question can route to. GridSearch
+        // (in AgentName.All) is an admin-only internal tool with no public
+        // routing entry, so it must not be expected here.
+        var expected = AgentName.PublicWizardSubAgents
             .OrderBy(s => s)
             .ToList();
 
@@ -102,9 +106,10 @@ public sealed class SeedQuestionsContractTests
 
         foreach (var q in manifest.Questions!)
         {
+            // PublicWizardSubAgents, not All — see ProductionManifest_HasExactlyOneQuestionPerSubAgent.
             Assert.Contains(
                 q.TargetSubAgent,
-                AgentName.All,
+                AgentName.PublicWizardSubAgents,
                 StringComparer.Ordinal);
         }
     }
