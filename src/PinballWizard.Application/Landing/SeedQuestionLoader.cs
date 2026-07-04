@@ -20,15 +20,10 @@ namespace PinballWizard.Application.Landing;
 // caught before the service starts handling requests.
 public sealed class SeedQuestionLoader : ISeedQuestionLoader
 {
-    // Canonical set of valid TargetSubAgent values (from AgentName constants).
+    // Canonical set of valid TargetSubAgent values — AgentName.PublicWizardSubAgents
+    // is the single source of truth (shared with SeedQuestionsContractTests).
     private static readonly HashSet<string> ValidSubAgents =
-        new(StringComparer.Ordinal)
-        {
-            AgentName.Wizard,
-            AgentName.Valuation,
-            AgentName.Rules,
-            AgentName.Repair,
-        };
+        new(AgentName.PublicWizardSubAgents, StringComparer.Ordinal);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
