@@ -103,7 +103,7 @@ public static class EditionFamily
     /// </summary>
     public static bool IsEditionFamily(IReadOnlyList<Machine> candidates)
     {
-        if (candidates.Count < 2) return false;
+        if (candidates.Count == 0) return false;
         var groupIds = candidates.Select(m => m.GroupId).Distinct().ToList();
         var years = candidates.Select(m => m.Year).Distinct().ToList();
         return groupIds.Count == 1 && groupIds[0] is not null
@@ -111,6 +111,14 @@ public static class EditionFamily
     }
 }
 ```
+
+**Amendment (post-approval, pre-implementation):** a concurrent change landed on `main` after this
+spec was approved and changed `DocumentLinker.IsEditionFamily`'s guard from `candidates.Count < 2`
+to `candidates.Count == 0`, so a *singleton* candidate with a non-null `GroupId`+`Year` now also
+counts as an edition family (used elsewhere to tag `EditionScope.SingleEdition` vs. `FranchiseWide`
+correctly even for a lone candidate). The shared helper above reflects that current `== 0` guard so
+the delegation in `DocumentLinker` stays behavior-preserving. This has no effect on
+`TiltForumsGameMatcher`, which only ever calls the helper when 2+ candidates are already in hand.
 
 `DocumentLinker.IsEditionFamily` (`DocumentLinker.cs:524-531`) is replaced with a one-line delegate:
 
