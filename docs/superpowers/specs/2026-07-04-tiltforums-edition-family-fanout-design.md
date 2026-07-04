@@ -201,10 +201,17 @@ see Component 4 below for why this applies even to single-machine matches.
 Document id per machine stays `tiltforums_{topicId}_{machineId}` (unchanged — already
 per-machine-scoped, so a fan-out naturally produces N distinct stable ids with no collision).
 
-New counter `tiltForumsEditionFamilyFanouts`, incremented once per **rulesheet** whose status was
-`ResolvedEditionFamily` (not once per machine — this counts "how many rulesheets triggered a
-fan-out," a distinct signal from `indexed`, which continues to count total successful
-machine-level upserts as it does today). Final summary line:
+**Amendment (post-approval, pre-implementation):** re-reading the shipped Kineticist verb's actual
+counter semantics (Program.cs:1275-1282, an `articleIndexed`/`articleHadContent` flag pattern) shows
+`indexed` there counts **once per article**, not once per machine — an article that fans out to 3
+editions still contributes 1 to `indexed`, not 3. To keep the two twin verbs reading consistently
+(a reader comparing them shouldn't find the same counter name meaning two different things),
+`--sync-tiltforums-rulesheets`'s `indexed` is defined the same way: once per **rulesheet** that
+successfully indexed to at least one machine (mirroring the `articleIndexed`/`articleHadContent`
+flag pattern), regardless of how many sibling editions it fanned out to. `edition_family_fanouts` is
+incremented once per rulesheet whose status was `ResolvedEditionFamily` — a distinct signal layered
+on top of `indexed` ("of the indexed rulesheets, how many were multi-edition fan-outs"), not a
+replacement for it. Final summary line:
 
 ```text
 --sync-tiltforums-rulesheets complete: indexed=N unmatched=N edition_family_fanouts=N skipped_no_content=N failed=N
