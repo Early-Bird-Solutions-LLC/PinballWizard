@@ -96,11 +96,13 @@ public sealed class DocumentDownloadServiceTests
     // ── Incremental skip (the idempotency contract) ───────────────────────
 
     [Fact]
-    public async Task Skips_WhenLocalPathSet_WithoutBlobCheck()
+    public async Task Skips_WhenLocalPathAndSha256AndContentHashSet_WithoutBlobCheck()
     {
-        // Fast path: LocalPath is already set → skip without calling ExistsAsync.
+        // Fast path: LocalPath, Sha256, AND ContentHash all already set (genuinely
+        // fully synced) → skip without calling ExistsAsync.
         var raw = MakeRaw("doc_b", "https://sternpinball.com/x/y.pdf",
-            file: new DownloadedFileInfo { LocalPath = "manualspage/y.pdf", Filename = "y.pdf" });
+            file: new DownloadedFileInfo { LocalPath = "manualspage/y.pdf", Filename = "y.pdf", Sha256 = "abc" },
+            contentHash: "abc");
         StubStream(raw);
 
         var svc = MakeSvc();
@@ -111,10 +113,79 @@ public sealed class DocumentDownloadServiceTests
         Assert.Equal(0, summary.Backfilled);
         await _downloader.DidNotReceive().DownloadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
-        // No blob write and no blob write check needed when LocalPath is already set.
+        // No blob write and no blob write check needed when fully synced.
         await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await _blobStore.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         // Cosmos already correct — no redundant self-heal write.
         await _repo.DidNotReceive().UpdateFileAsync(Arg.Any<string>(), Arg.Any<DownloadedFileInfo>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Skips_WhenSha256Set_ButContentHashMissing_DenormalizesWithoutReadingBlob()
+    {
+        // Issue #664, second layer: File.Sha256 was already computed (by a prior
+        // download or by the self-heal-from-blob branch), but the top-level
+        // ContentHash was never copied from it — the only other writer of
+        // ContentHash is UpsertRawAsync (the scraper's re-discovery path), so a
+        // document downloaded but not yet re-scraped a second time stays stuck
+        // here forever without this branch. No blob read is needed — the hash is
+        // already known — just re-stamp the record so CosmosRawDocumentRepository's
+        // UpdateFileAsync denormalizes it into ContentHash.
+        var raw = MakeRaw("doc_h", "https://sternpinball.com/x/h.pdf",
+            file: new DownloadedFileInfo
+            {
+                LocalPath = "manualspage/h.pdf", Filename = "h.pdf", SizeBytes = 555, Sha256 = "known-hash",
+            },
+            contentHash: null);
+        StubStream(raw);
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Skipped);
+        Assert.Equal(0, summary.Downloaded);
+        Assert.Equal(1, summary.Backfilled);
+        await _downloader.DidNotReceive().DownloadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        await _blobStore.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _blobStore.DidNotReceive().TryOpenReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpdateFileAsync("doc_h",
+            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/h.pdf"
+                && f.SizeBytes == 555
+                && f.Sha256 == "known-hash"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Skips_WhenLocalPathSet_ButSha256Missing_BackfillsSha256FromExistingBlob()
+    {
+        // Retroactive repair (issue #664): a record whose LocalPath was stamped by
+        // the self-heal branch BEFORE it computed Sha256 (or by any older code path
+        // that only wrote LocalPath) is stuck — the OLD fast-path check would skip
+        // it forever, since LocalPath alone used to mean "nothing to do". It must
+        // fall through to the self-heal branch and backfill Sha256 from the blob
+        // that's already there, WITHOUT re-downloading or overwriting the blob.
+        var raw = MakeRaw("doc_r", "https://sternpinball.com/x/r.pdf",
+            file: new DownloadedFileInfo { LocalPath = "manualspage/r.pdf", Filename = "r.pdf", SizeBytes = 999 });
+        StubStream(raw);
+        _blobStore.ExistsAsync("manualspage/r.pdf", Arg.Any<CancellationToken>()).Returns(true);
+        _blobStore.GetSizeAsync("manualspage/r.pdf", Arg.Any<CancellationToken>()).Returns(999L);
+        var blobBytes = new byte[] { 7, 7, 7 };
+        var expectedSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(blobBytes)).ToLowerInvariant();
+        _blobStore.TryOpenReadAsync("manualspage/r.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream(blobBytes)));
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Skipped);
+        Assert.Equal(0, summary.Downloaded);
+        Assert.Equal(1, summary.Backfilled);
+        await _downloader.DidNotReceive().DownloadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<HttpMetadata?>(), Arg.Any<CancellationToken>());
+        await _blobStore.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).UpdateFileAsync("doc_r",
+            Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/r.pdf" && f.Sha256 == expectedSha256),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -124,10 +195,24 @@ public sealed class DocumentDownloadServiceTests
         // (e.g. a prior run wrote the blob but Cosmos update failed). This must
         // NOT be a silent no-op forever — a re-download would always re-hit this
         // same skip check, so the record must be self-healed here (issue #661).
+        //
+        // Sha256 must ALSO be backfilled from the existing blob (issue #664):
+        // once this branch stamps LocalPath, every future run hits the fast-path
+        // skip (LocalPath already set) and never revisits this document — so if
+        // Sha256 isn't captured here, it stays permanently empty. An empty
+        // ContentHash means RAG's rag_index_state short-circuit can never engage
+        // for this document, so it gets fully re-embedded on every future
+        // --run-rag-backfill run, forever. Reading the already-stored blob to hash
+        // it is cheap (our own storage, no external HTTP call) — unlike a real
+        // re-download, which this self-heal path exists specifically to avoid.
         var raw = MakeRaw("doc_c", "https://sternpinball.com/x/z.pdf", file: null);
         StubStream(raw);
         _blobStore.ExistsAsync("manualspage/z.pdf", Arg.Any<CancellationToken>()).Returns(true);
         _blobStore.GetSizeAsync("manualspage/z.pdf", Arg.Any<CancellationToken>()).Returns(4321L);
+        var blobBytes = new byte[] { 10, 20, 30, 40, 50 };
+        var expectedSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(blobBytes)).ToLowerInvariant();
+        _blobStore.TryOpenReadAsync("manualspage/z.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(new MemoryStream(blobBytes)));
 
         var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
 
@@ -141,7 +226,30 @@ public sealed class DocumentDownloadServiceTests
         await _repo.Received(1).UpdateFileAsync("doc_c",
             Arg.Is<DownloadedFileInfo>(f => f.LocalPath == "manualspage/z.pdf"
                 && f.Filename == "z.pdf"
-                && f.SizeBytes == 4321L),
+                && f.SizeBytes == 4321L
+                && f.Sha256 == expectedSha256),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Skips_WhenBlobExists_ButBlobVanishesBeforeHashRead_BackfillsWithNullSha256()
+    {
+        // TOCTOU: ExistsAsync said true, but the blob is gone by the time we try
+        // to read it for hashing (mirrors the existing GetSizeAsync race test).
+        // Must not throw — degrade to a null Sha256 rather than abandon the
+        // backfill or crash the whole run.
+        var raw = MakeRaw("doc_v", "https://sternpinball.com/x/v.pdf", file: null);
+        StubStream(raw);
+        _blobStore.ExistsAsync("manualspage/v.pdf", Arg.Any<CancellationToken>()).Returns(true);
+        _blobStore.GetSizeAsync("manualspage/v.pdf", Arg.Any<CancellationToken>()).Returns(100L);
+        _blobStore.TryOpenReadAsync("manualspage/v.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<Stream?>(null));
+
+        var summary = await MakeSvc().RunAsync(force: false, CancellationToken.None);
+
+        Assert.Equal(1, summary.Backfilled);
+        await _repo.Received(1).UpdateFileAsync("doc_v",
+            Arg.Is<DownloadedFileInfo>(f => f.Sha256 == null),
             Arg.Any<CancellationToken>());
     }
 
@@ -314,7 +422,8 @@ public sealed class DocumentDownloadServiceTests
     }
 
     private static RawDocumentRecord MakeRaw(
-        string documentId, string fileUrl, DownloadedFileInfo? file, HttpMetadata? http = null) => new()
+        string documentId, string fileUrl, DownloadedFileInfo? file, HttpMetadata? http = null,
+        string? contentHash = null) => new()
     {
         DocumentId = documentId,
         DocumentUrl = fileUrl,
@@ -330,5 +439,6 @@ public sealed class DocumentDownloadServiceTests
         Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
         File = file,
         Http = http,
+        ContentHash = contentHash,
     };
 }

@@ -172,6 +172,20 @@ internal sealed class CosmosRawDocumentRepository
         existing.Timeline ??= new RawTimelineInfo { FirstDiscoveredAt = DateTime.UtcNow };
         existing.Timeline.LastDownloadedAt = DateTime.UtcNow;
 
+        // Denormalize into the top-level ContentHash — mirrors the identical
+        // self-heal already in UpsertRawAsync above. Without this, a document
+        // downloaded here but not yet re-scraped a second time (the only other
+        // writer of ContentHash) keeps ContentHash permanently empty even though
+        // File.Sha256 is populated. RAG's rag_index_state short-circuit reads
+        // ContentHash (via scraped_documents.content_hash), not File.Sha256, so
+        // the gap caused affected documents to be fully re-embedded on every
+        // --run-rag-backfill run, forever (issue #664). A blank incoming Sha256
+        // (the TOCTOU degrade case) never clobbers a hash already stored.
+        if (file.Sha256 is { } newHash && !string.IsNullOrWhiteSpace(newHash))
+        {
+            existing.ContentHash = newHash;
+        }
+
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
