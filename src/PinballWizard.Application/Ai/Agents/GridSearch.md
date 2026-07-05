@@ -52,6 +52,13 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `DocsDiscovered` (int)
 - `RunFailures` (int)
 
+### admin-job-detail
+
+- `ExecutionName` (string)
+- `Status` (string)
+- `StartOn` (datetime)
+- `EndOn` (datetime)
+
 ## Operators
 Use the following operators:
 - `contains` (for strings)
