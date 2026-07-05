@@ -59,6 +59,14 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `StartOn` (datetime)
 - `EndOn` (datetime)
 
+### admin-link-overrides
+
+- `SourcePattern` (string)
+- `MachineIds` (string — comma-joined)
+- `CreatedBy` (string)
+- `CreatedAt` (string)
+- `Notes` (string, nullable)
+
 ## Operators
 Use the following operators:
 - `contains` (for strings)
