@@ -88,6 +88,45 @@ param kineticistSyncCronExpression string = '0 11 * * 0'
 @description('Cron schedule expression (UTC) for the weekly TWIP newsletter sync ACA Job. Default is 8 am Sunday (between OPDB sync at 3 am and Stern refresh at 10 am). TWIP is published Friday; Sunday gives a buffer for Beehiiv publishing lag. Has no effect when deployPhase2=false or deployAiSearch=false.')
 param twipNewsletterCronExpression string = '0 8 * * 0'
 
+@description('Cron schedule expression (UTC) for the weekly Multimorphic scraper ACA Job. Default is 4 am Sunday. Runs --source multimorphic. Has no effect when deployPhase2=false.')
+param multimorphicCronExpression string = '0 4 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly CGC scraper ACA Job. Default is 5 am Sunday. Runs --source cgc. Has no effect when deployPhase2=false.')
+param cgcCronExpression string = '0 5 * * 0'
+
+@description('Cron schedule expression (UTC) for the monthly Barrels of Fun scraper ACA Job. Default is 4 am on the 1st of each month. Runs --source barrelsoffun. Has no effect when deployPhase2=false.')
+param barrelsOfFunCronExpression string = '0 4 1 * *'
+
+@description('Cron schedule expression (UTC) for the daily Stern scraper ACA Job. Default is 4 am daily. Runs --source stern (document discovery only; game-page overview refresh has its own job). Has no effect when deployPhase2=false.')
+param sternScrapeCronExpression string = '0 4 * * *'
+
+@description('Cron schedule expression (UTC) for the daily JJP scraper ACA Job. Default is 5 am daily. Runs --source jjp. Has no effect when deployPhase2=false.')
+param jjpCronExpression string = '0 5 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly JJP support docs scraper ACA Job. Default is 6 am Sunday. Runs --source jjp_support. Has no effect when deployPhase2=false.')
+param jjpSupportCronExpression string = '0 6 * * 0'
+
+@description('Cron schedule expression (UTC) for the daily American Pinball scraper ACA Job. Default is 6 am daily. Runs --source ap. Has no effect when deployPhase2=false.')
+param apCronExpression string = '0 6 * * *'
+
+@description('Cron schedule expression (UTC) for the weekly American Pinball bulletins scraper ACA Job. Default is 7 am Sunday. Runs --source ap_bulletins. Has no effect when deployPhase2=false.')
+param apBulletinsCronExpression string = '0 7 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly Spooky Pinball scraper ACA Job. Default is 12 pm Sunday. Runs --source spooky. Has no effect when deployPhase2=false.')
+param spookyCronExpression string = '0 12 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly Spooky Pinball support scraper ACA Job. Default is 1 pm Sunday. Runs --source spooky_support. Has no effect when deployPhase2=false.')
+param spookySupportCronExpression string = '0 13 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly Pinball Brothers scraper ACA Job. Default is 2 pm Sunday. Runs --source pinballbrothers. Has no effect when deployPhase2=false.')
+param pbCronExpression string = '0 14 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly Pinball Brothers per-game docs scraper ACA Job. Default is 3 pm Sunday. Runs --source pb_docs. Has no effect when deployPhase2=false.')
+param pbDocsCronExpression string = '0 15 * * 0'
+
+@description('Cron schedule expression (UTC) for the weekly Pinball Brothers Freshdesk scraper ACA Job. Default is 4 pm Sunday. Runs --source pb_freshdesk. Has no effect when deployPhase2=false.')
+param pbFreshdeskCronExpression string = '0 16 * * 0'
+
 @description('Full HTTPS URL of the Wizard /alive endpoint for the App Insights availability test (e.g. https://{aca-fqdn}/alive). If empty, the availability test resource is not created. Set in the environment bicepparam file — must be updated if the ACA environment is recreated.')
 param wizardAliveUrl string = ''
 
@@ -437,6 +476,27 @@ resource acaIdentityJobsOperator 'Microsoft.Authorization/roleAssignments@2022-0
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       'b9a307c4-5aa3-4b52-ba60-2b17c136cd7b')
+    principalId: acaIdentity.?properties.principalId ?? ''
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Container Apps Contributor — grants the shared UAMI (acaIdentity) permission
+// to update Microsoft.App/jobs in this resource group (specifically the cron
+// schedule via the /admin/jobs schedule-edit UI). The Operator role above
+// covers read + start; this role adds Microsoft.App/jobs/write for schedule
+// updates via the ARM SDK's UpdateAsync path.
+//
+// Built-in role: "Contributor"
+// Role definition ID: b24988ac-6180-42a0-ab88-20f7382dd24c
+// Scoped to resourceGroup() (same as the Operator role).
+resource acaIdentityJobsContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
+  scope: resourceGroup()
+  name: guid(resourceGroup().id, '${namePrefix}-aca-id-${environment}', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalId: acaIdentity.?properties.principalId ?? ''
     principalType: 'ServicePrincipal'
   }
@@ -2619,6 +2679,461 @@ resource twipJobOpenAiUser 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 }
 
 // -----------------------------------------------------------------------------
+// Multimorphic scraper ACA Job (weekly product catalog scrape)
+// -----------------------------------------------------------------------------
+module multimorphicScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'multimorphic-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-multimorphic-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: multimorphicCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'multimorphic' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource multimorphicJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'multimorphic-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: multimorphicScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Chicago Gaming Company scraper ACA Job (weekly product catalog scrape)
+// -----------------------------------------------------------------------------
+module cgcScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'cgc-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-cgc-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: cgcCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'cgc' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource cgcJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'cgc-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: cgcScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Barrels of Fun scraper ACA Job (monthly product catalog scrape)
+// -----------------------------------------------------------------------------
+module barrelsOfFunScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'barrelsoffun-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-barrelsoffun-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: barrelsOfFunCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'barrelsoffun' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource barrelsOfFunJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'barrelsoffun-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: barrelsOfFunScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Stern document-discovery scraper ACA Job (daily scrape)
+// -----------------------------------------------------------------------------
+module sternScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'stern-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-stern-scrape-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: sternScrapeCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'stern' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource sternScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'stern-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: sternScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Jersey Jack Pinball scraper ACA Job (daily product/document scrape)
+// -----------------------------------------------------------------------------
+module jjpScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'jjp-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-jjp-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: jjpCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'jjp' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource jjpJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'jjp-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: jjpScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// JJP per-edition support docs scraper ACA Job (weekly scrape)
+// -----------------------------------------------------------------------------
+module jjpSupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'jjp-support-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-jjp-support-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: jjpSupportCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'jjp_support' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource jjpSupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'jjp-support-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: jjpSupportScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// American Pinball scraper ACA Job (daily product/document scrape)
+// -----------------------------------------------------------------------------
+module apScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'ap-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-ap-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: apCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'ap' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource apJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'ap-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: apScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// American Pinball service bulletins scraper ACA Job (weekly scrape)
+// -----------------------------------------------------------------------------
+module apBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'ap-bulletins-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-ap-bulletins-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: apBulletinsCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'ap_bulletins' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource apBulletinsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'ap-bulletins-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: apBulletinsScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Spooky Pinball scraper ACA Job (weekly product/document scrape)
+// -----------------------------------------------------------------------------
+module spookyScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'spooky-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-spooky-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: spookyCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'spooky' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource spookyJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'spooky-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: spookyScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Spooky Pinball support scraper ACA Job (weekly scrape)
+// -----------------------------------------------------------------------------
+module spookySupportScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'spooky-support-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-spooky-support-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: spookySupportCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'spooky_support' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource spookySupportJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'spooky-support-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: spookySupportScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Pinball Brothers scraper ACA Job (weekly product/document scrape)
+// -----------------------------------------------------------------------------
+module pbScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'pb-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-pb-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: pbCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'pinballbrothers' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource pbJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'pb-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: pbScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Pinball Brothers per-game documents scraper ACA Job (weekly scrape)
+// -----------------------------------------------------------------------------
+module pbDocsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'pb-docs-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-pb-docs-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: pbDocsCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'pb_docs' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource pbDocsJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'pb-docs-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: pbDocsScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Pinball Brothers Freshdesk support portal scraper ACA Job (weekly scrape)
+// -----------------------------------------------------------------------------
+module pbFreshdeskScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'pb-freshdesk-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-pb-freshdesk-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: pbFreshdeskCronExpression
+    replicaTimeout: 3600
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'pb_freshdesk' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource pbFreshdeskJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'pb-freshdesk-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: pbFreshdeskScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Outputs
 // -----------------------------------------------------------------------------
 // Phase-2-only outputs return empty strings when deployPhase2=false so callers
@@ -2692,6 +3207,39 @@ output kineticistSyncJobPrincipalId string = kineticistSyncJob.?outputs.jobPrinc
 
 output twipNewsletterJobName string = twipNewsletterJob.?outputs.jobName ?? ''
 output twipNewsletterJobPrincipalId string = twipNewsletterJob.?outputs.jobPrincipalId ?? ''
+
+// Scraper job name outputs only (no PrincipalId) — the Bicep linter enforces
+// a 64-output ceiling (max-outputs rule). Adding 13 × 2 outputs for these
+// jobs would exceed it. PrincipalId omitted because (a) Cosmos RBAC is granted
+// inline (the *JobCosmosDataContrib resources above), so no post-deploy
+// principal lookup is needed, and (b) main-shared.bicep does not expose these
+// outputs to deploy scripts. To retrieve a job's MI principal ID for ad-hoc
+// validation: az containerapp job show -n <name> -g <rg> --query identity.principalId
+output multimorphicScrapeJobName string = multimorphicScrapeJob.?outputs.jobName ?? ''
+
+output cgcScrapeJobName string = cgcScrapeJob.?outputs.jobName ?? ''
+
+output barrelsOfFunScrapeJobName string = barrelsOfFunScrapeJob.?outputs.jobName ?? ''
+
+output sternScrapeJobName string = sternScrapeJob.?outputs.jobName ?? ''
+
+output jjpScrapeJobName string = jjpScrapeJob.?outputs.jobName ?? ''
+
+output jjpSupportScrapeJobName string = jjpSupportScrapeJob.?outputs.jobName ?? ''
+
+output apScrapeJobName string = apScrapeJob.?outputs.jobName ?? ''
+
+output apBulletinsScrapeJobName string = apBulletinsScrapeJob.?outputs.jobName ?? ''
+
+output spookyScrapeJobName string = spookyScrapeJob.?outputs.jobName ?? ''
+
+output spookySupportScrapeJobName string = spookySupportScrapeJob.?outputs.jobName ?? ''
+
+output pbScrapeJobName string = pbScrapeJob.?outputs.jobName ?? ''
+
+output pbDocsScrapeJobName string = pbDocsScrapeJob.?outputs.jobName ?? ''
+
+output pbFreshdeskScrapeJobName string = pbFreshdeskScrapeJob.?outputs.jobName ?? ''
 
 // Wizard Container App + Phase 6 ops resources (Phase 5/6). Operators capture
 // `wizardContainerAppName` to swap the placeholder image after CI/CD wires it:
