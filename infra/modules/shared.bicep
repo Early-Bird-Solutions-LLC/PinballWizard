@@ -97,8 +97,14 @@ param cgcCronExpression string = '0 5 * * 0'
 @description('Cron schedule expression (UTC) for the monthly Barrels of Fun scraper ACA Job. Default is 4 am on the 1st of each month. Runs --source barrelsoffun. Has no effect when deployPhase2=false.')
 param barrelsOfFunCronExpression string = '0 4 1 * *'
 
-@description('Cron schedule expression (UTC) for the daily Stern scraper ACA Job. Default is 4 am daily. Runs --source stern (document discovery only; game-page overview refresh has its own job). Has no effect when deployPhase2=false.')
-param sternScrapeCronExpression string = '0 4 * * *'
+@description('Cron schedule expression (UTC) for the daily Stern manuals scraper ACA Job. Default is 4:15 am daily. Runs --source manuals (static HTML document discovery; game-page overview refresh has its own job, sternRefreshJob). Has no effect when deployPhase2=false.')
+param sternManualsCronExpression string = '15 4 * * *'
+
+@description('Cron schedule expression (UTC) for the daily Stern game-pages scraper ACA Job. Default is 4:45 am daily. Runs --source games (Playwright — 3 tabs per game page, matches the timeout precedent set by the existing Playwright-based sternRefreshJob). Has no effect when deployPhase2=false.')
+param sternGamesCronExpression string = '45 4 * * *'
+
+@description('Cron schedule expression (UTC) for the daily Stern service-bulletins scraper ACA Job. Default is 1:15 am daily. Runs --source bulletins (Playwright). Has no effect when deployPhase2=false.')
+param sternBulletinsCronExpression string = '15 1 * * *'
 
 @description('Cron schedule expression (UTC) for the daily JJP scraper ACA Job. Default is 5 am daily. Runs --source jjp. Has no effect when deployPhase2=false.')
 param jjpCronExpression string = '0 5 * * *'
@@ -2784,21 +2790,29 @@ resource barrelsOfFunJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts
 }
 
 // -----------------------------------------------------------------------------
-// Stern document-discovery scraper ACA Job (daily scrape)
+// Stern scraper ACA Jobs (daily scrape) — three separate jobs, one per
+// registered ISourceScraper (ScraperOrchestrator.SourceAliases has no single
+// "stern" alias: --source manuals / games / bulletins are the three valid
+// values). Kept as three independent jobs rather than one combined job so
+// each manufacturer-scraper surface gets its own Admin > Jobs monitoring row
+// and its own retry/timeout tuning. games/bulletins use the same 7200s
+// timeout as the existing Playwright-based sternRefreshJob below (3 tabs per
+// game page); manuals is static HTML (AngleSharp) and matches the 3600s
+// default the other non-Playwright scraper jobs use.
 // -----------------------------------------------------------------------------
-module sternScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
-  name: 'stern-scrape-job-${environment}'
+module sternManualsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'stern-manuals-scrape-job-${environment}'
   params: {
-    jobName: 'pinwiz-job-stern-scrape-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    jobName: 'pinwiz-job-stern-manuals-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
     location: location
     tags: tags
     containerImage: cliImageTag
     containerAppsEnvironmentId: acaEnvironment.id
     managedIdentityId: acaIdentity.id
     containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
-    cronExpression: sternScrapeCronExpression
+    cronExpression: sternManualsCronExpression
     replicaTimeout: 3600
-    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'stern' ]
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'manuals' ]
     env: [
       { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
       { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
@@ -2808,12 +2822,76 @@ module sternScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' =
   }
 }
 
-resource sternScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+resource sternManualsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
   parent: cosmosAccount
-  name: guid(cosmosAccount.id, 'stern-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  name: guid(cosmosAccount.id, 'stern-manuals-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
   properties: {
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
-    principalId: sternScrapeJob.?outputs.jobPrincipalId ?? ''
+    principalId: sternManualsScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+module sternGamesScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'stern-games-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-stern-games-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: sternGamesCronExpression
+    replicaTimeout: 7200
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'games' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource sternGamesScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'stern-games-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: sternGamesScrapeJob.?outputs.jobPrincipalId ?? ''
+    scope: cosmosAccount.id
+  }
+}
+
+module sternBulletinsScrapeJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep' = if (deployPhase2) {
+  name: 'stern-bulletins-scrape-job-${environment}'
+  params: {
+    jobName: 'pinwiz-job-stern-bulletins-${substring(uniqueString(subscription().id, resourceGroup().id), 0, 5)}'
+    location: location
+    tags: tags
+    containerImage: cliImageTag
+    containerAppsEnvironmentId: acaEnvironment.id
+    managedIdentityId: acaIdentity.id
+    containerRegistryLoginServer: containerRegistry.?properties.loginServer ?? ''
+    cronExpression: sternBulletinsCronExpression
+    replicaTimeout: 7200
+    command: [ 'dotnet', 'PinballWizard.Cli.dll', '--source', 'bulletins' ]
+    env: [
+      { name: 'Cosmos__AccountEndpoint', value: cosmosAccount.properties.documentEndpoint }
+      { name: 'Cosmos__AccountResourceId', value: cosmosAccount.id }
+      { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
+      { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+  }
+}
+
+resource sternBulletinsScrapeJobCosmosDataContrib 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-08-15' = if (deployPhase2) {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, 'stern-bulletins-scrape-job-${environment}', '00000000-0000-0000-0000-000000000002')
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002'
+    principalId: sternBulletinsScrapeJob.?outputs.jobPrincipalId ?? ''
     scope: cosmosAccount.id
   }
 }
@@ -3221,7 +3299,11 @@ output cgcScrapeJobName string = cgcScrapeJob.?outputs.jobName ?? ''
 
 output barrelsOfFunScrapeJobName string = barrelsOfFunScrapeJob.?outputs.jobName ?? ''
 
-output sternScrapeJobName string = sternScrapeJob.?outputs.jobName ?? ''
+output sternManualsScrapeJobName string = sternManualsScrapeJob.?outputs.jobName ?? ''
+
+output sternGamesScrapeJobName string = sternGamesScrapeJob.?outputs.jobName ?? ''
+
+output sternBulletinsScrapeJobName string = sternBulletinsScrapeJob.?outputs.jobName ?? ''
 
 output jjpScrapeJobName string = jjpScrapeJob.?outputs.jobName ?? ''
 
