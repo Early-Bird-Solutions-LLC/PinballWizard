@@ -68,6 +68,14 @@ structured grid filters. It never finished rolling out and has since drifted:
   `AdminDocumentDetail`, `AdminMachineDetail`, `AdminJobExecutionDetail` — none of these render a
   searchable data grid (confirmed by inventory; `AdminJobExecutionDetail`'s search box is a
   log-line text search within one execution's output, an unrelated mechanism).
+- Adding `Themes` to `MachineCatalogRow` for theme-aware semantic matching on `admin-machines`.
+  Investigated during planning: `Themes` doesn't exist on `MachineStatEntry` (the Cosmos-persisted
+  `catalog_stats` document schema) at all today — adding it means a schema change to that document
+  plus its builder (`CosmosCatalogStatsRepository.MapMachine`), threading through `MachineDocStats`
+  to `MachineCatalogRow`, AND a live `--build-catalog` re-run before any real data shows up in the
+  admin UI. Too large and too live-data-coupled for this pass. The generic semantic match (§4)
+  still works today using each row's existing string fields (e.g. `Title` often already contains
+  the thematic word — "Godzilla", "Star Wars").
 
 ## Design
 
@@ -77,7 +85,7 @@ structured grid filters. It never finished rolling out and has since drifted:
 |---|---|---|---|
 | `AdminDocumentTriage` | `DocumentTriageRow` | `admin-document-triage` | Restore `AppDataGrid` (revert the accidental revert) |
 | `AdminJobs` | `JobStatus` | `admin-jobs` | Restore `AppDataGrid` |
-| `AdminMachines` | `MachineCatalogRow` | `admin-machines` | Restore `AppDataGrid`; add `Themes` to the row projection (sourced from `Machine.Themes`) for semantic matching |
+| `AdminMachines` | `MachineCatalogRow` | `admin-machines` | Restore `AppDataGrid` |
 | `AdminManufacturers` | `ManufacturerRow` | `admin-manufacturers` | Migrate `MudDataGrid` → `AppDataGrid`; drop hardcoded `RowsPerPage="25"` |
 | `AdminSources` | `IngestionSourceRow` | `admin-sources` | Migrate; drop hardcoded `RowsPerPage="25"` |
 | `AdminJobDetail` | `JobExecution` | `admin-job-detail` | Migrate (currently no `RowsPerPage` override, so no page-size change, just adds search) |
@@ -114,7 +122,7 @@ silent-empty-result experience. The public context's schema omits those three co
 ### 3. Agent prompt (`Ai/Agents/GridSearch.md`) corrections
 
 - **Fix `admin-machines`:** remove the `Franchise` column (deleted from `MachineCatalogRow` in
-  `5870325`); add `Themes` (`string`, comma-joined — see §4 for why a flat string, not a list).
+  `5870325`). No replacement column — see the Themes note under Non-goals.
 - **Add 6 new context sections**, each with the real column list pulled from the actual row
   record (not guessed):
   - `admin-manufacturers`: `Key`, `DisplayName`, `Enabled` (bool), `HasSource` (bool),
@@ -142,15 +150,17 @@ silent-empty-result experience. The public context's schema omits those three co
   value and every public `IEnumerable<string>` property's joined values on `T` into one
   case-insensitive haystack, then `Contains(_semanticQuery)`. This is deliberately generic (same
   reflection approach `FilterFunc`/`ApplyOperator` already use for structural filters) so it
-  works for any row type without per-page special-casing — `MachineCatalogRow.Themes` (once
-  added), `Title`, `Manufacturer`, `Edition` all get picked up automatically, as would any future
-  row type's string-ish properties.
+  works for any row type without per-page special-casing — `Title`, `Manufacturer`, `Edition`,
+  etc. are picked up automatically on every existing row type, as would any future row type's
+  string-ish properties, with no per-page wiring.
 - When `_isSemanticSearch` is false, behavior is unchanged (existing structural filter loop over
   `_currentFilters`).
-- This is why §3's `admin-machines` schema documents `Themes` as a flat comma-joined `string`
-  rather than a list: the reflection blob-match handles `string` and `IEnumerable<string>`
-  properties, and a comma-joined string is simplest for the LLM to reason about consistently
-  with the other string columns it already sees.
+- This ships real, working semantic-ish matching immediately using only fields that already
+  exist — e.g. "sci-fi themed games" still matches on `Title` words like "Godzilla" or
+  "Star Wars" today. A true `Themes`-aware match is a deliberately deferred follow-up (see
+  Non-goals) since it requires a Cosmos-persisted schema change (`MachineStatEntry` →
+  `MachineDocStats` → `MachineCatalogRow`, three layers) plus a live `--build-catalog` re-run to
+  populate existing catalog_stats documents — out of scope for this pass.
 
 ### 5. Bug fix: clearing feedback doesn't clear the filter
 
