@@ -132,6 +132,15 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         Assert.NotNull(grid);
     }
 
+    [Fact]
+    public async Task AdminMachines_Renders_GridSearchBox()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
+
     // ── As-of stamp ───────────────────────────────────────────────────────────
 
     [Fact]

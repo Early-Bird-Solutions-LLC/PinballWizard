@@ -10,10 +10,9 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `Manufacturer` (string)
 - `Title` (string)
 - `Edition` (string)
-- `Year` (int)
+- `YearLabel` (string, e.g. "2024" or "Unknown" — numeric comparisons like "gt"/"lt" still work via string-to-number parsing)
 - `DocCount` (int)
 - `HealthLabel` (string: "OK", "Empty", "No manual", "Edition gap")
-- `Franchise` (string)
 - `Source` (string)
 
 ### admin-jobs
@@ -62,8 +61,8 @@ Response:
 {
   "filters": [
     { "column": "Manufacturer", "operator": "equals", "value": "Bally" },
-    { "column": "Year", "operator": "ge", "value": "1990" },
-    { "column": "Year", "operator": "le", "value": "1999" }
+    { "column": "YearLabel", "operator": "ge", "value": "1990" },
+    { "column": "YearLabel", "operator": "le", "value": "1999" }
   ],
   "explanation": "Filtering for Bally machines released between 1990 and 1999.",
   "isSemanticSearch": false,

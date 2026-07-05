@@ -83,8 +83,9 @@
         </AppErrorAlert>
     }
 
-    <MudDataGrid T="MachineCatalogRow"
+    <AppDataGrid T="MachineCatalogRow"
                  Items="@_machines"
+                 SearchContext="admin-machines"
                  Groupable="@true"
                  GroupExpanded="@true"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
@@ -185,10 +186,6 @@
             <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" HeaderClass="text-right" CellClass="text-right" />
 
         </Columns>
-        <PagerContent>
-            <MudDataGridPager T="MachineCatalogRow" />
-        </PagerContent>
-
         <NoRecordsContent>
             @if (!_loadFailed)
             {
@@ -203,7 +200,7 @@
             }
         </NoRecordsContent>
 
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {
