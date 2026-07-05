@@ -67,6 +67,35 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `CreatedAt` (string)
 - `Notes` (string, nullable)
 
+### admin-document-list
+- `Title` (string)
+- `DocumentType` (string)
+- `GameTitle` (string, nullable)
+- `Edition` (string, nullable)
+- `Manufacturer` (string)
+- `FileFormat` (string)
+- `PageCount` (int, nullable)
+- `SizeBytes` (int, nullable)
+- `FirstDiscoveredAt` (datetime)
+- `LinkStatus` (string, nullable — admin-only)
+- `LinkFailureReason` (string, nullable — admin-only)
+- `ResolutionStrategy` (string, nullable — admin-only)
+
+### public-document-list
+Same as `admin-document-list` but WITHOUT `LinkStatus`, `LinkFailureReason`, or
+`ResolutionStrategy` — those fields are always null on the public projection, so a
+query like "failed links" would otherwise silently match nothing. Use this context
+for a public (non-admin) visitor's query.
+- `Title` (string)
+- `DocumentType` (string)
+- `GameTitle` (string, nullable)
+- `Edition` (string, nullable)
+- `Manufacturer` (string)
+- `FileFormat` (string)
+- `PageCount` (int, nullable)
+- `SizeBytes` (int, nullable)
+- `FirstDiscoveredAt` (datetime)
+
 ## Operators
 Use the following operators:
 - `contains` (for strings)
