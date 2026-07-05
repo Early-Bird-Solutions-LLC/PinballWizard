@@ -49,8 +49,11 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `Cadence` (string)
 - `LastRun` (string — formatted date, e.g. "Jul 4, 2026 6:00 PM", or "—" if never run)
 - `LastSuccess` (string — same format as LastRun)
-- `DocsDiscovered` (int)
-- `RunFailures` (int)
+- `DocsDiscovered` (long)
+- `RunFailures` (long)
+- `DiscoveryStatus` (string, nullable — e.g. "authorized", "investigating", "deferred")
+- `DiscoveryNotes` (string, nullable — free-text outreach notes)
+- `DiscoveryDate` (datetime, nullable — date of discovery outreach decision)
 
 ### admin-job-detail
 
