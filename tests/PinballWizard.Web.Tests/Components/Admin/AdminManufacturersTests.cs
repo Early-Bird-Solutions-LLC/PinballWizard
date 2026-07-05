@@ -219,4 +219,18 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
             .QuerySelectorAll("td");
         Assert.Equal("1", jjpCells[2].TextContent.Trim());
     }
+
+    [Fact]
+    public async Task Populated_GridSearchBox_UsesAdminManufacturersContext()
+    {
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var gridSearch = cut.FindComponent<PinballWizard.Web.Components.Shared.GridSearch>();
+        Assert.Equal("admin-manufacturers", gridSearch.Instance.Context);
+    }
 }

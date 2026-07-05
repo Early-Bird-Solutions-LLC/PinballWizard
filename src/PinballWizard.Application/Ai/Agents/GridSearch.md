@@ -32,6 +32,14 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `FailureReason` (string)
 - `LastAttemptedAt` (datetime)
 
+### admin-manufacturers
+
+- `Key` (string — manufacturer partition key, e.g. "stern")
+- `DisplayName` (string)
+- `Enabled` (bool — null when no matching ingestion source exists)
+- `HasSource` (bool)
+- `Machines` (int)
+
 ## Operators
 Use the following operators:
 - `contains` (for strings)
