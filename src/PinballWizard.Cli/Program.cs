@@ -1844,6 +1844,13 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (!scrapeResult.Errors.IsEmpty)
     {
         Console.WriteLine($"  {scrapeResult.Errors.Count} errors during discovery");
+        // A scraper failure is caught, logged, and added to Errors by
+        // ScraperOrchestrator, then the run continues with the next source --
+        // but without this, the process still exits 0. Every scraper now runs
+        // as its own scheduled ACA Job (Admin > Jobs), and ACA reads the exit
+        // code as the job's success/failure status: without this, a fully-failed
+        // scraper run reports "Succeeded" on the dashboard (Invariant #17).
+        Environment.ExitCode = 1;
     }
 });
 

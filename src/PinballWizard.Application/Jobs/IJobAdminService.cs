@@ -31,4 +31,9 @@ public interface IJobAdminService
     // Return a single execution by name (status + start/end window), or null
     // when the execution is not found. On ARM failure, throws ArmJobAdminException.
     Task<JobExecution?> GetExecutionAsync(string jobName, string executionName, CancellationToken cancellationToken);
+
+    // Update the cron schedule for the named job via ARM.
+    // Validates the expression format before calling ARM.
+    // On ARM failure, throws ArmJobAdminException.
+    Task UpdateScheduleAsync(string jobName, string cronExpression, CancellationToken cancellationToken);
 }
