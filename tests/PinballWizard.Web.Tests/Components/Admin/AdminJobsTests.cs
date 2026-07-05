@@ -299,4 +299,18 @@ public sealed class AdminJobsTests : AsyncBunitContext
         // A manual-trigger job with no cron expression must show "—", not a blank cell.
         Assert.Contains("—", cut.Markup, StringComparison.Ordinal);
     }
+
+    // ── AppDataGrid search box renders when populated ────────────────────────
+
+    [Fact]
+    public async Task AdminJobs_Populated_RendersGridSearchBox()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.ListJobsAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(SeedJobs));
+
+        var cut = RenderPage(svc);
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
 }
