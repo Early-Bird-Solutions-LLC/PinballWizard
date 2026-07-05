@@ -40,16 +40,25 @@
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
 
     private List<GridFilter> _currentFilters = [];
+    private bool _isSemanticSearch;
+    private string? _semanticQuery;
     private Func<T, bool> _quickFilter => FilterFunc;
 
     private void HandleAiFilters(GridSearchResponse response)
     {
         _currentFilters = response.Filters.ToList();
+        _isSemanticSearch = response.IsSemanticSearch;
+        _semanticQuery = response.SemanticQuery;
         StateHasChanged();
     }
 
     private bool FilterFunc(T item)
     {
+        if (_isSemanticSearch && !string.IsNullOrWhiteSpace(_semanticQuery))
+        {
+            return MatchesSemanticQuery(item, _semanticQuery);
+        }
+
         if (_currentFilters.Count == 0) return true;
 
         foreach (var filter in _currentFilters)
@@ -64,12 +73,28 @@
         return true;
     }
 
-    private bool ApplyOperator(object? value, string op, string filterValue)
+    // Generic semantic-ish match: concatenate every public string property and every
+    // public IEnumerable<string> property's joined values into one case-insensitive
+    // haystack, then substring-match the query. Deliberately reflection-based (same
+    // approach FilterFunc/ApplyOperator already use for structural filters) so it
+    // works for any row type without per-page wiring — Title, Manufacturer, Edition,
+    // and any future row type's string-ish properties are picked up automatically.
+    private static bool MatchesSemanticQuery(T item, string query) =>
+        typeof(T).GetProperties()
+            .Select(prop => prop.GetValue(item))
+            .Any(value => value switch
+            {
+                string s => s.Contains(query, StringComparison.OrdinalIgnoreCase),
+                IEnumerable<string> strings => strings.Any(x => x is not null && x.Contains(query, StringComparison.OrdinalIgnoreCase)),
+                _ => false,
+            });
+
+    private static bool ApplyOperator(object? value, string op, string filterValue)
     {
         if (value == null) return string.IsNullOrWhiteSpace(filterValue) && op == "equals";
 
         var valStr = value.ToString() ?? "";
-        
+
         switch (op.ToLowerInvariant())
         {
             case "contains":

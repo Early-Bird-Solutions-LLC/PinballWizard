@@ -8,6 +8,24 @@ public static class GridSearchEndpoint
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    // Mirrors the "### " section headers in Ai/Agents/GridSearch.md — the prompt's per-grid
+    // column schemas. Keeping this list in sync is intentionally a review-time concern (a
+    // contract test analogous to SourceAliasContractTests would automate it), not because it's
+    // exploitable: an unrecognized context still can't reach anything beyond a filter-tuple
+    // parse. Rejecting it here removes the free-text prompt-injection surface at the boundary.
+    private static readonly HashSet<string> ValidGridContexts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "admin-machines",
+        "admin-jobs",
+        "admin-document-triage",
+        "admin-manufacturers",
+        "admin-sources",
+        "admin-job-detail",
+        "admin-link-overrides",
+        "admin-document-list",
+        "public-document-list",
+    };
+
     public static IEndpointRouteBuilder MapGridSearchEndpoint(
         this IEndpointRouteBuilder endpoints)
     {
@@ -31,6 +49,12 @@ public static class GridSearchEndpoint
         var gridContext = context.Request.Query["context"].ToString();
 
         if (string.IsNullOrWhiteSpace(q))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        if (!ValidGridContexts.Contains(gridContext))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;

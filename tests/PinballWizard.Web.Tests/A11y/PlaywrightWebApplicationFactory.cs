@@ -102,6 +102,16 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
                 c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
             .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
 
+        // Every admin data grid now renders GridSearch (AppDataGrid's EnableAiSearch
+        // defaults true), which @injects IGridSearchClient — same "renders empty"
+        // failure class as the two exclusions noted above if left unregistered.
+        // SearchAsync only fires on an explicit user query, never during initial
+        // render, so the 503 stub is safe here too.
+        builder.Services
+            .AddHttpClient<IGridSearchClient, GridSearchClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
         // No-op auth — no OIDC, no challenge, no redirect.
         builder.Services
             .AddAuthentication(defaultScheme: "Test")

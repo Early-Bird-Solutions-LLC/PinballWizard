@@ -10,10 +10,9 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `Manufacturer` (string)
 - `Title` (string)
 - `Edition` (string)
-- `Year` (int)
+- `YearLabel` (string, e.g. "2024" or "Unknown" — numeric comparisons like "gt"/"lt" still work via string-to-number parsing)
 - `DocCount` (int)
 - `HealthLabel` (string: "OK", "Empty", "No manual", "Edition gap")
-- `Franchise` (string)
 - `Source` (string)
 
 ### admin-jobs
@@ -32,6 +31,73 @@ Your goal is to output a JSON array of filters that can be applied to a data gri
 - `Status` (string: "Failed", "NotInCatalog", "PlatformGeneric")
 - `FailureReason` (string)
 - `LastAttemptedAt` (datetime)
+
+### admin-manufacturers
+
+- `Key` (string — manufacturer partition key, e.g. "stern")
+- `DisplayName` (string)
+- `Enabled` (bool — null when no matching ingestion source exists)
+- `HasSource` (bool)
+- `Machines` (int)
+
+### admin-sources
+
+- `Id` (string)
+- `Name` (string)
+- `SourceUrl` (string)
+- `Enabled` (bool)
+- `Cadence` (string)
+- `LastRun` (string — formatted date, e.g. "Jul 4, 2026 6:00 PM", or "—" if never run)
+- `LastSuccess` (string — same format as LastRun)
+- `DocsDiscovered` (long)
+- `RunFailures` (long)
+- `DiscoveryStatus` (string, nullable — e.g. "authorized", "investigating", "deferred")
+- `DiscoveryNotes` (string, nullable — free-text outreach notes)
+- `DiscoveryDate` (datetime, nullable — date of discovery outreach decision)
+
+### admin-job-detail
+
+- `ExecutionName` (string)
+- `Status` (string)
+- `StartOn` (datetime)
+- `EndOn` (datetime)
+
+### admin-link-overrides
+
+- `SourcePattern` (string)
+- `MachineIds` (string — comma-joined)
+- `CreatedBy` (string)
+- `CreatedAt` (string)
+- `Notes` (string, nullable)
+
+### admin-document-list
+- `Title` (string)
+- `DocumentType` (string)
+- `GameTitle` (string, nullable)
+- `Edition` (string, nullable)
+- `Manufacturer` (string)
+- `FileFormat` (string)
+- `PageCount` (int, nullable)
+- `SizeBytes` (int, nullable)
+- `FirstDiscoveredAt` (datetime)
+- `LinkStatus` (string, nullable — admin-only)
+- `LinkFailureReason` (string, nullable — admin-only)
+- `ResolutionStrategy` (string, nullable — admin-only)
+
+### public-document-list
+Same as `admin-document-list` but WITHOUT `LinkStatus`, `LinkFailureReason`, or
+`ResolutionStrategy` — those fields are always null on the public projection, so a
+query like "failed links" would otherwise silently match nothing. Use this context
+for a public (non-admin) visitor's query.
+- `Title` (string)
+- `DocumentType` (string)
+- `GameTitle` (string, nullable)
+- `Edition` (string, nullable)
+- `Manufacturer` (string)
+- `FileFormat` (string)
+- `PageCount` (int, nullable)
+- `SizeBytes` (int, nullable)
+- `FirstDiscoveredAt` (datetime)
 
 ## Operators
 Use the following operators:
@@ -62,8 +128,8 @@ Response:
 {
   "filters": [
     { "column": "Manufacturer", "operator": "equals", "value": "Bally" },
-    { "column": "Year", "operator": "ge", "value": "1990" },
-    { "column": "Year", "operator": "le", "value": "1999" }
+    { "column": "YearLabel", "operator": "ge", "value": "1990" },
+    { "column": "YearLabel", "operator": "le", "value": "1999" }
   ],
   "explanation": "Filtering for Bally machines released between 1990 and 1999.",
   "isSemanticSearch": false,

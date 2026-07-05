@@ -11,6 +11,7 @@
                       Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.AutoAwesome"
                       AdornmentColor="Color.Primary"
+                      AdornmentAriaLabel="Run AI search"
                       Variant="Variant.Outlined"
                       OnAdornmentClick="ExecuteSearch"
                       OnKeyDown="OnKeyDown"
@@ -103,10 +104,11 @@
         StateHasChanged();
     }
 
-    private void ClearFeedback()
+    private async Task ClearFeedback()
     {
         _lastResponse = null;
         _query = "";
+        await OnFiltersApplied.InvokeAsync(new GridSearchResponse([], "", false, null));
         StateHasChanged();
     }
 

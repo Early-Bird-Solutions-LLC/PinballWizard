@@ -63,6 +63,19 @@ public sealed class AdminJobDetailTests : AsyncBunitContext
     // ── Populated state ───────────────────────────────────────────────────────
 
     [Fact]
+    public async Task Populated_RendersGridSearchBox()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
+
+    [Fact]
     public async Task Populated_RendersHeaderFields()
     {
         var svc = Substitute.For<IJobAdminService>();

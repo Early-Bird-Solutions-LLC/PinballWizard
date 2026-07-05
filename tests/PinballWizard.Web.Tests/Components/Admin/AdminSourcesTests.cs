@@ -218,6 +218,17 @@ public sealed class AdminSourcesTests : AsyncBunitContext
         cut.WaitForAssertion(() =>
             cut.Find("a[href='https://stern.example.com']"));
     }
+
+    [Fact]
+    public void WithSources_RendersGridSearchBox()
+    {
+        RegisterSources(ct => Stream([MakeSource("stern", true)], ct));
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+
+        var cut = RenderWithPopover<AdminSources>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid='grid-search-input']"));
+    }
 }
 
 // Behavioral parity with AdminMachinesLoadingStateTests: the page shell + spinner

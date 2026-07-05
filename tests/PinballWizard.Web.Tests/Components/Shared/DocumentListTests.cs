@@ -129,13 +129,11 @@ public sealed class DocumentListTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task GameQueryParam_InitializesGameFilter()
+    public async Task GameQueryParam_ForwardsToRepository()
     {
         _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
              .Returns(_ => FakeStream([]));
 
-        // Render DocumentList directly with Game param — tests the behavioral
-        // contract that the filter control is populated from the Game parameter.
         var fragment = Render(builder =>
         {
             builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
@@ -148,13 +146,11 @@ public sealed class DocumentListTests : AsyncBunitContext
         var cut = fragment.FindComponent<PinballWizard.Web.Components.Shared.DocumentList>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Verify the repository was called with the game filter forwarded — not just displayed.
+        // The deep-link query param still narrows the server-side fetch — this is
+        // the mechanism Manufacturers.razor's /documents?manufacturer=X&game=Y link
+        // depends on, and it is deliberately NOT removed by dropping the visible
+        // filter UI (see design doc §2).
         _repo.Received(1).StreamDocumentsAsync("Godzilla", Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>());
-
-        // MudTextField splats UserAttributes to the inner <input> element,
-        // so data-testid lands on the input directly — not on a wrapper div.
-        var input = cut.Find("input[data-testid='doc-list-game-filter']");
-        Assert.Equal("Godzilla", input.GetAttribute("value"));
     }
 
     [Fact]
@@ -242,22 +238,6 @@ public sealed class DocumentListTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task TypeFilterChipStrip_RendersUserFacingDocumentTypes()
-    {
-        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
-             .Returns(_ => FakeStream([]));
-
-        var cut = RenderWithPopover<Documents>();
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        // Strip renders user-facing types and excludes internal artefacts.
-        var chipSetMarkup = cut.Find("[data-testid='doc-list-type-filter']").InnerHtml;
-        Assert.Contains("Manual", chipSetMarkup);
-        Assert.Contains("Rulesheet", chipSetMarkup);
-        Assert.DoesNotContain("MetadataCard", chipSetMarkup);
-    }
-
-    [Fact]
     public async Task TypeFilter_WithNoResults_ShowsFilteredEmptyState()
     {
         _repo.StreamDocumentsAsync(Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
@@ -270,5 +250,33 @@ public sealed class DocumentListTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         cut.Find("[data-testid='doc-list-empty-filtered']");
+    }
+
+    [Fact]
+    public async Task PublicPage_RendersGridSearchBox_NotLegacyFilters()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, false, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([MakeItem()]));
+
+        var cut = RenderWithPopover<Documents>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+        Assert.Empty(cut.FindAll("[data-testid='doc-list-game-filter']"));
+        Assert.Empty(cut.FindAll("[data-testid='doc-list-mfr-filter']"));
+        Assert.Empty(cut.FindAll("[data-testid='doc-list-type-filter']"));
+    }
+
+    [Fact]
+    public async Task AdminPage_RendersGridSearchBox_NotLegacyFilters()
+    {
+        _repo.StreamDocumentsAsync(null, null, null, true, Arg.Any<CancellationToken>())
+             .Returns(_ => FakeStream([MakeItem()]));
+
+        var cut = RenderWithPopover<PinballWizard.Web.Components.Pages.Admin.AdminDocuments>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+        Assert.Empty(cut.FindAll("[data-testid='doc-list-game-filter']"));
     }
 }

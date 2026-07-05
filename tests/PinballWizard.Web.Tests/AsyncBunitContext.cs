@@ -20,11 +20,11 @@ public abstract class AsyncBunitContext : BunitContext, IAsyncLifetime
 {
     protected AsyncBunitContext()
     {
-        // ADR-0008: register IUserPreferencesService (with 25-row default) so components
-        // like AppDataGrid and MudDataGrid can resolve their RowsPerPage parameter
-        // in unit tests.
+        // Register IUserPreferencesService with the SAME default as production
+        // (UserPreferencesService.PageSize = 10) so components like AppDataGrid and
+        // MudDataGrid resolve RowsPerPage the same way in tests as in the real app.
         var prefs = NSubstitute.Substitute.For<PinballWizard.Web.Services.IUserPreferencesService>();
-        prefs.PageSize.Returns(25);
+        prefs.PageSize.Returns(10);
         Services.AddSingleton<PinballWizard.Web.Services.IUserPreferencesService>(prefs);
         
         var searchClient = NSubstitute.Substitute.For<PinballWizard.Web.Clients.IGridSearchClient>();

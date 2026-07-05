@@ -178,10 +178,11 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task PagingAt25_RendersOnlyFirstPageWhenMoreThan25Manufacturers()
+    public async Task PagingAt10_RendersOnlyFirstPageWhenMoreThan10Manufacturers()
     {
-        // 26 distinct manufacturers — page 1 should show exactly 25 rows; pager footer must render.
-        var machines = Enumerable.Range(1, 26)
+        // 11 distinct manufacturers — page 1 should show exactly 10 rows (the shared
+        // Prefs.PageSize default), pager footer must render.
+        var machines = Enumerable.Range(1, 11)
             .Select(i => M($"mfr{i:D2}", $"Manufacturer {i:D2}"))
             .ToArray();
         _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(machines));
@@ -191,7 +192,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var rows = cut.FindAll("[data-testid='manufacturers-table'] tbody tr");
-        Assert.Equal(25, rows.Count);
+        Assert.Equal(10, rows.Count);
         cut.Find(".mud-table-pagination");
     }
 
@@ -217,5 +218,19 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         var jjpCells = rows.First(r => r.TextContent.Contains("Jersey Jack", StringComparison.Ordinal))
             .QuerySelectorAll("td");
         Assert.Equal("1", jjpCells[2].TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task Populated_GridSearchBox_UsesAdminManufacturersContext()
+    {
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var gridSearch = cut.FindComponent<PinballWizard.Web.Components.Shared.GridSearch>();
+        Assert.Equal("admin-manufacturers", gridSearch.Instance.Context);
     }
 }

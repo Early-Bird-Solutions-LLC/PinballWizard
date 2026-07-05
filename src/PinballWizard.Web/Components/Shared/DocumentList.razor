@@ -14,39 +14,6 @@
 }
 else
 {
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
-        <MudTextField T="string"
-                      Value="@Game"
-                      ValueChanged="@(v => OnGameChanged(v))"
-                      Placeholder="Search by game…"
-                      Adornment="Adornment.Start"
-                      AdornmentIcon="@Icons.Material.Filled.Search"
-                      Clearable="true"
-                      DebounceInterval="300"
-                      Immediate="true"
-                      data-testid="doc-list-game-filter" />
-        <MudChipSet T="string"
-                    SelectedValue="@Manufacturer"
-                    SelectedValueChanged="@(v => OnManufacturerChanged(v))"
-                    SelectionMode="SelectionMode.SingleSelection"
-                    data-testid="doc-list-mfr-filter">
-            @foreach (var mfr in _manufacturers)
-            {
-                <MudChip T="string" Value="@mfr" Variant="Variant.Outlined">@mfr</MudChip>
-            }
-        </MudChipSet>
-        <MudChipSet T="string"
-                    SelectedValue="@Type"
-                    SelectedValueChanged="@(v => OnTypeChanged(v))"
-                    SelectionMode="SelectionMode.SingleSelection"
-                    data-testid="doc-list-type-filter">
-            @foreach (var dt in _documentTypes)
-            {
-                <MudChip T="string" Value="@dt" Variant="Variant.Outlined" aria-label="@($"Filter by {dt}")">@dt</MudChip>
-            }
-        </MudChipSet>
-    </MudStack>
-
     @if (_loading)
     {
         <AdminLoadingBar Label="Loading documents" />
@@ -54,6 +21,7 @@ else
 
     <AppDataGrid T="DocumentListItem"
                  Items="@_documents"
+                 SearchContext="@(IsAdmin ? "admin-document-list" : "public-document-list")"
                  data-testid="doc-list-grid"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<DocumentListItem>>(this, OnRowClick))">
         <Columns>
@@ -151,23 +119,6 @@ else
     private bool _loadError;
     private CancellationTokenSource _cts = new();
 
-    private static readonly string[] _manufacturers =
-    [
-        "American Pinball", "Barrels of Fun", "Chicago Gaming",
-        "Jersey Jack", "Multimorphic", "Pinball Brothers",
-        "Spooky", "Stern"
-    ];
-
-    // Valid document_type values derived from PinballWizard.Core.Models.DocumentType enum.
-    // Synthesized types (MetadataCard, GameOverview, NewsDigest) are omitted: they are
-    // internal catalog artefacts not surfaced as user-selectable filter options.
-    private static readonly string[] _documentTypes =
-    [
-        "Manual", "Schematic", "Firmware", "ServiceBulletin",
-        "Flyer", "SpecSheet", "FeatureMatrix", "Rulesheet",
-        "Readme", "Other"
-    ];
-
     protected override async Task OnParametersSetAsync()
     {
         _cts.Cancel();
@@ -203,39 +154,6 @@ else
     {
         _cts.Cancel();
         _cts.Dispose();
-    }
-
-    private void OnGameChanged(string? value)
-    {
-        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
-        {
-            ["game"] = string.IsNullOrWhiteSpace(value) ? null : value,
-            ["manufacturer"] = Manufacturer,
-            ["type"] = Type
-        });
-        Nav.NavigateTo(uri, replace: true);
-    }
-
-    private void OnManufacturerChanged(string? value)
-    {
-        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
-        {
-            ["game"] = Game,
-            ["manufacturer"] = string.IsNullOrWhiteSpace(value) ? null : value,
-            ["type"] = Type
-        });
-        Nav.NavigateTo(uri, replace: true);
-    }
-
-    private void OnTypeChanged(string? value)
-    {
-        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
-        {
-            ["game"] = Game,
-            ["manufacturer"] = Manufacturer,
-            ["type"] = string.IsNullOrWhiteSpace(value) ? null : value
-        });
-        Nav.NavigateTo(uri, replace: true);
     }
 
     private void OnRowClick(DataGridRowClickEventArgs<DocumentListItem> args) =>
