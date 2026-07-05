@@ -1012,24 +1012,26 @@ git commit -m "fix(web,ai) restore AppDataGrid on AdminMachines; fix stale admin
 
 ---
 
-### Task 8: Migrate `AdminManufacturers` to `AppDataGrid`
+### Task 8: Wire `SearchContext` and the prompt schema for `AdminManufacturers`
+
+> **Plan amendment (recorded during execution, not originally written this way):** Task 1's implementer discovered that its own test code could not pass without migrating `AdminManufacturers.razor` off raw `MudDataGrid` — `RowsPerPage="25"` was hardcoded directly on `MudDataGrid`, completely bypassing `IUserPreferencesService`, so changing the shared mock had no effect on this page. Task 1 (commit `90ae5a2`) therefore already did the `MudDataGrid` → `AppDataGrid` tag swap, removed the hardcoded `RowsPerPage="25"`, and removed the redundant `<PagerContent>` block. **What's left for this task is narrower than originally scoped:** the grid already renders a GridSearch box today, but under `AppDataGrid`'s default `SearchContext="default"` — not a context the agent prompt (`GridSearch.md`) has a schema for, so a query here still isn't grounded in this grid's real columns (the exact bug class this whole plan exists to fix). This task's job is to give this grid its own named context and matching prompt section, and fix the stale doc comment Task 1 didn't touch.
 
 **Files:**
-- Modify: `src/PinballWizard.Web/Components/Pages/Admin/AdminManufacturers.razor:63,94-97`
+- Modify: `src/PinballWizard.Web/Components/Pages/Admin/AdminManufacturers.razor` (add `SearchContext` attribute; fix stale doc comment)
 - Modify: `src/PinballWizard.Application/Ai/Agents/GridSearch.md` (add `admin-manufacturers` section)
 - Test: `tests/PinballWizard.Web.Tests/Components/Admin/AdminManufacturersTests.cs`
 
 **Interfaces:**
-- Consumes: `AppDataGrid<ManufacturerRow>` where `ManufacturerRow(string Key, string DisplayName, bool? Enabled, bool HasSource, int Machines)`.
-- Produces: `[data-testid='grid-search-input']` now renders on `/admin/manufacturers`; grid honors `Prefs.PageSize` (10) instead of hardcoded 25 (Task 1 already updated the one dependent test for this).
+- Consumes: `AppDataGrid<ManufacturerRow>` where `ManufacturerRow(string Key, string DisplayName, bool? Enabled, bool HasSource, int Machines)` — already wired in by Task 1, unchanged here.
+- Produces: `SearchContext="admin-manufacturers"` on `/admin/manufacturers`, with a matching `GridSearch.md` schema section — so a query here is actually grounded in `ManufacturerRow`'s real columns, not silently evaluated under the generic `"default"` context.
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `AdminManufacturersTests.cs`:
+Add to `AdminManufacturersTests.cs`. This asserts the box uses the grid's own context — not merely that a search box exists (Task 1 already made that trivially true):
 
 ```csharp
     [Fact]
-    public async Task Populated_RendersGridSearchBox()
+    public async Task Populated_GridSearchBox_UsesAdminManufacturersContext()
     {
         _machines.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(M("stern", "Stern Pinball")));
@@ -1038,40 +1040,51 @@ Add to `AdminManufacturersTests.cs`:
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        cut.Find("[data-testid='grid-search-input']");
+        var grid = cut.FindComponent<PinballWizard.Web.Components.Shared.AppDataGrid<PinballWizard.Web.Components.Pages.Admin.AdminManufacturers.ManufacturerRow>>();
+        Assert.Equal("admin-manufacturers", grid.Instance.SearchContext);
     }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+Note: `ManufacturerRow` is currently a `private sealed record` nested in `AdminManufacturers`'s `@code` block (see `AdminManufacturers.razor` around line 102) — `FindComponent<AppDataGrid<T>>` needs a resolvable `T`. If the private record cannot be referenced from the test assembly, use this simpler equivalent instead (finds the rendered `GridSearch` child and reads its bound `Context` parameter, which is `AppDataGrid`'s `SearchContext` value passed straight through):
 
-Run: `dotnet test tests/PinballWizard.Web.Tests --filter "FullyQualifiedName~AdminManufacturersTests.Populated_RendersGridSearchBox" --nologo`
-Expected: FAIL.
+```csharp
+    [Fact]
+    public async Task Populated_GridSearchBox_UsesAdminManufacturersContext()
+    {
+        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(M("stern", "Stern Pinball")));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
 
-- [ ] **Step 3: Migrate the razor file**
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-In `AdminManufacturers.razor`, change:
-
-```razor
-        <MudDataGrid T="ManufacturerRow" Items="@_rows" RowsPerPage="25" data-testid="manufacturers-table">
+        var gridSearch = cut.FindComponent<PinballWizard.Web.Components.Shared.GridSearch>();
+        Assert.Equal("admin-manufacturers", gridSearch.Instance.Context);
+    }
 ```
 
-to:
+Try the first form; if it doesn't compile because `ManufacturerRow` is inaccessible, use the second form instead — don't spend more than one attempt deciding, either form proves the same thing.
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `dotnet test tests/PinballWizard.Web.Tests --filter "FullyQualifiedName~AdminManufacturersTests.Populated_GridSearchBox_UsesAdminManufacturersContext" --nologo`
+Expected: FAIL — the rendered context is `"default"`, not `"admin-manufacturers"` (`AppDataGrid.SearchContext` defaults to `"default"` when not set, per `AppDataGrid.razor`'s existing `[Parameter] public string SearchContext { get; set; } = "default";`).
+
+- [ ] **Step 3: Add the `SearchContext` attribute**
+
+In `AdminManufacturers.razor`, the grid tag currently reads (after Task 1's migration):
+
+```razor
+        <AppDataGrid T="ManufacturerRow" Items="@_rows" data-testid="manufacturers-table">
+```
+
+Change to:
 
 ```razor
         <AppDataGrid T="ManufacturerRow" Items="@_rows" SearchContext="admin-manufacturers" data-testid="manufacturers-table">
 ```
 
-Remove the explicit pager block:
-
-```razor
-            <PagerContent>
-                <MudDataGridPager T="ManufacturerRow" />
-            </PagerContent>
-```
-
-Change the closing `</MudDataGrid>` to `</AppDataGrid>`.
-
-Also update the doc comment on line 24 (`Paged via AppDataGrid (RowsPerPage=25)`) — it was already inaccurate (this page used raw `MudDataGrid`, not `AppDataGrid`, until now) — change to:
+Also fix the stale doc comment (still reads `Paged via AppDataGrid (RowsPerPage=25)`, unchanged by Task 1's migration — a leftover from when this page briefly had `AppDataGrid` in its comment but raw `MudDataGrid` in its code, then flipped the other way in Task 1 without anyone updating the prose):
 
 ```
  * Paged via AppDataGrid (RowsPerPage defaults to the shared 10-row user preference).
@@ -1079,7 +1092,7 @@ Also update the doc comment on line 24 (`Paged via AppDataGrid (RowsPerPage=25)`
 
 - [ ] **Step 4: Run the test again to verify it passes**
 
-Run: `dotnet test tests/PinballWizard.Web.Tests --filter "FullyQualifiedName~AdminManufacturersTests.Populated_RendersGridSearchBox" --nologo`
+Run: `dotnet test tests/PinballWizard.Web.Tests --filter "FullyQualifiedName~AdminManufacturersTests.Populated_GridSearchBox_UsesAdminManufacturersContext" --nologo`
 Expected: PASS.
 
 - [ ] **Step 5: Run the full AdminManufacturersTests file**
@@ -1104,7 +1117,7 @@ Add after the `admin-document-triage` section (before `## Operators`):
 
 ```bash
 git add src/PinballWizard.Web/Components/Pages/Admin/AdminManufacturers.razor src/PinballWizard.Application/Ai/Agents/GridSearch.md tests/PinballWizard.Web.Tests/Components/Admin/AdminManufacturersTests.cs
-git commit -m "feat(web,ai) migrate AdminManufacturers to AppDataGrid, add admin-manufacturers prompt schema"
+git commit -m "feat(web,ai) give AdminManufacturers its own SearchContext and prompt schema"
 ```
 
 ---
