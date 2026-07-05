@@ -62,7 +62,8 @@
 
         <MudPaper Class="pa-4" Elevation="2" data-testid="corpus-by-type">
             <MudText Typo="Typo.h6" GutterBottom="true">Indexed chunks by document type</MudText>
-            <MudDataGrid T="DocTypeChunkCount" Items="@_stats.ByDocumentType"
+            <AppDataGrid T="DocTypeChunkCount" Items="@_stats.ByDocumentType"
+                         EnableAiSearch="false"
                          data-testid="corpus-table">
                 <Columns>
                     <PropertyColumn Property="r => r.DocumentType" Title="Document type" />
@@ -72,7 +73,7 @@
                         </CellTemplate>
                     </TemplateColumn>
                 </Columns>
-            </MudDataGrid>
+            </AppDataGrid>
         </MudPaper>
     }
 </MudContainer>
