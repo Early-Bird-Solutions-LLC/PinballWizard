@@ -487,22 +487,30 @@ resource acaIdentityJobsOperator 'Microsoft.Authorization/roleAssignments@2022-0
   }
 }
 
-// Container Apps Contributor — grants the shared UAMI (acaIdentity) permission
-// to update Microsoft.App/jobs in this resource group (specifically the cron
-// schedule via the /admin/jobs schedule-edit UI). The Operator role above
-// covers read + start; this role adds Microsoft.App/jobs/write for schedule
-// updates via the ARM SDK's UpdateAsync path.
+// Container Apps Jobs Contributor — grants the shared UAMI (acaIdentity)
+// permission to update Microsoft.App/jobs in this resource group
+// (specifically the cron schedule via the /admin/jobs schedule-edit UI). The
+// Operator role above covers read + start; this role adds
+// Microsoft.App/jobs/write for schedule updates via the ARM SDK's
+// UpdateAsync path. Scoped to the Container Apps Jobs resource type only
+// (not the generic subscription-wide "Contributor" role, which would also
+// grant write access to Storage/Key Vault/App Insights/AI Search in this
+// resource group).
 //
-// Built-in role: "Contributor"
-// Role definition ID: b24988ac-6180-42a0-ab88-20f7382dd24c
+// Built-in role: "Container Apps Jobs Contributor"
+// Role definition ID: 4e3d2b60-56ae-4dc6-a233-09c8e5a82e68
+// Verified: az role definition list --name "Container Apps Jobs Contributor"
+// (roleType: BuiltInRole; actions include Microsoft.App/jobs/write,
+// Microsoft.App/jobs/*/action, Microsoft.App/jobs/read — no access outside
+// Microsoft.App/jobs, managedenvironments, connectedEnvironments read-only).
 // Scoped to resourceGroup() (same as the Operator role).
 resource acaIdentityJobsContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2) {
   scope: resourceGroup()
-  name: guid(resourceGroup().id, '${namePrefix}-aca-id-${environment}', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
+  name: guid(resourceGroup().id, '${namePrefix}-aca-id-${environment}', '4e3d2b60-56ae-4dc6-a233-09c8e5a82e68')
   properties: {
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
-      'b24988ac-6180-42a0-ab88-20f7382dd24c')
+      '4e3d2b60-56ae-4dc6-a233-09c8e5a82e68')
     principalId: acaIdentity.?properties.principalId ?? ''
     principalType: 'ServicePrincipal'
   }

@@ -216,7 +216,8 @@ public sealed class CronExpressionValidatorTests
     {
         // "5-" — malformed range (no end value)
         var ex = Assert.Throws<ArgumentException>(() => CronExpressionValidator.Validate("5- * * * *"));
-        Assert.NotNull(ex);
+        Assert.Contains("5-", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("minute", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -224,7 +225,8 @@ public sealed class CronExpressionValidatorTests
     {
         // "a-b" — non-numeric range bounds
         var ex = Assert.Throws<ArgumentException>(() => CronExpressionValidator.Validate("a-b * * * *"));
-        Assert.NotNull(ex);
+        Assert.Contains("a-b", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("minute", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Malformed list ────────────────────────────────────────────────────────

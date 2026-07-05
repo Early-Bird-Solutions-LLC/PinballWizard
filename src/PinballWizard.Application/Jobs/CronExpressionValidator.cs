@@ -5,10 +5,6 @@ namespace PinballWizard.Application.Jobs;
 // with clear messages rather than letting ARM reject with an opaque 400.
 public static class CronExpressionValidator
 {
-    /// <summary>
-    /// Validates a 5-field cron expression. Throws <see cref="ArgumentException"/>
-    /// with a descriptive message on failure.
-    /// </summary>
     public static void Validate(string? expression)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -27,9 +23,6 @@ public static class CronExpressionValidator
         ValidateField(parts[4], "day-of-week", 0, 7); // 0 and 7 both mean Sunday
     }
 
-    /// <summary>
-    /// Returns true if the expression is valid; false otherwise.
-    /// </summary>
     public static bool TryValidate(string? expression, out string? errorMessage)
     {
         try
