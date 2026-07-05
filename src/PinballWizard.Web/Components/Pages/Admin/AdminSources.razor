@@ -49,9 +49,9 @@
         </AppErrorAlert>
     }
 
-    <MudDataGrid T="IngestionSourceRow"
+    <AppDataGrid T="IngestionSourceRow"
                  Items="@_sources"
-                 RowsPerPage="25"
+                 SearchContext="admin-sources"
                  data-testid="admin-sources-grid">
 
         <Columns>
@@ -110,11 +110,7 @@
             }
         </NoRecordsContent>
 
-        <PagerContent>
-            <MudDataGridPager T="IngestionSourceRow" />
-        </PagerContent>
-
-    </MudDataGrid>
+    </AppDataGrid>
 </MudContainer>
 
 @code {
