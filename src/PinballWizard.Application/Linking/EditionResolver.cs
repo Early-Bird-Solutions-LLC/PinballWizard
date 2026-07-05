@@ -19,14 +19,17 @@ public enum EditionScope { SingleEdition, EditionSubset, FranchiseWide }
 /// </summary>
 public static class EditionResolver
 {
-    // Ordered most-specific-first so "_le_pre_" matches "le" before "premium".
+    // Ordered most-specific-first so "_le_pre_" matches "le" before "premium",
+    // and a cross-year reissue qualifier (sle/ve/vault/brk) is caught before the
+    // base edition it modifies — a filename carrying both "_pro_" and "_vault_"
+    // (a Vault Edition's own manual) must extract "vault", not "pro" (issue #677).
     private static readonly (string Marker, string Token)[] FilenameMarkers =
     {
         ("70th", "70th"), ("60th", "60th"), ("30th", "30th"),
+        ("_sle_", "sle"), ("_ve_", "ve"), ("_vault_", "vault"), ("_brk_", "brk"),
         ("_pro_", "pro"), ("-pro-", "pro"),
         ("_le_", "le"), ("-le-", "le"),
         ("_prem", "premium"), ("-prem", "premium"), ("premium", "premium"),
-        ("_sle_", "sle"), ("_ve_", "ve"), ("_vault_", "vault"), ("_brk_", "brk"),
     };
 
     // Hyphen/no-space forms catch slugified filenames; the spaced forms catch
@@ -47,10 +50,10 @@ public static class EditionResolver
     private static readonly (string Marker, string Token)[] LinkTextMarkers =
     {
         ("70th", "70th"), ("60th", "60th"), ("30th", "30th"),
+        (" sle ", "sle"), (" ve ", "ve"), (" vault ", "vault"),
         (" pro ", "pro"),
         (" le ", "le"),
         (" premium ", "premium"), (" prem ", "premium"),
-        (" sle ", "sle"), (" ve ", "ve"), (" vault ", "vault"),
     };
 
     /// <summary>
@@ -110,10 +113,30 @@ public static class EditionResolver
             return EditionResolution.Unresolved();
         }
 
-        var match = candidates.FirstOrDefault(m =>
-            m.EditionTokens.Any(t => t.Equals(token, StringComparison.OrdinalIgnoreCase)));
+        // Cross-year families (issue #677) can put the same bare token on more
+        // than one candidate — e.g. AC/DC's 2012 "Pro" base carries ["pro"] and
+        // its 2017 "Pro Vault Edition" reissue carries ["pro","vault"], so a
+        // document whose only signal is "pro" now matches both. A blind
+        // FirstOrDefault would nondeterministically pick one — silently wrong
+        // half the time. When more than one candidate carries the token, prefer
+        // the one(s) with the FEWEST EditionTokens: a doc that never mentions
+        // "vault" is describing the plain edition, not the reissue that adds a
+        // qualifier the doc never signals. Only trust this when it narrows to a
+        // single candidate; a genuine remaining tie is left Unresolved rather
+        // than guessed.
+        var candidatesWithToken = candidates
+            .Where(m => m.EditionTokens.Any(t => t.Equals(token, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
 
-        return match is not null ? EditionResolution.ForSingleEdition(match) : EditionResolution.Unresolved();
+        if (candidatesWithToken.Count == 0) return EditionResolution.Unresolved();
+        if (candidatesWithToken.Count == 1) return EditionResolution.ForSingleEdition(candidatesWithToken[0]);
+
+        var fewestTokens = candidatesWithToken.Min(m => m.EditionTokens.Count);
+        var mostSpecific = candidatesWithToken.Where(m => m.EditionTokens.Count == fewestTokens).ToList();
+
+        return mostSpecific.Count == 1
+            ? EditionResolution.ForSingleEdition(mostSpecific[0])
+            : EditionResolution.Unresolved();
     }
 
     private static string? ExtractEditionFromPageText(string? page1Text)

@@ -299,9 +299,11 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
         // Genuine "same title, different franchise" cases (e.g. Big Ben 1954
         // vs 1975) have DIFFERENT OPDB group segments ("G5QBX" vs "GRBo3") so
         // the segment count check rejects them correctly without needing the
-        // year to discriminate. The DocumentLinker's IsEditionFamily (a separate
-        // method) retains the year guard because edition-resolution for document
-        // linking does need to distinguish cross-year reissues.
+        // year to discriminate. DocumentLinker.IsEditionFamily used to retain a
+        // year guard for document-linking's edition resolution, but that only
+        // blocked EditionResolver from ever running against cross-year families
+        // (e.g. AC/DC 2012 vs. its 2017 Vault Edition reissue) — it now also
+        // uses this same GroupId-only check (issue #677).
         if (IsEditionFamilyByGroup(matches))
         {
             return (matches, MatchOutcome.Group);
@@ -417,11 +419,7 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
     // multiple same-franchise-title matches are an edition family (not a true
     // ambiguity) when they all share one non-null OPDB group segment. See the
     // year-guard rationale in FindMatch (issue #655 Gap 1).
-    private static bool IsEditionFamilyByGroup(List<Machine> matches)
-    {
-        var segments = matches.Select(m => m.GroupId).Distinct().ToList();
-        return segments.Count == 1 && segments[0] is not null;
-    }
+    private static bool IsEditionFamilyByGroup(List<Machine> matches) => EditionFamily.IsEditionFamilyByGroup(matches);
 
     private enum MatchOutcome { None, Slug, Title, Group, Ambiguous }
 }
