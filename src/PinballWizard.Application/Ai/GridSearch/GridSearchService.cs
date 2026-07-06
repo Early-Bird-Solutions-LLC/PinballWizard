@@ -37,7 +37,8 @@ public sealed class GridSearchService : IGridSearchService
 
             if (string.IsNullOrWhiteSpace(json))
             {
-                _logger.LogWarning("Agent returned non-JSON response for grid search: {Response}", text);
+                // Agent output is seeded by the caller's free-text query — sanitize like the query itself (CWE-117).
+                _logger.LogWarning("Agent returned non-JSON response for grid search: {Response}", LogSanitizer.ForLog(text));
                 return new GridSearchResponse([], "I couldn't parse your query into filters. Try a different phrasing.", false, null);
             }
 
