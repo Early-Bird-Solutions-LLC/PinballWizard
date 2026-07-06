@@ -134,6 +134,75 @@ public sealed class WizardE2ETests : IAsyncLifetime
             "Conversation thread lost the prior turn after the follow-up.");
     }
 
+    [E2EFact]
+    public async Task AskFlow_CitationSourceLink_NavigatesToRenderedSourceDetail()
+    {
+        // Provenance is THE differentiator: an answer's citation must be a live,
+        // clickable link INTO the internal source page — not a dead ordinal. This
+        // drives the full chain end-to-end: ask → cited answer → click the
+        // citation's primary link → the source-detail page renders its content.
+        // A corpus chunk links to /documents/{id} (citation-source-link); a machine
+        // record links to /machines/resolve/{id} (citation-title-link). The chain
+        // is only real if the click lands on a page that RENDERS — not the global
+        // Tilt error page and not a load-error / not-found state.
+        //
+        // This is the acceptance guard for the synthesized-source provenance break:
+        // synthesized docs (Kineticist/Tilt Forums/TWIP) were indexed + cited but
+        // absent from scraped_documents_raw, so their /documents/{id} link 404'd
+        // ("Document not found"). Now they are first-class document records
+        // (SynthesizedDocumentRecordFactory). NOTE: this runs against live data —
+        // existing synthesized docs need the one-time raw-doc backfill before a
+        // citation to one resolves; the test asserts the general contract that a
+        // cited source link renders its detail page.
+        var page = await NewPageAsync();
+        await page.GotoAsync($"{_stack.WebBaseUrl}/wizard", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+
+        // A rules/corpus question grounds the answer in an indexed manual, so the
+        // primary citation carries a DocumentChunkId and renders the document
+        // source-link. (AskOnceAndAssertCitedAsync already asserts a cited answer.)
+        await AskOnceAndAssertCitedAsync(page, "how does the wizard mode work on Stern Godzilla");
+
+        // A legitimate transient refusal (eval-known gap / retrieval degradation)
+        // has no citation to click — bail green, matching AskFlow_FollowUp.
+        if (await page.Locator("[data-testid='refusal-panel']").IsVisibleAsync())
+        {
+            return;
+        }
+
+        // Click the citation's primary internal link. Prefer the document
+        // source-link (corpus chunk → /documents/{id}); fall back to the machine
+        // title-link (machine record → /machines/resolve/{id}) so the test still
+        // exercises the click-through when retrieval returns only machine records.
+        var sourceLink = page.Locator("[data-testid='citation-source-link']").First;
+        var expectDocument = await sourceLink.CountAsync() > 0;
+        var primaryLink = expectDocument
+            ? sourceLink
+            : page.Locator("[data-testid='citation-title-link']").First;
+        await primaryLink.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15_000 });
+        await primaryLink.ClickAsync();
+
+        Assert.DoesNotContain("/error", page.Url, StringComparison.OrdinalIgnoreCase);
+
+        if (expectDocument)
+        {
+            await page.WaitForURLAsync(url => url.Contains("/documents/"), new() { Timeout = 15_000 });
+            await page.Locator("[data-testid='doc-detail-card']")
+                .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15_000 });
+            Assert.False(
+                await page.Locator("[data-testid='doc-detail-load-error'], [data-testid='doc-detail-not-found']").IsVisibleAsync(),
+                "Citation source-link landed on a document-detail error/not-found state.");
+        }
+        else
+        {
+            await page.WaitForURLAsync(url => url.Contains("/machines/"), new() { Timeout = 15_000 });
+            await page.Locator("[data-testid='detail-title']")
+                .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15_000 });
+            Assert.False(
+                await page.Locator("[data-testid='resolve-failed']").IsVisibleAsync(),
+                "Citation title-link landed on a machine-resolve-failed state.");
+        }
+    }
+
     // Types the ask-flow question (canonical by default), submits, awaits
     // the terminal state, and asserts the provenance contract (cited answer
     // or rendered refusal). Assumes the page is already on /wizard in Idle
