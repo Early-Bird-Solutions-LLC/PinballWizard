@@ -1356,6 +1356,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
+        var tiltForumsFuzzyResolved = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var listing in listings)
@@ -1390,6 +1391,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             {
                 tiltForumsEditionFamilyFanouts++;
             }
+
+            if (matchResult.ResolvedViaFuzzy)
+                tiltForumsFuzzyResolved++;
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
             try
@@ -1493,7 +1497,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} " +
+            $"edition_family_fanouts={tiltForumsEditionFamilyFanouts} fuzzy_resolved={tiltForumsFuzzyResolved} " +
+            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
