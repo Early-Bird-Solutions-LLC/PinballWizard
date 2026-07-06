@@ -59,7 +59,7 @@ negative) it carries.
 | [0046](0046-shared-blazor-component-library.md) | Shared Blazor component library in `Components/Shared/` | Accepted |
 | [0047](0047-anthropic-wif-github-actions.md) | Anthropic Workload Identity Federation for GitHub Actions CI | Accepted |
 | [0048](0048-forgiving-machine-title-resolution.md) | Forgiving machine-title resolution (`&`/`and` variant + substring fuzzy fallback) in `getMachineByTitle` | Accepted |
-| [0049](0049-findability-and-relevance-ranking-program.md) | Findability & relevance-ranking program (AI-Search-backed machine lookup, content-intrinsic ranking, eval-first) | Proposed |
+| [0049](0049-findability-and-relevance-ranking-program.md) | Findability & relevance-ranking program (AI-Search-backed machine lookup, content-intrinsic ranking, eval-first) | Accepted |
 | [0050](0050-tiltforums-rulesheet-ingestion.md) | Ingest Tilt Forums community rulesheets under the founder's public invitation | Accepted |
 
 ## Conventions
