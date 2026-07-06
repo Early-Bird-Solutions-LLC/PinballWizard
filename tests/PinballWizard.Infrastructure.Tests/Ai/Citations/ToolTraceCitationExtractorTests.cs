@@ -919,7 +919,7 @@ public sealed class ToolTraceCitationExtractorTests
         var response = BuildAgentResponseWithToolResult("searchCorpus", malformed);
 
         // Must not throw — falls through to the URL regex.
-        var citations = extractor.Extract(response);
+        extractor.Extract(response);
 
         // A Warning must have been logged for the deserialization failure
         // (the 2026-06-10 outage class detection — invariant #17 audit).
@@ -943,7 +943,7 @@ public sealed class ToolTraceCitationExtractorTests
         var response = BuildAgentResponseWithToolResult("getMachineByTitle", malformed);
 
         // Must not throw.
-        var citations = extractor.Extract(response);
+        extractor.Extract(response);
 
         Assert.True(capturingLogger.WarningCount > 0,
             "Expected at least one Warning log when JsonException occurs during TryDeserialize on a MachineGroundingDto.");

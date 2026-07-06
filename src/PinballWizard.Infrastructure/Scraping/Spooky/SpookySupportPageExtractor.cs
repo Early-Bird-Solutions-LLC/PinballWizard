@@ -298,12 +298,9 @@ public static partial class SpookySupportPageExtractor
             // they appear inside URLs for other domains (e.g. example.com).
             // AbsolutizeUrl would then prepend our base URL, creating a false
             // spookypinball.com hit.  Guard here before absolutizing.
-            if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                // Already absolute — validate the domain before proceeding.
-                if (!IsWpContentUploadsPdf(path)) continue;
-            }
+            var isAbsolute = path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                             path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            if (isAbsolute && !IsWpContentUploadsPdf(path)) continue;
 
             var absoluteUrl = AbsolutizeUrl(path);
 

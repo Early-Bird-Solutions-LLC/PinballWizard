@@ -82,7 +82,7 @@ public sealed class AiSearchMachineIndex : IMachineSearchIndex
 
             _logger.LogDebug(
                 "Machine search: query='{Query}' top={Top} hits={HitCount}",
-                query, top, hits.Count);
+                LogSanitizer.ForLog(query), top, hits.Count);
 
             return hits;
         }

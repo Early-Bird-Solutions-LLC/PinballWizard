@@ -73,7 +73,7 @@ internal sealed class MachineSuggestService : IMachineSuggestService
             _logger.LogDebug(
                 "MachineSuggestService: IMachineSearchIndex is not configured — " +
                 "returning empty suggestions for query '{Query}'",
-                ForLog(query));
+                LogSanitizer.ForLog(query));
             return [];
         }
 
@@ -92,21 +92,11 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         {
             _logger.LogWarning(ex,
                 "MachineSuggestService: machine index search failed for query '{Query}' — degrading to empty suggestions.",
-                ForLog(query));
+                LogSanitizer.ForLog(query));
             PinballWizardTelemetry.MachineSearchErrors.Add(
                 1, new KeyValuePair<string, object?>("reason", "suggest_unavailable"));
             return [];
         }
-    }
-
-    // Sanitizes user-supplied query text before it enters a log message. The query
-    // is free text from a public endpoint, so logging it raw would allow log forging
-    // (CWE-117): a newline-laden query could inject fake log lines. Strip control
-    // characters and cap the length; the value is diagnostic only.
-    private static string ForLog(string query)
-    {
-        var cleaned = new string(query.Where(static c => !char.IsControl(c)).ToArray());
-        return cleaned.Length > 120 ? cleaned[..120] + "…" : cleaned;
     }
 
     // Groups ranked hits into one suggestion per distinct machine, preserving rank order.
