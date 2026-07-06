@@ -136,6 +136,7 @@ public sealed class MultimorphicProductScraperTests
         {
             await foreach (var _ in scraper.ScrapeAsync(CancellationToken.None))
             {
+                // Exhaust the enumerator so the exception propagates to ThrowsAsync.
             }
         });
 
@@ -157,6 +158,7 @@ public sealed class MultimorphicProductScraperTests
         {
             await foreach (var _ in scraper.ScrapeAsync(CancellationToken.None))
             {
+                // Exhaust the enumerator so the exception propagates to ThrowsAsync.
             }
         });
     }

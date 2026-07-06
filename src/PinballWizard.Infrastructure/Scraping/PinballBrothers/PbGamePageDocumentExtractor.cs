@@ -181,11 +181,9 @@ public static partial class PbGamePageDocumentExtractor
             var path = urlMatch.Value.TrimEnd(',', ';', ')', ']');
 
             // If it's already absolute, validate it belongs to pinballbrothers.com.
-            if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!IsPbPdfAbsolute(path)) continue;
-            }
+            var isAbsolute = path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                             path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            if (isAbsolute && !IsPbPdfAbsolute(path)) continue;
 
             var absoluteUrl = AbsolutizeUrl(path);
             if (!IsPbPdfAbsolute(absoluteUrl)) continue;

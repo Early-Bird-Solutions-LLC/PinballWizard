@@ -233,7 +233,7 @@ else if (_machine is not null)
     private Machine? _machine;
     private IReadOnlyList<CatalogHealthFlag> _healthFlags = [CatalogHealthFlag.Ok];
     private List<SiblingEntry> _siblings = [];
-    private List<MachineDocumentLink> _docs = [];
+    private readonly List<MachineDocumentLink> _docs = [];
     private bool _loading = true;
     private bool _loadFailed;
     private bool _notFound;

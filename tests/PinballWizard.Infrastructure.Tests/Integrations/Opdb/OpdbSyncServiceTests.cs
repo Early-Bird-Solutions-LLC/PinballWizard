@@ -935,7 +935,7 @@ public sealed class OpdbSyncServiceTests : IDisposable
         _repository.GetByOpdbIdAsync("GweeP-MW95j", "stern", Arg.Any<CancellationToken>()).Returns(pro);
         _repository.GetByOpdbIdAsync("GweeP-Ml9pZ", "stern", Arg.Any<CancellationToken>()).Returns(_ => lastPremLe);
         _repository.UpsertAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>())
-            .Returns(call => { var m = call.Arg<Machine>(); if (m.Id == "GweeP-Ml9pZ") lastPremLe = m; return m; });
+            .Returns(call => { var m = call.Arg<Machine>(); if (m.Id == "GweeP-Ml9pZ") { lastPremLe = m; } return m; });
         _titleLookups.GetByTitleAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((MachineTitleLookup?)null);
 

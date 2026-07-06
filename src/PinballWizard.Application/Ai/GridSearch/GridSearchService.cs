@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Hosting;
+using PinballWizard.Application.Observability;
 
 namespace PinballWizard.Application.Ai.GridSearch;
 
@@ -36,7 +37,8 @@ public sealed class GridSearchService : IGridSearchService
 
             if (string.IsNullOrWhiteSpace(json))
             {
-                _logger.LogWarning("Agent returned non-JSON response for grid search: {Response}", text);
+                // Agent output is seeded by the caller's free-text query — sanitize like the query itself (CWE-117).
+                _logger.LogWarning("Agent returned non-JSON response for grid search: {Response}", LogSanitizer.ForLog(text));
                 return new GridSearchResponse([], "I couldn't parse your query into filters. Try a different phrasing.", false, null);
             }
 
@@ -45,7 +47,8 @@ public sealed class GridSearchService : IGridSearchService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during AI grid search for query '{Query}' in context '{Context}'", query, gridContext);
+            // query is free text from an AllowAnonymous endpoint — sanitize before logging (CWE-117).
+            _logger.LogError(ex, "Error during AI grid search for query '{Query}' in context '{Context}'", LogSanitizer.ForLog(query), gridContext);
             return new GridSearchResponse([], "An error occurred while processing your search.", false, null);
         }
     }
