@@ -1,12 +1,19 @@
 name: Docs Agent
 
-# Push-triggered documentation updater. On each merge to main touching code or
-# infra, reads the merged diff and opens an auto-mergeable docs-only PR when a
-# DESCRIPTIVE doc has gone untruthful. Weekly sweep catches misses.
+# Documentation updater. After each merge to main touching code or infra, reads
+# the merged diff and opens an auto-mergeable docs-only PR when a DESCRIPTIVE
+# doc has gone untruthful. Weekly sweep catches misses.
 #
 # This is a CI development-automation agent, NOT a Foundry product agent — it
 # acts on git events and edits markdown, so it lives in Actions with
 # claude-code-action, not in Foundry. See ADR-0051 for the category boundary.
+#
+# Trigger shape: anthropics/claude-code-action@v1 does NOT support the `push`
+# event ("Unsupported event type: push"). So the push trigger does not run the
+# agent directly — the `redispatch` job re-invokes this workflow as a
+# workflow_dispatch, which IS supported and (per GitHub docs) always creates a
+# run even from GITHUB_TOKEN, unlike push/pull_request. The agent job runs only
+# on workflow_dispatch/schedule. Keyless throughout (no PAT).
 #
 # Auth: GitHub OIDC → Anthropic WIF (ADR-0047), identical to claude.yml. No
 # static key. Authority is bounded by .github/docs-agent-allowlist.txt and
@@ -27,6 +34,11 @@ on:
   schedule:
     - cron: '23 8 * * 1'   # Mondays 08:23 UTC — weekly full sweep (low-traffic slot)
   workflow_dispatch:
+    inputs:
+      before_sha:
+        description: 'Base SHA for the diff range (set by the on-push re-dispatch; blank = weekly-style sweep)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -40,8 +52,30 @@ concurrency:
   cancel-in-progress: false   # each merge deserves its own analysis; queue, don't drop
 
 jobs:
+  # claude-code-action rejects `push`, so the push trigger re-dispatches this
+  # workflow as a workflow_dispatch (supported; always creates a run even from
+  # GITHUB_TOKEN). The push's before-SHA is passed so the agent analyzes the
+  # exact merge range. This job does nothing but re-dispatch.
+  redispatch:
+    name: Re-dispatch merge as workflow_dispatch
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Trigger the agent via workflow_dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          gh workflow run docs-agent.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f before_sha="$BEFORE_SHA"
+
   docs-agent:
     name: Update docs from merged changes
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -85,11 +119,15 @@ jobs:
       - name: Compute diff range
         id: range
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
+          # before_sha is set by the on-push re-dispatch; empty on a scheduled
+          # or manually-triggered sweep. A push never reaches this job.
+          BEFORE_SHA: ${{ github.event.inputs.before_sha }}
           CURRENT_SHA: ${{ github.sha }}
         run: |
-          if [ "$EVENT_NAME" = "push" ]; then
+          # An all-zero before-SHA (e.g. branch-create edge) is not a usable
+          # base — fall through to the sweep window.
+          if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            # Re-dispatched from an on-push merge: analyze the exact merge range.
             echo "range=$BEFORE_SHA..$CURRENT_SHA" >> "$GITHUB_OUTPUT"
           else
             # sweep/dispatch: last 7 days of commits.
