@@ -1141,6 +1141,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
+        var kineticistRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
+
         Console.WriteLine("Discovering Kineticist tutorial articles...");
 
         var kineticistSlugs = await kineticistClient.DiscoverTutorialSlugsAsync(cancellationToken);
@@ -1151,6 +1153,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var kineticistSkippedNoMachine = 0;
         var kineticistSkippedNoContent = 0;
         var kineticistFailed = 0;
+        var kineticistRawDocFailed = 0;
         var kineticistIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var slug in kineticistSlugs)
@@ -1274,6 +1277,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
                         articleIndexed = true;
                         kineticistEditionsLinked++;
+
+                        var synDoc = SynthesizedDocumentRecordFactory.Create(
+                            documentId, article.Title, article.CanonicalUrl, "Kineticist Tutorial",
+                            DocumentType.Rulesheet, "md", machineManufacturer,
+                            machineTitle, article.GameSlug, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                        if (!await TryPersistSynthesizedRawDocAsync(kineticistRawDocRepo, synDoc, cancellationToken))
+                        {
+                            kineticistRawDocFailed++;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1294,7 +1306,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed}");
+        Console.WriteLine($"--sync-kineticist-tutorials complete: indexed={kineticistIndexed} editions_linked={kineticistEditionsLinked} skipped_no_machine={kineticistSkippedNoMachine} skipped_no_content={kineticistSkippedNoContent} failed={kineticistFailed} raw_doc_write_failed={kineticistRawDocFailed}");
         if (kineticistFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1322,6 +1334,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Environment.ExitCode = 2;
             return;
         }
+
+        var tiltForumsRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
         var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
@@ -1354,6 +1368,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
+        var tiltForumsRawDocFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
@@ -1471,6 +1486,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
                         rulesheetIndexed = true;
+
+                        var synDoc = SynthesizedDocumentRecordFactory.Create(
+                            documentId, article.GameTitle, article.TopicUrl, "Tilt Forums Rulesheet",
+                            DocumentType.Rulesheet, "html", machineMatch.ManufacturerDisplayName,
+                            machineMatch.MachineTitle, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                        if (!await TryPersistSynthesizedRawDocAsync(tiltForumsRawDocRepo, synDoc, cancellationToken))
+                        {
+                            tiltForumsRawDocFailed++;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1492,7 +1516,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1519,6 +1543,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
+        var twipRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
+
         // Parse --twip-since date.
         DateTimeOffset? since = null;
         if (twipSince is not null)
@@ -1542,6 +1568,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var twipSkippedParse = 0;
         var twipSkippedContent = 0;
         var twipFailed = 0;
+        var twipRawDocFailed = 0;
         var twipIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var slug in twipSlugs)
@@ -1588,6 +1615,15 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 {
                     Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → {chunks.Count} chunk(s)");
                     twipIndexed++;
+
+                    var synDoc = SynthesizedDocumentRecordFactory.Create(
+                        documentId, article.Title, article.CanonicalUrl, "TWIP Newsletter",
+                        DocumentType.NewsDigest, "html", "Kineticist",
+                        null, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                    if (!await TryPersistSynthesizedRawDocAsync(twipRawDocRepo, synDoc, cancellationToken))
+                    {
+                        twipRawDocFailed++;
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1598,7 +1634,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-twip-newsletter complete: discovered={twipSlugs.Count} indexed={twipIndexed} skipped_parse={twipSkippedParse} skipped_content={twipSkippedContent} failed={twipFailed}");
+        Console.WriteLine($"--sync-twip-newsletter complete: discovered={twipSlugs.Count} indexed={twipIndexed} skipped_parse={twipSkippedParse} skipped_content={twipSkippedContent} failed={twipFailed} raw_doc_write_failed={twipRawDocFailed}");
         if (twipFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1626,6 +1662,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
+        var freshdeskRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
+
         Console.WriteLine("Discovering Pinball Brothers Freshdesk support folders...");
 
         IReadOnlyList<PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.FreshdeskFolder> freshdeskFolders;
@@ -1646,6 +1684,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var freshdeskSkippedNoContent = 0;
         var freshdeskSkippedNoMachine = 0;
         var freshdeskFailed = 0;
+        var freshdeskRawDocFailed = 0;
         var freshdeskIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
         var freshdeskKnownGameSlugs = PinballWizard.Infrastructure.Scraping.PinballBrothers.Freshdesk.PbFreshdeskDocumentScraper.KnownGameSlugs;
 
@@ -1769,6 +1808,18 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         Console.WriteLine($"  Indexed '{article.Title}' ({folder.FolderName}) → {chunks.Count} chunk(s)");
                         freshdeskIndexed++;
+
+                        // Pass gameTitle/gameSlug only for game-specific articles; general-category
+                        // articles (machineId == "pb_support") mirror the TWIP pinball_news pattern.
+                        string? docGameTitle = machineId != "pb_support" ? machineTitle : (string?)null;
+                        var synDoc = SynthesizedDocumentRecordFactory.Create(
+                            documentId, article.Title, article.Url, "Pinball Brothers Freshdesk Article",
+                            DocumentType.SupportArticle, "html", manufacturer,
+                            docGameTitle, matchedSlug, DateTimeOffset.UtcNow);
+                        if (!await TryPersistSynthesizedRawDocAsync(freshdeskRawDocRepo, synDoc, cancellationToken))
+                        {
+                            freshdeskRawDocFailed++;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1780,7 +1831,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine();
-        Console.WriteLine($"--sync-pb-freshdesk-articles complete: indexed={freshdeskIndexed} skipped_attachment={freshdeskSkippedAttachment} skipped_no_content={freshdeskSkippedNoContent} skipped_no_machine={freshdeskSkippedNoMachine} failed={freshdeskFailed}");
+        Console.WriteLine($"--sync-pb-freshdesk-articles complete: indexed={freshdeskIndexed} skipped_attachment={freshdeskSkippedAttachment} skipped_no_content={freshdeskSkippedNoContent} skipped_no_machine={freshdeskSkippedNoMachine} failed={freshdeskFailed} raw_doc_write_failed={freshdeskRawDocFailed}");
         if (freshdeskFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1855,6 +1906,30 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 });
 
 return await rootCommand.Parse(args).InvokeAsync();
+
+// ── Shared synthesized-doc helpers ────────────────────────────────────────────
+
+// Upserts a synthesized DocumentRecord to scraped_documents_raw and immediately
+// sets its LinkStatus to PlatformGeneric so the linker skips it. Returns true on
+// success (or when rawDocRepo is null — no Cosmos configured). Returns false and
+// logs a warning on any transient error so callers can meter the failure without
+// aborting the overall sync run (degrade-visibly, invariant #17).
+static async Task<bool> TryPersistSynthesizedRawDocAsync(
+    IRawDocumentRepository? rawDocRepo, DocumentRecord record, CancellationToken ct)
+{
+    if (rawDocRepo is null) return true; // no doc store configured — not a write failure
+    try
+    {
+        await rawDocRepo.UpsertRawAsync(record, ct);
+        await rawDocRepo.UpdateLinkStatusAsync(record.DocumentId, LinkStatus.PlatformGeneric, "synthesized", null, null, ct);
+        return true;
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+        Console.Error.WriteLine($"  Warning: raw-doc store write failed for {record.DocumentId}: {ex.Message}");
+        return false;
+    }
+}
 
 // ── Host Builder ──────────────────────────────────────────────────────────────
 
