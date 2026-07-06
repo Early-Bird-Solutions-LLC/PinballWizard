@@ -28,7 +28,7 @@ public sealed class MachineSearchFindabilityLookup(
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         var hits = await machineSearchIndex
-            .SearchAsync(query, DefaultTop, cancellationToken)
+            .SearchAsync(query, DefaultTop, manufacturerKey: null, cancellationToken)
             .ConfigureAwait(false);
 
         var ids = new string[hits.Count];
