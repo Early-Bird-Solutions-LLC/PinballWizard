@@ -22,6 +22,7 @@
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth (AdminOnly policy)
  * ADR-0026  § 1 — render-mode doctrine (InteractiveServer for action page)
+ * ADR-0046  — shared Blazor component library (AppPageShell, AppPageHeader)
  * Invariant #17 — degrade visibly; never fabricate job data
  *@
 
@@ -39,9 +40,7 @@
 
 <PageTitle>@(_detail?.DisplayName ?? JobName) — Jobs — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
-
+<AppPageShell>
     @if (_loading)
     {
         <AdminLoadingBar Label="Loading job details from Azure ARM" />
@@ -69,54 +68,12 @@
     }
     else if (_detail is not null)
     {
-        <MudPaper Elevation="2" Class="pa-6 mb-6" data-testid="job-detail-header">
-            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
-                <div>
-                    <MudText Typo="Typo.h5" GutterBottom="true">@_detail.DisplayName</MudText>
-                    <MudGrid Spacing="1">
-                        <MudItem xs="12">
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Schedule</MudText>
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                                <MudText Typo="Typo.body1">
-                                    @CronExpressionFormatter.Format(_detail.CronExpression)
-                                    @if (_detail.CronExpression is not null)
-                                    {
-                                        <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
-                                            (@_detail.CronExpression)
-                                        </MudText>
-                                    }
-                                </MudText>
-                                @if (_isAdmin && _detail.CronExpression is not null)
-                                {
-                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                                   Size="Size.Small"
-                                                   Color="Color.Primary"
-                                                   aria-label="Edit schedule"
-                                                   data-testid="edit-schedule-button"
-                                                   OnClick="OpenScheduleEdit" />
-                                }
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="12">
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Image</MudText>
-                            @if (_detail.ImageTag is not null)
-                            {
-                                <code data-testid="image-tag">@_detail.ImageTag</code>
-                            }
-                            else
-                            {
-                                <MudText Typo="Typo.body1">—</MudText>
-                            }
-                        </MudItem>
-                        <MudItem xs="12">
-                            <MudText Typo="Typo.body2" Color="Color.Secondary">Latest status</MudText>
-                            <AppStatusChip Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
-                                           data-testid="latest-status">
-                                @_detail.LatestExecutionStatus
-                            </AppStatusChip>
-                        </MudItem>
-                    </MudGrid>
-                </div>
+        @* Header routed through the shared AppPageHeader (title + breadcrumbs), with
+         * the primary Run-now action in its Actions slot — the same pattern as
+         * AdminSourceDetail / AdminLinkOverrides. Schedule/image/status move to the
+         * capped details card below. *@
+        <AppPageHeader Title="@_detail.DisplayName" Breadcrumbs="@Breadcrumbs">
+            <Actions>
                 <MudIconButton Icon="@Icons.Material.Filled.PlayArrow"
                                Color="Color.Primary"
                                Size="Size.Large"
@@ -124,7 +81,54 @@
                                data-testid="run-now-button"
                                Disabled="@(_startBusy || !_isAdmin)"
                                OnClick="@OpenRunNowConfirm" />
-            </MudStack>
+            </Actions>
+        </AppPageHeader>
+
+        <MudPaper Elevation="2" Class="pa-6 mb-6 pw-readable" data-testid="job-detail-header">
+            <MudText Typo="Typo.h6" GutterBottom="true">Job details</MudText>
+            <MudGrid Spacing="1">
+                <MudItem xs="12">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Schedule</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body1">
+                            @CronExpressionFormatter.Format(_detail.CronExpression)
+                            @if (_detail.CronExpression is not null)
+                            {
+                                <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                                    (@_detail.CronExpression)
+                                </MudText>
+                            }
+                        </MudText>
+                        @if (_isAdmin && _detail.CronExpression is not null)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           aria-label="Edit schedule"
+                                           data-testid="edit-schedule-button"
+                                           OnClick="OpenScheduleEdit" />
+                        }
+                    </MudStack>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Image</MudText>
+                    @if (_detail.ImageTag is not null)
+                    {
+                        <code data-testid="image-tag">@_detail.ImageTag</code>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body1">—</MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Latest status</MudText>
+                    <AppStatusChip Color="@JobStatusColor.For(_detail.LatestExecutionStatus)"
+                                   data-testid="latest-status">
+                        @_detail.LatestExecutionStatus
+                    </AppStatusChip>
+                </MudItem>
+            </MudGrid>
         </MudPaper>
 
         <MudText Typo="Typo.h6" Class="mb-3">Execution History</MudText>
@@ -151,17 +155,17 @@
                         </AppStatusChip>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="@($"Started ({_tzLabel})")">
+                <TemplateColumn Title="@($"Started ({_tzLabel})")" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.StartOn)</MudText>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="@($"Ended ({_tzLabel})")">
+                <TemplateColumn Title="@($"Ended ({_tzLabel})")" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.EndOn)</MudText>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="Duration">
+                <TemplateColumn Title="Duration" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatDuration(context.Item.StartOn, context.Item.EndOn)</MudText>
                     </CellTemplate>
@@ -186,7 +190,6 @@
             </MudStack>
         }
     }
-</MudContainer>
 
 @* Run-now confirmation panel — rendered inline to remain testable via bUnit
    (MudDialog routes content through MudPopoverProvider, which bUnit cannot
@@ -264,6 +267,7 @@
         </MudStack>
     </MudPaper>
 }
+</AppPageShell>
 
 @code {
     [Parameter] public string JobName { get; set; } = "";

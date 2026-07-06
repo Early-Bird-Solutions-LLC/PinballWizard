@@ -564,24 +564,29 @@ html, body {
 
 /* ── MudDataGrid Customization (AB#259 / Branding) ────────────────────── */
 
-/* Group headers: force high-contrast text on MudBlazor's dark group-row bg.
-   MudBlazor paints group rows with --mud-palette-background-gray (dark in all
-   themes), so we hardcode white text to guarantee WCAG AA contrast. */
-.pw-grid-group-header {
-    color: #ffffff;
-    font-weight: 700;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.pw-grid-group-label {
-    color: var(--pw-accent-primary);
-    margin-right: 4px;
-    font-weight: 600;
-}
-
-/* Alignment utilities for table cells/headers. */
+/* Alignment utility for numeric/date table cells and their headers. Applied via
+   AppDataGrid columns' HeaderClass/CellClass. Right-aligns the cell values. */
 .text-right {
     text-align: right !important;
+}
+
+/* MudDataGrid renders each header as a flex row (.column-header) holding the label
+   then the sort/menu options, which fill the width — so text-align/justify-content
+   can't pull the label to the right edge (the options sit after it). row-reverse
+   places the label last (flush right, above the right-aligned cell values) with the
+   sort affordance to its left — the conventional right-aligned-column look. Classes
+   and layout confirmed from the rendered MudDataGrid <th> computed styles.
+   NOTE: .column-header is a MudBlazor-internal class, not a public API —
+   re-verify header alignment after any MudBlazor major-version bump. */
+.text-right .column-header {
+    flex-direction: row-reverse;
+}
+
+/* Readable-measure cap for prose / key-value / dashboard cards on otherwise
+   full-width (AppPageShell) pages: text content stays a comfortable width while
+   a data grid on the same page still uses the full horizontal space. */
+.pw-readable {
+    max-width: 60rem;
 }
 
 /* ── BrandFooter (global — not scoped) ────────────────────────────────── */
