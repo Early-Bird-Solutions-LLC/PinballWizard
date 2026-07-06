@@ -45,6 +45,33 @@ public sealed class AdminIdentityControlTests : AsyncBunitContext
         Assert.Empty(cut.FindAll("[data-testid='admin-signout']"));
     }
 
+    // Regression guard for the "Sign in does nothing" bug (screenshot report):
+    // AdminIdentityControl renders anchors, and blazor.web.js enhanced navigation
+    // intercepts same-origin anchor clicks and services them via fetch + DOM patch.
+    // The AccountController's SignIn action responds with a *cross-origin* 302 to
+    // Entra, which enhanced navigation cannot apply to the DOM — so the URL updated
+    // to /MicrosoftIdentity/Account/SignIn but the page never left for the IdP.
+    // Both auth anchors must opt out of enhanced navigation (data-enhance-nav="false")
+    // so the browser performs a real full-page navigation and follows the redirect.
+    // Same fix as TiltErrorBoundary's "Reset and try again" link.
+    [Fact]
+    public void SignIn_OptsOutOfEnhancedNavigation_ForRealBrowserRedirect()
+    {
+        this.AddAuthorization().SetNotAuthorized();
+        var cut = RenderControl();
+        var link = cut.Find("[data-testid='admin-signin']");
+        Assert.Equal("false", link.GetAttribute("data-enhance-nav"));
+    }
+
+    [Fact]
+    public void SignOut_OptsOutOfEnhancedNavigation_ForRealBrowserRedirect()
+    {
+        this.AddAuthorization().SetAuthorized("jim@example.com");
+        var cut = RenderControl();
+        var link = cut.Find("[data-testid='admin-signout']");
+        Assert.Equal("false", link.GetAttribute("data-enhance-nav"));
+    }
+
     [Fact]
     public void Authenticated_RendersIdentityAndSignOut()
     {
