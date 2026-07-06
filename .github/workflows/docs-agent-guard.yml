@@ -1,0 +1,61 @@
+name: Docs Agent Guard
+
+# Required check. On PRs from docs-agent/* branches, fails if any changed file
+# falls outside .github/docs-agent-allowlist.txt. On every other branch it
+# passes instantly (no noop companion needed). This is the mechanical fence
+# that makes docs-agent auto-merge safe — the agent's authority is bounded
+# here, not by prompt obedience. See ADR-0051 / docs-agent.yml.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Enforce docs-agent allowlist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip for non-agent branches
+        id: gate
+        run: |
+          if [[ "${{ github.head_ref }}" == docs-agent/* ]]; then
+            echo "enforce=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enforce=false" >> "$GITHUB_OUTPUT"
+            echo "Not a docs-agent branch — guard passes."
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.enforce == 'true'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify changed files are within allowlist
+        if: steps.gate.outputs.enforce == 'true'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head")
+          echo "Changed files:"; echo "$changed"
+          # Evaluate each changed path against the allowlist using git's
+          # pathspec matching (supports ** and ! negation via a temp gitignore).
+          deny=".github/docs-agent-allowlist.txt"
+          violations=""
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # A path is allowed iff `git check-ignore` (with allowlist as the
+            # ignore file, inverted semantics) says it matches an allow pattern
+            # and not a deny (!) pattern. Implement with a small matcher:
+            if ! node .github/scripts/allowlist-match.mjs "$deny" "$f"; then
+              violations="${violations}\n${f}"
+            fi
+          done <<< "$changed"
+          if [ -n "$violations" ]; then
+            echo -e "::error::docs-agent PR touches files outside the allowlist:$violations"
+            exit 1
+          fi
+          echo "All changed files are within the allowlist."
