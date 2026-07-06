@@ -681,10 +681,16 @@ public sealed class AdminMachineDetailLoadingStateTests : AsyncBunitContext
         Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
 
         // null → machine not found path — still completes LoadAsync and clears spinner.
+        // Release the gate, then drain the renderer dispatcher deterministically:
+        // SetResult posts OnParametersSetAsync's continuation (which sets _loading =
+        // false and calls StateHasChanged) onto the dispatcher. Two InvokeAsync
+        // flushes run that continuation and then the resulting re-render, so the
+        // assertion never races thread-pool scheduling. WaitForAssertion's wall-clock
+        // poll is what flaked under CI load (see project_bunit_gotchas).
         _machineGate.SetResult(null);
-        cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-        await Task.CompletedTask;
+        Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
     }
 }
