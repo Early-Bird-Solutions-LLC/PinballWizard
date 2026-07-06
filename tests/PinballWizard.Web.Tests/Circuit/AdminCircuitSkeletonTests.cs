@@ -6,16 +6,21 @@ namespace PinballWizard.Web.Tests.Circuit;
 // DE-RISK GATE for Half B (#423): proves a REAL Blazor Server circuit runs in
 // the in-process harness — the one thing bUnit (always-interactive) and the
 // build-time RenderModeConventionTests cannot show. Loads /admin/machines and
-// clicks a group-by axis button: on a live circuit the active button flips and
-// the grid regroups WITHOUT navigation (pure in-circuit client state). If this
-// can't be made to pass, Half B's per-page tests do not get built (see plan
-// Task 4 gate + spec §7 fallback).
+// sorts the grid by clicking a column header: on a live circuit MudDataGrid
+// reorders the rows in place (pure in-circuit client state, WITHOUT navigation);
+// on a static (dead) render the click does nothing and the order never changes.
+// If this can't be made to pass, Half B's per-page tests do not get built (see
+// plan Task 4 gate + spec §7 fallback).
+//
+// The admin test doubles seed two "stern" rows — Godzilla Pro (2 docs) and
+// Godzilla LE (0 docs) — so sorting by the Docs column produces a deterministic,
+// data-backed reorder that is independent of any MudBlazor-internal CSS class.
 [Trait("Category", "Circuit")]
 public sealed class AdminCircuitSkeletonTests(InteractiveAdminWebApplicationFactory factory)
     : IClassFixture<InteractiveAdminWebApplicationFactory>
 {
     [Fact]
-    public async Task AdminMachines_GroupByAxisClick_RegroupsInCircuit_NoNavigation()
+    public async Task AdminMachines_ColumnSort_ReordersInCircuit_NoNavigation()
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
@@ -25,25 +30,33 @@ public sealed class AdminCircuitSkeletonTests(InteractiveAdminWebApplicationFact
             $"{factory.ServerAddress}/admin/machines",
             new() { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-        var selector = page.Locator("[data-testid='groupby-selector']");
-        await selector.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
+        // Grid + data must be present before we can prove interactivity.
+        var grid = page.Locator("[data-testid='admin-machines-grid']");
+        await grid.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
 
-        // Find the "Health" axis button. On a static (dead) render this click does
-        // nothing; on a live circuit it becomes mud-button-filled-primary.
-        var healthButton = selector.GetByRole(AriaRole.Button, new() { Name = "Health" });
+        var firstRow = grid.Locator("tbody tr").First;
+        await firstRow.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 60_000 });
+        var initialFirstRow = (await firstRow.InnerTextAsync()).Trim();
 
-        // Circuit may lag the prerender — retry the click + the state assertion
-        // (the WizardE2ETests pattern).
-        var active = false;
-        for (var attempt = 0; attempt < 20 && !active; attempt++)
+        // The Docs column header is a sortable MudDataGrid header cell (a real
+        // <th>, implicit columnheader role). Clicking toggles the sort direction.
+        var docsHeader = grid.GetByRole(AriaRole.Columnheader, new() { Name = "Docs", Exact = false });
+
+        // Circuit may lag the prerender — retry the click + the reorder assertion
+        // (the WizardE2ETests pattern). Each click toggles the sort direction; with
+        // two rows of distinct doc counts, an ascending sort puts the 0-doc LE row
+        // first, which differs from the default insertion order — so a live circuit
+        // changes the first row within a click or two. A dead render never does.
+        var reordered = false;
+        for (var attempt = 0; attempt < 20 && !reordered; attempt++)
         {
             try
             {
-                await healthButton.ClickAsync(new() { Timeout = 5_000 });
-                await page.Locator("[data-testid='groupby-selector'] button.mud-button-filled-primary")
-                    .Filter(new() { HasText = "Health" })
-                    .WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 3_000 });
-                active = true;
+                await docsHeader.ClickAsync(new() { Timeout = 5_000 });
+                await page.WaitForTimeoutAsync(500);
+                var current = (await firstRow.InnerTextAsync()).Trim();
+                if (!string.Equals(current, initialFirstRow, StringComparison.Ordinal))
+                    reordered = true;
             }
             catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
             {
@@ -51,7 +64,7 @@ public sealed class AdminCircuitSkeletonTests(InteractiveAdminWebApplicationFact
             }
         }
 
-        Assert.True(active, "Group-by 'Health' button never became active — admin circuit not interactive.");
+        Assert.True(reordered, "Grid never reordered on a column-header click — admin circuit not interactive.");
         // No navigation: still on /admin/machines.
         Assert.Contains("/admin/machines", page.Url, StringComparison.Ordinal);
     }

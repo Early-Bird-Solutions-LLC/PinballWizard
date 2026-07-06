@@ -38,10 +38,9 @@
 
 <PageTitle>Jobs — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Scheduled Jobs"
-                   Subtitle="Live view of Container Apps Jobs scheduled in this environment. Use Run now to trigger a manual execution."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Scheduled Jobs"
+              Subtitle="Live view of Container Apps Jobs scheduled in this environment. Use Run now to trigger a manual execution."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -138,7 +137,7 @@
             </Columns>
         </AppDataGrid>
     }
-</MudContainer>
+</AppPageShell>
 
 @* Run-now confirmation panel — rendered inline to remain testable via bUnit
    (MudDialog routes content through MudPopoverProvider, which bUnit cannot

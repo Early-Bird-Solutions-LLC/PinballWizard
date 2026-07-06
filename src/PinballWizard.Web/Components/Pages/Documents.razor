@@ -6,11 +6,10 @@
 
 <PageTitle>PinballWizard — Documents</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
-    <AppPageHeader Title="Documents"
-                   Subtitle="Browse every manual, schematic, firmware, and ruleset we've indexed — with full source provenance." />
+<AppPageShell Title="Documents"
+              Subtitle="Browse every manual, schematic, firmware, and ruleset we've indexed — with full source provenance.">
     <DocumentList IsAdmin="false" Game="@Game" Manufacturer="@Manufacturer" Type="@Type" />
-</MudContainer>
+</AppPageShell>
 
 @code {
     [SupplyParameterFromQuery(Name = "game")] public string? Game { get; set; }

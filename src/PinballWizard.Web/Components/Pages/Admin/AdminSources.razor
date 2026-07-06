@@ -31,10 +31,9 @@
 
 <PageTitle>Ingestion Sources — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Ingestion Sources"
-                   Subtitle="Configured scraping sources and their ingestion status."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Ingestion Sources"
+              Subtitle="Configured scraping sources and their ingestion status."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -87,10 +86,10 @@
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn Property="x => x.Cadence" Title="Cadence" />
-            <PropertyColumn Property="x => x.LastRun" Title="Last Run" />
-            <PropertyColumn Property="x => x.LastSuccess" Title="Last Success" />
-            <PropertyColumn Property="x => x.DocsDiscovered" Title="Docs Discovered" />
-            <PropertyColumn Property="x => x.RunFailures" Title="Run Failures" />
+            <PropertyColumn Property="x => x.LastRun" Title="Last Run" HeaderClass="text-right" CellClass="text-right" />
+            <PropertyColumn Property="x => x.LastSuccess" Title="Last Success" HeaderClass="text-right" CellClass="text-right" />
+            <PropertyColumn Property="x => x.DocsDiscovered" Title="Docs Discovered" HeaderClass="text-right" CellClass="text-right" />
+            <PropertyColumn Property="x => x.RunFailures" Title="Run Failures" HeaderClass="text-right" CellClass="text-right" />
         </Columns>
 
         <NoRecordsContent>
@@ -111,7 +110,7 @@
         </NoRecordsContent>
 
     </AppDataGrid>
-</MudContainer>
+</AppPageShell>
 
 @code {
     // Display projection of IngestionSource. A null LastRun/LastSuccess renders
