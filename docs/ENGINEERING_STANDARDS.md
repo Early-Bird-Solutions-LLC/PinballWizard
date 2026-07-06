@@ -305,6 +305,7 @@ Use `Microsoft.Extensions.Http.Resilience` (Polly v8). Every named `HttpClient` 
 | `AskFlow_GodzillaQuestion_ReturnsCitedAnswer` | a single ask returns an answer carrying a clickable citation | a broken citation chain across the camelCase tool-trace seam |
 | `AskFlow_RepeatedQuestion_CachedAnswerStillRendersCitations` | a cache-hit replay still renders its citations | cache-path citation loss (PR #365) |
 | `AskFlow_FollowUp_CarriesConversationContext` | a pronoun-only follow-up ("who designed it") is answered from conversation history | multi-turn context not surviving the wire |
+| BugFinder crawler — `CrawlPublicSiteAndGenerateBugReport` (`Category=BugFinder`; local-only; run via `tools/e2e/Run-BugFinder.ps1`) | crawls all public routes; per-page functional checks (console errors, nav timing, HTTP status) + optional GPT-4o vision UI review; writes a Markdown report to `tools/e2e/bug-reports/`; **always passes** (non-gating reporter — findings surface in the report, never as test failures) | broad surface regressions across all public pages that the 4-test E2E suite does not exercise |
 
 ### 7.2 What we don't test
 

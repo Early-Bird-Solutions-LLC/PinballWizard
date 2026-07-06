@@ -8,6 +8,8 @@ supersedes: ""
 
 # Quality Bar
 
+> **Point-in-time artifact (2026-05-16).** This document reflects the state of the codebase as of that date; see [build-spec.md](build-spec.md) and [guardrails.md](guardrails.md) for current authoritative guidance.
+
 The durable checklist for any change landing in PinballWizard. Skim this before
 opening a PR. CI enforces most of it; the rest is on the author and reviewer.
 
