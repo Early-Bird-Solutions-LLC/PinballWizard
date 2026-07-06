@@ -42,21 +42,21 @@ Otherwise, this log is the right home.
 
 **Related:** PR #698 (re-dispatch), this PR (allowed_bots + docs), ADR-0051 (agent categories), ADR-0047 (WIF).
 
-## 2026-07-06 (AI-drafted — pending human confirmation)
+## 2026-07-06
 
-> **What this section is:** these entries were drafted by Claude Code on 2026-07-06 as part of a documentation refresh pass — no new dated section had been added since 2026-05-30. Each entry records a decision made in June–July 2026 that was not logged at the time. Every entry is explicitly marked **[AI-drafted — confirm]** and is a *proposal* for Jim to accept, edit, or strike before this file is treated as authoritative for these decisions. Rationale that could not be confirmed from code, ADRs, or commit messages is flagged as "(inferred — confirm)".
+> **Note:** these entries were added retroactively on 2026-07-06 during a documentation-refresh pass — no dated section had been logged since 2026-05-30. Each records a decision made in June–July 2026 that was not captured at the time. Reviewed and confirmed by Jim on 2026-07-06.
 
-### [AI-drafted — confirm] OCR activation: wire ADI Document Intelligence into Bicep (PR #669)
+### OCR activation: wire ADI Document Intelligence into Bicep (PR #669)
 
 **Decision:** `DocumentIntelligence__Endpoint` env var and `Cognitive Services User` RBAC for the RAG indexer managed identity are now encoded in Bicep (shared.bicep), making the `AzureDocumentIntelligenceExtractor` OCR fallback live for deployed environments. Developer RBAC for Document Intelligence was also added. No application-code changes — the fallback built in PR #266 was already production-ready.
 
-**Why it was not activated earlier (inferred — confirm):** The 2026-05-22 decision-log entry records the ADI resource as provisioned and the endpoint as set on the Container App at that time; PR #669's design spec states the fallback "was never enabled." The most likely reconciliation is that the 2026-05-22 endpoint setting was done outside IaC and would not survive a stack redeploy — PR #669 codifies it in Bicep. The specific rationale for the original deferral from Phase 4.5 is not documented in the commit or ADRs; pending Jim's confirmation.
+**Why it was dormant until now:** The 2026-05-22 provisioning set the endpoint env var and the `Cognitive Services User` RBAC ad-hoc (outside IaC). A later Deployment Stack redeploy stripped both — Stacks remove anything not present in the template — so the OCR fallback silently went dormant, which is why PR #669's spec describes it as "never enabled" (never enabled *durably*). PR #669 codifies the env var and both RBAC grants in `shared.bicep` so they survive redeploys. Confirming evidence: the deploy hit `RoleAssignmentExists` twice — Azure rejects a duplicate (principal, role, scope) tuple even under a new assignment GUID, which only occurs if the roles already existed ad-hoc and had to be deleted before Bicep could adopt them (see `reference_az_role_assignment_workflow`).
 
 **Revisit when:** ADI page cost approaches the ~$30/mo threshold from the 2026-05-22 entry, or Document Intelligence introduces consumption-based pricing better suited to bursty ingestion.
 
 **Related:** PR #669, PR #266 (ADI extractor + fallback decorator), 2026-05-22 decision-log entry.
 
-### [AI-drafted — confirm] Tilt Forums posture reversal: permission-gated → active (ADR-0050)
+### Tilt Forums posture reversal: permission-gated → active (ADR-0050)
 
 **Decision:** Ingest Tilt Forums' ~80–90 Wiki Rulesheets via the synthesis pipeline (same shape as Kineticist tutorials), classified `DocumentType.Rulesheet`. A 2026-06-25 decision brief concluded "low odds of a commercial waiver" under CC-BY-NC-SA 3.0 and recommended route-outward links only, gated on written permission. That gate was cleared on 2026-06-30 when founder/admin Greg Dunlap posted a public, unambiguous invitation in ["The Future of Tilt Forums"](https://tiltforums.com/t/the-future-of-tilt-forums/10276) ("Mine the data, train your models"), announcing forum closure on 2026-09-01. Direction given 2026-07-03: proceed on the public statement without waiting for a personal written reply (courtesy outreach message still sent as a paper-trail backstop). Non-negotiable: every answer cites and links back to the specific Tilt Forums topic; short excerpts only. Posture toward Pinside, IPDB, and PinWiki is unchanged.
 
@@ -66,7 +66,7 @@ Otherwise, this log is the right home.
 
 **Related:** ADR-0050, PR #670 (ingestion), PR #675 (edition fan-out), `docs/superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md`.
 
-### [AI-drafted — confirm] Individual ACA Job per scraper, not a combined sweep (PR #681)
+### Individual ACA Job per scraper, not a combined sweep (PR #681)
 
 **Decision:** Ship one dedicated ACA Job per source scraper (15 jobs: Multimorphic, CGC, Barrels of Fun, Stern × 3, JJP, JJP support, AP, AP bulletins, Spooky, Spooky support, Pinball Brothers, PB docs, PB Freshdesk). Each runs a single `--source <alias>` invocation on its own cron schedule. A combined sweep job was explicitly considered and rejected.
 
@@ -76,17 +76,17 @@ Otherwise, this log is the right home.
 
 **Related:** PR #681, `infra/modules/shared.bicep`.
 
-### [AI-drafted — confirm] Pinball Brothers Freshdesk as a polite second source (PR #663)
+### Pinball Brothers Freshdesk as a polite second source (PR #663)
 
 **Decision:** Add `PbFreshdeskDocumentScraper` (static HTML via AngleSharp, extending `PoliteScraperBase`) for Pinball Brothers' public Freshdesk support portal (`pinballbrothers.freshdesk.com/support/solutions`). Introduces `DocumentType.SupportArticle`. A synthesis path (`PbFreshdeskArticleSynthesizer`) routes text-only support articles directly to the RAG index. The existing `pb_bulletins` ingestion source is superseded by `pb_freshdesk`. All discovery calls are wrapped for visible degradation (Invariant #17).
 
-**Rationale (inferred — confirm):** Pinball Brothers publishes electronics guides and rulebook-adjacent content on their public Freshdesk portal that was not reachable via the existing game-page scraper. The portal is publicly accessible without authentication, meeting the polite-source bar.
+**Rationale:** Pinball Brothers publishes electronics guides and rulebook-adjacent content on their public Freshdesk portal that was not reachable via the existing game-page scraper. The portal is publicly accessible without authentication, meeting the polite-source bar.
 
 **Revisit when:** Pinball Brothers migrates support content off Freshdesk, or the portal introduces authentication requirements.
 
 **Related:** PR #663, `PbFreshdeskDocumentScraper`, `PbFreshdeskArticleSynthesizer`.
 
-### [AI-drafted — confirm] Admin GridSearch: unified AI search with per-grid prompt schemas (PR #680)
+### Admin GridSearch: unified AI search with per-grid prompt schemas (PR #680)
 
 **Decision:** Unified AI-powered search across all admin data grids via a shared `IGridSearchService` / `IGridSearchClient` pair and a `/api/search/grid` endpoint discriminated by a `gridContext` query parameter. Each admin grid gets its own prompt schema (field names + descriptions) registered as an allow-listed context; unrecognized contexts are rejected at the API boundary. `AppDataGrid<TItem>` integrates the client; stats-only grids (AdminCorpus) opt out.
 
@@ -98,7 +98,7 @@ Otherwise, this log is the right home.
 
 **Related:** PR #680, `IGridSearchService`, `IGridSearchClient`, ADR-0046 (shared Blazor component library).
 
-### [AI-drafted — confirm] ManufacturerSlugs backfill from captured cross-reference provenance (PR #676)
+### ManufacturerSlugs backfill from captured cross-reference provenance (PR #676)
 
 **Decision:** Add `IScraperReconciliationService.BackfillSlugsFromCrossReferencesAsync` and a `--backfill-manufacturer-slugs` CLI verb to populate `Machine.ManufacturerSlugs` for titles absent from the live manufacturer game-page lineup. Reads already-captured cross-reference `/game/{slug}/` URLs from `scraped_documents_raw` (no HTTP calls, idempotent), reuses the reconciler's franchise-title matching (Pass 2). Exit code 3 flags ambiguous slugs for manual triage, consistent with `--audit-catalog` convention. Operators run `--relink-all` afterwards.
 
