@@ -82,10 +82,11 @@ public enum DocumentType
 
     // A Freshdesk knowledge-base article with no downloadable attachment
     // (troubleshooting Q&A, "how to" guides, update/changelog notes). Indexed
-    // via the PbFreshdeskArticleSynthesizer bypass path (--sync-pb-freshdesk-articles),
-    // like NewsDigest/SdkGuide — not PDF-derived, not change-feed routed, and
-    // deliberately excluded from RagIngestionOptions.AcceptedDocumentTypes
-    // since it never flows through the Cosmos scraped_documents_raw pipeline.
+    // via the PbFreshdeskArticleSynthesizer bypass path (--sync-pb-freshdesk-articles)
+    // and written to scraped_documents_raw by the same CLI verb so citations resolve
+    // at /documents/{id}. Excluded from RagIngestionOptions.AcceptedDocumentTypes
+    // because these arrive via the CLI bypass path, not the change-feed, so the
+    // RAG ingestion worker never needs to re-process them.
     SupportArticle,
 }
 
