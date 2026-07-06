@@ -4,7 +4,15 @@
 
 @* Admin app-bar identity control. Anchor-only (no @onclick / @rendermode) so it
  * never perturbs admin page circuits (interactive-island-in-static-layout).
- * Sign-in/out route through the Microsoft.Identity.Web AccountController via AdminSignIn. *@
+ * Sign-in/out route through the Microsoft.Identity.Web AccountController via AdminSignIn.
+ *
+ * data-enhance-nav="false" on both anchors is load-bearing: blazor.web.js enhanced
+ * navigation intercepts same-origin anchor clicks and services them via fetch + DOM
+ * patch. The AccountController responds with a cross-origin 302 to Entra, which
+ * enhanced navigation cannot apply — the URL changed to the SignIn endpoint but the
+ * browser never left for the IdP, so "Sign in" appeared to do nothing. Opting out
+ * forces a real full-page navigation that follows the redirect. Same fix as
+ * TiltErrorBoundary's recover link. *@
 
 <AuthorizeView>
     <Authorized>
@@ -12,6 +20,7 @@
             Signed in as @DisplayName(context)
         </MudText>
         <MudButton Href="@AdminSignIn.SignOutPath"
+                   data-enhance-nav="false"
                    Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
                    StartIcon="@Icons.Material.Filled.Logout" data-testid="admin-signout">
             Sign out
@@ -19,6 +28,7 @@
     </Authorized>
     <NotAuthorized>
         <MudButton Href="@AdminSignIn.Href(ReturnUrl)"
+                   data-enhance-nav="false"
                    Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
                    StartIcon="@Icons.Material.Filled.Login" data-testid="admin-signin">
             Sign in
