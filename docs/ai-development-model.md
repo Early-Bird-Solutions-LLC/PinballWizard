@@ -137,6 +137,28 @@ Some controls are not a single stage — they run through the whole process:
   is non-optional and independent of any developer being online. See [ADR-0041](adr/0041-pr-feedback-triage.md)
   for the rationale and the deferred autonomous-mode upgrade path.
 
+## Two kinds of agents
+
+The automation described above involves AI agents, but not all agents play the same role.
+PinballWizard runs two distinct categories, and the boundary matters ([ADR-0051](adr/0051-agent-categories-foundry-vs-ci.md)):
+
+**Foundry runs the product.** The Wizard's grounding, search, and repair agents serve live
+user traffic on pinwiz.ai inside Microsoft Foundry. They carry managed identity, eval
+harness evaluation, per-agent model routing, and latency SLOs. A regression here degrades
+the answer a visitor receives.
+
+**Claude Code builds and maintains the repo.** Agents triggered by git events — push, PR,
+schedule — run as ephemeral GitHub Actions jobs via `claude-code-action@v1`, authenticated
+keylessly through GitHub OIDC → Anthropic WIF (ADR-0047). They need `git`, `gh pr create`,
+and repo checkout; they have no place in a product-runtime orchestrator. The `@claude`
+mention handler (`claude.yml`) and the PR-feedback triage bot (`pr-feedback-triage.yml`)
+are already in this category. The **docs-agent** (Phase 3) is the worked example that made
+the boundary explicit: it opens a PR to refresh documentation on a schedule — a canonical
+repo-maintenance task, not a product-serving one.
+
+The classification rule for any future agent is a single question: does it serve live user
+traffic, or does it act on git events? Foundry and CI respectively.
+
 ## Verification & evidence
 
 The most common failure mode of an AI contributor is not a syntax error — it is a confident,
