@@ -61,7 +61,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 
 `MudTable` and `MudSimpleTable` are banned from the page layer — use `AppDataGrid`. All call sites pass extra props (Groupable, RowClick, data-testid, etc.) via attribute splatting.
 
-### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
+### Source manufacturers (8 manufacturers + OPDB)
 
 | Manufacturer | Source URL | Pattern | Notes |
 | --- | --- | --- | --- |
