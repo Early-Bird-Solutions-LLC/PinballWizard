@@ -1,0 +1,103 @@
+@* Engineering landing — live docs sourced from the repo.
+ *
+ * Static SSR page (no @rendermode). Groups docs from the manifest into
+ * AppSummaryCards, shows the top 5 latest ADRs, and links to the ADR index.
+ *
+ * Two kinds of agents: Foundry agents run the product; Claude Code CI agents
+ * build and maintain it. ADR-0051 (Phase 3) covers the CI-agent architecture.
+ *
+ * ADR-0046 — shared component wrappers (AppPageHeader, AppSummaryCard, AppStatusChip)
+ * ADR-0008  — MudBlazor strict
+ *@
+
+@page "/engineering"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>PinballWizard — Engineering</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    <AppPageHeader Title="Engineering"
+                   Subtitle="How pinwiz.ai is built — from the repo itself" />
+
+    @* ── Intro paragraph ─────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.body1" Class="mb-2">
+        PinballWizard runs two kinds of agents:
+        <MudLink Href="/engineering/adr/51">Azure AI Foundry agents</MudLink>
+        run the product (Wizard, Repair, Grounding, Search); Claude Code CI
+        agents build and maintain it. Every engineering decision is captured in
+        an ADR, and the canonical docs are served straight from the repo — no
+        separate wiki to drift from the code.
+    </MudText>
+
+    @* ── Freshness stamp ─────────────────────────────────────────────────── *@
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Sourced from commit <code>@Provider.SourceCommit</code>, built @Provider.BuildDate
+    </MudText>
+
+    @* ── Group cards + ADR card ───────────────────────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-3">Documentation</MudText>
+
+    <MudGrid Spacing="3" Class="mb-6">
+        @foreach (var grp in Provider.Docs
+                      .GroupBy(d => d.Group)
+                      .OrderBy(g => g.Key, StringComparer.Ordinal))
+        {
+            var firstDoc = grp.OrderBy(d => d.Order).First();
+            var groupName = grp.Key;
+            <MudItem xs="12" sm="6" md="4">
+                <AppSummaryCard Icon="@Icons.Material.Filled.MenuBook"
+                                IconColor="Color.Primary"
+                                Label="@groupName"
+                                ActionHref="@($"/engineering/docs/{firstDoc.Slug}")"
+                                ActionLabel="Read docs">
+                    <Content>
+                        <MudText Typo="Typo.h6">@groupName</MudText>
+                    </Content>
+                </AppSummaryCard>
+            </MudItem>
+        }
+        <MudItem xs="12" sm="6" md="4">
+            <AppSummaryCard Icon="@Icons.Material.Filled.AccountTree"
+                            IconColor="Color.Secondary"
+                            Label="Architecture Decision Records"
+                            ActionHref="/engineering/adr"
+                            ActionLabel="Browse ADRs">
+                <Content>
+                    <MudText Typo="Typo.h6">Architecture Decisions</MudText>
+                </Content>
+            </AppSummaryCard>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Latest ADRs strip (top 5 by number desc) ────────────────────────── *@
+    <MudText Typo="Typo.h5" Class="mb-3">Latest ADRs</MudText>
+
+    @* Plain semantic <ul>, not AppBulletList (MudList): MudList renders an
+       interactive role="listbox" which axe flags on this static link list
+       (aria-input-field-name + nested-interactive). A native list is the
+       accessible, correct markup. *@
+    <ul class="eng-list mb-6">
+        @foreach (var adr in Provider.Adrs.OrderByDescending(a => a.Number).Take(5))
+        {
+            <li>
+                <MudLink Href="@($"/engineering/adr/{adr.Number}")">
+                    ADR-@adr.Number.ToString("D4") — @adr.Title
+                </MudLink>
+                @if (!string.IsNullOrWhiteSpace(adr.Status))
+                {
+                    <AppStatusChip Color="@AdrStatusColors.ForStatus(adr.Status)" Class="ml-2">
+                        @adr.Status
+                    </AppStatusChip>
+                }
+            </li>
+        }
+    </ul>
+
+</MudContainer>
+
+@code {
+}

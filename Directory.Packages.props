@@ -139,6 +139,16 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
+  <ItemGroup Label="Web — Markdown rendering for the /engineering live-docs section">
+    <!--
+      Markdig 1.3.2 — CommonMark-compliant Markdown-to-HTML pipeline used
+      by the /engineering section to render the repo's own docs in-browser.
+      Version verified via: dotnet package search Markdig (take 1)
+      Result on 2026-07-06: latest stable = 1.3.2, owner xoofx, 68 M+ downloads.
+      See src/PinballWizard.Web/PinballWizard.Web.csproj for the consumer.
+    -->
+    <PackageVersion Include="Markdig" Version="1.3.2" />
+  </ItemGroup>
   <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
     <!--
       MudBlazor 9.x targets .NET 8+; 9.5.0 supports .NET 10 via the .NET 8

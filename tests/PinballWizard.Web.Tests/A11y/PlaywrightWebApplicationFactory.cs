@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MudBlazor.Services;
 using PinballWizard.Web.Clients;
+using PinballWizard.Web.Engineering;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
@@ -79,6 +80,13 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         // Scoped services depended on by Blazor components.
         builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
         builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
+
+        // Engineering live-docs provider — the /engineering pages inject it.
+        // Mirrors Program.cs; reads embedded docs from the Web assembly, no
+        // external deps, so it works unchanged in this minimal host. Without
+        // it the /engineering routes 500 during SSR (axe then sees an empty
+        // document) — guarded by EngineeringSsrSmokeTests.
+        builder.Services.AddSingleton<IEngineeringDocsProvider, EngineeringDocsProvider>();
 
         // Stub HTTP clients: base addresses point nowhere but the Index page
         // has a compiled-in fallback for when the landing endpoint is down.

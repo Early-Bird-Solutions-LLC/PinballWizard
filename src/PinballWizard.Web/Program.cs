@@ -41,6 +41,7 @@ using PinballWizard.Web.Clients;
 using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
+using PinballWizard.Web.Engineering;
 using PinballWizard.Web.Hosting;
 using PinballWizard.Web.Security;
 using PinballWizard.Web.Services;
@@ -173,6 +174,13 @@ builder.Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 // to Cosmos overrides. Unconditional: the page renders on the local-dev
 // no-auth path too.
 builder.Services.AddSingleton<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>();
+
+// ── Engineering live-docs provider ────────────────────────────────────────
+// Loads and Markdig-parses all /engineering docs + ADRs from the assembly's
+// embedded resources exactly once at startup. Singleton: zero per-request
+// file or network I/O — all content cached in memory after construction.
+// Consumers: /engineering/* pages (Task 4/5).
+builder.Services.AddSingleton<IEngineeringDocsProvider, EngineeringDocsProvider>();
 
 // ── Degradation state store (scoped per circuit) ──────────────────────────
 // IClientDegradationStore propagates DegradationContext from WizardAnswer

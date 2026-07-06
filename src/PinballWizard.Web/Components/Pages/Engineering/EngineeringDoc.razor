@@ -1,0 +1,102 @@
+@* EngineeringDoc — renders a single engineering doc from the manifest.
+ *
+ * Route: /engineering/docs/{Slug}
+ * Static SSR (no @rendermode). Uses MarkdownComponentRenderer.Render to
+ * emit the AST as MudBlazor components (XSS-safe: no MarkupString).
+ *
+ * ResolveLink maps relative file paths in the markdown to live app routes:
+ *   docs/adr/NNNN-*.md → /engineering/adr/{N}
+ *   any manifest sourcePath  → /engineering/docs/{slug}
+ *   anything else            → null (link kept verbatim, safe relative path)
+ *
+ * ADR-0046 — AppPageHeader, AppEmptyState
+ * ADR-0008  — MudBlazor strict; no MarkupString
+ *@
+
+@page "/engineering/docs/{Slug}"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>@(Provider.BySlug(Slug) is { } _t ? $"PinballWizard — Engineering / {_t.Title}" : $"PinballWizard — Engineering / {Slug} not found")</PageTitle>
+
+@{
+    var doc = Provider.BySlug(Slug);
+    var crumbs = doc is null
+        ? null
+        : (IReadOnlyList<BreadcrumbItem>)new[]
+        {
+            new BreadcrumbItem("Engineering", "/engineering"),
+            new BreadcrumbItem(doc.Title, href: null, disabled: true),
+        };
+}
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    @if (doc is null)
+    {
+        <AppEmptyState Heading="@($"{Slug} not found")"
+                       Detail="This document does not exist or has not been published yet."
+                       Icon="@Icons.Material.Outlined.FindInPage" />
+    }
+    else
+    {
+        <AppPageHeader Title="@doc.Title" Breadcrumbs="@crumbs" />
+
+        <div class="eng-doc-body">
+            @MarkdownComponentRenderer.Render(doc.Ast, ResolveLink)
+        </div>
+
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudLink Href="@doc.SourceGitHubUrl"
+                     Target="_blank"
+                     rel="noopener noreferrer">
+                View source on GitHub
+            </MudLink>
+        </MudText>
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+
+    // GitHub base used to reconstruct the relative sourcePath from the full URL.
+    private const string GitHubBase =
+        "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/";
+
+    private string? ResolveLink(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        // ADR pattern: any path containing a four-digit sequence followed by a dash
+        // (e.g. "docs/adr/0001-record-architecture-decisions.md", "../adr/0001-...")
+        var adrMatch = System.Text.RegularExpressions.Regex.Match(path, @"(\d{4})-");
+        if (adrMatch.Success
+            && int.TryParse(adrMatch.Groups[1].Value, out var adrNum))
+        {
+            return $"/engineering/adr/{adrNum}";
+        }
+
+        // Manifest doc pattern: check whether the path suffix matches any doc's sourcePath.
+        var normalized = path.TrimStart('.').TrimStart('/');
+        foreach (var d in Provider.Docs)
+        {
+            var sourcePath = d.SourceGitHubUrl.StartsWith(GitHubBase, StringComparison.OrdinalIgnoreCase)
+                ? d.SourceGitHubUrl[GitHubBase.Length..]
+                : d.SourceGitHubUrl;
+
+            if (string.Equals(sourcePath, normalized, StringComparison.OrdinalIgnoreCase)
+                || sourcePath.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"/engineering/docs/{d.Slug}";
+            }
+        }
+
+        return null;
+    }
+}

@@ -43,7 +43,7 @@ public sealed class ResponsiveSnapshotTests(PlaywrightWebApplicationFactory fact
     private static readonly string ScreenshotRoot =
         Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "screenshots"));
 
-    // Routes × viewports: 3 routes × 3 viewports = 9 test cases.
+    // Routes × viewports: 5 routes × 3 viewports = 15 test cases.
     //
     // Viewports follow three canonical breakpoints:
     //   mobile  375 × 812  — iPhone 14 portrait
@@ -54,16 +54,25 @@ public sealed class ResponsiveSnapshotTests(PlaywrightWebApplicationFactory fact
     // only via a thrown RenderException; navigating to it directly in the
     // minimal test host doesn't exercise the same code path and produces a
     // misleading screenshot. The Accessibility job covers /tilt for a11y.
+    //
+    // /engineering/docs/glossary is the representative sub-page for the
+    // /engineering section — covers the EngineeringDoc.razor render path.
     [Theory]
-    [InlineData("/",       375,  812,  "landing-mobile")]
-    [InlineData("/",       768,  1024, "landing-tablet")]
-    [InlineData("/",       1440, 900,  "landing-desktop")]
-    [InlineData("/wizard", 375,  812,  "wizard-mobile")]
-    [InlineData("/wizard", 768,  1024, "wizard-tablet")]
-    [InlineData("/wizard", 1440, 900,  "wizard-desktop")]
-    [InlineData("/error",  375,  812,  "error-mobile")]
-    [InlineData("/error",  768,  1024, "error-tablet")]
-    [InlineData("/error",  1440, 900,  "error-desktop")]
+    [InlineData("/",                         375,  812,  "landing-mobile")]
+    [InlineData("/",                         768,  1024, "landing-tablet")]
+    [InlineData("/",                         1440, 900,  "landing-desktop")]
+    [InlineData("/wizard",                   375,  812,  "wizard-mobile")]
+    [InlineData("/wizard",                   768,  1024, "wizard-tablet")]
+    [InlineData("/wizard",                   1440, 900,  "wizard-desktop")]
+    [InlineData("/error",                    375,  812,  "error-mobile")]
+    [InlineData("/error",                    768,  1024, "error-tablet")]
+    [InlineData("/error",                    1440, 900,  "error-desktop")]
+    [InlineData("/engineering",              375,  812,  "engineering-mobile")]
+    [InlineData("/engineering",              768,  1024, "engineering-tablet")]
+    [InlineData("/engineering",              1440, 900,  "engineering-desktop")]
+    [InlineData("/engineering/docs/glossary", 375,  812,  "engineering-glossary-mobile")]
+    [InlineData("/engineering/docs/glossary", 768,  1024, "engineering-glossary-tablet")]
+    [InlineData("/engineering/docs/glossary", 1440, 900,  "engineering-glossary-desktop")]
     public async Task PublicPage_RendersWithoutCriticalViolationsAtBreakpoint(
         string route,
         int viewportWidth,

@@ -38,10 +38,12 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
     // Settings.razor lands it will be added here. /{**slug} (404) redirects
     // to /error via NotFound.razor so /error covers that code path.
     [Theory]
-    [InlineData("/",       "landing page")]
-    [InlineData("/wizard", "wizard ask page")]
-    [InlineData("/error",  "error page")]
-    [InlineData("/tilt",   "tilt page")]
+    [InlineData("/",                        "landing page")]
+    [InlineData("/wizard",                  "wizard ask page")]
+    [InlineData("/error",                   "error page")]
+    [InlineData("/tilt",                    "tilt page")]
+    [InlineData("/engineering",             "engineering docs index")]
+    [InlineData("/engineering/docs/glossary", "engineering docs glossary")]
     public async Task PublicPage_HasNoAxeViolations(string path, string description)
     {
         _ = description; // InlineData label — surfaced in test output, not asserted

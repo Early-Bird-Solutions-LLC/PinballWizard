@@ -1,0 +1,91 @@
+@* AdrPage — renders a single ADR from its embedded markdown AST.
+ *
+ * Route: /engineering/adr/{Number:int}
+ * Static SSR (no @rendermode). MarkdownComponentRenderer.Render emits
+ * MudBlazor components — XSS-safe: no MarkupString used anywhere.
+ *
+ * ADR-0046 — AppPageHeader, AppEmptyState
+ * ADR-0008  — MudBlazor strict; no MarkupString
+ *@
+
+@page "/engineering/adr/{Number:int}"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>@(Provider.ByNumber(Number) is { } _a ? $"PinballWizard — ADR-{_a.Number:D4}: {_a.Title}" : $"PinballWizard — ADR-{Number:D4} not found")</PageTitle>
+
+@{
+    var adr = Provider.ByNumber(Number);
+    var crumbs = adr is null
+        ? null
+        : (IReadOnlyList<BreadcrumbItem>)new[]
+        {
+            new BreadcrumbItem("Engineering", "/engineering"),
+            new BreadcrumbItem("ADRs", "/engineering/adr"),
+            new BreadcrumbItem($"ADR-{adr.Number:D4}", href: null, disabled: true),
+        };
+}
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    @if (adr is null)
+    {
+        <AppEmptyState Heading="@($"ADR-{Number:D4} not found")"
+                       Detail="This ADR number does not exist or has not been published yet."
+                       Icon="@Icons.Material.Outlined.FindInPage" />
+    }
+    else
+    {
+        <AppPageHeader Title="@($"ADR-{adr.Number:D4}")"
+                       Subtitle="@adr.Title"
+                       Breadcrumbs="@crumbs" />
+
+        <div class="eng-adr-body">
+            @MarkdownComponentRenderer.Render(adr.Ast, ResolveAdrLink)
+        </div>
+    }
+
+</MudContainer>
+
+@code {
+    [Parameter] public int Number { get; set; }
+
+    private const string GitHubBase =
+        "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/";
+
+    // Cross-reference resolver for links inside ADR documents.
+    // Handles inter-ADR links (../0002-..., docs/adr/0002-...) and
+    // manifest doc links (docs/vision.md → /engineering/docs/vision).
+    private string? ResolveAdrLink(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        // ADR cross-reference: four-digit number followed by a dash
+        var adrMatch = System.Text.RegularExpressions.Regex.Match(path, @"(\d{4})-");
+        if (adrMatch.Success
+            && int.TryParse(adrMatch.Groups[1].Value, out var adrNum))
+        {
+            return $"/engineering/adr/{adrNum}";
+        }
+
+        // Manifest doc links
+        var normalized = path.TrimStart('.').TrimStart('/');
+        foreach (var d in Provider.Docs)
+        {
+            var sourcePath = d.SourceGitHubUrl.StartsWith(GitHubBase, StringComparison.OrdinalIgnoreCase)
+                ? d.SourceGitHubUrl[GitHubBase.Length..]
+                : d.SourceGitHubUrl;
+
+            if (string.Equals(sourcePath, normalized, StringComparison.OrdinalIgnoreCase)
+                || sourcePath.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"/engineering/docs/{d.Slug}";
+            }
+        }
+
+        return null;
+    }
+}
