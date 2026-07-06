@@ -72,6 +72,69 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Markdig is the Markdown-to-HTML pipeline for the /engineering live-docs
+      section. Version managed centrally in Directory.Packages.props.
+    -->
+    <PackageReference Include="Markdig" />
+  </ItemGroup>
+
+  <!--
+    Engineering docs embed: the /engineering section renders the repo's own
+    markdown. The manifest (docs/engineering-manifest.json) is the single
+    curation point; this target embeds exactly its listed files plus all ADRs.
+    Docs are reachable because the Docker build context is the repo root
+    (two levels up from src/PinballWizard.Web/).
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/vision.md" LogicalName="PinballWizard.Web.docs.vision.md" />
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/ai-development-model.md" LogicalName="PinballWizard.Web.docs.ai-development-model.md" />
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/learning-from-failure.md" LogicalName="PinballWizard.Web.docs.learning-from-failure.md" />
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/architecture-v2.md" LogicalName="PinballWizard.Web.docs.architecture.md" />
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/glossary.md" LogicalName="PinballWizard.Web.docs.glossary.md" />
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/adr/*.md" LogicalName="PinballWizard.Web.docs.adr.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    Stamp two assembly-metadata attributes at build time so the running app can
+    surface the repo commit and build date in the /engineering section without
+    any runtime file I/O.
+
+    Technique: WriteCodeFragment generates a temporary .cs file in IntermediateOutputPath,
+    which is then added to @(Compile). This sidesteps the SDK's own GenerateAssemblyInfo
+    collection cycle (both use BeforeTargets="CoreCompile" but with undefined ordering),
+    making the stamp robust regardless of target scheduling.
+
+    ContinueOnError on the git Exec ensures a build without git in PATH (e.g. a
+    standalone Docker layer) produces an empty commit string rather than failing.
+  -->
+  <Target Name="StampEngineeringMetadata" BeforeTargets="CoreCompile">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMsBuild="true" ContinueOnError="true" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_EngineeringSourceCommit" />
+    </Exec>
+    <PropertyGroup>
+      <_EngineeringSourceCommit>$(_EngineeringSourceCommit.Trim())</_EngineeringSourceCommit>
+      <_EngineeringBuildDate>$([System.DateTime]::UtcNow.ToString("yyyy-MM-dd"))</_EngineeringBuildDate>
+    </PropertyGroup>
+    <ItemGroup>
+      <_EngineeringStampAttrs Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>EngineeringSourceCommit</_Parameter1>
+        <_Parameter2>$(_EngineeringSourceCommit)</_Parameter2>
+      </_EngineeringStampAttrs>
+      <_EngineeringStampAttrs Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>EngineeringBuildDate</_Parameter1>
+        <_Parameter2>$(_EngineeringBuildDate)</_Parameter2>
+      </_EngineeringStampAttrs>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#"
+                       OutputFile="$(IntermediateOutputPath)EngineeringStamp.cs"
+                       AssemblyAttributes="@(_EngineeringStampAttrs)" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)EngineeringStamp.cs" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
     <ProjectReference Include="../PinballWizard.Application/PinballWizard.Application.csproj" />
     <ProjectReference Include="../PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj" />
     <ProjectReference Include="../PinballWizard.ServiceDefaults/PinballWizard.ServiceDefaults.csproj" />
