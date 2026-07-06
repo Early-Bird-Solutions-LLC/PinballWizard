@@ -177,4 +177,48 @@ public sealed class MarkdownComponentRendererTests : BunitContext, IAsyncLifetim
         Assert.Contains("<strong>", cut.Markup);
         Assert.Contains("Medieval Madness", cut.Markup);
     }
+
+    // ── H4 heading ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void H4_MapsToTypoSubtitle1()
+    {
+        var frag = MarkdownComponentRenderer.Render(Parse("#### Heading Four"), _ => null);
+        var cut = Render(frag);
+        Assert.Contains("mud-typography-subtitle1", cut.Markup);
+    }
+
+    // ── Dangerous URI scheme stripping ────────────────────────────────────────
+
+    [Fact]
+    public void JavascriptSchemeLink_StripsHrefAndPreservesText()
+    {
+        var frag = MarkdownComponentRenderer.Render(
+            Parse("[evil](javascript:alert(1))"),
+            _ => null);
+        var cut = Render(frag);
+        Assert.DoesNotContain("javascript:", cut.Markup);
+        Assert.Contains("evil", cut.Markup);
+    }
+
+    [Fact]
+    public void DataUriLink_StripsHref()
+    {
+        var frag = MarkdownComponentRenderer.Render(
+            Parse("[x](data:text/html,foo)"),
+            _ => null);
+        var cut = Render(frag);
+        Assert.DoesNotContain("data:text/html", cut.Markup);
+    }
+
+    [Fact]
+    public void ExternalHttpsLink_StillRendersHrefWithTargetBlank()
+    {
+        var frag = MarkdownComponentRenderer.Render(
+            Parse("[y](https://example.com)"),
+            _ => null);
+        var cut = Render(frag);
+        Assert.Contains("https://example.com", cut.Markup);
+        Assert.Contains("_blank", cut.Markup);
+    }
 }

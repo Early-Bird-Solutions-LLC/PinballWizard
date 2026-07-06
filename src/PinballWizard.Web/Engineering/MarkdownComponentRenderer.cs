@@ -18,6 +18,10 @@ namespace PinballWizard.Web.Engineering;
 // rendering pipeline — XSS-class payloads are structurally impossible.
 // This mirrors the posture established by MarkdownTokenizer.cs.
 //
+// URI safety: links whose final href does not match an allowlist of safe schemes
+// (http/https, root-relative /, fragment #, or bare relative paths) are stripped
+// to their link text with no href — javascript: and data: URIs never reach the DOM.
+//
 // Node mapping:
 //   HeadingBlock       → MudText (Typo: h1→h4, h2→h5, h3→h6, else subtitle1)
 //   ParagraphBlock     → MudText Typo.body1
@@ -299,6 +303,14 @@ internal static class MarkdownComponentRenderer
 
         var href = isExternal ? url : (slugLinkResolver(url) ?? url);
 
+        if (!IsSafeHref(href))
+        {
+            // Dangerous scheme (javascript:, data:, etc.) — render link text only,
+            // no href reaches the DOM.
+            RenderInlines(builder, link, slugLinkResolver);
+            return;
+        }
+
         builder.OpenComponent<MudLink>(0);
         builder.AddComponentParameter(0, "Href", href);
         if (isExternal)
@@ -307,6 +319,14 @@ internal static class MarkdownComponentRenderer
             (RenderFragment)(b => RenderInlines(b, link, slugLinkResolver)));
         builder.CloseComponent();
     }
+
+    private static bool IsSafeHref(string url) =>
+        url.Length == 0
+        || url[0] == '/'
+        || url[0] == '#'
+        || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        || !url.Contains(':', StringComparison.Ordinal); // relative repo paths like foo.md, ./bar
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
