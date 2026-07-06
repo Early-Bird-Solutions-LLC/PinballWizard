@@ -3,33 +3,26 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Markdig;
+using Microsoft.Extensions.Logging;
 
 namespace PinballWizard.Web.Engineering;
 
-/// <summary>
-/// Loads and parses all engineering docs and ADRs from the Web assembly's embedded
-/// resources exactly once in the constructor. Registered as a singleton so every
-/// subsequent call to <see cref="Docs"/>, <see cref="Adrs"/>, <see cref="BySlug"/>, or
-/// <see cref="ByNumber"/> is a pure in-memory read with zero I/O.
-///
-/// Logical name conventions (from PinballWizard.Web.csproj):
-///   - Manifest:  PinballWizard.Web.docs.engineering-manifest.json
-///   - Doc pages: PinballWizard.Web.docs.{slug}.md
-///   - ADRs:      PinballWizard.Web.docs.adr.{filename}.md
-/// </summary>
 public sealed partial class EngineeringDocsProvider : IEngineeringDocsProvider
 {
     private const string GitHubBase = "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/";
     private const string AdrPrefix = "PinballWizard.Web.docs.adr.";
     private const string ManifestResource = "PinballWizard.Web.docs.engineering-manifest.json";
 
+    private readonly ILogger<EngineeringDocsProvider> _logger;
+
     public IReadOnlyList<EngineeringDoc> Docs { get; }
     public IReadOnlyList<AdrEntry> Adrs { get; }
     public string SourceCommit { get; }
     public string BuildDate { get; }
 
-    public EngineeringDocsProvider()
+    public EngineeringDocsProvider(ILogger<EngineeringDocsProvider> logger)
     {
+        _logger = logger;
         var assembly = typeof(EngineeringDocsProvider).Assembly;
         var pipeline = new MarkdownPipelineBuilder()
             .UsePipeTables()
@@ -58,7 +51,11 @@ public sealed partial class EngineeringDocsProvider : IEngineeringDocsProvider
             // set in the csproj EmbeddedResource items.
             var logicalName = $"PinballWizard.Web.docs.{slug}.md";
             var text = ReadResource(assembly, logicalName);
-            if (text is null) continue;
+            if (text is null)
+            {
+                _logger.LogWarning("Embedded resource missing for doc '{Slug}' (expected '{LogicalName}'); entry skipped.", slug, logicalName);
+                continue;
+            }
 
             var ast = Markdig.Markdown.Parse(text, pipeline);
             var url = $"{GitHubBase}{sourcePath}";
@@ -87,7 +84,11 @@ public sealed partial class EngineeringDocsProvider : IEngineeringDocsProvider
                 : filename;
 
             var text = ReadResource(assembly, resourceName);
-            if (text is null) continue;
+            if (text is null)
+            {
+                _logger.LogWarning("Embedded ADR resource '{ResourceName}' could not be read; ADR entry skipped.", resourceName);
+                continue;
+            }
 
             var ast = Markdig.Markdown.Parse(text, pipeline);
             var (title, status, date) = ParseAdrMetadata(text);
@@ -134,16 +135,11 @@ public sealed partial class EngineeringDocsProvider : IEngineeringDocsProvider
         return reader.ReadToEnd();
     }
 
-    /// <summary>
-    /// Extracts Title, Status, and Date from an ADR's raw markdown text.
-    /// All three fields fall back to <see cref="string.Empty"/> when absent so
-    /// an ADR missing a Status or Date line does not throw.
-    ///
-    /// Expected ADR format (ADR-0001 is the reference):
-    ///   # NNNN — Title text
-    ///   **Status:** Accepted
-    ///   **Date:** 2026-05-02
-    /// </summary>
+    // Expected ADR format (ADR-0001 is the reference):
+    //   # NNNN — Title text
+    //   **Status:** Accepted
+    //   **Date:** 2026-05-02
+    // All three fields fall back to string.Empty when absent — no throw on missing lines.
     private static (string Title, string Status, string Date) ParseAdrMetadata(string text)
     {
         // Leading H1 — everything after "# " on the first heading line

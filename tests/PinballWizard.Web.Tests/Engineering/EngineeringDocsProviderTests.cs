@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PinballWizard.Web.Engineering;
 using Xunit;
 
@@ -9,6 +10,7 @@ public sealed class EngineeringDocsProviderTests
     private static IEngineeringDocsProvider Provider()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<IEngineeringDocsProvider, EngineeringDocsProvider>();
         return services.BuildServiceProvider().GetRequiredService<IEngineeringDocsProvider>();
     }
