@@ -78,3 +78,11 @@ would serve neither context well. Rejected.
 - Foundry product agents continue to run under ADR-0014 and ADR-0015 without modification.
 - New repo-maintenance agents (linting, docs refresh, dependency analysis) are CI agents by
   default, reusing the `anthropics/claude-code-action@v1` + WIF pattern from ADR-0047.
+
+## Threat model
+
+The docs-agent reads `git diff` output as part of its prompt — an inherent LLM prompt-injection
+surface if a merged commit contained adversarial content. This is mitigated by three layers:
+branch protection on `main` (no direct pushes; all merges require a passing PR), the restricted
+`allowedTools` list in the action config (limits what the agent can invoke), and the
+`docs-agent-guard.yml` allowlist guard (blocks any write outside the allowlisted doc paths).

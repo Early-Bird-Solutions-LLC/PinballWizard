@@ -33,6 +33,7 @@ permissions:
   pull-requests: write
   id-token: write
   issues: write       # Report failure step: issues.create / issues.createComment
+  # issues:write blast radius: repo issue tracker only; agent Bash tool can also call gh issue create.
 
 concurrency:
   group: docs-agent-main
