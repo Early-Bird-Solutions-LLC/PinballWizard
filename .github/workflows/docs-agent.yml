@@ -8,12 +8,16 @@ name: Docs Agent
 # acts on git events and edits markdown, so it lives in Actions with
 # claude-code-action, not in Foundry. See ADR-0051 for the category boundary.
 #
-# Trigger shape: anthropics/claude-code-action@v1 does NOT support the `push`
-# event ("Unsupported event type: push"). So the push trigger does not run the
-# agent directly — the `redispatch` job re-invokes this workflow as a
-# workflow_dispatch, which IS supported and (per GitHub docs) always creates a
-# run even from GITHUB_TOKEN, unlike push/pull_request. The agent job runs only
-# on workflow_dispatch/schedule. Keyless throughout (no PAT).
+# Trigger shape — two claude-code-action@v1 constraints drive this design:
+#   1. It does NOT support the `push` event ("Unsupported event type: push").
+#      So the push trigger does not run the agent directly — the `redispatch`
+#      job re-invokes this workflow as a workflow_dispatch, which IS supported
+#      and (per GitHub docs) always creates a run even from GITHUB_TOKEN, unlike
+#      push/pull_request. The agent job runs only on workflow_dispatch/schedule.
+#   2. It blocks runs initiated by a non-human actor. The re-dispatched run is
+#      initiated by github-actions[bot], so the `Run docs agent` step sets
+#      `allowed_bots: "github-actions"` (specific bot, not '*'; see that step).
+# Keyless throughout (no PAT).
 #
 # Auth: GitHub OIDC → Anthropic WIF (ADR-0047), identical to claude.yml. No
 # static key. Authority is bounded by .github/docs-agent-allowlist.txt and
@@ -149,6 +153,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ env.ANTHROPIC_ACCESS_TOKEN }}
+          # The re-dispatched run is initiated by github-actions[bot] (a Bot,
+          # not a human), which claude-code-action blocks by default. Allow
+          # ONLY that specific bot — not '*', which the action warns can let
+          # external Apps invoke it on public repos (this repo is public). The
+          # matcher lowercases + strips the [bot] suffix, so "github-actions"
+          # matches the github-actions[bot] actor. Safe here regardless: the
+          # prompt is hardcoded below, never taken from the triggering event.
+          allowed_bots: "github-actions"
           prompt: |
             You are the PinballWizard docs updater (a CI automation agent — see ADR-0051).
             Analyze the merged change range ${{ steps.range.outputs.range }} (use `git diff` / `git log`).

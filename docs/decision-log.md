@@ -30,6 +30,18 @@ Otherwise, this log is the right home.
 
 <!-- New entries append below this marker, newest at the top. -->
 
+## 2026-07-06 — docs-agent trigger design (re-dispatch on push + allowed_bots)
+
+**Decision:** The docs-agent workflow runs the `anthropics/claude-code-action` step only on `workflow_dispatch` and `schedule`. A separate push-only `redispatch` job re-invokes the workflow as a `workflow_dispatch` (passing the push's before-SHA for an exact diff range), and the action step sets `allowed_bots: "github-actions"`.
+
+**Alternatives considered:** (a) `on: push` running the action directly — rejected: the action aborts with "Unsupported event type: push". (b) `schedule` + manual only, dropping per-merge — rejected: docs would lag merges. (c) `allowed_bots: "*"` — rejected: the action warns that `*` on a public repo can let external Apps invoke it; this repo is public.
+
+**Rationale:** `claude-code-action@v1` has two constraints that only surfaced at go-live: it (1) does not accept the `push` event, and (2) blocks runs initiated by a non-human actor. Re-dispatching as `workflow_dispatch` clears (1) and stays keyless — GitHub exempts `workflow_dispatch`/`repository_dispatch` from the anti-recursion rule, so the built-in `GITHUB_TOKEN` re-dispatch fires without a PAT. `allowed_bots` clears (2); its matcher lowercases and strips the `[bot]` suffix, so `github-actions` matches the `github-actions[bot]` actor. The specific-bot value is safe regardless because the agent prompt is hardcoded in the workflow, never taken from the triggering event.
+
+**Revisit when:** `claude-code-action` adds native `push` support (collapse the `redispatch` job), or the workflow_dispatch indirection proves too coarse on diff range / latency.
+
+**Related:** PR #698 (re-dispatch), this PR (allowed_bots + docs), ADR-0051 (agent categories), ADR-0047 (WIF).
+
 ## 2026-07-06 (AI-drafted — pending human confirmation)
 
 > **What this section is:** these entries were drafted by Claude Code on 2026-07-06 as part of a documentation refresh pass — no new dated section had been added since 2026-05-30. Each entry records a decision made in June–July 2026 that was not logged at the time. Every entry is explicitly marked **[AI-drafted — confirm]** and is a *proposal* for Jim to accept, edit, or strike before this file is treated as authoritative for these decisions. Rationale that could not be confirmed from code, ADRs, or commit messages is flagged as "(inferred — confirm)".
