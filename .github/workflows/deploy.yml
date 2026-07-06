@@ -279,10 +279,13 @@ jobs:
         env:
           E2E__BaseUrl: https://${{ needs.smoke.outputs.wizard_fqdn }}
         run: |
-          # Route/health canaries only — exclude the ask flow (E2E=Ask, WizardE2ETests):
-          # it makes a real model call per run (cost + latency) and, being the slowest
-          # E2E, previously pushed this job past its 15-min budget and got cancelled.
-          # The ask flow is validated by the local full run (tools/e2e/Run-E2E.ps1).
+          # Route/health + landing-interactivity canaries — exclude only the ask flow
+          # (E2E=Ask, WizardE2ETests): it makes a real model call per run (cost + latency)
+          # and, being the slowest E2E, previously pushed this job past its 15-min budget
+          # and got cancelled. The ask flow is validated by the local full run
+          # (tools/e2e/Run-E2E.ps1). Everything else — including the landing seed-card
+          # interactivity check (LandingInteractivityCanaryE2ETests, model-call-free and
+          # only reliable against a real deployment) — runs here.
           dotnet test \
             --no-build \
             --configuration Release \
