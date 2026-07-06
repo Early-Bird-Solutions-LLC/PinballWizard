@@ -87,6 +87,12 @@
     (two levels up from src/PinballWizard.Web/).
   -->
   <ItemGroup>
+    <!--
+      The manifest JSON is embedded so EngineeringDocsProvider can read slug/title/group/order
+      from the assembly at startup with zero filesystem I/O. The same file is the single
+      curation point for which docs appear in the /engineering section.
+    -->
+    <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/engineering-manifest.json" LogicalName="PinballWizard.Web.docs.engineering-manifest.json" />
     <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/vision.md" LogicalName="PinballWizard.Web.docs.vision.md" />
     <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/ai-development-model.md" LogicalName="PinballWizard.Web.docs.ai-development-model.md" />
     <EmbeddedResource Include="$(MSBuildProjectDirectory)/../../docs/learning-from-failure.md" LogicalName="PinballWizard.Web.docs.learning-from-failure.md" />
