@@ -32,6 +32,7 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write
+  issues: write       # Report failure step: issues.create / issues.createComment
 
 concurrency:
   group: docs-agent-main
@@ -90,9 +91,19 @@ jobs:
           if [ "$EVENT_NAME" = "push" ]; then
             echo "range=$BEFORE_SHA..$CURRENT_SHA" >> "$GITHUB_OUTPUT"
           else
-            # sweep/dispatch: last 7 days
-            since=$(git rev-list -1 --before='7 days ago' main || echo "")
-            echo "range=${since:+$since..}$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            # sweep/dispatch: last 7 days of commits.
+            # Fall back to a bounded window (last 200 commits) if no commit
+            # resolves from 7 days ago (e.g. quiet repo, new branch).
+            since=$(git rev-list -1 --before='7 days ago' main 2>/dev/null || echo "")
+            if [ -z "$since" ]; then
+              since=$(git rev-list --max-count=1 --skip=200 main 2>/dev/null || echo "")
+            fi
+            if [ -n "$since" ]; then
+              echo "range=$since..$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            else
+              # Repo has fewer than 200 commits — sweep from root
+              echo "range=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Run docs agent
