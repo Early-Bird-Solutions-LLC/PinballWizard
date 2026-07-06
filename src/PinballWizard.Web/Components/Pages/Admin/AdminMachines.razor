@@ -8,21 +8,15 @@
 @rendermode InteractiveServer
 @inherits AdminPageBase
 
-@* AdminMachines — /admin/machines manufacturer-grouped machine catalog (AB#259).
+@* AdminMachines — /admin/machines flat machine catalog (AB#259).
  *
  * Loads all manufacturer rollup docs via ICatalogStatsReadRepository.StreamAllManufacturersAsync
  * (bounded ~8-9 point reads, ADR-0036 compliant). Flattens to per-machine rows;
  * computes CatalogHealth.Evaluate per row.
  *
- * Group-by axis is selected by in-circuit OnClick buttons (native client-side
- * grouping — no query param, no page reload). MudDataGrid receives the active
- * axis column with Grouping="true"; all other groupable columns have
- * Grouping="false". The axis switch mutates _activeAxis and the grid regroups
- * in place on the shared circuit.
- *
  * Interactive page (@rendermode InteractiveServer) per the ADR-0034 amendment
- * (2026-06-17) — the sortable/filterable/groupable grid is the showcase data
- * surface; AdminLayout providers are pinned interactive to match.
+ * (2026-06-17) — the sortable/filterable grid is the showcase data surface;
+ * AdminLayout providers are pinned interactive to match.
  *
  * Health column = MudChip (Color.Error / Color.Warning / Color.Success) — no row
  * background tinting per the design-review accessibility/contrast decision.
@@ -41,23 +35,9 @@
 
 <PageTitle>Machine Catalog — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Machine Catalog"
-                   Subtitle="All pinball machines indexed across manufacturers and OPDB."
-                   Breadcrumbs="@_breadcrumbs" />
-
-    <MudStack Row="true" Spacing="1" Class="mb-4" data-testid="groupby-selector">
-        @foreach (var axis in _axes)
-        {
-            var isActive = _activeAxis == axis.Value;
-            <MudButton OnClick="@(() => _activeAxis = axis.Value)"
-                       Variant="@(isActive ? Variant.Filled : Variant.Outlined)"
-                       Color="@(isActive ? Color.Primary : Color.Default)"
-                       Size="Size.Small">
-                @axis.Label
-            </MudButton>
-        }
-    </MudStack>
+<AppPageShell Title="Machine Catalog"
+              Subtitle="All pinball machines indexed across manufacturers and OPDB."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_asOf is not null)
     {
@@ -86,32 +66,11 @@
     <AppDataGrid T="MachineCatalogRow"
                  Items="@_machines"
                  SearchContext="admin-machines"
-                 Groupable="@true"
-                 GroupExpanded="@true"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
                  data-testid="admin-machines-grid">
 
         <Columns>
-            @* Each groupable column has Grouping="true" only when it is the active
-             * axis. Exactly one column is active per render, determined by the
-             * circuit's `_activeAxis` state (set by the in-circuit group-by buttons).
-             *
-             * GroupTemplate overrides MudDataGrid's default group-header rendering
-             * (<span style="font-weight:bold">) to fix a WCAG 2.1 AA color-contrast
-             * failure. The admin layout uses IsDarkMode="true" which SSR-injects
-             * --mud-palette-background-gray: rgba(39,39,47,1) onto the group-row <td>.
-             * MudBlazor.min.css is not loaded by the test host, so the <body> colour
-             * rule (color: var(--mud-palette-text-primary)) never fires; the browser
-             * defaults to black text on a near-black background (1:1 contrast).
-             *
-             * Fix: set color: var(--mud-palette-text-primary) explicitly on the
-             * group-label span. The CSS variable IS defined in the SSR <style> tag
-             * (MudThemeProvider pre-renders it), so it resolves to the theme's light
-             * text colour (~70% white) in both the test host and production. *@
-            <PropertyColumn Property="x => x.Manufacturer"
-                            Title="Manufacturer"
-                            Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Manufacturer)">
+            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer">
                 <CellTemplate>
                     @if (context.Item.ManufacturerDisplayName is not null)
                     {
@@ -123,17 +82,8 @@
                         <MudText Typo="Typo.body2">@context.Item.Manufacturer</MudText>
                     }
                 </CellTemplate>
-                <GroupTemplate>
-                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
-                        <span class="pw-grid-group-label">Manufacturer:</span>
-                        @(context.Grouping.FirstOrDefault()?.ManufacturerDisplayName ?? context.Grouping.Key?.ToString())
-                    </MudText>
-                </GroupTemplate>
             </PropertyColumn>
-            <PropertyColumn Property="x => x.HealthLabel"
-                            Title="Health"
-                            Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Health)">
+            <PropertyColumn Property="x => x.HealthLabel" Title="Health">
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)
                     {
@@ -143,27 +93,9 @@
                         </AppStatusChip>
                     }
                 </CellTemplate>
-                <GroupTemplate>
-                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
-                        <span class="pw-grid-group-label">Health:</span> @context.Grouping.Key
-                    </MudText>
-                </GroupTemplate>
             </PropertyColumn>
-
-            <PropertyColumn Property="x => x.YearLabel"
-                            Title="Year"
-                            Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Year)">
-                <GroupTemplate>
-                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
-                        <span class="pw-grid-group-label">Year:</span> @context.Grouping.Key
-                    </MudText>
-                </GroupTemplate>
-            </PropertyColumn>
-            <PropertyColumn Property="x => x.Source"
-                            Title="Source"
-                            Groupable="true"
-                            Grouping="@(_activeAxis == GroupByAxis.Source)">
+            <PropertyColumn Property="x => x.YearLabel" Title="Year" HeaderClass="text-right" CellClass="text-right" />
+            <PropertyColumn Property="x => x.Source" Title="Source">
                 <CellTemplate>
                     @if (context.Item.IsOpdbOnly)
                     {
@@ -175,11 +107,6 @@
                                  Typo="Typo.body2">@context.Item.Source</MudLink>
                     }
                 </CellTemplate>
-                <GroupTemplate>
-                    <MudText Typo="Typo.subtitle2" Class="pw-grid-group-header">
-                        <span class="pw-grid-group-label">Source:</span> @context.Grouping.Key
-                    </MudText>
-                </GroupTemplate>
             </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
             <PropertyColumn Property="x => x.Edition" Title="Edition" />
@@ -201,23 +128,9 @@
         </NoRecordsContent>
 
     </AppDataGrid>
-</MudContainer>
+</AppPageShell>
 
 @code {
-    // ── Axis enum + registry ───────────────────────────────────────────────────
-
-    private enum GroupByAxis { Manufacturer, Health, Year, Source }
-
-    private sealed record AxisDef(string Key, GroupByAxis Value, string Label);
-
-    private static readonly AxisDef[] _axes =
-    [
-        new("manufacturer", GroupByAxis.Manufacturer, "Manufacturer"),
-        new("health",        GroupByAxis.Health,       "Health"),
-        new("year",          GroupByAxis.Year,         "Year"),
-        new("source",        GroupByAxis.Source,       "Source"),
-    ];
-
     // ── Row model ──────────────────────────────────────────────────────────────
     private sealed record MachineCatalogRow(
         string MachineId,
@@ -225,9 +138,9 @@
         string? ManufacturerDisplayName,
         string Title,
         string Edition,
-        string YearLabel,       // string so it groups as "2024" not int bucket
+        string YearLabel,       // "2024" or "Unknown" — display + sort key
         int    DocCount,
-        string HealthLabel,     // dominant flag as short string for grouping
+        string HealthLabel,     // dominant flag as short string (Health sort key)
         string Source,          // "OPDB only" | manufacturer key
         bool   IsOpdbOnly,      // true → plain text; false → link to /admin/sources/{Source}
         IReadOnlyList<CatalogHealthFlag> HealthFlags);
@@ -237,7 +150,6 @@
     private bool _loading = true;
     private bool _loadFailed;
     private DateTimeOffset? _asOf;
-    private GroupByAxis _activeAxis = GroupByAxis.Manufacturer;
 
     private readonly List<BreadcrumbItem> _breadcrumbs =
     [
@@ -328,8 +240,8 @@
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
-    // Short string for the dominant health flag — used as the group label when
-    // grouping by health axis.
+    // Short string for the dominant health flag — backs the Health column's sort
+    // key (the cell itself renders the full set of flag chips).
     private static string HealthLabel(IReadOnlyList<CatalogHealthFlag> flags) =>
         flags.Count == 0 || (flags.Count == 1 && flags[0] == CatalogHealthFlag.Ok)
             ? "OK"

@@ -31,7 +31,7 @@
 
 <PageTitle>@(_displayName ?? Key) — PinballWizard</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+<AppPageShell>
     @if (_loading)
     {
         <AdminLoadingBar Label="Loading manufacturer" />
@@ -83,6 +83,7 @@
                     </CellTemplate>
                 </TemplateColumn>
                 <TemplateColumn Title="Year" Sortable="true"
+                                HeaderClass="text-right" CellClass="text-right"
                                 SortBy="@(new Func<GameRow, object>(r => r.Year ?? 0))">
                     <CellTemplate>@(context.Item.Year?.ToString() ?? "—")</CellTemplate>
                 </TemplateColumn>
@@ -90,6 +91,7 @@
                     <CellTemplate>@(context.Item.Edition ?? "—")</CellTemplate>
                 </TemplateColumn>
                 <TemplateColumn Title="Documents" Sortable="true"
+                                HeaderClass="text-right" CellClass="text-right"
                                 SortBy="@(new Func<GameRow, object>(r => r.DocCount))">
                     <CellTemplate>
                         @if (context.Item.DocCount > 0)
@@ -119,7 +121,7 @@
             </Columns>
         </AppDataGrid>
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     [Parameter] public string Key { get; set; } = default!;

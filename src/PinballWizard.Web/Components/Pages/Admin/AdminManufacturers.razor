@@ -37,10 +37,9 @@
 
 <PageTitle>Manufacturers — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Manufacturers"
-                   Subtitle="Catalog contribution per manufacturer — machines and catalog documents."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Manufacturers"
+              Subtitle="Catalog contribution per manufacturer — machines and catalog documents."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -93,7 +92,7 @@
             </Columns>
         </AppDataGrid>
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     private sealed record ManufacturerRow(

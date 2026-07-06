@@ -10,7 +10,7 @@
  * EnableAiSearch="false": the AI grid search widget is interactive
  * (calls back via OnFiltersApplied); suppressing it keeps the page static.
  *
- * ADR-0046 — AppPageHeader, AppDataGrid, AppStatusChip
+ * ADR-0046 — AppPageShell, AppDataGrid, AppStatusChip
  * ADR-0008  — MudBlazor strict; MudTable banned (use AppDataGrid)
  * ADR-0034  — static-SSR pager rule → ShowPager="false"
  *@
@@ -24,11 +24,9 @@
 
 <PageTitle>PinballWizard — Architecture Decision Records</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
-
-    <AppPageHeader Title="Architecture Decision Records"
-                   Subtitle="Every significant technical decision, with its context and rationale, committed alongside the code."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Architecture Decision Records"
+              Subtitle="Every significant technical decision, with its context and rationale, committed alongside the code."
+              Breadcrumbs="@_breadcrumbs">
 
     <AppDataGrid T="AdrEntry"
                  Items="@Provider.Adrs"
@@ -59,11 +57,12 @@
                 </CellTemplate>
             </TemplateColumn>
             <PropertyColumn T="AdrEntry" TProperty="string" Property="@(a => a.Date)"
-                            Title="Date" Sortable="true" />
+                            Title="Date" Sortable="true"
+                            HeaderClass="text-right" CellClass="text-right" />
         </Columns>
     </AppDataGrid>
 
-</MudContainer>
+</AppPageShell>
 
 @code {
     private static readonly IReadOnlyList<BreadcrumbItem> _breadcrumbs = new[]

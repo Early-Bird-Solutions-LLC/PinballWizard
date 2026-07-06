@@ -35,13 +35,14 @@
  * ADR-0008  — MudBlazor strict
  * ADR-0034  — render-mode doctrine (interactive admin pages)
  * ADR-0036  — Cosmos read-access (single-partition point-reads)
+ * ADR-0046  — shared Blazor component library (AppPageShell)
  *@
 
 <PageTitle>Source Detail — PinballWizard Admin</PageTitle>
 
 @inject IUserPreferencesService Prefs
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+<AppPageShell>
 
     @if (_loading)
     {
@@ -66,7 +67,7 @@
                        Breadcrumbs="@Breadcrumbs" />
 
         @* a. Source config + run stats *@
-        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-config">
+        <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-config">
             <MudText Typo="Typo.h6" GutterBottom="true">Configuration &amp; run stats</MudText>
             <MudStack Spacing="1">
                 @KeyValue("Scraper key", _source.ScraperImplKey)
@@ -119,7 +120,7 @@
         @* b. Politeness overrides — the polite-by-construction showcase surface.
          * A null field (or a null PolitenessOverrides) means the global default
          * applies; that is shown explicitly, not as a blank. *@
-        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-politeness">
+        <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-politeness">
             <MudText Typo="Typo.h6" GutterBottom="true">Politeness overrides</MudText>
             <MudStack Spacing="1">
                 @{ var p = _source.PolitenessOverrides; var po = PolitenessOpts.Value; }
@@ -132,7 +133,7 @@
 
         @* c. Catalog contribution — null stats = not a manufacturer catalog
          * source (n/a); a thrown read is a section-scoped error (Invariant #17). *@
-        <MudPaper Class="pa-4 mb-4" Elevation="2" data-testid="source-catalog">
+        <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-catalog">
             <MudText Typo="Typo.h6" GutterBottom="true">Catalog contribution</MudText>
             @if (_catalogFailed)
             {
@@ -182,7 +183,7 @@
                              data-testid="run-history-table">
                     <Columns>
                         <HierarchyColumn T="ScrapeRunRecord" />
-                        <TemplateColumn Title="Run (UTC)">
+                        <TemplateColumn Title="Run (UTC)" HeaderClass="text-right" CellClass="text-right">
                             <CellTemplate>
                                 <MudText Typo="Typo.body2">@context.Item.RunAt.UtcDateTime.ToString("u")</MudText>
                             </CellTemplate>
@@ -194,19 +195,19 @@
                                 </AppStatusChip>
                             </CellTemplate>
                         </TemplateColumn>
-                        <TemplateColumn Title="Duration">
+                        <TemplateColumn Title="Duration" HeaderClass="text-right" CellClass="text-right">
                             <CellTemplate>
-                                <MudText Typo="Typo.body2" Style="text-align:right">@($"{context.Item.DurationSeconds:0.0} s")</MudText>
+                                <MudText Typo="Typo.body2">@($"{context.Item.DurationSeconds:0.0} s")</MudText>
                             </CellTemplate>
                         </TemplateColumn>
-                        <TemplateColumn Title="Processed">
+                        <TemplateColumn Title="Processed" HeaderClass="text-right" CellClass="text-right">
                             <CellTemplate>
-                                <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.DocumentsDiscovered</MudText>
+                                <MudText Typo="Typo.body2">@context.Item.DocumentsDiscovered</MudText>
                             </CellTemplate>
                         </TemplateColumn>
-                        <TemplateColumn Title="New">
+                        <TemplateColumn Title="New" HeaderClass="text-right" CellClass="text-right">
                             <CellTemplate>
-                                <MudText Typo="Typo.body2" Style="text-align:right">@context.Item.DocumentsNew</MudText>
+                                <MudText Typo="Typo.body2">@context.Item.DocumentsNew</MudText>
                             </CellTemplate>
                         </TemplateColumn>
                         <TemplateColumn Title="Trigger">
@@ -227,7 +228,7 @@
             }
         </MudPaper>
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     [Parameter] public string Id { get; set; } = default!;
