@@ -52,7 +52,7 @@
                 <CellTemplate>
                     @if (!string.IsNullOrWhiteSpace(context.Item.Status))
                     {
-                        <AppStatusChip Color="@AdrStatusColor(context.Item.Status)">
+                        <AppStatusChip Color="@AdrStatusColors.ForStatus(context.Item.Status)">
                             @context.Item.Status
                         </AppStatusChip>
                     }
@@ -71,14 +71,4 @@
         new BreadcrumbItem("Engineering", "/engineering"),
         new BreadcrumbItem("Architecture Decision Records", href: null, disabled: true),
     };
-
-    private static Color AdrStatusColor(string status) =>
-        status.Trim().ToLowerInvariant() switch
-        {
-            "accepted"   => Color.Success,
-            "deprecated" => Color.Warning,
-            "superseded" => Color.Warning,
-            "proposed"   => Color.Info,
-            _            => Color.Default,
-        };
 }

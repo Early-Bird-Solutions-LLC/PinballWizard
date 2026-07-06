@@ -85,7 +85,7 @@
                 </MudLink>
                 @if (!string.IsNullOrWhiteSpace(adr.Status))
                 {
-                    <AppStatusChip Color="@AdrStatusColor(adr.Status)" Class="ml-2">
+                    <AppStatusChip Color="@AdrStatusColors.ForStatus(adr.Status)" Class="ml-2">
                         @adr.Status
                     </AppStatusChip>
                 }
@@ -96,13 +96,4 @@
 </MudContainer>
 
 @code {
-    private static Color AdrStatusColor(string status) =>
-        status.Trim().ToLowerInvariant() switch
-        {
-            "accepted"   => Color.Success,
-            "deprecated" => Color.Warning,
-            "superseded" => Color.Warning,
-            "proposed"   => Color.Info,
-            _            => Color.Default,
-        };
 }

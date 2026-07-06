@@ -50,6 +50,45 @@
     font-feature-settings: "tnum";
 }
 
+/* ── Engineering markdown renderer — MarkdownComponentRenderer output classes ── */
+/* These classes are emitted by MarkdownComponentRenderer.Render into
+   EngineeringDoc and AdrPage. Single source of truth here; the former
+   per-component inline <style> blocks and Engineering.razor.css are removed. */
+
+.eng-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.25rem;
+    font-size: 0.875rem;
+}
+
+.eng-table th,
+.eng-table td {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 6px 12px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.eng-table thead th {
+    background: rgba(255, 255, 255, 0.06);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.eng-code {
+    font-family: "Cascadia Code", "Fira Code", "Consolas", "Menlo", monospace;
+    font-size: 0.8125rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    white-space: pre;
+    margin-bottom: 1.25rem;
+    line-height: 1.55;
+}
+
 /* ── Daytime Route sibling theme ──────────────────────────────────── */
 /* Light/outdoor palette: warm cream base, burnt-orange accent, deep green
    grounded. CSS-variable-only for v1 — delight surfaces reference --pw-*
