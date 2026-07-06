@@ -1,4 +1,5 @@
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using PinballWizard.Core.Domain;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Findability;
@@ -325,6 +326,30 @@ public sealed class TiltForumsGameMatcherTests
 
         Assert.Equal(TiltForumsGameMatchStatus.NoMatchInManufacturerPartition, result.Status);
         Assert.False(result.ResolvedViaFuzzy);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ExactMiss_IndexTransportError_DegradesToNoMatch()
+    {
+        // Invariant #17: a machine-index transport failure must degrade visibly
+        // to NoMatch (listing → unmatched, not failed), never fabricate. The
+        // catch must not touch the point-read path.
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Pinbot", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+
+        var index = Substitute.For<IMachineSearchIndex>();
+        index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+             .ThrowsAsync(new InvalidOperationException("transport failure"));
+
+        var result = await TiltForumsGameMatcher.ResolveAsync(
+            repo, index, "Pinbot", "Stern Pinball", CancellationToken.None);
+
+        Assert.Equal(TiltForumsGameMatchStatus.NoMatchInManufacturerPartition, result.Status);
+        Assert.Empty(result.Machines);
+        Assert.False(result.ResolvedViaFuzzy);
+        await repo.DidNotReceive().GetByOpdbIdAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     private static async IAsyncEnumerable<Machine> ToAsyncEnumerable(IEnumerable<Machine> machines)
