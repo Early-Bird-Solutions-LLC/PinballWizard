@@ -44,7 +44,7 @@ The most important framing: these eleven domains do **not** all behave the same 
 | multimorphic.com | P3 modular platform games | Future expansion |
 | barrelsoffunpinball.com | Barrels of Fun | Future expansion |
 | haggispinball.com | Haggis Pinball (Australia) | Future expansion |
-| pinballbrothers.com | Pinball Brothers (Queen, Alien) | Future expansion |
+| pinballbrothers.com + pinballbrothers.freshdesk.com | Pinball Brothers (Queen, Alien, ABBA, Predator) | **Active** — game pages (`PbGamePageScraper`) + Freshdesk support portal PDF/file attachments (`PbFreshdeskDocumentScraper`, PR #663) |
 
 The Phase 1 architecture (provenance model, conditional GETs, deterministic IDs) is intentionally generalizable. New manufacturers slot into the same `ISourceScraper` pattern.
 
@@ -52,7 +52,7 @@ The Phase 1 architecture (provenance model, conditional GETs, deterministic IDs)
 
 | Source | Coverage | Acquisition |
 |---|---|---|
-| **IPDB (ipdb.org)** | Definitive metadata for every pinball machine ever made — production runs, dates, designers, artists, mechanics, theme | Scrape (well-structured per-game pages) |
+| **IPDB (ipdb.org)** | Definitive metadata for every pinball machine ever made — production runs, dates, designers, artists, mechanics, theme | **Reference-link only** — `Machine.IpdbId` + `Machine.IpdbReferenceUrl` populated from OPDB sync (commit `11a3a8d`); IPDB returns HTTP 403 to scrapers, so machine pages are linked to but not ingested |
 | **PinWiki (pinwiki.com)** | Hobbyist-edited wiki with deep technical content per machine generation, troubleshooting guides, board reference | Scrape (most permissive, hobbyist-friendly) |
 | **Internet Pinball Serial Number Database** | Production numbers, original ownership records | Scrape, lower priority |
 
@@ -61,7 +61,7 @@ The Phase 1 architecture (provenance model, conditional GETs, deterministic IDs)
 | Source | Coverage | Caveats |
 |---|---|---|
 | **Pinside (pinside.com)** | Game ratings, owner reviews, market values, forums, mod marketplace | High-value source; apply the polite baseline (§7), and consider direct outreach if we want deeper integration |
-| **Tilt Forums (tiltforums.com)** | Modern tournament-focused community, deep gameplay discussion | More permissive than Pinside; predominantly text |
+| **Tilt Forums (tiltforums.com)** | Wiki Rulesheets subcategory (~80–90 modern machines) — domain-2 gameplay-rules depth | **Active** — ingested under [ADR-0050](adr/0050-tiltforums-rulesheet-ingestion.md) (founder's public invitation 2026-06-30; PRs #670, #675); forum closes 2026-09-01 |
 | **Reddit r/pinball** | General Q&A, repair help, deals, news | Reddit API has known cost/access constraints; rate-limited polling for high-value posts only |
 | **Pinball News (pinballnews.com)** | Long-form release coverage, reviews, event reporting | Editorial content; respect terms |
 | **This Week in Pinball** | Weekly news roundup | Newsletter; archive pages exist |
@@ -115,7 +115,7 @@ response payload satisfies both attribution obligations in a single call. See
 
 Domain 2 (§2, row 2) splits into two tiers with very different availability. *Overview / feature / edition* content is now indexed (Stern game-page enrichment, PR #495). *Wizard-mode rule depth* — the mode-completion graph behind "what do I finish to reach Godzilla's wizard mode" — has **no polite, public, login-free manufacturer source**. This was confirmed empirically on 2026-06-25: a reclassification pass over the live corpus (567 documents) produced **zero** `Rulesheet` promotions. Manufacturers publish manuals and hardware charts (indexed as `Manual`); the rule-depth that exists publicly lives in **community-authored** rulesheets, and Stern's own per-game rulesheets sit behind the **Insider Connected** login wall (rejected on posture grounds — a login is a deliberate access-control signal, §7).
 
-This is a sourcing ceiling, not a pipeline gap: `DocumentType.Rulesheet` is already in the RAG allow-list and would index rule content the moment a source supplies it. Consistent with the community-resource posture (§7 and `feedback_community_resource_posture`), the Wizard's correct expression for this gap is to **route users outward** to community rulesheet sites via the refusal panel rather than ingest community labor. Ingesting any community rulesheet is gated on written permission plus a governing ADR — see the decision brief at [`docs/superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md`](superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md). The one polite public manufacturer lead under evaluation is Pinball Brothers' per-game `/documents/` PDFs (§3.1).
+This is a sourcing ceiling, not a pipeline gap: `DocumentType.Rulesheet` is already in the RAG allow-list and would index rule content the moment a source supplies it. Tilt Forums' gate was lifted by [ADR-0050](adr/0050-tiltforums-rulesheet-ingestion.md) (founder Greg Dunlap's public "Mine the data, train your models" invitation, 2026-06-30; PRs #670, #675) — domain-2 rule depth now has its first real content source. All other community rulesheet sources remain gated on written permission; see the decision brief at [`docs/superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md`](superpowers/specs/2026-06-25-domain2-rules-sourcing-decision.md). Pinball Brothers Freshdesk support-portal PDFs are now active via `PbFreshdeskDocumentScraper` (§3.1, PR #663).
 
 ---
 
@@ -210,7 +210,7 @@ This is a hobbyist project, but it interacts with third-party content. The ethic
 **Per-source posture:**
 - **Manufacturer sites (sternpinball.com et al.)** — public marketing/support content. Polite baseline applies.
 - **Reference databases (IPDB, PinWiki)** — hobbyist-run and historically welcoming to enthusiast use. Identify ourselves clearly and contribute back where possible.
-- **Community sites (Pinside, Tilt Forums)** — polite baseline applies. Throttle conservatively and link back rather than republish. For deeper integration, prefer the direct-outreach path (principle 3) over scraping at the edges.
+- **Community sites (Pinside)** — polite baseline applies. Throttle conservatively and link back rather than republish. For deeper integration, prefer the direct-outreach path (principle 3) over scraping at the edges. **Tilt Forums** is actively ingested under [ADR-0050](adr/0050-tiltforums-rulesheet-ingestion.md) (Wiki Rulesheets subcategory only; polite baseline applies; answers must cite and link back to the specific topic per ADR constraint).
 - **Reddit** — use the official API rather than scraping HTML. Comply with documented rate limits and attribution.
 - **YouTube** — terms permit transcript extraction for personal use; commercial republishing of transcripts is restricted.
 - **Public APIs (IFPA, Match Play)** — comply with documented rate limits and attribution requirements.
@@ -233,13 +233,13 @@ This is a hobbyist project, but it interacts with third-party content. The ethic
 
 **Phase 3a — Multi-manufacturer expansion.** Apply the Phase 1 scraper to Jersey Jack, American Pinball, Chicago Gaming, Spooky, etc. No new pipeline work — same patterns, new `ISourceScraper` implementations.
 
-**Phase 3b — Reference databases.** IPDB scrape for game metadata, PinWiki scrape for technical content. Manual glossary authored alongside.
+**Phase 3b — Reference databases.** IPDB cross-reference fields (`Machine.IpdbId` + `Machine.IpdbReferenceUrl`) are now populated from OPDB sync (commit `11a3a8d`); IPDB returns HTTP 403 to scrapers so full content ingestion is not planned without an access path. PinWiki scrape for technical content and manual glossary remain future work.
 
 **Phase 3c — Live competitive agent.** IFPA + Match Play tool integrations. Player registry curated manually for the top tier. ADR for the hybrid architecture (§5).
 
 **Phase 3d — Educational corpus.** Bowen Kerins / PAPA tutorial transcripts, podcast transcripts, technique videos. Audio pipeline (Whisper) added.
 
-**Phase 3e — Community content.** Pinside, Tilt Forums, curated Reddit threads. Polite baseline per §7, with direct outreach for deeper integration where the value justifies it. Source-quality weighting in retrieval.
+**Phase 3e — Community content.** **Tilt Forums Wiki Rulesheets: SHIPPED** (ADR-0050, PRs #670, #675). Remaining: Pinside, curated Reddit threads. Polite baseline per §7, with direct outreach for deeper integration where the value justifies it. Source-quality weighting in retrieval.
 
 **Stretch — Multi-user access, contribution path, alerts/notifications, integration with Pinball Map for location-aware queries.**
 

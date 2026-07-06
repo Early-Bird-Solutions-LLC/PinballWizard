@@ -72,6 +72,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |
+| Pinball Brothers (Freshdesk) | `pinballbrothers.freshdesk.com/support/solutions` | Static HTML (AngleSharp) | `PbFreshdeskDocumentScraper`; PDF/file attachments (PR #663) |
 | Barrels of Fun | `shop.kollectfun.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `BofProductScraper` |
 | Multimorphic | `multimorphic.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `MultimorphicProductScraper` |
 | Chicago Gaming (CGC) | `chicago-gaming.com/coinop/` | Custom Nginx HTML | `CgcGamePageScraper` |
