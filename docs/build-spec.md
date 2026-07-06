@@ -996,6 +996,12 @@ Learnings:
 - **`init` vs `set` on Options**: `DocumentIntelligenceOptions.Endpoint` requires `set` not `init` — `services.Configure<T>(section)` uses reflection-based assignment which doesn't support `init`-only properties.
 - **Decision-log entries need a feature branch**: even a one-liner doc edit is blocked on `main` by branch protection. The ADI deploy entry was drafted but not committed; it folds into the W2 branch.
 
+### Post-wave improvements
+
+**OCR activation (PR #669, 2026-07-03):** The ADI fallback wired in W1 (PR #266) was activated in production by setting the `DocumentIntelligence__Endpoint` environment variable on the RAG indexer ACA app. No application code changes required — the `FallbackDocumentTextExtractor` chain was already in place. Six scanned Stern manuals that had previously returned `ExtractionStatus.OcrRequired` now extract via ADI and are indexed. Distinct from W1 (which wired the fallback); this is a deployment-only activation.
+
+**DocumentLinker cross-year reissue-family resolution (PRs #676, #678, 2026-07-04):** `DocumentLinker` previously matched documents only within the same OPDB machine entry, missing cases where a manufacturer published a document against a prior-year edition that OPDB tracks as a separate entry in the same reissue family. PR #678 adds cross-year family traversal via `IngestionSource.CrossReferences`. PR #676 backfills `ManufacturerSlugs` from cross-reference provenance so the linker has slug data available at resolution time.
+
 ---
 
 ## Phase 5 — Blazor + MudBlazor frontend
@@ -1053,6 +1059,12 @@ Phase 5 exit criteria not formally gated: a Phase 5 retrospective checklist anal
 #### Post-Phase-5 admin capabilities (PRs merged 2026-06-22–2026-06-24)
 
 Six admin capabilities shipped after Phase 5 closed, completing the admin control plane scope item that Phase 5 listed but did not fully deliver: AdminDashboard with live source metrics (showcase public-read / gated-write split, PR #477); AdminSources with per-source enable/disable toggle and drilldown detail page (PRs #478, #479); corpus/RAG stats panel at `/admin/corpus` backed by live AI Search (PR #480); per-source scrape-run history timeline writing to a `scrape_runs` Cosmos container with per-source aggregation (PRs #481, #483); and AdminManufacturers catalog page at `/admin/manufacturers` (PR #484). All six capabilities are public-read with gated mutations, follow ADR-0034 static-SSR-by-default render-mode doctrine, and pass the full bUnit + contract + axe-route test suite. The full admin control plane is now complete as of 2026-06-24.
+
+#### Post-Phase-5 infra and admin additions (PRs merged 2026-07)
+
+**ACA per-scraper scheduled jobs + admin schedule editor (PR #681, 2026-07-06):** 15 ACA Job definitions added to shared Bicep — one per active `ISourceScraper` — establishing an explicit cron schedule for each scraper source. `CronExpressionValidator` enforces valid cron syntax at startup. An admin schedule editor at `/admin/sources/{id}` allows live cron overrides per source without a redeploy.
+
+**Admin AI grid search unified (PR #680, 2026-07-02):** A shared AI search behavior replaces per-grid ad-hoc filter wiring across AdminMachines, AdminDocuments, AdminSources, and AdminManufacturers. Reduces per-grid boilerplate to a single parameter and makes AI-powered grid filtering consistent across all admin data grids.
 
 ### Phase 5 follow-ups inherited by Phase 6
 
@@ -1359,6 +1371,10 @@ PR #202 (Lighthouse fix: dotnet publish NO_FCP) and #203 (bUnit 2.7.2 migration)
 
 - **The "deploy the real app" block has cleared.** The Wizard and Api are now containerized and deployed (Phase 7 A-track); `pinwiz.ai` serves the live app behind Cloudflare (CSP promoted to enforced, `decision-log.md` 2026-06-12) with Entra `GlobalAdmin`-gated `/admin` auth (live + smoke-verified, `decision-log.md` 2026-06-12). The three gates deferred above are therefore **unblocked** — live-surface Lighthouse and axe-core (+ NVDA) can now run against the real surface, and the 30-day cost-burn clock has started. Their formal pass / sign-off is **not yet captured here** (record when run); the burn snapshot the note above projected to "~June 14" is now due for capture against Azure Cost Management.
 - **Subscription consolidation.** The `*-hlpz4` resource names in the drill results above belong to the original `UpworkDemo` subscription (`4dce9fdd`), a duplicate stack. The project has since consolidated onto the canonical `pinwiz.ai` subscription (`b1f33f17`, suffix `buutj`); the `4dce9fdd` / `hlpz4` duplicate was deleted 2026-06-15. The drill results stand as recorded — only the subscription they ran against changed.
+
+**Update (2026-07-03) — local QA tooling:**
+
+**Bugfinder Playwright crawler (PR #671, 2026-07-03):** A rerunnable local QA tool (`tools/bugfinder/`) crawls the live `pinwiz.ai` site with Playwright, captures a screenshot of each page, and runs a GPT-4o visual review pass over each screenshot. Produces a structured findings report. Not CI-gated — runs on-demand before major releases to catch visual regressions that automated tests miss. Complements (does not replace) the Lighthouse + axe-core CI gates from Phase 5 Wave 3.
 
 ---
 

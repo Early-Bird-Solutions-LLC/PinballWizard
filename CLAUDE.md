@@ -61,7 +61,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 
 `MudTable` and `MudSimpleTable` are banned from the page layer — use `AppDataGrid`. All call sites pass extra props (Groupable, RowClick, data-testid, etc.) via attribute splatting.
 
-### Source manufacturers (10 ISourceScrapers, 8 manufacturers + OPDB)
+### Source manufacturers (8 manufacturers + OPDB)
 
 | Manufacturer | Source URL | Pattern | Notes |
 | --- | --- | --- | --- |
@@ -69,9 +69,14 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | Stern (game pages) | `sternpinball.com/game/{slug}/` | Vue.js (Playwright) | `GamePageScraper`, 3 tabs per game |
 | Stern (bulletins) | `sternpinball.com/support/service-bulletins/` | Vue.js (Playwright) | `ServiceBulletinScraper` |
 | Jersey Jack (JJP) | `jerseyjackpinball.com/products/...` | Shopify sitemap + JSON-LD | `JjpProductScraper` |
+| Jersey Jack (JJP, support) | `jerseyjackpinball.com/support/` + `/pages/support/{edition}` | Static Shopify page | `JjpSupportDocScraper`; per-edition Game Manual + Rules Flowchart PDFs |
 | American Pinball (AP) | `american-pinball.com` | DOM heuristic | `ApGamePageScraper` |
+| American Pinball (AP, bulletins) | `american-pinball.com/support/` | Static HTML (AngleSharp) | `ApBulletinScraper`; service-bulletin PDFs |
 | Spooky Pinball | `spookypinball.com` | DOM heuristic | `SpookyGamePageScraper` |
+| Spooky Pinball (support) | `spookypinball.com` game-support pages | WordPress REST (child pages) | `SpookySupportPageScraper`; per-game rule sheets / manuals / charts (PDF) |
 | Pinball Brothers | `pinballbrothers.com` | WP-REST + slug filter | `PbGamePageScraper` |
+| Pinball Brothers (documents) | `pinballbrothers.com/games/{slug}/documents/*.pdf` | WP-REST + linked-PDF discovery | `PbGamePageDocumentScraper`; per-game document PDFs |
+| Pinball Brothers (Freshdesk) | `pinballbrothers.freshdesk.com/support/solutions` | Static HTML (AngleSharp) | `PbFreshdeskDocumentScraper`; PDF/file attachments (PR #663) |
 | Barrels of Fun | `shop.kollectfun.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `BofProductScraper` |
 | Multimorphic | `multimorphic.com` | WooCommerce **Store API** (`/wp-json/wc/store/v1`) | `MultimorphicProductScraper` |
 | Chicago Gaming (CGC) | `chicago-gaming.com/coinop/` | Custom Nginx HTML | `CgcGamePageScraper` |

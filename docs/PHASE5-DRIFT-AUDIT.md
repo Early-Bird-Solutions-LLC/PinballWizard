@@ -1,5 +1,7 @@
 # Phase 5 Wave 1 Drift Audit — `Dev-WebUiBrainstormResume`
 
+> **Point-in-time artifact (2026-05-09).** This document reflects the state of the codebase as of that date; see [build-spec.md](build-spec.md) and [guardrails.md](guardrails.md) for current authoritative guidance.
+>
 > **Status:** Audit produced 2026-05-09 on `Dev-WebUiBrainstormResume` (off `5c4366b`). Item 3 of the brainstorm-resume queue. Compares the shipped Phase 5 Wave 1 chrome scaffold (`src/PinballWizard.Web/`) against the locked design system (`docs/ui/themes/modern-lcd.md`, `docs/ui/screens/*.md`, [ADR-0026](adr/0026-user-delight-frontend-and-streaming.md)) to surface drift before Wave 2 components calcify against incorrect defaults.
 >
 > **Authority:** the design system + ADRs are the source of truth. This audit's findings are change requests against the shipped code, not against the spec.

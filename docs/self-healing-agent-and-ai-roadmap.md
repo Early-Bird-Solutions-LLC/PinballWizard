@@ -8,6 +8,8 @@ supersedes: ""
 
 # Self-Healing Agent — Architecture Roadmap (Part 1 of 2)
 
+> **Point-in-time artifact (2026-05-16).** This document reflects the state of the codebase as of that date; see [build-spec.md](build-spec.md) and [guardrails.md](guardrails.md) for current authoritative guidance.
+>
 > **Status:** Draft for review
 > **Phase:** 7 (post-launch; depends on live deployment + stable scraper failures to reproduce)
 > **Owner:** Jim

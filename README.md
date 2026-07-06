@@ -16,7 +16,7 @@ Every architectural decision is justified in an [ADR](docs/adr/). Every PR clear
 
 ## Live demo
 
-Phase 5 code is complete and the application is fully deployable. The public `pinwiz.ai` URL goes live after the Phase 6 operator H-chain completes (Bicep apply with all Phase 6 resources, Application Insights workbook wired to live telemetry, alert rules validated end-to-end). Until then, this repository and its [documentation tree](#documentation-map) is the showcase artifact. See [`docs/vision.md`](docs/vision.md) for the full prospect-facing positioning.
+Phases 2–6 are complete. The shipped product is a live RAG-powered Wizard on [pinwiz.ai](https://pinwiz.ai) with source-cited Q&A, admin control plane, and end-to-end observability. Phase 7 is the current active work stream. See [`docs/vision.md`](docs/vision.md) for the full prospect-facing positioning.
 
 ## Architecture at a glance
 
@@ -149,7 +149,7 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | --- | --- |
 | [`docs/vision.md`](docs/vision.md) | What's being built and why; how prospects encounter the project; what this is *not* |
 | [`docs/guardrails.md`](docs/guardrails.md) | Meta-spec — seven main goals, scope discipline, decision framework, phase gates, risk register, escalation triggers, monthly self-evaluation |
-| [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria and retrospectives; Phases 0–5 closed; Phase 6 current |
+| [`docs/build-spec.md`](docs/build-spec.md) | Comprehensive WHAT — phase by phase with exit criteria and retrospectives; Phases 0–6 closed; Phase 7 current |
 | [`docs/quality-spec.md`](docs/quality-spec.md) | Comprehensive HOW — every quality gate (current and future) across code, tests, review, docs, ops, accessibility, security, cost |
 | [`docs/adr/`](docs/adr/) | Architecture Decision Records (0001–0047) |
 | [`docs/decision-log.md`](docs/decision-log.md) | Sub-ADR decisions (tool versions, threshold settings, naming conventions) |
@@ -170,18 +170,18 @@ The repository's documentation is part of the showcase artifact. A senior engine
 | 3 — AI & Integration layer | ✅ Complete | Microsoft Foundry orchestration ([ADR-0014](docs/adr/0014-microsoft-foundry-orchestration.md)); four-agent surface with `getMachineByTitle`; confidence-threshold refusal ([ADR-0017](docs/adr/0017-confidence-threshold-refusal.md)); per-agent cost routing + LRU semantic cache ([ADR-0015](docs/adr/0015-cost-routing-and-semantic-cache.md)); evaluation harness via Foundry `EvaluationClient` ([ADR-0016](docs/adr/0016-evaluation-harness.md)); H2 baseline captured |
 | 4 — Event-driven RAG | ✅ Complete | Cosmos Change Feed → `PinballWizard.RagIngestionWorker` → PdfPig text extraction → hybrid chunking ([ADR-0019](docs/adr/0019-hybrid-chunking.md)) → text-embedding-3-large ([ADR-0020](docs/adr/0020-embedding-model.md)) → AI Search index ([ADR-0021](docs/adr/0021-ai-search-index-schema.md)); `searchCorpus` function tool with tool-call-trace citation extraction ([ADR-0022](docs/adr/0022-citation-extraction.md)); citation-required guardrail ([ADR-0023](docs/adr/0023-citation-required-guardrail.md)); two-stage re-ranking ([ADR-0024](docs/adr/0024-two-stage-reranking.md)); connected-agents dispatch wired |
 | 5 — Blazor + MudBlazor frontend | ✅ Complete | Blazor Web App (auto-render mode) + SSE streaming answer surface; five themes (Modern LCD, Daytime Route, Backbox, Cabinet, Score Reel); citation strips; community-resource refusal panels ([ADR-0027](docs/adr/0027-community-resource-posture.md)); Entra External ID auth + blanket `FallbackPolicy`; complete admin control plane (AdminDashboard, AdminSources with enable/disable toggle, AdminMachines, AdminManufacturers, AdminMonitoring with live App Insights telemetry via `IMonitoringStatsReader`, per-source run history, corpus/RAG stats); axe-core CI; Lighthouse CI; Cosmos for user-delight containers ([ADR-0025](docs/adr/0025-cosmos-for-user-delight.md)) |
-| 6 — Operability + launch readiness | 🚧 In progress | **Wave 1 complete:** 6 operational runbooks; Application Insights workbook (7 tiles); 5 metric alert rules; Wizard ACA app in Bicep; threat model; blanket auth `FallbackPolicy`. Wave 2 + H-chain operator procedures pending |
-| 7+ — Post-launch features | ⏳ Deferred | Strategy Tracker, OCR score capture, Dream Game generator |
+| 6 — Operability + launch readiness | ✅ Complete | 6 operational runbooks; Application Insights workbook (7 tiles); 5 metric alert rules; Wizard ACA app in Bicep; threat model; blanket auth `FallbackPolicy`; H-chain operator procedures complete; pinwiz.ai live |
+| 7 — Post-launch features | 🚧 In progress | Active work stream |
 
 **Tests:** 2,875 passing across foundation + scrapers + Cosmos + OPDB + Foundry orchestration + RAG pipeline + Web (bUnit + Playwright + endpoint). Build runs clean with `TreatWarningsAsErrors`.
 
 ### Known limitations v1
 
-Phase 5 is code-complete and the application is fully deployable. The following limitations are accurate as of Phase 6 Wave 1:
+The application is live on [pinwiz.ai](https://pinwiz.ai). The following limitations are accurate as of Phase 7:
 
 - **RAG corpus is a curated subset.** The AI Search index currently covers approximately 10 machines from the evaluation harness fixture set. Coverage expands as the scraper pipeline runs at scale against deployed Cosmos and the Change Feed worker processes the full `scraped_documents` backlog — this is a Phase 4.5 operator action, not a code gap.
 - **Cost attribution reads zero until upstream is resolved.** The `pinwiz.ai.cost_usd_cents` OTel instrument emits 0 because the Microsoft Agent Framework does not yet expose per-call token consumption in a consumable API surface (tracked upstream as `agent-framework#2688`). The AdminMonitoring cost tile is deployed in eval-only mode (alert rule suppressed) for the same reason. Azure Cost Management is the authoritative budget signal for the $300–$400/mo cap until that issue resolves.
-- **Lighthouse CI measures the test environment.** The CI pipeline runs Lighthouse against the locally-served Blazor app. Live-surface Lighthouse validation (Core Web Vitals, TTI, LCP from the real Cloudflare-fronted edge) is a Phase 6 H-chain gate item that runs after `pinwiz.ai` goes live.
+- **Lighthouse CI measures the test environment.** The CI pipeline runs Lighthouse against the locally-served Blazor app. Live-surface Lighthouse validation (Core Web Vitals, TTI, LCP from the real Cloudflare-fronted edge) against the live pinwiz.ai edge is a Phase 7 follow-up item.
 
 ## Tech stack
 
