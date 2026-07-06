@@ -89,6 +89,18 @@
     line-height: 1.55;
 }
 
+/* Native lists rendered by MarkdownComponentRenderer and the /engineering
+   pages (plain <ul>/<ol>, not MudList — see the renderer's a11y note). */
+.eng-list {
+    padding-left: 1.5rem;
+    margin-bottom: 1.25rem;
+    line-height: 1.6;
+}
+
+.eng-list li {
+    margin-bottom: 0.35rem;
+}
+
 /* ── Daytime Route sibling theme ──────────────────────────────────── */
 /* Light/outdoor palette: warm cream base, burnt-orange accent, deep green
    grounded. CSS-variable-only for v1 — delight surfaces reference --pw-*

@@ -25,7 +25,8 @@ namespace PinballWizard.Web.Engineering;
 // Node mapping:
 //   HeadingBlock       → MudText (Typo: h1→h4, h2→h5, h3→h6, else subtitle1)
 //   ParagraphBlock     → MudText Typo.body1
-//   ListBlock          → AppBulletList / AppBulletItem per list item
+//   ListBlock          → plain <ul>/<ol class="eng-list"> / <li> (native list;
+//                        MudList's role="listbox" fails axe on static content)
 //   Table (pipe table) → plain <table class="eng-table"> / <thead> / <tbody>
 //   CodeBlock          → <pre class="eng-code"><code> with AddContent text
 //   HtmlBlock          → literal text via AddContent (never injected)
@@ -135,24 +136,27 @@ internal static class MarkdownComponentRenderer
         ListBlock list,
         Func<string, string?> slugLinkResolver)
     {
-        builder.OpenComponent<AppBulletList>(0);
-        builder.AddComponentParameter(0, "ChildContent", (RenderFragment)(b =>
+        // Plain semantic <ul>/<ol>, NOT MudList (AppBulletList). MudList renders
+        // role="listbox" with interactive option children, which axe flags on
+        // static doc content (aria-input-field-name + nested-interactive). A
+        // native list is the accessible, correct markup — same reasoning as the
+        // plain <table> below.
+        var tag = list.IsOrdered ? "ol" : "ul";
+        builder.OpenElement(0, tag);
+        builder.AddAttribute(0, "class", "eng-list");
+        foreach (var listItem in list.OfType<ListItemBlock>())
         {
-            foreach (var listItem in list.OfType<ListItemBlock>())
+            builder.OpenElement(0, "li");
+            foreach (var child in listItem)
             {
-                b.OpenComponent<AppBulletItem>(0);
-                b.AddComponentParameter(0, "ChildContent", (RenderFragment)(b2 =>
-                {
-                    foreach (var child in listItem)
-                    {
-                        if (child is ParagraphBlock p)
-                            RenderInlines(b2, p.Inline, slugLinkResolver);
-                    }
-                }));
-                b.CloseComponent();
+                if (child is ParagraphBlock p)
+                    RenderInlines(builder, p.Inline, slugLinkResolver);
+                else if (child is ListBlock nested)
+                    RenderList(builder, nested, slugLinkResolver);
             }
-        }));
-        builder.CloseComponent();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
     }
 
     private static void RenderTable(

@@ -33,4 +33,20 @@ public sealed class EngineeringSsrSmokeTests(PlaywrightWebApplicationFactory fac
             $"{path} returned {(int)response.StatusCode} {response.StatusCode}; " +
             $"expected 200. First 500 chars of body:\n{body[..Math.Min(500, body.Length)]}");
     }
+
+    // Browser-free guard for the axe [aria-input-field-name] + [nested-interactive]
+    // violations: those come from MudList's role="listbox" on static content. The
+    // /engineering pages and the markdown renderer emit native <ul>/<ol> instead,
+    // so the rendered HTML must contain no listbox role.
+    [Theory]
+    [InlineData("/engineering")]
+    [InlineData("/engineering/docs/glossary")]
+    public async Task EngineeringRoute_HasNoInteractiveListboxRole(string path)
+    {
+        using var client = new HttpClient();
+
+        var body = await client.GetStringAsync($"{factory.ServerAddress}{path}");
+
+        Assert.DoesNotContain("role=\"listbox\"", body);
+    }
 }

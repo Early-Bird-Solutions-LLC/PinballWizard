@@ -76,10 +76,14 @@
     @* ── Latest ADRs strip (top 5 by number desc) ────────────────────────── *@
     <MudText Typo="Typo.h5" Class="mb-3">Latest ADRs</MudText>
 
-    <AppBulletList Class="mb-6">
+    @* Plain semantic <ul>, not AppBulletList (MudList): MudList renders an
+       interactive role="listbox" which axe flags on this static link list
+       (aria-input-field-name + nested-interactive). A native list is the
+       accessible, correct markup. *@
+    <ul class="eng-list mb-6">
         @foreach (var adr in Provider.Adrs.OrderByDescending(a => a.Number).Take(5))
         {
-            <AppBulletItem>
+            <li>
                 <MudLink Href="@($"/engineering/adr/{adr.Number}")">
                     ADR-@adr.Number.ToString("D4") — @adr.Title
                 </MudLink>
@@ -89,9 +93,9 @@
                         @adr.Status
                     </AppStatusChip>
                 }
-            </AppBulletItem>
+            </li>
         }
-    </AppBulletList>
+    </ul>
 
 </MudContainer>
 

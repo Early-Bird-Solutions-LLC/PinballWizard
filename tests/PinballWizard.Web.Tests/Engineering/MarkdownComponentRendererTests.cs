@@ -124,14 +124,27 @@ public sealed class MarkdownComponentRendererTests : BunitContext, IAsyncLifetim
     // ── Lists ─────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void UnorderedList_RendersAsAppBulletList()
+    public void UnorderedList_RendersAsSemanticUl()
     {
         var frag = MarkdownComponentRenderer.Render(Parse("- Item one\n- Item two"), _ => null);
         var cut = Render(frag);
         Assert.Contains("Item one", cut.Markup);
         Assert.Contains("Item two", cut.Markup);
-        // AppBulletList wraps MudList which renders with the mud-list CSS class.
-        Assert.Contains("mud-list", cut.Markup);
+        // Native <ul>/<li>, not MudList: role="listbox" fails axe on static
+        // content (aria-input-field-name + nested-interactive).
+        Assert.Contains("<ul", cut.Markup);
+        Assert.Contains("<li", cut.Markup);
+        Assert.DoesNotContain("role=\"listbox\"", cut.Markup);
+    }
+
+    [Fact]
+    public void OrderedList_RendersAsSemanticOl()
+    {
+        var frag = MarkdownComponentRenderer.Render(Parse("1. First\n2. Second"), _ => null);
+        var cut = Render(frag);
+        Assert.Contains("First", cut.Markup);
+        Assert.Contains("<ol", cut.Markup);
+        Assert.DoesNotContain("role=\"listbox\"", cut.Markup);
     }
 
     // ── Tables ────────────────────────────────────────────────────────────────
