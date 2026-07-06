@@ -3,14 +3,19 @@
 // lines starting with ! are denials. Uses minimatch-free glob via a small
 // regex compile (no external deps in the runner).
 import { readFileSync } from 'node:fs';
-const [, , listFile, target] = process.argv;
+const [, , listFile, rawTarget] = process.argv;
+const target = rawTarget.split('/').reduce((acc, seg) => {
+  if (seg === '..') acc.pop();
+  else if (seg !== '.' && seg !== '') acc.push(seg);
+  return acc;
+}, []).join('/');
 const lines = readFileSync(listFile, 'utf8').split('\n').map(s => s.trim()).filter(Boolean);
 function toRegex(glob) {
   let re = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&')
                .replace(/\*\*/g, ' ')
                .replace(/\*/g, '[^/]*')
                .replace(/ /g, '.*');
-  return new RegExp('^' + re + '$');
+  return new RegExp('^' + re + '$', 'i');
 }
 let allowed = false;
 for (const line of lines) {

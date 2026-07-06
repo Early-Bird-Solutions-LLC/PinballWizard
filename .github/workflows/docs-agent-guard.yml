@@ -20,8 +20,10 @@ jobs:
     steps:
       - name: Skip for non-agent branches
         id: gate
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [[ "${{ github.head_ref }}" == docs-agent/* ]]; then
+          if [[ "$HEAD_REF" == docs-agent/* ]]; then
             echo "enforce=true" >> "$GITHUB_OUTPUT"
           else
             echo "enforce=false" >> "$GITHUB_OUTPUT"
@@ -36,20 +38,18 @@ jobs:
 
       - name: Verify changed files are within allowlist
         if: steps.gate.outputs.enforce == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          changed=$(git diff --name-only "$base" "$head")
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Changed files:"; echo "$changed"
-          # Evaluate each changed path against the allowlist using git's
-          # pathspec matching (supports ** and ! negation via a temp gitignore).
+          # Evaluate each changed path against the allowlist using the
+          # allowlist-match.mjs Node.js matcher (supports ** and ! negation).
           deny=".github/docs-agent-allowlist.txt"
           violations=""
           while IFS= read -r f; do
             [ -z "$f" ] && continue
-            # A path is allowed iff `git check-ignore` (with allowlist as the
-            # ignore file, inverted semantics) says it matches an allow pattern
-            # and not a deny (!) pattern. Implement with a small matcher:
             if ! node .github/scripts/allowlist-match.mjs "$deny" "$f"; then
               violations="${violations}\n${f}"
             fi
