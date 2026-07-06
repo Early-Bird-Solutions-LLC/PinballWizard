@@ -62,3 +62,23 @@ public sealed class E2ETheoryAttribute : TheoryAttribute
         }
     }
 }
+
+// Runs ONLY in deployed-target mode (E2E__BaseUrl set); skips in local-spawn mode.
+// For assertions whose signal depends on a fully-hydrated Blazor Server circuit:
+// circuit hydration is reliable against a real deployment but flaky in the local
+// `dotnet run`-spawned Web process (the same environment sensitivity that keeps
+// Category=Circuit tests CI-only). Running such a test in local-spawn produces
+// intermittent false failures with no diagnostic value, so it is skipped there and
+// exercised by the post-deploy canary instead (which drives the deployed FQDN).
+public sealed class DeployedOnlyE2EFactAttribute : FactAttribute
+{
+    public DeployedOnlyE2EFactAttribute()
+    {
+        if (E2EFactAttribute.DeployedBaseUrl is null)
+        {
+            Skip = "Deployed-target only — set E2E__BaseUrl to run (the post-deploy canary does). " +
+                   "Skipped in local-spawn mode: Blazor circuit hydration is unreliable in the spawned " +
+                   "Web process, so this assertion only carries signal against a real deployment.";
+        }
+    }
+}
