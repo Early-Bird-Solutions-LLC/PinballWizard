@@ -209,6 +209,7 @@ public sealed class MarkdownComponentRendererTests : BunitContext, IAsyncLifetim
             _ => null);
         var cut = Render(frag);
         Assert.DoesNotContain("data:text/html", cut.Markup);
+        Assert.Contains("x", cut.Markup);   // link text must survive href stripping
     }
 
     [Fact]

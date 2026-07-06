@@ -9,7 +9,7 @@
  *   any manifest sourcePath  → /engineering/docs/{slug}
  *   anything else            → null (link kept verbatim, safe relative path)
  *
- * ADR-0046 — AppPageHeader, AppErrorAlert
+ * ADR-0046 — AppPageHeader, AppEmptyState
  * ADR-0008  — MudBlazor strict; no MarkupString
  *@
 
@@ -20,7 +20,7 @@
 
 @inject IEngineeringDocsProvider Provider
 
-<PageTitle>@(Provider.BySlug(Slug) is { } _t ? $"PinballWizard — Engineering / {_t.Title}" : "PinballWizard — Engineering")</PageTitle>
+<PageTitle>@(Provider.BySlug(Slug) is { } _t ? $"PinballWizard — Engineering / {_t.Title}" : $"PinballWizard — Engineering / {Slug} not found")</PageTitle>
 
 @{
     var doc = Provider.BySlug(Slug);
@@ -37,12 +37,9 @@
 
     @if (doc is null)
     {
-        <AppErrorAlert>
-            <MudText Typo="Typo.body1">
-                Document &ldquo;@Slug&rdquo; was not found. Try the
-                <MudLink Href="/engineering">Engineering index</MudLink>.
-            </MudText>
-        </AppErrorAlert>
+        <AppEmptyState Heading="@($"{Slug} not found")"
+                       Detail="This document does not exist or has not been published yet."
+                       Icon="@Icons.Material.Outlined.FindInPage" />
     }
     else
     {

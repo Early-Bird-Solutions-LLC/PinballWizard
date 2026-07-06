@@ -38,7 +38,7 @@ public sealed class EngineeringManifestConformanceTests
     public void EverySlug_IsUniqueAndUrlSafe()
     {
         var entries = EngineeringManifest.Load(RepoRoot());
-        Assert.Equal(entries.Select(e => e.Slug).Distinct().Count(), entries.Count);
+        Assert.Equal(entries.Count, entries.Select(e => e.Slug).Distinct().Count());
         Assert.All(entries, e => Assert.Matches("^[a-z0-9-]+$", e.Slug));
     }
 }

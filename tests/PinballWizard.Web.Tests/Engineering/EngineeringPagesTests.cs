@@ -97,8 +97,8 @@ public sealed class EngineeringPagesTests : AsyncBunitContext
             builder.CloseComponent();
         });
 
-        // AppErrorAlert renders MudAlert → CSS class mud-alert
-        Assert.Contains("mud-alert", cut.Markup);
+        // AppEmptyState renders the Heading text as a MudText body1 element.
+        Assert.Contains("not found", cut.Markup, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── ADR index ─────────────────────────────────────────────────────────────

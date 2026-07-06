@@ -327,6 +327,8 @@ internal static class MarkdownComponentRenderer
         || url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
         || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
         || !url.Contains(':', StringComparison.Ordinal); // relative repo paths like foo.md, ./bar
+        // Note: percent-encoded colons (%3a) are safe — browsers do not decode the scheme
+        // component when matching URI schemes, so %3a cannot smuggle a javascript: or data: URI.
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
