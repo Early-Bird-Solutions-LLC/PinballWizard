@@ -41,6 +41,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject PinballWizard.Web.Security.AdminActionGuard Guard
+@inject ILogger<AdminSettings> Logger
 
 <PageTitle>Settings — PinballWizard Admin</PageTitle>
 
@@ -379,6 +380,7 @@
         {
             // Degrade visibly (invariant #17): name the failure, make clear
             // the Wizard itself is unaffected, offer nothing interactive.
+            Logger.LogError(ex, "Admin settings load failed.");
             _loadError = ex.Message;
         }
         finally
@@ -425,6 +427,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Admin settings save failed.");
             Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -459,6 +462,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Admin setting reset to default failed for {SettingKey}.", row.Key);
             Snackbar.Add($"Reset failed: {ex.Message}", Severity.Error);
         }
     }
@@ -537,6 +541,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Prompt state load failed for agent {AgentName}.", _selectedAgent);
             Snackbar.Add($"Prompt state load failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -570,6 +575,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Prompt version save failed for agent {AgentName}.", _selectedAgent);
             Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -609,6 +615,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Prompt version {Version} activation failed for agent {AgentName}.", version, _selectedAgent);
             Snackbar.Add($"Activate failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -648,6 +655,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Prompt revert to embedded default failed for agent {AgentName}.", _selectedAgent);
             Snackbar.Add($"Revert failed: {ex.Message}", Severity.Error);
         }
         finally

@@ -256,39 +256,133 @@ public sealed class LandingHeroTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 8. Suggestion selected → navigate to /wizard?q={title}
+    // 8. Suggestion selected for a NAME query → navigate to /wizard?q={title}
     //
-    // When the user picks a suggestion from the dropdown, the component
-    // navigates directly to /wizard?q={suggestion.Title}, bypassing
-    // QuestionSubmitted entirely (the title is already a resolved machine
-    // name).  Verified by invoking MudAutocomplete's ValueChanged directly,
-    // which is how MudBlazor fires it on item selection.
+    // When the user is typing a machine NAME ("Godzilla") and picks a matching
+    // suggestion, the component treats it as a machine jump: navigate directly
+    // to /wizard?q={suggestion.Title}, bypassing QuestionSubmitted.  The intent
+    // test is "does the title start with what the user typed" — here it does.
+    // Verified by invoking MudAutocomplete's ValueChanged directly, which is how
+    // MudBlazor fires it on item selection.
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task LandingHero_OnSuggestionSelected_NavigatesToWizardWithTitle()
+    public async Task LandingHero_OnSuggestionSelected_ForNameQuery_NavigatesToWizardWithTitle()
     {
         await using var ctx = new BunitContext();
         RegisterHeroServices(ctx);
 
-        var cut = RenderHeroWithPopover(ctx);
+        // The user typed a machine name ("Godzilla"); the suggestion title
+        // ("Godzilla Pro") starts with it → genuine machine jump.  Wire
+        // QuestionSubmitted so we can assert the machine-jump path does NOT also
+        // fire the free-text submit (no double-handling of the same selection).
+        string? submitted = null;
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            builder.AddAttribute(2, nameof(LandingHero.QuestionText), "Godzilla");
+            builder.AddAttribute(3, nameof(LandingHero.QuestionSubmitted),
+                EventCallback.Factory.Create<string>(this, q => submitted = q));
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<LandingHero>();
 
         // BunitNavigationManager must be resolved after render (provider locked).
         var navMan = ctx.Services.GetRequiredService<BunitNavigationManager>();
 
-        // Simulate the user selecting "Godzilla Pro" from the dropdown.
-        // Invoking ValueChanged directly mirrors how MudAutocomplete fires
-        // it on item selection (click or keyboard Enter on highlighted item).
-        // NOTE: the keyboard "Enter on a highlighted suggestion" path also fires
-        // OnKeyDown; the _pendingNavigationSuggestion flag suppresses the free-text
-        // submit in that case. bUnit cannot faithfully simulate MudAutocomplete's
-        // internal keydown→ValueChanged ordering, so that specific interleaving is
-        // exercised manually, not here — this test pins the navigation outcome.
         var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
         await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
             new MachineSuggestion("opdb-stern-godzilla-pro", "Godzilla Pro", "Stern", 2021)));
 
         Assert.EndsWith("/wizard?q=Godzilla%20Pro", navMan.Uri, StringComparison.Ordinal);
+        Assert.Null(submitted); // machine jump only — never also a free-text submit
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8a. Interior-word name query: an article-prefixed title ("The Addams
+    //     Family") is still a machine jump when the user types the distinctive
+    //     word ("addams").  Without the interior-word branch, StartsWith alone
+    //     would misroute ~a quarter of the catalog (every "The X" title) into
+    //     the free-text path.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LandingHero_OnSuggestionSelected_ForInteriorWordNameQuery_NavigatesToWizardWithTitle()
+    {
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
+
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            builder.AddAttribute(2, nameof(LandingHero.QuestionText), "addams");
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<LandingHero>();
+
+        var navMan = ctx.Services.GetRequiredService<BunitNavigationManager>();
+
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
+            new MachineSuggestion("opdb-bally-addams-family", "The Addams Family", "Bally", 1992)));
+
+        Assert.EndsWith("/wizard?q=The%20Addams%20Family", navMan.Uri, StringComparison.Ordinal);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 8b. REGRESSION (question hijack): a QUESTION that surfaces a suggestion
+    //     must be submitted verbatim — never replaced by the machine title.
+    //
+    // MudAutocomplete 9.5.0 auto-highlights the first suggestion when the menu
+    // opens and Enter always selects it (verified against MudAutocomplete
+    // .razor.cs OnEnterKeyAsync — no property disables this).  So typing
+    // "whats a good tournament strategy for stranger things" and pressing Enter
+    // fires ValueChanged with the "Stranger Things" suggestion.  Before the fix
+    // this discarded the question and navigated to /wizard?q=Stranger%20Things,
+    // making the Wizard answer the wrong thing (observed live: "…godzilla" →
+    // Mars God of War).  The title is NOT a prefix of the question, so the
+    // intent test routes it back through the free-text path: ?q= must equal the
+    // text the user actually asked.
+    // ──────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task LandingHero_SuggestionAutoSelectedOnQuestion_SubmitsQuestionNotTitle()
+    {
+        await using var ctx = new BunitContext();
+        RegisterHeroServices(ctx);
+
+        const string question = "whats a good tournament strategy for stranger things";
+
+        string? submitted = null;
+        var fragment = ctx.Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<LandingHero>(1);
+            builder.AddAttribute(2, nameof(LandingHero.QuestionText), question);
+            builder.AddAttribute(3, nameof(LandingHero.QuestionSubmitted),
+                EventCallback.Factory.Create<string>(this, q => submitted = q));
+            builder.CloseComponent();
+        });
+        var cut = fragment.FindComponent<LandingHero>();
+
+        var navMan = ctx.Services.GetRequiredService<BunitNavigationManager>();
+
+        // Simulate MudAutocomplete auto-selecting its highlighted first
+        // suggestion (a machine whose title appears in the question). This is
+        // exactly what Enter does when the menu is open with results.
+        var autocomplete = cut.FindComponent<MudAutocomplete<MachineSuggestion>>();
+        await cut.InvokeAsync(() => autocomplete.Instance.ValueChanged.InvokeAsync(
+            new MachineSuggestion("opdb-stern-stranger-things", "Stranger Things", "Stern", 2019)));
+
+        // The literal question flows through the free-text submit path...
+        Assert.Equal(question, submitted);
+        // ...and the machine title is NOT used as the query.
+        Assert.DoesNotContain("q=Stranger%20Things", navMan.Uri, StringComparison.Ordinal);
     }
 
     // ──────────────────────────────────────────────────────────────────────

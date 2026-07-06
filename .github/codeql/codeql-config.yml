@@ -11,8 +11,12 @@
 
 name: PinballWizard CodeQL config
 
-# Generated build output is not source we maintain — exclude it from analysis
-# so source generator output (e.g. RegexGenerator) does not surface findings.
+# Generated build output is not source we maintain. NOTE: for compiled
+# languages analyzed with a build, paths-ignore does NOT filter results — the
+# compiler decides what enters the CodeQL database (GitHub docs, "Specifying
+# directories to scan"). The enforcing mechanism for C# is the filter-sarif
+# step in .github/workflows/codeql.yml; this list is kept as the single
+# statement of intent and would take effect under build-mode: none.
 paths-ignore:
   - "**/obj/**"
   - "**/bin/**"
@@ -74,3 +78,11 @@ query-filters:
       id: cs/linq/missed-where
   - exclude:
       id: cs/linq/missed-select
+
+  # cs/xmldoc/missing-summary — flags public API members without /// summary
+  # blocks. This repo's documentation bar deliberately excludes XML doc
+  # comments on public surface (CLAUDE.md "Showcase obligations"; memory
+  # feedback_no_xml_docs): intent is documented via ADRs, specs, and inline
+  # rationale comments instead. The rule contradicts repo policy wholesale.
+  - exclude:
+      id: cs/xmldoc/missing-summary

@@ -251,6 +251,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Link override create failed for pattern {SourcePattern}.", _newPattern);
             Snackbar.Add($"Create failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -282,6 +283,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Link override delete failed for pattern {SourcePattern}.", row.SourcePattern);
             Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
         }
     }

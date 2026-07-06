@@ -8,17 +8,21 @@
  *
  * The question input is two-way bound to the QuestionText parameter so the
  * parent (Index.razor) can pre-fill it when a seed question card is clicked.
- * QuestionSubmitted is invoked when the user presses Enter or clicks "Ask"
- * WITHOUT selecting a suggestion from the dropdown.  When the user DOES select
- * a suggestion, the component navigates directly to /wizard?q={title}, bypassing
- * QuestionSubmitted entirely — the suggestion is already a resolved title.
+ * The box is FIRST a question box; the machine typeahead is a convenience on
+ * top.  A suggestion selection is treated as a machine jump only when the user
+ * was typing that machine's name (see OnSuggestionSelected); a natural-language
+ * question is always submitted verbatim so ?q= equals the question asked.
  *
- * Dual submit paths (ADR-0049 Phase 3):
- *   1. Suggestion selected (click or keyboard Enter on a highlighted item)
- *      → Nav.NavigateTo("/wizard?q={suggestion.Title}").
- *   2. Free-text Enter / adornment click (no suggestion selected)
- *      → QuestionSubmitted fires with the raw typed text.
- *      The parent (Index.razor) handles this via OnQuestionSubmitted.
+ * Submit paths (ADR-0049 Phase 3):
+ *   1. Free-text Enter / adornment click → QuestionSubmitted fires with the raw
+ *      typed text; the parent (Index.razor) routes to /wizard?q={text}.
+ *   2. Suggestion selected AND the title starts with the typed text (a genuine
+ *      name query) → Nav.NavigateTo("/wizard?q={suggestion.Title}").
+ *   3. Suggestion auto-selected while typing a question (MudAutocomplete
+ *      auto-highlights + Enter selects) → the raw question is submitted via
+ *      path 1, NOT the machine title.  This prevents the question from being
+ *      silently replaced by a machine name (observed live: "…godzilla" → Mars
+ *      God of War).
  *
  * Autocomplete degradation (ADR-0049 § Fault-tolerance):
  *   If IMachineSuggestClient returns an empty list (endpoint down, non-200,
@@ -143,23 +147,62 @@
     public EventCallback<string> QuestionSubmitted { get; set; }
 
     // ── Suggestion selection path ──────────────────────────────────────────
-    // Fires when the user picks a suggestion from the dropdown (click or
-    // keyboard Enter on a highlighted item).  Navigate directly to the wizard
-    // with the suggestion's canonical title — it's already a resolved machine
-    // name, so there's no need to route through QuestionSubmitted.
-    private void OnSuggestionSelected(MachineSuggestion suggestion)
+    // Fires when the user picks a suggestion from the dropdown (mouse click, or
+    // Enter on a highlighted item).  A selection is treated as a machine JUMP
+    // (navigate to /wizard?q={title}) ONLY when the user was typing that
+    // machine's name; otherwise the literal typed text is submitted as a
+    // question through the same free-text path as Enter/adornment.
+    //
+    // WHY the intent test is load-bearing (do not simplify back to an
+    // unconditional navigate-to-title):
+    //   MudAutocomplete 9.5.0 auto-highlights the FIRST suggestion the instant
+    //   the menu opens (_selectedListItemIndex = _enabledItemIndices[0]) and
+    //   Enter on an open menu ALWAYS selects that highlighted item — verified
+    //   against MudAutocomplete.razor.cs OnEnterKeyAsync; there is no property
+    //   to disable it.  So a user who types a *question* that merely surfaces a
+    //   suggestion ("whats a good tournament strategy for stranger things") and
+    //   presses Enter would otherwise have their question silently discarded and
+    //   replaced by the bare machine title ("Stranger Things") in ?q= — and the
+    //   Wizard answers the wrong thing (observed live: "…godzilla" → Mars God of
+    //   War).  Invariant: ?q= must always equal the text the user actually asked.
+    private async Task OnSuggestionSelected(MachineSuggestion suggestion)
     {
         // Guard: with T=MachineSuggestion (non-nullable), suggestion should
         // never be null here, but MudAutocomplete's internal state management
         // can fire ValueChanged with default(T) in edge cases.
         if (suggestion is null) return;
 
-        // Set the flag BEFORE navigation so OnKeyDown (which fires after
-        // ValueChanged within the same browser event cycle) can detect that
-        // a suggestion was selected and skip firing QuestionSubmitted.
+        // Set the flag BEFORE any navigation so OnKeyDown (which fires after
+        // ValueChanged within the same browser event cycle) detects that this
+        // cycle already handled the submit and skips its own QuestionSubmitted.
         _pendingNavigationSuggestion = suggestion;
 
-        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(suggestion.Title)}");
+        // At the moment ValueChanged fires, QuestionText still holds the user's
+        // RAW input — CoerceText overwrites it with the title only afterwards,
+        // via TextChanged (see the OnTextChanged note below).  Distinguish the
+        // two intents by that raw text: treat it as a machine jump only when the
+        // typed text is a genuine name query — the title starts with it, OR the
+        // title contains it as a whole interior word so article-prefixed titles
+        // ("The Addams Family", "The Getaway") still resolve when the user types
+        // the distinctive word ("addams").  The leading space keeps the interior
+        // match from firing on a question that merely mentions the machine:
+        // `typed` is the ENTIRE input, so a full sentence is never a contiguous
+        // interior substring of a short title.  A natural-language question thus
+        // always falls through to the free-text submit below.
+        var typed = (QuestionText ?? string.Empty).Trim();
+        var isMachineNameQuery = typed.Length > 0
+            && (suggestion.Title.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
+                || suggestion.Title.Contains(" " + typed, StringComparison.OrdinalIgnoreCase));
+
+        if (isMachineNameQuery)
+        {
+            Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(suggestion.Title)}");
+            return;
+        }
+
+        // Question intent — submit the literal typed text through the same
+        // free-text path as Enter/adornment so ?q= equals the question asked.
+        await QuestionSubmitted.InvokeAsync(typed).ConfigureAwait(false);
     }
 
     // Sync raw text back to the parent binding and keep QuestionText current
@@ -206,8 +249,10 @@
 
         if (_pendingNavigationSuggestion is not null)
         {
-            // Navigation was already triggered by OnSuggestionSelected — clear
-            // the flag and skip QuestionSubmitted to avoid a double-fire.
+            // OnSuggestionSelected already handled this event cycle — either via
+            // Nav.NavigateTo (machine-jump path) or QuestionSubmitted (question
+            // path). Clear the flag and skip the free-text QuestionSubmitted so
+            // the same cycle never submits twice.
             _pendingNavigationSuggestion = null;
             return;
         }

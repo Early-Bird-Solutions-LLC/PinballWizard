@@ -541,18 +541,16 @@ public sealed class EvaluationHarnessTests
         var result = await harness.RunAsync(CancellationToken.None);
 
         // Per-slice breakdown must exist for both slices.
-        Assert.True(result.BySlice.ContainsKey("easy"), "Expected 'easy' key in BySlice");
-        Assert.True(result.BySlice.ContainsKey("reranker-sensitive"), "Expected 'reranker-sensitive' key in BySlice");
+        Assert.True(result.BySlice.TryGetValue("easy", out var easyAgg), "Expected 'easy' key in BySlice");
+        Assert.True(result.BySlice.TryGetValue("reranker-sensitive", out var rerankAgg), "Expected 'reranker-sensitive' key in BySlice");
 
         // easy slice: both rows cited correctly → precision mean = 1.0.
-        var easyAgg = result.BySlice["easy"];
-        Assert.Equal(2, easyAgg.QuestionCount);
+        Assert.Equal(2, easyAgg!.QuestionCount);
         Assert.Equal(1.0, easyAgg.CitationPrecisionMean);
         Assert.Equal(1.0, easyAgg.CitationRecallMean);
 
         // reranker-sensitive slice: both rows cited wrong → precision mean = 0.0.
-        var rerankAgg = result.BySlice["reranker-sensitive"];
-        Assert.Equal(2, rerankAgg.QuestionCount);
+        Assert.Equal(2, rerankAgg!.QuestionCount);
         Assert.Equal(0.0, rerankAgg.CitationPrecisionMean);
         Assert.Equal(0.0, rerankAgg.CitationRecallMean);
 

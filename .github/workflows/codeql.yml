@@ -59,5 +59,32 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release PinballWizard.slnx
 
+      # `upload: failure-only` defers the real upload to the filtered step below;
+      # per the codeql-action docs it exists exactly "for users post-processing
+      # the SARIF file before uploading it to Code Scanning".
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
+        with:
+          output: sarif-results
+          upload: failure-only
+
+      # paths-ignore in codeql-config.yml does NOT filter results for compiled
+      # languages analyzed with a build — the compiler decides what enters the
+      # database, so source-generator output under obj/ (RegexGenerator.g.cs)
+      # still produces alerts (GitHub docs, "Specifying directories to scan").
+      # Stripping those results from the SARIF before upload is GitHub's
+      # documented workaround; on the next default-branch run, code scanning
+      # auto-closes the existing obj/ alerts as no-longer-detected.
+      - name: Filter generated build output from SARIF
+        uses: advanced-security/filter-sarif@2da736ff05ef065cb2894ac6892e47b5eac2c3c0 # v1.1
+        with:
+          patterns: |
+            -**/obj/**
+            -**/bin/**
+          input: sarif-results/csharp.sarif
+          output: sarif-results/csharp.sarif
+
+      - name: Upload filtered SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: sarif-results/csharp.sarif
