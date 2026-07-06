@@ -1,0 +1,7 @@
+README.md
+CLAUDE.md
+docs/engineering-manifest.json
+docs/**
+!docs/adr/**
+!docs/decision-log.md
+!docs/superpowers/**

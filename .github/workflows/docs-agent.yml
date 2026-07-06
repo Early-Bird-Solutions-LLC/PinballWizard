@@ -1,0 +1,153 @@
+name: Docs Agent
+
+# Push-triggered documentation updater. On each merge to main touching code or
+# infra, reads the merged diff and opens an auto-mergeable docs-only PR when a
+# DESCRIPTIVE doc has gone untruthful. Weekly sweep catches misses.
+#
+# This is a CI development-automation agent, NOT a Foundry product agent — it
+# acts on git events and edits markdown, so it lives in Actions with
+# claude-code-action, not in Foundry. See ADR-0051 for the category boundary.
+#
+# Auth: GitHub OIDC → Anthropic WIF (ADR-0047), identical to claude.yml. No
+# static key. Authority is bounded by .github/docs-agent-allowlist.txt and
+# enforced by docs-agent-guard.yml — this is why auto-merge is safe.
+#
+# No self-retrigger: the agent's PRs edit ONLY allowlisted paths
+# (docs/**, README.md, CLAUDE.md, docs/engineering-manifest.json). None of
+# those match the push trigger's src/**/infra/**/.github/workflows/** path
+# filter, so a merged agent PR cannot retrigger this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'infra/**'
+      - '.github/workflows/**'
+  schedule:
+    - cron: '23 8 * * 1'   # Mondays 08:23 UTC — weekly full sweep (low-traffic slot)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+  issues: write       # Report failure step: issues.create / issues.createComment
+  # issues:write blast radius: repo issue tracker only; agent Bash tool can also call gh issue create.
+
+concurrency:
+  group: docs-agent-main
+  cancel-in-progress: false   # each merge deserves its own analysis; queue, don't drop
+
+jobs:
+  docs-agent:
+    name: Update docs from merged changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # need history for the diff range
+
+      - name: Fetch GitHub OIDC token
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const token = await core.getIDToken('https://api.anthropic.com');
+            core.setSecret(token);
+            core.exportVariable('GHA_OIDC_TOKEN', token);
+
+      - name: Exchange for Anthropic access token
+        env:
+          FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg grant_type "urn:ietf:params:oauth:grant-type:jwt-bearer" \
+            --arg assertion "$GHA_OIDC_TOKEN" \
+            --arg federation_rule_id "$FEDERATION_RULE_ID" \
+            --arg organization_id "$ORGANIZATION_ID" \
+            --arg service_account_id "$SERVICE_ACCOUNT_ID" \
+            --arg workspace_id "$WORKSPACE_ID" \
+            '$ARGS.named')
+          ACCESS_TOKEN=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+            -H "content-type: application/json" \
+            -d "$PAYLOAD" | jq -r .access_token)
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "::error::Anthropic WIF token exchange failed"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "ANTHROPIC_ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Compute diff range
+        id: range
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "range=$BEFORE_SHA..$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          else
+            # sweep/dispatch: last 7 days of commits.
+            # Fall back to a bounded window (last 200 commits) if no commit
+            # resolves from 7 days ago (e.g. quiet repo, new branch).
+            since=$(git rev-list -1 --before='7 days ago' main 2>/dev/null || echo "")
+            if [ -z "$since" ]; then
+              since=$(git rev-list --max-count=1 --skip=200 main 2>/dev/null || echo "")
+            fi
+            if [ -n "$since" ]; then
+              echo "range=$since..$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            else
+              # Repo has fewer than 200 commits — sweep from root
+              echo "range=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Run docs agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ env.ANTHROPIC_ACCESS_TOKEN }}
+          prompt: |
+            You are the PinballWizard docs updater (a CI automation agent — see ADR-0051).
+            Analyze the merged change range ${{ steps.range.outputs.range }} (use `git diff` / `git log`).
+
+            Question: does this change make any DESCRIPTIVE documentation untruthful?
+            Descriptive docs are factual surfaces: README.md, CLAUDE.md, and docs/** EXCEPT
+            docs/adr/** and docs/decision-log.md (those record human decisions — you must
+            never author them).
+
+            If NO doc is affected: do nothing, open no PR, exit.
+
+            If docs ARE affected:
+              1. Edit ONLY files within .github/docs-agent-allowlist.txt.
+              2. Make the minimal truthful correction — do not rewrite, do not editorialize.
+              3. If the change looks like it warranted a NEW ADR or decision-log entry,
+                 DO NOT write one. Instead note it under a "## Human follow-ups" heading
+                 in the PR body.
+              4. Create a branch named docs-agent/${{ github.sha }}, commit as
+                 Jim Keeley <94459922+jkeeley2073@users.noreply.github.com> (no Claude
+                 attribution trailer), push, and open a PR with:
+                   - label: claude-code
+                   - a body documenting: the analyzed range, each doc touched and WHY,
+                     and any Human follow-ups.
+              5. Enable auto-merge: `gh pr merge --auto --squash`.
+            Never touch code, workflows, ADRs, or the decision log. Keep the diff small.
+          claude_args: '--allowedTools "Bash,Edit,Read,Grep,Glob"'
+
+      - name: Report failure
+        if: failure()
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const title = 'Docs Agent run failed';
+            const body = `The docs-agent workflow failed on ${context.sha} (${context.eventName}). Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const existing = await github.rest.issues.listForRepo({ owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'docs-agent-failure' });
+            if (existing.data.length) {
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.data[0].number, body });
+            } else {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['docs-agent-failure'] });
+            }
