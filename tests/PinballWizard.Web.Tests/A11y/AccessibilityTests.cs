@@ -44,6 +44,7 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
     [InlineData("/tilt",                    "tilt page")]
     [InlineData("/engineering",             "engineering docs index")]
     [InlineData("/engineering/docs/glossary", "engineering docs glossary")]
+    [InlineData("/about",                   "about / engineering story page")]
     public async Task PublicPage_HasNoAxeViolations(string path, string description)
     {
         _ = description; // InlineData label — surfaced in test output, not asserted
