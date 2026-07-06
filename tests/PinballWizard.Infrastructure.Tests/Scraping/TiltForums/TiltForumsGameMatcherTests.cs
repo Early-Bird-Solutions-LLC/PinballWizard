@@ -267,6 +267,31 @@ public sealed class TiltForumsGameMatcherTests
 
         Assert.Equal(TiltForumsGameMatchStatus.NoMatchInManufacturerPartition, result.Status);
         Assert.Empty(result.Machines);
+        await index.Received(1).SearchAsync("Weird Al", 5, "multimorphic", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ExactMiss_FuzzyResolvesUngroupedMachine_ReturnsResolved()
+    {
+        // Exact query misses; index returns one hit whose machine has GroupId = null.
+        // Must resolve to Resolved (not a fan-out) with ResolvedViaFuzzy = true,
+        // and must NOT call GetSiblingsByGroupIdAsync at all.
+        var ungrouped = MakeMachine("GZZZ-1", "stern", "Stern Pinball", "Pinbot");
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Pin Bot", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.GetByOpdbIdAsync("GZZZ-1", "stern", Arg.Any<CancellationToken>()).Returns(ungrouped);
+        var index = FakeIndex(
+            Hit("GZZZ-1", "Pinbot", "stern", "Stern Pinball", null, null, 85.0));
+
+        var result = await TiltForumsGameMatcher.ResolveAsync(
+            repo, index, "Pin Bot", "Stern Pinball", CancellationToken.None);
+
+        Assert.Equal(TiltForumsGameMatchStatus.Resolved, result.Status);
+        Assert.True(result.ResolvedViaFuzzy);
+        Assert.Single(result.Machines);
+        Assert.Equal("GZZZ-1", result.Machines[0].MachineId);
+        repo.DidNotReceive().GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

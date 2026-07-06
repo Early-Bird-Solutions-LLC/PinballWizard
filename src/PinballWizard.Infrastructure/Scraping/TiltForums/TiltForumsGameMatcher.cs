@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Findability;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Infrastructure.Integrations.Opdb;
@@ -74,7 +76,8 @@ public static class TiltForumsGameMatcher
         IMachineSearchIndex? machineSearchIndex,
         string gameTitle,
         string manufacturerHeaderText,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(machineRepository);
         ArgumentException.ThrowIfNullOrWhiteSpace(gameTitle);
@@ -115,7 +118,7 @@ public static class TiltForumsGameMatcher
         if (machineSearchIndex is not null)
         {
             var fuzzy = await ResolveViaMachineIndexAsync(
-                machineRepository, machineSearchIndex, gameTitle, manufacturerKey, cancellationToken);
+                machineRepository, machineSearchIndex, gameTitle, manufacturerKey, cancellationToken, logger);
             if (fuzzy is not null)
                 return fuzzy;
         }
@@ -131,10 +134,25 @@ public static class TiltForumsGameMatcher
         IMachineSearchIndex machineSearchIndex,
         string gameTitle,
         string manufacturerKey,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger? logger = null)
     {
-        var hits = await machineSearchIndex.SearchAsync(
-            gameTitle, MachineIndexTopHits, manufacturerKey, cancellationToken);
+        IReadOnlyList<MachineSearchHit> hits;
+        try
+        {
+            hits = await machineSearchIndex.SearchAsync(
+                gameTitle, MachineIndexTopHits, manufacturerKey, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger?.LogWarning(ex,
+                "TiltForumsGameMatcher: machine index query for '{GameTitle}' (manufacturer '{ManufacturerKey}') failed — degrading to no-match.",
+                gameTitle, manufacturerKey);
+            PinballWizardTelemetry.MachineSearchErrors.Add(
+                1, new KeyValuePair<string, object?>("reason", "tiltforums_fuzzy_unavailable"));
+            return null;
+        }
+
         if (hits.Count == 0)
             return null;
 
@@ -145,7 +163,12 @@ public static class TiltForumsGameMatcher
         var topMachine = await machineRepository.GetByOpdbIdAsync(
             topHit.OpdbId, topHit.ManufacturerKey, cancellationToken);
         if (topMachine is null)
+        {
+            logger?.LogWarning(
+                "TiltForumsGameMatcher: stale index — hit '{OpdbId}' present in AI Search but machine row absent from Cosmos for manufacturer '{ManufacturerKey}'. Degrading to no-match; will self-heal on next machine-index projection.",
+                topHit.OpdbId, topHit.ManufacturerKey);
             return null;
+        }
 
         // Cross-group same-title collision guard: a different-group hit that carries
         // the SAME title as the top hit is a genuine same-name-different-game

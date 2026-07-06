@@ -1351,6 +1351,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
         }
 
+        var tiltForumsLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("PinballWizard.Cli.TiltForumsRulesheetsSync");
         var tiltForumsIndexed = 0;
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
@@ -1367,7 +1368,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
