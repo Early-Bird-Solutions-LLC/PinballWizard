@@ -1,0 +1,10 @@
+{
+  "docs": [
+    { "slug": "vision", "sourcePath": "docs/vision.md", "title": "Vision", "group": "Overview", "order": 10 },
+    { "slug": "ai-development-model", "sourcePath": "docs/ai-development-model.md", "title": "AI Development Model", "group": "Overview", "order": 20 },
+    { "slug": "learning-from-failure", "sourcePath": "docs/learning-from-failure.md", "title": "Learning from Failure", "group": "Overview", "order": 30 },
+    { "slug": "architecture", "sourcePath": "docs/architecture-v2.md", "title": "Architecture", "group": "Architecture", "order": 40 },
+    { "slug": "glossary", "sourcePath": "docs/glossary.md", "title": "Glossary", "group": "Reference", "order": 50 }
+  ],
+  "includeAllAdrs": true
+}
