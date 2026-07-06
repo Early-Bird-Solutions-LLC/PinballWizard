@@ -32,10 +32,9 @@
 
 <PageTitle>Document Triage — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Document Triage"
-                   Subtitle="Unlinked, failed, and platform-generic documents awaiting resolution."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Document Triage"
+              Subtitle="Unlinked, failed, and platform-generic documents awaiting resolution."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -108,7 +107,7 @@
         </NoRecordsContent>
 
     </AppDataGrid>
-</MudContainer>
+</AppPageShell>
 
 @code {
     [CascadingParameter]

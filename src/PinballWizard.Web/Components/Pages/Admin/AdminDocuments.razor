@@ -8,9 +8,10 @@
 
 <PageTitle>PinballWizard Admin — Documents</PageTitle>
 
-<AppPageHeader Title="Documents"
-               Subtitle="Full corpus with triage status and failure reasons." />
-<DocumentList IsAdmin="true" Game="@Game" Manufacturer="@Manufacturer" Type="@Type" />
+<AppPageShell Title="Documents"
+              Subtitle="Full corpus with triage status and failure reasons.">
+    <DocumentList IsAdmin="true" Game="@Game" Manufacturer="@Manufacturer" Type="@Type" />
+</AppPageShell>
 
 @code {
     [SupplyParameterFromQuery(Name = "game")] public string? Game { get; set; }

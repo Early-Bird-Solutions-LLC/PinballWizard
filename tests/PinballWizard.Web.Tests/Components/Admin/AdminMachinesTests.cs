@@ -19,14 +19,12 @@ namespace PinballWizard.Web.Tests.Components.Admin;
 // ICatalogStatsReadRepository is faked via NSubstitute returning two
 // manufacturers — one machine with 0 docs (Empty flag), one all-OK machine.
 // Tests assert behavioral invariants: grid sentinel, "as of" stamp, health
-// chips, axis selector links, query-param grouping, breadcrumb trail.
+// chips, manufacturer detail links, breadcrumb trail.
 //
 // Note: AdminMachines is interactive (@rendermode InteractiveServer, ADR-0034
-// amendment 2026-06-17). The group-by axis is switched by in-circuit OnClick
-// buttons (no query param, no page reload); native MudDataGrid grouping
-// re-evaluates per the active axis. Tests drive the axis by clicking buttons
-// inside InvokeAsync (the dispatcher-click pattern — clicking an element found
-// outside InvokeAsync uses a stale handler id under load).
+// amendment 2026-06-17) — the sortable/filterable grid needs a live circuit.
+// The catalog is a flat grid (grouping was removed): every row's cells,
+// including the health chips and manufacturer links, render unconditionally.
 public sealed class AdminMachinesTests : AsyncBunitContext
 {
     // ── Shared fake data ───────────────────────────────────────────────────────
@@ -185,87 +183,6 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         cut.Find(".mud-chip-color-success"); // throws NotFoundException if absent
     }
 
-    // ── Axis selector ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task AdminMachines_AxisSelector_RendersAllFourAxisButtons()
-    {
-        var cut = RenderWithPopover<AdminMachines>();
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        var selector = cut.Find("[data-testid='groupby-selector']");
-        // Four in-circuit buttons, one per axis — Manufacturer/Health/Year/Source
-        // (Franchise was removed by 5870325: "not useful to end users"). MudButton
-        // with OnClick renders as <button>, not <a> — the static href selector is retired.
-        var buttons = selector.QuerySelectorAll("button");
-        Assert.True(buttons.Length >= 4,
-            $"Expected at least 4 axis buttons, got {buttons.Length}.");
-    }
-
-    [Fact]
-    public async Task AdminMachines_DefaultAxis_IsManufacturer()
-    {
-        var cut = RenderWithPopover<AdminMachines>();
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        // Default active axis = manufacturer → that button is Filled + Primary.
-        // Class confirmed from MudBlazor 8.x: mud-button-filled-primary.
-        var selector = cut.Find("[data-testid='groupby-selector']");
-        var activeBtn = selector.QuerySelector("button.mud-button-filled-primary");
-        Assert.NotNull(activeBtn);
-        Assert.Contains("Manufacturer", activeBtn!.TextContent, StringComparison.Ordinal);
-    }
-
-    // ── Click-driven grouping axis ─────────────────────────────────────────────
-
-    // Helper: click an axis button by its visible label, inside InvokeAsync so
-    // the handler id is fresh (dispatcher-click pattern, memory note 2026-06-12).
-    private static async Task ClickAxisAsync(IRenderedComponent<AdminMachines> cut, string label)
-    {
-        await cut.InvokeAsync(() =>
-        {
-            var selector = cut.Find("[data-testid='groupby-selector']");
-            var button = selector.QuerySelectorAll("button")
-                .First(b => b.TextContent.Contains(label, StringComparison.Ordinal));
-            button.Click();
-        });
-    }
-
-    [Fact]
-    public async Task AdminMachines_ClickingHealthAxis_ActivatesItWithoutReload()
-    {
-        var cut = RenderWithPopover<AdminMachines>();
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        await ClickAxisAsync(cut, "Health");
-
-        // The Health button is now Filled + Primary; the grid is still present
-        // (in-circuit regroup, no navigation).
-        var selector = cut.Find("[data-testid='groupby-selector']");
-        var activeBtn = selector.QuerySelector("button.mud-button-filled-primary");
-        Assert.NotNull(activeBtn);
-        Assert.Contains("Health", activeBtn!.TextContent, StringComparison.Ordinal);
-        cut.Find("[data-testid='admin-machines-grid']");
-
-        // Health flag labels render: "Empty" (Foo Pro, 0 docs) and "Ok" (Bar CE/LE).
-        Assert.Contains("Empty", cut.Markup, StringComparison.Ordinal);
-        Assert.Contains("Ok", cut.Markup, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("Year")]
-    [InlineData("Source")]
-    public async Task AdminMachines_ClickingAxis_RegroupsWithoutError(string label)
-    {
-        var cut = RenderWithPopover<AdminMachines>();
-        await cut.InvokeAsync(() => Task.CompletedTask);
-
-        await ClickAxisAsync(cut, label);
-
-        Assert.NotNull(cut.Markup);
-        cut.Find("[data-testid='admin-machines-grid']");
-    }
-
     // ── Breadcrumb ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -286,12 +203,9 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
-        // Group by a non-manufacturer axis so the Manufacturer column renders as
-        // normal data cells (not folded into a group header).
-        await ClickAxisAsync(cut, "Year");
-
-        // Stern's rollup carries a display name → its cell links to the public
-        // manufacturer detail page with the display text (not the raw key).
+        // Flat grid — the Manufacturer column always renders as data cells. Stern's
+        // rollup carries a display name → its cell links to the public manufacturer
+        // detail page with the display text (not the raw key).
         var link = cut.Find("a[href='/manufacturers/stern']");
         Assert.Contains("Stern Pinball", link.TextContent, StringComparison.Ordinal);
     }

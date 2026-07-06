@@ -29,23 +29,22 @@
 
 <PageTitle>Link Overrides — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Link Overrides"
-                   Subtitle="Admin-configured document-to-machine mappings."
-                   Breadcrumbs="@_breadcrumbs">
-        <Actions>
-            @if (_isAdmin)
-            {
-                <MudButton data-testid="overrides-new-button"
-                           Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           OnClick="OpenCreateDialogAsync">
-                    New Override
-                </MudButton>
-            }
-        </Actions>
-    </AppPageHeader>
+<AppPageShell Title="Link Overrides"
+              Subtitle="Admin-configured document-to-machine mappings."
+              Breadcrumbs="@_breadcrumbs">
+    <Actions>
+        @if (_isAdmin)
+        {
+            <MudButton data-testid="overrides-new-button"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialogAsync">
+                New Override
+            </MudButton>
+        }
+    </Actions>
+    <ChildContent>
 
     @if (_loading)
     {
@@ -102,7 +101,8 @@
         </NoRecordsContent>
 
     </AppDataGrid>
-</MudContainer>
+    </ChildContent>
+</AppPageShell>
 
 @* Create Override dialog — gated: only renders for admins *@
 @if (_isAdmin)

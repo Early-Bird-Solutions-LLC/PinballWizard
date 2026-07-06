@@ -1,0 +1,55 @@
+@namespace PinballWizard.Web.Components.Shared
+
+@* AppPageShell — the shared page frame for every grid/list view.
+ *
+ * Owns the two things that were previously hand-rolled (and drifting) on each
+ * page: the MudContainer (width + vertical rhythm) and the AppPageHeader. This
+ * is the single place to adjust page layout — change it here and every grid page
+ * moves together (the "adjust once" requirement).
+ *
+ * Width: defaults to MaxWidth.False (full-width, minus MudContainer's responsive
+ * side gutters) so wide grids use the available horizontal space instead of
+ * being pinned to ~1200px on a 2560px monitor. Data grids with many columns then
+ * fit without a horizontal scrollbar. A page that wants a narrower measure can
+ * override MaxWidth.
+ *
+ * Header: rendered only when Title is set. Pages whose heading depends on loaded
+ * data (e.g. /manufacturers/{key}) omit Title and render their own header inside
+ * ChildContent — they still get the identical container so layout stays uniform.
+ *
+ * ADR-0008 — MudBlazor strict   ADR-0046 — shared Blazor component library
+ *@
+
+<MudContainer MaxWidth="@MaxWidth" Class="@Class">
+    @if (Title is not null)
+    {
+        <AppPageHeader Title="@Title"
+                       Subtitle="@Subtitle"
+                       Breadcrumbs="@Breadcrumbs"
+                       Actions="@Actions" />
+    }
+    @ChildContent
+</MudContainer>
+
+@code {
+    // Page heading. When null, no AppPageHeader is rendered (the page supplies
+    // its own header inside ChildContent).
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public IReadOnlyList<BreadcrumbItem>? Breadcrumbs { get; set; }
+
+    // Header action slot (buttons beside the title). Has no effect when Title is
+    // null — with no header rendered there is nowhere for actions to go. A page
+    // that needs actions without the shell's header renders its own header inside
+    // ChildContent instead.
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // Container width. Full-width by default to use the available horizontal space.
+    [Parameter] public MaxWidth MaxWidth { get; set; } = MaxWidth.False;
+
+    // Vertical rhythm. Symmetric padding so pages breathe above and below.
+    [Parameter] public string Class { get; set; } = "py-6";
+}
