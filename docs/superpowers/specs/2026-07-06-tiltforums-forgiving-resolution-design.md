@@ -39,14 +39,16 @@ ResolveViaMachineIndex(title, manufacturerKey?) → ResolutionResult
     ResolutionResult ∈ { Resolved(machine), ResolvedEditionFamily(siblings[]), Ambiguous, NoMatch }
 ```
 
-Behavior:
-- Query `IMachineSearchIndex` for `title`. When `manufacturerKey` is supplied, restrict hits to that partition; when null (subcategory path), search unscoped.
-- Collapse the in-scope hits by `(group_id, year)`:
-  - Exactly one dominant group → **Resolved**; if that group has multiple sibling editions, fan out to the complete sibling set via the existing `IMachineRepository.GetSiblingsByGroupIdAsync` → **ResolvedEditionFamily**. (Reuses ADR-0032 semantics already in `TiltForumsGameMatcher`.)
-  - Multiple comparable groups/years (e.g. `Walking Dead` → Remastered vs 2014 vs 2015; `Star Trek` 2013 vs 2018) → **Ambiguous**.
-  - No in-scope hits → **NoMatch**.
+Behavior (margin-free collapse — no score thresholds to tune):
+1. Query `IMachineSearchIndex` for `title`, `top = 5`. When `manufacturerKey` is supplied, restrict hits server-side to that partition; when null (subcategory path), search unscoped.
+2. No hits → **NoMatch**.
+3. `topHit = hits[0]`. Point-read `topMachine = GetByOpdbIdAsync(topHit.OpdbId, topHit.ManufacturerKey)`. Null (stale index row) → **NoMatch**, logged Warning (invariant #17).
+4. **Cross-group same-title collision guard.** If any other hit `h` has `GroupKey(h) != GroupKey(topHit)` *and* `h.Title` case-insensitively equals `topHit.Title` → **Ambiguous** (a genuine same-name-different-game collision, e.g. two identically-titled machines in different OPDB groups). `GroupKey = GroupId ?? OpdbId`.
+5. Otherwise resolve `topMachine`'s edition family: if `topMachine.GroupId` is set, fetch its complete sibling set via `GetSiblingsByGroupIdAsync`; apply the existing `EditionFamily.IsEditionFamily` — a clean same-group+year family → **ResolvedEditionFamily** (all siblings, ADR-0032 franchise-wide fan-out); a mixed-year / incomplete group → **Resolved** on `topMachine` alone (ground the top-ranked machine, never fan a rulesheet onto a genuinely different-year game). Ungrouped `topMachine` → **Resolved**.
 
-This mirrors the matcher's existing `Resolved` / `ResolvedEditionFamily` / `MultipleMatchesInManufacturerPartition` / `NoMatchInManufacturerPartition` outcomes — the same decision tree, fed by fuzzy hits instead of exact equality.
+**Why margin-free, not a score threshold:** noise hits (e.g. `King Kong: Myth of Terror Island` also surfaces a low-scoring `Guardians of the Galaxy`) carry a *different title*, so the collision guard (step 4) ignores them without any dominance ratio. Genuine collisions are same-title-different-group. This deliberately resolves title-distinct franchise variants to the top-ranked hit (e.g. `Walking Dead` → the top-ranked Walking Dead release; `Jurassic Park (Stern)` → `Jurassic Park`, not `Jurassic Park (Home Edition)`), which is the intended behavior — a same-manufacturer rulesheet applies to the canonical release, and manufacturer scoping already blocks cross-manufacturer mis-grounding.
+
+This mirrors the matcher's existing `Resolved` / `ResolvedEditionFamily` / `MultipleMatchesInManufacturerPartition` (→ `Ambiguous`) / `NoMatchInManufacturerPartition` outcomes — the same decision tree, fed by fuzzy hits instead of exact equality.
 
 **Ambiguity posture (approved):** `Ambiguous` is **skipped and logged**, never force-grounded — same no-fabrication posture as today's `MultipleMatches` (invariant #17). No score-margin auto-resolve, no multi-candidate fan-out. A human can add a manual title→OPDB mapping later if a specific game is worth it.
 
