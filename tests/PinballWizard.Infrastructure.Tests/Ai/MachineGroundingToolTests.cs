@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
@@ -54,6 +55,47 @@ public sealed class MachineGroundingToolTests
         Assert.Equal(2, result.Editions.Count);
         Assert.Equal("Pro", result.Editions[0].Name);
         Assert.Equal("$7,000", result.Editions[0].Msrp);
+    }
+
+    [Fact]
+    public async Task GetMachineByTitleAsync_RecordsOpdbSyncFreshnessIntoSink()
+    {
+        // Machine freshness (LastSeenAt = the last time OpdbSyncService refreshed this
+        // record from opdb.org) is threaded to the citation surface out-of-band via the
+        // metadata sink, keyed by OpdbSourceUrl — so the machine citation renders
+        // "synced N ago" instead of "freshness unknown", without the model ever seeing
+        // the timestamp.
+        var synced = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var machine = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Foo Fighters",
+            Year = 2023,
+            OpdbSourceUrl = "https://opdb.org/machines/GRBN-MQR4P",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = synced,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(machine));
+
+        var sink = new RetrievalCitationMetadataSink();
+        var tool = new MachineGroundingTool(
+            repo,
+            Substitute.For<IMachineTitleLookupRepository>(),
+            NullLogger<MachineGroundingTool>.Instance,
+            machineSearchIndex: null,
+            metadataSink: sink);
+
+        await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        Assert.True(
+            sink.TryGet("https://opdb.org/machines/GRBN-MQR4P", out var meta),
+            "Machine grounding did not record freshness into the sink under its OpdbSourceUrl.");
+        Assert.Equal(synced, meta!.LastScrapedUtc);
     }
 
     [Fact]

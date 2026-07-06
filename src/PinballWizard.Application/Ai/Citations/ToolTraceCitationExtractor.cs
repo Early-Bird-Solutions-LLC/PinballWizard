@@ -237,7 +237,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
         // Typed object arm (unit tests and any future SDK that preserves type).
         if (result is MachineGroundingDto dto)
         {
-            AddCitationFromGroundingDto(dto, byUrl, citations);
+            AddCitationFromGroundingDto(dto, byUrl, citations, _metadataSink);
             // getMachineByTitle → Citations only, NOT sourceIndex (grounding record,
             // not a [[cite:k]]-numbered source).
             return;
@@ -307,7 +307,7 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
                 // getMachineByTitle → Citations only, NOT sourceIndex.
                 if (TryDeserialize<MachineGroundingDto>(element, functionCallId, _logger) is { } dto)
                 {
-                    AddCitationFromGroundingDto(dto, byUrl, citations);
+                    AddCitationFromGroundingDto(dto, byUrl, citations, _metadataSink);
                     return;
                 }
             }
@@ -394,19 +394,29 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     private static void AddCitationFromGroundingDto(
         MachineGroundingDto dto,
         Dictionary<string, int> byUrl,
-        List<Citation> citations)
+        List<Citation> citations,
+        IRetrievalCitationMetadataSink? metadataSink)
     {
         if (string.IsNullOrWhiteSpace(dto.OpdbSourceUrl))
         {
             return;
         }
 
+        // MachineGroundingDto carries no freshness field (the model must never see
+        // freshness timestamps), so LastScrapedUtc arrives only via the side channel:
+        // MachineGroundingTool records Machine.LastSeenAt (the last OPDB sync) keyed by
+        // OpdbSourceUrl. Null when the sink wasn't populated (typed-object unit-test path)
+        // — the FreshnessBadge renders "freshness unknown" gracefully in that case.
+        RetrievalCitationMetadata? sinkMeta = null;
+        metadataSink?.TryGet(dto.OpdbSourceUrl, out sinkMeta);
+
         AddOrUpgrade(byUrl, citations, new Citation(
             Title: $"OPDB record {dto.OpdbId}",
             SourceUrl: dto.OpdbSourceUrl,
             MachineId: dto.OpdbId,
             DocumentChunkId: null,
-            SourceType: CitationSourceType.MachineRecord));
+            SourceType: CitationSourceType.MachineRecord,
+            LastScrapedUtc: sinkMeta?.LastScrapedUtc));
     }
 
     // Per ADR-0022 § Algorithm step 2: each retrieved chunk is a
