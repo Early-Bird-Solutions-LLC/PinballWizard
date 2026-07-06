@@ -1313,6 +1313,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsSynthesizer>();
         var tiltForumsIndexer = host.Services.GetService<IRagIndexer>();
         var tiltForumsMachineRepo = host.Services.GetService<IMachineRepository>();
+        var tiltForumsMachineSearchIndex = host.Services.GetService<IMachineSearchIndex>();
 
         if (tiltForumsClient is null || tiltForumsSynthesizer is null || tiltForumsIndexer is null || tiltForumsMachineRepo is null)
         {
@@ -1365,7 +1366,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
