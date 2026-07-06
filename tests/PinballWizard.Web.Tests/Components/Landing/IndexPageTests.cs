@@ -53,7 +53,7 @@ public sealed class IndexPageTests
             ],
             FeaturedMachines:
             [
-                new FeaturedMachine("stern-godzilla", "Godzilla Pro", null, 1, "King of the monsters"),
+                new FeaturedMachine("stern-godzilla", "Godzilla Pro", null, null, 1, "King of the monsters"),
             ],
             SystemStatus: new SystemStatus(CosmosHealthy: true, FoundryHealthy: true, AiSearchHealthy: true));
     }

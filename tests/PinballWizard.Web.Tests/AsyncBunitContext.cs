@@ -1,5 +1,7 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using Xunit;
 
 namespace PinballWizard.Web.Tests;
@@ -16,6 +18,18 @@ namespace PinballWizard.Web.Tests;
 // BunitContext.Dispose() checks _disposed and is a no-op after async disposal.
 public abstract class AsyncBunitContext : BunitContext, IAsyncLifetime
 {
+    protected AsyncBunitContext()
+    {
+        // Register IUserPreferencesService with the SAME default as production
+        // (UserPreferencesService.PageSize = 10) so components like AppDataGrid and
+        // MudDataGrid resolve RowsPerPage the same way in tests as in the real app.
+        var prefs = NSubstitute.Substitute.For<PinballWizard.Web.Services.IUserPreferencesService>();
+        prefs.PageSize.Returns(10);
+        Services.AddSingleton<PinballWizard.Web.Services.IUserPreferencesService>(prefs);
+        
+        var searchClient = NSubstitute.Substitute.For<PinballWizard.Web.Clients.IGridSearchClient>();
+        Services.AddSingleton<PinballWizard.Web.Clients.IGridSearchClient>(searchClient);
+    }
     // Components consulting RendererInfo.IsInteractive (e.g.
     // WizardAnswerStream gates its auto-submit so it can't run during SSR
     // prerender) need RendererInfo set or bUnit throws

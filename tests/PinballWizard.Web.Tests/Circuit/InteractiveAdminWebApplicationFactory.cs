@@ -144,6 +144,17 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
                 c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
             .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
 
+        // Every admin data grid now renders GridSearch (AppDataGrid's EnableAiSearch
+        // defaults true), which @injects IGridSearchClient. Unregistered, that throws
+        // during component activation on every admin page and the circuit never goes
+        // interactive. The 503 stub is safe: SearchAsync only fires on an explicit
+        // user query, never during initial render, and degrades to its own
+        // "Failed to connect" response on a bad status (GridSearchClientTests).
+        builder.Services
+            .AddHttpClient<IGridSearchClient, GridSearchClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
         // UseStaticWebAssets wires the runtime static-assets manifest
         // (PinballWizard.Web.staticwebassets.runtime.json) so the
         // StaticAssetDevelopmentRuntimeHandler can resolve asset files from

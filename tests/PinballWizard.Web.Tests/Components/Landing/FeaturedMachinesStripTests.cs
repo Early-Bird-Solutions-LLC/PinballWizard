@@ -24,9 +24,9 @@ public sealed class FeaturedMachinesStripTests
 {
     private static FeaturedMachine[] BuildMachines() =>
     [
-        new FeaturedMachine("jjp-wonka", "Wonka", null, 2,
+        new FeaturedMachine("jjp-wonka", "Wonka", null, null, 2,
             "Jersey Jack's whimsical masterpiece."),
-        new FeaturedMachine("stern-godzilla-pro", "Godzilla Pro", null, 1,
+        new FeaturedMachine("stern-godzilla-pro", "Godzilla Pro", null, null, 1,
             "The king of the monsters rules the playfield."),
     ];
 

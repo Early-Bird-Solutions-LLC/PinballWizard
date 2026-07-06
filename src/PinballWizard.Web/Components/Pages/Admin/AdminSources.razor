@@ -51,20 +51,10 @@
 
     <AppDataGrid T="IngestionSourceRow"
                  Items="@_sources"
-                 Groupable="@true"
-                 GroupExpanded="@true"
+                 SearchContext="admin-sources"
                  data-testid="admin-sources-grid">
 
         <Columns>
-            <PropertyColumn Property="x => x.SourceGroup" Title="Manufacturer" Grouping="true" Hidden="true">
-                <GroupTemplate>
-                    <MudText Typo="Typo.body2"
-                             data-testid="source-group-header"
-                             Style="color: var(--mud-palette-text-primary)">
-                        @context.Grouping.Key
-                    </MudText>
-                </GroupTemplate>
-            </PropertyColumn>
             <TemplateColumn Title="Name">
                 <CellTemplate>
                     <MudLink Href="@($"/admin/sources/{context.Item.Id}")">
@@ -137,7 +127,6 @@
         string LastSuccess,
         long DocsDiscovered,
         long RunFailures,
-        string SourceGroup,
         string? DiscoveryStatus,
         string? DiscoveryNotes,
         DateOnly? DiscoveryDate);
@@ -182,11 +171,10 @@
                     SourceUrl:       s.BaseUrl,
                     Enabled:         s.Enabled,
                     Cadence:         s.Cadence,
-                    LastRun:         s.LastRunAt?.ToString("u") ?? "—",
-                    LastSuccess:     s.LastSuccessAt?.ToString("u") ?? "—",
+                    LastRun:         s.LastRunAt?.ToString("MMM d, yyyy h:mm tt") ?? "—",
+                    LastSuccess:     s.LastSuccessAt?.ToString("MMM d, yyyy h:mm tt") ?? "—",
                     DocsDiscovered:  s.TotalDocumentsDiscovered,
                     RunFailures:     s.TotalRunFailures,
-                    SourceGroup:     s.SourceGroup,
                     DiscoveryStatus: s.DiscoveryStatus,
                     DiscoveryNotes:  s.DiscoveryNotes,
                     DiscoveryDate:   s.DiscoveryDate));

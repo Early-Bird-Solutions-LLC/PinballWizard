@@ -249,6 +249,11 @@ var auditCatalogOption = new Option<bool>("--audit-catalog")
     Description = "Proactive catalog-quality audit. Streams all machines and reports title-superset collisions — games whose title is BOTH an exact game and a subtitle-prefix of a different OPDB group (e.g. 'Iron Maiden' 1981 vs 'Iron Maiden: Legacy of the Beast' 2018). These are the catalog shape behind the #532 mis-grounding class; surfacing them lets us add eval coverage per collision before a prospect finds the gap. Read-only (no external HTTP, no writes). Exit code 0 = no collisions, 3 = collisions found (so CI/cron can alert). Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+var backfillManufacturerSlugsOption = new Option<bool>("--backfill-manufacturer-slugs")
+{
+    Description = "Backfills Machine.ManufacturerSlugs from /game/{slug}/ cross-reference URLs already captured in scraped_documents_raw, for machines a scraper reconciliation run never reached (issue #672). A --source games run's reconciliation only covers games discoverable in that run — e.g. Stern's currently-marketed lineup — so titles retired from that listing keep an empty ManufacturerSlugs entry forever, even though their documents already carry a valid cross-reference to the game page (captured e.g. when a manual's 'Specs & Manual tab' was scraped). Reuses the same franchise-title matching as scraper reconciliation. No external HTTP calls — operates entirely on already-stored Cosmos data. Idempotent: a slug already present on any machine in the partition is left untouched. Run --relink-all afterward so the linker's Tier 1 (xref_slug) re-resolves documents against the newly-backfilled slugs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -286,6 +291,7 @@ rootCommand.Options.Add(migrateDownloadPathsOption);
 rootCommand.Options.Add(rebuildCatalogStatsOption);
 rootCommand.Options.Add(reclassifyDocumentsOption);
 rootCommand.Options.Add(auditCatalogOption);
+rootCommand.Options.Add(backfillManufacturerSlugsOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -325,6 +331,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var rebuildCatalogStats  = parseResult.GetValue(rebuildCatalogStatsOption);
     var reclassifyDocuments  = parseResult.GetValue(reclassifyDocumentsOption);
     var auditCatalog         = parseResult.GetValue(auditCatalogOption);
+    var backfillManufacturerSlugs = parseResult.GetValue(backfillManufacturerSlugsOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -1230,6 +1237,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 // the same game don't collide on the same chunk id.
                 var documentId = $"kineticist_{slug}_{machineId}";
 
+                // Kineticist tutorials are gameplay rulesheets — edition-agnostic
+                // per ADR-0032 — regardless of whether this article resolved to
+                // one machine or fanned out to every sibling edition.
                 var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
                     MachineId: machineId,
                     MachineTitle: machineTitle,
@@ -1237,7 +1247,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     DocumentId: documentId,
                     DocumentUrl: article.CanonicalUrl,
                     DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow,
+                    EditionScope: "franchise-wide");
 
                 var chunks = kineticistSynthesizer.Synthesize(article, chunkRequest);
                 if (chunks.Count == 0)
@@ -1343,6 +1354,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
+        var tiltForumsEditionFamilyFanouts = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var listing in listings)
@@ -1363,12 +1375,19 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            if (matchResult.Status != PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.Resolved)
+            var isResolved = matchResult.Status is PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.Resolved
+                or PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.ResolvedEditionFamily;
+            if (!isResolved)
             {
                 Console.Error.WriteLine(
                     $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
                 tiltForumsUnmatched++;
                 continue;
+            }
+
+            if (matchResult.Status == PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatchStatus.ResolvedEditionFamily)
+            {
+                tiltForumsEditionFamilyFanouts++;
             }
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
@@ -1391,11 +1410,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
 
             string topicId;
-            string documentId;
             try
             {
                 topicId = new Uri(listing.TopicUrl).Segments[^1].TrimEnd('/');
-                documentId = $"tiltforums_{topicId}_{matchResult.MachineId}";
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1405,50 +1422,77 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 continue;
             }
 
-            var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
-                MachineId: matchResult.MachineId!,
-                MachineTitle: matchResult.MachineTitle!,
-                Manufacturer: matchResult.ManufacturerDisplayName!,
-                DocumentId: documentId,
-                DocumentUrl: article.TopicUrl,
-                DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
-                LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow);
+            // Per-rulesheet flags, mirroring --sync-kineticist-tutorials's
+            // articleIndexed/articleHadContent pattern: `indexed` counts once
+            // per rulesheet that landed on at least one machine, not once per
+            // sibling edition, so the two twin verbs' summary counters mean
+            // the same thing.
+            var rulesheetIndexed = false;
+            var rulesheetHadContent = false;
 
-            var chunks = tiltForumsSynthesizer.Synthesize(article, chunkRequest);
-            if (chunks.Count == 0)
+            foreach (var machineMatch in matchResult.Machines)
             {
-                tiltForumsSkippedNoContent++;
-                continue;
-            }
+                var documentId = $"tiltforums_{topicId}_{machineMatch.MachineId}";
 
-            try
-            {
-                var result = await tiltForumsIndexer.UpsertAsync(chunkRequest, chunks, tiltForumsIndexerOptions, cancellationToken);
-                if (result.Failures.Count > 0)
+                // Rulesheets describe gameplay rules, which are edition-agnostic
+                // (ADR-0032) — every chunk gets the franchise-wide tag regardless
+                // of whether this listing resolved to one machine or fanned out
+                // to several sibling editions.
+                var chunkRequest = new PinballWizard.Application.Rag.Chunking.ChunkRequest(
+                    MachineId: machineMatch.MachineId,
+                    MachineTitle: machineMatch.MachineTitle,
+                    Manufacturer: machineMatch.ManufacturerDisplayName,
+                    DocumentId: documentId,
+                    DocumentUrl: article.TopicUrl,
+                    DocumentType: PinballWizard.Core.Models.DocumentType.Rulesheet,
+                    LastScrapedUtc: article.PublishedAt ?? DateTimeOffset.UtcNow,
+                    EditionScope: "franchise-wide");
+
+                var chunks = tiltForumsSynthesizer.Synthesize(article, chunkRequest);
+                if (chunks.Count == 0)
                 {
-                    foreach (var failure in result.Failures)
+                    continue;
+                }
+                rulesheetHadContent = true;
+
+                try
+                {
+                    var result = await tiltForumsIndexer.UpsertAsync(chunkRequest, chunks, tiltForumsIndexerOptions, cancellationToken);
+                    if (result.Failures.Count > 0)
                     {
-                        Console.Error.WriteLine(
-                            $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.GameTitle}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        foreach (var failure in result.Failures)
+                        {
+                            Console.Error.WriteLine(
+                                $"  AI Search rejected chunk '{failure.ChunkId}' for '{article.GameTitle}': HTTP {failure.StatusCode} — {failure.ErrorMessage}");
+                        }
+                        tiltForumsFailed++;
                     }
+                    else
+                    {
+                        Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
+                        rulesheetIndexed = true;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Console.Error.WriteLine($"  Failed to index '{article.GameTitle}' -> machine {machineMatch.MachineId}: {ex.Message}");
                     tiltForumsFailed++;
                 }
-                else
-                {
-                    Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {matchResult.MachineId} ({chunks.Count} chunk(s))");
-                    tiltForumsIndexed++;
-                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            if (rulesheetIndexed)
             {
-                Console.Error.WriteLine($"  Failed to index '{article.GameTitle}': {ex.Message}");
-                tiltForumsFailed++;
+                tiltForumsIndexed++;
+            }
+            else if (!rulesheetHadContent)
+            {
+                tiltForumsSkippedNoContent++;
             }
         }
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1781,6 +1825,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         return;
     }
 
+    // Handle --backfill-manufacturer-slugs (issue #672: recover ManufacturerSlugs
+    // from cross-reference provenance already in scraped_documents_raw; no HTTP
+    // calls). Resolves IScraperReconciliationService + IRawDocumentRepository from
+    // DI; both are only registered when Cosmos is configured.
+    if (backfillManufacturerSlugs)
+    {
+        await BackfillManufacturerSlugsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
     // Default behavior: scrape (discover + upsert to Cosmos).
     var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
 
@@ -1790,6 +1844,13 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (!scrapeResult.Errors.IsEmpty)
     {
         Console.WriteLine($"  {scrapeResult.Errors.Count} errors during discovery");
+        // A scraper failure is caught, logged, and added to Errors by
+        // ScraperOrchestrator, then the run continues with the next source --
+        // but without this, the process still exits 0. Every scraper now runs
+        // as its own scheduled ACA Job (Admin > Jobs), and ACA reads the exit
+        // code as the job's success/failure status: without this, a fully-failed
+        // scraper run reports "Succeeded" on the dashboard (Invariant #17).
+        Environment.ExitCode = 1;
     }
 });
 

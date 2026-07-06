@@ -132,6 +132,15 @@ public sealed class AdminMachinesTests : AsyncBunitContext
         Assert.NotNull(grid);
     }
 
+    [Fact]
+    public async Task AdminMachines_Renders_GridSearchBox()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
+
     // ── As-of stamp ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -179,17 +188,18 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     // ── Axis selector ─────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task AdminMachines_AxisSelector_RendersAllFiveAxisButtons()
+    public async Task AdminMachines_AxisSelector_RendersAllFourAxisButtons()
     {
         var cut = RenderWithPopover<AdminMachines>();
         await cut.InvokeAsync(() => Task.CompletedTask);
 
         var selector = cut.Find("[data-testid='groupby-selector']");
-        // Five in-circuit buttons, one per axis (MudButton with OnClick renders
-        // as <button>, not <a> — the static href selector is retired).
+        // Four in-circuit buttons, one per axis — Manufacturer/Health/Year/Source
+        // (Franchise was removed by 5870325: "not useful to end users"). MudButton
+        // with OnClick renders as <button>, not <a> — the static href selector is retired.
         var buttons = selector.QuerySelectorAll("button");
-        Assert.True(buttons.Length >= 5,
-            $"Expected at least 5 axis buttons, got {buttons.Length}.");
+        Assert.True(buttons.Length >= 4,
+            $"Expected at least 4 axis buttons, got {buttons.Length}.");
     }
 
     [Fact]
@@ -243,7 +253,6 @@ public sealed class AdminMachinesTests : AsyncBunitContext
     }
 
     [Theory]
-    [InlineData("Franchise")]
     [InlineData("Year")]
     [InlineData("Source")]
     public async Task AdminMachines_ClickingAxis_RegroupsWithoutError(string label)

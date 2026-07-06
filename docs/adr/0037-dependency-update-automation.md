@@ -37,7 +37,8 @@ Split the job across two tools by what each does best:
   rationale lives inline):
   - Updates **grouped by package family** (Aspire, Microsoft.Extensions,
     Microsoft.AspNetCore, OpenTelemetry, Azure SDKs, test deps) — a servicing-train
-    bump lands as one reviewable PR, not twenty.
+    bump lands as one reviewable PR, not twenty. All GitHub Actions bumps land in
+    a single **"GitHub Actions"** group PR.
   - **Minor / patch / digest auto-merge** via GitHub's native auto-merge, which
     only merges after `main`'s required status checks pass (`Build, test,
     coverage` + forbidden-token scan + `Analyze (csharp)`/CodeQL). Auto-merge is
@@ -47,6 +48,12 @@ Split the job across two tools by what each does best:
     appear as checkboxes on the Renovate Dependency Dashboard issue and open a PR
     only when a human checks the box. This encodes the standing rule that
     breaking-change bumps land as dedicated, individually reviewed PRs.
+  - **GitHub Actions are SHA-pinned** (`pinDigests: true`). Renovate converted
+    every floating `@vN` tag to `@<commit-sha> # vN` and will keep those SHAs
+    current as each action publishes new tags. SHA pinning prevents a compromised
+    or mistakenly-overwritten tag from silently changing what runs in CI.
+    NuGet packages are *not* SHA-pinned — SHAs are not meaningful for NuGet
+    restore; version-tagged references are the correct primitive there.
   - Commit messages pinned to the repo's `chore(deps) <summary>` convention
     (no colon after the scope; `semanticCommits: "disabled"`).
 
@@ -102,3 +109,25 @@ onboarding PR.
   set is the guardrail.
 - Renovate does not migrate breaking changes. A major PR it opens (once approved)
   may be red; closing it is a human/code task, not a version bump.
+
+---
+
+## Amendment — 2026-07-04
+
+**Change:** Added `pinDigests: true` to `.github/renovate.json5` and grouped all
+GitHub Actions updates under a single `"GitHub Actions"` package rule.
+
+**Rationale:** A workflow audit found that all 16 workflow files used floating
+major-version tags (e.g. `actions/checkout@v6`). A tag can be moved by the
+action's publisher — intentionally (new patch) or maliciously (supply-chain
+attack). SHA pinning eliminates this class of risk: the exact commit that ran in
+CI is recorded in the workflow file itself, and any change requires a Renovate PR
+that goes through the same required-check gate as code changes.
+
+**Effect:** On its next scheduled run (Monday 06:00 UTC) Renovate will open one
+PR that rewrites every `uses: action@vN` line to `uses: action@<sha> # vN`.
+Subsequent digest bumps (when an action publishes a new commit under the same
+tag) arrive in the weekly `"GitHub Actions"` group PR and auto-merge once CI
+passes.
+
+**No change to Dependabot or the Renovate major-hold posture.**

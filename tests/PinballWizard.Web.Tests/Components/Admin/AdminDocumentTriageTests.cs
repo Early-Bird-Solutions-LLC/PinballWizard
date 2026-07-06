@@ -91,6 +91,15 @@ public sealed class AdminDocumentTriageTests : AsyncBunitContext
         Assert.NotNull(adminLink);
     }
 
+    [Fact]
+    public async Task AdminDocumentTriage_Renders_GridSearchBox()
+    {
+        var cut = RenderWithPopover<AdminDocumentTriage>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
+
 }
 
 // Behavioral test: page shell + spinner render BEFORE data arrives; spinner hides

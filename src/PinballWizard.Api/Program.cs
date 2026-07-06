@@ -149,6 +149,9 @@ app.MapWizardLandingEndpoint();
 // ADR-0049 phase 3: GET /api/machines/suggest?q={query}&top={n}
 app.MapMachineSuggestEndpoint();
 
+// AI-driven grid search: GET /api/search/grid?q={query}&context={context}
+app.MapGridSearchEndpoint();
+
 await app.RunAsync().ConfigureAwait(false);
 
 // Exposed for WebApplicationFactory<Program> composition-root regression tests.

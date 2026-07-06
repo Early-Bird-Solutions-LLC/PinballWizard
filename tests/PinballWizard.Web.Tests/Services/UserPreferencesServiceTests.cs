@@ -19,13 +19,14 @@ namespace PinballWizard.Web.Tests.Services;
 public sealed class UserPreferencesServiceTests
 {
     [Fact]
-    public async Task InitializeAsync_ReadsAllThreePreferences_FromLocalStorage()
+    public async Task InitializeAsync_ReadsAllFourPreferences_FromLocalStorage()
     {
         using var ctx = new BunitContext();
         ctx.JSInterop.Mode = JSRuntimeMode.Loose;
         ctx.JSInterop.Setup<string>("pinwiz.getTheme").SetResult(ThemeNames.DaytimeRoute);
         ctx.JSInterop.Setup<string>("pinwiz.getMotion").SetResult("on");
         ctx.JSInterop.Setup<string>("pinwiz.getSound").SetResult("on");
+        ctx.JSInterop.Setup<string>("pinwiz.getPageSize").SetResult("50");
 
         var js = ctx.Services.GetRequiredService<IJSRuntime>();
         var svc = new UserPreferencesService(js);
@@ -35,6 +36,7 @@ public sealed class UserPreferencesServiceTests
         Assert.Equal(ThemeNames.DaytimeRoute, svc.CurrentTheme);
         Assert.Equal("on", svc.CurrentMotion);
         Assert.Equal("on", svc.CurrentSound);
+        Assert.Equal(50, svc.PageSize);
         Assert.True(svc.StorageAvailable);
     }
 
@@ -143,5 +145,19 @@ public sealed class UserPreferencesServiceTests
         await svc.SetSoundAsync("on");
 
         Assert.Equal("on", svc.CurrentSound);
+    }
+
+    [Fact]
+    public async Task SetPageSizeAsync_UpdatesPageSize()
+    {
+        using var ctx = new BunitContext();
+        ctx.JSInterop.Mode = JSRuntimeMode.Loose;
+
+        var js = ctx.Services.GetRequiredService<IJSRuntime>();
+        var svc = new UserPreferencesService(js);
+
+        await svc.SetPageSizeAsync(100);
+
+        Assert.Equal(100, svc.PageSize);
     }
 }

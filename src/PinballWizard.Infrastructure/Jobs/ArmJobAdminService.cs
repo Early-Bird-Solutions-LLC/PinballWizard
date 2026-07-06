@@ -260,6 +260,81 @@ internal sealed class ArmJobAdminService : IJobAdminService
         }
     }
 
+    public async Task UpdateScheduleAsync(string jobName, string cronExpression, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobName);
+        CronExpressionValidator.Validate(cronExpression);
+        try
+        {
+            var rg = await GetResourceGroupAsync(cancellationToken).ConfigureAwait(false);
+
+            ContainerAppJobResource job;
+            try
+            {
+                var response = await rg.GetContainerAppJobAsync(jobName, cancellationToken).ConfigureAwait(false);
+                job = response.Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                throw new ArmJobAdminException($"Job '{jobName}' not found.", ex, isNotFound: true);
+            }
+
+            // Patch only the cron expression — reuse the full existing Configuration
+            // object (registries, secrets, identity settings, etc. all come along
+            // unchanged) rather than constructing a fresh minimal one. A freshly
+            // constructed ContainerAppJobConfiguration would drop those fields, and
+            // ContainerAppJobPatch.Properties is null until explicitly assigned (verified
+            // against Azure.ResourceManager.AppContainers 1.5.0 — the parameterless
+            // ContainerAppJobPatch() ctor does not initialize Properties).
+            var existingConfig = job.Data.Configuration;
+            if (existingConfig?.ScheduleTriggerConfig is null)
+            {
+                throw new ArmJobAdminException(
+                    $"Job '{jobName}' does not have a schedule trigger configuration.");
+            }
+
+            existingConfig.ScheduleTriggerConfig = new JobConfigurationScheduleTriggerConfig(cronExpression)
+            {
+                Parallelism = existingConfig.ScheduleTriggerConfig.Parallelism,
+                ReplicaCompletionCount = existingConfig.ScheduleTriggerConfig.ReplicaCompletionCount,
+            };
+
+            var patch = new ContainerAppJobPatch
+            {
+                Properties = new ContainerAppJobPatchProperties
+                {
+                    Configuration = existingConfig,
+                },
+            };
+
+            await job.UpdateAsync(Azure.WaitUntil.Completed, patch, cancellationToken)
+                .ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Updated schedule for ACA job {JobName} to '{CronExpression}' in resource group {ResourceGroup}.",
+                jobName, cronExpression, _resourceGroupName);
+        }
+        catch (ArmJobAdminException)
+        {
+            throw;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex,
+                "ARM request failed while updating schedule for job {JobName}: {Status} {Code}.",
+                jobName, ex.Status, ex.ErrorCode);
+            throw new ArmJobAdminException(
+                $"Could not update schedule for job '{jobName}': {ex.ErrorCode ?? ex.Message} (HTTP {ex.Status})", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not ArgumentException)
+        {
+            _logger.LogError(ex,
+                "Unexpected error updating schedule for ACA job {JobName}.",
+                jobName);
+            throw new ArmJobAdminException($"Unexpected error updating schedule for job '{jobName}'.", ex);
+        }
+    }
+
     private Task<ResourceGroupResource> GetResourceGroupAsync(CancellationToken cancellationToken)
     {
         // Construct the resource group reference from its known ID without making a GET call.

@@ -34,12 +34,18 @@ public sealed class SeedQuestionsContractTests
     }
 
     [Fact]
-    public void ProductionManifest_HasExactlyFourQuestions()
+    public void ProductionManifest_HasExactlyOneQuestionCountForEachPublicSubAgent()
     {
         var manifest = LoadManifest();
 
         Assert.NotNull(manifest.Questions);
-        Assert.Equal(4, manifest.Questions!.Count);
+        // Derived from AgentName.PublicWizardSubAgents, not a hardcoded "4" —
+        // a hardcoded count silently drifts the moment a real public sub-agent
+        // is added: the test would fail with "Expected 4, Actual 5" even after
+        // a developer correctly added both the PublicWizardSubAgents entry and
+        // the matching seed question, reading as a regression instead of the
+        // expected update it actually is.
+        Assert.Equal(AgentName.PublicWizardSubAgents.Count, manifest.Questions!.Count);
     }
 
     [Fact]
@@ -52,7 +58,11 @@ public sealed class SeedQuestionsContractTests
             .OrderBy(s => s)
             .ToList();
 
-        var expected = AgentName.All
+        // PublicWizardSubAgents, not All — the landing page only ever shows
+        // customer-facing sub-agents a seed question can route to. GridSearch
+        // (in AgentName.All) is an admin-only internal tool with no public
+        // routing entry, so it must not be expected here.
+        var expected = AgentName.PublicWizardSubAgents
             .OrderBy(s => s)
             .ToList();
 
@@ -102,9 +112,10 @@ public sealed class SeedQuestionsContractTests
 
         foreach (var q in manifest.Questions!)
         {
+            // PublicWizardSubAgents, not All — see ProductionManifest_HasExactlyOneQuestionPerSubAgent.
             Assert.Contains(
                 q.TargetSubAgent,
-                AgentName.All,
+                AgentName.PublicWizardSubAgents,
                 StringComparer.Ordinal);
         }
     }

@@ -488,6 +488,9 @@ html, body {
 .citation-card {
     border: 1px solid var(--pw-border-quiet);
     border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 /* High-score (≥ 0.85) accent border — arcade amber glow to signal confidence. */
@@ -499,10 +502,239 @@ html, body {
 .citation-group {
     border-left: 2px solid var(--pw-border-quiet);
     padding-left: 8px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
 .citation-strip-label {
     display: block;
+}
+
+/* ── MudDataGrid Customization (AB#259 / Branding) ────────────────────── */
+
+/* Group headers: force high-contrast text on MudBlazor's dark group-row bg.
+   MudBlazor paints group rows with --mud-palette-background-gray (dark in all
+   themes), so we hardcode white text to guarantee WCAG AA contrast. */
+.pw-grid-group-header {
+    color: #ffffff;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.pw-grid-group-label {
+    color: var(--pw-accent-primary);
+    margin-right: 4px;
+    font-weight: 600;
+}
+
+/* Alignment utilities for table cells/headers. */
+.text-right {
+    text-align: right !important;
+}
+
+/* ── BrandFooter (global — not scoped) ────────────────────────────────── */
+/* Premium multi-section footer with arcade-glow divider, organized link
+   columns, coverage callout, and bottom meta bar. Consumes --pw-* design
+   tokens for cross-theme compatibility. */
+
+.brand-footer {
+    position: relative;
+    background: var(--pw-bg-base);
+    color: var(--pw-text-secondary);
+    margin-top: auto;
+}
+
+/* Animated glow divider — warm amber gradient pulse */
+.brand-footer__glow-divider {
+    height: 2px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--pw-accent-primary) 20%,
+        var(--pw-accent-grounded) 50%,
+        var(--pw-accent-primary) 80%,
+        transparent 100%
+    );
+    opacity: 0.6;
+    animation: footer-glow-shift 6s ease-in-out infinite alternate;
+}
+
+@keyframes footer-glow-shift {
+    0%   { opacity: 0.4; filter: hue-rotate(0deg); }
+    100% { opacity: 0.7; filter: hue-rotate(10deg); }
+}
+
+.brand-footer__container {
+    padding-top: 48px;
+    padding-bottom: 24px;
+}
+
+/* ── Top row: brand column + link columns ─────────────────────────────── */
+.brand-footer__top {
+    display: grid;
+    grid-template-columns: 1.5fr 2fr;
+    gap: 48px;
+    padding-bottom: 40px;
+}
+
+.brand-footer__brand-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.brand-footer__logo {
+    font-family: var(--pw-font-display) !important;
+    color: var(--pw-text-primary) !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px;
+}
+
+.brand-footer__tagline {
+    color: var(--pw-text-secondary) !important;
+    line-height: 1.6 !important;
+    max-width: 280px;
+}
+
+/* Link columns nav */
+.brand-footer__links {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+}
+
+.brand-footer__link-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.brand-footer__link-heading {
+    color: var(--pw-accent-primary) !important;
+    font-family: var(--pw-font-display) !important;
+    font-weight: 600 !important;
+    letter-spacing: 1.5px !important;
+    font-size: 0.7rem !important;
+    margin-bottom: 4px;
+}
+
+.brand-footer__link {
+    color: var(--pw-text-secondary) !important;
+    font-size: 0.875rem !important;
+    transition: color var(--pw-motion-fast) ease,
+                transform var(--pw-motion-fast) ease !important;
+    display: inline-block;
+}
+
+.brand-footer__link:hover {
+    color: var(--pw-text-primary) !important;
+    transform: translateX(3px);
+}
+
+/* ── Coverage statement callout ───────────────────────────────────────── */
+.brand-footer__coverage {
+    border-top: 1px solid var(--pw-border-quiet);
+    border-bottom: 1px solid var(--pw-border-quiet);
+    padding: 20px 0;
+    margin-bottom: 20px;
+}
+
+.brand-footer__coverage-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.brand-footer__coverage-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--pw-accent-grounded);
+    margin-top: 6px;
+    box-shadow: 0 0 6px var(--pw-border-glow-green);
+    animation: footer-dot-pulse 3s ease-in-out infinite;
+}
+
+@keyframes footer-dot-pulse {
+    0%, 100% { box-shadow: 0 0 4px var(--pw-border-glow-green); }
+    50%      { box-shadow: 0 0 10px var(--pw-accent-grounded), 0 0 20px var(--pw-border-glow-green); }
+}
+
+.brand-footer__coverage-text {
+    color: var(--pw-text-secondary) !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.6 !important;
+}
+
+.brand-footer__coverage-link {
+    margin-left: 4px;
+    font-weight: 500 !important;
+}
+
+/* ── Bottom bar ───────────────────────────────────────────────────────── */
+.brand-footer__bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 4px;
+}
+
+.brand-footer__copyright {
+    color: var(--pw-text-faint, var(--pw-text-secondary)) !important;
+    font-size: 0.75rem !important;
+}
+
+.brand-footer__meta-links {
+    display: flex !important;
+    align-items: center;
+    gap: 0;
+}
+
+.brand-footer__meta-link {
+    color: var(--pw-text-faint, var(--pw-text-secondary)) !important;
+    font-size: 0.75rem !important;
+    transition: color var(--pw-motion-fast) ease !important;
+}
+
+.brand-footer__meta-link:hover {
+    color: var(--pw-accent-primary) !important;
+}
+
+.brand-footer__meta-sep {
+    color: var(--pw-border-quiet);
+    margin: 0 8px;
+    user-select: none;
+}
+
+/* ── Responsive: mobile collapse ──────────────────────────────────────── */
+@media (max-width: 768px) {
+    .brand-footer__top {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+
+    .brand-footer__links {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+    }
+
+    .brand-footer__bottom {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .brand-footer__links {
+        grid-template-columns: 1fr;
+    }
+
+    .brand-footer__container {
+        padding-top: 32px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -63,6 +63,19 @@ public sealed class AdminJobDetailTests : AsyncBunitContext
     // ── Populated state ───────────────────────────────────────────────────────
 
     [Fact]
+    public async Task Populated_RendersGridSearchBox()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        cut.Find("[data-testid='grid-search-input']");
+    }
+
+    [Fact]
     public async Task Populated_RendersHeaderFields()
     {
         var svc = Substitute.For<IJobAdminService>();
@@ -201,6 +214,219 @@ public sealed class AdminJobDetailTests : AsyncBunitContext
 
         cut.Find("[data-testid='job-detail-service-unavailable']");
         Assert.Empty(cut.FindAll("[data-testid='job-detail-header']"));
+    }
+
+    // ── Schedule edit ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task EditScheduleButton_AdminWithCronExpression_IsVisible()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Admin user + CronExpression present → edit button must render
+        cut.Find("[data-testid='edit-schedule-button']");
+    }
+
+    [Fact]
+    public async Task EditScheduleButton_CronExpressionNull_IsHidden()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        var detailWithNoCron = new JobDetail(
+            JobName: "pinwiz-job-linker-buutj",
+            DisplayName: "Linker",
+            CronExpression: null,
+            TriggerType: "Manual",
+            LatestExecutionStatus: "Succeeded",
+            ImageTag: null,
+            Executions: [],
+            HasMore: false);
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(detailWithNoCron));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // No CronExpression → edit button must not render even for admin
+        Assert.Empty(cut.FindAll("[data-testid='edit-schedule-button']"));
+    }
+
+    [Fact]
+    public async Task EditScheduleButton_NonAdmin_IsHidden()
+    {
+        // Override the constructor's admin setup: render as an authenticated
+        // user who does NOT satisfy the AdminOnly policy.
+        this.AddAuthorization().SetNotAuthorized();
+
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail())); // CronExpression is set
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Non-admin → edit button must be hidden even though CronExpression exists
+        Assert.Empty(cut.FindAll("[data-testid='edit-schedule-button']"));
+    }
+
+    [Fact]
+    public async Task EditButtonClick_OpensPanelPrefilledWithCurrentCron()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='edit-schedule-button']").Click());
+        await FlushAsync(cut);
+
+        // Panel must be present
+        cut.Find("[data-testid='schedule-edit-panel']");
+
+        // Input pre-filled with the current cron expression
+        // MudBaseInput splats UserAttributes onto the <input> itself
+        var cronInput = cut.Find("[data-testid='cron-input']");
+        Assert.Equal("0 2 * * *", cronInput.GetAttribute("value"));
+
+        // Preview shows the human-readable form
+        // CronExpressionFormatter.Format("0 2 * * *") == "Daily at 2:00 AM UTC" (see CronExpressionFormatterTests)
+        var preview = cut.Find("[data-testid='cron-preview']");
+        Assert.Contains("Daily at 2:00 AM UTC", preview.TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveSchedule_ValidExpression_CallsUpdateScheduleAsyncAndClosesPanel()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+        svc.UpdateScheduleAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Open the panel
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='edit-schedule-button']").Click());
+        await FlushAsync(cut);
+
+        // Change to a different valid expression
+        // The cron-input MudTextField has Immediate="true", which wires TextChanged
+        // to oninput (not onchange) — use .Input(), not .Change().
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='cron-input']").Input("0 5 * * 0"));
+
+        // Save
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='schedule-edit-save']").Click());
+        await FlushAsync(cut);
+
+        // Service must have been called with the trimmed new expression
+        await svc.Received(1).UpdateScheduleAsync(
+            "pinwiz-job-linker-buutj", "0 5 * * 0", Arg.Any<CancellationToken>());
+
+        // Panel must be closed
+        Assert.Empty(cut.FindAll("[data-testid='schedule-edit-panel']"));
+    }
+
+    [Fact]
+    public async Task SaveSchedule_InvalidExpression_ShowsInlineErrorAndDoesNotCallService()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Open the panel
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='edit-schedule-button']").Click());
+        await FlushAsync(cut);
+
+        // Enter an expression that CronExpressionValidator rejects (not 5 fields)
+        // The cron-input MudTextField has Immediate="true", which wires TextChanged
+        // to oninput (not onchange) — use .Input(), not .Change().
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='cron-input']").Input("not a cron"));
+
+        // Click Save
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='schedule-edit-save']").Click());
+        await FlushAsync(cut);
+
+        // Inline error must appear in the rendered markup
+        Assert.Contains("exactly 5 fields", cut.Markup, StringComparison.OrdinalIgnoreCase);
+
+        // UpdateScheduleAsync must never have been called
+        await svc.DidNotReceive().UpdateScheduleAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveSchedule_ArmFailure_ShowsErrorAndKeepsPanelOpen()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+        // Mirror the throw pattern from ArmError_RendersErrorAlert
+        svc.UpdateScheduleAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new ArmJobAdminException("ARM failure"));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Open the panel and save immediately (expression is pre-filled and valid)
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='edit-schedule-button']").Click());
+        await FlushAsync(cut);
+
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='schedule-edit-save']").Click());
+        await FlushAsync(cut);
+
+        // UpdateScheduleAsync was called exactly once
+        await svc.Received(1).UpdateScheduleAsync(
+            "pinwiz-job-linker-buutj", Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // Panel stays open on ARM failure (SaveScheduleAsync does not close it in the catch block)
+        cut.Find("[data-testid='schedule-edit-panel']");
+    }
+
+    [Fact]
+    public async Task CancelButton_Click_ClosesPanelWithoutCallingService()
+    {
+        var svc = Substitute.For<IJobAdminService>();
+        svc.GetJobDetailAsync("pinwiz-job-linker-buutj", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(MakeDetail()));
+
+        var cut = RenderPage(svc);
+        await FlushAsync(cut);
+
+        // Open the panel
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='edit-schedule-button']").Click());
+        await FlushAsync(cut);
+
+        // Cancel
+        await cut.InvokeAsync(() =>
+            cut.Find("[data-testid='schedule-edit-cancel']").Click());
+        await FlushAsync(cut);
+
+        // Panel must be closed
+        Assert.Empty(cut.FindAll("[data-testid='schedule-edit-panel']"));
+
+        // UpdateScheduleAsync must never have been called
+        await svc.DidNotReceive().UpdateScheduleAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ── Execution row linking ─────────────────────────────────────────────────

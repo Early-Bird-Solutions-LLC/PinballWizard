@@ -118,4 +118,15 @@ public sealed class AdminCorpusTests : AsyncBunitContext
         // Totals still render.
         cut.Find("[data-testid='corpus-total']");
     }
+
+    [Fact]
+    public async Task Populated_DoesNotRenderGridSearchBox()
+    {
+        _reader.GetCorpusStatsAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(Stats()));
+
+        var cut = RenderCorpus();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.Empty(cut.FindAll("[data-testid='grid-search-input']"));
+    }
 }

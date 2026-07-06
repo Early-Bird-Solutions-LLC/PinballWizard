@@ -1,0 +1,21 @@
+@namespace PinballWizard.Web.Components.Shared
+
+@* MachineLink — shared component for linking to a machine's detail page.
+ *
+ * Usage:
+ * <MachineLink MachineId="G4xlK-sky-dive" ManufacturerKey="gottlieb" Title="Sky Dive" />
+ *@
+
+<MudLink Href="@($"/machines/{ManufacturerKey}/{MachineId}")" 
+         data-testid="machine-link"
+         Class="@Class">
+    @Title
+</MudLink>
+
+@code {
+    [Parameter, EditorRequired] public string MachineId { get; set; } = null!;
+    [Parameter, EditorRequired] public string ManufacturerKey { get; set; } = null!;
+    [Parameter, EditorRequired] public string Title { get; set; } = null!;
+    
+    [Parameter] public string? Class { get; set; }
+}

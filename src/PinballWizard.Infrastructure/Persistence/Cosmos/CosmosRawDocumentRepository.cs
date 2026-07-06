@@ -172,6 +172,53 @@ internal sealed class CosmosRawDocumentRepository
         existing.Timeline ??= new RawTimelineInfo { FirstDiscoveredAt = DateTime.UtcNow };
         existing.Timeline.LastDownloadedAt = DateTime.UtcNow;
 
+        // Denormalize into the top-level ContentHash — mirrors the identical
+        // self-heal already in UpsertRawAsync above. Without this, a document
+        // downloaded here but not yet re-scraped a second time (the only other
+        // writer of ContentHash) keeps ContentHash permanently empty even though
+        // File.Sha256 is populated. RAG's rag_index_state short-circuit reads
+        // ContentHash (via scraped_documents.content_hash), not File.Sha256, so
+        // the gap caused affected documents to be fully re-embedded on every
+        // --run-rag-backfill run, forever (issue #664). A blank incoming Sha256
+        // (the TOCTOU degrade case) never clobbers a hash already stored.
+        if (file.Sha256 is { } newHash && !string.IsNullOrWhiteSpace(newHash))
+        {
+            existing.ContentHash = newHash;
+        }
+
+        await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
+    }
+
+    // IRawDocumentRepository.DenormalizeContentHashAsync
+    public async Task DenormalizeContentHashAsync(
+        string documentId,
+        string sha256,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+
+        // A blank hash has nothing to denormalize — no-op rather than clobber
+        // whatever ContentHash already holds.
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            return;
+        }
+
+        var existing = await GetByIdAsync(documentId, documentId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is null)
+        {
+            throw new InvalidOperationException(
+                $"DenormalizeContentHashAsync: document {documentId} not found in scraped_documents_raw.");
+        }
+
+        // ONLY ContentHash changes — File and Timeline (including
+        // LastDownloadedAt) are left exactly as they were. Unlike UpdateFileAsync,
+        // no bytes were transferred here, so stamping a fresh LastDownloadedAt
+        // would misrepresent when the document was actually last fetched.
+        existing.ContentHash = sha256;
+
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }
 
@@ -339,8 +386,8 @@ internal sealed class CosmosRawDocumentRepository
         const string query =
             "SELECT * FROM c " +
             "WHERE (@game = '' OR (IS_DEFINED(c.game) AND IS_DEFINED(c.game.title) " +
-            "       AND CONTAINS(LOWER(c.game.title), LOWER(@game)))) " +
-            "  AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
+            "       AND (CONTAINS(LOWER(c.game.title), LOWER(@game)) OR CONTAINS(LOWER(@game), LOWER(c.game.title))))) " +
+            "AND (@manufacturer = '' OR LOWER(c.manufacturer) = LOWER(@manufacturer)) " +
             "  AND (@type = '' OR LOWER(c.classification.document_type) = LOWER(@type)) " +
             "ORDER BY c.timeline.first_discovered_at DESC";
 
@@ -396,6 +443,7 @@ internal sealed class CosmosRawDocumentRepository
             Manufacturer: raw.Manufacturer ?? "",
             FirstDiscoveredAt: raw.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
             LastDownloadedAt: raw.Timeline?.LastDownloadedAt,
+            MachineId: raw.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? raw.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? raw.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? raw.ResolutionStrategy : null,
@@ -425,6 +473,7 @@ internal sealed class CosmosRawDocumentRepository
             PageCount: r.File?.PageCount,
             SizeBytes: r.File?.SizeBytes,
             FirstDiscoveredAt: r.Timeline?.FirstDiscoveredAt ?? DateTimeOffset.MinValue,
+            MachineId: r.LinkedMachineIds?.FirstOrDefault(),
             LinkStatus: includeAdminFields ? r.LinkStatus : null,
             LinkFailureReason: includeAdminFields ? r.LinkFailureReason : null,
             ResolutionStrategy: includeAdminFields ? r.ResolutionStrategy : null

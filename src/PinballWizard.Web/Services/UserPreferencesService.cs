@@ -27,6 +27,7 @@ public static class PreferenceKeys
     public const string Theme = "pinwiz.theme";
     public const string Motion = "pinwiz.motion";
     public const string Sound = "pinwiz.sound";
+    public const string PageSize = "pinwiz.pageSize";
 }
 
 public interface IUserPreferencesService
@@ -34,12 +35,14 @@ public interface IUserPreferencesService
     string CurrentTheme { get; }   // ThemeNames.*
     string CurrentMotion { get; }  // "match" | "on" | "off"
     string CurrentSound { get; }   // "muted" | "on"
+    int PageSize { get; }
     bool StorageAvailable { get; }
     event Action? StateChanged;
     Task InitializeAsync();
     Task SetThemeAsync(string theme);
     Task SetMotionAsync(string motion);
     Task SetSoundAsync(string sound);
+    Task SetPageSizeAsync(int pageSize);
 }
 
 public sealed class UserPreferencesService(IJSRuntime js, ILogger<UserPreferencesService>? logger = null) : IUserPreferencesService
@@ -47,6 +50,7 @@ public sealed class UserPreferencesService(IJSRuntime js, ILogger<UserPreference
     public string CurrentTheme { get; private set; } = ThemeNames.Paper;
     public string CurrentMotion { get; private set; } = "match";
     public string CurrentSound { get; private set; } = "muted";
+    public int PageSize { get; private set; } = 10;
     public bool StorageAvailable { get; private set; } = true;
 
     public event Action? StateChanged;
@@ -58,6 +62,11 @@ public sealed class UserPreferencesService(IJSRuntime js, ILogger<UserPreference
             CurrentTheme = await js.InvokeAsync<string>("pinwiz.getTheme").ConfigureAwait(false);
             CurrentMotion = await js.InvokeAsync<string>("pinwiz.getMotion").ConfigureAwait(false);
             CurrentSound = await js.InvokeAsync<string>("pinwiz.getSound").ConfigureAwait(false);
+            var pageSizeStr = await js.InvokeAsync<string>("pinwiz.getPageSize").ConfigureAwait(false);
+            if (int.TryParse(pageSizeStr, out var ps))
+            {
+                PageSize = ps;
+            }
         }
         catch (JSException)
         {
@@ -87,6 +96,14 @@ public sealed class UserPreferencesService(IJSRuntime js, ILogger<UserPreference
         try { await js.InvokeVoidAsync("pinwiz.setSound", sound).ConfigureAwait(false); }
         catch (JSException ex) { logger?.LogDebug(ex, "localStorage write failed for {Preference}; preference stored in-memory only.", "sound"); }
         CurrentSound = sound;
+        StateChanged?.Invoke();
+    }
+
+    public async Task SetPageSizeAsync(int pageSize)
+    {
+        try { await js.InvokeVoidAsync("pinwiz.setPageSize", pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture)).ConfigureAwait(false); }
+        catch (JSException ex) { logger?.LogDebug(ex, "localStorage write failed for {Preference}; preference stored in-memory only.", "pageSize"); }
+        PageSize = pageSize;
         StateChanged?.Invoke();
     }
 }

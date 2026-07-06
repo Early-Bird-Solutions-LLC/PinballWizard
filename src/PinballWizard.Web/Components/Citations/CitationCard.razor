@@ -55,7 +55,7 @@
           data-source-type="@Citation.SourceType.ToString()"
           data-relevance-score="@(Citation.RelevanceScore?.ToString("F2") ?? "")">
 
-    <MudStack Row="false" Spacing="1" Class="pa-3">
+    <MudStack Row="false" Spacing="1" Class="pa-3" Style="flex:1">
 
         @* Header row: ordinal badge + source-type icon + title + page anchor *@
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Wrap="Wrap.Wrap">
@@ -68,9 +68,22 @@
                      Class="citation-source-icon"
                      data-testid="citation-source-icon" />
 
-            <MudText Typo="Typo.subtitle2" Class="citation-title" Style="flex: 1; min-width: 0;">
-                @Citation.Title
-            </MudText>
+            @if (Citation.SourceType == CitationSourceType.MachineRecord && !string.IsNullOrWhiteSpace(Citation.MachineId))
+            {
+                <MudLink Href="@($"/machines/resolve/{Citation.MachineId}")" 
+                         Typo="Typo.subtitle2" 
+                         Class="citation-title" 
+                         Style="flex: 1; min-width: 0;"
+                         data-testid="citation-title-link">
+                    @Citation.Title
+                </MudLink>
+            }
+            else
+            {
+                <MudText Typo="Typo.subtitle2" Class="citation-title" Style="flex: 1; min-width: 0;">
+                    @Citation.Title
+                </MudText>
+            }
 
             @if (pageAnchor is not null)
             {

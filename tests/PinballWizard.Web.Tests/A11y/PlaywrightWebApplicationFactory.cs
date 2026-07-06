@@ -13,6 +13,7 @@ using PinballWizard.Web.Components;
 using PinballWizard.Web.Components.Degraded;
 using PinballWizard.Web.Components.Wizard;
 using PinballWizard.Web.Security;
+using PinballWizard.Web.Services;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.A11y;
@@ -77,6 +78,7 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
 
         // Scoped services depended on by Blazor components.
         builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
+        builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
 
         // Stub HTTP clients: base addresses point nowhere but the Index page
         // has a compiled-in fallback for when the landing endpoint is down.
@@ -97,6 +99,16 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         // client return [] → the autocomplete simply shows no suggestions.
         builder.Services
             .AddHttpClient<IMachineSuggestClient, MachineSuggestClient>(
+                c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
+            .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
+
+        // Every admin data grid now renders GridSearch (AppDataGrid's EnableAiSearch
+        // defaults true), which @injects IGridSearchClient — same "renders empty"
+        // failure class as the two exclusions noted above if left unregistered.
+        // SearchAsync only fires on an explicit user query, never during initial
+        // render, so the 503 stub is safe here too.
+        builder.Services
+            .AddHttpClient<IGridSearchClient, GridSearchClient>(
                 c => c.BaseAddress = new Uri("http://127.0.0.1:1"))
             .ConfigurePrimaryHttpMessageHandler(() => new StubHttpHandler());
 

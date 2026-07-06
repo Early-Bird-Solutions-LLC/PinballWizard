@@ -186,33 +186,24 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
         // handles the null result with an honest "unavailable" answer.
         var getMarketValue = AIFunctionFactory.Create(_marketValueTool.GetMarketValueAsync);
 
-        // Two-pass construction (Phase 4 W1-1, revised fix/wizard-citation-extraction):
-        //   Pass 1 — sub-agents (Valuation / Rules / Repair) get only
-        //            getMachineByTitle. searchCorpus is NOT included
-        //            because sub-agent tool results execute in an internal
-        //            agent execution context whose FunctionResultContent
-        //            objects are not surfaced in the Wizard's
-        //            AgentResponse.Messages — ToolTraceCitationExtractor
-        //            cannot observe them. The Wizard calls searchCorpus itself (Step 4
-        //            of Wizard.md) and passes the retrieved context inline
-        //            to the sub-agent, ensuring SearchCorpusResult objects
-        //            appear in the Wizard's AgentResponse.Messages where
-        //            the extractor reads them.
-        //   Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
+        // Pass 2 — Wizard gets getMachineByTitle + searchCorpus PLUS each
         //            sub-agent wrapped via AIAgent.AsAIFunction(). The
         //            function name defaults to the AIAgent's name
         //            (passed to AsAIAgent), which matches the routing
         //            table in Wizard.md.
         AITool[] subAgentTools = [getMachineByTitle];
-        var subAgentNames = AgentName.All.Where(n => n != AgentName.Wizard).ToArray();
-        var wizardTools = new List<AITool>(subAgentNames.Length + 3)
+        
+        // Connected sub-agents are the ones the Wizard dispatches to.
+        string[] connectedSubAgentNames = [AgentName.Valuation, AgentName.Rules, AgentName.Repair];
+        
+        var wizardTools = new List<AITool>(connectedSubAgentNames.Length + 3)
         {
             getMachineByTitle,
             searchCorpus,
             getMarketValue,
         };
 
-        foreach (var name in subAgentNames)
+        foreach (var name in connectedSubAgentNames)
         {
             var instructions = _promptProvider.GetPrompt(name);
             var model = ResolveModel(name);
@@ -225,11 +216,30 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             wizardTools.Add(subAgent.AsAIFunction());
 
             _logger.LogInformation(
-                "Constructed Foundry AIAgent (Responses Agent, sub-agent): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount}",
+                "Constructed Foundry AIAgent (Responses Agent, connected sub-agent): name={AgentName} model={Model} promptVersion={PromptVersion} toolCount={ToolCount}",
                 name,
                 model,
                 _promptProvider.PromptVersion,
                 subAgentTools.Length);
+        }
+
+        // Standalone agents (not connected to Wizard)
+        string[] standaloneAgentNames = [AgentName.GridSearch];
+        foreach (var name in standaloneAgentNames)
+        {
+            var instructions = _promptProvider.GetPrompt(name);
+            var model = ResolveModel(name);
+            var agent = projectClient.AsAIAgent(
+                model: model,
+                name: name,
+                instructions: instructions);
+            result[name] = agent;
+
+            _logger.LogInformation(
+                "Constructed Foundry AIAgent (Standalone): name={AgentName} model={Model} promptVersion={PromptVersion}",
+                name,
+                model,
+                _promptProvider.PromptVersion);
         }
 
         var wizardInstructions = _promptProvider.GetPrompt(AgentName.Wizard);
@@ -248,7 +258,7 @@ public sealed class FoundryAgentFactory : IFoundryAgentFactory, IFoundryAgentCac
             wizardModel,
             _promptProvider.PromptVersion,
             wizardTooling.Length,
-            string.Join(",", subAgentNames));
+            string.Join(",", connectedSubAgentNames));
 
         return result;
     }

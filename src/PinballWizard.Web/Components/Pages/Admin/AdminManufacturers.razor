@@ -21,7 +21,7 @@
  *
  * Sorted alphabetically by default (no ranking — favoritism guardrail). User can
  * re-sort by Manufacturer, Status, or Machines via AppDataGrid TemplateColumn sort.
- * Paged via AppDataGrid (RowsPerPage=25). Rows with an ingestion source link to the
+ * Paged via AppDataGrid (RowsPerPage defaults to the shared 10-row user preference). Rows with an ingestion source link to the
  * source-detail page; OPDB-only rows render plain text. Failures degrade visibly
  * (Invariant #17): machine-load failure shows a MudAlert; empty set a distinct
  * empty state; source enrichment failure leaves Enabled = "—".
@@ -60,7 +60,7 @@
     }
     else
     {
-        <AppDataGrid T="ManufacturerRow" Items="@_rows" data-testid="manufacturers-table">
+        <AppDataGrid T="ManufacturerRow" Items="@_rows" SearchContext="admin-manufacturers" data-testid="manufacturers-table">
             <Columns>
                 <TemplateColumn Title="Manufacturer" Sortable="true"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
@@ -84,13 +84,10 @@
                         }
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="Machines" Sortable="true"
+                <TemplateColumn Title="Machines" Sortable="true" HeaderClass="text-right" CellClass="text-right"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.Machines))">
-                    <HeaderTemplate>
-                        <MudText Style="text-align:right;width:100%">Machines</MudText>
-                    </HeaderTemplate>
                     <CellTemplate>
-                        <MudText Style="text-align:right;display:block">@context.Item.Machines</MudText>
+                        @context.Item.Machines
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>

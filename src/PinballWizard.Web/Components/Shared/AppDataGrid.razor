@@ -1,6 +1,14 @@
 @namespace PinballWizard.Web.Components.Shared
 @typeparam T
 @attribute [CascadingTypeParameter(nameof(T))]
+@using PinballWizard.Web.Services
+@using PinballWizard.Application.Ai.GridSearch
+@inject IUserPreferencesService Prefs
+
+@if (EnableAiSearch)
+{
+    <GridSearch Context="@SearchContext" OnFiltersApplied="HandleAiFilters" />
+}
 
 <MudDataGrid T="T"
              Items="@Items"
@@ -8,8 +16,9 @@
              Striped="true"
              Dense="true"
              Elevation="2"
-             RowsPerPage="@RowsPerPage"
+             RowsPerPage="@(RowsPerPage ?? Prefs.PageSize)"
              PagerContent="@_pagerContent"
+             QuickFilter="@_quickFilter"
              @attributes="AdditionalAttributes">
     <Columns>
         @Columns
@@ -22,11 +31,104 @@
 @code {
     [Parameter, EditorRequired] public IEnumerable<T> Items { get; set; } = [];
     [Parameter, EditorRequired] public RenderFragment Columns { get; set; } = null!;
-    [Parameter] public int RowsPerPage { get; set; } = 25;
+    [Parameter] public int? RowsPerPage { get; set; }
     [Parameter] public bool ShowPager { get; set; } = true;
     [Parameter] public RenderFragment? NoRecordsContent { get; set; }
+    [Parameter] public bool EnableAiSearch { get; set; } = true;
+    [Parameter] public string SearchContext { get; set; } = "default";
     [Parameter(CaptureUnmatchedValues = true)]
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private List<GridFilter> _currentFilters = [];
+    private bool _isSemanticSearch;
+    private string? _semanticQuery;
+    private Func<T, bool> _quickFilter => FilterFunc;
+
+    private void HandleAiFilters(GridSearchResponse response)
+    {
+        _currentFilters = response.Filters.ToList();
+        _isSemanticSearch = response.IsSemanticSearch;
+        _semanticQuery = response.SemanticQuery;
+        StateHasChanged();
+    }
+
+    private bool FilterFunc(T item)
+    {
+        if (_isSemanticSearch && !string.IsNullOrWhiteSpace(_semanticQuery))
+        {
+            return MatchesSemanticQuery(item, _semanticQuery);
+        }
+
+        if (_currentFilters.Count == 0) return true;
+
+        foreach (var filter in _currentFilters)
+        {
+            var prop = typeof(T).GetProperty(filter.Column);
+            if (prop == null) continue;
+
+            var val = prop.GetValue(item);
+            if (!ApplyOperator(val, filter.Operator, filter.Value))
+                return false;
+        }
+        return true;
+    }
+
+    // Generic semantic-ish match: concatenate every public string property and every
+    // public IEnumerable<string> property's joined values into one case-insensitive
+    // haystack, then substring-match the query. Deliberately reflection-based (same
+    // approach FilterFunc/ApplyOperator already use for structural filters) so it
+    // works for any row type without per-page wiring — Title, Manufacturer, Edition,
+    // and any future row type's string-ish properties are picked up automatically.
+    private static bool MatchesSemanticQuery(T item, string query) =>
+        typeof(T).GetProperties()
+            .Select(prop => prop.GetValue(item))
+            .Any(value => value switch
+            {
+                string s => s.Contains(query, StringComparison.OrdinalIgnoreCase),
+                IEnumerable<string> strings => strings.Any(x => x is not null && x.Contains(query, StringComparison.OrdinalIgnoreCase)),
+                _ => false,
+            });
+
+    private static bool ApplyOperator(object? value, string op, string filterValue)
+    {
+        if (value == null) return string.IsNullOrWhiteSpace(filterValue) && op == "equals";
+
+        var valStr = value.ToString() ?? "";
+
+        switch (op.ToLowerInvariant())
+        {
+            case "contains":
+                return valStr.Contains(filterValue, StringComparison.OrdinalIgnoreCase);
+            case "equals":
+                return valStr.Equals(filterValue, StringComparison.OrdinalIgnoreCase);
+            case "gt":
+                if (double.TryParse(valStr, out var vGt) && double.TryParse(filterValue, out var fGt))
+                    return vGt > fGt;
+                if (DateTime.TryParse(valStr, out var dGt) && DateTime.TryParse(filterValue, out var fdGt))
+                    return dGt > fdGt;
+                break;
+            case "lt":
+                if (double.TryParse(valStr, out var vLt) && double.TryParse(filterValue, out var fLt))
+                    return vLt < fLt;
+                if (DateTime.TryParse(valStr, out var dLt) && DateTime.TryParse(filterValue, out var fdLt))
+                    return dLt < fdLt;
+                break;
+            case "ge":
+                if (double.TryParse(valStr, out var vGe) && double.TryParse(filterValue, out var fGe))
+                    return vGe >= fGe;
+                if (DateTime.TryParse(valStr, out var dGe) && DateTime.TryParse(filterValue, out var fdGe))
+                    return dGe >= fdGe;
+                break;
+            case "le":
+                if (double.TryParse(valStr, out var vLe) && double.TryParse(filterValue, out var fLe))
+                    return vLe <= fLe;
+                if (DateTime.TryParse(valStr, out var dLe) && DateTime.TryParse(filterValue, out var fdLe))
+                    return dLe <= fdLe;
+                break;
+        }
+
+        return false;
+    }
 
     private RenderFragment? _pagerContent =>
         ShowPager ? (RenderFragment)(b => { b.OpenComponent<MudDataGridPager<T>>(0); b.CloseComponent(); }) : null;

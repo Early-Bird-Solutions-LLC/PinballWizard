@@ -11,47 +11,118 @@
  *@
 
 <footer class="brand-footer" aria-label="Site footer">
-    <MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
-        <MudStack Spacing="3">
-            <MudText Typo="Typo.body2"
-                     Color="Color.Secondary"
-                     Class="brand-footer-tagline">
-                PinballWizard routes you to the source, not away from it.
-            </MudText>
+    @* ── Glow divider ──────────────────────────────────────────────────── *@
+    <div class="brand-footer__glow-divider" aria-hidden="true"></div>
 
-            <MudText Typo="Typo.body2" Align="Align.Center" Class="footer-coverage">
-                The Wizard has first-party data on 8 active manufacturers, OPDB, Kineticist, and Silverball Labs.
-                Everything else routes to community resources.
+    <MudContainer MaxWidth="MaxWidth.Large" Class="brand-footer__container">
+
+        @* ── Top row: tagline + link columns ───────────────────────────── *@
+        <div class="brand-footer__top">
+            <div class="brand-footer__brand-col">
+                <MudText Typo="Typo.h6" Class="brand-footer__logo">
+                    &#x25CF; PinballWizard
+                </MudText>
+                <MudText Typo="Typo.body2" Class="brand-footer__tagline">
+                    Routes you to the source,<br />not away from it.
+                </MudText>
+            </div>
+
+            <nav class="brand-footer__links" aria-label="Footer navigation">
+                <div class="brand-footer__link-group">
+                    <MudText Typo="Typo.overline" Class="brand-footer__link-heading">
+                        Navigate
+                    </MudText>
+                    <MudLink Href="/"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             aria-label="Ask the Wizard">Ask the Wizard</MudLink>
+                    <MudLink Href="/about"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             aria-label="What we cover">What We Cover</MudLink>
+                    <MudLink Href="/documents"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             aria-label="Documents">Documents</MudLink>
+                </div>
+
+                <div class="brand-footer__link-group">
+                    <MudText Typo="Typo.overline" Class="brand-footer__link-heading">
+                        Resources
+                    </MudText>
+                    <MudLink Href="/status"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             aria-label="System status">System Status</MudLink>
+                    <MudLink Href="/settings"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             aria-label="Settings">Settings</MudLink>
+                </div>
+
+                <div class="brand-footer__link-group">
+                    <MudText Typo="Typo.overline" Class="brand-footer__link-heading">
+                        Connect
+                    </MudText>
+                    <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard"
+                             Target="_blank"
+                             Color="Color.Inherit"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__link"
+                             rel="noopener noreferrer"
+                             aria-label="PinballWizard on GitHub">GitHub</MudLink>
+                </div>
+            </nav>
+        </div>
+
+        @* ── Coverage statement ────────────────────────────────────────── *@
+        <div class="brand-footer__coverage">
+            <div class="brand-footer__coverage-inner">
+                <span class="brand-footer__coverage-dot" aria-hidden="true"></span>
+                <MudText Typo="Typo.body2" Class="brand-footer__coverage-text">
+                    The Wizard has first-party data on 8 active manufacturers, OPDB,
+                    Kineticist, and Silverball Labs. Everything else routes to community resources.
+                    <MudLink Href="/about"
+                             Color="Color.Success"
+                             Underline="Underline.Hover"
+                             Class="brand-footer__coverage-link"
+                             aria-label="What we cover">What we cover &rarr;</MudLink>
+                </MudText>
+            </div>
+        </div>
+
+        @* ── Bottom bar ────────────────────────────────────────────────── *@
+        <div class="brand-footer__bottom">
+            <MudText Typo="Typo.caption" Class="brand-footer__copyright">
+                &copy; @DateTime.UtcNow.Year Early Bird Solutions LLC
+            </MudText>
+            <MudText Typo="Typo.caption" Class="brand-footer__meta-links">
                 <MudLink Href="/about"
-                         Color="Color.Success"
+                         Color="Color.Inherit"
                          Underline="Underline.Hover"
-                         Class="footer-coverage-link"
-                         aria-label="What we cover">What we cover &rarr;</MudLink>
-            </MudText>
-
-            <MudText Typo="Typo.caption" Align="Align.Center" Class="footer-meta">
-                <span class="footer-project-name">PinballWizard</span>
-                <span class="footer-sep" aria-hidden="true"> · </span>
+                         Class="brand-footer__meta-link"
+                         aria-label="About">About</MudLink>
+                <span class="brand-footer__meta-sep" aria-hidden="true">·</span>
+                <MudLink Href="/status"
+                         Color="Color.Inherit"
+                         Underline="Underline.Hover"
+                         Class="brand-footer__meta-link"
+                         aria-label="Status">Status</MudLink>
+                <span class="brand-footer__meta-sep" aria-hidden="true">·</span>
                 <MudLink Href="https://github.com/Early-Bird-Solutions-LLC/PinballWizard"
                          Target="_blank"
                          Color="Color.Inherit"
                          Underline="Underline.Hover"
-                         Class="footer-github-link"
+                         Class="brand-footer__meta-link"
                          rel="noopener noreferrer"
-                         aria-label="PinballWizard on GitHub">GitHub</MudLink>
-                <span class="footer-sep" aria-hidden="true"> · </span>
-                <MudLink Href="/status"
-                         Color="Color.Inherit"
-                         Underline="Underline.Hover"
-                         Class="footer-status-link"
-                         aria-label="System status">Status</MudLink>
-                <span class="footer-sep" aria-hidden="true"> · </span>
-                <MudLink Href="/settings"
-                         Color="Color.Inherit"
-                         Underline="Underline.Hover"
-                         Class="footer-settings-link"
-                         aria-label="Settings">Settings</MudLink>
+                         aria-label="GitHub">GitHub</MudLink>
             </MudText>
-        </MudStack>
+        </div>
+
     </MudContainer>
 </footer>

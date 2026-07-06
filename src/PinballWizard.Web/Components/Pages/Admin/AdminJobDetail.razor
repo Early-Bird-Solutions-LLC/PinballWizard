@@ -76,15 +76,26 @@
                     <MudGrid Spacing="1">
                         <MudItem xs="12">
                             <MudText Typo="Typo.body2" Color="Color.Secondary">Schedule</MudText>
-                            <MudText Typo="Typo.body1">
-                                @CronExpressionFormatter.Format(_detail.CronExpression)
-                                @if (_detail.CronExpression is not null)
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudText Typo="Typo.body1">
+                                    @CronExpressionFormatter.Format(_detail.CronExpression)
+                                    @if (_detail.CronExpression is not null)
+                                    {
+                                        <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
+                                            (@_detail.CronExpression)
+                                        </MudText>
+                                    }
+                                </MudText>
+                                @if (_isAdmin && _detail.CronExpression is not null)
                                 {
-                                    <MudText Inline="true" Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">
-                                        (@_detail.CronExpression)
-                                    </MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Size="Size.Small"
+                                                   Color="Color.Primary"
+                                                   aria-label="Edit schedule"
+                                                   data-testid="edit-schedule-button"
+                                                   OnClick="OpenScheduleEdit" />
                                 }
-                            </MudText>
+                            </MudStack>
                         </MudItem>
                         <MudItem xs="12">
                             <MudText Typo="Typo.body2" Color="Color.Secondary">Image</MudText>
@@ -119,7 +130,7 @@
         <MudText Typo="Typo.h6" Class="mb-3">Execution History</MudText>
         <AppDataGrid T="JobExecution"
                      Items="@_detail.Executions"
-                     ShowPager="false"
+                     SearchContext="admin-job-detail"
                      data-testid="execution-table">
             <Columns>
                 <TemplateColumn Title="Execution">
@@ -208,6 +219,52 @@
     </MudPaper>
 }
 
+@* Schedule-edit panel — admin-only inline editor for the job's cron expression.
+   Same inline-MudPaper pattern as Run-now for bUnit testability. The edit
+   button is hidden for anonymous visitors; server-side Guard re-check in
+   SaveScheduleAsync provides defense in depth. *@
+@if (_showScheduleEdit && _detail is not null)
+{
+    <MudPaper Elevation="4" Class="pa-4 mt-4" data-testid="schedule-edit-panel">
+        <MudText Typo="Typo.h6" GutterBottom="true">Edit Schedule</MudText>
+        <MudTextField @bind-Value="_editCronExpression"
+                      Label="Cron expression (UTC)"
+                      Placeholder="e.g. 0 4 * * 0"
+                      Immediate="true"
+                      TextChanged="OnCronExpressionChanged"
+                      Error="@(_editCronError is not null)"
+                      ErrorText="@_editCronError"
+                      data-testid="cron-input" />
+        @if (_editCronPreview is { Length: > 0 })
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1" data-testid="cron-preview">
+                Preview: @_editCronPreview
+            </MudText>
+        }
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2 mb-4">
+            Standard 5-field cron format (minute hour day-of-month month day-of-week).
+            Changes take effect immediately on the Azure Container Apps Job.
+        </MudText>
+        <MudStack Row="true" Spacing="2">
+            <MudButton OnClick="@(() => { _showScheduleEdit = false; _editCronError = null; })"
+                       data-testid="schedule-edit-cancel">
+                Cancel
+            </MudButton>
+            <MudButton Color="Color.Primary"
+                       Variant="Variant.Filled"
+                       OnClick="SaveScheduleAsync"
+                       Disabled="@_savingSchedule"
+                       data-testid="schedule-edit-save">
+                @if (_savingSchedule)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Save Schedule
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
 @code {
     [Parameter] public string JobName { get; set; } = "";
 
@@ -228,6 +285,11 @@
     private int _historyCount = 10;
     private TimeZoneInfo? _timeZoneInfo;
     private string _tzLabel = "UTC";
+    private bool _showScheduleEdit;
+    private string _editCronExpression = "";
+    private string? _editCronPreview;
+    private string? _editCronError;
+    private bool _savingSchedule;
 
     private List<BreadcrumbItem> Breadcrumbs =>
     [
@@ -366,6 +428,68 @@
         finally
         {
             _startBusy = false;
+        }
+    }
+
+    private void OpenScheduleEdit()
+    {
+        _editCronExpression = _detail?.CronExpression ?? "";
+        _editCronError = null;
+        _editCronPreview = CronExpressionFormatter.Format(_editCronExpression);
+        _showScheduleEdit = true;
+    }
+
+    private void OnCronExpressionChanged(string value)
+    {
+        _editCronExpression = value;
+        _editCronPreview = CronExpressionFormatter.Format(value);
+        _editCronError = null;
+    }
+
+    private async Task SaveScheduleAsync()
+    {
+        if (_detail is null || JobService is null || _savingSchedule) return;
+        if (!await Guard.IsAdminAsync(AuthState).ConfigureAwait(true))
+        {
+            Snackbar.Add("Admin sign-in required to edit schedules.", Severity.Warning);
+            _showScheduleEdit = false;
+            return;
+        }
+
+        if (!CronExpressionValidator.TryValidate(_editCronExpression, out var validationError))
+        {
+            _editCronError = validationError;
+            return;
+        }
+
+        _savingSchedule = true;
+        try
+        {
+            await JobService.UpdateScheduleAsync(_detail.JobName, _editCronExpression.Trim(), CancellationToken.None)
+                .ConfigureAwait(true);
+            Snackbar.Add(
+                $"Schedule updated to '{CronExpressionFormatter.Format(_editCronExpression)}'.",
+                Severity.Success);
+            _showScheduleEdit = false;
+
+            // Reload to reflect the new schedule in the header.
+            _loading = true;
+            SafeStateHasChanged();
+            await LoadAsync(_historyCount);
+        }
+        catch (ArmJobAdminException ex)
+        {
+            Logger.LogError(ex, "ARM error updating schedule for job {JobName}.", _detail.JobName);
+            Snackbar.Add($"Failed to update schedule: {ex.Message}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error updating schedule for job {JobName}.", _detail.JobName);
+            Snackbar.Add("Unexpected error updating schedule.", Severity.Error);
+        }
+        finally
+        {
+            _savingSchedule = false;
         }
     }
 
