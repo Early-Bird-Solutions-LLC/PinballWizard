@@ -83,4 +83,21 @@ if (broken.length > 0) {
   process.exit(1);
 }
 
+// ── Engineering manifest: assert every sourcePath exists on disk ─────────────
+// Belt-and-braces with the xUnit conformance test, but runs in the docs-only
+// CI lane where .NET tests don't execute. Each entry in docs[] must have a
+// sourcePath that resolves to a real file relative to the repo root.
+const manifestPath = path.join(ROOT, 'docs', 'engineering-manifest.json');
+if (fs.existsSync(manifestPath)) {
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const entries = (manifest.docs ?? []).filter(e => e.sourcePath);
+  const missingPaths = entries.filter(e => !fs.existsSync(path.resolve(ROOT, e.sourcePath)));
+  if (missingPaths.length > 0) {
+    console.error(`✗ ${missingPaths.length} engineering-manifest.json sourcePath(s) missing on disk:\n`);
+    for (const e of missingPaths) console.error(`  ${e.sourcePath}  (slug: ${e.slug})`);
+    process.exit(1);
+  }
+  console.log(`✓ all ${entries.length} engineering-manifest.json sourcePaths resolve.`);
+}
+
 console.log(`✓ all ${linkCount} internal links resolve across ${files.length} markdown files.`);

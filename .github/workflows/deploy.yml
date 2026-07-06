@@ -59,6 +59,7 @@ on:
       - 'src/PinballWizard.ServiceDefaults/**'
       - 'Directory.Build.props'
       - 'Directory.Packages.props'
+      - 'docs/**'
 
   # Allow manual trigger from the Actions tab (useful for re-deploying
   # without a code change, e.g. after an infra-only deploy reverts the image).
