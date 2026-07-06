@@ -1,0 +1,143 @@
+@* EngineeringDoc — renders a single engineering doc from the manifest.
+ *
+ * Route: /engineering/docs/{Slug}
+ * Static SSR (no @rendermode). Uses MarkdownComponentRenderer.Render to
+ * emit the AST as MudBlazor components (XSS-safe: no MarkupString).
+ *
+ * ResolveLink maps relative file paths in the markdown to live app routes:
+ *   docs/adr/NNNN-*.md → /engineering/adr/{N}
+ *   any manifest sourcePath  → /engineering/docs/{slug}
+ *   anything else            → null (link kept verbatim, safe relative path)
+ *
+ * ADR-0046 — AppPageHeader, AppErrorAlert
+ * ADR-0008  — MudBlazor strict; no MarkupString
+ *@
+
+@page "/engineering/docs/{Slug}"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>PinballWizard — Engineering</PageTitle>
+
+@{
+    var doc = Provider.BySlug(Slug);
+    var crumbs = doc is null
+        ? null
+        : (IReadOnlyList<BreadcrumbItem>)new[]
+        {
+            new BreadcrumbItem("Engineering", "/engineering"),
+            new BreadcrumbItem(doc.Title, href: null, disabled: true),
+        };
+}
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    @if (doc is null)
+    {
+        <AppErrorAlert>
+            <MudText Typo="Typo.body1">
+                Document &ldquo;@Slug&rdquo; was not found. Try the
+                <MudLink Href="/engineering">Engineering index</MudLink>.
+            </MudText>
+        </AppErrorAlert>
+    }
+    else
+    {
+        <AppPageHeader Title="@doc.Title" Breadcrumbs="@crumbs" />
+
+        <div class="eng-doc-body">
+            @MarkdownComponentRenderer.Render(doc.Ast, ResolveLink)
+        </div>
+
+        <MudDivider Class="my-6" />
+
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            <MudLink Href="@doc.SourceGitHubUrl"
+                     Target="_blank"
+                     rel="noopener noreferrer">
+                View source on GitHub
+            </MudLink>
+        </MudText>
+    }
+
+</MudContainer>
+
+<style>
+    /* Markdown pipe-table — borders + padding to match Mud table density */
+    .eng-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .eng-table th,
+    .eng-table td {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 6px 12px;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .eng-table thead th {
+        background: rgba(255, 255, 255, 0.06);
+        font-weight: 600;
+        letter-spacing: 0.03em;
+    }
+
+    /* Fenced code block */
+    .eng-code {
+        font-family: "Cascadia Code", "Fira Code", "Consolas", "Menlo", monospace;
+        font-size: 0.8125rem;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 12px 16px;
+        overflow-x: auto;
+        white-space: pre;
+        margin-bottom: 1.25rem;
+        line-height: 1.55;
+    }
+</style>
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+
+    // GitHub base used to reconstruct the relative sourcePath from the full URL.
+    private const string GitHubBase =
+        "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/";
+
+    private string? ResolveLink(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        // ADR pattern: any path containing a four-digit sequence followed by a dash
+        // (e.g. "docs/adr/0001-record-architecture-decisions.md", "../adr/0001-...")
+        var adrMatch = System.Text.RegularExpressions.Regex.Match(path, @"(\d{4})-");
+        if (adrMatch.Success
+            && int.TryParse(adrMatch.Groups[1].Value, out var adrNum))
+        {
+            return $"/engineering/adr/{adrNum}";
+        }
+
+        // Manifest doc pattern: check whether the path suffix matches any doc's sourcePath.
+        var normalized = path.TrimStart('.').TrimStart('/');
+        foreach (var d in Provider.Docs)
+        {
+            var sourcePath = d.SourceGitHubUrl.StartsWith(GitHubBase, StringComparison.OrdinalIgnoreCase)
+                ? d.SourceGitHubUrl[GitHubBase.Length..]
+                : d.SourceGitHubUrl;
+
+            if (string.Equals(sourcePath, normalized, StringComparison.OrdinalIgnoreCase)
+                || sourcePath.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"/engineering/docs/{d.Slug}";
+            }
+        }
+
+        return null;
+    }
+}

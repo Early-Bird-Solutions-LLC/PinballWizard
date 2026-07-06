@@ -1,0 +1,84 @@
+@* AdrIndex — lists all Architecture Decision Records.
+ *
+ * Route: /engineering/adr
+ * Static SSR (no @rendermode). AppDataGrid with ShowPager="false" so the
+ * pager (an interactive control) is suppressed — passes
+ * RenderModeConventionTests.EveryStaticPage_WithLiveGridPager_DeclaresRenderMode
+ * without requiring @rendermode. The ADR count is typically under 100,
+ * so a single-page listing is appropriate.
+ *
+ * EnableAiSearch="false": the AI grid search widget is interactive
+ * (calls back via OnFiltersApplied); suppressing it keeps the page static.
+ *
+ * ADR-0046 — AppPageHeader, AppDataGrid, AppStatusChip
+ * ADR-0008  — MudBlazor strict; MudTable banned (use AppDataGrid)
+ * ADR-0034  — static-SSR pager rule → ShowPager="false"
+ *@
+
+@page "/engineering/adr"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>PinballWizard — Architecture Decision Records</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    <AppPageHeader Title="Architecture Decision Records"
+                   Subtitle="Every significant technical decision, with its context and rationale, committed alongside the code."
+                   Breadcrumbs="@_breadcrumbs" />
+
+    <AppDataGrid T="AdrEntry"
+                 Items="@Provider.Adrs"
+                 ShowPager="false"
+                 EnableAiSearch="false"
+                 data-testid="adr-index-grid">
+        <Columns>
+            <TemplateColumn T="AdrEntry" Title="Number" Sortable="true" SortBy="@(a => a.Number)">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2">ADR-@context.Item.Number.ToString("D4")</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn T="AdrEntry" Title="Title" Sortable="true" SortBy="@(a => a.Title)">
+                <CellTemplate>
+                    <MudLink Href="@($"/engineering/adr/{context.Item.Number}")">
+                        @context.Item.Title
+                    </MudLink>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn T="AdrEntry" Title="Status" Sortable="true" SortBy="@(a => a.Status)">
+                <CellTemplate>
+                    @if (!string.IsNullOrWhiteSpace(context.Item.Status))
+                    {
+                        <AppStatusChip Color="@AdrStatusColor(context.Item.Status)">
+                            @context.Item.Status
+                        </AppStatusChip>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn T="AdrEntry" TProperty="string" Property="@(a => a.Date)"
+                            Title="Date" Sortable="true" />
+        </Columns>
+    </AppDataGrid>
+
+</MudContainer>
+
+@code {
+    private static readonly IReadOnlyList<BreadcrumbItem> _breadcrumbs = new[]
+    {
+        new BreadcrumbItem("Engineering", "/engineering"),
+        new BreadcrumbItem("Architecture Decision Records", href: null, disabled: true),
+    };
+
+    private static Color AdrStatusColor(string status) =>
+        status.Trim().ToLowerInvariant() switch
+        {
+            "accepted"   => Color.Success,
+            "deprecated" => Color.Warning,
+            "superseded" => Color.Warning,
+            "proposed"   => Color.Info,
+            _            => Color.Default,
+        };
+}

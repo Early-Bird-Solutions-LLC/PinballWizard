@@ -1,0 +1,129 @@
+@* AdrPage — renders a single ADR from its embedded markdown AST.
+ *
+ * Route: /engineering/adr/{Number:int}
+ * Static SSR (no @rendermode). MarkdownComponentRenderer.Render emits
+ * MudBlazor components — XSS-safe: no MarkupString used anywhere.
+ *
+ * ADR-0046 — AppPageHeader, AppEmptyState
+ * ADR-0008  — MudBlazor strict; no MarkupString
+ *@
+
+@page "/engineering/adr/{Number:int}"
+@attribute [AllowAnonymous]
+
+@using PinballWizard.Web.Engineering
+
+@inject IEngineeringDocsProvider Provider
+
+<PageTitle>PinballWizard — ADR</PageTitle>
+
+@{
+    var adr = Provider.ByNumber(Number);
+    var crumbs = adr is null
+        ? null
+        : (IReadOnlyList<BreadcrumbItem>)new[]
+        {
+            new BreadcrumbItem("Engineering", "/engineering"),
+            new BreadcrumbItem("ADRs", "/engineering/adr"),
+            new BreadcrumbItem($"ADR-{adr.Number:D4}", href: null, disabled: true),
+        };
+}
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-6">
+
+    @if (adr is null)
+    {
+        <AppEmptyState Heading="@($"ADR-{Number:D4} not found")"
+                       Detail="This ADR number does not exist or has not been published yet."
+                       Icon="@Icons.Material.Outlined.FindInPage" />
+    }
+    else
+    {
+        <AppPageHeader Title="@($"ADR-{adr.Number:D4}")"
+                       Subtitle="@adr.Title"
+                       Breadcrumbs="@crumbs" />
+
+        <div class="eng-adr-body">
+            @MarkdownComponentRenderer.Render(adr.Ast, ResolveAdrLink)
+        </div>
+    }
+
+</MudContainer>
+
+<style>
+    /* Markdown pipe-table */
+    .eng-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .eng-table th,
+    .eng-table td {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 6px 12px;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .eng-table thead th {
+        background: rgba(255, 255, 255, 0.06);
+        font-weight: 600;
+        letter-spacing: 0.03em;
+    }
+
+    /* Fenced code block */
+    .eng-code {
+        font-family: "Cascadia Code", "Fira Code", "Consolas", "Menlo", monospace;
+        font-size: 0.8125rem;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 12px 16px;
+        overflow-x: auto;
+        white-space: pre;
+        margin-bottom: 1.25rem;
+        line-height: 1.55;
+    }
+</style>
+
+@code {
+    [Parameter] public int Number { get; set; }
+
+    private const string GitHubBase =
+        "https://github.com/Early-Bird-Solutions-LLC/PinballWizard/blob/main/";
+
+    // Cross-reference resolver for links inside ADR documents.
+    // Handles inter-ADR links (../0002-..., docs/adr/0002-...) and
+    // manifest doc links (docs/vision.md → /engineering/docs/vision).
+    private string? ResolveAdrLink(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        // ADR cross-reference: four-digit number followed by a dash
+        var adrMatch = System.Text.RegularExpressions.Regex.Match(path, @"(\d{4})-");
+        if (adrMatch.Success
+            && int.TryParse(adrMatch.Groups[1].Value, out var adrNum))
+        {
+            return $"/engineering/adr/{adrNum}";
+        }
+
+        // Manifest doc links
+        var normalized = path.TrimStart('.').TrimStart('/');
+        foreach (var d in Provider.Docs)
+        {
+            var sourcePath = d.SourceGitHubUrl.StartsWith(GitHubBase, StringComparison.OrdinalIgnoreCase)
+                ? d.SourceGitHubUrl[GitHubBase.Length..]
+                : d.SourceGitHubUrl;
+
+            if (string.Equals(sourcePath, normalized, StringComparison.OrdinalIgnoreCase)
+                || sourcePath.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"/engineering/docs/{d.Slug}";
+            }
+        }
+
+        return null;
+    }
+}
