@@ -440,9 +440,13 @@ public sealed class MachineGroundingTool
             // ToolTraceCitationExtractor.AddCitationFromGroundingDto.
             if (!string.IsNullOrEmpty(match.OpdbSourceUrl))
             {
+                // default(DateTimeOffset) = a record that predates LastSeenAt (never synced) —
+                // surface it as null freshness ("freshness unknown") rather than a misleading
+                // "synced ~2000 years ago" badge from DateTimeOffset.MinValue.
+                DateTimeOffset? lastSynced = match.LastSeenAt == default ? null : match.LastSeenAt;
                 _metadataSink?.Record(
                     match.OpdbSourceUrl,
-                    new RetrievalCitationMetadata(LastScrapedUtc: match.LastSeenAt, RelevanceScore: null));
+                    new RetrievalCitationMetadata(LastScrapedUtc: lastSynced, RelevanceScore: null));
             }
 
             return new MachineGroundingDto(

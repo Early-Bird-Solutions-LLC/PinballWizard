@@ -99,6 +99,42 @@ public sealed class MachineGroundingToolTests
     }
 
     [Fact]
+    public async Task GetMachineByTitleAsync_NeverSyncedMachine_RecordsNullFreshness()
+    {
+        // A record predating LastSeenAt deserializes with default(DateTimeOffset)
+        // (DateTimeOffset.MinValue). Surfacing that verbatim would render a misleading
+        // "synced ~2000 years ago" badge, so it must be recorded as null freshness
+        // ("freshness unknown") instead.
+        var machine = new Machine
+        {
+            Id = "GRBN-MQR4P",
+            PartitionKey = "stern",
+            ManufacturerDisplayName = "Stern Pinball",
+            Title = "Foo Fighters",
+            OpdbSourceUrl = "https://opdb.org/machines/GRBN-MQR4P",
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = default,
+        };
+
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Foo Fighters", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(machine));
+
+        var sink = new RetrievalCitationMetadataSink();
+        var tool = new MachineGroundingTool(
+            repo,
+            Substitute.For<IMachineTitleLookupRepository>(),
+            NullLogger<MachineGroundingTool>.Instance,
+            machineSearchIndex: null,
+            metadataSink: sink);
+
+        await tool.GetMachineByTitleAsync("Foo Fighters", CancellationToken.None);
+
+        Assert.True(sink.TryGet("https://opdb.org/machines/GRBN-MQR4P", out var meta));
+        Assert.Null(meta!.LastScrapedUtc);
+    }
+
+    [Fact]
     public async Task GetMachineByTitleAsync_NoMatch_ReturnsNull()
     {
         var repo = Substitute.For<IMachineRepository>();
