@@ -22,6 +22,7 @@
  * ADR-0008  — MudBlazor strict
  * ADR-0009  — Entra External ID auth (AdminOnly policy)
  * ADR-0026  § 1 — render-mode doctrine (InteractiveServer for action page)
+ * ADR-0046  — shared Blazor component library (AppPageShell)
  * Invariant #17 — degrade visibly; never fabricate job data
  *@
 
@@ -39,7 +40,7 @@
 
 <PageTitle>@(_detail?.DisplayName ?? JobName) — Jobs — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+<AppPageShell>
     <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
 
     @if (_loading)
@@ -69,7 +70,7 @@
     }
     else if (_detail is not null)
     {
-        <MudPaper Elevation="2" Class="pa-6 mb-6" data-testid="job-detail-header">
+        <MudPaper Elevation="2" Class="pa-6 mb-6 pw-readable" data-testid="job-detail-header">
             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
                 <div>
                     <MudText Typo="Typo.h5" GutterBottom="true">@_detail.DisplayName</MudText>
@@ -151,17 +152,17 @@
                         </AppStatusChip>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="@($"Started ({_tzLabel})")">
+                <TemplateColumn Title="@($"Started ({_tzLabel})")" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.StartOn)</MudText>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="@($"Ended ({_tzLabel})")">
+                <TemplateColumn Title="@($"Ended ({_tzLabel})")" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatLocalTime(context.Item.EndOn)</MudText>
                     </CellTemplate>
                 </TemplateColumn>
-                <TemplateColumn Title="Duration">
+                <TemplateColumn Title="Duration" HeaderClass="text-right" CellClass="text-right">
                     <CellTemplate>
                         <MudText Typo="Typo.body2">@FormatDuration(context.Item.StartOn, context.Item.EndOn)</MudText>
                     </CellTemplate>
@@ -186,7 +187,6 @@
             </MudStack>
         }
     }
-</MudContainer>
 
 @* Run-now confirmation panel — rendered inline to remain testable via bUnit
    (MudDialog routes content through MudPopoverProvider, which bUnit cannot
@@ -264,6 +264,7 @@
         </MudStack>
     </MudPaper>
 }
+</AppPageShell>
 
 @code {
     [Parameter] public string JobName { get; set; } = "";

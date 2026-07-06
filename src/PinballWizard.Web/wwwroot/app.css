@@ -582,6 +582,13 @@ html, body {
     flex-direction: row-reverse;
 }
 
+/* Readable-measure cap for prose / key-value / dashboard cards on otherwise
+   full-width (AppPageShell) pages: text content stays a comfortable width while
+   a data grid on the same page still uses the full horizontal space. */
+.pw-readable {
+    max-width: 60rem;
+}
+
 /* ── BrandFooter (global — not scoped) ────────────────────────────────── */
 /* Premium multi-section footer with arcade-glow divider, organized link
    columns, coverage callout, and bottom meta bar. Consumes --pw-* design
