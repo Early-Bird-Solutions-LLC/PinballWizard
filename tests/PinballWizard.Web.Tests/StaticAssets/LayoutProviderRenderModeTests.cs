@@ -44,7 +44,7 @@ public sealed class LayoutProviderRenderModeTests
         // forms, so we look for the provider name and the rendermode attribute within
         // the same opening tag span (no newlines between < and >).
         var pattern = $@"<{Regex.Escape(providerName)}\b[^>]*@rendermode=""InteractiveServer""[^>]*/?>|<{Regex.Escape(providerName)}\b[^>]*/?>.*@rendermode=""InteractiveServer""";
-        var hasInteractiveRenderMode = Regex.IsMatch(mainLayout, $@"<{Regex.Escape(providerName)}[^>]*@rendermode=""InteractiveServer""");
+        var hasInteractiveRenderMode = Regex.IsMatch(mainLayout, pattern);
 
         Assert.True(
             hasInteractiveRenderMode,
@@ -69,9 +69,10 @@ public sealed class LayoutProviderRenderModeTests
     {
         var adminLayout = File.ReadAllText(AdminLayoutPath());
 
-        var hasInteractiveRenderMode = Regex.IsMatch(
-            adminLayout,
-            $@"<{Regex.Escape(providerName)}[^>]*@rendermode=""InteractiveServer""");
+        // Same two-alternative pattern as the MainLayout test: \b prevents a longer
+        // provider name (e.g. MudThemeProviderExtra) from satisfying the match.
+        var pattern = $@"<{Regex.Escape(providerName)}\b[^>]*@rendermode=""InteractiveServer""[^>]*/?>|<{Regex.Escape(providerName)}\b[^>]*/?>.*@rendermode=""InteractiveServer""";
+        var hasInteractiveRenderMode = Regex.IsMatch(adminLayout, pattern);
 
         Assert.True(
             hasInteractiveRenderMode,

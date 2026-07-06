@@ -96,7 +96,6 @@ public sealed class CliOptionsContractTests
             DefaultValueFactory = _ => "all"
         };
 
-        var result = new RootCommand().Parse(string.Empty);
         // Build a minimal command to parse with the default
         var cmd = new RootCommand();
         cmd.Options.Add(sourceOption);

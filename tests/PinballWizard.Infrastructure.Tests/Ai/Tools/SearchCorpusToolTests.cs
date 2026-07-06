@@ -698,7 +698,7 @@ public sealed class SearchCorpusToolTests
 
         await retriever.Received(1).RetrieveAsync(
             Arg.Any<string>(),
-            Arg.Is<RetrievalOptions>(o => o.MinimumScore == 0.45),
+            Arg.Is<RetrievalOptions>(o => Math.Abs(o.MinimumScore - 0.45) < 1e-9),
             Arg.Any<CancellationToken>());
     }
 
@@ -748,7 +748,7 @@ public sealed class SearchCorpusToolTests
             Arg.Any<string>(),
             Arg.Is<RetrievalOptions>(o =>
                 o.TopK == SearchCorpusTool.TopKDefault
-                && o.MinimumScore == new RetrievalOptions().MinimumScore),
+                && Math.Abs(o.MinimumScore - new RetrievalOptions().MinimumScore) < 1e-9),
             Arg.Any<CancellationToken>());
     }
 

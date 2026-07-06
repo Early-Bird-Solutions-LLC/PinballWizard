@@ -36,7 +36,7 @@ public sealed class DataPlaneCosmosProvisionerTests
         drifted.IndexingPolicy.IncludedPaths.Add(new IncludedPath { Path = "/document_id/?" });
         drifted.IndexingPolicy.ExcludedPaths.Add(new ExcludedPath { Path = "/*" });
 
-        var (provisioner, database, container) = ArrangeProvisioner(drifted);
+        var (provisioner, _, container) = ArrangeProvisioner(drifted);
 
         await provisioner.EnsureDatabaseAndContainersAsync("pinwiz", [ScrapedDocsOpts()], CancellationToken.None);
 

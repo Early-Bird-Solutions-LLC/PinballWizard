@@ -73,7 +73,7 @@
     private string _question = string.Empty;
 
     // Null = loading (show skeletons). Populated on successful API call or
-    // fallback. Never null after OnInitializedAsync completes.
+    // fallback. Never null after OnInitialized completes (set synchronously).
     private IReadOnlyList<SeedQuestion>? _seedQuestions;
     private IReadOnlyList<FeaturedMachine>? _featuredMachines;
     private SystemStatus? _status;
@@ -122,23 +122,40 @@
             "Chicago Gaming Company's faithful recreation of the beloved Williams classic."),
     ];
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        // Pre-render (SSR) must return fast so the browser receives HTML before
-        // Lighthouse's FCP timeout. The API call below can take 30-48 s in
-        // environments where pinwiz-api isn't configured (Polly retries DNS
-        // failures with exponential backoff). With @rendermode InteractiveServer
-        // the component runs twice: once during SSR pre-render (IsInteractive=false)
-        // and again when the interactive circuit starts (IsInteractive=true).
-        // Populate fallback eagerly on both paths so the first render always has
-        // content; replace with live data only after the interactive circuit is up.
+        // Populate the compiled-in fallback synchronously on BOTH the SSR
+        // pre-render and the interactive render, so the first paint always has
+        // content (fast FCP) and — because the fallback seed slugs are the same
+        // slugs the live data carries — the cards are click-ready the instant
+        // the interactive circuit's first render wires their @onclick handlers.
+        // The live-data load is deliberately NOT awaited here; see
+        // OnAfterRenderAsync below.
         _seedQuestions = FallbackSeedQuestions;
         _featuredMachines = FallbackFeaturedMachines;
         _status = null;
+    }
 
-        if (!RendererInfo.IsInteractive)
+    // Live data is loaded AFTER the first interactive render — never before it.
+    // Blazor wires the seed-card @onclick handlers as part of that first
+    // interactive render; awaiting the landing call in OnInitializedAsync would
+    // block it. GetLandingAsync can take 30-48 s under Polly retries when the
+    // endpoint is slow or down, which would leave the rendered-but-inert cards
+    // unclickable for that whole window — the 2026-06-10 "one card click made
+    // the whole page inert" regression class (see Components/Pages/Wizard.razor's
+    // ResolveSlugAsync catch note). Loading here keeps the landing page
+    // interactive immediately and swaps the fallback for live data when it
+    // arrives. OnAfterRenderAsync does not run during static SSR pre-render, so
+    // this never fires on the fast prerender path.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RendererInfo.IsInteractive)
             return;
 
+        // GetLandingAsync is null-safe — WizardLandingClient catches every
+        // non-cancellation exception (incl. Polly's BrokenCircuitException) and
+        // returns null — so no try/catch is needed here. CancellationToken.None
+        // means the one propagating type, OperationCanceledException, cannot fire.
         var landing = await LandingClient
             .GetLandingAsync(CancellationToken.None)
             .ConfigureAwait(false);
@@ -164,6 +181,9 @@
             DegradationStore.SetDegradation(
                 new DegradationContext(DegradationMode.LandingUnavailable, Detail: null, RetryAfterSeconds: null));
         }
+
+        // Reflect the live data (or the degraded fallback state) in the UI.
+        await InvokeAsync(StateHasChanged).ConfigureAwait(false);
     }
 
     private void OnSeedQuestionSelected(string question)

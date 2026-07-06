@@ -114,7 +114,7 @@ else
     [Parameter] public string? Manufacturer { get; set; }
     [Parameter] public string? Type { get; set; }
 
-    private List<DocumentListItem> _documents = [];
+    private readonly List<DocumentListItem> _documents = [];
     private bool _loading = true;
     private bool _loadError;
     private CancellationTokenSource _cts = new();

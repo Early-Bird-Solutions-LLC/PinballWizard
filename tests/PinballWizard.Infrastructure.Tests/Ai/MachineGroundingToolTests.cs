@@ -1988,7 +1988,6 @@ public sealed class MachineGroundingToolTests
         repo.GetByOpdbIdAsync("SEGA-GODZILLA", "sega", Arg.Any<CancellationToken>())
             .Returns((Machine?)null);
 
-        var loggedWarnings = new List<string>();
         var logger = new CapturingLoggerForGrounding();
 
         var tool = new MachineGroundingTool(repo, titleLookups, logger);

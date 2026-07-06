@@ -3,12 +3,14 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.E2E;
 
-// True end-to-end coverage: real browser → real Web app → real Api →
-// live Azure (Cosmos / AI Search / Foundry). These assert the behaviors
-// that broke on 2026-06-10 and that no in-process test could see:
-// the Blazor circuit becoming interactive, seed-question cards being
-// clickable, and the ask flow returning a CITED answer (the citation
-// chain crosses the camelCase tool-trace seam end-to-end).
+// True end-to-end coverage of the ASK FLOW: real browser → real Web app →
+// real Api → live Azure (Cosmos / AI Search / Foundry). These assert the
+// answer path that no in-process test can see — the ask flow returning a
+// CITED answer (the citation chain crosses the camelCase tool-trace seam
+// end-to-end), cache-hit replay, and multi-turn follow-up context.
+// (Landing-page circuit interactivity lives in
+// LandingInteractivityCanaryE2ETests — it makes no model call and runs in
+// the post-deploy canary.)
 //
 // Cost note: AskFlow makes one real model call per run (~cents). The
 // suite is local-only (Category=E2E is CI-excluded); run it before
@@ -49,53 +51,10 @@ public sealed class WizardE2ETests : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    [E2EFact]
-    public async Task Landing_SeedQuestionCard_IsClickable_AndNavigatesToWizard()
-    {
-        // The 2026-06-10 regression class: the page prerenders but the
-        // circuit never becomes interactive, leaving the @onclick seed
-        // cards inert ("seed questions aren't links"). Clicking one and
-        // observing navigation proves the circuit is alive end-to-end.
-        var page = await NewPageAsync();
-        await page.GotoAsync($"{_stack.WebBaseUrl}/", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-
-        var card = page.Locator("[data-testid^='seed-card-']").First;
-        await card.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60_000 });
-
-        // The circuit may lag the prerender, and the grid re-renders as it
-        // transitions skeleton → fallback → live manifest, detaching the
-        // node mid-click. Retry both the click (detach race throws) and
-        // the navigation wait (an inert prerendered card swallows clicks).
-        var navigated = false;
-        for (var attempt = 0; attempt < 20 && !navigated; attempt++)
-        {
-            try
-            {
-                await card.ClickAsync(new() { Timeout = 5_000 });
-                await page.WaitForURLAsync(url => url.Contains("/wizard"), new() { Timeout = 3_000 });
-                navigated = true;
-            }
-            catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
-            {
-                // Circuit not live yet or the card re-rendered mid-click —
-                // give it a beat and retry against the re-resolved locator.
-                await page.WaitForTimeoutAsync(2_000);
-            }
-        }
-
-        Assert.True(navigated, "Seed-question card click never navigated to /wizard — circuit not interactive.");
-
-        // Navigation alone is not the contract — the hand-off must carry
-        // the question into the wizard and AUTO-SUBMIT it. The original
-        // version of this test stopped at the URL check and missed the
-        // /wizard?q= query parameter being silently dropped (the page only
-        // read the /wizard/q/{slug} route): users landed on a bare idle
-        // page. The submitted-question header proves the full hand-off.
-        var submittedQuestion = page.Locator("[data-testid='submitted-question']");
-        await submittedQuestion.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 30_000 });
-        var text = await submittedQuestion.InnerTextAsync();
-        Assert.False(string.IsNullOrWhiteSpace(text), "Submitted-question header rendered empty after seed-card hand-off.");
-    }
+    // NOTE: landing-page seed-card interactivity moved to
+    // LandingInteractivityCanaryE2ETests — it makes no model call (so it belongs
+    // in the post-deploy canary, not the Ask-excluded set) and its circuit-
+    // hydration signal is only reliable against a deployed target.
 
     [E2EFact]
     public async Task AskFlow_GodzillaQuestion_ReturnsCitedAnswer()

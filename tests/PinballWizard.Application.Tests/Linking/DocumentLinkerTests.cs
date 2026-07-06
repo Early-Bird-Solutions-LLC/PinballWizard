@@ -570,7 +570,7 @@ public class DocumentLinkerTests
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, overrides: overrides);
 
         await linker.InitializeAsync(CancellationToken.None);
-        var result = await linker.LinkAsync(raw, CancellationToken.None);
+        await linker.LinkAsync(raw, CancellationToken.None);
 
         // The result from TryTier0Override still says ManuallyLinked, but FanOutAndUpdateAsync
         // should have downgraded the UpdateLinkStatusAsync call to Failed.

@@ -121,7 +121,8 @@ public sealed class IndexPageTests
 
         var cut = RenderIndexWithPopover(ctx);
 
-        // Wait for OnInitializedAsync to complete (client call returns synchronously
+        // Wait for OnAfterRenderAsync to complete (the live-data load runs there,
+        // after the first interactive render; the client call returns synchronously
         // via NSubstitute's Task.FromResult).
         await cut.InvokeAsync(async () => await Task.Yield());
         cut.Render();
@@ -179,9 +180,9 @@ public sealed class IndexPageTests
         var cut = RenderIndexWithPopover(ctx);
 
         // While the client is in-flight, Questions holds the compiled-in
-        // fallback (not null). The fallback is set at the start of
-        // OnInitializedAsync before the API await, so there is no null /
-        // skeleton flash in the interactive path either.
+        // fallback (not null). The fallback is set synchronously in OnInitialized
+        // (before any render), and the live-data load moved to OnAfterRenderAsync,
+        // so there is no null / skeleton flash in the interactive path either.
         var grid = cut.FindComponent<SeedQuestionGrid>();
         Assert.NotNull(grid.Instance.Questions);
         Assert.Equal(4, grid.Instance.Questions!.Count);

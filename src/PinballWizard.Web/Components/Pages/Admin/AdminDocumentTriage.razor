@@ -224,6 +224,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Re-link failed for document {DocumentId}.", row.DocumentId);
             Snackbar.Add($"Re-link failed: {ex.Message}", Severity.Error);
         }
         finally
@@ -256,6 +257,7 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Mark-generic failed for document {DocumentId}.", row.DocumentId);
             Snackbar.Add($"Mark Generic failed: {ex.Message}", Severity.Error);
         }
         finally
