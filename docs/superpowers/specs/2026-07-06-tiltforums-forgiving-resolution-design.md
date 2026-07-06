@@ -34,7 +34,7 @@ Rejected alternatives: **B — hand-rolled normalization** (reimplements the ana
 
 A manufacturer-scope-aware resolver, the single piece both issues consume:
 
-```
+```text
 ResolveViaMachineIndex(title, manufacturerKey?) → ResolutionResult
     ResolutionResult ∈ { Resolved(machine), ResolvedEditionFamily(siblings[]), Ambiguous, NoMatch }
 ```
@@ -50,7 +50,9 @@ This mirrors the matcher's existing `Resolved` / `ResolvedEditionFamily` / `Mult
 
 **Ambiguity posture (approved):** `Ambiguous` is **skipped and logged**, never force-grounded — same no-fabrication posture as today's `MultipleMatches` (invariant #17). No score-margin auto-resolve, no multi-candidate fan-out. A human can add a manual title→OPDB mapping later if a specific game is worth it.
 
-**Interface change:** `IMachineSearchIndex` needs an optional `manufacturerKey` scope. Preferred: add a scoped overload / optional parameter that emits `filter=manufacturer_key eq '<key>'` server-side (cheaper, exact). Acceptable fallback: filter the returned hits client-side on `MachineSearchHit.ManufacturerKey`. Decide during planning; server-side filter preferred.
+**Interface change (decided):** `IMachineSearchIndex` gains an optional `manufacturerKey` scope that emits `filter=manufacturer_key eq '<key>'` **server-side** (cheaper and exact — no wasted top-N slots on other manufacturers). Client-side hit filtering is rejected.
+
+**Delivery (decided): two PRs.** Phase 1 (#694) ships first — self-contained, demonstrable value on the master-list corpus. Phase 2 (#693) builds on the merged resolver. The shared primitive lands in PR 1; PR 2 adds only the unscoped call site + subcategory union.
 
 ## Phase 1 — #694 (title-matching), scoped
 
