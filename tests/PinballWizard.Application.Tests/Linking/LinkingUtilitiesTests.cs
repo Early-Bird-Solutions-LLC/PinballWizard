@@ -33,10 +33,27 @@ public class LinkingUtilitiesTests
         var data = new TheoryData<SourceType>();
         foreach (var t in Enum.GetValues<SourceType>())
         {
+            // SynthesizedArticle is the one deliberately manufacturer-agnostic source type:
+            // Kineticist / Tilt Forums / TWIP articles are cross-manufacturer, persisted as
+            // PlatformGeneric documents that never enter title-collision disambiguation. Its
+            // null result is pinned separately below.
+            if (t == SourceType.SynthesizedArticle)
+            {
+                continue;
+            }
             data.Add(t);
         }
         return data;
     }
+
+    // The exhaustiveness guard's inverse: SynthesizedArticle MUST have no manufacturer key,
+    // because its manufacturer is per-record (DocumentRecord.Manufacturer), not inferable from
+    // the source type. This pins that intent so a future change can't quietly give it one.
+    [Fact]
+    public void InferManufacturerKey_ReturnsNull_ForSynthesizedArticle()
+        => Assert.True(
+            string.IsNullOrEmpty(LinkingUtilities.InferManufacturerKey(SourceWith(SourceType.SynthesizedArticle))),
+            "SynthesizedArticle is cross-manufacturer / PlatformGeneric and must not resolve to a manufacturer key.");
 
     // NormalizeForMatch
     [Theory]

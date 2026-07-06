@@ -1141,6 +1141,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
+        var kineticistRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
+
         Console.WriteLine("Discovering Kineticist tutorial articles...");
 
         var kineticistSlugs = await kineticistClient.DiscoverTutorialSlugsAsync(cancellationToken);
@@ -1274,6 +1276,23 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → machine {machineId} ({chunks.Count} chunk(s))");
                         articleIndexed = true;
                         kineticistEditionsLinked++;
+
+                        if (kineticistRawDocRepo is not null)
+                        {
+                            try
+                            {
+                                var synDoc = SynthesizedDocumentRecordFactory.Create(
+                                    documentId, article.Title, article.CanonicalUrl, "Kineticist Tutorial",
+                                    DocumentType.Rulesheet, "md", machineManufacturer,
+                                    machineTitle, article.GameSlug, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                                await kineticistRawDocRepo.UpsertRawAsync(synDoc, cancellationToken);
+                                await kineticistRawDocRepo.UpdateLinkStatusAsync(documentId, LinkStatus.PlatformGeneric, "synthesized", null, null, cancellationToken);
+                            }
+                            catch (Exception rawEx) when (rawEx is not OperationCanceledException)
+                            {
+                                Console.Error.WriteLine($"  Warning: raw-doc store write failed for '{article.Title}' → {machineId}: {rawEx.Message}");
+                            }
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1322,6 +1341,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Environment.ExitCode = 2;
             return;
         }
+
+        var tiltForumsRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
         var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
@@ -1471,6 +1492,23 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
                         rulesheetIndexed = true;
+
+                        if (tiltForumsRawDocRepo is not null)
+                        {
+                            try
+                            {
+                                var synDoc = SynthesizedDocumentRecordFactory.Create(
+                                    documentId, article.GameTitle, article.TopicUrl, "Tilt Forums Rulesheet",
+                                    DocumentType.Rulesheet, "html", machineMatch.ManufacturerDisplayName,
+                                    machineMatch.MachineTitle, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                                await tiltForumsRawDocRepo.UpsertRawAsync(synDoc, cancellationToken);
+                                await tiltForumsRawDocRepo.UpdateLinkStatusAsync(documentId, LinkStatus.PlatformGeneric, "synthesized", null, null, cancellationToken);
+                            }
+                            catch (Exception rawEx) when (rawEx is not OperationCanceledException)
+                            {
+                                Console.Error.WriteLine($"  Warning: raw-doc store write failed for '{article.GameTitle}' -> {machineMatch.MachineId}: {rawEx.Message}");
+                            }
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1518,6 +1556,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Environment.ExitCode = 2;
             return;
         }
+
+        var twipRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         // Parse --twip-since date.
         DateTimeOffset? since = null;
@@ -1588,6 +1628,23 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                 {
                     Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → {chunks.Count} chunk(s)");
                     twipIndexed++;
+
+                    if (twipRawDocRepo is not null)
+                    {
+                        try
+                        {
+                            var synDoc = SynthesizedDocumentRecordFactory.Create(
+                                documentId, article.Title, article.CanonicalUrl, "TWIP Newsletter",
+                                DocumentType.NewsDigest, "html", "Kineticist",
+                                null, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
+                            await twipRawDocRepo.UpsertRawAsync(synDoc, cancellationToken);
+                            await twipRawDocRepo.UpdateLinkStatusAsync(documentId, LinkStatus.PlatformGeneric, "synthesized", null, null, cancellationToken);
+                        }
+                        catch (Exception rawEx) when (rawEx is not OperationCanceledException)
+                        {
+                            Console.Error.WriteLine($"  Warning: raw-doc store write failed for '{article.Title}': {rawEx.Message}");
+                        }
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1625,6 +1682,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             Environment.ExitCode = 2;
             return;
         }
+
+        var freshdeskRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Pinball Brothers Freshdesk support folders...");
 
@@ -1769,6 +1828,26 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     {
                         Console.WriteLine($"  Indexed '{article.Title}' ({folder.FolderName}) → {chunks.Count} chunk(s)");
                         freshdeskIndexed++;
+
+                        if (freshdeskRawDocRepo is not null)
+                        {
+                            try
+                            {
+                                // Pass gameTitle/gameSlug only for game-specific articles; general-category
+                                // articles (machineId == "pb_support") mirror the TWIP pinball_news pattern.
+                                string? docGameTitle = machineId != "pb_support" ? machineTitle : (string?)null;
+                                var synDoc = SynthesizedDocumentRecordFactory.Create(
+                                    documentId, article.Title, article.Url, "Pinball Brothers Freshdesk Article",
+                                    DocumentType.SupportArticle, "html", manufacturer,
+                                    docGameTitle, matchedSlug, DateTimeOffset.UtcNow);
+                                await freshdeskRawDocRepo.UpsertRawAsync(synDoc, cancellationToken);
+                                await freshdeskRawDocRepo.UpdateLinkStatusAsync(documentId, LinkStatus.PlatformGeneric, "synthesized", null, null, cancellationToken);
+                            }
+                            catch (Exception rawEx) when (rawEx is not OperationCanceledException)
+                            {
+                                Console.Error.WriteLine($"  Warning: raw-doc store write failed for '{article.Title}': {rawEx.Message}");
+                            }
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

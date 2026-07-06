@@ -19,6 +19,8 @@ public enum SourceType
     MultimorphicProductPage,
     JjpSupportPage,
     PinballBrothersFreshdeskArticle,
+    // Kineticist tutorials, Tilt Forums rulesheets, TWIP newsletters — index + doc-store, no scraper
+    SynthesizedArticle,
 }
 
 /// <summary>
