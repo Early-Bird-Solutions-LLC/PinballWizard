@@ -37,6 +37,12 @@ public static class LinkingUtilities
             SourceType.BarrelsOfFunProductPage => ScraperManufacturerKey.BarrelsOfFun,
             SourceType.ChicagoGamingGamePage => ScraperManufacturerKey.ChicagoGaming,
             SourceType.MultimorphicProductPage => ScraperManufacturerKey.Multimorphic,
+            // Synthesized articles (Kineticist / Tilt Forums / TWIP) are cross-manufacturer
+            // knowledge sources persisted as PlatformGeneric documents — they never enter the
+            // linker's title-collision disambiguation, and their manufacturer travels per-record
+            // on DocumentRecord.Manufacturer rather than being inferable from the source type.
+            // So there is deliberately no single manufacturer key here.
+            SourceType.SynthesizedArticle => null,
             _ => null,
         };
     }
