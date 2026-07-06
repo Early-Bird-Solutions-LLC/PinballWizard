@@ -142,7 +142,7 @@
     // block it. GetLandingAsync can take 30-48 s under Polly retries when the
     // endpoint is slow or down, which would leave the rendered-but-inert cards
     // unclickable for that whole window — the 2026-06-10 "one card click made
-    // the whole page inert" regression class (see WizardShell/Wizard.razor's
+    // the whole page inert" regression class (see Components/Pages/Wizard.razor's
     // ResolveSlugAsync catch note). Loading here keeps the landing page
     // interactive immediately and swaps the fallback for live data when it
     // arrives. OnAfterRenderAsync does not run during static SSR pre-render, so
@@ -152,6 +152,10 @@
         if (!firstRender || !RendererInfo.IsInteractive)
             return;
 
+        // GetLandingAsync is null-safe — WizardLandingClient catches every
+        // non-cancellation exception (incl. Polly's BrokenCircuitException) and
+        // returns null — so no try/catch is needed here. CancellationToken.None
+        // means the one propagating type, OperationCanceledException, cannot fire.
         var landing = await LandingClient
             .GetLandingAsync(CancellationToken.None)
             .ConfigureAwait(false);
