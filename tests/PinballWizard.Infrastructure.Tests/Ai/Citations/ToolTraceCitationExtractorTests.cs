@@ -54,6 +54,41 @@ public sealed class ToolTraceCitationExtractorTests
     }
 
     [Fact]
+    public void Extract_MachineCitation_ThreadsFreshnessFromSink()
+    {
+        // Machine freshness (OPDB LastSeenAt) travels out-of-band via the metadata
+        // sink keyed by OpdbSourceUrl — the model never sees the timestamp. The machine
+        // citation's LastScrapedUtc must be enriched from the sink so the FreshnessBadge
+        // shows "synced N ago" instead of "freshness unknown".
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var synced = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var sink = new RetrievalCitationMetadataSink();
+        sink.Record(dto.OpdbSourceUrl!, new RetrievalCitationMetadata(LastScrapedUtc: synced, RelevanceScore: null));
+        var extractor = new ToolTraceCitationExtractor(metadataSink: sink);
+        var response = BuildAgentResponseWithToolResult(functionName: "getMachineByTitle", result: dto);
+
+        var citation = Assert.Single(extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal(synced, citation.LastScrapedUtc);
+    }
+
+    [Fact]
+    public void Extract_MachineCitation_NoSinkEntry_LeavesFreshnessNull()
+    {
+        // No sink entry (machine not seen this run, or the typed-object path) → freshness
+        // stays null and the FreshnessBadge renders "freshness unknown" gracefully.
+        var dto = SampleGroundingDto(opdbId: "GRBE-MJL05", title: "Godzilla (Premium)");
+        var extractor = new ToolTraceCitationExtractor(metadataSink: new RetrievalCitationMetadataSink());
+        var response = BuildAgentResponseWithToolResult(functionName: "getMachineByTitle", result: dto);
+
+        var citation = Assert.Single(extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Null(citation.LastScrapedUtc);
+    }
+
+    [Fact]
     public void Extract_GetMachineByTitleNullResult_ReturnsEmpty()
     {
         // The Wizard called the tool but the title didn't match anything.
