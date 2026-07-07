@@ -1,9 +1,10 @@
 namespace PinballWizard.Infrastructure.Scraping.TiltForums;
 
 /// <summary>
-/// One entry from the Tilt Forums "Rulesheet Master List" wiki page — a
-/// game title, the manufacturer section it's grouped under, and the topic
-/// URL to fetch the full rulesheet from.
+/// One discovered Tilt Forums rulesheet listing — a game title, the topic
+/// URL to fetch the full rulesheet from, and (for master-list entries) the
+/// manufacturer section it's grouped under. Subcategory-discovered entries
+/// carry a null <see cref="ManufacturerHeaderText"/> (no manufacturer hint).
 /// </summary>
 public sealed class TiltForumsRulesheetListing
 {

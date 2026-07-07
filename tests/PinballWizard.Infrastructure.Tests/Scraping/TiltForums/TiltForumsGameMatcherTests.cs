@@ -387,6 +387,10 @@ public sealed class TiltForumsGameMatcherTests
 
         Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
         Assert.Empty(result.Machines);
+        // A genuine cross-manufacturer collision must never be fanned out.
+        // (No await: GetSiblingsByGroupIdAsync returns IAsyncEnumerable, not Task.)
+        repo.DidNotReceive().GetSiblingsByGroupIdAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     private static async IAsyncEnumerable<Machine> ToAsyncEnumerable(IEnumerable<Machine> machines)
