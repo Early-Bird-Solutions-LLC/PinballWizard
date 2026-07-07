@@ -2557,8 +2557,30 @@ module kineticistSyncJob '../../deploy/scheduled-cli-job/scheduled-cli-job.bicep
         name: 'AiFoundry__EmbeddingDeploymentName'
         value: foundryEmbeddingDeploymentName
       }
+      {
+        // Kineticist Tier-A API key (ADR-0043) sourced from Key Vault via the ACA
+        // secrets block below. The token value never appears in Bicep, params, or
+        // source — resolved at run time by the UAMI (Key Vault Secrets User). When
+        // present, the tutorials sync resolves each game through the OPDB-keyed
+        // Kineticist API (durable, per-edition) instead of the fuzzy title-lookup
+        // fallback that skips messy game-slugs (issue #712). Absent → the sync
+        // degrades visibly to the fallback (KineticistOptions.ApiKey is optional).
+        name: 'Kineticist__ApiKey'
+        secretRef: 'kineticist-api-key'
+      }
       { name: 'Scraper__DataPath', value: '/tmp/pinwiz' }
       { name: 'Scraper__Trigger', value: 'scheduled' }
+    ]
+    // Kineticist API key: Key Vault secret resolved at run time by the UAMI.
+    // Same construction as the OPDB sync job's Opdb-ApiToken reference. The secret
+    // must be created before the first run after this change (operator step in the
+    // PR): az keyvault secret set --name Kineticist-ApiKey --value <ki_live_…>.
+    secrets: [
+      {
+        name: 'kineticist-api-key'
+        keyVaultUrl: 'https://${keyVaultName}${az.environment().suffixes.keyvaultDns}/secrets/Kineticist-ApiKey'
+        identity: acaIdentity.id
+      }
     ]
   }
 }
