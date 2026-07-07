@@ -30,6 +30,7 @@ for it. If everything is in scope, write "nothing intentionally deferred."
 ## Checklist
 
 - [ ] CI is green (build + test + coverage + CodeQL + sanitization)
+- [ ] Post-merge `Deploy` green (build → smoke `/alive` → E2E canary) — "done" is not "merged" (see `.claude/PR-AUDIT.md` Step 3)
 - [ ] PR title follows the Conventional Commits format above
 - [ ] If this is a new architectural decision, an ADR has been added under [`docs/adr/`](../docs/adr/)
 - [ ] If user-visible behavior changes, [`README.md`](../README.md) and/or [`docs/`](../docs/) are updated in the same PR

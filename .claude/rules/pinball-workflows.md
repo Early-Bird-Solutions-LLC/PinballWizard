@@ -46,6 +46,12 @@ each (fix-and-push, or dismiss-with-justification). The PR is not "done" until c
 scanning is green or every finding is fixed / dismissed-with-reason. Full mechanism
 + exact `gh` commands: [`.claude/PR-AUDIT.md`](../PR-AUDIT.md) Step 2.
 
+## 4b. After merge — deploy verification (BLOCKING)
+
+Merging ships nothing until the post-merge `Deploy` is green. Watch it to
+completion and treat a failure like a code-scanning finding — fix-forward or
+revert before calling the work done. Full mechanism: [`.claude/PR-AUDIT.md`](../PR-AUDIT.md) Step 3.
+
 ## 5. Quick reference
 
 | Trigger | Action |
@@ -55,3 +61,4 @@ scanning is green or every finding is fixed / dismissed-with-reason. Full mechan
 | After push | (nothing — no time tracking) |
 | "create PR" | `/local-review` → PR-AUDIT → `gh pr create` → add+verify `claude-code` label → **PR-AUDIT Step 2 (post-push code-scanning triage)** |
 | PR checks / bot review comments appear | Fetch + triage automatically (fix or dismiss-with-reason) — PR-AUDIT Step 2; don't wait to be told |
+| After merge to `main` | Watch the `Deploy` run to green (PR-AUDIT Step 3); "done" ≠ "merged". Triage any `deploy-failure` issue. |
