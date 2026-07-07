@@ -169,12 +169,11 @@ public sealed class AiSearchRagRetrieverTests
     // ResolveScore returns the RAW reranker score (0–4), not a fraction. The
     // prior fixtures only used <=1.0 values, which never exercised the real
     // range — this documents that a genuine reranker score passes through.
-    [Fact]
-    public void ResolveScore_PassesThroughRerankerScoreAboveOne()
-    {
-        Assert.Equal(1.9, AiSearchRagRetriever.ResolveScore(rerankerScore: 1.9, bm25Score: 8.7));
-        Assert.Equal(3.4, AiSearchRagRetriever.ResolveScore(rerankerScore: 3.4, bm25Score: null));
-    }
+    [Theory]
+    [InlineData(1.9, 8.7, 1.9)]     // reranker present, above 1.0 — reranker wins over BM25
+    [InlineData(3.4, null, 3.4)]    // reranker present, no BM25 — passes through unchanged
+    public void ResolveScore_PassesThroughRerankerScoreAboveOne(double reranker, double? bm25, double expected) =>
+        Assert.Equal(expected, AiSearchRagRetriever.ResolveScore(rerankerScore: reranker, bm25Score: bm25));
 
     // The floor compares a NORMALIZED (0–1) score against MinimumScore. This
     // is the fixture where the filter actually fires: the 28%-match Cactus

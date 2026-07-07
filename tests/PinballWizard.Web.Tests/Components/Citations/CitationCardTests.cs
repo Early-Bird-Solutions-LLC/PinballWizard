@@ -421,11 +421,13 @@ public sealed class CitationCardTests
     // Cross-layer parity: CitationCard badge vs shared RetrievalScoring helper
     // ──────────────────────────────────────────────────────────────────────
 
-    // Cross-layer parity: the citation "% match" badge and the retriever's
-    // relevance floor must speak one scale. Both derive from the single
-    // RetrievalScoring.NormalizeRerankerScore helper; this pins that the UI
-    // percent equals round(sharedNormalize * 100), so the 0-4-vs-0-1 scale
-    // bug cannot re-emerge on the Web side.
+    // Cross-layer contract test (not a behavioral one): pins that the badge's
+    // MatchPercent still DELEGATES to the shared RetrievalScoring helper. It
+    // catches constant-drift (if MaxRerankerScore changes) and clamp-removal
+    // (the 8.0 case), and fails the build if MatchPercent stops using the
+    // shared normalizer — the structural guarantee against the 0-4-vs-0-1
+    // scale bug re-emerging. It would NOT catch re-inlining an algebraically
+    // identical formula; that regression is prevented by the code, not this test.
     [Theory]
     [InlineData(1.12)]  // the 28% Cactus Canyon card
     [InlineData(1.6)]
