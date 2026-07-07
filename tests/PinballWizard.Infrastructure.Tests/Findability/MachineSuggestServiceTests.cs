@@ -52,6 +52,7 @@ public sealed class MachineSuggestServiceTests
         await _index.DidNotReceive().SearchAsync(
             Arg.Any<string>(),
             Arg.Any<int>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -61,7 +62,7 @@ public sealed class MachineSuggestServiceTests
     [InlineData("godzilla")]  // normal query
     public async Task SuggestAsync_QueryHasAtLeastTwoNonWsChars_CallsIndex(string query)
     {
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>([]));
         var service = BuildService();
 
@@ -70,6 +71,7 @@ public sealed class MachineSuggestServiceTests
         await _index.Received(1).SearchAsync(
             Arg.Is<string>(q => q == query),
             Arg.Any<int>(),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -93,7 +95,7 @@ public sealed class MachineSuggestServiceTests
     {
         // A transient index failure on a public typeahead must degrade to an empty
         // dropdown (invariant #17 — logged + metered, never a 500, never fabricated).
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns<Task<IReadOnlyList<MachineSearchHit>>>(_ =>
                 throw new InvalidOperationException("simulated transient index failure"));
         var service = BuildService();
@@ -102,7 +104,7 @@ public sealed class MachineSuggestServiceTests
 
         Assert.Empty(result);
         // The index WAS attempted (degrade, not skip).
-        await _index.Received(1).SearchAsync("godzilla", Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _index.Received(1).SearchAsync("godzilla", Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     // ── Edition collapse / dedup ──────────────────────────────────────────────
@@ -120,7 +122,7 @@ public sealed class MachineSuggestServiceTests
             ("GYWBZ-MkPr5", "Medieval Madness (Proto)",         "Williams",               1997, 6.0),
             ("GYWBZ-MkPr6", "Medieval Madness (Home Edition)",  "Williams",               1997, 5.0),
         });
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -143,7 +145,7 @@ public sealed class MachineSuggestServiceTests
             BuildHit("GW222-bbb1", "Medieval Madness", "Chicago Gaming Company", 2016, "GW222",  8.5),
             BuildHit("GW222-bbb2", "Medieval Madness", "Williams",               1997, "GW222",  7.0),
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -163,7 +165,7 @@ public sealed class MachineSuggestServiceTests
             BuildHit("id1", "Attack from Mars", "Bally",  1995, groupId: null, score: 9.0),
             BuildHit("id2", "Attack from Mars", "Bally",  1995, groupId: null, score: 7.0),
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -182,7 +184,7 @@ public sealed class MachineSuggestServiceTests
             BuildHit("id1", "Attack from Mars",  "Bally", 1995, groupId: null, score: 9.0),
             BuildHit("id2", "Creature from the Black Lagoon", "Bally", 1992, groupId: null, score: 8.0),
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -204,7 +206,7 @@ public sealed class MachineSuggestServiceTests
             BuildHit("mm1", "Medieval Madness", "Chicago Gaming Company", 2016, "GW2",  8.0),
             BuildHit("gz2", "Godzilla LE",      "Stern Pinball",          2021, "GW1",  9.0), // same group as gz1, collapsed
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -224,7 +226,7 @@ public sealed class MachineSuggestServiceTests
         var hits = Enumerable.Range(1, 10)
             .Select(i => BuildHit($"id{i}", $"Machine {i}", "Stern", 2020, groupId: null, score: 10 - i))
             .ToList();
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -243,7 +245,7 @@ public sealed class MachineSuggestServiceTests
             BuildHit("GYWBZ-MkPrr", "Willy Wonka & The Chocolate Factory", "Jersey Jack Pinball", 2019,
                 groupId: "GYWBZ", score: 10.0),
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -263,7 +265,7 @@ public sealed class MachineSuggestServiceTests
         {
             BuildHit("id1", "Some Prototype", "Unknown Mfr", year: null, groupId: null, score: 5.0),
         };
-        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        _index.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>(hits));
         var service = BuildService();
 
@@ -321,6 +323,7 @@ public sealed class MachineSuggestServiceTests
         _index.SearchAsync(
                 Arg.Any<string>(),
                 Arg.Do<int>(t => capturedRawTop = t),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>([]));
         var service = BuildService();
@@ -338,6 +341,7 @@ public sealed class MachineSuggestServiceTests
         _index.SearchAsync(
                 Arg.Any<string>(),
                 Arg.Do<int>(t => capturedRawTop = t),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<MachineSearchHit>>([]));
         var service = BuildService();

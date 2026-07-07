@@ -14,10 +14,15 @@ public interface IMachineSearchIndex
 {
     // Returns OPDB IDs ranked by descending relevance (highest score first).
     // `top` bounds the result set; callers that only need one result pass top=1.
-    // An empty list is a valid honest-miss answer — callers must not fabricate.
+    // When `manufacturerKey` is non-null/non-whitespace, results are restricted to
+    // that manufacturer partition (server-side filter) — used by ingestion-time
+    // resolution that already knows the manufacturer. Null = unscoped (the
+    // getMachineByTitle default). An empty list is a valid honest-miss answer —
+    // callers must not fabricate.
     Task<IReadOnlyList<MachineSearchHit>> SearchAsync(
         string query,
         int top,
+        string? manufacturerKey,
         CancellationToken cancellationToken);
 }
 

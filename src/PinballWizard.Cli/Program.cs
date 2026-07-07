@@ -1325,6 +1325,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsSynthesizer>();
         var tiltForumsIndexer = host.Services.GetService<IRagIndexer>();
         var tiltForumsMachineRepo = host.Services.GetService<IMachineRepository>();
+        var tiltForumsMachineSearchIndex = host.Services.GetService<IMachineSearchIndex>();
 
         if (tiltForumsClient is null || tiltForumsSynthesizer is null || tiltForumsIndexer is null || tiltForumsMachineRepo is null)
         {
@@ -1364,12 +1365,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             }
         }
 
+        var tiltForumsLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("PinballWizard.Cli.TiltForumsRulesheetsSync");
         var tiltForumsIndexed = 0;
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
         var tiltForumsRawDocFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
+        var tiltForumsFuzzyResolved = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
         foreach (var listing in listings)
@@ -1380,7 +1383,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1404,6 +1407,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             {
                 tiltForumsEditionFamilyFanouts++;
             }
+
+            if (matchResult.ResolvedViaFuzzy)
+                tiltForumsFuzzyResolved++;
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
             try
@@ -1516,7 +1522,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} " +
+            $"edition_family_fanouts={tiltForumsEditionFamilyFanouts} fuzzy_resolved={tiltForumsFuzzyResolved} " +
+            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;

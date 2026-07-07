@@ -13,6 +13,7 @@ public sealed class NullMachineSearchIndex : IMachineSearchIndex
     public Task<IReadOnlyList<MachineSearchHit>> SearchAsync(
         string query,
         int top,
+        string? manufacturerKey,
         CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<MachineSearchHit>>([]);
 }
