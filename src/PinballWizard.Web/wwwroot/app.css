@@ -101,6 +101,25 @@
     margin-bottom: 0.35rem;
 }
 
+/* Shared AppBulletList / AppBulletItem — native semantic <ul>/<li> (no
+   interactive ARIA, unlike MudList). Mirrors the .eng-list spacing; the disc
+   marker is the default <ul> list-style, indented by the left padding. */
+.app-bullet-list {
+    padding-left: 1.5rem;
+    margin-bottom: 1.25rem;
+    line-height: 1.6;
+}
+
+.app-bullet-item {
+    margin-bottom: 0.35rem;
+}
+
+/* Call sites wrap item text in <MudText Typo="body2">, which renders a block
+   <p>; drop its default margin so the text sits tight against the marker. */
+.app-bullet-item > .mud-typography {
+    margin-bottom: 0;
+}
+
 /* ── Daytime Route sibling theme ──────────────────────────────────── */
 /* Light/outdoor palette: warm cream base, burnt-orange accent, deep green
    grounded. CSS-variable-only for v1 — delight surfaces reference --pw-*
