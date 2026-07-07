@@ -75,6 +75,37 @@ dismissed-with-reason.
 > violations (322 CA2000 + 106 CA1031), so that is a separate baseline-and-cleanup
 > initiative, not a drop-in. Until then, Step 2 is the safety net.
 
+## Step 3 — Post-merge deploy verification (BLOCKING — "done" is not "merged")
+
+> **Branch-protection note:** the operator must add the four `Build <image> image` checks
+> from the `Container Build` workflow to `main`'s required status checks — until then the
+> gate runs and is visible but advisory.
+
+Merging is not shipping. The post-merge `Deploy` workflow (build all four images
+→ push to ACR → ACA revision swap → smoke `/alive` → E2E canary) is what puts the
+change on the live site, and it can fail after a green PR (Docker context, RBAC,
+env, revision rollover). **Work is not done until that deploy is green.**
+
+After a merge to `main`:
+
+```bash
+# Find and watch the Deploy run for the merge commit.
+DEPLOY_ID=$(gh run list --workflow=deploy.yml --branch main --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$DEPLOY_ID" --exit-status
+```
+
+- **Green** → done. Report the live change.
+- **Failed** → triage immediately (root-cause + fix-forward, or revert). The
+  `report` job also opens a `deploy-failure` issue automatically; annotate/close it
+  as you resolve. Do NOT declare the work done.
+
+At session start (or when picking up work), check for open deploy-failure issues
+first — a red deploy blocks everyone's changes from going live:
+
+```bash
+gh issue list --state open --label deploy-failure
+```
+
 ## Recording the outcome
 
 The PR description records: `/local-review` finding counts (🔴 fixed, ⚠️

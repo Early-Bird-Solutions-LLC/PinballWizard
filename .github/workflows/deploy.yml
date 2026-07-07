@@ -316,3 +316,41 @@ jobs:
           echo "| \`pinwiz-api\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-rag-indexer\` | \`${{ github.sha }}\` | ACA app (revision swap) |" >> $GITHUB_STEP_SUMMARY
           echo "| \`pinwiz-cli\` | \`${{ github.sha }}\` | ACA Jobs (next Deployment Stack run) |" >> $GITHUB_STEP_SUMMARY
+
+  report:
+    # Deploy-health reporter. Any failed leg (build/deploy, smoke, e2e) opens or
+    # updates ONE deduplicated deploy-failure issue so a broken deploy is visible
+    # without watching the Actions tab — honest failure surfacing per invariant
+    # #17. A fully-green deploy closes any open issue, so the issue's open/closed
+    # state tracks live deploy health. Mirrors canary.yml's alarm pattern.
+    name: Report deploy health
+    runs-on: ubuntu-latest
+    needs: [build-deploy, smoke, e2e]
+    if: ${{ always() }}
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Open or update the deploy-failure issue
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: |
+          title="🚨 Deploy failing on main"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body=$(printf 'Deploy failed on `%s`.\n\nRun: %s\nTime: %s\n\nTriage: open the run, find the failed job (build-deploy / smoke / e2e), and fix-forward or revert. This issue auto-closes when a deploy goes green.' \
+            "${{ github.sha }}" "$run_url" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+          existing=$(gh issue list --state open --label deploy-failure --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing on \`${{ github.sha }}\`. $run_url"
+          else
+            gh issue create --title "$title" --label deploy-failure --body "$body"
+          fi
+
+      - name: Close the deploy-failure issue on a green deploy
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        run: |
+          for n in $(gh issue list --state open --label deploy-failure --json number --jq '.[].number'); do
+            gh issue comment "$n" --body "✅ Resolved by \`${{ github.sha }}\` — deploy green. Closing."
+            gh issue close "$n"
+          done

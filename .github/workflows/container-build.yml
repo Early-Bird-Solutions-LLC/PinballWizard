@@ -1,0 +1,61 @@
+name: Container Build
+
+# Builds every container image on PRs that touch image inputs (no push) so a
+# Docker-context / .dockerignore / Dockerfile / embedded-resource break fails the
+# PR instead of the post-merge Deploy. In its OWN workflow (not ci.yml) so it is
+# NOT subject to ci.yml's `docs/**` + `.claude/**` paths-ignore: a docs-only PR
+# that changes an embedded doc (e.g. a new ADR the web image embeds via
+# docs/adr/*.md) still gets its image built here. The 2026-07-06 web-deploy break
+# (#689) was exactly this class. deploy.yml's build on main warms the shared
+# type=gha cache (same scope), so incremental PR builds are fast.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'docs/**'
+      - '.dockerignore'
+      - '**/Dockerfile'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  container-build:
+    name: Build ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pinwiz-web
+            dockerfile: src/PinballWizard.Web/Dockerfile
+          - image: pinwiz-api
+            dockerfile: src/PinballWizard.Api/Dockerfile
+          - image: pinwiz-rag-indexer
+            dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
+          - image: pinwiz-cli
+            dockerfile: src/PinballWizard.Cli/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build ${{ matrix.image }} image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
