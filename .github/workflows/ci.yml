@@ -280,3 +280,41 @@ jobs:
           path: circuit-results/**/*.trx
           if-no-files-found: warn
           retention-days: 14
+
+  container-build:
+    # Builds every container image on the PR (no push) so a Docker-context /
+    # .dockerignore / Dockerfile / embedded-resource break fails HERE instead of
+    # silently on the post-merge Deploy. CI's dotnet build sees the whole working
+    # tree; only the Docker build filters context via .dockerignore — this job is
+    # what closes that divergence (the 2026-07-06 web-deploy break, #689). Shares
+    # the type=gha cache scope with deploy.yml so incremental builds are fast.
+    name: Build ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pinwiz-web
+            dockerfile: src/PinballWizard.Web/Dockerfile
+          - image: pinwiz-api
+            dockerfile: src/PinballWizard.Api/Dockerfile
+          - image: pinwiz-rag-indexer
+            dockerfile: src/PinballWizard.RagIngestionWorker/Dockerfile
+          - image: pinwiz-cli
+            dockerfile: src/PinballWizard.Cli/Dockerfile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build ${{ matrix.image }} image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
