@@ -144,8 +144,9 @@ public sealed class WellKnownSettingsTests
     [InlineData("rag.retrieval_top_k", "0", false)]         // below floor
     [InlineData("rag.retrieval_top_k", "21", false)]        // above ceiling (TopKCeiling)
     [InlineData("rag.retrieval_minimum_score", "0.0", true)]
+    [InlineData("rag.retrieval_minimum_score", "0.35", true)] // live default: 35% match floor
     [InlineData("rag.retrieval_minimum_score", "0.5", true)]
-    [InlineData("rag.retrieval_minimum_score", "1.0", true)]
+    [InlineData("rag.retrieval_minimum_score", "1.0", true)]  // 100% match — normalized ceiling
     [InlineData("rag.retrieval_minimum_score", "-0.1", false)] // below floor
     [InlineData("rag.retrieval_minimum_score", "1.1", false)]  // above ceiling
     [InlineData("not.a.real.key", "1", false)]

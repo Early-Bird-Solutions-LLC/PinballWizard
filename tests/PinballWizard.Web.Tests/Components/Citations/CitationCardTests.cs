@@ -2,6 +2,7 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 using PinballWizard.Application.Ai;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Web.Components.Citations;
 using Xunit;
 
@@ -414,5 +415,28 @@ public sealed class CitationCardTests
         var rel = link.GetAttribute("rel") ?? string.Empty;
         Assert.Contains("noopener", rel, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("noreferrer", rel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Cross-layer parity: CitationCard badge vs shared RetrievalScoring helper
+    // ──────────────────────────────────────────────────────────────────────
+
+    // Cross-layer contract test (not a behavioral one): pins that the badge's
+    // MatchPercent still DELEGATES to the shared RetrievalScoring helper. It
+    // catches constant-drift (if MaxRerankerScore changes) and clamp-removal
+    // (the 8.0 case), and fails the build if MatchPercent stops using the
+    // shared normalizer — the structural guarantee against the 0-4-vs-0-1
+    // scale bug re-emerging. It would NOT catch re-inlining an algebraically
+    // identical formula; that regression is prevented by the code, not this test.
+    [Theory]
+    [InlineData(1.12)]  // the 28% Cactus Canyon card
+    [InlineData(1.6)]
+    [InlineData(3.4)]
+    [InlineData(4.0)]
+    [InlineData(8.0)]
+    public void MatchPercent_equals_shared_normalization(double rerankerScore)
+    {
+        var expected = (int)Math.Round(RetrievalScoring.NormalizeRerankerScore(rerankerScore) * 100.0);
+        Assert.Equal(expected, CitationCard.MatchPercent(rerankerScore));
     }
 }

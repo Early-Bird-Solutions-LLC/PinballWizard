@@ -45,9 +45,15 @@ namespace PinballWizard.Application.Ai;
 // Mockingbird Lane one") refused via Wizard instead of searching the corpus
 // (H5b-hard finding; ADR-0024 § Phase 4.5 H5b-hard outcome). Cache key in
 // AiRouter is (normalized, promptVersion) — bumping evicts stale refusals.
+// Bumped to "v9.2026.07" (relevance-floor + machine-scope): Wizard.md Step 3
+// retry now preserves the resolved machineId (never widens to a corpus-wide
+// search), fixing the Cactus Canyon incident where a manual-empty metadata_card
+// retry dropped the machineId and returned unrelated machines' records. Cache
+// key in AiRouter is (normalized, promptVersion) — bumping evicts stale answers
+// generated under the old unscoped-retry behavior.
 public sealed class EmbeddedResourceAgentPromptProvider : IAgentPromptProvider
 {
-    public const string CurrentPromptVersion = "v8.2026.06";
+    public const string CurrentPromptVersion = "v9.2026.07";
 
     private readonly Dictionary<string, string> _prompts;
 

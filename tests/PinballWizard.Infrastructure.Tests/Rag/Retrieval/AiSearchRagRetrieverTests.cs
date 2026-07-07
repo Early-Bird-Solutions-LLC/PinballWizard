@@ -166,6 +166,28 @@ public sealed class AiSearchRagRetrieverTests
         Assert.Equal(0.0, AiSearchRagRetriever.ResolveScore(rerankerScore: null, bm25Score: null));
     }
 
+    // ResolveScore returns the RAW reranker score (0–4), not a fraction. The
+    // prior fixtures only used <=1.0 values, which never exercised the real
+    // range — this documents that a genuine reranker score passes through.
+    [Theory]
+    [InlineData(1.9, 8.7, 1.9)]     // reranker present, above 1.0 — reranker wins over BM25
+    [InlineData(3.4, null, 3.4)]    // reranker present, no BM25 — passes through unchanged
+    public void ResolveScore_PassesThroughRerankerScoreAboveOne(double reranker, double? bm25, double expected) =>
+        Assert.Equal(expected, AiSearchRagRetriever.ResolveScore(rerankerScore: reranker, bm25Score: bm25));
+
+    // The floor compares a NORMALIZED (0–1) score against MinimumScore. This
+    // is the fixture where the filter actually fires: the 28%-match Cactus
+    // Canyon junk (raw 1.12 → 0.28) is dropped at a 0.35 floor, while a
+    // genuine 40%-match chunk (raw 1.6 → 0.40) survives.
+    [Theory]
+    [InlineData(1.12, 0.35, false)]  // 28% match — the incident junk — dropped
+    [InlineData(1.6, 0.35, true)]    // 40% match — kept
+    [InlineData(1.4, 0.35, true)]    // 35% match — exactly at the floor is kept (>=)
+    [InlineData(0.0, 0.0, true)]     // floor 0.0 keeps everything (default posture)
+    [InlineData(8.0, 0.35, true)]    // BM25 fallback clamps to 100% — kept
+    public void PassesMinimumScore_ComparesNormalizedScore(double rawScore, double floor, bool expected) =>
+        Assert.Equal(expected, AiSearchRagRetriever.PassesMinimumScore(rawScore, floor));
+
     [Fact]
     public void MapToChunk_RoundTripsAllSchemaFields()
     {

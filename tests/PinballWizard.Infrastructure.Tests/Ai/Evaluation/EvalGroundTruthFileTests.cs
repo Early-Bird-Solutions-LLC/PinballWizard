@@ -67,6 +67,21 @@ public sealed class EvalGroundTruthFileTests
         Assert.Contains(questions, q => !q.AcceptableRefusal && !q.RefusalRequired);
     }
 
+    [Fact]
+    public void V2_ContainsMachineIdScopeRegressionFixture()
+    {
+        // Asserts the 2026-07-06 machineId-filter-stability regression fixture
+        // is present and well-formed. The row must carry a non-empty
+        // expected_citation_set — the whole point of the fixture is that a
+        // corpus-wide retry without machineId returns OTHER machines, so a
+        // machine-specific expected set is what distinguishes pass from fail.
+        var path = LocateGroundTruthFile("wizard.v2.jsonl");
+        var questions = EvalQuestionParser.ParseFile(path);
+
+        var scopeRow = Assert.Single(questions, q => q.Slice == "machineId-filter-stability");
+        Assert.NotEmpty(scopeRow.ExpectedCitationSet);
+    }
+
     private static string LocateGroundTruthFile(string fileName)
     {
         // Search upward from the test binary's directory until we find
