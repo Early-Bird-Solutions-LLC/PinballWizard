@@ -1,12 +1,20 @@
 @namespace PinballWizard.Web.Components.Shared
 
-<MudList T="string" Dense="true" Class="@Class" @attributes="AdditionalAttributes">
+@* Native semantic <ul> — deliberately NOT MudList. MudList renders an
+   interactive role="listbox" (and role="option" per item) which axe flags on
+   static content (aria-input-field-name + nested-interactive). A plain <ul> is
+   the accessible, correct markup for a static bullet list. Same pattern as the
+   /engineering "Latest ADRs" list. Guarded by AppBulletListTests. *@
+<ul class="@CssClass" @attributes="AdditionalAttributes">
     @ChildContent
-</MudList>
+</ul>
 
 @code {
     [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = null!;
     [Parameter] public string? Class { get; set; }
     [Parameter(CaptureUnmatchedValues = true)]
     public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string CssClass =>
+        string.IsNullOrWhiteSpace(Class) ? "app-bullet-list" : $"app-bullet-list {Class}";
 }

@@ -1,10 +1,12 @@
 @namespace PinballWizard.Web.Components.Shared
 
-<MudListItem T="string" Icon="@Icon">
+@* Native <li> — the marker is drawn by CSS list-style on the parent <ul>
+   (.app-bullet-list), not an icon component, keeping the static list free of
+   interactive ARIA. See AppBulletList.razor for the a11y rationale. *@
+<li class="app-bullet-item">
     @ChildContent
-</MudListItem>
+</li>
 
 @code {
     [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = null!;
-    [Parameter] public string Icon { get; set; } = Icons.Material.Filled.Circle;
 }
