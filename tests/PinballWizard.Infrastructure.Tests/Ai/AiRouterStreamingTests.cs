@@ -11,6 +11,7 @@ using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
 using Xunit;
@@ -796,6 +797,12 @@ public sealed class AiRouterStreamingTests
             .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
             .Returns((RefusalDetail?)null);
 
+        // Default coverage: machines have content so existing tests still hit the agent.
+        var machineCorpusCoverage = Substitute.For<IMachineCorpusCoverage>();
+        machineCorpusCoverage
+            .HasIndexedContentAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
         var router = new AiRouter(
             agentFactory,
             cache,
@@ -806,6 +813,7 @@ public sealed class AiRouterStreamingTests
             new ToolTraceCitationExtractor(),
             new RegexLegacyCitationExtractor(),
             refusalRecovery,
+            machineCorpusCoverage,
             new AmbientDegradationContext(),
             options,
             NullLogger<AiRouter>.Instance);
@@ -905,5 +913,125 @@ public sealed class AiRouterStreamingTests
             JsonSerializerOptions? jsonSerializerOptions,
             CancellationToken cancellationToken)
             => throw new NotImplementedException("Session lifecycle not exercised in streaming tests.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T-Gate1 — Machine-scoped ask, zero indexed chunks → short-circuit
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MachineScopedAsk_WithZeroIndexedChunks_ShortCircuits_WithoutInvokingAgent()
+    {
+        // Arrange: coverage says this machine has NO indexed chunks.
+        var agentFactory = Substitute.For<IFoundryAgentFactory>();
+        var coverage = Substitute.For<IMachineCorpusCoverage>();
+        coverage.HasIndexedContentAsync("EMPTY-MACHINE", Arg.Any<CancellationToken>())
+                .Returns(false);
+
+        var router = BuildRouterForGateTests(agentFactory, coverage);
+
+        // Act
+        var chunks = new List<AnswerChunk>();
+        await foreach (var chunk in router.AnswerStreamingAsync(
+            "tell me about Super Flipp", history: null, machineId: "EMPTY-MACHINE", CancellationToken.None))
+        {
+            chunks.Add(chunk);
+        }
+
+        // Assert: agent never resolved, and a NoCitation refusal Final chunk came back.
+        agentFactory.DidNotReceive().GetAgent(Arg.Any<string>());
+
+        var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
+        Assert.True(final.Answer.IsRefusal);
+        Assert.Equal(RefusalCategory.NoCitation, final.Answer.RefusalCategory);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T-Gate2 — Machine-scoped ask, has indexed chunks → agent runs
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MachineScopedAsk_WithIndexedChunks_InvokesAgent_DoesNotShortCircuit()
+    {
+        // Arrange: coverage says this machine HAS at least one chunk
+        // (e.g. a synthesized metadata card) — the agent must run.
+        var agentUpdates = new[]
+        {
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate("Godzilla is a Stern machine."),
+        };
+        var fakeAgent = new FakeStreamingAgent(agentUpdates.ToList());
+        var agentFactory = Substitute.For<IFoundryAgentFactory>();
+        agentFactory.GetAgent(Arg.Any<string>()).Returns(fakeAgent);
+
+        var coverage = Substitute.For<IMachineCorpusCoverage>();
+        coverage.HasIndexedContentAsync("HAS-CARD", Arg.Any<CancellationToken>())
+                .Returns(true);
+
+        var router = BuildRouterForGateTests(agentFactory, coverage);
+
+        var confidence = Substitute.For<IConfidenceCalculator>();
+        SetConfidencePass(confidence);
+
+        // Act
+        await foreach (var _ in router.AnswerStreamingAsync(
+            "tell me about Godzilla", history: null, machineId: "HAS-CARD", CancellationToken.None))
+        {
+            // consume stream
+        }
+
+        // Assert: the agent WAS resolved — a metadata-card-only machine is
+        // never suppressed by the gate.
+        agentFactory.Received().GetAgent(Arg.Any<string>());
+    }
+
+    // Builds a minimal AiRouter with the supplied agentFactory and coverage.
+    // Cache is always-miss, confidence always passes, cost is zero — so the
+    // only behaviour under test is the machine-scope gate itself.
+    private static AiRouter BuildRouterForGateTests(
+        IFoundryAgentFactory agentFactory,
+        IMachineCorpusCoverage coverage)
+    {
+        var cache = Substitute.For<ISemanticAnswerCache>();
+        SetCacheMiss(cache);
+
+        var promptProvider = Substitute.For<IAgentPromptProvider>();
+        promptProvider.PromptVersion.Returns("v-test");
+
+        var confidence = Substitute.For<IConfidenceCalculator>();
+        SetConfidencePass(confidence);
+
+        var tokenUsageReader = Substitute.For<ITokenUsageReader>();
+        tokenUsageReader.TryRead(Arg.Any<object>(), Arg.Any<string>()).Returns((TokenUsage?)null);
+
+        var costCalculator = Substitute.For<IAiCostCalculator>();
+        costCalculator.ComputeUsdCents(Arg.Any<TokenUsage>()).Returns(0.0);
+
+        var refusalRecovery = Substitute.For<IRefusalRecoveryService>();
+        refusalRecovery
+            .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
+            .Returns((RefusalDetail?)null);
+
+        var options = Options.Create(new AiFoundryOptions
+        {
+            RetainRegexCitationCutover = false,
+            ConfidenceThreshold = 0.65,
+            PerCallCostCeilingUsdCents = 10,
+        });
+
+        return new AiRouter(
+            agentFactory,
+            cache,
+            promptProvider,
+            confidence,
+            tokenUsageReader,
+            costCalculator,
+            new ToolTraceCitationExtractor(),
+            new RegexLegacyCitationExtractor(),
+            refusalRecovery,
+            coverage,
+            new AmbientDegradationContext(),
+            options,
+            NullLogger<AiRouter>.Instance);
     }
 }

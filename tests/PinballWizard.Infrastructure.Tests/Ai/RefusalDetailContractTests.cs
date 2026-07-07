@@ -5,6 +5,7 @@ using PinballWizard.Application.Ai.Degradation;
 using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Core.Configuration;
 using System.Threading;
 using Xunit;
@@ -95,6 +96,11 @@ public sealed class RefusalDetailContractTests
             .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
             .Returns((RefusalDetail?)null);
 
+        var machineCorpusCoverage = Substitute.For<IMachineCorpusCoverage>();
+        machineCorpusCoverage
+            .HasIndexedContentAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
         return new AiRouter(
             Substitute.For<IFoundryAgentFactory>(),
             Substitute.For<ISemanticAnswerCache>(),
@@ -105,6 +111,7 @@ public sealed class RefusalDetailContractTests
             toolTraceExtractor,
             regexExtractor,
             refusalRecovery,
+            machineCorpusCoverage,
             new AmbientDegradationContext(),
             Microsoft.Extensions.Options.Options.Create(options ?? Options),
             NullLogger<AiRouter>.Instance);

@@ -26,7 +26,10 @@ public interface IAiRouter
     // cost ceiling, confidence threshold, NoCitation, UpstreamThrottled)
     // stay one-shot via AgentResponseExtensions.ToAgentResponseAsync
     // post-stream reconstruction (Wave 2). Both surfaces share guardrails.
-    IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(string question, CancellationToken cancellationToken);
+    IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        CancellationToken cancellationToken)
+        => AnswerStreamingAsync(question, history: null, machineId: null, cancellationToken);
 
     // Multi-turn overloads (2026-06-11 design: client-held conversation
     // history). `history` is the client-supplied list of completed prior
@@ -46,5 +49,14 @@ public interface IAiRouter
         string question,
         IReadOnlyList<ConversationTurn>? history,
         CancellationToken cancellationToken)
-        => AnswerStreamingAsync(question, cancellationToken);
+        => AnswerStreamingAsync(question, history, machineId: null, cancellationToken);
+
+    // Canonical overload (ADR-0052). machineId, when non-null, pins the ask
+    // to a specific machine so the router can skip the agent turn if the RAG
+    // index holds no chunks for it. Null preserves prior free-text behaviour.
+    IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
+        CancellationToken cancellationToken);
 }
