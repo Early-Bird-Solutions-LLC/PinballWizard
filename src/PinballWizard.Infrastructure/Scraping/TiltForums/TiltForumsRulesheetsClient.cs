@@ -127,6 +127,12 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
         return t;
     }
 
+    // Matches the Discourse pinned "about this category" topic that Discourse
+    // auto-creates for every subcategory — it is forum meta, not a game rulesheet.
+    // Pattern: "About the <anything> category" (case-insensitive, trimmed).
+    internal static bool IsCategoryAboutTopic(string linkText)
+        => Regex.IsMatch(linkText.Trim(), @"^About the .+ category$", RegexOptions.IgnoreCase);
+
     // Returns the numeric Discourse topic id from a Tilt Forums URL, e.g.
     // https://tiltforums.com/t/stranger-things-rulesheet/6093 → 6093.
     // Returns null if the URL is malformed or the trailing segment is not numeric.
@@ -183,6 +189,11 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
                 var href = link.GetAttribute("href");
                 var text = link.TextContent.Trim();
                 if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(text)) continue;
+                if (IsCategoryAboutTopic(text))
+                {
+                    Logger.LogDebug("TiltForumsRulesheetsClient: skipping Discourse category 'about' topic '{Title}'.", text);
+                    continue;
+                }
                 if (!byUrl.ContainsKey(href))
                 {
                     byUrl[href] = new TiltForumsRulesheetListing

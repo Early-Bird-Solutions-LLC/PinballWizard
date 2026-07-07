@@ -401,6 +401,14 @@ public sealed class TiltForumsRulesheetsClientTests
     public void NormalizeSubcategoryTitle_StripsRulesheetWikiSuffix(string input, string expected)
         => Assert.Equal(expected, TiltForumsRulesheetsClient.NormalizeSubcategoryTitle(input));
 
+    [Theory]
+    [InlineData("About the Wiki Rulesheets category", true)]
+    [InlineData("About the Rulesheet Wikis category", true)]
+    [InlineData("Stranger Things Rulesheet", false)]
+    [InlineData("Godzilla", false)]
+    public void IsCategoryAboutTopic_MatchesDiscourseAboutTopics(string t, bool expected)
+        => Assert.Equal(expected, TiltForumsRulesheetsClient.IsCategoryAboutTopic(t));
+
     // Dedup guarantee: the same Discourse topic served under different slugs must
     // produce the same numeric id (the trailing path segment is the stable key).
     [Theory]
