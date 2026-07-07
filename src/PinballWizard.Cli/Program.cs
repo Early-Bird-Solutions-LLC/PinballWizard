@@ -1339,10 +1339,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
-        var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
-        Console.WriteLine($"Found {listings.Count} rulesheet listing(s) in the master list.");
+        var masterListings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
+        Console.WriteLine($"Found {masterListings.Count} rulesheet listing(s) in the master list.");
 
-        if (listings.Count == 0)
+        if (masterListings.Count == 0)
         {
             Console.Error.WriteLine(
                 "Tilt Forums master list returned 0 rulesheets — this likely indicates a fetch failure rather than a genuinely empty list; check the warning/error logs above.");
@@ -1350,21 +1350,27 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
+        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for additional topics...");
         var subcategoryListings = await tiltForumsClient.DiscoverSubcategoryRulesheetsAsync(cancellationToken);
-        var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var tiltForumsGaps = subcategoryListings
-            .Select(l => l.TopicUrl)
-            .Where(u => !masterListUrls.Contains(u) && !u.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (tiltForumsGaps.Count > 0)
-        {
-            Console.WriteLine($"  {tiltForumsGaps.Count} topic(s) in the subcategory are not in the master list (not ingested this run):");
-            foreach (var gap in tiltForumsGaps)
+        // Dedup by numeric topic id (not URL string) — Discourse serves the same topic under
+        // multiple slugs (e.g. /t/stranger-things-rulesheet-wip/6093 vs .../6093), so
+        // comparing full URLs would re-fetch already-covered topics.
+        var masterListTopicIds = masterListings
+            .Select(l => TryParseTopicId(l.TopicUrl))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToHashSet();
+        var subcategoryOnlyListings = subcategoryListings
+            .Where(l =>
             {
-                Console.WriteLine($"    {gap}");
-            }
-        }
+                var id = TryParseTopicId(l.TopicUrl);
+                return id.HasValue
+                    && !masterListTopicIds.Contains(id.Value)
+                    && !l.TopicUrl.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+        Console.WriteLine($"  {subcategoryOnlyListings.Count} subcategory-only topic(s) will be ingested this run.");
+        var allListings = masterListings.Concat(subcategoryOnlyListings).ToList();
 
         var tiltForumsLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("PinballWizard.Cli.TiltForumsRulesheetsSync");
         var tiltForumsIndexed = 0;
@@ -1374,9 +1380,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsRawDocFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
         var tiltForumsFuzzyResolved = 0;
+        var tiltForumsSubcategoryIndexed = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
-        foreach (var listing in listings)
+        foreach (var listing in allListings)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
@@ -1384,7 +1391,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText!, cancellationToken, tiltForumsLogger);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -1514,6 +1521,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (rulesheetIndexed)
             {
                 tiltForumsIndexed++;
+                if (string.IsNullOrWhiteSpace(listing.ManufacturerHeaderText))
+                    tiltForumsSubcategoryIndexed++;
             }
             else if (!rulesheetHadContent)
             {
@@ -1525,7 +1534,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         Console.WriteLine(
             $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} " +
             $"edition_family_fanouts={tiltForumsEditionFamilyFanouts} fuzzy_resolved={tiltForumsFuzzyResolved} " +
-            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
+            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed} " +
+            $"subcategory_indexed={tiltForumsSubcategoryIndexed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1937,6 +1947,24 @@ static async Task<bool> TryPersistSynthesizedRawDocAsync(
     {
         Console.Error.WriteLine($"  Warning: raw-doc store write failed for {record.DocumentId}: {ex.Message}");
         return false;
+    }
+}
+
+// Returns the numeric Discourse topic id from a Tilt Forums URL, e.g.
+// https://tiltforums.com/t/stranger-things-rulesheet/6093 → 6093.
+// Returns null if the URL is malformed or the trailing segment is not a number.
+// Used to dedup master-list vs subcategory topics: Discourse serves the same
+// topic under multiple slugs, so comparison must be id-based, not URL-string-based.
+static int? TryParseTopicId(string url)
+{
+    try
+    {
+        var segment = new Uri(url).Segments[^1].TrimEnd('/');
+        return int.TryParse(segment, out var id) ? id : null;
+    }
+    catch (UriFormatException)
+    {
+        return null;
     }
 }
 
