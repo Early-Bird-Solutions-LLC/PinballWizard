@@ -401,6 +401,16 @@ public sealed class TiltForumsRulesheetsClientTests
     public void NormalizeSubcategoryTitle_StripsRulesheetWikiSuffix(string input, string expected)
         => Assert.Equal(expected, TiltForumsRulesheetsClient.NormalizeSubcategoryTitle(input));
 
+    // Dedup guarantee: the same Discourse topic served under different slugs must
+    // produce the same numeric id (the trailing path segment is the stable key).
+    [Theory]
+    [InlineData("https://tiltforums.com/t/stranger-things-rulesheet-wip/6093", 6093)]
+    [InlineData("https://tiltforums.com/t/stranger-things-rulesheet/6093", 6093)] // same id, different slug
+    [InlineData("https://tiltforums.com/t/some-topic/12345", 12345)]
+    [InlineData("https://tiltforums.com/t/no-id/", null)] // non-numeric trailing segment → null
+    public void TryParseTopicId_ReturnsExpectedId(string url, int? expected)
+        => Assert.Equal(expected, TiltForumsRulesheetsClient.TryParseTopicId(url));
+
     private static (TiltForumsRulesheetsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)
     {

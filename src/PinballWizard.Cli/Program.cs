@@ -1356,14 +1356,14 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         // multiple slugs (e.g. /t/stranger-things-rulesheet-wip/6093 vs .../6093), so
         // comparing full URLs would re-fetch already-covered topics.
         var masterListTopicIds = masterListings
-            .Select(l => TryParseTopicId(l.TopicUrl))
+            .Select(l => PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl))
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
             .ToHashSet();
         var subcategoryOnlyListings = subcategoryListings
             .Where(l =>
             {
-                var id = TryParseTopicId(l.TopicUrl);
+                var id = PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl);
                 return id.HasValue
                     && !masterListTopicIds.Contains(id.Value)
                     && !l.TopicUrl.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase);
@@ -1396,7 +1396,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText}): {ex.Message}");
+                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}): {ex.Message}");
                 tiltForumsFailed++;
                 continue;
             }
@@ -1406,7 +1406,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (!isResolved)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
+                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}) — {matchResult.Status}.");
                 tiltForumsUnmatched++;
                 continue;
             }
@@ -1947,24 +1947,6 @@ static async Task<bool> TryPersistSynthesizedRawDocAsync(
     {
         Console.Error.WriteLine($"  Warning: raw-doc store write failed for {record.DocumentId}: {ex.Message}");
         return false;
-    }
-}
-
-// Returns the numeric Discourse topic id from a Tilt Forums URL, e.g.
-// https://tiltforums.com/t/stranger-things-rulesheet/6093 → 6093.
-// Returns null if the URL is malformed or the trailing segment is not a number.
-// Used to dedup master-list vs subcategory topics: Discourse serves the same
-// topic under multiple slugs, so comparison must be id-based, not URL-string-based.
-static int? TryParseTopicId(string url)
-{
-    try
-    {
-        var segment = new Uri(url).Segments[^1].TrimEnd('/');
-        return int.TryParse(segment, out var id) ? id : null;
-    }
-    catch (UriFormatException)
-    {
-        return null;
     }
 }
 

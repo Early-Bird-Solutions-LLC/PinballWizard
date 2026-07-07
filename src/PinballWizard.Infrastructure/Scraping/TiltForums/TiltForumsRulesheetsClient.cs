@@ -127,6 +127,24 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
         return t;
     }
 
+    // Returns the numeric Discourse topic id from a Tilt Forums URL, e.g.
+    // https://tiltforums.com/t/stranger-things-rulesheet/6093 → 6093.
+    // Returns null if the URL is malformed or the trailing segment is not numeric.
+    // Dedup key: Discourse serves the same topic under multiple slugs; only the
+    // trailing integer is stable across slug changes.
+    public static int? TryParseTopicId(string url)
+    {
+        try
+        {
+            var segment = new Uri(url).Segments[^1].TrimEnd('/');
+            return int.TryParse(segment, out var id) ? id : null;
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Discovers every topic listed in the "Wiki Rulesheets" subcategory,
     /// returning titled listings (with <see cref="TiltForumsRulesheetListing.GameTitle"/>
@@ -206,8 +224,8 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
         catch (HttpRequestException ex)
         {
             Logger.LogWarning(ex,
-                "TiltForumsRulesheetsClient: failed to fetch topic '{Title}' at {Url}; skipping.",
-                listing.GameTitle, listing.TopicUrl);
+                "TiltForumsRulesheetsClient: failed to fetch topic '{Title}' at {Url}; skipping; HTTP {StatusCode}.",
+                listing.GameTitle, listing.TopicUrl, ex.StatusCode);
             return null;
         }
 
