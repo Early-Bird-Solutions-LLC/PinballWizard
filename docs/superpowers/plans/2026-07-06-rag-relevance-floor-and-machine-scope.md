@@ -463,6 +463,13 @@ the retry searched the whole corpus and surfaced unrelated machines
 
 ---
 
+> **IMPLEMENTATION NOTE (2026-07-07):** Only the `machineId-filter-stability` fixture
+> (`ev-rules-9002`, Cactus Canyon `G4835-Mb5eO`) shipped. The `reranker-sensitive` fixture
+> (`ev-rules-9001`) was **intentionally deferred**: whether any question lands in the mid
+> reranker-score band is unknowable without live eval score data, so it cannot be authored
+> correctly until the eval-tuning step. Tracked as a follow-up (see Rollout §follow-ups). The
+> ground-truth test asserts only the shipped slice.
+
 ### Task 6: Eval regression fixtures + ground-truth file coverage
 
 **Files:**
