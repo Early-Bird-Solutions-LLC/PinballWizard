@@ -89,7 +89,7 @@ public sealed class AiSearchRagRetriever : IRagRetriever
                 EmitScoreSample(result);
 
                 var score = ResolveScore(result);
-                if (score < options.MinimumScore)
+                if (!PassesMinimumScore(score, options.MinimumScore))
                 {
                     continue;
                 }
@@ -323,6 +323,16 @@ public sealed class AiSearchRagRetriever : IRagRetriever
 
     internal static double ResolveScore(double? rerankerScore, double? bm25Score)
         => rerankerScore ?? bm25Score ?? 0.0;
+
+    // The minimum-score floor compares a NORMALIZED score. ResolveScore
+    // returns the raw Azure reranker score (0–4) or a BM25 fallback; the
+    // admin `rag.retrieval_minimum_score` key is a 0–1 fraction (== the
+    // citation "% match" / 100). Normalizing here via the shared
+    // RetrievalScoring helper is what lets a 0.35 floor mean "35% match"
+    // and cut the low-relevance tail — before this, the 0–1 floor was
+    // compared against a 0–4 score and could not fire (2026-07-06 design).
+    internal static bool PassesMinimumScore(double rawScore, double minimumScore) =>
+        RetrievalScoring.NormalizeRerankerScore(rawScore) >= minimumScore;
 
     internal static RetrievedChunk MapToChunk(RetrievedChunkDocument doc, double score)
         => new(
