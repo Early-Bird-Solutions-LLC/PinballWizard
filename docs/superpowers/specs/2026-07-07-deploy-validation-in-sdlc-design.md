@@ -105,7 +105,7 @@ The SDLC/process change — it binds both the automated pipeline and the agent's
 
 ```mermaid
 flowchart TD
-    PR["Pull request"] --> CB["Layer 1: container-build gate<br/>(all 4 images, --target build, no push)"]
+    PR["Pull request"] --> CB["Layer 1: container-build gate<br/>(all 4 images, no push, path-scoped)"]
     CB -->|red| BLOCK["merge blocked"]
     CB -->|green| MERGE["merge to main"]
     MERGE --> DEP["deploy.yml: build → smoke /alive → e2e canary"]
@@ -139,10 +139,11 @@ The gates must be shown to actually gate — tests-as-evidence, applied to CI:
 
 ## Risks
 
-- **PR CI time.** Four image builds add minutes. Mitigated by `type=gha` caching and
-  `--target build`. If it proves too slow, a path-filter (build only images whose inputs
-  changed, fanning shared files like `.dockerignore`/`Directory.Build.props` to all) is a
-  follow-up — but start with all-four-cached for correctness, then optimize with data.
+- **PR CI time.** Four image builds add minutes. Mitigated by `type=gha` caching and the
+  dedicated workflow's `paths:` filter (it runs only when image inputs change — `src/**`,
+  `docs/**`, `.dockerignore`, `**/Dockerfile`, `Directory.*.props`). If it still proves too
+  slow, per-image path-filtering (build only images whose inputs changed, fanning shared files
+  like `.dockerignore`/`Directory.Build.props` to all) is a follow-up.
 - **Alert fatigue.** The dedup (comment-not-duplicate) + auto-close keeps `deploy-failure` to
   one open issue at a time, so it signals "deploy is currently broken," not a pile of noise.
 - **Required-check bootstrapping.** Making the container-build a required check needs a branch-
