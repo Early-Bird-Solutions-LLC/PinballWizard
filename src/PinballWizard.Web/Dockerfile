@@ -37,6 +37,12 @@ RUN dotnet restore src/PinballWizard.Web/PinballWizard.Web.csproj
 # StaticWebAssetProjectMode) so the runtime image can serve WASM without
 # a separate build step.
 COPY src/ src/
+# PinballWizard.Web embeds engineering docs as resources (Web.csproj: the
+# manifest, five named docs, and docs/adr/*.md). .dockerignore re-includes
+# exactly that set under docs/, so copying the whole (already-filtered) docs/
+# tree brings in precisely what `dotnet publish` must embed — and stays correct
+# as ADRs are added. Without this COPY: CS1566 at publish (2026-07-07 break).
+COPY docs/ docs/
 RUN dotnet publish src/PinballWizard.Web/PinballWizard.Web.csproj \
     -c Release \
     -o /app/publish \
