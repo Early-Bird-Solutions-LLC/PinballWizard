@@ -227,9 +227,6 @@ public static class TiltForumsGameMatcher
     private static readonly HashSet<string> TitleStopWords = new(StringComparer.Ordinal)
     { "the", "of", "and", "a", "an", "for", "to", "in", "on", "with", "at" };
 
-    private static readonly HashSet<string> GenericTitleTokens = new(StringComparer.Ordinal)
-    { "pinball", "game", "games" };
-
     private static List<string> NormalizeTitleTokens(string title)
     {
         // Diacritic-fold: decompose then drop combining marks (Pokémon → pokemon).
@@ -251,24 +248,38 @@ public static class TiltForumsGameMatcher
     }
 
     // Confirms a fuzzy machine-index hit genuinely corresponds to the query title,
-    // guarding the unscoped path against single-weak-token mis-grounds (#711).
+    // guarding the unscoped path against mis-grounds where a topic title merely
+    // shares a common word with an unrelated machine (#711). This is a purely
+    // structural rule on token-set shape — no enumerated word list — so it covers
+    // every single-common-word vintage machine title (Pinball, Tournament,
+    // Baseball, …), not just a hand-picked few. Trade-off: a single-word-title game
+    // discovered ONLY via a multi-word subcategory topic ("Rules document for
+    // Alien" → "Alien") degrades to no-match rather than risk a mis-ground; such
+    // games are still covered via the (scoped) master-list path.
     private static bool ConfirmTitleMatch(string queryTitle, string machineTitle)
     {
-        var q = NormalizeTitleTokens(queryTitle);
-        var m = NormalizeTitleTokens(machineTitle);
-        if (q.Count == 0 || m.Count == 0) return false;
+        var qSet = new HashSet<string>(NormalizeTitleTokens(queryTitle), StringComparer.Ordinal);
+        var mSet = new HashSet<string>(NormalizeTitleTokens(machineTitle), StringComparer.Ordinal);
+        if (qSet.Count == 0 || mSet.Count == 0) return false;
+        if (!qSet.Overlaps(mSet)) return false;
 
-        var qSet = new HashSet<string>(q, StringComparer.Ordinal);
-        var mSet = new HashSet<string>(m, StringComparer.Ordinal);
-        var shared = qSet.Where(mSet.Contains).ToList();
-        if (shared.Count == 0) return false;
+        // Exact token-set match (modulo diacritics/punctuation) — always accept.
+        // "Pokemon" ↔ "Pokémon"; "Willy Wonka and…" ↔ "Willy Wonka & …".
+        if (qSet.SetEquals(mSet)) return true;
 
-        // Shorter title's tokens must all appear in the longer (clean extension).
-        var (smaller, larger) = qSet.Count <= mSet.Count ? (qSet, mSet) : (mSet, qSet);
-        if (!smaller.IsSubsetOf(larger)) return false;
+        // Machine name ⊊ topic title (the topic contains the whole machine name plus
+        // more). Require the machine title to carry ≥2 significant tokens, so a single
+        // common word inside an unrelated long topic title cannot anchor a match.
+        // Accepts "Jurassic Park (Stern)"→"Jurassic Park"; rejects "Junkyard Pinball"
+        // →"Pinball" and "List of Exploits … Tournament Play"→"Tournament".
+        if (mSet.IsProperSubsetOf(qSet)) return mSet.Count >= 2;
 
-        // At least one shared token must be distinctive (not generic-pinball filler).
-        return shared.Any(t => !GenericTitleTokens.Contains(t));
+        // Query ⊊ machine name (the machine name extends the query, e.g.
+        // "James Bond"→"James Bond 007") — strong signal the machine is the game.
+        if (qSet.IsProperSubsetOf(mSet)) return true;
+
+        // Overlap but neither title contains the other → different games → reject.
+        return false;
     }
 
     // Fetches the COMPLETE sibling set from the repository rather than
