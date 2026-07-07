@@ -117,6 +117,11 @@ var gcRagIndexOption = new Option<bool>("--gc-rag-index")
     Description = "Reconcile the RAG index against the scraped_documents catalog: delete index chunks whose (document_id, machine_id) pair has no backing fan-out row. This is the delete-propagation mechanism the Cosmos Change Feed (latest-version mode) cannot provide — after a --relink-all prunes stale fan-out rows, their index chunks linger as orphans until this pass removes them. Unlike --rebuild-rag-index (full wipe + re-ingest), this is a surgical, idempotent, read-mostly reconcile. Combine with --dry-run to preview orphan pairs without deleting. Requires Cosmos and Azure AI Search to be configured."
 };
 
+var backfillSynthesizedRawDocsOption = new Option<bool>("--backfill-synthesized-raw-docs")
+{
+    Description = "Heal dead citations to synthesized sources. Scans the RAG index for synthesized documents (Kineticist tutorials, Tilt Forums rulesheets, TWIP newsletters, Pinball Brothers Freshdesk articles) and writes a scraped_documents_raw row for any that lack one, reconstructing title / source url / type / manufacturer / freshness from the indexed metadata. Such docs are cited in Wizard answers but resolve to \"Document not found\" at /documents/{id} until backfilled — the case the live sync verbs cannot cover for docs they no longer re-index (e.g. a game slug that no longer resolves to a machine). Idempotent and non-destructive: never overwrites a raw doc the live sync already wrote. Combine with --dry-run to preview. Requires Cosmos and Azure AI Search to be configured."
+};
+
 var ensureMachineIndexOption = new Option<bool>("--ensure-machine-index")
 {
     Description = "Non-destructive: ensures the AI Search machine findability index schema and synonym map exist (creates them if absent; no-op if already present). Safe to call at startup or in CI without data loss. Use --rebuild-machine-index to wipe and re-project. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
@@ -266,6 +271,7 @@ rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(gcRagIndexOption);
+rootCommand.Options.Add(backfillSynthesizedRawDocsOption);
 rootCommand.Options.Add(ensureMachineIndexOption);
 rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
@@ -306,6 +312,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var gcRagIndex = parseResult.GetValue(gcRagIndexOption);
+    var backfillSynthesizedRawDocs = parseResult.GetValue(backfillSynthesizedRawDocsOption);
     var ensureMachineIndex = parseResult.GetValue(ensureMachineIndexOption);
     var rebuildMachineIndex = parseResult.GetValue(rebuildMachineIndexOption);
     var ask = parseResult.GetValue(askOption);
@@ -497,6 +504,44 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             $"RAG index GC {(gcResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
             $"{gcResult.PairsScanned} pairs scanned, {gcResult.OrphanPairs} orphan pairs, " +
             $"{gcResult.ChunksDeleted} chunks deleted.");
+        return;
+    }
+
+    // Handle --backfill-synthesized-raw-docs (heal dead synthesized citations by
+    // writing a scraped_documents_raw row for any synthesized index document that
+    // lacks one). Resolves SynthesizedRawDocBackfillService; registered only when AI
+    // Search is wired, and its IRawDocumentRepository dependency additionally needs
+    // Cosmos (the early orchestrator gate above already ensures Cosmos). Honors the
+    // shared --dry-run flag to preview without writing.
+    if (backfillSynthesizedRawDocs)
+    {
+        var backfill = host.Services.GetService<SynthesizedRawDocBackfillService>();
+        if (backfill is null)
+        {
+            Console.Error.WriteLine(
+                "--backfill-synthesized-raw-docs requires Cosmos and Azure AI Search to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos) and AiSearch:Endpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(dryRun
+            ? "Synthesized raw-doc backfill (dry-run) starting — reporting docs to write without writing..."
+            : "Synthesized raw-doc backfill starting — writing raw docs for synthesized citations that lack one...");
+        var backfillResult = await backfill.RunAsync(dryRun, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine(
+            $"Synthesized raw-doc backfill {(backfillResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
+            $"examined={backfillResult.Examined} written={backfillResult.Written} " +
+            $"skipped_existing={backfillResult.SkippedExisting} skipped_unmapped={backfillResult.SkippedUnmapped} " +
+            $"failed={backfillResult.Failed}.");
+        // A write failure is caught and metered per-doc but must surface as a non-zero
+        // exit so an ACA Job invocation doesn't report success while docs stayed dead
+        // (invariant #17: degrade visibly).
+        if (backfillResult.Failed > 0)
+        {
+            Environment.ExitCode = 1;
+        }
         return;
     }
 
@@ -1278,9 +1323,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         articleIndexed = true;
                         kineticistEditionsLinked++;
 
+                        var kd = SynthesizedSourceDescriptors.Kineticist;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.Title, article.CanonicalUrl, "Kineticist Tutorial",
-                            DocumentType.Rulesheet, "md", machineManufacturer,
+                            documentId, article.Title, article.CanonicalUrl, kd.DiscoveryContext,
+                            kd.DocumentType, kd.FileFormat, machineManufacturer,
                             machineTitle, article.GameSlug, article.PublishedAt ?? DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(kineticistRawDocRepo, synDoc, cancellationToken))
                         {
@@ -1493,9 +1539,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
                         rulesheetIndexed = true;
 
+                        var td = SynthesizedSourceDescriptors.TiltForums;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.GameTitle, article.TopicUrl, "Tilt Forums Rulesheet",
-                            DocumentType.Rulesheet, "html", machineMatch.ManufacturerDisplayName,
+                            documentId, article.GameTitle, article.TopicUrl, td.DiscoveryContext,
+                            td.DocumentType, td.FileFormat, machineMatch.ManufacturerDisplayName,
                             machineMatch.MachineTitle, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(tiltForumsRawDocRepo, synDoc, cancellationToken))
                         {
@@ -1624,9 +1671,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → {chunks.Count} chunk(s)");
                     twipIndexed++;
 
+                    var wd = SynthesizedSourceDescriptors.Twip;
                     var synDoc = SynthesizedDocumentRecordFactory.Create(
-                        documentId, article.Title, article.CanonicalUrl, "TWIP Newsletter",
-                        DocumentType.NewsDigest, "html", "Kineticist",
+                        documentId, article.Title, article.CanonicalUrl, wd.DiscoveryContext,
+                        wd.DocumentType, wd.FileFormat, wd.ManufacturerOverride!,
                         null, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
                     if (!await TryPersistSynthesizedRawDocAsync(twipRawDocRepo, synDoc, cancellationToken))
                     {
@@ -1820,9 +1868,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         // Pass gameTitle/gameSlug only for game-specific articles; general-category
                         // articles (machineId == "pb_support") mirror the TWIP pinball_news pattern.
                         string? docGameTitle = machineId != "pb_support" ? machineTitle : (string?)null;
+                        var fd = SynthesizedSourceDescriptors.PbFreshdesk;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.Title, article.Url, "Pinball Brothers Freshdesk Article",
-                            DocumentType.SupportArticle, "html", manufacturer,
+                            documentId, article.Title, article.Url, fd.DiscoveryContext,
+                            fd.DocumentType, fd.FileFormat, manufacturer,
                             docGameTitle, matchedSlug, DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(freshdeskRawDocRepo, synDoc, cancellationToken))
                         {

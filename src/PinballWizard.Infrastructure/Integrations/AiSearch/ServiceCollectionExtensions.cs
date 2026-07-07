@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PinballWizard.Application.Ai.Evaluation.Findability;
 using PinballWizard.Application.Ai.Retrieval;
+using PinballWizard.Application.Documents;
 using PinballWizard.Application.Findability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Indexing;
@@ -137,6 +138,14 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IIndexedPairSource>(BuildIndexedPairSource);
         services.TryAddSingleton<IRagIndexGarbageCollector, RagIndexGarbageCollector>();
 
+        // Synthesized raw-doc backfill (--backfill-synthesized-raw-docs). The source
+        // enumerates synthesized documents in the index; the service writes a
+        // scraped_documents_raw row for any that lack one (healing dead citations).
+        // It depends on IRawDocumentRepository, registered by Cosmos persistence, so
+        // resolving the service also requires Cosmos to be wired.
+        services.TryAddSingleton<IIndexedSynthesizedDocumentSource>(BuildSynthesizedDocumentSource);
+        services.TryAddSingleton<SynthesizedRawDocBackfillService>();
+
         return services;
     }
 
@@ -151,6 +160,19 @@ public static class ServiceCollectionExtensions
         return new AiSearchIndexedPairSource(
             searchClient,
             sp.GetRequiredService<ILogger<AiSearchIndexedPairSource>>());
+    }
+
+    private static AiSearchIndexedSynthesizedDocumentSource BuildSynthesizedDocumentSource(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.IndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new AiSearchIndexedSynthesizedDocumentSource(
+            searchClient,
+            sp.GetRequiredService<ILogger<AiSearchIndexedSynthesizedDocumentSource>>());
     }
 
     private static AzureOpenAIQueryEmbedder BuildQueryEmbedder(IServiceProvider sp)
