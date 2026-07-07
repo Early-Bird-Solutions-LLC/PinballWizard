@@ -56,7 +56,7 @@ Repeated MudBlazor patterns across admin and public pages are extracted into `Co
 | `AppEmptyState` | `MudStack` + icon + text | Centred empty-state with Inbox icon default |
 | `AppErrorAlert` | `MudAlert Severity.Error` | `Class="mb-4"` |
 | `AppStatusChip` | `MudChip T="string"` | `Size.Small Variant.Filled`; caller sets `Color` |
-| `AppBulletList` / `AppBulletItem` | `MudList Dense` + `MudListItem` | Circle icon, body2 text |
+| `AppBulletList` / `AppBulletItem` | native `<ul>` + `<li>` | Semantic static list; no interactive ARIA (a11y — not `MudList`, which renders `role="listbox"`) |
 | `AppSummaryCard` | `MudCard Elevation=2` | Admin dashboard card pattern |
 
 `MudTable` and `MudSimpleTable` are banned from the page layer — use `AppDataGrid`. All call sites pass extra props (Groupable, RowClick, data-testid, etc.) via attribute splatting.
