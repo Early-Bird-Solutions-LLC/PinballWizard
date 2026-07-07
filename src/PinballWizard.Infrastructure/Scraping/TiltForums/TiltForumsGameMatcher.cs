@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
@@ -174,6 +176,17 @@ public static class TiltForumsGameMatcher
             return null;
         }
 
+        // Title-overlap confirmation gate: guard the unscoped path against
+        // single-weak-token mis-grounds (#711). A hit whose machine title shares
+        // no distinctive tokens with the query is a false positive.
+        if (!ConfirmTitleMatch(gameTitle, topMachine.Title))
+        {
+            logger?.LogInformation(
+                "TiltForumsGameMatcher: fuzzy hit '{MachineTitle}' ({OpdbId}) rejected for query '{Query}' — insufficient title overlap; treating as no match.",
+                topMachine.Title, topMachine.Id, gameTitle);
+            return null;
+        }
+
         // Cross-group same-title collision guard: a different-group hit that carries
         // the SAME title as the top hit is a genuine same-name-different-game
         // ambiguity — do not guess.
@@ -210,6 +223,53 @@ public static class TiltForumsGameMatcher
 
     private static string GroupKeyOf(string opdbId, string? groupId) =>
         string.IsNullOrEmpty(groupId) ? opdbId : groupId;
+
+    private static readonly HashSet<string> TitleStopWords = new(StringComparer.Ordinal)
+    { "the", "of", "and", "a", "an", "for", "to", "in", "on", "with", "at" };
+
+    private static readonly HashSet<string> GenericTitleTokens = new(StringComparer.Ordinal)
+    { "pinball", "game", "games" };
+
+    private static List<string> NormalizeTitleTokens(string title)
+    {
+        // Diacritic-fold: decompose then drop combining marks (Pokémon → pokemon).
+        var decomposed = title.ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var sb = new StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                sb.Append(ch);
+        var folded = sb.ToString().Normalize(NormalizationForm.FormC);
+
+        var tokens = new List<string>();
+        foreach (var raw in folded.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var t = new string(raw.Where(char.IsLetterOrDigit).ToArray());
+            if (t.Length < 2 || TitleStopWords.Contains(t)) continue;
+            tokens.Add(t);
+        }
+        return tokens;
+    }
+
+    // Confirms a fuzzy machine-index hit genuinely corresponds to the query title,
+    // guarding the unscoped path against single-weak-token mis-grounds (#711).
+    private static bool ConfirmTitleMatch(string queryTitle, string machineTitle)
+    {
+        var q = NormalizeTitleTokens(queryTitle);
+        var m = NormalizeTitleTokens(machineTitle);
+        if (q.Count == 0 || m.Count == 0) return false;
+
+        var qSet = new HashSet<string>(q, StringComparer.Ordinal);
+        var mSet = new HashSet<string>(m, StringComparer.Ordinal);
+        var shared = qSet.Where(mSet.Contains).ToList();
+        if (shared.Count == 0) return false;
+
+        // Shorter title's tokens must all appear in the longer (clean extension).
+        var (smaller, larger) = qSet.Count <= mSet.Count ? (qSet, mSet) : (mSet, qSet);
+        if (!smaller.IsSubsetOf(larger)) return false;
+
+        // At least one shared token must be distinctive (not generic-pinball filler).
+        return shared.Any(t => !GenericTitleTokens.Contains(t));
+    }
 
     // Fetches the COMPLETE sibling set from the repository rather than
     // trusting the title-matched candidates already in hand — a sibling
