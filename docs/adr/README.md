@@ -62,6 +62,7 @@ negative) it carries.
 | [0049](0049-findability-and-relevance-ranking-program.md) | Findability & relevance-ranking program (AI-Search-backed machine lookup, content-intrinsic ranking, eval-first) | Accepted |
 | [0050](0050-tiltforums-rulesheet-ingestion.md) | Ingest Tilt Forums community rulesheets under the founder's public invitation | Accepted |
 | [0051](0051-agent-categories-foundry-vs-ci.md) | Two agent categories: Foundry product agents vs Claude Code CI automation | Accepted |
+| [0052](0052-deterministic-zero-content-shortcircuit.md) | Deterministic zero-content short-circuit in the Wizard ask pipeline (index-chunk-count gate) | Proposed |
 
 ## Conventions
 
