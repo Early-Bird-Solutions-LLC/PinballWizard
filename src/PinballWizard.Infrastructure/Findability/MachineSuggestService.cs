@@ -85,7 +85,7 @@ internal sealed class MachineSuggestService : IMachineSuggestService
         // no fabricated suggestions. Cancellation propagates normally.
         try
         {
-            var hits = await _index.SearchAsync(query, rawTop, cancellationToken).ConfigureAwait(false);
+            var hits = await _index.SearchAsync(query, rawTop, manufacturerKey: null, cancellationToken).ConfigureAwait(false);
             return CollapseEditions(hits, top);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

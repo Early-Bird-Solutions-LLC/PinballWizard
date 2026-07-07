@@ -1325,6 +1325,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsSynthesizer>();
         var tiltForumsIndexer = host.Services.GetService<IRagIndexer>();
         var tiltForumsMachineRepo = host.Services.GetService<IMachineRepository>();
+        var tiltForumsMachineSearchIndex = host.Services.GetService<IMachineSearchIndex>();
 
         if (tiltForumsClient is null || tiltForumsSynthesizer is null || tiltForumsIndexer is null || tiltForumsMachineRepo is null)
         {
@@ -1338,10 +1339,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
-        var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
-        Console.WriteLine($"Found {listings.Count} rulesheet listing(s) in the master list.");
+        var masterListings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
+        Console.WriteLine($"Found {masterListings.Count} rulesheet listing(s) in the master list.");
 
-        if (listings.Count == 0)
+        if (masterListings.Count == 0)
         {
             Console.Error.WriteLine(
                 "Tilt Forums master list returned 0 rulesheets — this likely indicates a fetch failure rather than a genuinely empty list; check the warning/error logs above.");
@@ -1349,30 +1350,40 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
-        var subcategoryUrls = await tiltForumsClient.DiscoverSubcategoryTopicUrlsAsync(cancellationToken);
-        var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var tiltForumsGaps = subcategoryUrls
-            .Where(u => !masterListUrls.Contains(u) && !u.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (tiltForumsGaps.Count > 0)
-        {
-            Console.WriteLine($"  {tiltForumsGaps.Count} topic(s) in the subcategory are not in the master list (not ingested this run):");
-            foreach (var gap in tiltForumsGaps)
+        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for additional topics...");
+        var subcategoryListings = await tiltForumsClient.DiscoverSubcategoryRulesheetsAsync(cancellationToken);
+        // Dedup by numeric topic id (not URL string) — Discourse serves the same topic under
+        // multiple slugs (e.g. /t/stranger-things-rulesheet-wip/6093 vs .../6093), so
+        // comparing full URLs would re-fetch already-covered topics.
+        var masterListTopicIds = masterListings
+            .Select(l => PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToHashSet();
+        var subcategoryOnlyListings = subcategoryListings
+            .Where(l =>
             {
-                Console.WriteLine($"    {gap}");
-            }
-        }
+                var id = PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl);
+                return id.HasValue
+                    && !masterListTopicIds.Contains(id.Value)
+                    && !l.TopicUrl.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+        Console.WriteLine($"  {subcategoryOnlyListings.Count} subcategory-only topic(s) will be ingested this run.");
+        var allListings = masterListings.Concat(subcategoryOnlyListings).ToList();
 
+        var tiltForumsLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("PinballWizard.Cli.TiltForumsRulesheetsSync");
         var tiltForumsIndexed = 0;
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
         var tiltForumsRawDocFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
+        var tiltForumsFuzzyResolved = 0;
+        var tiltForumsSubcategoryIndexed = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
-        foreach (var listing in listings)
+        foreach (var listing in allListings)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
@@ -1380,12 +1391,12 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText}): {ex.Message}");
+                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}): {ex.Message}");
                 tiltForumsFailed++;
                 continue;
             }
@@ -1395,7 +1406,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (!isResolved)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
+                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}) — {matchResult.Status}.");
                 tiltForumsUnmatched++;
                 continue;
             }
@@ -1404,6 +1415,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             {
                 tiltForumsEditionFamilyFanouts++;
             }
+
+            if (matchResult.ResolvedViaFuzzy)
+                tiltForumsFuzzyResolved++;
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
             try
@@ -1507,6 +1521,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (rulesheetIndexed)
             {
                 tiltForumsIndexed++;
+                if (string.IsNullOrWhiteSpace(listing.ManufacturerHeaderText))
+                    tiltForumsSubcategoryIndexed++;
             }
             else if (!rulesheetHadContent)
             {
@@ -1516,7 +1532,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} " +
+            $"edition_family_fanouts={tiltForumsEditionFamilyFanouts} fuzzy_resolved={tiltForumsFuzzyResolved} " +
+            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed} " +
+            $"subcategory_indexed={tiltForumsSubcategoryIndexed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;

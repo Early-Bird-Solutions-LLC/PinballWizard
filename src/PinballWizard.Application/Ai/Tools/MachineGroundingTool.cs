@@ -773,7 +773,7 @@ public sealed class MachineGroundingTool
                 // filtered. Top=MaxFuzzyCollisionGroups+4 keeps the request bounded.
                 var top = MaxFuzzyCollisionGroups + 4;
                 var hits = await _machineSearchIndex
-                    .SearchAsync(title, top, cancellationToken)
+                    .SearchAsync(title, top, manufacturerKey: null, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (hits.Count == 0)

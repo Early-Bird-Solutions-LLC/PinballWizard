@@ -2124,7 +2124,7 @@ public sealed class MachineGroundingToolTests
             .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
 
         var searchIndex = Substitute.For<IMachineSearchIndex>();
-        searchIndex.SearchAsync("Godzilla", Arg.Any<int>(), Arg.Any<CancellationToken>())
+        searchIndex.SearchAsync("Godzilla", Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new List<MachineSearchHit>
             {
                 new("GRBN-STERN", "Godzilla", "Stern Pinball", "stern", "GRBN", 2021, 0.95),
@@ -2155,7 +2155,7 @@ public sealed class MachineGroundingToolTests
             .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
 
         var searchIndex = Substitute.For<IMachineSearchIndex>();
-        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new List<MachineSearchHit>());
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);
@@ -2187,7 +2187,7 @@ public sealed class MachineGroundingToolTests
             .Returns((Machine?)null);
 
         var searchIndex = Substitute.For<IMachineSearchIndex>();
-        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(new List<MachineSearchHit>
             {
                 new("GYWBZ-MkPrr", "Willy Wonka & The Chocolate Factory", "Jersey Jack Pinball", "jjp", "GYWBZ", 2019, 0.9),
@@ -2230,7 +2230,7 @@ public sealed class MachineGroundingToolTests
             .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
 
         var searchIndex = Substitute.For<IMachineSearchIndex>();
-        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+        searchIndex.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("simulated AI Search transport failure"));
 
         var tool = new MachineGroundingTool(repo, lookups, NullLogger<MachineGroundingTool>.Instance, searchIndex);

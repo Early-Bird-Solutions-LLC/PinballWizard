@@ -20,7 +20,7 @@ public sealed class AiSearchMachineIndexTests
         // common nicknames) and co-application with phonetic analysis.
         // QueryType.Full (Lucene) was evaluated and rejected — see AiSearchMachineIndex
         // class comment for the rationale.
-        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5);
+        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5, manufacturerKey: null);
 
         Assert.Equal(SearchQueryType.Simple, options.QueryType);
     }
@@ -28,7 +28,7 @@ public sealed class AiSearchMachineIndexTests
     [Fact]
     public void BuildSearchOptions_ScoringProfile_IsMachineContentIntrinsic()
     {
-        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5);
+        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5, manufacturerKey: null);
 
         Assert.Equal(MachineSearchIndexSchema.ScoringProfileName, options.ScoringProfile);
     }
@@ -36,7 +36,7 @@ public sealed class AiSearchMachineIndexTests
     [Fact]
     public void BuildSearchOptions_Size_MatchesTopParameter()
     {
-        var options = AiSearchMachineIndex.BuildSearchOptions(top: 7);
+        var options = AiSearchMachineIndex.BuildSearchOptions(top: 7, manufacturerKey: null);
 
         Assert.Equal(7, options.Size);
     }
@@ -46,7 +46,7 @@ public sealed class AiSearchMachineIndexTests
     {
         // The three search fields provide: BM25 + synonyms (title),
         // edge-n-gram prefix (title_prefix), phonetic typo tolerance (title_phonetic).
-        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5);
+        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5, manufacturerKey: null);
 
         Assert.Contains(MachineSearchIndexFields.Title,        options.SearchFields);
         Assert.Contains(MachineSearchIndexFields.TitlePrefix,  options.SearchFields);
@@ -58,7 +58,7 @@ public sealed class AiSearchMachineIndexTests
     {
         // The Select list must include every field MachineSearchResultDocument
         // deserializes so MapToHit can project identity + grounding data.
-        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5);
+        var options = AiSearchMachineIndex.BuildSearchOptions(top: 5, manufacturerKey: null);
 
         Assert.Contains(MachineSearchIndexFields.Id,             options.Select);
         Assert.Contains(MachineSearchIndexFields.Title,          options.Select);

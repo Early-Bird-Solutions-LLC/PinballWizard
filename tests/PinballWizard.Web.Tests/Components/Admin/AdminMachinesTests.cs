@@ -365,12 +365,17 @@ public sealed class AdminMachinesLoadingStateTests : AsyncBunitContext
         // Spinner present while gate is held.
         Assert.Contains("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
 
-        // Release the gate — data load completes and StateHasChanged triggers re-render.
+        // Release the gate, then drain the renderer dispatcher deterministically:
+        // SetResult posts the load continuation (which sets _loading = false and calls
+        // StateHasChanged) onto the dispatcher. Two InvokeAsync flushes run that
+        // continuation and then the resulting re-render, so the assertion never races
+        // thread-pool scheduling. WaitForAssertion's wall-clock poll is what flaked
+        // under CI load (see project_bunit_gotchas).
         _dataGate.SetResult();
-        cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal));
+        await cut.InvokeAsync(() => Task.CompletedTask);
+        await cut.InvokeAsync(() => Task.CompletedTask);
 
-        await Task.CompletedTask;
+        Assert.DoesNotContain("mud-progress-indeterminate", cut.Markup, StringComparison.Ordinal);
     }
 }
 

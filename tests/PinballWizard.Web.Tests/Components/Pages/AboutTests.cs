@@ -97,15 +97,12 @@ public sealed class AboutTests : AsyncBunitContext
     {
         var cut = Render<About>();
 
-        // MudListItem renders divs, not li elements. Count MudListItem-based
-        // cells using the mud-list-item CSS class that MudBlazor emits.
-        // Fall back to checking the text content is non-empty and substantial
-        // (contains multiple tech-stack entries).
+        // AppBulletList renders a native <ul> of <li> items. Rather than
+        // counting elements, assert the rendered text contains the well-known
+        // stack entries — an implementation-agnostic check that stays stable if
+        // the item count changes.
         var techList = cut.Find("[data-testid='about-tech-list']");
 
-        // MudBlazor MudListItem renders with class "mud-list-item" or similar.
-        // Rather than coupling to the internal MudBlazor CSS class, assert the
-        // rendered text contains at least five well-known stack entries.
         var text = techList.TextContent;
         var expectedEntries = new[]
         {
