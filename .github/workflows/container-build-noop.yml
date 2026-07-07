@@ -1,0 +1,49 @@
+# Companion to container-build.yml for PRs that touch NO image inputs
+# (GitHub's documented workaround, "Troubleshooting required status checks §
+# Handling skipped but required checks" — same mechanism as ci-docs-noop.yml).
+#
+# Why this exists: the four `Build <image> image` checks are REQUIRED
+# branch-protection checks, but container-build.yml is fully path-filtered to
+# image inputs (src/**, docs/**, .dockerignore, **/Dockerfile,
+# Directory.*.props, global.json). On a PR that changes none of those, that
+# workflow never triggers — and GitHub does NOT synthesize a "skipped" check,
+# so each required `Build <image> image` sits in "Expected" forever and the PR
+# can never merge. This companion runs on the INVERSE path set and reports the
+# same four check names as an immediate success.
+#
+# Keep this `paths-ignore:` list in lockstep with container-build.yml's
+# `paths:` list — drift re-introduces stuck PRs (list too narrow) or skipped
+# real builds masked by this no-op (list too wide).
+#
+# Mixed PRs (image + non-image files) trigger BOTH workflows; the check names
+# are shared and branch protection follows the latest-completed run, which is
+# the real build (minutes) finishing after this no-op (seconds).
+name: Container Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'src/**'
+      - 'docs/**'
+      - '.dockerignore'
+      - '**/Dockerfile'
+      - 'Directory.Build.props'
+      - 'Directory.Packages.props'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  container-build:
+    name: Build ${{ matrix.image }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [pinwiz-web, pinwiz-api, pinwiz-rag-indexer, pinwiz-cli]
+    steps:
+      - name: Satisfy required check for non-image change
+        run: echo "No image inputs changed — the ${{ matrix.image }} container build is not affected."
