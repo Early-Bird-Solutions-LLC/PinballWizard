@@ -9,8 +9,8 @@ public sealed class TiltForumsRulesheetArticle
     /// <summary>Game title, carried through from the originating <see cref="TiltForumsRulesheetListing"/>.</summary>
     public required string GameTitle { get; init; }
 
-    /// <summary>Manufacturer section heading text, carried through from the listing.</summary>
-    public required string ManufacturerHeaderText { get; init; }
+    /// <summary>Manufacturer section heading text, carried through from the listing, or null for subcategory-only topics.</summary>
+    public string? ManufacturerHeaderText { get; init; }
 
     /// <summary>Full URL of the Discourse topic — the citation URL that rides every RAG answer sourced from this article.</summary>
     public required string TopicUrl { get; init; }

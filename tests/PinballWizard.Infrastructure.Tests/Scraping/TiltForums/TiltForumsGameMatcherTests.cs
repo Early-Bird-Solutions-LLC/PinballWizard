@@ -352,6 +352,47 @@ public sealed class TiltForumsGameMatcherTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task ResolveAsync_NullManufacturer_SingleCrossPartitionMatch_Resolves()
+    {
+        // Subcategory topic, no manufacturer hint. "Stranger Things" exists only
+        // in the Stern partition → resolves unscoped; manufacturer derived from machine.
+        var st = MakeMachine("Gzy89-M0oPy", "stern", "Stern Pinball", "Stranger Things", "Gzy89", 2019);
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Stranger Things", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable([st]));
+        repo.GetSiblingsByGroupIdAsync("Gzy89", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable([st]));
+
+        var result = await TiltForumsGameMatcher.ResolveAsync(
+            repo, machineSearchIndex: null, "Stranger Things", manufacturerHeaderText: null, CancellationToken.None);
+
+        Assert.Equal(TiltForumsGameMatchStatus.Resolved, result.Status);
+        Assert.Equal("Stern Pinball", result.Machines[0].ManufacturerDisplayName);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_NullManufacturer_MultiManufacturerCollision_IsAmbiguous()
+    {
+        // "Star Wars" exists for Bally AND Stern (different partitions). Unscoped
+        // with no hint → genuinely ambiguous → skip, never guess.
+        var bally = MakeMachine("Gb-1", "bally", "Bally", "Star Wars", "Gb", 1992);
+        var stern = MakeMachine("Gs-1", "stern", "Stern Pinball", "Star Wars", "Gs", 2017);
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync("Star Wars", Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable([bally, stern]));
+
+        var result = await TiltForumsGameMatcher.ResolveAsync(
+            repo, machineSearchIndex: null, "Star Wars", manufacturerHeaderText: null, CancellationToken.None);
+
+        Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
+        Assert.Empty(result.Machines);
+        // A genuine cross-manufacturer collision must never be fanned out.
+        // (No await: GetSiblingsByGroupIdAsync returns IAsyncEnumerable, not Task.)
+        repo.DidNotReceive().GetSiblingsByGroupIdAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static async IAsyncEnumerable<Machine> ToAsyncEnumerable(IEnumerable<Machine> machines)
     {
         foreach (var machine in machines)
