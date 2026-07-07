@@ -1,10 +1,11 @@
 @* DataPartnersStrip — landing-page data-partners section.
  *
- * Hardcoded (no API dep): the three partnership agreements are durable.
+ * Hardcoded (no API dep): the partnership set is durable and mirrors the
+ * /about#data-partners cards one-for-one.
  * Placed directly above FeaturedMachinesStrip per design handoff Screen A.
  *
  * Layout: section-header row (eyebrow left, attribution link right,
- * border-top rule) + 3-column grid of compact DataPartnerCards.
+ * border-top rule) + 4-column grid of compact DataPartnerCards.
  *
  * ADR-0026 § Landing surface.
  * ADR-0027 — routes outward; attribution link leads to /about#data-partners.
@@ -39,6 +40,7 @@
     private sealed record PartnerEntry(string Role, string Name, string Href, string Description, string StatusText);
 
     // Partnership order: catalog first (the join key), then rules, then pricing.
+    // Mirrors the /about#data-partners card order (ADR-0050 added Tilt Forums).
     private static readonly PartnerEntry[] Partners =
     [
         new("Catalog",
@@ -51,6 +53,11 @@
             "https://kineticist.com",
             "Gameplay-rules depth and catalog enrichment via API access and rules-guide permission.",
             "API + rules · Jun 2026"),
+        new("Rules",
+            "Tilt Forums",
+            "https://tiltforums.com",
+            "Community-maintained Wiki Rulesheets — deep strategy guides for modern machines.",
+            "Community · Jul 2026"),
         new("Pricing",
             "Silverball Labs",
             "https://silverballlabs.com",

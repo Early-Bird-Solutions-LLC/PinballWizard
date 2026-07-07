@@ -54,6 +54,7 @@ public sealed class AiSearchMachineIndex : IMachineSearchIndex
     public async Task<IReadOnlyList<MachineSearchHit>> SearchAsync(
         string query,
         int top,
+        string? manufacturerKey,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
@@ -62,7 +63,7 @@ public sealed class AiSearchMachineIndex : IMachineSearchIndex
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var options = BuildSearchOptions(top);
+            var options = BuildSearchOptions(top, manufacturerKey);
 
             // SearchAsync<T> deserializes the selected fields from the index
             // response into MachineSearchResultDocument via STJ. The generic
@@ -97,45 +98,57 @@ public sealed class AiSearchMachineIndex : IMachineSearchIndex
     // Builds the SearchOptions for a simple-mode machine-index query.
     // Exposed as internal static so AiSearchMachineIndexTests can pin the
     // field selection, scoring profile, and query type without a live client.
-    internal static SearchOptions BuildSearchOptions(int top) => new()
+    internal static SearchOptions BuildSearchOptions(int top, string? manufacturerKey)
     {
-        // Simple query type: enables BM25 on `title` (with synonym-map expansion),
-        // edge-n-gram on `title_prefix` (prefix/typeahead), and doubleMetaphone on
-        // `title_phonetic` (phonetic typo tolerance). The three-field combination
-        // handles all five findability categories in a single round-trip.
-        // QueryType is Simple (the default) — stated explicitly so intent is clear.
-        QueryType = SearchQueryType.Simple,
-
-        // Scoring profile "machine-content-intrinsic": magnitude(completeness) +
-        // freshness(last_updated_utc) boosts richer, more recently synced records.
-        // Applied on top of BM25 relevance so tie-breaking is content-driven, not
-        // insertion-order (matches the Phase 1 tie-break goal from ADR-0049).
-        ScoringProfile = MachineSearchIndexSchema.ScoringProfileName,
-
-        Size = top,
-
-        Select =
+        var options = new SearchOptions
         {
-            MachineSearchIndexFields.Id,
-            MachineSearchIndexFields.Title,
-            MachineSearchIndexFields.Manufacturer,
-            MachineSearchIndexFields.ManufacturerKey,
-            MachineSearchIndexFields.GroupId,
-            MachineSearchIndexFields.Year,
-        },
+            // Simple query type: enables BM25 on `title` (with synonym-map expansion),
+            // edge-n-gram on `title_prefix` (prefix/typeahead), and doubleMetaphone on
+            // `title_phonetic` (phonetic typo tolerance). The three-field combination
+            // handles all five findability categories in a single round-trip.
+            // QueryType is Simple (the default) — stated explicitly so intent is clear.
+            QueryType = SearchQueryType.Simple,
 
-        SearchFields =
+            // Scoring profile "machine-content-intrinsic": magnitude(completeness) +
+            // freshness(last_updated_utc) boosts richer, more recently synced records.
+            // Applied on top of BM25 relevance so tie-breaking is content-driven, not
+            // insertion-order (matches the Phase 1 tie-break goal from ADR-0049).
+            ScoringProfile = MachineSearchIndexSchema.ScoringProfileName,
+
+            Size = top,
+
+            Select =
+            {
+                MachineSearchIndexFields.Id,
+                MachineSearchIndexFields.Title,
+                MachineSearchIndexFields.Manufacturer,
+                MachineSearchIndexFields.ManufacturerKey,
+                MachineSearchIndexFields.GroupId,
+                MachineSearchIndexFields.Year,
+            },
+
+            SearchFields =
+            {
+                // title: standard analyzer + synonym map — abbreviations, full-text BM25.
+                MachineSearchIndexFields.Title,
+
+                // title_prefix: edge-n-gram — prefix/typeahead without wildcard syntax.
+                MachineSearchIndexFields.TitlePrefix,
+
+                // title_phonetic: doubleMetaphone — phonetic typo tolerance.
+                MachineSearchIndexFields.TitlePhonetic,
+            },
+        };
+
+        if (!string.IsNullOrWhiteSpace(manufacturerKey))
         {
-            // title: standard analyzer + synonym map — abbreviations, full-text BM25.
-            MachineSearchIndexFields.Title,
+            // OData string-literal escaping: a single quote is doubled.
+            var escaped = manufacturerKey.Replace("'", "''", StringComparison.Ordinal);
+            options.Filter = $"{MachineSearchIndexFields.ManufacturerKey} eq '{escaped}'";
+        }
 
-            // title_prefix: edge-n-gram — prefix/typeahead without wildcard syntax.
-            MachineSearchIndexFields.TitlePrefix,
-
-            // title_phonetic: doubleMetaphone — phonetic typo tolerance.
-            MachineSearchIndexFields.TitlePhonetic,
-        },
-    };
+        return options;
+    }
 
     // Maps a single AI Search result document to a MachineSearchHit.
     // Returns null when the document lacks a required identity field (OpdbId or

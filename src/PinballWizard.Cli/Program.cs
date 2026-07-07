@@ -117,6 +117,11 @@ var gcRagIndexOption = new Option<bool>("--gc-rag-index")
     Description = "Reconcile the RAG index against the scraped_documents catalog: delete index chunks whose (document_id, machine_id) pair has no backing fan-out row. This is the delete-propagation mechanism the Cosmos Change Feed (latest-version mode) cannot provide — after a --relink-all prunes stale fan-out rows, their index chunks linger as orphans until this pass removes them. Unlike --rebuild-rag-index (full wipe + re-ingest), this is a surgical, idempotent, read-mostly reconcile. Combine with --dry-run to preview orphan pairs without deleting. Requires Cosmos and Azure AI Search to be configured."
 };
 
+var backfillSynthesizedRawDocsOption = new Option<bool>("--backfill-synthesized-raw-docs")
+{
+    Description = "Heal dead citations to synthesized sources. Scans the RAG index for synthesized documents (Kineticist tutorials, Tilt Forums rulesheets, TWIP newsletters, Pinball Brothers Freshdesk articles) and writes a scraped_documents_raw row for any that lack one, reconstructing title / source url / type / manufacturer / freshness from the indexed metadata. Such docs are cited in Wizard answers but resolve to \"Document not found\" at /documents/{id} until backfilled — the case the live sync verbs cannot cover for docs they no longer re-index (e.g. a game slug that no longer resolves to a machine). Idempotent and non-destructive: never overwrites a raw doc the live sync already wrote. Combine with --dry-run to preview. Requires Cosmos and Azure AI Search to be configured."
+};
+
 var ensureMachineIndexOption = new Option<bool>("--ensure-machine-index")
 {
     Description = "Non-destructive: ensures the AI Search machine findability index schema and synonym map exist (creates them if absent; no-op if already present). Safe to call at startup or in CI without data loss. Use --rebuild-machine-index to wipe and re-project. Requires AiSearch:Endpoint and Cosmos to be configured. Exit code 2 + remediation hint when not configured."
@@ -266,6 +271,7 @@ rootCommand.Options.Add(ensureAiSearchOption);
 rootCommand.Options.Add(ensureRagIndexOption);
 rootCommand.Options.Add(rebuildRagIndexOption);
 rootCommand.Options.Add(gcRagIndexOption);
+rootCommand.Options.Add(backfillSynthesizedRawDocsOption);
 rootCommand.Options.Add(ensureMachineIndexOption);
 rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
@@ -306,6 +312,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var ensureRagIndex = parseResult.GetValue(ensureRagIndexOption);
     var rebuildRagIndex = parseResult.GetValue(rebuildRagIndexOption);
     var gcRagIndex = parseResult.GetValue(gcRagIndexOption);
+    var backfillSynthesizedRawDocs = parseResult.GetValue(backfillSynthesizedRawDocsOption);
     var ensureMachineIndex = parseResult.GetValue(ensureMachineIndexOption);
     var rebuildMachineIndex = parseResult.GetValue(rebuildMachineIndexOption);
     var ask = parseResult.GetValue(askOption);
@@ -497,6 +504,44 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             $"RAG index GC {(gcResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
             $"{gcResult.PairsScanned} pairs scanned, {gcResult.OrphanPairs} orphan pairs, " +
             $"{gcResult.ChunksDeleted} chunks deleted.");
+        return;
+    }
+
+    // Handle --backfill-synthesized-raw-docs (heal dead synthesized citations by
+    // writing a scraped_documents_raw row for any synthesized index document that
+    // lacks one). Resolves SynthesizedRawDocBackfillService; registered only when AI
+    // Search is wired, and its IRawDocumentRepository dependency additionally needs
+    // Cosmos (the early orchestrator gate above already ensures Cosmos). Honors the
+    // shared --dry-run flag to preview without writing.
+    if (backfillSynthesizedRawDocs)
+    {
+        var backfill = host.Services.GetService<SynthesizedRawDocBackfillService>();
+        if (backfill is null)
+        {
+            Console.Error.WriteLine(
+                "--backfill-synthesized-raw-docs requires Cosmos and Azure AI Search to be configured. " +
+                "Set Cosmos:AccountEndpoint (or ConnectionStrings:cosmos) and AiSearch:Endpoint.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        Console.WriteLine(dryRun
+            ? "Synthesized raw-doc backfill (dry-run) starting — reporting docs to write without writing..."
+            : "Synthesized raw-doc backfill starting — writing raw docs for synthesized citations that lack one...");
+        var backfillResult = await backfill.RunAsync(dryRun, cancellationToken);
+        Console.WriteLine();
+        Console.WriteLine(
+            $"Synthesized raw-doc backfill {(backfillResult.DryRun ? "(dry-run) " : string.Empty)}complete: " +
+            $"examined={backfillResult.Examined} written={backfillResult.Written} " +
+            $"skipped_existing={backfillResult.SkippedExisting} skipped_unmapped={backfillResult.SkippedUnmapped} " +
+            $"failed={backfillResult.Failed}.");
+        // A write failure is caught and metered per-doc but must surface as a non-zero
+        // exit so an ACA Job invocation doesn't report success while docs stayed dead
+        // (invariant #17: degrade visibly).
+        if (backfillResult.Failed > 0)
+        {
+            Environment.ExitCode = 1;
+        }
         return;
     }
 
@@ -1278,9 +1323,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         articleIndexed = true;
                         kineticistEditionsLinked++;
 
+                        var kd = SynthesizedSourceDescriptors.Kineticist;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.Title, article.CanonicalUrl, "Kineticist Tutorial",
-                            DocumentType.Rulesheet, "md", machineManufacturer,
+                            documentId, article.Title, article.CanonicalUrl, kd.DiscoveryContext,
+                            kd.DocumentType, kd.FileFormat, machineManufacturer,
                             machineTitle, article.GameSlug, article.PublishedAt ?? DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(kineticistRawDocRepo, synDoc, cancellationToken))
                         {
@@ -1325,6 +1371,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsSynthesizer = host.Services.GetService<PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsSynthesizer>();
         var tiltForumsIndexer = host.Services.GetService<IRagIndexer>();
         var tiltForumsMachineRepo = host.Services.GetService<IMachineRepository>();
+        var tiltForumsMachineSearchIndex = host.Services.GetService<IMachineSearchIndex>();
 
         if (tiltForumsClient is null || tiltForumsSynthesizer is null || tiltForumsIndexer is null || tiltForumsMachineRepo is null)
         {
@@ -1338,10 +1385,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         var tiltForumsRawDocRepo = host.Services.GetService<IRawDocumentRepository>();
 
         Console.WriteLine("Discovering Tilt Forums rulesheets from the master list...");
-        var listings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
-        Console.WriteLine($"Found {listings.Count} rulesheet listing(s) in the master list.");
+        var masterListings = await tiltForumsClient.DiscoverRulesheetsAsync(cancellationToken);
+        Console.WriteLine($"Found {masterListings.Count} rulesheet listing(s) in the master list.");
 
-        if (listings.Count == 0)
+        if (masterListings.Count == 0)
         {
             Console.Error.WriteLine(
                 "Tilt Forums master list returned 0 rulesheets — this likely indicates a fetch failure rather than a genuinely empty list; check the warning/error logs above.");
@@ -1349,30 +1396,40 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             return;
         }
 
-        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
-        var subcategoryUrls = await tiltForumsClient.DiscoverSubcategoryTopicUrlsAsync(cancellationToken);
-        var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var tiltForumsGaps = subcategoryUrls
-            .Where(u => !masterListUrls.Contains(u) && !u.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (tiltForumsGaps.Count > 0)
-        {
-            Console.WriteLine($"  {tiltForumsGaps.Count} topic(s) in the subcategory are not in the master list (not ingested this run):");
-            foreach (var gap in tiltForumsGaps)
+        Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for additional topics...");
+        var subcategoryListings = await tiltForumsClient.DiscoverSubcategoryRulesheetsAsync(cancellationToken);
+        // Dedup by numeric topic id (not URL string) — Discourse serves the same topic under
+        // multiple slugs (e.g. /t/stranger-things-rulesheet-wip/6093 vs .../6093), so
+        // comparing full URLs would re-fetch already-covered topics.
+        var masterListTopicIds = masterListings
+            .Select(l => PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToHashSet();
+        var subcategoryOnlyListings = subcategoryListings
+            .Where(l =>
             {
-                Console.WriteLine($"    {gap}");
-            }
-        }
+                var id = PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetsClient.TryParseTopicId(l.TopicUrl);
+                return id.HasValue
+                    && !masterListTopicIds.Contains(id.Value)
+                    && !l.TopicUrl.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+        Console.WriteLine($"  {subcategoryOnlyListings.Count} subcategory-only topic(s) will be ingested this run.");
+        var allListings = masterListings.Concat(subcategoryOnlyListings).ToList();
 
+        var tiltForumsLogger = host.Services.GetService<ILoggerFactory>()?.CreateLogger("PinballWizard.Cli.TiltForumsRulesheetsSync");
         var tiltForumsIndexed = 0;
         var tiltForumsSkippedNoContent = 0;
         var tiltForumsUnmatched = 0;
         var tiltForumsFailed = 0;
         var tiltForumsRawDocFailed = 0;
         var tiltForumsEditionFamilyFanouts = 0;
+        var tiltForumsFuzzyResolved = 0;
+        var tiltForumsSubcategoryIndexed = 0;
         var tiltForumsIndexerOptions = new PinballWizard.Application.Rag.Indexing.RagIndexerOptions();
 
-        foreach (var listing in listings)
+        foreach (var listing in allListings)
         {
             if (cancellationToken.IsCancellationRequested) break;
 
@@ -1380,12 +1437,12 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText}): {ex.Message}");
+                    $"  Tilt Forums: game matching failed for '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}): {ex.Message}");
                 tiltForumsFailed++;
                 continue;
             }
@@ -1395,7 +1452,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (!isResolved)
             {
                 Console.Error.WriteLine(
-                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText}) — {matchResult.Status}.");
+                    $"  Tilt Forums: unmatched '{listing.GameTitle}' ({listing.ManufacturerHeaderText ?? "unscoped"}) — {matchResult.Status}.");
                 tiltForumsUnmatched++;
                 continue;
             }
@@ -1404,6 +1461,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             {
                 tiltForumsEditionFamilyFanouts++;
             }
+
+            if (matchResult.ResolvedViaFuzzy)
+                tiltForumsFuzzyResolved++;
 
             PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsRulesheetArticle? article;
             try
@@ -1487,9 +1547,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         Console.WriteLine($"  Indexed '{article.GameTitle}' -> machine {machineMatch.MachineId} ({chunks.Count} chunk(s))");
                         rulesheetIndexed = true;
 
+                        var td = SynthesizedSourceDescriptors.TiltForums;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.GameTitle, article.TopicUrl, "Tilt Forums Rulesheet",
-                            DocumentType.Rulesheet, "html", machineMatch.ManufacturerDisplayName,
+                            documentId, article.GameTitle, article.TopicUrl, td.DiscoveryContext,
+                            td.DocumentType, td.FileFormat, machineMatch.ManufacturerDisplayName,
                             machineMatch.MachineTitle, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(tiltForumsRawDocRepo, synDoc, cancellationToken))
                         {
@@ -1507,6 +1568,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             if (rulesheetIndexed)
             {
                 tiltForumsIndexed++;
+                if (string.IsNullOrWhiteSpace(listing.ManufacturerHeaderText))
+                    tiltForumsSubcategoryIndexed++;
             }
             else if (!rulesheetHadContent)
             {
@@ -1516,7 +1579,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine(
-            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} edition_family_fanouts={tiltForumsEditionFamilyFanouts} skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed}");
+            $"--sync-tiltforums-rulesheets complete: indexed={tiltForumsIndexed} unmatched={tiltForumsUnmatched} " +
+            $"edition_family_fanouts={tiltForumsEditionFamilyFanouts} fuzzy_resolved={tiltForumsFuzzyResolved} " +
+            $"skipped_no_content={tiltForumsSkippedNoContent} failed={tiltForumsFailed} raw_doc_write_failed={tiltForumsRawDocFailed} " +
+            $"subcategory_indexed={tiltForumsSubcategoryIndexed}");
         if (tiltForumsFailed > 0)
             Environment.ExitCode = 1;
         return;
@@ -1616,9 +1682,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                     Console.WriteLine($"  Indexed '{article.Title}' ({article.Author}) → {chunks.Count} chunk(s)");
                     twipIndexed++;
 
+                    var wd = SynthesizedSourceDescriptors.Twip;
                     var synDoc = SynthesizedDocumentRecordFactory.Create(
-                        documentId, article.Title, article.CanonicalUrl, "TWIP Newsletter",
-                        DocumentType.NewsDigest, "html", "Kineticist",
+                        documentId, article.Title, article.CanonicalUrl, wd.DiscoveryContext,
+                        wd.DocumentType, wd.FileFormat, wd.ManufacturerOverride!,
                         null, null, article.PublishedAt ?? DateTimeOffset.UtcNow);
                     if (!await TryPersistSynthesizedRawDocAsync(twipRawDocRepo, synDoc, cancellationToken))
                     {
@@ -1812,9 +1879,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                         // Pass gameTitle/gameSlug only for game-specific articles; general-category
                         // articles (machineId == "pb_support") mirror the TWIP pinball_news pattern.
                         string? docGameTitle = machineId != "pb_support" ? machineTitle : (string?)null;
+                        var fd = SynthesizedSourceDescriptors.PbFreshdesk;
                         var synDoc = SynthesizedDocumentRecordFactory.Create(
-                            documentId, article.Title, article.Url, "Pinball Brothers Freshdesk Article",
-                            DocumentType.SupportArticle, "html", manufacturer,
+                            documentId, article.Title, article.Url, fd.DiscoveryContext,
+                            fd.DocumentType, fd.FileFormat, manufacturer,
                             docGameTitle, matchedSlug, DateTimeOffset.UtcNow);
                         if (!await TryPersistSynthesizedRawDocAsync(freshdeskRawDocRepo, synDoc, cancellationToken))
                         {

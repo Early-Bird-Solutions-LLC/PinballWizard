@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Findability;
 using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
@@ -36,6 +37,7 @@ public sealed class MachineGroundingTool
     private readonly IMachineRepository _machines;
     private readonly IMachineTitleLookupRepository _titleLookups;
     private readonly ILogger<MachineGroundingTool> _logger;
+    private readonly IRetrievalCitationMetadataSink? _metadataSink;
 
     // IMachineSearchIndex? is optional: it is null when AI Search is not configured
     // (local dev without AI Search endpoint, or hosts that only wire Cosmos). When
@@ -50,7 +52,8 @@ public sealed class MachineGroundingTool
         IMachineRepository machines,
         IMachineTitleLookupRepository titleLookups,
         ILogger<MachineGroundingTool> logger,
-        IMachineSearchIndex? machineSearchIndex = null)
+        IMachineSearchIndex? machineSearchIndex = null,
+        IRetrievalCitationMetadataSink? metadataSink = null)
     {
         ArgumentNullException.ThrowIfNull(machines);
         ArgumentNullException.ThrowIfNull(titleLookups);
@@ -59,6 +62,7 @@ public sealed class MachineGroundingTool
         _titleLookups = titleLookups;
         _logger = logger;
         _machineSearchIndex = machineSearchIndex;
+        _metadataSink = metadataSink;
     }
 
     // Tool tag value emitted on `pinwiz.ai.tool_duration_ms` and (when the
@@ -427,6 +431,24 @@ public sealed class MachineGroundingTool
             // match — so at most one of these is non-empty.
             var effectiveCollisions = titleCollisions.Count > 0 ? titleCollisions : fuzzyTitleCollisions;
 
+            // Thread the machine's OPDB-sync freshness (Machine.LastSeenAt = the last time
+            // OpdbSyncService refreshed this record from opdb.org) to the citation surface
+            // out-of-band. Freshness timestamps must stay model-invisible (see
+            // RetrievalCitationMetadata remarks — the model must never meta-reason on them),
+            // so we use the same side channel as corpus freshness rather than a DTO field.
+            // Keyed by OpdbSourceUrl, which is the machine citation's SourceUrl in
+            // ToolTraceCitationExtractor.AddCitationFromGroundingDto.
+            if (!string.IsNullOrEmpty(match.OpdbSourceUrl))
+            {
+                // default(DateTimeOffset) = a record that predates LastSeenAt (never synced) —
+                // surface it as null freshness ("freshness unknown") rather than a misleading
+                // "synced ~2000 years ago" badge from DateTimeOffset.MinValue.
+                DateTimeOffset? lastSynced = match.LastSeenAt == default ? null : match.LastSeenAt;
+                _metadataSink?.Record(
+                    match.OpdbSourceUrl,
+                    new RetrievalCitationMetadata(LastScrapedUtc: lastSynced, RelevanceScore: null));
+            }
+
             return new MachineGroundingDto(
                 OpdbId: match.Id,
                 Title: match.Title,
@@ -751,7 +773,7 @@ public sealed class MachineGroundingTool
                 // filtered. Top=MaxFuzzyCollisionGroups+4 keeps the request bounded.
                 var top = MaxFuzzyCollisionGroups + 4;
                 var hits = await _machineSearchIndex
-                    .SearchAsync(title, top, cancellationToken)
+                    .SearchAsync(title, top, manufacturerKey: null, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (hits.Count == 0)

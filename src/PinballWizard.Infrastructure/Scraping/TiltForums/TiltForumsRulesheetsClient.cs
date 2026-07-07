@@ -110,65 +110,107 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
 
     private const string SubcategoryPath = "/c/game-specific/rulesheet-wikis/18";
 
-    /// <summary>
-    /// Discovers every topic URL listed in the "Wiki Rulesheets" subcategory,
-    /// for cross-checking against <see cref="DiscoverRulesheetsAsync"/>'s
-    /// master-list results — the master list is human-maintained and may lag
-    /// a newly-added rulesheet.
-    /// </summary>
-    public async Task<IReadOnlyList<string>> DiscoverSubcategoryTopicUrlsAsync(CancellationToken cancellationToken)
+    // Subcategory topic titles carry a trailing "Rulesheet"/"Wiki" word the
+    // clean master-list game titles lack. Strip it so title-resolution sees
+    // the bare game name.
+    internal static string NormalizeSubcategoryTitle(string linkText)
     {
-        var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var page = 0;
+        var t = linkText.Trim();
+        // Repeatedly strip a trailing " Wiki" or " Rulesheet" token (handles
+        // "Rulesheet Wiki"). Case-insensitive; whole-word only.
+        while (true)
+        {
+            var trimmed = Regex.Replace(t, @"\s+(Rulesheet|Wiki)$", "", RegexOptions.IgnoreCase);
+            if (trimmed == t) break;
+            t = trimmed.Trim();
+        }
+        return t;
+    }
 
+    // Matches the Discourse pinned "about this category" topic that Discourse
+    // auto-creates for every subcategory — it is forum meta, not a game rulesheet.
+    // Pattern: "About the <anything> category" (case-insensitive, trimmed).
+    internal static bool IsCategoryAboutTopic(string linkText)
+        => Regex.IsMatch(linkText.Trim(), @"^About the .+ category$", RegexOptions.IgnoreCase);
+
+    // Returns the numeric Discourse topic id from a Tilt Forums URL, e.g.
+    // https://tiltforums.com/t/stranger-things-rulesheet/6093 → 6093.
+    // Returns null if the URL is malformed or the trailing segment is not numeric.
+    // Dedup key: Discourse serves the same topic under multiple slugs; only the
+    // trailing integer is stable across slug changes.
+    public static int? TryParseTopicId(string url)
+    {
+        try
+        {
+            var segment = new Uri(url).Segments[^1].TrimEnd('/');
+            return int.TryParse(segment, out var id) ? id : null;
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Discovers every topic listed in the "Wiki Rulesheets" subcategory,
+    /// returning titled listings (with <see cref="TiltForumsRulesheetListing.GameTitle"/>
+    /// de-suffixed and <see cref="TiltForumsRulesheetListing.ManufacturerHeaderText"/>
+    /// set to <see langword="null"/>). Used for cross-checking against
+    /// <see cref="DiscoverRulesheetsAsync"/>'s master-list results — the master
+    /// list is human-maintained and may lag a newly-added rulesheet.
+    /// </summary>
+    public async Task<IReadOnlyList<TiltForumsRulesheetListing>> DiscoverSubcategoryRulesheetsAsync(CancellationToken cancellationToken)
+    {
+        var byUrl = new Dictionary<string, TiltForumsRulesheetListing>(StringComparer.OrdinalIgnoreCase);
+        var page = 0;
         while (true)
         {
             var pageUrl = page == 0
                 ? new Uri($"{BaseUrl}{SubcategoryPath}")
                 : new Uri($"{BaseUrl}{SubcategoryPath}?page={page}");
-
             string html;
-            try
-            {
-                html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false);
-            }
+            try { html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false); }
             catch (HttpRequestException ex)
             {
                 if (ex.StatusCode == HttpStatusCode.NotFound)
-                {
-                    Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} returned 404; pagination exhausted.", page);
-                }
+                    Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} 404; pagination exhausted.", page);
                 else
-                {
-                    Logger.LogWarning(ex,
-                        "TiltForumsRulesheetsClient: subcategory page {Page} fetch failed ({StatusCode}); stopping pagination with {Collected} URL(s) collected so far.",
-                        page, ex.StatusCode, urls.Count);
-                }
+                    Logger.LogWarning(ex, "TiltForumsRulesheetsClient: subcategory page {Page} fetch failed ({StatusCode}); stopping with {Collected} collected.", page, ex.StatusCode, byUrl.Count);
                 break;
             }
 
-            using var browsingContext = BrowsingContext.New(Configuration.Default);
-            var parser = browsingContext.GetService<IHtmlParser>()!;
+            using var ctx = BrowsingContext.New(Configuration.Default);
+            var parser = ctx.GetService<IHtmlParser>()!;
             using var document = await parser.ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
 
             var newCount = 0;
             foreach (var link in document.QuerySelectorAll("a.raw-topic-link[href]"))
             {
                 var href = link.GetAttribute("href");
-                if (string.IsNullOrWhiteSpace(href)) continue;
-                if (urls.Add(href)) newCount++;
+                var text = link.TextContent.Trim();
+                if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(text)) continue;
+                if (IsCategoryAboutTopic(text))
+                {
+                    Logger.LogDebug("TiltForumsRulesheetsClient: skipping Discourse category 'about' topic '{Title}'.", text);
+                    continue;
+                }
+                if (!byUrl.ContainsKey(href))
+                {
+                    byUrl[href] = new TiltForumsRulesheetListing
+                    {
+                        GameTitle = NormalizeSubcategoryTitle(text),
+                        ManufacturerHeaderText = null,
+                        TopicUrl = href,
+                    };
+                    newCount++;
+                }
             }
-
-            Logger.LogDebug(
-                "TiltForumsRulesheetsClient: subcategory page {Page} yielded {New} new topic URL(s) (total {Total}).",
-                page, newCount, urls.Count);
-
+            Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} yielded {New} new topic(s) (total {Total}).", page, newCount, byUrl.Count);
             if (newCount == 0) break;
             page++;
         }
-
-        Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} total topic URL(s).", urls.Count);
-        return [.. urls];
+        Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} topic(s).", byUrl.Count);
+        return [.. byUrl.Values];
     }
 
     [GeneratedRegex(@"Code Rev:\s*([\d.]+)", RegexOptions.IgnoreCase)]
@@ -193,8 +235,8 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
         catch (HttpRequestException ex)
         {
             Logger.LogWarning(ex,
-                "TiltForumsRulesheetsClient: failed to fetch topic '{Title}' at {Url}; skipping.",
-                listing.GameTitle, listing.TopicUrl);
+                "TiltForumsRulesheetsClient: failed to fetch topic '{Title}' at {Url}; skipping; HTTP {StatusCode}.",
+                listing.GameTitle, listing.TopicUrl, ex.StatusCode);
             return null;
         }
 
