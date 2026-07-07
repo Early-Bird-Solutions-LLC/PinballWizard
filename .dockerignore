@@ -37,6 +37,19 @@ docs/
 thoughts/
 *.md
 
+# ...EXCEPT the docs the /engineering section embeds as resources
+# (PinballWizard.Web.csproj EmbeddedResource entries: the manifest, five named
+# top-level docs, and every ADR via docs/adr/*.md). Excluding them strips the
+# files from the web build context, so `dotnet publish` fails with CS1566
+# "Could not find a part of the path" — the 2026-07-07 web-deploy break.
+# These negations MUST follow BOTH `docs/` and `*.md` — later patterns win, and
+# `*.md` would otherwise re-exclude the markdown. The `!docs/adr/*.md` glob keeps
+# new ADRs working without touching this file again. Only the web Dockerfile
+# COPYs docs/, so api/cli/indexer images are unaffected.
+!docs/engineering-manifest.json
+!docs/*.md
+!docs/adr/*.md
+
 # Test projects + fixtures (images build only src/ app projects)
 tests/
 
