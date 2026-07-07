@@ -401,15 +401,21 @@ public sealed class TiltForumsGameMatcherTests
     [InlineData("Pokemon", "Pokémon", true)]
     [InlineData("Jurassic Park (Stern)", "Jurassic Park", true)]
     [InlineData("James Bond", "James Bond 007", true)]
-    [InlineData("Rules document for Alien", "Alien", true)]
     [InlineData("Willy Wonka and the Chocolate Factory", "Willy Wonka & The Chocolate Factory", true)]
-    // rejects — the #711 mis-grounds
+    // rejects — the #711 mis-grounds. Includes the two single-common-word cases the
+    // structural rule now catches: a single-token machine name (Pinball, Tournament)
+    // fully contained in an unrelated long topic title must NOT anchor a match.
     [InlineData("Junkyard Pinball", "Pinball", false)]
+    [InlineData("List of Exploits that are Allowed / Disallowed in Tournament Play", "Tournament", false)]
     [InlineData("Points for Extra Ball", "Extra Inning", false)]
     [InlineData("Action Button Master List", "Triple Action / Star Action", false)]
     [InlineData("List of games with their current code number", "Beach Games", false)]
     [InlineData("About the Wiki Rulesheets category", "The Avengers", false)]
     [InlineData("RoadShow 2.0 - Where's my Dozer At?", "Eros One / Flame of Athens", false)]
+    // Trade-off (documented): a single-word-title game found ONLY via a multi-word
+    // subcategory topic degrades to no-match rather than risk a mis-ground; such
+    // games remain covered via the scoped master-list path.
+    [InlineData("Rules document for Alien", "Alien", false)]
     public async Task ResolveAsync_FuzzyMatch_ConfirmsTitleOverlap(string query, string machineTitle, bool shouldResolve)
     {
         var machine = MakeMachine("Gxxx-1", "stern", "Stern Pinball", machineTitle, "Gxxx", 2020);
