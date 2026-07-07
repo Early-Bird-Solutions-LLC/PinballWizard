@@ -75,20 +75,24 @@ public static class TiltForumsGameMatcher
         IMachineRepository machineRepository,
         IMachineSearchIndex? machineSearchIndex,
         string gameTitle,
-        string manufacturerHeaderText,
+        string? manufacturerHeaderText,
         CancellationToken cancellationToken,
         ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(machineRepository);
         ArgumentException.ThrowIfNullOrWhiteSpace(gameTitle);
-        ArgumentException.ThrowIfNullOrWhiteSpace(manufacturerHeaderText);
 
-        var manufacturerKey = OpdbMachineMapper.NormalizeManufacturerKey(manufacturerHeaderText);
+        // null/whitespace manufacturer hint = subcategory topic → unscoped resolution.
+        var manufacturerKey = string.IsNullOrWhiteSpace(manufacturerHeaderText)
+            ? null
+            : OpdbMachineMapper.NormalizeManufacturerKey(manufacturerHeaderText);
 
         var matches = new List<Machine>();
         await foreach (var machine in machineRepository.QueryByTitleAsync(gameTitle, cancellationToken))
         {
-            if (string.Equals(machine.PartitionKey, manufacturerKey, StringComparison.OrdinalIgnoreCase))
+            // Scoped: keep only the hinted partition. Unscoped (key null): keep all.
+            if (manufacturerKey is null
+                || string.Equals(machine.PartitionKey, manufacturerKey, StringComparison.OrdinalIgnoreCase))
             {
                 matches.Add(machine);
             }
@@ -127,13 +131,13 @@ public static class TiltForumsGameMatcher
     }
 
     // Forgiving fallback: resolve gameTitle via the machine findability index,
-    // scoped to manufacturerKey. Returns null when the index yields nothing usable
-    // so the caller emits the historical NoMatch.
+    // scoped to manufacturerKey (null = unscoped cross-partition search).
+    // Returns null when the index yields nothing usable so the caller emits the historical NoMatch.
     private static async Task<TiltForumsGameMatchResult?> ResolveViaMachineIndexAsync(
         IMachineRepository machineRepository,
         IMachineSearchIndex machineSearchIndex,
         string gameTitle,
-        string manufacturerKey,
+        string? manufacturerKey,
         CancellationToken cancellationToken,
         ILogger? logger = null)
     {
