@@ -116,21 +116,64 @@ flowchart TD
 
 ## Testing
 
-Tests assert **behavior**, not structure (showcase bar):
+Tests assert **behavior**, not structure (showcase bar). This bug slipped through because it was
+*structurally untestable as written*: `MaxRerankerScore` lived only in the Web layer (no shared
+seam to pin), the retriever fixtures only used 0–1 scores (matching the mistaken mental model), and
+the eval scores precision by OPDB ID (a widened search that still surfaces the right card scores
+1.0 and hides the scope drop). The coverage below closes each surface.
 
-- **A2 (retriever normalization):** unit test with fixture reranker scores straddling the ceiling —
-  a chunk at reranker score 1.12 (28% match) is **dropped** at `MinimumScore = 0.35`; a chunk at
-  reranker score 1.6 (40% match) is **kept**. A BM25-fallback score above 4.0 clamps to 1.0 and is
-  kept. This is the fixture where the filter actually fires — the prior 0–1 assumption never
-  exercised a >1.0 score.
-- **A1/A2 parity:** a test pinning that the retriever and `CitationCard.MatchPercent` normalize an
-  identical reranker score to the same fraction/percent (shared-constant guard against re-drift).
-- **B (prompt):** extend the Wizard prompt-contract / eval coverage so the "general machine,
-  manual-empty, metadata_card retry" path issues the retry **with** the resolved `machineId`.
-  Confirm via the eval harness that a Cactus-Canyon-style query returns only same-machine records.
+### Surface 1 — shared numeric assumption drifting between layers (the scale bug)
+
+- **Cross-layer parity contract test** (new — models `SourceAliasContractTests` /
+  `CrossPartitionQueryAllowListTests`): assert the retriever and `CitationCard.MatchPercent`
+  normalize an identical reranker score to the same fraction/percent, both referencing the single
+  shared `MaxRerankerScore` constant (A1). Fails the build if anyone reintroduces a divergent
+  constant. **General rule this encodes:** whenever two components compute independently from the
+  same raw value (scale, threshold, ID format), pin the agreement in a contract test.
+- **`WellKnownSettingsTests`:** update the `rag.retrieval_minimum_score` range assertion and add a
+  row pinning the corrected semantics (0–1 = normalized %match), replacing the rows that encoded
+  the wrong 0–1-is-the-raw-scale belief.
+
+### Surface 2 — deterministic filter behavior with realistic inputs
+
+- **`AiSearchRagRetrieverTests.ResolveScore_*`:** add `[InlineData]` cases exercising reranker
+  scores **> 1.0** (1.9, 2.5, 3.4, 4.0) — the range the prior fixtures never touched.
+- **Minimum-score boundary test** (new — the fixture where the filter actually fires): a chunk at
+  reranker score 1.12 (28% match) is **dropped** at `MinimumScore = 0.35`; a chunk at 1.6 (40%) is
+  **kept**; a BM25-fallback score above 4.0 clamps to 1.0 and is kept. Discipline encoded:
+  *fixtures use values from the real 0–4 system, not values that match an assumption.*
+
+### Surface 3 — LLM prompt adherence (machineId dropped on retry) — NOT unit-testable
+
+An LLM cannot be asserted to pass an argument, so this is covered statistically + by a backstop:
+
+- **Eval regression fixture** (new): add a `slice: "machineId-filter-stability"` row to
+  `data/eval/wizard.v2.jsonl` targeting a machine whose title/theme collides with another machine's
+  content in a corpus-wide search (Cactus Canyon itself is the canonical case). Expected citation
+  set is machine-specific, so if the retry drops `machineId` the corpus-wide search returns the
+  wrong machine and **precision collapses to 0** — surfacing the drop the aggregate would otherwise
+  hide. Turn the observed incident into a permanent fixture (learning-from-failure loop).
+- **Eval slice for A:** add a `slice: "reranker-sensitive"` row targeting a machine whose correct
+  chunks score in the 1.0–2.5 reranker range, so the harness measures whether the 0.35 floor cuts
+  genuine low-relevance results without cutting real ones. (The slicing infra exists;
+  `EvaluationHarnessTests` already asserts per-slice aggregates — only the fixture rows are missing.)
+- **Code-side backstop (the real lesson):** because Surface 3 is non-deterministic, A (the
+  relevance floor) is the safety net, not an optimization. If eval shows B's prompt adherence is
+  unreliable, the follow-up is to thread the resolved `machineId` as ambient tool context so
+  `SearchCorpusTool` *defaults* it when the model omits it — converting a prompt hope into a code
+  guarantee. Deferred until eval shows it's needed.
 - **Regression guard:** the indirect-reference row and a machine-less query ("what Stern games
   shipped in 2023") still issue an *unscoped* `searchCorpus`.
-- Full CI-equivalent suite before push (per `feedback_run_full_ci_suite_before_push`).
+
+### Known infrastructure gap (follow-up, not this PR)
+
+The eval harness sees only the final `WizardAnswer` (citations, sub-agent, refusal) — **not the
+tool-call trace**, so it cannot *directly* assert "the retry carried `machineId`"; it infers it from
+precision collapsing (Surface 3 fixture above). Closing this properly means surfacing a
+`ToolCallTrace` onto `WizardAnswer` so an evaluator can grade tool arguments directly. Larger change
+— filed as a follow-up, out of scope here.
+
+Full CI-equivalent suite before push (per `feedback_run_full_ci_suite_before_push`).
 
 ## Rollout
 
