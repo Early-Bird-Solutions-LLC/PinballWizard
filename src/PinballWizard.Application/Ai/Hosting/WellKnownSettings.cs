@@ -41,10 +41,14 @@ public static class WellKnownSettings
     //     ceiling of 20 matches SearchCorpusTool.TopKCeiling (server-side
     //     clamp on the model-requested value). AI Search has no semantic
     //     re-ranking benefit past ~20 candidates (ADR-0021 § Search defaults).
-    //   retrieval_minimum_score: 0.0..1.0 — the semantic re-ranker and
-    //     BM25 both produce scores in this range (ADR-0021 § Scoring).
-    //     0.0 returns every hit; 1.0 would return almost nothing in
-    //     practice. The calibration target from ADR-0023 H3 is ~0.5.
+    //   retrieval_minimum_score: 0.0..1.0 — a NORMALIZED fraction of the
+    //     reranker ceiling, equal to the citation "% match" / 100. The raw
+    //     Azure semantic reranker score is 0–4 (RetrievalScoring.MaxRerankerScore);
+    //     the retriever normalizes via RetrievalScoring.NormalizeRerankerScore
+    //     before comparing to this floor, so 0.35 here means "cut anything
+    //     below 35% match". 0.0 returns every hit; 1.0 keeps only a perfect
+    //     match. Live default is 0.35 (2026-07-06 design); code default stays
+    //     0.0 for CLI/fixtures.
     public static readonly IReadOnlyDictionary<string, (double Min, double Max)> NumericRanges =
         new Dictionary<string, (double, double)>(StringComparer.Ordinal)
         {
