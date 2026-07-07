@@ -77,6 +77,10 @@ dismissed-with-reason.
 
 ## Step 3 — Post-merge deploy verification (BLOCKING — "done" is not "merged")
 
+> **Branch-protection note:** the operator must add the four `Build <image> image` checks
+> from the `Container Build` workflow to `main`'s required status checks — until then the
+> gate runs and is visible but advisory.
+
 Merging is not shipping. The post-merge `Deploy` workflow (build all four images
 → push to ACR → ACA revision swap → smoke `/alive` → E2E canary) is what puts the
 change on the live site, and it can fail after a green PR (Docker context, RBAC,

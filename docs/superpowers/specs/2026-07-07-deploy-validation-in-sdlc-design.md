@@ -48,18 +48,22 @@ Three independent gaps let a broken build sit on `main` undetected:
 
 ### Layer 1 — Prevention: PR-time container-build gate
 
-A new job (in `ci.yml` or a dedicated `container-build.yml`) that runs on `pull_request`:
+A dedicated `container-build.yml` workflow (NOT in `ci.yml`) that runs on `pull_request` for
+paths covering image inputs (`src/**`, `docs/**`, `.dockerignore`, `**/Dockerfile`,
+`Directory.Build.props`, `Directory.Packages.props`):
 
-- For each of the four images (`web`, `api`, `cli`, `rag-indexer`), `docker buildx build
-  --target build --file <dockerfile> .` — **no push**, `cache-from/cache-to: type=gha`
-  (the same layer cache `deploy.yml` uses, so incremental PR builds are fast).
+- For each of the four images (`web`, `api`, `cli`, `rag-indexer`), full `docker buildx build
+  --file <dockerfile> .` (no `--target` — not every Dockerfile names its first stage `build`),
+  **no push**, `cache-from/cache-to: type=gha` (the same layer cache `deploy.yml` uses, so
+  incremental PR builds are fast).
 - Matrix over the four Dockerfiles, mirroring the deploy matrix so the two never drift.
+- Lives in a **dedicated `container-build.yml`** rather than `ci.yml` so it is NOT subject to
+  `ci.yml`'s `paths-ignore: ['docs/**', '.claude/**', '**/*.md', ...]`. A docs-only PR that
+  changes an embedded doc (e.g. a new ADR the web image copies in) still triggers this gate.
 - Marked a **required status check** on `main` branch protection, so a red build blocks merge.
 
 This closes the CI-vs-Docker divergence: the exact #689 break (`docs/engineering-manifest.json`
-+ ADR docs excluded by `.dockerignore`) would have turned the PR red. Building to
-`--target build` stops after `dotnet publish` (the stage that fails on context problems) and
-skips the runtime stage, saving time while still exercising the whole context + publish path.
++ ADR docs excluded by `.dockerignore`) would have turned the PR red.
 
 **Cost:** cached incremental builds are cheap; the first build on a cold cache is the
 expensive one. Acceptable under the cost-discipline bar — a broken deploy costs far more.
