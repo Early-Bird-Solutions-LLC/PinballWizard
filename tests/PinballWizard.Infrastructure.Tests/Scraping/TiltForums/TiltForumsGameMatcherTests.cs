@@ -277,13 +277,16 @@ public sealed class TiltForumsGameMatcherTests
         // Exact query misses; index returns one hit whose machine has GroupId = null.
         // Must resolve to Resolved (not a fan-out) with ResolvedViaFuzzy = true,
         // and must NOT call GetSiblingsByGroupIdAsync at all.
-        var ungrouped = MakeMachine("GZZZ-1", "stern", "Stern Pinball", "Pinbot");
+        // Fixture uses "Pin Bot" (spaced) for both query and machine title so the
+        // title-overlap gate passes ("pin"+"bot" shared distinctive tokens). The
+        // ungrouped-machine path is the behaviour under test, not spelling variation.
+        var ungrouped = MakeMachine("GZZZ-1", "stern", "Stern Pinball", "Pin Bot");
         var repo = Substitute.For<IMachineRepository>();
         repo.QueryByTitleAsync("Pin Bot", Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
         repo.GetByOpdbIdAsync("GZZZ-1", "stern", Arg.Any<CancellationToken>()).Returns(ungrouped);
         var index = FakeIndex(
-            Hit("GZZZ-1", "Pinbot", "stern", "Stern Pinball", null, null, 85.0));
+            Hit("GZZZ-1", "Pin Bot", "stern", "Stern Pinball", null, null, 85.0));
 
         var result = await TiltForumsGameMatcher.ResolveAsync(
             repo, index, "Pin Bot", "Stern Pinball", CancellationToken.None);
@@ -391,6 +394,39 @@ public sealed class TiltForumsGameMatcherTests
         // (No await: GetSiblingsByGroupIdAsync returns IAsyncEnumerable, not Task.)
         repo.DidNotReceive().GetSiblingsByGroupIdAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    // accepts — genuine title relationships
+    [InlineData("Pokemon", "Pokémon", true)]
+    [InlineData("Jurassic Park (Stern)", "Jurassic Park", true)]
+    [InlineData("James Bond", "James Bond 007", true)]
+    [InlineData("Rules document for Alien", "Alien", true)]
+    [InlineData("Willy Wonka and the Chocolate Factory", "Willy Wonka & The Chocolate Factory", true)]
+    // rejects — the #711 mis-grounds
+    [InlineData("Junkyard Pinball", "Pinball", false)]
+    [InlineData("Points for Extra Ball", "Extra Inning", false)]
+    [InlineData("Action Button Master List", "Triple Action / Star Action", false)]
+    [InlineData("List of games with their current code number", "Beach Games", false)]
+    [InlineData("About the Wiki Rulesheets category", "The Avengers", false)]
+    [InlineData("RoadShow 2.0 - Where's my Dozer At?", "Eros One / Flame of Athens", false)]
+    public async Task ResolveAsync_FuzzyMatch_ConfirmsTitleOverlap(string query, string machineTitle, bool shouldResolve)
+    {
+        var machine = MakeMachine("Gxxx-1", "stern", "Stern Pinball", machineTitle, "Gxxx", 2020);
+        var repo = Substitute.For<IMachineRepository>();
+        repo.QueryByTitleAsync(query, Arg.Any<CancellationToken>()).Returns(ToAsyncEnumerable(Array.Empty<Machine>()));
+        repo.GetByOpdbIdAsync("Gxxx-1", "stern", Arg.Any<CancellationToken>()).Returns(machine);
+        repo.GetSiblingsByGroupIdAsync("Gxxx", Arg.Any<CancellationToken>()).Returns(ToAsyncEnumerable([machine]));
+        var index = Substitute.For<IMachineSearchIndex>();
+        index.SearchAsync(query, Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+             .Returns(new[] { new MachineSearchHit("Gxxx-1", machineTitle, "Stern Pinball", "stern", "Gxxx", 2020, 10.0) });
+
+        var result = await TiltForumsGameMatcher.ResolveAsync(repo, index, query, manufacturerHeaderText: null, CancellationToken.None);
+
+        if (shouldResolve)
+            Assert.Contains(result.Status, new[] { TiltForumsGameMatchStatus.Resolved, TiltForumsGameMatchStatus.ResolvedEditionFamily });
+        else
+            Assert.Equal(TiltForumsGameMatchStatus.NoMatchInManufacturerPartition, result.Status);
     }
 
     private static async IAsyncEnumerable<Machine> ToAsyncEnumerable(IEnumerable<Machine> machines)
