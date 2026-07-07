@@ -1,6 +1,6 @@
 /* DataPartnersStrip scoped styles.
  * Section header: mono eyebrow left + attribution link right, border-top rule.
- * 3-column grid collapses to 1-column on narrow viewports.
+ * 4-column grid → 2-column on tablet → 1-column on narrow viewports.
  */
 
 .partners-strip__header {
@@ -34,8 +34,14 @@
 
 .partners-strip__grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
+}
+
+@media (max-width: 900px) {
+    .partners-strip__grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 @media (max-width: 640px) {
