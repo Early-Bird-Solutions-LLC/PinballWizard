@@ -80,7 +80,7 @@ public sealed class TiltForumsRulesheetsClientTests
         var listings = await client.DiscoverRulesheetsAsync(CancellationToken.None);
 
         Assert.DoesNotContain(listings, l => l.TopicUrl.Contains("replayfoundation", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(listings, l => l.ManufacturerHeaderText.Contains("Legacy", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(listings, l => l.ManufacturerHeaderText?.Contains("Legacy", StringComparison.OrdinalIgnoreCase) == true);
     }
 
     [Fact]
@@ -158,24 +158,29 @@ public sealed class TiltForumsRulesheetsClientTests
         """;
 
     [Fact]
-    public async Task DiscoverSubcategoryTopicUrlsAsync_TwoPages_ReturnsAllUrls()
+    public async Task DiscoverSubcategoryRulesheetsAsync_TwoPages_ReturnsAllListings()
     {
         var (client, gate, _) = BuildClient(h => h
             .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
             .MapHtml(SubcategoryPageUrl(1), SubcategoryPage1Html)
             .Map(SubcategoryPageUrl(2), _ => new HttpResponseMessage(HttpStatusCode.NotFound)));
 
-        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+        var listings = await client.DiscoverSubcategoryRulesheetsAsync(CancellationToken.None);
 
-        Assert.Equal(3, urls.Count);
-        Assert.Contains("https://tiltforums.com/t/rulesheet-master-list/7230", urls);
-        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
-        Assert.Contains("https://tiltforums.com/t/jaws-rulesheet/2", urls);
+        Assert.Equal(3, listings.Count);
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/rulesheet-master-list/7230");
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/godzilla-rulesheet/1");
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/jaws-rulesheet/2");
+        // Titles must be de-suffixed.
+        Assert.Contains(listings, l => l.GameTitle == "Godzilla");
+        Assert.Contains(listings, l => l.GameTitle == "Jaws");
+        // ManufacturerHeaderText is null for subcategory-discovered listings.
+        Assert.All(listings, l => Assert.Null(l.ManufacturerHeaderText));
         Assert.Equal(gate.Acquired.Count, gate.Reported.Count);
     }
 
     [Fact]
-    public async Task DiscoverSubcategoryTopicUrlsAsync_EmptyPage_StopsPagination()
+    public async Task DiscoverSubcategoryRulesheetsAsync_EmptyPage_StopsPagination()
     {
         const string emptyPage = "<html><body><table class='topic-list'><tbody></tbody></table></body></html>";
 
@@ -183,27 +188,27 @@ public sealed class TiltForumsRulesheetsClientTests
             .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
             .MapHtml(SubcategoryPageUrl(1), emptyPage));
 
-        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+        var listings = await client.DiscoverSubcategoryRulesheetsAsync(CancellationToken.None);
 
-        Assert.Equal(2, urls.Count);
+        Assert.Equal(2, listings.Count);
     }
 
     [Fact]
-    public async Task DiscoverSubcategoryTopicUrlsAsync_NonNotFoundHttpError_StopsPaginationGracefully_ReturnsAccumulated()
+    public async Task DiscoverSubcategoryRulesheetsAsync_NonNotFoundHttpError_StopsPaginationGracefully_ReturnsAccumulated()
     {
-        // Page 0 succeeds and yields 2 URLs; page 1 returns a 500 (server error).
+        // Page 0 succeeds and yields 2 listings; page 1 returns a 500 (server error).
         // The method must not throw — it should stop pagination and return the 2
-        // URLs already collected from page 0, losing no data already gathered.
+        // listings already collected from page 0, losing no data already gathered.
         var (client, _, _) = BuildClient(h => h
             .MapHtml(SubcategoryPageUrl0, SubcategoryPage0Html)
             .Map(SubcategoryPageUrl(1), _ => new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
-        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+        var listings = await client.DiscoverSubcategoryRulesheetsAsync(CancellationToken.None);
 
-        // Must not throw; must return the 2 URLs from page 0, not 0.
-        Assert.Equal(2, urls.Count);
-        Assert.Contains("https://tiltforums.com/t/rulesheet-master-list/7230", urls);
-        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
+        // Must not throw; must return the 2 listings from page 0, not 0.
+        Assert.Equal(2, listings.Count);
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/rulesheet-master-list/7230");
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/godzilla-rulesheet/1");
     }
 
     // Shape verified against the live "Transformers" topic page 2026-07-03:
@@ -352,11 +357,11 @@ public sealed class TiltForumsRulesheetsClientTests
     }
 
     [Fact]
-    public async Task DiscoverSubcategoryTopicUrlsAsync_DuplicateUrlAcrossPages_DedupedAndStopsPagination()
+    public async Task DiscoverSubcategoryRulesheetsAsync_DuplicateUrlAcrossPages_DedupedAndStopsPagination()
     {
         // Page 1 repeats a URL already seen on page 0. newCount == 0 for page 1
-        // must stop pagination via the dedup path (HashSet.Add returns false),
-        // not the empty-page path (this page is NOT empty — it has one <a>).
+        // must stop pagination via the dedup path (Dictionary.ContainsKey returns
+        // true), not the empty-page path (this page is NOT empty — it has one <a>).
         const string page0 = """
             <html><body>
             <table class='topic-list'><tbody>
@@ -380,14 +385,21 @@ public sealed class TiltForumsRulesheetsClientTests
             .MapHtml($"{BaseUrl}/c/game-specific/rulesheet-wikis/18", page0)
             .MapHtml($"{BaseUrl}/c/game-specific/rulesheet-wikis/18?page=1", page1Duplicate));
 
-        var urls = await client.DiscoverSubcategoryTopicUrlsAsync(CancellationToken.None);
+        var listings = await client.DiscoverSubcategoryRulesheetsAsync(CancellationToken.None);
 
-        Assert.Single(urls);
-        Assert.Contains("https://tiltforums.com/t/godzilla-rulesheet/1", urls);
+        Assert.Single(listings);
+        Assert.Contains(listings, l => l.TopicUrl == "https://tiltforums.com/t/godzilla-rulesheet/1");
         // Both pages were fetched (dedup happens after fetch, not before) —
-        // page 2 was never requested since page 1 yielded 0 NEW urls.
+        // page 2 was never requested since page 1 yielded 0 NEW listings.
         Assert.Equal(2, handler.Requests.Count);
     }
+
+    [Theory]
+    [InlineData("Stranger Things Rulesheet", "Stranger Things")]
+    [InlineData("Godzilla Rulesheet Wiki", "Godzilla")]
+    [InlineData("Elvira's House of Horrors", "Elvira's House of Horrors")] // no suffix → unchanged
+    public void NormalizeSubcategoryTitle_StripsRulesheetWikiSuffix(string input, string expected)
+        => Assert.Equal(expected, TiltForumsRulesheetsClient.NormalizeSubcategoryTitle(input));
 
     private static (TiltForumsRulesheetsClient Client, FakePolitenessGate Gate, QueueingHttpMessageHandler Handler)
         BuildClient(Action<QueueingHttpMessageHandler> configureHandler)

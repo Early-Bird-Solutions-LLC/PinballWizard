@@ -1351,9 +1351,10 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         }
 
         Console.WriteLine("Cross-checking against the Wiki Rulesheets subcategory for gaps...");
-        var subcategoryUrls = await tiltForumsClient.DiscoverSubcategoryTopicUrlsAsync(cancellationToken);
+        var subcategoryListings = await tiltForumsClient.DiscoverSubcategoryRulesheetsAsync(cancellationToken);
         var masterListUrls = listings.Select(l => l.TopicUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var tiltForumsGaps = subcategoryUrls
+        var tiltForumsGaps = subcategoryListings
+            .Select(l => l.TopicUrl)
             .Where(u => !masterListUrls.Contains(u) && !u.Contains("rulesheet-master-list", StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (tiltForumsGaps.Count > 0)
@@ -1383,7 +1384,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
             try
             {
                 matchResult = await PinballWizard.Infrastructure.Scraping.TiltForums.TiltForumsGameMatcher.ResolveAsync(
-                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText, cancellationToken, tiltForumsLogger);
+                    tiltForumsMachineRepo, tiltForumsMachineSearchIndex, listing.GameTitle, listing.ManufacturerHeaderText!, cancellationToken, tiltForumsLogger);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

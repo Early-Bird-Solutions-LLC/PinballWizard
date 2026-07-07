@@ -110,65 +110,78 @@ public sealed partial class TiltForumsRulesheetsClient : PoliteScraperBase
 
     private const string SubcategoryPath = "/c/game-specific/rulesheet-wikis/18";
 
-    /// <summary>
-    /// Discovers every topic URL listed in the "Wiki Rulesheets" subcategory,
-    /// for cross-checking against <see cref="DiscoverRulesheetsAsync"/>'s
-    /// master-list results — the master list is human-maintained and may lag
-    /// a newly-added rulesheet.
-    /// </summary>
-    public async Task<IReadOnlyList<string>> DiscoverSubcategoryTopicUrlsAsync(CancellationToken cancellationToken)
+    // Subcategory topic titles carry a trailing "Rulesheet"/"Wiki" word the
+    // clean master-list game titles lack. Strip it so title-resolution sees
+    // the bare game name.
+    internal static string NormalizeSubcategoryTitle(string linkText)
     {
-        var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var page = 0;
+        var t = linkText.Trim();
+        // Repeatedly strip a trailing " Wiki" or " Rulesheet" token (handles
+        // "Rulesheet Wiki"). Case-insensitive; whole-word only.
+        while (true)
+        {
+            var trimmed = Regex.Replace(t, @"\s+(Rulesheet|Wiki)$", "", RegexOptions.IgnoreCase);
+            if (trimmed == t) break;
+            t = trimmed.Trim();
+        }
+        return t;
+    }
 
+    /// <summary>
+    /// Discovers every topic listed in the "Wiki Rulesheets" subcategory,
+    /// returning titled listings (with <see cref="TiltForumsRulesheetListing.GameTitle"/>
+    /// de-suffixed and <see cref="TiltForumsRulesheetListing.ManufacturerHeaderText"/>
+    /// set to <see langword="null"/>). Used for cross-checking against
+    /// <see cref="DiscoverRulesheetsAsync"/>'s master-list results — the master
+    /// list is human-maintained and may lag a newly-added rulesheet.
+    /// </summary>
+    public async Task<IReadOnlyList<TiltForumsRulesheetListing>> DiscoverSubcategoryRulesheetsAsync(CancellationToken cancellationToken)
+    {
+        var byUrl = new Dictionary<string, TiltForumsRulesheetListing>(StringComparer.OrdinalIgnoreCase);
+        var page = 0;
         while (true)
         {
             var pageUrl = page == 0
                 ? new Uri($"{BaseUrl}{SubcategoryPath}")
                 : new Uri($"{BaseUrl}{SubcategoryPath}?page={page}");
-
             string html;
-            try
-            {
-                html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false);
-            }
+            try { html = await GetStringPolitelyAsync(_http, pageUrl, cancellationToken).ConfigureAwait(false); }
             catch (HttpRequestException ex)
             {
                 if (ex.StatusCode == HttpStatusCode.NotFound)
-                {
-                    Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} returned 404; pagination exhausted.", page);
-                }
+                    Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} 404; pagination exhausted.", page);
                 else
-                {
-                    Logger.LogWarning(ex,
-                        "TiltForumsRulesheetsClient: subcategory page {Page} fetch failed ({StatusCode}); stopping pagination with {Collected} URL(s) collected so far.",
-                        page, ex.StatusCode, urls.Count);
-                }
+                    Logger.LogWarning(ex, "TiltForumsRulesheetsClient: subcategory page {Page} fetch failed ({StatusCode}); stopping with {Collected} collected.", page, ex.StatusCode, byUrl.Count);
                 break;
             }
 
-            using var browsingContext = BrowsingContext.New(Configuration.Default);
-            var parser = browsingContext.GetService<IHtmlParser>()!;
+            using var ctx = BrowsingContext.New(Configuration.Default);
+            var parser = ctx.GetService<IHtmlParser>()!;
             using var document = await parser.ParseDocumentAsync(html, cancellationToken).ConfigureAwait(false);
 
             var newCount = 0;
             foreach (var link in document.QuerySelectorAll("a.raw-topic-link[href]"))
             {
                 var href = link.GetAttribute("href");
-                if (string.IsNullOrWhiteSpace(href)) continue;
-                if (urls.Add(href)) newCount++;
+                var text = link.TextContent.Trim();
+                if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(text)) continue;
+                if (!byUrl.ContainsKey(href))
+                {
+                    byUrl[href] = new TiltForumsRulesheetListing
+                    {
+                        GameTitle = NormalizeSubcategoryTitle(text),
+                        ManufacturerHeaderText = null,
+                        TopicUrl = href,
+                    };
+                    newCount++;
+                }
             }
-
-            Logger.LogDebug(
-                "TiltForumsRulesheetsClient: subcategory page {Page} yielded {New} new topic URL(s) (total {Total}).",
-                page, newCount, urls.Count);
-
+            Logger.LogDebug("TiltForumsRulesheetsClient: subcategory page {Page} yielded {New} new topic(s) (total {Total}).", page, newCount, byUrl.Count);
             if (newCount == 0) break;
             page++;
         }
-
-        Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} total topic URL(s).", urls.Count);
-        return [.. urls];
+        Logger.LogInformation("TiltForumsRulesheetsClient: subcategory listing yielded {Count} topic(s).", byUrl.Count);
+        return [.. byUrl.Values];
     }
 
     [GeneratedRegex(@"Code Rev:\s*([\d.]+)", RegexOptions.IgnoreCase)]
