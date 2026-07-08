@@ -109,6 +109,11 @@ import {
   id = "13b7f7c8b15889652f0004d420669fe1/security_header"
 }
 
+import {
+  to = cloudflare_zone_setting.email_obfuscation
+  id = "13b7f7c8b15889652f0004d420669fe1/email_obfuscation"
+}
+
 # ─── Bot Management ──────────────────────────────────────────────────
 
 # Bot Fight Mode was enabled in the dashboard before IaC was introduced.
