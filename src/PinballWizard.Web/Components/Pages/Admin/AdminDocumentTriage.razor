@@ -266,11 +266,6 @@
         }
     }
 
-    private static Color StatusColor(string status) => status switch
-    {
-        "Failed"          => Color.Error,
-        "NotInCatalog"    => Color.Warning,
-        "PlatformGeneric" => Color.Info,
-        _                 => Color.Default,
-    };
+    private static Color StatusColor(string status) =>
+        DocumentLinkStatusColor.For(status);
 }
