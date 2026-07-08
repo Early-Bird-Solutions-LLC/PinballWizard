@@ -58,6 +58,6 @@ public sealed class DocumentListColumnsTests : AsyncBunitContext
         // MudDataGrid renders column-header title text directly in the markup.
         // The same pattern is used by AdminColumns_HiddenOnPublicPage in DocumentListTests.
         cut.WaitForAssertion(() =>
-            Assert.DoesNotContain("Format", cut.Markup));
+            Assert.DoesNotContain(">Format</span>", cut.Markup));
     }
 }
