@@ -1,6 +1,6 @@
 # Admin Surface — Performance Baseline (2026-07-07)
 
-**Status:** In progress — Part 1 (shared bundle) complete; Part 2 (per-page) capture pending
+**Status:** Part 1 (shared bundle) + Part 2 (per-page, 13/16 routes) captured; only the single live-edge Lighthouse run (§2.3) is outstanding
 **Branch:** `docs/admin-perf-baseline`
 **Origin:** Follow-up to the "do we need combine/minify?" question raised against the live admin.
 
@@ -87,40 +87,67 @@ change rendering).
 
 ### 2.1 Capture method
 
-Per-page metrics are captured against the **local live-stack** topology (`tools/e2e/Run-E2E.ps1` /
-`LiveStackFixture`): the real Api + Web run locally against **live Azure** Cosmos/AI Search, driven by
-Playwright Chromium. In that topology there is **no Cloudflare gate and no Entra login** (Web runs in
-Development → permissive auth), so all 16 admin routes are reachable.
+Per-page metrics are captured against the **local live-stack** topology
+(`LiveStackFixture`): the real Api + Web run locally against **live Azure** Cosmos/AI Search, driven
+by Playwright Chromium. In that topology there is **no Cloudflare gate and no Entra login** (Web runs
+in Development → permissive auth), so all admin routes are reachable. The capture is codified as an
+on-demand test (`tests/PinballWizard.Web.Tests/E2E/AdminPerfBaselineCaptureE2E.cs`,
+`Category=E2E` → excluded from CI); re-run per §3.
 
-> **Honesty caveat:** local `dotnet run` (Development) does **not** run publish-time Brotli/Gzip
-> precompression, so *transfer bytes* captured locally are **uncompressed** and would overstate the
-> minify opportunity. Transfer-size conclusions therefore come from §1 (published + compressed), not
-> from this section. The page-level metrics below (DOM nodes, timings, request count) are driven by
-> rendering + real data and are representative.
+Captured 2026-07-07 against `main` @ `30c55c1`. Detail-page ids are **derived at runtime** from the
+first row link of the parent list (no hardcoded ids): `sources/stern`,
+`documents/twip_what-are-pinball-legends`.
 
-### 2.2 Routes (16)
+> **Honesty caveats:**
+> - Local `dotnet run` (Development) does **not** run publish-time Brotli/Gzip precompression, so the
+>   *Transfer* column is **uncompressed** and is **not** a basis for any size conclusion — those come
+>   from §1 (published + compressed). It is kept only as a rough per-page relative indicator.
+> - The **`/admin` row absorbs cold-start** (first route navigated → JIT + first Cosmos connection
+>   warmup). Its 3.1 s is a first-hit artifact, not steady-state; the other rows reflect a warm host.
+> - LCP is not captured here (needs a pre-load observer); it is covered for the representative page by
+>   the live Lighthouse run (§2.3).
 
-Metrics: DOMContentLoaded (ms), Load (ms), First Contentful Paint (ms), Largest Contentful Paint
-(ms), DOM node count, request count. `— pending —` until the capture run.
+### 2.2 Results (captured)
 
-| # | Route | Kind | DCL | Load | FCP | LCP | DOM nodes | Requests |
-|---|---|---|--:|--:|--:|--:|--:|--:|
-| 1 | `/admin` (Dashboard) | list | — | — | — | — | — | — |
-| 2 | `/admin/sources` | list | — | — | — | — | — | — |
-| 3 | `/admin/manufacturers` | list | — | — | — | — | — | — |
-| 4 | `/admin/machines` | list (heavy grid) | — | — | — | — | — | — |
-| 5 | `/admin/documents` | list | — | — | — | — | — | — |
-| 6 | `/admin/document-triage` | list | — | — | — | — | — | — |
-| 7 | `/admin/link-overrides` | list | — | — | — | — | — | — |
-| 8 | `/admin/jobs` | list (authz) | — | — | — | — | — | — |
-| 9 | `/admin/monitoring` | list | — | — | — | — | — | — |
-| 10 | `/admin/settings` | tabs | — | — | — | — | — | — |
-| 11 | `/admin/corpus` | list | — | — | — | — | — | — |
-| 12 | `/admin/sources/{id}` | detail | — | — | — | — | — | — |
-| 13 | `/admin/machines/{opdbId}` | detail | — | — | — | — | — | — |
-| 14 | `/admin/documents/{documentId}` | detail | — | — | — | — | — | — |
-| 15 | `/admin/jobs/{jobName}` | detail | — | — | — | — | — | — |
-| 16 | `/admin/jobs/{jobName}/executions/{executionName}` | detail | — | — | — | — | — | — |
+| Route | Kind | DCL (ms) | Load (ms) | FCP (ms) | DOM nodes | Requests | Transfer\* (KB) |
+|---|---|--:|--:|--:|--:|--:|--:|
+| `/admin` (Dashboard) | dashboard | 3126† | 3126† | 1204† | 237 | 13 | 395.3 |
+| `/admin/sources` | list | 426 | 426 | 412 | 466 | 12 | 374.3 |
+| `/admin/manufacturers` | list | 878 | 878 | 868 | 288 | 12 | 374.3 |
+| `/admin/machines` | list (heavy grid) | 87 | 87 | 84 | 461 | 12 | 374.3 |
+| `/admin/documents` | list | 736 | 736 | 732 | 436 | 12 | 374.3 |
+| `/admin/document-triage` | list | 95 | 95 | 84 | 481 | 12 | 374.3 |
+| `/admin/link-overrides` | list | 55 | 74 | 84 | 306 | 12 | 374.3 |
+| `/admin/jobs` | list (authz) | 58 | 58 | 44 | 140 | 12 | 374.3 |
+| `/admin/monitoring` | list | 142 | 142 | 116 | 287 | 15 | 440.9 |
+| `/admin/settings` | tabs | 58 | 64 | 60 | 182 | 12 | 374.3 |
+| `/admin/corpus` | list | 936 | 936 | 68 | 207 | 12 | 374.3 |
+| `/admin/sources/stern` | detail | 40 | 51 | 56 | 123 | 11 | 353.1 |
+| `/admin/documents/twip_…legends` | detail | 213 | 214 | 200 | 163 | 13 | 394.2 |
+| `/admin/machines/{opdbId}` | detail | — | — | — | — | — | **skipped** |
+| `/admin/jobs/{jobName}` | detail | — | — | — | — | — | not sampled‡ |
+| `/admin/jobs/{jobName}/executions/{…}` | detail | — | — | — | — | — | not sampled‡ |
+
+\* Uncompressed (local Development) — relative indicator only, not a size conclusion (see §2.1).
+† First route navigated — includes host cold-start; not steady-state.
+‡ Job detail/execution ids are not derivable from a static list link; deferred (low value — same
+shared bundle, small DOM).
+
+### 2.3 Observations
+
+- **Request count and shared-bundle transfer are flat across pages** (~12 requests, ~374 KB
+  uncompressed) — confirming §1's point that the static bundle is identical everywhere; per-page cost
+  is DOM + data + render, not assets.
+- **The DOM stays small everywhere** (123–481 nodes). The "heavy" `/admin/machines` grid is **461
+  nodes / 87 ms** — `AppDataGrid`'s `RowsPerPage=25` caps the rendered DOM regardless of catalog size
+  (30k+ machines), so there is no large-list DOM problem to solve.
+- **Warm render is sub-second** on every page except the cold-start dashboard row. `/admin/manufacturers`
+  (868 ms FCP), `/admin/documents` (732 ms), and `/admin/corpus` (936 ms DCL) are the slowest warm
+  pages — each does a live Cosmos/AI-Search aggregation on load; a natural place to look next if page
+  latency (not asset weight) becomes the concern.
+- **`/admin/machines` grid rows are not `<a href>`** — they navigate via row-click JS, so the
+  detail-id derivation found no link (row marked *skipped*). Not a defect; noted for future capture
+  tooling (derive machine ids from the API instead).
 
 ### 2.3 Live edge Lighthouse (production representative — one run)
 
@@ -149,11 +176,24 @@ fingerprint gap in §1.4. To be recorded:
 
 ---
 
-## 4. Recommendations (pending per-page + live data)
+## 4. Recommendations
+
+Per-page data (§2) shows **no DOM or rendering hotspot** — the DOM is small everywhere, the grid is
+paginated, and asset weight is flat across pages. So the (modest) opportunity is in **asset delivery**,
+not page rendering. In priority order:
 
 1. **Prioritize the fingerprint/`immutable` caching change over combine/minify** if §2.3 confirms a
    weak cache policy — it's framework-native (`@Assets[]` / ImportMap), helps repeat visits most, and
    avoids a bundler.
-2. **Minify `app.css`/`app.js`** as a small clean win, via a build-time step, not a bolt-on bundler.
+2. **Minify `app.css`/`app.js`** as a small clean win (~4.7 KB brotli, §1.3), via a build-time step,
+   not a bolt-on bundler.
 3. **Do not combine** — no benefit under HTTP/2.
 4. MudBlazor CSS + `blazor.web.js` dominate the bundle and are framework-inherent; no action.
+5. **Separately from asset work:** the only page-latency signals are the dashboard cold-start and a
+   few live-aggregation pages (`/admin/manufacturers`, `/admin/documents`, `/admin/corpus`, all warm
+   sub-second). Not an asset problem — track as a distinct backend/latency item only if it regresses.
+
+**Net answer to the original question:** the app already has the substance of "combine & minify"
+(Brotli/Gzip precompression, pre-minified MudBlazor, framework-bundled scoped CSS). Adding a classic
+combine/minify pass buys ~4.7 KB brotli — real but small — while the higher-leverage, framework-native
+move is fingerprinted `immutable` caching.
