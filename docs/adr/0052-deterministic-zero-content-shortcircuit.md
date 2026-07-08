@@ -39,14 +39,11 @@ Add a deterministic preflight to `AiRouter.AnswerStreamingAsync`, after the
 semantic-cache miss and before the agent turn, gated on an **explicit
 `machineId`** supplied by machine-scoped entry points:
 
-1. Count indexed chunks for the machine via a new Application port
-   `IMachineCorpusCoverage.CountAsync`, implemented in `AiSearchRagRetriever` as a
-   `machine_id eq '{id}'`, `Size=0`, `IncludeTotalCount=true` search that reuses
-   the **same** `BuildFilter` the real retrieval path uses.
-2. **Zero chunks** → reproduce the identical `NoCitation` recovery via
+1. Call `IMachineCorpusCoverage.HasIndexedContentAsync(string machineId, CancellationToken ct) : Task<bool>`, implemented in `AiSearchMachineCorpusCoverage` using a `machine_id eq '{id}'`, `Size=0`, `IncludeTotalCount=true` count over the corpus index — returns `true` when ≥ 1 chunk exists. (`Size=0, IncludeTotalCount=true` is an implementation detail of the AI Search impl.) The method reuses the **same** `BuildFilter` the real retrieval path uses; a parity contract test asserts the two filters are byte-identical.
+2. **`false` (zero chunks)** → reproduce the identical `NoCitation` recovery via
    `RefusalRecoveryService.BuildRecoveryAsync(question, RefusalCategory.NoCitation,
    ct)` and return — **no LLM call**.
-3. **≥ 1 chunk** (or no `machineId`) → run the agent turn exactly as today.
+3. **`true` (≥ 1 chunk)** or no `machineId` → run the agent turn exactly as today.
 
 The gate keys on chunk count, never on doc-link count. It fires only when a
 question can be pinned to a single machine (the detail-page button passes
@@ -65,10 +62,7 @@ question can be pinned to a single machine (the detail-page button passes
   retrieval filter; both are built from the same `BuildFilter`, and a contract
   test asserts an identical `machine_id` clause — making that drift structurally
   impossible.
-- The short-circuit is metered (`AiMachineScopeGateShortCircuits`, tagged
-  `manufacturer` + `had_doc_links`) and logged per fire, so the firing rate is
-  observable; a spike for a *supported* manufacturer surfaces an ingestion gap
-  rather than hiding one (no-masking posture).
+- The short-circuit is metered (untagged `AiMachineScopeGateShortCircuits`) and logged per fire (structured Info log carrying `machineId`, from which manufacturer is derivable offline). A manufacturer or `had_doc_links` tag breakdown was evaluated and deferred: manufacturer is not available at the gate without an extra read, and the linked-docs-but-zero-chunks case is already covered by `CosmosAiSearchRagReconciler` Missing-drift detection. Coverage-check failures are metered separately (`AiMachineScopeGateErrors`) and fall through to the full agent path, so a skipped-optimization is never silent (no-masking posture, invariant #17).
 - Typed free-text questions about uncovered machines still pay the full agent cost
   — an accepted trade to avoid fuzzy server-side resolution and its false-skip
   risk. If the counter shows the volume justifies it, a later ADR can add
