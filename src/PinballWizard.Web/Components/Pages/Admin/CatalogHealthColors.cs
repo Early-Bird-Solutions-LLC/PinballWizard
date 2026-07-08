@@ -13,9 +13,9 @@ internal static class CatalogHealthColors
     /// <summary>Returns the MudBlazor Color for a single <see cref="CatalogHealthFlag"/>.</summary>
     public static Color ForFlag(CatalogHealthFlag flag) => flag switch
     {
-        CatalogHealthFlag.Empty      => Color.Error,
-        CatalogHealthFlag.NoManual   => Color.Warning,
-        CatalogHealthFlag.EditionGap => Color.Warning,
+        CatalogHealthFlag.Empty      => Color.Error,   // missing catalog → failure
+        CatalogHealthFlag.NoManual   => Color.Default, // informational health flag → neutral
+        CatalogHealthFlag.EditionGap => Color.Default, // informational health flag → neutral
         CatalogHealthFlag.Ok         => Color.Success,
         _                            => Color.Default,
     };

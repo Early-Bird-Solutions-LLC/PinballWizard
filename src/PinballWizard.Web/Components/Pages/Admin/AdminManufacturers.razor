@@ -86,7 +86,7 @@
                 <TemplateColumn Title="Machines" Sortable="true" HeaderClass="text-right" CellClass="text-right"
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.Machines))">
                     <CellTemplate>
-                        @context.Item.Machines
+                        @context.Item.Machines.ToString("N0")
                     </CellTemplate>
                 </TemplateColumn>
             </Columns>

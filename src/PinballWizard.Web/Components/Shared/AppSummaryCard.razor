@@ -9,13 +9,13 @@
                 <MudText Typo="Typo.body2" Color="Color.Secondary">@Label</MudText>
                 @if (Caption is not null)
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Tertiary">@Caption</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@Caption</MudText>
                 }
             </MudStack>
         </MudStack>
     </MudCardContent>
     <MudCardActions>
-        <MudButton Href="@ActionHref" Variant="Variant.Text" Color="@IconColor" Size="Size.Small">
+        <MudButton Href="@ActionHref" Variant="Variant.Text" Color="@ButtonColor" Size="Size.Small">
             @ActionLabel
         </MudButton>
     </MudCardActions>
@@ -24,6 +24,9 @@
 @code {
     [Parameter, EditorRequired] public string Icon { get; set; } = null!;
     [Parameter, EditorRequired] public Color IconColor { get; set; }
+    // CTA color is decoupled from the decorative icon color and defaults to the
+    // amber interactive role. Icons may be neutral/expressive; the action is always amber.
+    [Parameter] public Color ButtonColor { get; set; } = Color.Primary;
     [Parameter, EditorRequired] public string Label { get; set; } = null!;
     [Parameter, EditorRequired] public string ActionHref { get; set; } = null!;
     [Parameter, EditorRequired] public string ActionLabel { get; set; } = null!;

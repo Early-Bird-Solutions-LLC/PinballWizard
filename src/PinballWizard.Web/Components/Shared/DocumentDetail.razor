@@ -239,11 +239,6 @@ else
         _ => $"{bytes / (1024 * 1024):F1} MB"
     };
 
-    private static Color LinkStatusColor(string? status) => status switch
-    {
-        "linked" or "manually_linked" => Color.Success,
-        "failed" or "not_in_catalog" => Color.Error,
-        "platform_generic" => Color.Warning,
-        _ => Color.Default
-    };
+    private static Color LinkStatusColor(string? status) =>
+        DocumentLinkStatusColor.For(status);
 }
