@@ -28,6 +28,13 @@ public sealed class CatalogHealthColorsTests
         }
     }
 
+    [Fact]
+    public void Describe_ThrowsForUnmappedFlag()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            CatalogHealthColors.Describe((CatalogHealthFlag)999));
+    }
+
     [Theory]
     [InlineData(CatalogHealthFlag.Ok,         "Healthy — documents present, including a manual.")]
     [InlineData(CatalogHealthFlag.Empty,      "No documents linked to this machine yet.")]
