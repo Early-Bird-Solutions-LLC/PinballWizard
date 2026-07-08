@@ -970,9 +970,6 @@ public sealed class AiRouterStreamingTests
 
         var router = BuildRouterForGateTests(agentFactory, coverage);
 
-        var confidence = Substitute.For<IConfidenceCalculator>();
-        SetConfidencePass(confidence);
-
         // Act
         await foreach (var _ in router.AnswerStreamingAsync(
             "tell me about Godzilla", history: null, machineId: "HAS-CARD", CancellationToken.None))
