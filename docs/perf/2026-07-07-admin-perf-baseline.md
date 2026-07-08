@@ -154,9 +154,26 @@ shared bundle, small DOM).
 A single Lighthouse run against **live pinwiz.ai** (in an authenticated browser, past the Cloudflare
 OTP gate) captures the production edge picture the local stack cannot: real Brotli at the edge, and
 the **"Serve static assets with an efficient cache policy"** audit that confirms/denies the
-fingerprint gap in §1.4. To be recorded:
+fingerprint gap in §1.4.
 
-- FCP / LCP / TBT / Speed Index / Performance score — `— pending —`
+**Captured 2026-07-07, `pinwiz.ai/wizard` (Navigation, Desktop, Performance):**
+
+| Metric | Value | Verdict |
+|---|---|---|
+| Performance score | **90** | 🟢 good |
+| First Contentful Paint | 0.5 s | 🟢 |
+| Largest Contentful Paint | 0.6 s | 🟢 |
+| Total Blocking Time | 0 ms | 🟢 |
+| Cumulative Layout Shift | **0.169** | 🟠 needs improvement (> 0.1) |
+
+The loading metrics are excellent — **confirming asset weight is not the problem** (sub-second
+FCP/LCP, zero blocking). The single blemish is **CLS 0.169**: content shifts as the page settles.
+That is page behavior (layout not reserved / font swap / async content arriving), **not** asset size,
+and is a more material UX win than the ~4.7 KB minify. The wizard page is representative for the
+shared-bundle audits below; CLS itself is page-specific.
+
+Still to record (scroll to the Diagnostics / Insights section of the same report):
+
 - Minify CSS / Minify JavaScript opportunities — `— pending —`
 - Enable text compression (expect: pass) — `— pending —`
 - Efficient cache policy for static assets — `— pending —`
