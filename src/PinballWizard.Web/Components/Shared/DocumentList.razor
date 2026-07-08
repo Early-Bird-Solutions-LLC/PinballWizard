@@ -64,7 +64,11 @@ else
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.PageCount" Title="Pages" HeaderClass="text-right" CellClass="text-right" />
+            <TemplateColumn Title="Pages" HeaderClass="text-right" CellClass="text-right">
+                <CellTemplate>
+                    @context.Item.PageCount?.ToString("N0")
+                </CellTemplate>
+            </TemplateColumn>
             <TemplateColumn Title="Discovered" HeaderClass="text-right" CellClass="text-right">
                 <CellTemplate>
                     @context.Item.FirstDiscoveredAt.ToString("yyyy-MM-dd")
