@@ -5,6 +5,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
+    @* Preload the above-the-fold brand faces — Inter (body) + Barlow Condensed
+       (display). Paired with font-display: optional in app.css: optional
+       guarantees no post-paint font swap (→ zero CLS; see the 2026-07 perf
+       baseline — font swap was the sole layout-shift culprit), and preloading
+       the first-paint-critical weights lets the brand fonts win optional's
+       short block period so they still render on first paint. JetBrains Mono
+       (code) and Roboto (secondary fallback) are deliberately not preloaded —
+       they are not above the fold, and over-preloading steals bandwidth from
+       the critical faces. crossorigin is required: fonts fetch in CORS mode
+       even same-origin, and the preload must match that to dedupe with the
+       CSS-triggered request. *@
+    <link rel="preload" href="fonts/inter/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/inter/inter-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/barlow-condensed/barlow-condensed-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/barlow-condensed/barlow-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="app.css" />
     @* Scoped-CSS bundle (every Components/**/*.razor.css). Without this link

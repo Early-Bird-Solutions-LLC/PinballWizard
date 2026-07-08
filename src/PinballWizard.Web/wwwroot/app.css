@@ -416,7 +416,7 @@ html.theme-modern-lcd {
     font-family: 'Inter';
     font-style: normal;
     font-weight: 400;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/inter/inter-latin-400-normal.woff2') format('woff2');
 }
 
@@ -424,7 +424,7 @@ html.theme-modern-lcd {
     font-family: 'Inter';
     font-style: normal;
     font-weight: 500;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/inter/inter-latin-500-normal.woff2') format('woff2');
 }
 
@@ -432,7 +432,7 @@ html.theme-modern-lcd {
     font-family: 'Inter';
     font-style: normal;
     font-weight: 600;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/inter/inter-latin-600-normal.woff2') format('woff2');
 }
 
@@ -440,7 +440,7 @@ html.theme-modern-lcd {
     font-family: 'Inter';
     font-style: normal;
     font-weight: 700;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/inter/inter-latin-700-normal.woff2') format('woff2');
 }
 
@@ -448,7 +448,7 @@ html.theme-modern-lcd {
     font-family: 'Barlow Condensed';
     font-style: normal;
     font-weight: 500;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/barlow-condensed/barlow-condensed-latin-500-normal.woff2') format('woff2');
 }
 
@@ -456,7 +456,7 @@ html.theme-modern-lcd {
     font-family: 'Barlow Condensed';
     font-style: normal;
     font-weight: 700;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/barlow-condensed/barlow-condensed-latin-700-normal.woff2') format('woff2');
 }
 
@@ -464,7 +464,7 @@ html.theme-modern-lcd {
     font-family: 'JetBrains Mono';
     font-style: normal;
     font-weight: 400;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2');
 }
 
@@ -472,7 +472,7 @@ html.theme-modern-lcd {
     font-family: 'JetBrains Mono';
     font-style: normal;
     font-weight: 500;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2') format('woff2');
 }
 
@@ -480,7 +480,7 @@ html.theme-modern-lcd {
     font-family: 'Roboto';
     font-style: normal;
     font-weight: 300;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/roboto/roboto-latin-300-normal.woff2') format('woff2');
 }
 
@@ -488,7 +488,7 @@ html.theme-modern-lcd {
     font-family: 'Roboto';
     font-style: normal;
     font-weight: 400;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/roboto/roboto-latin-400-normal.woff2') format('woff2');
 }
 
@@ -496,7 +496,7 @@ html.theme-modern-lcd {
     font-family: 'Roboto';
     font-style: normal;
     font-weight: 500;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/roboto/roboto-latin-500-normal.woff2') format('woff2');
 }
 
@@ -504,7 +504,7 @@ html.theme-modern-lcd {
     font-family: 'Roboto';
     font-style: normal;
     font-weight: 700;
-    font-display: swap;
+    font-display: optional;
     src: url('fonts/roboto/roboto-latin-700-normal.woff2') format('woff2');
 }
 
