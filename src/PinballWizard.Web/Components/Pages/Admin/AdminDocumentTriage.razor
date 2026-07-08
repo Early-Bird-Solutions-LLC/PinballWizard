@@ -54,10 +54,15 @@
                  data-testid="admin-document-triage-grid">
 
         <Columns>
-            <PropertyColumn Property="x => x.DocumentId" Title="Document ID" />
             <PropertyColumn Property="x => x.DocumentType" Title="Document Type" />
             <PropertyColumn Property="x => x.SourceUrl" Title="Source URL" />
-            <PropertyColumn Property="x => x.LinkText" Title="Link Text" />
+            <TemplateColumn Title="Link Text">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2">@context.Item.LinkText</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary"
+                             data-testid="triage-doc-id">@context.Item.DocumentId</MudText>
+                </CellTemplate>
+            </TemplateColumn>
             <TemplateColumn Title="Status">
                 <CellTemplate>
                     <AppStatusChip Color="@StatusColor(context.Item.Status)">
