@@ -1,37 +1,42 @@
 @page "/admin/manufacturers"
 @layout AdminLayout
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Logging
+@using PinballWizard.Application.Catalog
 @using PinballWizard.Application.Persistence
-@using PinballWizard.Core.Domain
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
+@inherits AdminPageBase
 
 @* AdminManufacturers — /admin/manufacturers catalog-by-brand overview.
  *
  * Interactive page (@rendermode InteractiveServer) — MudDataGrid sorting requires a
  * live Blazor circuit. Data loads once in OnInitializedAsync.
  *
- * Two reads: (1) IMachineRepository.StreamAllAsync (cross-partition, already in the
- * ADR-0036 allow-list for MachineRepository.cs) — streams every machine and groups
- * by manufacturer partition key in memory, surfacing ALL manufacturers including
- * OPDB-only ones (Williams, Bally, Gottlieb, etc.) that have no scraper source.
- * (2) IIngestionSourceRepository.StreamAllAsync (single 'config' partition) —
- * best-effort enrichment for Enabled status. ManufacturerDisplayName comes from
- * the machine records, so rows never degrade to the raw key.
+ * Core read: ICatalogStatsReadRepository.StreamAllManufacturersAsync (bounded ~8-9
+ * point reads, ADR-0036 compliant). Each ManufacturerCatalogStats carries the full
+ * machine list so Machines count and Documents (sum of DocCount) are computed in
+ * memory without a cross-partition scan.
  *
- * Sorted alphabetically by default (no ranking — favoritism guardrail). User can
- * re-sort by Manufacturer, Status, or Machines via AppDataGrid TemplateColumn sort.
- * Paged via AppDataGrid (RowsPerPage defaults to the shared 10-row user preference). Rows with an ingestion source link to the
- * source-detail page; OPDB-only rows render plain text. Failures degrade visibly
- * (Invariant #17): machine-load failure shows a MudAlert; empty set a distinct
- * empty state; source enrichment failure leaves Enabled = "—".
+ * Enabled-status enrichment via IIngestionSourceRepository.StreamAllAsync is preserved
+ * exactly as before (best-effort, degrades to "—" on failure). ManufacturerDisplayName
+ * comes from the rollup doc; rows never degrade to the raw key unless the rollup
+ * predates the backfill.
+ *
+ * Manufacturer name cell links to the admin machines view filtered by this manufacturer
+ * (/admin/machines?manufacturer={key}) so admins can drill down without a full scan.
+ * Documents cell links to /admin/documents?manufacturer={key}.
+ *
+ * Sorted alphabetically by default (no ranking — favoritism guardrail). Failures
+ * degrade visibly (Invariant #17): stats-load failure shows a MudAlert; source
+ * enrichment failure leaves Enabled = "—" while Machines/Documents counts survive.
  *
  * ADR-0008  — MudBlazor strict
  * ADR-0034  — render-mode doctrine (interactive for sortable grid)
- * ADR-0036  — Cosmos read-access (cross-partition via StreamAllAsync, allow-listed)
+ * ADR-0036  — Cosmos read-access (Tier-1 bounded reads via StreamAllManufacturersAsync)
  *@
 
-@inject IMachineRepository MachineRepo
+@inject ICatalogStatsReadRepository Stats
 @inject IIngestionSourceRepository SourceRepo
 @inject ILogger<AdminManufacturers> Logger
 
@@ -65,7 +70,8 @@
                                 SortBy="@(new Func<ManufacturerRow, object>(r => r.DisplayName))"
                                 InitialDirection="SortDirection.Ascending">
                     <CellTemplate>
-                        <ManufacturerLink ManufacturerKey="@context.Item.Key" DisplayName="@context.Item.DisplayName" />
+                        <MudLink Href="@($"/admin/machines?manufacturer={Uri.EscapeDataString(context.Item.Key)}")"
+                                 Typo="Typo.body2">@context.Item.DisplayName</MudLink>
                     </CellTemplate>
                 </TemplateColumn>
                 <TemplateColumn Title="Status" Sortable="true"
@@ -89,6 +95,13 @@
                         @context.Item.Machines.ToString("N0")
                     </CellTemplate>
                 </TemplateColumn>
+                <TemplateColumn Title="Documents" Sortable="true" HeaderClass="text-right" CellClass="text-right"
+                                SortBy="@(new Func<ManufacturerRow, object>(r => r.Documents))">
+                    <CellTemplate>
+                        <MudLink Href="@($"/admin/documents?manufacturer={Uri.EscapeDataString(context.Item.Key)}")"
+                                 Typo="Typo.body2">@context.Item.Documents.ToString("N0")</MudLink>
+                    </CellTemplate>
+                </TemplateColumn>
             </Columns>
         </AppDataGrid>
     }
@@ -96,7 +109,7 @@
 
 @code {
     private sealed record ManufacturerRow(
-        string Key, string DisplayName, bool? Enabled, bool HasSource, int Machines);
+        string Key, string DisplayName, bool? Enabled, bool HasSource, int Machines, int Documents);
 
     private List<ManufacturerRow> _rows = [];
     private bool _loading = true;
@@ -110,7 +123,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
 
         // Best-effort enrichment: key → (DisplayName, Enabled). Failure leaves Enabled = null ("—").
         var sourceLookup = new Dictionary<string, (string DisplayName, bool Enabled)>(StringComparer.OrdinalIgnoreCase);
@@ -128,42 +141,41 @@
             Logger.LogWarning(ex, "Admin manufacturers: ingestion-source enrichment read failed; Enabled column degrades to '—'.");
         }
 
-        // Core read: stream all machines and group by manufacturer partition key.
-        // ManufacturerDisplayName from machine records — no raw-key degradation even
-        // for OPDB-only manufacturers without a scraper source.
+        // Core read: stream manufacturer rollup docs and project to ManufacturerRow.
+        // Each rollup doc already carries the full per-machine list, so Machines count
+        // and Documents sum are computed inline without a cross-partition scan.
         try
         {
-            var groups = new Dictionary<string, (string DisplayName, int Count)>(StringComparer.OrdinalIgnoreCase);
-            await foreach (var machine in MachineRepo.StreamAllAsync(cts.Token))
+            var rows = new List<ManufacturerRow>();
+            await foreach (var mfr in Stats.StreamAllManufacturersAsync(cts.Token))
             {
-                if (!groups.TryGetValue(machine.PartitionKey, out var g))
-                    groups[machine.PartitionKey] = (machine.ManufacturerDisplayName, 1);
-                else
-                    groups[machine.PartitionKey] = (g.DisplayName, g.Count + 1);
+                var key         = mfr.Manufacturer;
+                var displayName = mfr.ManufacturerDisplayName ?? key;
+                var machines    = mfr.Machines.Count;
+                var documents   = mfr.Machines.Sum(m => m.DocCount);
+
+                var found = sourceLookup.TryGetValue(key, out var src);
+                rows.Add(new ManufacturerRow(
+                    Key:         key,
+                    DisplayName: found ? src.DisplayName : displayName,
+                    Enabled:     found ? src.Enabled     : null,
+                    HasSource:   found,
+                    Machines:    machines,
+                    Documents:   documents));
             }
 
-            _rows = groups
-                .Select(kvp =>
-                {
-                    var found = sourceLookup.TryGetValue(kvp.Key, out var src);
-                    return new ManufacturerRow(
-                        Key:         kvp.Key,
-                        DisplayName: found ? src.DisplayName : kvp.Value.DisplayName,
-                        Enabled:     found ? src.Enabled : null,
-                        HasSource:   found,
-                        Machines:    kvp.Value.Count);
-                })
+            _rows = rows
                 .OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
         catch (OperationCanceledException)
         {
-            Logger.LogWarning("Admin manufacturers: machine catalog stream timed out after 30 s.");
+            Logger.LogWarning("Admin manufacturers: catalog stats stream timed out after 30 s.");
             _loadFailed = true;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load manufacturers from machine catalog.");
+            Logger.LogError(ex, "Failed to load manufacturers from catalog stats.");
             _loadFailed = true;
         }
         finally

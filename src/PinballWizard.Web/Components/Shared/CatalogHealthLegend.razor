@@ -1,0 +1,34 @@
+@namespace PinballWizard.Web.Components.Shared
+@using PinballWizard.Application.Catalog
+@using PinballWizard.Web.Components.Pages.Admin
+
+@*
+ * CatalogHealthLegend — explains the four CatalogHealthFlag badge values.
+ *
+ * Rendered once above the AppDataGrid on /admin/machines.
+ * Uses CatalogHealthColors as the single source of truth for both
+ * the chip color and the inline description text.
+ *
+ * ADR-0008 — MudBlazor strict (no hex colors, MudBlazor tokens only)
+ * ADR-0046 — use AppStatusChip, never raw MudChip at the page layer
+ *@
+
+<MudStack Row="true" Wrap="Wrap.Wrap" Spacing="3" Class="mb-4" data-testid="catalog-health-legend">
+    @foreach (var flag in _flags)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+            <AppStatusChip Color="@CatalogHealthColors.ForFlag(flag)">
+                @flag.ToString()
+            </AppStatusChip>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @CatalogHealthColors.Describe(flag)
+            </MudText>
+        </MudStack>
+    }
+</MudStack>
+
+@code {
+    // Canonical flag order: healthy first, then most-severe to least-severe health issues.
+    private static readonly CatalogHealthFlag[] _flags =
+        [CatalogHealthFlag.Ok, CatalogHealthFlag.Empty, CatalogHealthFlag.NoManual, CatalogHealthFlag.EditionGap];
+}

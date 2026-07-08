@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using MudBlazor.Services;
 using NSubstitute;
+using PinballWizard.Application.Catalog;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Domain;
 using PinballWizard.Web.Components.Pages.Admin;
@@ -11,18 +12,22 @@ using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Admin;
 
-// bUnit tests for AdminManufacturers.razor (/admin/manufacturers). Interactive
-// (rendermode InteractiveServer): OnInitializedAsync streams all machines from
-// IMachineRepository (cross-partition, ADR-0036 allow-listed) and groups by
-// manufacturer partition key, then enriches rows with Enabled status from
-// IIngestionSourceRepository (best-effort, single 'config' partition).
-// ManufacturerDisplayName comes from the machine records so rows never degrade
-// to the raw key. Honest states: machine-load-fail alert, distinct empty, and
-// source-enrichment failure that leaves Enabled = "—" while counts + display
-// names survive (Invariant #17).
+// bUnit tests for AdminManufacturers.razor (/admin/manufacturers).
+//
+// The page switched from IMachineRepository.StreamAllAsync (cross-partition) to
+// ICatalogStatsReadRepository.StreamAllManufacturersAsync (bounded ~8-9 point reads,
+// ADR-0036 Tier-1) so the test setup uses that repository now.
+//
+// Verified behavioural invariants:
+// - Manufacturer name cell links to /admin/machines?manufacturer={key} (admin drill-down)
+// - Documents column links to /admin/documents?manufacturer={key}
+// - Documents count = sum of MachineDocStats.DocCount across the manufacturer's machines
+// - Alphabetical ordering (no ranking — favouritism guardrail)
+// - Enabled-status enrichment degrades visibly on source-read failure (Invariant #17)
+// - Machine-load failure shows alert; empty set shows empty state
 public sealed class AdminManufacturersTests : AsyncBunitContext
 {
-    private readonly IMachineRepository _machines = Substitute.For<IMachineRepository>();
+    private readonly ICatalogStatsReadRepository _stats = Substitute.For<ICatalogStatsReadRepository>();
     private readonly IIngestionSourceRepository _sources = Substitute.For<IIngestionSourceRepository>();
 
     public AdminManufacturersTests()
@@ -30,20 +35,39 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         Services.AddMudServices();
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization().SetAuthorized("test-admin@example.com");
-        Services.AddSingleton(_machines);
+        Services.AddSingleton(_stats);
         Services.AddSingleton(_sources);
         Services.AddSingleton<ILogger<AdminManufacturers>>(NullLogger<AdminManufacturers>.Instance);
     }
 
-    private static Machine M(string key, string displayName) => new()
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    // Creates a ManufacturerCatalogStats with N machines whose DocCount values are
+    // taken from the supplied array. Pass no doc counts for a zero-machine rollup.
+    private static ManufacturerCatalogStats MfrStats(
+        string key, string displayName, params int[] docCounts)
     {
-        Id                      = $"{key}-opdb-id",
-        PartitionKey            = key,
-        ManufacturerDisplayName = displayName,
-        Title                   = "Test Machine",
-        FirstSeenAt             = DateTimeOffset.MinValue,
-        LastSeenAt              = DateTimeOffset.MinValue,
-    };
+        var machines = docCounts
+            .Select((dc, i) => new MachineDocStats(
+                MachineId:     $"mch_{key}_{i}",
+                Title:         $"{displayName} Machine {i}",
+                EditionLabel:  null,
+                GroupId:       null,
+                Year:          2024,
+                IsOpdbOnly:    false,
+                DocCount:      dc,
+                DocTypeCounts: dc > 0
+                    ? new Dictionary<string, int> { ["Manual"] = dc }
+                    : new Dictionary<string, int>(),
+                HasManual:     dc > 0))
+            .ToList();
+
+        return new ManufacturerCatalogStats(
+            Manufacturer: key,
+            AsOfUtc: DateTimeOffset.UtcNow,
+            Machines: machines)
+        { ManufacturerDisplayName = displayName };
+    }
 
     private static IngestionSource Source(string id, string displayName, bool enabled) => new()
     {
@@ -78,11 +102,14 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         return fragment.FindComponent<AdminManufacturers>();
     }
 
+    // ── Core rendering ─────────────────────────────────────────────────────────
+
     [Fact]
-    public async Task Populated_RendersRowWithNameStatusCountAndManufacturerLink()
+    public async Task Populated_RendersRowWithNameStatusCountAndAdminLink()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("stern", "Stern Pinball")));
+        // Two stern machines: docCounts 1 + 1 → Machines=2, Documents=2
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("stern", "Stern Pinball", 1, 1)));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(Source("stern", "Stern Pinball", enabled: true)));
 
@@ -91,16 +118,53 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
 
         var cells = cut.Find("[data-testid='manufacturers-table'] tbody tr").QuerySelectorAll("td");
         Assert.Contains("Stern Pinball", cells[0].TextContent, StringComparison.Ordinal);
-        Assert.Contains("Enabled", cells[1].TextContent, StringComparison.Ordinal);
-        Assert.Equal("2", cells[2].TextContent.Trim());
-        cut.Find("a[href='/manufacturers/stern']");   // now links to the detail page
+        Assert.Contains("Enabled",       cells[1].TextContent, StringComparison.Ordinal);
+        Assert.Equal("2",                cells[2].TextContent.Trim());   // Machines
+        Assert.Equal("2",                cells[3].TextContent.Trim());   // Documents (sum)
+
+        // Manufacturer name links to admin drill-down, not the public manufacturer page
+        cut.Find("a[href='/admin/machines?manufacturer=stern']");
+    }
+
+    [Fact]
+    public async Task Populated_DocumentsCell_LinksToAdminDocumentsFilter()
+    {
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("stern", "Stern Pinball", 1, 1)));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Documents column renders a link to /admin/documents?manufacturer={key}
+        cut.Find("a[href='/admin/documents?manufacturer=stern']");
+    }
+
+    [Fact]
+    public async Task Populated_DocumentsCount_IsSumOfMachineDocCounts()
+    {
+        // Three machines with doc counts 3, 5, 2 → Documents total = 10
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("stern", "Stern Pinball", 3, 5, 2)));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
+
+        var cut = RenderPage();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        var cells = cut.Find("[data-testid='manufacturers-table'] tbody tr").QuerySelectorAll("td");
+        Assert.Equal("3", cells[2].TextContent.Trim());   // 3 machines
+        Assert.Equal("10", cells[3].TextContent.Trim());  // 3+5+2 = 10 docs
     }
 
     [Fact]
     public async Task Sorted_AlphabeticallyByDisplayName()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("jjp", "Jersey Jack Pinball")));
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(
+                MfrStats("stern", "Stern Pinball", 1),
+                MfrStats("jjp",   "Jersey Jack Pinball", 1)));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream<IngestionSource>());
 
@@ -113,11 +177,15 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
             "Rows must be sorted alphabetically by display name (no ranking).");
     }
 
+    // ── Degraded / error states ────────────────────────────────────────────────
+
     [Fact]
     public async Task Empty_RendersDistinctEmptyState()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<Machine>());
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<ManufacturerCatalogStats>());
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -127,10 +195,12 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task MachineLoadFailure_RendersVisibleAlertNoTable()
+    public async Task StatsLoadFailure_RendersVisibleAlertNoTable()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Throwing<Machine>());
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Throwing<ManufacturerCatalogStats>());
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -141,13 +211,14 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task SourceEnrichmentFailure_DisplayNameFromMachine_EnabledShowsDash()
+    public async Task SourceEnrichmentFailure_DisplayNameFromRollup_EnabledShowsDash()
     {
-        // Source read throws → display name still comes from machine record (no raw-key
-        // degradation), Enabled shows "—", machine count survives (Invariant #17).
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(M("stern", "Stern Pinball"), M("stern", "Stern Pinball")));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Throwing<IngestionSource>());
+        // Source read throws → display name still comes from the rollup doc (no
+        // raw-key degradation), Enabled shows "—", machine and doc counts survive.
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("stern", "Stern Pinball", 1, 1)));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Throwing<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -155,17 +226,18 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         var table = cut.Find("[data-testid='manufacturers-table']");
         Assert.Contains("Stern Pinball", table.TextContent, StringComparison.Ordinal);
         var cells = table.QuerySelectorAll("tbody tr td");
-        Assert.Equal("2", cells[2].TextContent.Trim());
+        Assert.Equal("2", cells[2].TextContent.Trim());   // Machines survives
+        Assert.Equal("2", cells[3].TextContent.Trim());   // Documents survives (2 machines × 1 doc)
         Assert.DoesNotContain("Enabled", cells[1].TextContent, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task NoSourceForKey_StillLinksToManufacturerDetail()
+    public async Task NoSourceForKey_StillLinksToAdminMachinesFilter()
     {
-        // Machine exists but no matching ingestion source → display name from machine,
-        // status "—", but manufacturer detail page link still renders (OPDB-only manufacturer).
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(M("williams", "Williams")));
+        // Machine exists but no matching ingestion source → display name from rollup,
+        // status "—", but the admin machines filter link still renders.
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("williams", "Williams", 0)));
         _sources.StreamAllAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(Source("stern", "Stern Pinball", true)));
 
@@ -174,19 +246,20 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
 
         var table = cut.Find("[data-testid='manufacturers-table']");
         Assert.Contains("Williams", table.TextContent, StringComparison.Ordinal);
-        cut.Find("a[href='/manufacturers/williams']");   // detail page works for OPDB-only too
+        cut.Find("a[href='/admin/machines?manufacturer=williams']");
     }
 
     [Fact]
     public async Task PagingAt10_RendersOnlyFirstPageWhenMoreThan10Manufacturers()
     {
-        // 11 distinct manufacturers — page 1 should show exactly 10 rows (the shared
-        // Prefs.PageSize default), pager footer must render.
-        var machines = Enumerable.Range(1, 11)
-            .Select(i => M($"mfr{i:D2}", $"Manufacturer {i:D2}"))
+        // 11 distinct manufacturers — page 1 shows 10 rows (default PageSize), pager renders.
+        var stats = Enumerable.Range(1, 11)
+            .Select(i => MfrStats($"mfr{i:D2}", $"Manufacturer {i:D2}", 1))
             .ToArray();
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream(machines));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(stats));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -197,13 +270,15 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
     }
 
     [Fact]
-    public async Task MultipleManufacturers_GroupsMachinesCorrectly()
+    public async Task MultipleManufacturers_RendersCorrectCounts()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
+        // Stern has 3 machines (docs 1,1,1=3), JJP has 1 machine (docs 2).
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
             .Returns(_ => Stream(
-                M("stern", "Stern Pinball"), M("stern", "Stern Pinball"), M("stern", "Stern Pinball"),
-                M("jjp", "Jersey Jack Pinball")));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+                MfrStats("stern", "Stern Pinball", 1, 1, 1),
+                MfrStats("jjp",   "Jersey Jack Pinball", 2)));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
@@ -211,21 +286,25 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         var rows = cut.FindAll("[data-testid='manufacturers-table'] tbody tr");
         Assert.Equal(2, rows.Count);
 
+        // Jersey Jack sorts before Stern alphabetically
+        var jjpCells  = rows.First(r => r.TextContent.Contains("Jersey Jack", StringComparison.Ordinal))
+                            .QuerySelectorAll("td");
         var sternCells = rows.First(r => r.TextContent.Contains("Stern Pinball", StringComparison.Ordinal))
-            .QuerySelectorAll("td");
-        Assert.Equal("3", sternCells[2].TextContent.Trim());
+                             .QuerySelectorAll("td");
 
-        var jjpCells = rows.First(r => r.TextContent.Contains("Jersey Jack", StringComparison.Ordinal))
-            .QuerySelectorAll("td");
-        Assert.Equal("1", jjpCells[2].TextContent.Trim());
+        Assert.Equal("1", jjpCells[2].TextContent.Trim());    // JJP: 1 machine
+        Assert.Equal("2", jjpCells[3].TextContent.Trim());    // JJP: 2 docs
+        Assert.Equal("3", sternCells[2].TextContent.Trim());  // Stern: 3 machines
+        Assert.Equal("3", sternCells[3].TextContent.Trim());  // Stern: 1+1+1 = 3 docs
     }
 
     [Fact]
     public async Task Populated_GridSearchBox_UsesAdminManufacturersContext()
     {
-        _machines.StreamAllAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => Stream(M("stern", "Stern Pinball")));
-        _sources.StreamAllAsync(Arg.Any<CancellationToken>()).Returns(_ => Stream<IngestionSource>());
+        _stats.StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream(MfrStats("stern", "Stern Pinball", 1)));
+        _sources.StreamAllAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => Stream<IngestionSource>());
 
         var cut = RenderPage();
         await cut.InvokeAsync(() => Task.CompletedTask);
