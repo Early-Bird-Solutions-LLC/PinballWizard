@@ -23,7 +23,7 @@
 
     @if (string.IsNullOrWhiteSpace(Mfr))
     {
-        <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="detail-missing-mfr">
+        <MudAlert Severity="Severity.Normal" Class="mb-4" data-testid="detail-missing-mfr">
             Manufacturer is required to load machine details. Navigate here from the
             <MudLink Href="/admin/machines">Machine Catalog</MudLink> — it always
             supplies the <code>?mfr=</code> query parameter.
