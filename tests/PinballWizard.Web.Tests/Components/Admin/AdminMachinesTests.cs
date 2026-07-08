@@ -379,6 +379,140 @@ public sealed class AdminMachinesLoadingStateTests : AsyncBunitContext
     }
 }
 
+// Manufacturer-filter tests: when ?manufacturer=stern is present in the URL,
+// only machines for that manufacturer are displayed and the filter indicator is shown.
+// Without the filter, all machines from all manufacturers are displayed.
+//
+// [SupplyParameterFromQuery] resolves via NavigationManager.Uri; the test navigates
+// the BunitNavigationManager to the filtered URL before rendering so the component
+// picks up the query parameter during initialisation.
+public sealed class AdminMachinesManufacturerFilterTests : AsyncBunitContext
+{
+    private static readonly DateTimeOffset FakeAsOf = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
+
+    // Stern: 1 machine ("Foo Pro")
+    private static readonly ManufacturerCatalogStats FakeStern = new(
+        Manufacturer: "stern",
+        AsOfUtc: FakeAsOf,
+        Machines:
+        [
+            new MachineDocStats(
+                MachineId:     "mch_stern_foo_pro",
+                Title:         "Foo Pro",
+                EditionLabel:  "Pro",
+                GroupId:       "foo",
+                Year:          2024,
+                IsOpdbOnly:    false,
+                DocCount:      0,
+                DocTypeCounts: new Dictionary<string, int>(),
+                HasManual:     false),
+        ])
+    { ManufacturerDisplayName = "Stern Pinball" };
+
+    // JJP: 2 machines ("Bar CE", "Bar LE")
+    private static readonly ManufacturerCatalogStats FakeJjp = new(
+        Manufacturer: "jjp",
+        AsOfUtc: FakeAsOf.AddHours(1),
+        Machines:
+        [
+            new MachineDocStats(
+                MachineId:     "mch_jjp_bar_ce",
+                Title:         "Bar CE",
+                EditionLabel:  "CE",
+                GroupId:       "bar",
+                Year:          2023,
+                IsOpdbOnly:    false,
+                DocCount:      2,
+                DocTypeCounts: new Dictionary<string, int> { ["Manual"] = 1 },
+                HasManual:     true),
+            new MachineDocStats(
+                MachineId:     "mch_jjp_bar_le",
+                Title:         "Bar LE",
+                EditionLabel:  "LE",
+                GroupId:       "bar",
+                Year:          2023,
+                IsOpdbOnly:    false,
+                DocCount:      1,
+                DocTypeCounts: new Dictionary<string, int> { ["Manual"] = 1 },
+                HasManual:     true),
+        ])
+    { ManufacturerDisplayName = "Jersey Jack Pinball" };
+
+    private static async IAsyncEnumerable<ManufacturerCatalogStats> FakeStream(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken _)
+    {
+        await Task.CompletedTask;
+        yield return FakeStern;
+        yield return FakeJjp;
+    }
+
+    public AdminMachinesManufacturerFilterTests()
+    {
+        Services.AddMudServices();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        this.AddAuthorization().SetAuthorized("test-admin@example.com");
+
+        var statsRepo = Substitute.For<ICatalogStatsReadRepository>();
+        statsRepo
+            .StreamAllManufacturersAsync(Arg.Any<CancellationToken>())
+            .Returns(ci => FakeStream(ci.Arg<CancellationToken>()));
+        Services.AddSingleton(statsRepo);
+
+        _ = Services.GetRequiredService<BunitNavigationManager>();
+    }
+
+    [Fact]
+    public async Task ManufacturerFilter_Stern_ShowsOnlySternMachines()
+    {
+        // Navigate to the filtered URL so [SupplyParameterFromQuery] resolves "stern"
+        Services.GetRequiredService<BunitNavigationManager>()
+            .NavigateTo("/admin/machines?manufacturer=stern");
+
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Stern's "Foo Pro" must be visible; JJP machines must be hidden
+        Assert.Contains("Foo Pro", cut.Markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bar CE", cut.Markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bar LE", cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManufacturerFilter_Stern_ShowsFilterIndicator()
+    {
+        Services.GetRequiredService<BunitNavigationManager>()
+            .NavigateTo("/admin/machines?manufacturer=stern");
+
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Filter indicator must render with the manufacturer's display name
+        var indicator = cut.Find("[data-testid='machines-manufacturer-filter']");
+        Assert.Contains("Stern Pinball", indicator.TextContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoFilter_ShowsAllManufacturerMachines()
+    {
+        // No navigation — default URL has no manufacturer query param
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.Contains("Foo Pro", cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Bar CE",  cut.Markup, StringComparison.Ordinal);
+        Assert.Contains("Bar LE",  cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoFilter_FilterIndicatorAbsent()
+    {
+        var cut = RenderWithPopover<AdminMachines>();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        Assert.Empty(cut.FindAll("[data-testid='machines-manufacturer-filter']"));
+    }
+}
+
 // Separate context for the Cosmos load-failure path.
 // The repo throws so the page must show the distinct error alert and must NOT
 // show the "No machines in catalog" empty-state (which implies data, not failure).
