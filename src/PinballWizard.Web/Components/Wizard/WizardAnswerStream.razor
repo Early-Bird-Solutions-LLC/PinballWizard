@@ -210,6 +210,12 @@
     [Parameter]
     public string? Question { get; set; }
 
+    // Optional: OPDB canonical machine id forwarded from the "Ask the Wizard
+    // about this machine" button on the machine detail page. Null when the
+    // user navigates to /wizard directly — the router applies no corpus filter.
+    [Parameter]
+    public string? MachineId { get; set; }
+
     // ── State machine ─────────────────────────────────────────────────────
     private enum AnswerState
     {
@@ -337,7 +343,7 @@
 
         TransitionTo(AnswerState.Submitted);
 
-        await StreamAnswerAsync(_submittedQuestion, BuildHistory(), _cts.Token).ConfigureAwait(false);
+        await StreamAnswerAsync(_submittedQuestion, BuildHistory(), MachineId, _cts.Token).ConfigureAwait(false);
     }
 
     // Maps the thread to the wire shape. Empty thread → null, which keeps
@@ -353,6 +359,7 @@
     private async Task StreamAnswerAsync(
         string question,
         IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
         CancellationToken ct)
     {
         var gotFirstChunk = false;
@@ -360,7 +367,7 @@
         try
         {
             await foreach (var chunk in StreamingClient
-                .StreamAsync(question, history, ct)
+                .StreamAsync(question, history, machineId, ct)
                 .ConfigureAwait(false))
             {
                 if (ct.IsCancellationRequested)

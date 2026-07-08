@@ -321,7 +321,8 @@ else if (_machine is not null)
     {
         if (_machine is null) return;
         var query = $"tell me about {_machine.Title}";
-        Nav.NavigateTo($"/wizard?q={Uri.EscapeDataString(query)}");
+        Nav.NavigateTo(
+            $"/wizard?q={Uri.EscapeDataString(query)}&machineId={Uri.EscapeDataString(_machine.Id)}");
     }
 
     public void Dispose()
