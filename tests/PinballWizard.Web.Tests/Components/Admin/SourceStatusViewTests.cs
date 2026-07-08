@@ -31,9 +31,9 @@ public sealed class SourceStatusViewTests
     }
 
     [Fact]
-    public void Derive_Deferred_UsesWarningColour()
+    public void Derive_Deferred_UsesDefaultColour() // informational, not a failure (closed palette)
     {
-        Assert.Equal(Color.Warning, SourceStatusView.Derive(false, "Deferred").Color);
+        Assert.Equal(Color.Default, SourceStatusView.Derive(false, "Deferred").Color);
     }
 
     [Fact]
