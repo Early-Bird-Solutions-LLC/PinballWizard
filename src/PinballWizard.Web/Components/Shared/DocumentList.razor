@@ -64,7 +64,8 @@ else
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <TemplateColumn Title="Pages" HeaderClass="text-right" CellClass="text-right">
+            <TemplateColumn Title="Pages" HeaderClass="text-right" CellClass="text-right"
+                            Sortable="true" SortBy="@(new Func<DocumentListItem, object?>(x => x.PageCount))">
                 <CellTemplate>
                     @context.Item.PageCount?.ToString("N0")
                 </CellTemplate>
