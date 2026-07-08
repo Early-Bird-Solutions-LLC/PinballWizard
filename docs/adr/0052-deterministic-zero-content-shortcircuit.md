@@ -1,6 +1,6 @@
 # 0052 — Deterministic zero-content short-circuit in the Wizard ask pipeline
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-07
 
 ## Context
