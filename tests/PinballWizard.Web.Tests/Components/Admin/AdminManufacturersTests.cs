@@ -227,6 +227,7 @@ public sealed class AdminManufacturersTests : AsyncBunitContext
         Assert.Contains("Stern Pinball", table.TextContent, StringComparison.Ordinal);
         var cells = table.QuerySelectorAll("tbody tr td");
         Assert.Equal("2", cells[2].TextContent.Trim());   // Machines survives
+        Assert.Equal("2", cells[3].TextContent.Trim());   // Documents survives (2 machines × 1 doc)
         Assert.DoesNotContain("Enabled", cells[1].TextContent, StringComparison.Ordinal);
     }
 
