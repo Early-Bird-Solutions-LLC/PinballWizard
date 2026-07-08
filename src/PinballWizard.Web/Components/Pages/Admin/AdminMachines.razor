@@ -63,6 +63,8 @@
         </AppErrorAlert>
     }
 
+    <CatalogHealthLegend />
+
     <AppDataGrid T="MachineCatalogRow"
                  Items="@_machines"
                  SearchContext="admin-machines"
@@ -87,10 +89,12 @@
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)
                     {
-                        <AppStatusChip Color="@HealthFlagColor(flag)"
-                                       Class="mr-1">
-                            @flag.ToString()
-                        </AppStatusChip>
+                        <MudTooltip Text="@CatalogHealthColors.Describe(flag)">
+                            <AppStatusChip Color="@HealthFlagColor(flag)"
+                                           Class="mr-1">
+                                @flag.ToString()
+                            </AppStatusChip>
+                        </MudTooltip>
                     }
                 </CellTemplate>
             </PropertyColumn>
