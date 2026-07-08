@@ -218,14 +218,14 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
                 Arg.Any<IReadOnlyList<ConversationTurn>?>(),
                 Arg.Do<string?>(m => capturedMachineId = m),
                 Arg.Any<CancellationToken>())
-            .Returns(ToAsyncEnumerable(new AnswerChunk[]
-            {
+            .Returns(ToAsyncEnumerable(
+            [
                 new AnswerChunk.Final(
                     new WizardAnswer(
                         Text: "ok", Citations: [], SubAgentUsed: "wizard",
                         Confidence: 1.0, Escalated: false, IsRefusal: false,
                         RefusalCategory: null, PromptVersion: "v1", FoundryThreadId: null)),
-            }));
+            ]));
 
         using var server = BuildServer(router: router);
         using var client = server.CreateClient();

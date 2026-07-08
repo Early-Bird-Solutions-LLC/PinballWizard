@@ -223,9 +223,7 @@ public static class ServiceCollectionExtensions
             aiSearchOptions.IndexName,
             Credentials.SharedAzureCredential.Instance);
 
-        return new AiSearchMachineCorpusCoverage(
-            searchClient,
-            sp.GetRequiredService<ILogger<AiSearchMachineCorpusCoverage>>());
+        return new AiSearchMachineCorpusCoverage(searchClient);
     }
 
     // Symmetric to `BuildQueryEmbedder` — derives the Azure OpenAI

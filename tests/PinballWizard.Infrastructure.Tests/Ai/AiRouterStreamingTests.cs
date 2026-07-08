@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Azure;
@@ -13,6 +15,7 @@ using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
+using PinballWizard.Application.Observability;
 using PinballWizard.Core.Configuration;
 using Xunit;
 
@@ -922,6 +925,19 @@ public sealed class AiRouterStreamingTests
     [Fact]
     public async Task MachineScopedAsk_WithZeroIndexedChunks_ShortCircuits_WithoutInvokingAgent()
     {
+        // Arrange: subscribe to the short-circuit counter BEFORE the call
+        // (parallel-tolerant ConcurrentBag pattern; distinct instrument name
+        // means no cross-fixture collision risk even without a tag filter).
+        var bag = new ConcurrentBag<long>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "pinwiz.ai.machine_scope_gate.short_circuits_total")
+                bag.Add(value);
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiMachineScopeGateShortCircuits);
+
         // Arrange: coverage says this machine has NO indexed chunks.
         var agentFactory = Substitute.For<IFoundryAgentFactory>();
         var coverage = Substitute.For<IMachineCorpusCoverage>();
@@ -944,6 +960,9 @@ public sealed class AiRouterStreamingTests
         var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
         Assert.True(final.Answer.IsRefusal);
         Assert.Equal(RefusalCategory.NoCitation, final.Answer.RefusalCategory);
+
+        // Assert: the short-circuit counter was incremented exactly once.
+        Assert.Contains(bag, v => v == 1);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -980,6 +999,60 @@ public sealed class AiRouterStreamingTests
         // Assert: the agent WAS resolved — a metadata-card-only machine is
         // never suppressed by the gate.
         agentFactory.Received().GetAgent(Arg.Any<string>());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // T-Gate3 — Coverage check throws → agent runs (no masking) + error metered
+    //
+    // Locks invariant #17: a coverage-check failure must NOT suppress the agent
+    // turn. The gate falls through and emits AiMachineScopeGateErrors so the
+    // skipped-optimization is visible in telemetry rather than silent.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MachineScopedAsk_CoverageCheckThrows_InvokesAgent_MetersError()
+    {
+        // Arrange: subscribe to the error counter BEFORE the call.
+        var errBag = new ConcurrentBag<long>();
+        using var listener = new MeterListener();
+        listener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "pinwiz.ai.machine_scope_gate.errors_total")
+                errBag.Add(value);
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(PinballWizardTelemetry.AiMachineScopeGateErrors);
+
+        // Arrange: coverage throws a non-cancellation exception — simulates
+        // AI Search being temporarily unavailable.
+        var agentUpdates = new[]
+        {
+            MakeToolResultUpdate("GRBE-MJL05", "Godzilla (Premium)"),
+            MakeTextUpdate("Godzilla is a Stern machine."),
+        };
+        var fakeAgent = new FakeStreamingAgent(agentUpdates.ToList());
+        var agentFactory = Substitute.For<IFoundryAgentFactory>();
+        agentFactory.GetAgent(Arg.Any<string>()).Returns(fakeAgent);
+
+        var coverage = Substitute.For<IMachineCorpusCoverage>();
+        coverage.HasIndexedContentAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<bool>(new InvalidOperationException("search down")));
+
+        var router = BuildRouterForGateTests(agentFactory, coverage);
+
+        // Act
+        await foreach (var _ in router.AnswerStreamingAsync(
+            "tell me about Godzilla", history: null, machineId: "MACHINE-X", CancellationToken.None))
+        {
+            // consume stream
+        }
+
+        // Assert (a): gate failure did NOT suppress the agent — full turn ran.
+        agentFactory.Received().GetAgent(Arg.Any<string>());
+
+        // Assert (b): error counter was incremented — skipped-optimization is
+        // visible in telemetry, not swallowed (no-masking invariant #17).
+        Assert.Contains(errBag, v => v == 1);
     }
 
     // Builds a minimal AiRouter with the supplied agentFactory and coverage.

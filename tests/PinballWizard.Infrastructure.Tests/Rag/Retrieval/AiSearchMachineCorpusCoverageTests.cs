@@ -19,6 +19,7 @@ public sealed class AiSearchMachineCorpusCoverageTests
         var retrieverFilter = AiSearchRagRetriever.BuildFilter(
             new RetrievalOptions(MachineId: machineId));
 
+        // Tautological today (both from BuildFilter) but becomes a real cross-check if BuildCountFilter ever gets an independent implementation.
         Assert.Equal(retrieverFilter, coverageFilter);
         Assert.Equal("machine_id eq 'GRBN-MQR4P'", coverageFilter);
     }
@@ -35,6 +36,7 @@ public sealed class AiSearchMachineCorpusCoverageTests
         var retrieverFilter = AiSearchRagRetriever.BuildFilter(
             new RetrievalOptions(MachineId: machineId));
 
+        // Tautological today (both from BuildFilter) but becomes a real cross-check if BuildCountFilter ever gets an independent implementation.
         Assert.Equal(retrieverFilter, coverageFilter);
         Assert.Equal("machine_id eq 'O''Brien-1'", coverageFilter);
     }

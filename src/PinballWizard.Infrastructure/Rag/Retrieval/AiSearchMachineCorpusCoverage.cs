@@ -1,5 +1,4 @@
 using Azure.Search.Documents;
-using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Ai.Retrieval;
 
 namespace PinballWizard.Infrastructure.Rag.Retrieval;
@@ -9,19 +8,16 @@ namespace PinballWizard.Infrastructure.Rag.Retrieval;
 // machine_id — the same pattern CosmosAiSearchRagReconciler.CountChunksAsync
 // uses — and reuses AiSearchRagRetriever.BuildFilter so the machine filter
 // is provably identical to the retrieval path (see the parity contract test).
+// The router (AiRouter) already logs the gate decision with machineId, so
+// this class needs no logging of its own.
 public sealed class AiSearchMachineCorpusCoverage : IMachineCorpusCoverage
 {
     private readonly SearchClient _searchClient;
-    private readonly ILogger<AiSearchMachineCorpusCoverage> _logger;
 
-    public AiSearchMachineCorpusCoverage(
-        SearchClient searchClient,
-        ILogger<AiSearchMachineCorpusCoverage> logger)
+    public AiSearchMachineCorpusCoverage(SearchClient searchClient)
     {
         ArgumentNullException.ThrowIfNull(searchClient);
-        ArgumentNullException.ThrowIfNull(logger);
         _searchClient = searchClient;
-        _logger = logger;
     }
 
     public async Task<bool> HasIndexedContentAsync(string machineId, CancellationToken ct)
