@@ -6,10 +6,8 @@ internal static class JobStatusColor
 {
     internal static Color For(string status) => status switch
     {
-        "Succeeded" => Color.Success,
-        "Running" or "Processing" => Color.Info,
-        "Failed" => Color.Error,
-        "Stopped" or "Degraded" => Color.Warning,
+        "Succeeded" or "Running" or "Processing" => Color.Success, // active/healthy
+        "Failed" or "Degraded" or "Stopped" => Color.Error,        // problem/terminal
         _ => Color.Default,
     };
 }

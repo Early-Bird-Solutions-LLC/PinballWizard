@@ -64,8 +64,12 @@ else
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.FileFormat" Title="Format" />
-            <PropertyColumn Property="x => x.PageCount" Title="Pages" HeaderClass="text-right" CellClass="text-right" />
+            <TemplateColumn Title="Pages" HeaderClass="text-right" CellClass="text-right"
+                            Sortable="true" SortBy="@(new Func<DocumentListItem, object?>(x => x.PageCount))">
+                <CellTemplate>
+                    @context.Item.PageCount?.ToString("N0")
+                </CellTemplate>
+            </TemplateColumn>
             <TemplateColumn Title="Discovered" HeaderClass="text-right" CellClass="text-right">
                 <CellTemplate>
                     @context.Item.FirstDiscoveredAt.ToString("yyyy-MM-dd")
@@ -162,11 +166,6 @@ else
     private string DocUrl(string documentId) =>
         IsAdmin ? $"/admin/documents/{documentId}" : $"/documents/{documentId}";
 
-    private static Color LinkStatusColor(string? status) => status switch
-    {
-        "linked" or "manually_linked" => Color.Success,
-        "failed" or "not_in_catalog" => Color.Error,
-        "platform_generic" => Color.Warning,
-        _ => Color.Default
-    };
+    private static Color LinkStatusColor(string? status) =>
+        DocumentLinkStatusColor.For(status);
 }

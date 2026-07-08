@@ -32,6 +32,24 @@ public sealed class SelfHostedFontsTests
         ("Roboto", 700, "roboto-latin-700-normal.woff2", "roboto"),
     ];
 
+    // The above-the-fold brand faces preloaded in App.razor. font-display: optional
+    // guarantees zero CLS; preloading these first-paint-critical weights lets the
+    // brand fonts (Inter = body, Barlow Condensed = display headings) win optional's
+    // short block period so they still render on first paint.
+    //
+    // Deliberately NOT preloaded: Inter 600/700 (bold — rarely above the fold on the
+    // text pages that drove the CLS fix; on a very slow first load they fall back to
+    // Roboto for that render, still zero-shift), JetBrains Mono (code, below the fold),
+    // Roboto (secondary fallback, never the first choice). Over-preloading would steal
+    // bandwidth from the four critical faces and dilute the first-paint win.
+    private static readonly string[] PreloadedCriticalFaces =
+    [
+        "fonts/inter/inter-latin-400-normal.woff2",
+        "fonts/inter/inter-latin-500-normal.woff2",
+        "fonts/barlow-condensed/barlow-condensed-latin-500-normal.woff2",
+        "fonts/barlow-condensed/barlow-condensed-latin-700-normal.woff2",
+    ];
+
     [Fact]
     public void AppRazor_LoadsNoFontsFromGoogleCdn()
     {
@@ -65,22 +83,68 @@ public sealed class SelfHostedFontsTests
         foreach (var (family, weight, fileSlug, dirSlug) in ExpectedWeights)
         {
             // Match the family + weight pair within a single @font-face block,
-            // and require `font-display: swap` to co-occur in that same block.
-            // `font-display: swap` is the FOIT/FOUT mitigation that makes
-            // self-hosting acceptable — pinning it per-block prevents a future
-            // edit from adding an unswapped block while the global Contains
-            // check below still passes.
+            // and require `font-display: optional` to co-occur in that same block.
+            // optional (not swap) is load-bearing: it gives a short block period
+            // and NO swap period, so the web font is never swapped in AFTER first
+            // paint — eliminating the FOUT reflow that Lighthouse identified as the
+            // sole Cumulative-Layout-Shift culprit on pinwiz.ai (perf baseline,
+            // 2026-07; /wizard CLS 0.169 → font-swap). The critical brand faces are
+            // preloaded (see AppRazor_PreloadsCriticalBrandFaces) so they still win
+            // optional's block period and render on first paint. Pinning optional
+            // per-block prevents a future edit from re-introducing a swapping block
+            // while the global Contains check below still passes.
             var blockPattern = new Regex(
-                $@"@font-face\s*\{{(?=[^}}]*font-family:\s*'{Regex.Escape(family)}')(?=[^}}]*font-weight:\s*{weight}\b)(?=[^}}]*font-display:\s*swap)[^}}]*\}}",
+                $@"@font-face\s*\{{(?=[^}}]*font-family:\s*'{Regex.Escape(family)}')(?=[^}}]*font-weight:\s*{weight}\b)(?=[^}}]*font-display:\s*optional)[^}}]*\}}",
                 RegexOptions.Singleline | RegexOptions.IgnoreCase);
             Assert.True(
                 blockPattern.IsMatch(appCss),
-                $"app.css missing @font-face for {family} {weight} (with font-display: swap)");
+                $"app.css missing @font-face for {family} {weight} (with font-display: optional)");
 
             Assert.Contains(
                 $"fonts/{dirSlug}/{fileSlug}",
                 appCss,
                 StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void AppCss_UsesOptionalFontDisplay_NeverSwap()
+    {
+        var appCss = File.ReadAllText(Path.Combine(WebProjectRoot(), "wwwroot", "app.css"));
+
+        // `swap` swaps the web font in AFTER first paint → FOUT reflow → CLS.
+        // The perf baseline (2026-07) pinned font swap as the sole layout-shift
+        // culprit; optional is the fix and must never regress to swap.
+        Assert.DoesNotContain("font-display: swap", appCss, StringComparison.OrdinalIgnoreCase);
+
+        // Exactly one `font-display: optional` per declared face.
+        var optionalCount = Regex.Count(appCss, @"font-display:\s*optional", RegexOptions.IgnoreCase);
+        Assert.Equal(ExpectedWeights.Length, optionalCount);
+    }
+
+    [Fact]
+    public void AppRazor_PreloadsCriticalBrandFaces()
+    {
+        var appRazor = File.ReadAllText(Path.Combine(WebProjectRoot(), "Components", "App.razor"));
+        var appCss = File.ReadAllText(Path.Combine(WebProjectRoot(), "wwwroot", "app.css"));
+
+        foreach (var face in PreloadedCriticalFaces)
+        {
+            // A rel=preload as=font link for this face, with crossorigin — required
+            // to dedupe with the CORS-mode CSS font fetch (a mismatch double-downloads).
+            var preloadPattern = new Regex(
+                $@"<link\b(?=[^>]*rel=""preload"")(?=[^>]*as=""font"")(?=[^>]*href=""{Regex.Escape(face)}"")(?=[^>]*crossorigin)[^>]*/?>",
+                RegexOptions.IgnoreCase);
+            Assert.True(
+                preloadPattern.IsMatch(appRazor),
+                $"App.razor is missing a rel=preload as=font crossorigin link for {face}");
+
+            // The preloaded face must be a real declared @font-face (else the preload
+            // is unused) and exist on disk (else it 404s).
+            Assert.Contains(face, appCss, StringComparison.Ordinal);
+            Assert.True(
+                File.Exists(Path.Combine(WebProjectRoot(), "wwwroot", face.Replace('/', Path.DirectorySeparatorChar))),
+                $"Preloaded font file does not exist: {face}");
         }
     }
 
