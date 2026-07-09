@@ -8,6 +8,7 @@
     <Project Path="src/PinballWizard.Api/PinballWizard.Api.csproj" />
     <Project Path="src/PinballWizard.Web/PinballWizard.Web.csproj" />
     <Project Path="src/PinballWizard.Web.Client/PinballWizard.Web.Client.csproj" />
+    <Project Path="src/PinballWizard.PerfMetrics/PinballWizard.PerfMetrics.csproj" />
   </Folder>
   <Folder Name="/Aspire/">
     <Project Path="src/PinballWizard.AppHost/PinballWizard.AppHost.csproj" />
@@ -20,6 +21,7 @@
     <Project Path="tests/PinballWizard.Api.Tests/PinballWizard.Api.Tests.csproj" />
     <Project Path="tests/PinballWizard.Cli.Tests/PinballWizard.Cli.Tests.csproj" />
     <Project Path="tests/PinballWizard.Web.Tests/PinballWizard.Web.Tests.csproj" />
+    <Project Path="tests/PinballWizard.PerfMetrics.Tests/PinballWizard.PerfMetrics.Tests.csproj" />
     <Project Path="tests/PinballWizard.ServiceDefaults.Tests/PinballWizard.ServiceDefaults.Tests.csproj" />
   </Folder>
 </Solution>

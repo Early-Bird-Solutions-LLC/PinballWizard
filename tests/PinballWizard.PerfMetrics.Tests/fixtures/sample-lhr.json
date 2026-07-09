@@ -1,0 +1,17 @@
+{
+  "lighthouseVersion": "12.3.0",
+  "finalDisplayedUrl": "https://pinwiz.ai/wizard",
+  "categories": {
+    "performance": { "score": 0.90 },
+    "accessibility": { "score": 0.97 },
+    "best-practices": { "score": 0.96 },
+    "seo": { "score": 0.91 }
+  },
+  "audits": {
+    "largest-contentful-paint": { "numericValue": 2340.0 },
+    "cumulative-layout-shift": { "numericValue": 0.169 },
+    "total-blocking-time": { "numericValue": 120.0 },
+    "first-contentful-paint": { "numericValue": 1280.0 },
+    "speed-index": { "numericValue": 2100.0 }
+  }
+}
