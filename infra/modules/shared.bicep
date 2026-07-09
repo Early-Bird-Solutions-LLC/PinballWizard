@@ -46,6 +46,9 @@ param developerObjectId string
 @description('Object (principal) ID of the CI/CD deploy service principal — the "PinballWizard GitHub Actions" app registration that the deploy.yml workflow logs in as via OIDC. When non-empty, it is granted Contributor on the Wizard / Api / RAG-indexer Container Apps so the workflow can run `az containerapp update --image` against each app. Empty (default) skips these grants. Replaces the former manual per-app `az role assignment create` step in the deploy.yml header — CI-identity RBAC is now IaC. NOTE: this is the SP object id, NOT the appId/client id (the AZURE_CLIENT_ID secret).')
 param cicdDeployPrincipalId string = ''
 
+@description('Object (principal) id of the CI OIDC deployer identity that publishes perf telemetry to App Insights (Monitoring Metrics Publisher role, 3913510d-42f4-4e42-8a64-420c390055eb). Same underlying identity as cicdDeployPrincipalId — parameterised separately so the scope is explicitly appInsights (least-privilege). Empty (default) skips the role assignment. The real SP object id is supplied at deploy time via the param file or pipeline variable; do not hardcode here.')
+param ciDeployerPrincipalId string = ''
+
 @description('When false, only Phase 1 resources are deployed (Cosmos + Log Analytics + Cosmos diagnostics). Phase 2 resources (App Insights, Key Vault, ACR, AI Search, Azure OpenAI, Storage + blob containers, and their diagnostic settings + developer RBAC) are gated behind this flag and ship when their consuming features start landing.')
 param deployPhase2 bool
 
@@ -2257,6 +2260,23 @@ resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
     principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Grants the CI OIDC deployer identity the Monitoring Metrics Publisher role on
+// App Insights so the perf emitter (Phase 7 Lighthouse runner) can ingest
+// telemetry via Entra auth — no InstrumentationKey required (DisableLocalAuth=true
+// is already set on appInsights). Built-in role definition GUID is stable/well-known:
+//   Monitoring Metrics Publisher = 3913510d-42f4-4e42-8a64-420c390055eb
+// Gated on deployPhase2 (appInsights is a Phase 2 resource) and a non-empty
+// ciDeployerPrincipalId so a bare stack deploy without the SP skips cleanly.
+resource perfMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(ciDeployerPrincipalId)) {
+  name: guid(appInsights.id, ciDeployerPrincipalId, 'Monitoring Metrics Publisher')
+  scope: appInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+    principalId: ciDeployerPrincipalId
     principalType: 'ServicePrincipal'
   }
 }

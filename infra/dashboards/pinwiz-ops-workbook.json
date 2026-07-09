@@ -85,6 +85,32 @@
         "visualization": "timechart"
       },
       "name": "availability"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where message == \"LighthouseRun\"\n| extend d = customDimensions\n| where tostring(d.environment) == \"synthetic\"\n| summarize avg(toreal(d.performance)), avg(toreal(d.accessibility)),\n            avg(toreal(d.bestPractices)), avg(toreal(d.seo))\n    by bin(timestamp, 1d), page = tostring(d.page)\n| render timechart",
+        "size": 0,
+        "title": "Lighthouse category scores — daily trend (synthetic, all pages)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "perf-category-scores"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where message == \"LighthouseRun\"\n| extend d = customDimensions\n| summarize avg(toreal(d.cls)), avg(toreal(d.lcp)), avg(toreal(d.tbt))\n    by bin(timestamp, 1d), page = tostring(d.page), env = tostring(d.environment)\n| render timechart",
+        "size": 0,
+        "title": "Core Web Vitals — daily trend (CLS good < 0.1, LCP, TBT)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "perf-core-web-vitals"
     }
   ],
   "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"

@@ -45,6 +45,16 @@ param developerObjectId = ''
 //   az ad sp show --id 9bfa919b-d517-4ba8-a65f-a5d04025ddb1 --query id -o tsv
 param cicdDeployPrincipalId = 'c8466e83-9470-4cad-92a1-2d4149263fdc'
 
+// CI OIDC deployer identity — Monitoring Metrics Publisher on App Insights.
+// Same underlying SP as cicdDeployPrincipalId above; parameterised separately
+// so the Bicep scope is explicitly appInsights (least-privilege per brief).
+// The real SP object id is the same value as cicdDeployPrincipalId but is
+// supplied at deploy time (pipeline variable or local override) rather than
+// committed here, keeping the param as the canonical injection point.
+// To activate locally: copy to main-shared.dev.local.bicepparam and set to
+// the SP object id (az ad sp show --id <AZURE_CLIENT_ID> --query id -o tsv).
+param ciDeployerPrincipalId = ''
+
 // Entra OIDC sign-in for the Wizard web app (PR-B0 infra half).
 // The "PinballWizard Web" app registration's client ID — a public
 // identifier, safe to commit. The matching client SECRET lives only in
