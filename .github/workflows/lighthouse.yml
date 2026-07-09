@@ -22,9 +22,17 @@ on:
       - 'src/PinballWizard.Web/**'
       - '.github/workflows/lighthouse.yml'
       - '.lighthouserc.json'
+  push:
+    branches: [main]
+    paths:
+      - 'src/PinballWizard.Web/**'
+      - '.github/workflows/lighthouse.yml'
+      - '.lighthouserc.json'
+      - 'src/PinballWizard.PerfMetrics/**'
 
 permissions:
   contents: read
+  id-token: write   # OIDC token for emitter's az login (push to main only)
 
 concurrency:
   group: lighthouse-${{ github.workflow }}-${{ github.ref }}
@@ -151,6 +159,36 @@ jobs:
 
       - name: Assert Lighthouse thresholds
         run: lhci assert
+
+      # ── Azure login for the perf emitter (push to main only) ─────────────────
+      # Mirrors the pattern in deploy.yml: OIDC federated credential, no long-lived
+      # secret. Required so az monitor app-insights component show can fetch the
+      # App Insights connection string at runtime (DisableLocalAuth means no key).
+      - name: Azure login (emitter)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Emit one App Insights custom event + metrics per main merge so the perf
+      # trend dashboard can chart Core Web Vitals over time.
+      # Resource name derived from shared.bicep: namePrefix=pinwiz, environment=dev
+      # → var appInsightsName = '${namePrefix}-ai-${environment}' = pinwiz-ai-dev.
+      # Connection string is non-secret under DisableLocalAuth — fetched at runtime.
+      - name: Emit perf trend to App Insights (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          CS=$(az monitor app-insights component show \
+                 --app pinwiz-ai-dev \
+                 --resource-group rg-pinwiz-shared-dev \
+                 --query connectionString -o tsv)
+          dotnet run --project src/PinballWizard.PerfMetrics -c Release -- \
+            --reports-dir .lighthouseci \
+            --environment synthetic \
+            --commit-sha "${{ github.sha }}" \
+            --connection-string "$CS"
 
       - name: Upload Lighthouse reports
         if: always()
