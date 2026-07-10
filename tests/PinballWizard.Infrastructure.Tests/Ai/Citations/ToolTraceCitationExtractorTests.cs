@@ -1380,6 +1380,249 @@ public sealed class ToolTraceCitationExtractorTests
             AttributionUrl: $"https://silverballlabs.com/market/{opdbId}",
             AttributionText: "Powered by Silverball Labs");
 
+    // ── ADR-0052: citation link target follows source knowledge-shape ────────
+    //
+    // Machine-derived structured-record projections (MetadataCard / GameOverview)
+    // have no scraped_documents_raw row. Emitting them as CorpusChunk citations
+    // produces a /documents/{id} link that 404s. They must be classified by
+    // IsMachineDerivedStructuredRecord and emitted as MachineRecord citations so
+    // CitationCard links to /machines/resolve/{MachineId} instead.
+
+    // ── IsMachineDerivedStructuredRecord helper — direct unit tests ───────────
+
+    [Theory]
+    [InlineData("MetadataCard", true)]
+    [InlineData("metadata_card", true)]
+    [InlineData("GameOverview", true)]
+    [InlineData("game_overview", true)]
+    [InlineData("Manual", false)]
+    [InlineData("manual", false)]
+    [InlineData("ServiceBulletin", false)]
+    [InlineData("Rulesheet", false)]   // other real-document types stay out of scope (guards against over-broadening)
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsMachineDerivedStructuredRecord_classifies_expected_values(
+        string? documentType,
+        bool expectedResult)
+    {
+        Assert.Equal(
+            expectedResult,
+            ToolTraceCitationExtractor.IsMachineDerivedStructuredRecord(documentType));
+    }
+
+    // ── MetadataCard corpus hit → MachineRecord citation ─────────────────────
+
+    [Fact]
+    public void Extract_MetadataCardHit_PascalCase_EmitsMachineRecordCitation()
+    {
+        // A MetadataCard corpus hit (PascalCase, as stored in the AI Search index)
+        // must produce a MachineRecord citation with MachineId set and
+        // DocumentChunkId null — so CitationCard links to /machines/resolve/{id}
+        // instead of /documents/{id} (which 404s for structured-record projections).
+        const string opdbUrl = "https://opdb.org/search?q=GRBE-MJL05";
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla (Premium)",
+                DocumentId: "meta_GRBE-MJL05",
+                DocumentUrl: opdbUrl,
+                DocumentType: "MetadataCard",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "Metadata",
+                Content: "Godzilla (Premium) by Stern, 2021."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal("GRBE-MJL05", citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);   // no /documents link
+        Assert.Equal(opdbUrl, citation.SourceUrl);
+    }
+
+    [Fact]
+    public void Extract_MetadataCardHit_SnakeCase_EmitsMachineRecordCitation()
+    {
+        // Same as above but with the snake_case alias form ("metadata_card")
+        // used on the filter side. Both forms must classify identically.
+        const string opdbUrl = "https://opdb.org/search?q=GRBE-MJL05";
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla (Premium)",
+                DocumentId: "meta_GRBE-MJL05",
+                DocumentUrl: opdbUrl,
+                DocumentType: "metadata_card",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "Metadata",
+                Content: "Godzilla (Premium) by Stern, 2021."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal("GRBE-MJL05", citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+    }
+
+    // ── GameOverview corpus hit → MachineRecord citation ─────────────────────
+
+    [Fact]
+    public void Extract_GameOverviewHit_PascalCase_EmitsMachineRecordCitation()
+    {
+        // GameOverview corpus hits are also machine-derived projections.
+        const string opdbUrl = "https://opdb.org/search?q=Gj66Z-Mp4BN";
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "Gj66Z-Mp4BN",
+                MachineTitle: "Halloween (Pro)",
+                DocumentId: "overview_Gj66Z-Mp4BN",
+                DocumentUrl: opdbUrl,
+                DocumentType: "GameOverview",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "Overview",
+                Content: "Halloween Pro overview prose."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+        Assert.Equal(opdbUrl, citation.SourceUrl);
+    }
+
+    [Fact]
+    public void Extract_GameOverviewHit_SnakeCase_EmitsMachineRecordCitation()
+    {
+        // snake_case alias "game_overview" must classify identically to "GameOverview".
+        const string opdbUrl = "https://opdb.org/search?q=Gj66Z-Mp4BN";
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "Gj66Z-Mp4BN",
+                MachineTitle: "Halloween (Pro)",
+                DocumentId: "overview_Gj66Z-Mp4BN",
+                DocumentUrl: opdbUrl,
+                DocumentType: "game_overview",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "Overview",
+                Content: "Halloween Pro overview prose."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal("Gj66Z-Mp4BN", citation.MachineId);
+        Assert.Null(citation.DocumentChunkId);
+    }
+
+    // ── Unstructured-text document hits remain CorpusChunk ───────────────────
+
+    [Fact]
+    public void Extract_ManualHit_RemainsCorpusChunk_NotOverRouted()
+    {
+        // A Manual (real document) corpus hit must be emitted unchanged as
+        // CorpusChunk with DocumentChunkId set — it has a scraped_documents_raw
+        // row and its /documents/{id} link is live. Guards against over-routing.
+        const string pdfUrl = "https://sternpinball.com/manuals/godzilla_manual.pdf";
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla (Premium)",
+                DocumentId: "doc_abc123",
+                DocumentUrl: pdfUrl,
+                DocumentType: "Manual",
+                PageStart: 12,
+                PageEnd: 14,
+                SectionHeading: "Coil Replacement",
+                Content: "Replace the coil as follows..."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+        Assert.Equal("doc_abc123", citation.DocumentChunkId);  // /documents link stays
+        Assert.Equal("GRBE-MJL05", citation.MachineId);
+        Assert.Equal(12, citation.PageStart);
+        Assert.Equal("Coil Replacement", citation.SectionHeading);
+    }
+
+    // ── Defensive: structured-record hit with blank MachineId ─────────────────
+
+    [Fact]
+    public void Extract_MetadataCardHit_BlankMachineId_FallsBackToCorpusChunk()
+    {
+        // A MetadataCard hit with no MachineId (not expected in practice) must
+        // degrade to corpus-chunk shape rather than dropping the citation entirely.
+        // Better a slightly-wrong link than silence — invariant #17.
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "",
+                MachineTitle: "Unknown",
+                DocumentId: "meta_orphan",
+                DocumentUrl: "https://opdb.org/search?q=UNKNOWN",
+                DocumentType: "MetadataCard",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "",
+                Content: "Orphaned metadata."),
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        // Falls back to corpus-chunk shape (not dropped, not null).
+        Assert.Equal(CitationSourceType.CorpusChunk, citation.SourceType);
+        Assert.Equal("meta_orphan", citation.DocumentChunkId);
+    }
+
+    // ── Thread-through: RelevanceScore and LastScrapedUtc flow onto machine citations ──
+
+    [Fact]
+    public void Extract_MetadataCardHit_ThreadsRelevanceScoreAndFreshness()
+    {
+        // MachineRecord citations emitted from MetadataCard hits must carry
+        // RelevanceScore and LastScrapedUtc from the two-channel pattern, same
+        // as corpus-chunk citations, so the CitationCard freshness badge and
+        // match-percent badge render correctly.
+        var expectedTs = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+        const double expectedScore = 3.2;
+        const string opdbUrl = "https://opdb.org/search?q=GRBE-MJL05";
+
+        var corpus = new SearchCorpusResult([
+            new SearchCorpusHit(
+                MachineId: "GRBE-MJL05",
+                MachineTitle: "Godzilla (Premium)",
+                DocumentId: "meta_GRBE-MJL05",
+                DocumentUrl: opdbUrl,
+                DocumentType: "MetadataCard",
+                PageStart: 0,
+                PageEnd: 0,
+                SectionHeading: "Metadata",
+                Content: "Godzilla by Stern.")
+            {
+                Score = expectedScore,
+                LastScrapedUtc = expectedTs,
+            },
+        ]);
+        var response = BuildAgentResponseWithToolResult("searchCorpus", corpus);
+
+        var citation = Assert.Single(Extractor.Extract(response));
+
+        Assert.Equal(CitationSourceType.MachineRecord, citation.SourceType);
+        Assert.Equal(expectedScore, citation.RelevanceScore);
+        Assert.Equal(expectedTs, citation.LastScrapedUtc);
+    }
+
     // Simple capturing logger for Warning-log assertions.
     private sealed class CapturingExtractorLogger : ILogger<ToolTraceCitationExtractor>
     {
