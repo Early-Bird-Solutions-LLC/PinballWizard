@@ -1398,6 +1398,7 @@ public sealed class ToolTraceCitationExtractorTests
     [InlineData("Manual", false)]
     [InlineData("manual", false)]
     [InlineData("ServiceBulletin", false)]
+    [InlineData("Rulesheet", false)]   // other real-document types stay out of scope (guards against over-broadening)
     [InlineData("", false)]
     [InlineData(null, false)]
     public void IsMachineDerivedStructuredRecord_classifies_expected_values(
