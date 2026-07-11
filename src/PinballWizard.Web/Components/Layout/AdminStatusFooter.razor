@@ -1,0 +1,43 @@
+@* AdminStatusFooter — pinned status strip at the bottom of the admin sidebar.
+ *
+ * Renders: green health dot · environment label · build identity in mono type.
+ * Build identity comes from BuildInfo (singleton, reads PINWIZ_BUILD_SHA /
+ * PINWIZ_BUILD_TIME injected at image build). Local dev shows "local · dev" —
+ * never a fabricated version (Invariant #17 visible degradation).
+ *
+ * CIRCUIT SAFETY: this is STATIC content — no @onclick, no @rendermode.
+ * It must not change the admin layout's interactivity profile. Pure display.
+ * Hosted in the AppNavRail Footer slot, which is rendered inside the static
+ * admin chrome (AppNavRail ShowToggle=false, no @rendermode on the rail tag).
+ *
+ * ADR-0008 — MudBlazor strict (Color.Success for the dot; no hardcoded hex).
+ * Spec: docs/superpowers/specs/2026-07-07-admin-consistency-design.md §5.2
+ *@
+@inject BuildInfo BuildInfo
+
+<div class="admin-status-footer" data-testid="admin-status-footer" aria-label="Build status">
+    @* Green health dot — MudBlazor Color.Success token, not hardcoded hex. *@
+    <MudIcon Icon="@Icons.Material.Filled.FiberManualRecord"
+             Color="Color.Success"
+             Size="Size.Small"
+             Class="admin-status-footer__dot"
+             aria-hidden="true" />
+
+    <span class="admin-status-footer__text">
+        @StatusText()
+    </span>
+</div>
+
+@code {
+    private string StatusText()
+    {
+        // Local dev: both env vars absent → honest fallback, never a fake version.
+        if (BuildInfo.BuildTimeUtc is null)
+        {
+            return $"{BuildInfo.Environment} · local";
+        }
+
+        // Deployed: full build identity — environment · short SHA · deploy timestamp.
+        return $"{BuildInfo.Environment} · build {BuildInfo.ShortSha} · deployed {BuildInfo.BuildTimeUtc.Value:MMM d, HH:mm} UTC";
+    }
+}

@@ -48,6 +48,12 @@ COPY --from=build --chown=pinwiz:pinwiz /app/publish .
 # serves its compiled-in fallback (observed live 2026-06-10).
 COPY --chown=pinwiz:pinwiz data/seeds/ data/seeds/
 
+# Declared but not promoted to ENV — silences Docker's "unused build-arg" warning
+# when deploy.yml passes BUILD_SHA / BUILD_TIME to all matrix legs (only the web
+# image uses them). See src/PinballWizard.Web/Dockerfile for the web-only ENV promotion.
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+
 # Internal ACA ingress: the Web app calls this service over plain HTTP within
 # the ACA environment. ACA handles any TLS termination at the environment boundary.
 ENV ASPNETCORE_URLS=http://+:8080 \
