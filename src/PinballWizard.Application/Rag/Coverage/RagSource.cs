@@ -16,6 +16,8 @@ public sealed record RagSource(
 {
     // True when a retrieved chunk belongs to this source. Used to verify a
     // retrieval hit came from the cell under test.
+    // Precondition: at least one of DocumentIdPrefix or ManufacturerValues must be set,
+    // or Matches returns true for every chunk (no filtering applied).
     public bool Matches(string documentId, string manufacturer)
     {
         if (DocumentIdPrefix is not null &&

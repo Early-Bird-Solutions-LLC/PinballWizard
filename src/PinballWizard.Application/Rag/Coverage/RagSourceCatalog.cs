@@ -19,6 +19,7 @@ public static class RagSourceCatalog
         // (overview_). Represent those two synthesized classes as their own
         // sources keyed off the Opdb id.
         new(IngestionSourceIds.Opdb, None, "meta_", None, ExpectedNonEmpty: true),
+        new(IngestionSourceIds.Opdb, None, "overview_", None, ExpectedNonEmpty: true),
 
         // Scraped manufacturers — manufacturer value AND the doc_ prefix.
         new(IngestionSourceIds.Stern, ["Stern"], "doc_", None, true),
