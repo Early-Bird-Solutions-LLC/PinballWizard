@@ -346,7 +346,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());
         return router;
     }
@@ -357,7 +357,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(ThrowAfterFirstChunk());
         return router;
     }

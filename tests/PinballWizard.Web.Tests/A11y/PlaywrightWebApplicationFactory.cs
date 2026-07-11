@@ -88,6 +88,15 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         // document) — guarded by EngineeringSsrSmokeTests.
         builder.Services.AddSingleton<IEngineeringDocsProvider, EngineeringDocsProvider>();
 
+        // AdminStatusFooter (in the admin nav-rail footer, so on every /admin/* page)
+        // @injects BuildInfo. It MUST be registered here or the admin chrome cannot be
+        // constructed and every admin page renders empty during SSR — the same
+        // "renders empty" failure class as the IEngineeringDocsProvider /
+        // IMachineSuggestClient / IGridSearchClient registrations above. Program.cs
+        // registers it for the real host; this minimal test host must mirror it.
+        // No env vars here → BuildInfo yields its honest local fallback (Invariant #17).
+        builder.Services.AddSingleton<BuildInfo>();
+
         // Stub HTTP clients: base addresses point nowhere but the Index page
         // has a compiled-in fallback for when the landing endpoint is down.
         builder.Services

@@ -1,5 +1,6 @@
 using Bunit;
 using Bunit.TestDoubles;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
@@ -328,5 +329,52 @@ public sealed class AppNavRailTests : AsyncBunitContext
 
         cut.WaitForAssertion(() =>
             Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label")));
+    }
+
+    // ── Footer slot ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Footer_IsRendered_WhenProvided()
+    {
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.AddAttribute(4, nameof(AppNavRail.ShowToggle), false);
+            builder.AddAttribute(5, nameof(AppNavRail.Footer), (RenderFragment)(b =>
+            {
+                b.OpenElement(0, "span");
+                b.AddAttribute(1, "data-testid", "footer-sentinel");
+                b.AddContent(2, "Footer content");
+                b.CloseElement();
+            }));
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        cut.Find("[data-testid='nav-rail-footer-slot']");
+        cut.Find("[data-testid='footer-sentinel']");
+        Assert.Contains("Footer content", cut.Markup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Footer_IsOmitted_WhenNull()
+    {
+        // Default Footer is null — no extra DOM emitted, public rail unaffected.
+        var cut = Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.AddAttribute(4, nameof(AppNavRail.ShowToggle), false);
+            // Footer parameter intentionally NOT set → defaults to null.
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+
+        Assert.Empty(cut.FindAll("[data-testid='nav-rail-footer-slot']"));
     }
 }

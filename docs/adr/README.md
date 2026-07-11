@@ -63,6 +63,7 @@ negative) it carries.
 | [0050](0050-tiltforums-rulesheet-ingestion.md) | Ingest Tilt Forums community rulesheets under the founder's public invitation | Accepted |
 | [0051](0051-agent-categories-foundry-vs-ci.md) | Two agent categories: Foundry product agents vs Claude Code CI automation | Accepted |
 | [0052](0052-citation-link-target-follows-source-shape.md) | Citation link target follows source knowledge-shape (fixes 404 on MetadataCard/GameOverview citations) | Accepted |
+| [0053](0053-deterministic-zero-content-shortcircuit.md) | Deterministic zero-content short-circuit in the Wizard ask pipeline (index-chunk-count gate) | Accepted |
 
 ## Conventions
 

@@ -1,0 +1,27 @@
+/* AppNavRail — scoped layout rules for the drawer + optional footer slot.
+ *
+ * Makes the MudDrawer content area a flex column so the nav menu grows to fill
+ * available space and the Footer (when present) pins naturally to the bottom.
+ * The public MainLayout rail (no Footer) is unaffected — flex on a single-child
+ * column is a no-op when there is no footer sibling.
+ */
+
+/* mud-drawer-content is the direct child of the MudDrawer <nav> element.
+   Flex-column with height:100% so the children stack vertically and fill the drawer. */
+::deep .mud-drawer-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* The MudNavMenu grows to consume the space between the header and the footer.
+   overflow-y keeps it scrollable when many nav items exist. */
+::deep .mud-nav-menu {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Footer slot — shrinks to its natural height at the bottom of the column. */
+.app-nav-rail__footer {
+    flex-shrink: 0;
+}

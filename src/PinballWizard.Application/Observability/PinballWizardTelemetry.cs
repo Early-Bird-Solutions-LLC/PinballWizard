@@ -118,6 +118,16 @@ public static class PinballWizardTelemetry
         unit: "{question}",
         description: "User-questions that ended in a refusal. Tagged with refusal_category (InsufficientGrounding | OutOfScope | LowModelConfidence | CostCeilingHit | HarmfulContent) so dashboards can distinguish retrieval drift from out-of-scope from safety blocks (per ADR-0017).");
 
+    public static readonly Counter<long> AiMachineScopeGateShortCircuits = Meter.CreateCounter<long>(
+        "pinwiz.ai.machine_scope_gate.short_circuits_total",
+        unit: "{question}",
+        description: "Machine-scoped asks answered by the deterministic zero-content gate (ADR-0053) — the machine had zero indexed chunks, so the community-resource refusal was returned WITHOUT invoking the Foundry agent. The firing rate is the token/latency saving; a rise for a supported manufacturer is a leading indicator of an ingestion gap.");
+
+    public static readonly Counter<long> AiMachineScopeGateErrors = Meter.CreateCounter<long>(
+        "pinwiz.ai.machine_scope_gate.errors_total",
+        unit: "{failure}",
+        description: "Coverage-count lookups that failed while evaluating the ADR-0053 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
+
     public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
         "pinwiz.ai.escalations",
         unit: "{question}",

@@ -20,6 +20,10 @@
  *      zero-@onclick layout subtree keeps the rail's interactivity profile
  *      identical to the previous inline admin drawer.
  *
+ * Footer slot (optional): a RenderFragment pinned to the drawer bottom via CSS
+ * flex column. When null (the default) no extra DOM is emitted and the public
+ * rail layout is unchanged. AdminLayout populates it with AdminStatusFooter.
+ *
  * Design: docs/superpowers/specs/2026-07-01-public-left-nav-design.md
  *         docs/superpowers/specs/2026-07-01-public-nav-rail-enhancements-design.md
  * ADR-0008 — MudBlazor strict.
@@ -62,6 +66,15 @@
             </MudNavLink>
         }
     </MudNavMenu>
+
+    @* Footer slot: pinned to drawer bottom via app-nav-rail flex-column CSS.
+       Only emits DOM when a Footer is provided — public rail is unaffected. *@
+    @if (Footer is not null)
+    {
+        <div class="app-nav-rail__footer" data-testid="nav-rail-footer-slot">
+            @Footer
+        </div>
+    }
 </MudDrawer>
 
 @code {
@@ -84,6 +97,11 @@
     // Default false — admin rail and any static rail are unaffected (no JS calls).
     [Parameter] public bool Persist { get; set; }
     [Parameter] public string PersistKey { get; set; } = "pinwiz.nav.pinned";
+
+    // Optional content pinned to the drawer bottom. Null by default so the
+    // public MainLayout rail is completely unaffected — no extra DOM, no layout
+    // change. AdminLayout populates this with <AdminStatusFooter />.
+    [Parameter] public RenderFragment? Footer { get; set; }
 
     private bool _pinned;
     private bool _peek;

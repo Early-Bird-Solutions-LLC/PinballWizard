@@ -127,7 +127,7 @@ public sealed class WizardAnswerStreamTests
         // we can observe the Submitted / Thinking state before any chunks arrive.
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ => NeverYieldsAsync());
 
         await using var ctx = BuildCtx(client);
@@ -174,8 +174,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -232,8 +232,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -278,8 +278,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -320,8 +320,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -381,8 +381,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -417,6 +417,20 @@ public sealed class WizardAnswerStreamTests
         var fallbackAnswer = BuildAnswer("Fallback answer text");
 
         var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? ThrowingAsync()
+                    : ToAsyncEnumerable([new AnswerChunk.Final(fallbackAnswer)]);
+            });
+        // FallbackToWholeResponseAsync calls the 3-arg overload. In production the
+        // default interface method delegates to the 4-arg overload, but NSubstitute
+        // does not execute default interface member bodies — it intercepts every call
+        // and returns the mock default (empty enumerable). Configure the 3-arg overload
+        // explicitly so the fallback path receives the same callCount-driven answer.
         client
             .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
@@ -497,7 +511,7 @@ public sealed class WizardAnswerStreamTests
         var callCount = 0;
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 callCount++;
@@ -571,8 +585,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ToAsyncEnumerable(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -622,8 +636,8 @@ public sealed class WizardAnswerStreamTests
 
         var client = Substitute.For<IWizardStreamingClient>();
         client
-            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci => ThreadPoolResumingAsync(chunks, ci.ArgAt<CancellationToken>(2)));
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ThreadPoolResumingAsync(chunks, ci.ArgAt<CancellationToken>(3)));
 
         await using var ctx = BuildCtx(client);
         var cut = ctx.Render<WizardAnswerStream>(p =>
@@ -664,6 +678,7 @@ public sealed class WizardAnswerStreamTests
             .StreamAsync(
                 Arg.Any<string>(),
                 Arg.Do<IReadOnlyList<ConversationTurn>?>(histories.Add),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(_ => ToAsyncEnumerable(chunks));
         return (client, histories);
@@ -804,6 +819,20 @@ public sealed class WizardAnswerStreamTests
         var callCount = 0;
 
         var client = Substitute.For<IWizardStreamingClient>();
+        client
+            .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                return callCount == 1
+                    ? ThrowingAsync()
+                    : ToAsyncEnumerable([new AnswerChunk.Final(fallbackAnswer)]);
+            });
+        // FallbackToWholeResponseAsync calls the 3-arg overload. In production the
+        // default interface method delegates to the 4-arg overload, but NSubstitute
+        // does not execute default interface member bodies — it intercepts every call
+        // and returns the mock default (empty enumerable). Configure the 3-arg overload
+        // explicitly so the fallback path receives the same callCount-driven answer.
         client
             .StreamAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>

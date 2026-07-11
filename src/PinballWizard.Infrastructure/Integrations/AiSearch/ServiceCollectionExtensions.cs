@@ -100,6 +100,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
         services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
+        services.TryAddSingleton<IMachineCorpusCoverage>(BuildMachineCorpusCoverage);
         services.TryAddSingleton<IRetrievalRankProbe, RetrievalRankProbe>();
         services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);
         services.TryAddSingleton(BuildSearchIndexClient);
@@ -212,6 +213,17 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IOptions<CrossEncoderOptions>>(),
             sp.GetRequiredService<ICrossEncoderReranker>(),
             sp.GetRequiredService<ILogger<AiSearchRagRetriever>>());
+    }
+
+    private static AiSearchMachineCorpusCoverage BuildMachineCorpusCoverage(IServiceProvider sp)
+    {
+        var aiSearchOptions = sp.GetRequiredService<IOptions<AiSearchOptions>>().Value;
+        var searchClient = new SearchClient(
+            new Uri(aiSearchOptions.Endpoint),
+            aiSearchOptions.IndexName,
+            Credentials.SharedAzureCredential.Instance);
+
+        return new AiSearchMachineCorpusCoverage(searchClient);
     }
 
     // Symmetric to `BuildQueryEmbedder` — derives the Azure OpenAI

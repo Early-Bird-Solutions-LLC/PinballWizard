@@ -71,6 +71,11 @@ USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .
 
+# Declared but not promoted to ENV — silences Docker's "unused build-arg" warning
+# when deploy.yml passes BUILD_SHA / BUILD_TIME to all matrix legs.
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+
 ENV DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_USE_POLLING_FILE_WATCHER=false \
     ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
