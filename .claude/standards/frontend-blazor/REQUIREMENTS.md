@@ -11,3 +11,4 @@
 | FE-07 | palette-pinned-modern-lcd | modifying PinballTheme.cs / daytime constants / app.css :root | 🔴 | ADR-0008 · modern-lcd.md · PinballThemeContractTests |
 | FE-08 | theme-design-system-sync | modifying a theme token | ⚠️ | design-system/README.md (mirror) · ADR-0026 §6 |
 | FE-09 | citation-as-hero-and-cta-parity | modifying citation/refusal-CTA/peer-destination surfaces | 🔴 | PROV-01 · COMM-02 · ADR-0026 §6 |
+| FE-10 | no-js-mutation-of-blazor-owned-dom | adding/modifying app-authored JS (wwwroot js, colocated razor.js, inline component script) | 🔴 | ADR-0034 · reference_js_dom_mutation_breaks_admin_circuit · NoJsMutationOfBlazorOwnedDomTests |
