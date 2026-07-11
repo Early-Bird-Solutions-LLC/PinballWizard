@@ -38,7 +38,12 @@
 <MudDialogProvider @rendermode="InteractiveServer" />
 <MudSnackbarProvider @rendermode="InteractiveServer" />
 
-<MudLayout>
+@* pw-sticky-footer: makes this layout a viewport-tall flex column so BrandFooter's
+   `margin-top: auto` can push it to the viewport bottom on short pages (/status,
+   /about) instead of leaving it floating mid-screen. Class (not a scoped .razor.css
+   rule) because MainLayout's markup is entirely child components — CSS isolation has
+   no element of its own to scope. Public chrome only; AdminLayout is unaffected. *@
+<MudLayout Class="pw-sticky-footer">
     <MudAppBar Elevation="1">
         <BrandHeader />
         @* SoundController: muted-by-default audio toggle per ADR-0026 § "Explicitly NOT adopted".
