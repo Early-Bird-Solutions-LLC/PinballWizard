@@ -82,7 +82,7 @@ resource "cloudflare_ruleset" "security_response_headers" {
             operation = "set"
             value = join("; ", [
               "default-src 'self'",
-              "script-src 'self' 'sha256-U+fOGD3Z/iVcnOcG5DVmxbvGhlwRX7A/zB8G/1hq34M='",
+              "script-src 'self' 'sha256-FBiFShlWpYQUgyeMxK9SojGlV7fUVVl6W92CMIqzzis='",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https://sternpinball.com",
               "font-src 'self'",

@@ -847,16 +847,16 @@ html, body {
  */
 
 /* Nav link label text — icon remains visible via MudNavLink Icon parameter */
-html.pw-admin-nav--collapsed .app-nav-rail .pw-nav-label {
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-label {
     display: none;
 }
 
 /* Rail header label ("Admin Navigation") — collapses to button icon only */
-html.pw-admin-nav--collapsed .app-nav-rail .pw-nav-header-text {
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-header-text {
     display: none;
 }
 
 /* Status footer text — collapses to the green dot only (spec §5.2) */
-html.pw-admin-nav--collapsed .admin-status-footer__text {
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__text {
     display: none;
 }
