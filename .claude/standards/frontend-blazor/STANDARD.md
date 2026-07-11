@@ -90,6 +90,14 @@ CHECK:  (qualitative — /local-review category 12 + category 13: citation stack
 SEV:    🔴
 REF:    PROV-01 (provenance sacred) · COMM-02 (no-editorial-ranking) · ADR-0026 §6 · docs/ui/design-system/README.md
 
+**RULE FE-10** (no-js-mutation-of-blazor-owned-dom)
+WHEN:   adding or modifying app-authored JavaScript — any `*.js` under `src/PinballWizard.Web/wwwroot/`, or an inline `<script>` block in `Components/App.razor`
+THEN:   drive layout/theme state by toggling classes / data-attributes / CSS custom properties on `<html>` (`document.documentElement`), or by setting the CSS variable MudBlazor already consumes (e.g. `--mud-drawer-width-left`); read/write only the app's own `[data-testid]` / `[data-pw-*]` hook elements
+NEVER:  `querySelector`/`getElementById` a MudBlazor-rendered element (any `.mud-*` class) and mutate it (`.style`, `.setAttribute`, `.classList`, `.innerHTML`, removal) — Blazor reconciles that DOM against its render tree and MudBlazor drives its layout off CSS variables; reaching in fights hydration and silently kills the admin circuit (the reverted collapse attempt did exactly this)
+CHECK:  dotnet test --filter "FullyQualifiedName~NoJsMutationOfBlazorOwnedDomTests" --no-build
+SEV:    🔴
+REF:    ADR-0034 (render-mode doctrine) · memory `reference_js_dom_mutation_breaks_admin_circuit` · NoJsMutationOfBlazorOwnedDomTests
+
 ## Definition of Done
 
 - FE-01: every interactive routable page declares `@rendermode InteractiveServer`; error/degraded surfaces stay static with `Href` anchors. Enforced by `RenderModeConventionTests`.
@@ -101,3 +109,4 @@ REF:    PROV-01 (provenance sacred) · COMM-02 (no-editorial-ranking) · ADR-002
 - FE-07: the Modern LCD palette stays pinned to spec (closed 5-accent set); hex drift fails `PinballThemeContractTests`/`DaytimeRouteThemeContractTests`.
 - FE-08: a theme-token change re-syncs `docs/ui/design-system/tokens.css` in the same PR (mirror stays current).
 - FE-09: citation cards full-fidelity & uncollapsed; peer outbound CTAs visually identical (no favoritism).
+- FE-10: app-authored JS never selects/mutates MudBlazor-owned `.mud-*` DOM; layout state is driven through `<html>` or the CSS variables MudBlazor consumes. Enforced by `NoJsMutationOfBlazorOwnedDomTests`.
