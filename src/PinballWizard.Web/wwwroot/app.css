@@ -532,6 +532,39 @@ html, body {
     height: 100%;
 }
 
+/* ── Admin sidebar collapse (spec §5.1) ───────────────────────────────── */
+/* The `pw-admin-nav--collapsed` class is toggled on <html> by the plain-button
+   handler in wwwroot/js/admin-nav-collapse.js (and applied before first paint by
+   the App.razor IIFE from localStorage). Width and content reflow are driven
+   ENTIRELY from CSS here — the JS never touches MudBlazor DOM (FE-10). An earlier
+   attempt set `.mud-drawer`/`.mud-main-content` inline styles from JS and killed the
+   admin circuit; that is exactly what FE-10 / NoJsMutationOfBlazorOwnedDomTests now
+   forbids.
+
+   How the width works: MudBlazor drives the mini-drawer width, the app-bar margin,
+   AND the main-content offset from the single custom property --mud-drawer-width-left
+   (verified in MudBlazor 9.5.0 MudBlazor.min.css: the drawer's open-state width and
+   the sibling content margin both read it). The admin rail is always Open="true", so
+   overriding that one variable collapses everything together. It is set on
+   .pw-admin-layout — a common ancestor of both the drawer and MudMainContent — so the
+   value inherits to both; and it is scoped to the admin layout so a collapsed-admin
+   visitor doesn't shrink the public rail (which shares the <html> class). Specificity
+   html.<class> .pw-admin-layout (0,2,1) beats MudBlazor's :root definition (0,1,0). */
+html.pw-admin-nav--collapsed .pw-admin-layout {
+    --mud-drawer-width-left: 64px;
+}
+
+/* Icon-only collapse: hide the nav-link labels, the rail header text, and the status-
+   footer text. Icons and the toggle button stay visible; title tooltips are retained
+   for a11y (spec §5.1). Scoped to the admin rail (.app-nav-rail--collapsible, added
+   only when ShowCollapseToggle is on) so the public rail — which shares the .pw-nav-label
+   spans from the same AppNavRail component — is never affected. */
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-label,
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .pw-nav-header-text,
+html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__text {
+    display: none;
+}
+
 /* ── CitationStrip delight surface (ADR-0026 § 4, § 6) ────────────────── */
 
 /* Freshness badge color variants — behavioral contract pinned by
