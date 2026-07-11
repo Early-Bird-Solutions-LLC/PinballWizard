@@ -30,10 +30,19 @@ flowchart LR
 - App Insights `pinwiz-ai-dev` has **`DisableLocalAuth: true`** — ingestion is **Entra-only**.
 - The emitter authenticates with **`DefaultAzureCredential`**; in CI that resolves the **GitHub OIDC
   service principal** (`secrets.AZURE_CLIENT_ID`), the same identity `deploy.yml` uses.
-- That SP holds **`Monitoring Metrics Publisher`** on the App Insights component (granted in
-  `infra/modules/shared.bicep`, reusing `cicdDeployPrincipalId`). No InstrumentationKey, no
-  connection-string secret — the connection string is fetched at runtime via `az` (non-sensitive
-  under `DisableLocalAuth`).
+- That SP holds **two** narrow roles on the App Insights component (both granted in
+  `infra/modules/shared.bicep`, reusing `cicdDeployPrincipalId`) — **both are required**:
+  - **`Monitoring Metrics Publisher`** — the *data-plane* write (`Microsoft.Insights/Telemetry/Write`).
+    This is what lets the emitter **publish**.
+  - **`Reader`** (scoped to the component) — the *control-plane* `Microsoft.Insights/components/read`.
+    This is what lets the emitter **discover the ingestion endpoint** via
+    `az monitor app-insights component show --query connectionString`.
+
+  These are genuinely different permissions, and it's an easy trap: Monitoring Metrics Publisher does
+  **not** include `components/read`, so with only the publisher role the emit step fails at the
+  connection-string fetch with `AuthorizationFailed` (this happened on the first live `push:main` run).
+  Granting Reader keeps Azure the single source of truth instead of duplicating the connection string
+  into GitHub config. No InstrumentationKey, no connection-string secret.
 - **Consequence:** you cannot smoke-test the emit as a personal `az login` — a non-publisher identity
   is rejected by Entra ingestion. The authoritative verification is the `push:main` CI run.
 

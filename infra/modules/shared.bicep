@@ -2282,6 +2282,31 @@ resource perfMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
+// Reader on the SAME App Insights component, for the SAME CI SP.
+//
+// Why a second role: Monitoring Metrics Publisher grants only the DATA-plane
+// actions (Microsoft.Insights/Metrics/Write + Telemetry/Write) — verified from
+// the role definition. It does NOT grant Microsoft.Insights/components/read, so
+// the emitter's `az monitor app-insights component show --query connectionString`
+// (which discovers the ingestion endpoint at run time) failed with
+// AuthorizationFailed on the first live push:main run. Publishing telemetry and
+// READING the component to find where to publish are two distinct permissions.
+//
+// Reader is scoped to this single component (least-privilege): it lets the SP
+// self-discover the connection string from Azure — keeping Azure the single
+// source of truth rather than duplicating the connection string into GitHub
+// config, which would drift if the component were ever recreated.
+// Built-in role id verified via `az role definition list --name Reader`.
+resource perfMetricsComponentReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  name: guid(appInsights.id, cicdDeployPrincipalId, 'Reader')
+  scope: appInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Linker ACA Job (document-to-machine linking nightly batch)
 // -----------------------------------------------------------------------------
