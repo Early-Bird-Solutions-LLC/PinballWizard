@@ -1,9 +1,13 @@
 using Bunit;
 using Bunit.TestDoubles;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using MudBlazor;
 using MudBlazor.Services;
+using NSubstitute;
 using PinballWizard.Web.Components.Layout;
+using PinballWizard.Web.Services;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.Components.Layout;
@@ -29,6 +33,13 @@ public sealed class AdminLayoutTests : AsyncBunitContext
         // AuthorizeView requires IAuthorizationPolicyProvider; anonymous state
         // is the baseline (structural tests don't care which branch renders).
         this.AddAuthorization();
+        // AdminLayout renders AdminStatusFooter which @injects BuildInfo.
+        // Register BEFORE GetRequiredService<BunitNavigationManager>() which locks
+        // the bUnit service provider — registration after the lock throws.
+        var config = new ConfigurationBuilder().Build();
+        var hostEnv = Substitute.For<IHostEnvironment>();
+        hostEnv.EnvironmentName.Returns("Testing");
+        Services.AddSingleton(new BuildInfo(config, hostEnv));
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 
@@ -146,6 +157,11 @@ public sealed class AdminLayoutAuthorizedTests : AsyncBunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         this.AddAuthorization()
             .SetAuthorized("test-admin@example.com");
+        // Register BuildInfo BEFORE GetRequiredService which locks the provider.
+        var config = new ConfigurationBuilder().Build();
+        var hostEnv = Substitute.For<IHostEnvironment>();
+        hostEnv.EnvironmentName.Returns("Testing");
+        Services.AddSingleton(new BuildInfo(config, hostEnv));
         _ = Services.GetRequiredService<BunitNavigationManager>();
     }
 

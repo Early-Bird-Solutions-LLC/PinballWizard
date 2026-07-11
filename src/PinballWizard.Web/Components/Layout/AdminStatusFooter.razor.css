@@ -1,0 +1,34 @@
+/* AdminStatusFooter — scoped styles for the admin sidebar status strip.
+ *
+ * Layout: horizontal flex row — dot + text, left-aligned, bottom of the rail.
+ * Mono font via --pw-font-mono CSS custom property (defined in app.css).
+ * Colors via MudBlazor palette tokens so the component respects the active theme.
+ */
+
+.admin-status-footer {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+    overflow: hidden;
+}
+
+.admin-status-footer__dot {
+    /* Prevent the icon from shrinking when the text is long. */
+    flex-shrink: 0;
+    /* Align the icon baseline with the text cap-height. */
+    font-size: 10px !important;
+    width: 10px !important;
+    height: 10px !important;
+}
+
+.admin-status-footer__text {
+    font-family: var(--pw-font-mono);
+    font-size: 0.68rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--mud-palette-text-secondary);
+}
