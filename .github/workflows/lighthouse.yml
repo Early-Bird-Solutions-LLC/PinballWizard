@@ -172,11 +172,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Emit one App Insights custom event + metrics per main merge so the perf
-      # trend dashboard can chart Core Web Vitals over time.
+      # Emit one App Insights log record ("LighthouseRun") per main merge so the
+      # perf trend dashboard can chart scores + Core Web Vitals over time.
       # Resource name derived from shared.bicep: namePrefix=pinwiz, environment=dev
       # → var appInsightsName = '${namePrefix}-ai-${environment}' = pinwiz-ai-dev.
       # Connection string is non-secret under DisableLocalAuth — fetched at runtime.
+      # --no-restore: the earlier locked-mode restore already covers the slnx, so
+      # `dotnet run` must not trigger an implicit non-locked restore (keeps the
+      # locked-mode supply-chain guarantee intact for this step).
       - name: Emit perf trend to App Insights (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -184,7 +187,8 @@ jobs:
                  --app pinwiz-ai-dev \
                  --resource-group rg-pinwiz-shared-dev \
                  --query connectionString -o tsv)
-          dotnet run --project src/PinballWizard.PerfMetrics -c Release -- \
+          [ -n "$CS" ] || { echo "ERROR: empty App Insights connection string from az — aborting emit."; exit 1; }
+          dotnet run --project src/PinballWizard.PerfMetrics -c Release --no-restore -- \
             --reports-dir .lighthouseci \
             --environment synthetic \
             --commit-sha "${{ github.sha }}" \
