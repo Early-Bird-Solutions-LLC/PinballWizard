@@ -6,7 +6,7 @@ namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 
 public sealed class AiSearchMachineCorpusCoverageTests
 {
-    // Safety invariant (ADR-0052): the coverage count filter MUST be
+    // Safety invariant (ADR-0053): the coverage count filter MUST be
     // byte-identical to the retriever's machine-scoped filter, so a
     // "zero content" verdict can never disagree with what the agent's
     // own machine-scoped search would see. Both derive from BuildFilter.

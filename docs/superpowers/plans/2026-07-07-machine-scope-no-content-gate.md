@@ -42,7 +42,7 @@ Create `src/PinballWizard.Application/Ai/Retrieval/IMachineCorpusCoverage.cs`:
 namespace PinballWizard.Application.Ai.Retrieval;
 
 // Answers "does the RAG index hold any chunks for this machine?" without
-// running retrieval or the LLM. Used by AiRouter (ADR-0052) to skip the
+// running retrieval or the LLM. Used by AiRouter (ADR-0053) to skip the
 // Foundry agent turn on a machine-scoped ask that could only ever refuse.
 // Backed by the SAME AI Search index and machine_id filter the retriever
 // uses, so a positive answer means the agent genuinely has grounding
@@ -66,7 +66,7 @@ namespace PinballWizard.Infrastructure.Tests.Rag.Retrieval;
 
 public sealed class AiSearchMachineCorpusCoverageTests
 {
-    // Safety invariant (ADR-0052): the coverage count filter MUST be
+    // Safety invariant (ADR-0053): the coverage count filter MUST be
     // byte-identical to the retriever's machine-scoped filter, so a
     // "zero content" verdict can never disagree with what the agent's
     // own machine-scoped search would see. Both derive from BuildFilter.
@@ -117,7 +117,7 @@ using PinballWizard.Application.Ai.Retrieval;
 
 namespace PinballWizard.Infrastructure.Rag.Retrieval;
 
-// AI Search implementation of IMachineCorpusCoverage (ADR-0052). Issues a
+// AI Search implementation of IMachineCorpusCoverage (ADR-0053). Issues a
 // Size=0, IncludeTotalCount=true count over the corpus index scoped to
 // machine_id — the same pattern CosmosAiSearchRagReconciler.CountChunksAsync
 // uses — and reuses AiSearchRagRetriever.BuildFilter so the machine filter
@@ -210,7 +210,7 @@ git add src/PinballWizard.Application/Ai/Retrieval/IMachineCorpusCoverage.cs \
         tests/PinballWizard.Infrastructure.Tests/Rag/Retrieval/AiSearchMachineCorpusCoverageTests.cs \
         src/PinballWizard.Infrastructure/Integrations/AiSearch/ServiceCollectionExtensions.cs
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
-  commit -m "feat(rag) IMachineCorpusCoverage — machine-scoped chunk-count over AI Search (ADR-0052)"
+  commit -m "feat(rag) IMachineCorpusCoverage — machine-scoped chunk-count over AI Search (ADR-0053)"
 ```
 
 ---
@@ -231,12 +231,12 @@ In `src/PinballWizard.Application/Observability/PinballWizardTelemetry.cs`, afte
     public static readonly Counter<long> AiMachineScopeGateShortCircuits = Meter.CreateCounter<long>(
         "pinwiz.ai.machine_scope_gate.short_circuits_total",
         unit: "{question}",
-        description: "Machine-scoped asks answered by the deterministic zero-content gate (ADR-0052) — the machine had zero indexed chunks, so the community-resource refusal was returned WITHOUT invoking the Foundry agent. The firing rate is the token/latency saving; a rise for a supported manufacturer is a leading indicator of an ingestion gap.");
+        description: "Machine-scoped asks answered by the deterministic zero-content gate (ADR-0053) — the machine had zero indexed chunks, so the community-resource refusal was returned WITHOUT invoking the Foundry agent. The firing rate is the token/latency saving; a rise for a supported manufacturer is a leading indicator of an ingestion gap.");
 
     public static readonly Counter<long> AiMachineScopeGateErrors = Meter.CreateCounter<long>(
         "pinwiz.ai.machine_scope_gate.errors_total",
         unit: "{failure}",
-        description: "Coverage-count lookups that failed while evaluating the ADR-0052 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
+        description: "Coverage-count lookups that failed while evaluating the ADR-0053 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
 ```
 
 - [ ] **Step 2: Build to verify it compiles**
@@ -249,7 +249,7 @@ Expected: Build succeeded.
 ```bash
 git add src/PinballWizard.Application/Observability/PinballWizardTelemetry.cs
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
-  commit -m "feat(observability) machine-scope gate counters — short-circuits + errors (ADR-0052)"
+  commit -m "feat(observability) machine-scope gate counters — short-circuits + errors (ADR-0053)"
 ```
 
 ---
@@ -281,7 +281,7 @@ In `src/PinballWizard.Application/Ai/IAiRouter.cs`, replace the two existing `An
         CancellationToken cancellationToken)
         => AnswerStreamingAsync(question, history, machineId: null, cancellationToken);
 
-    // Canonical overload (ADR-0052). machineId, when non-null, pins the ask
+    // Canonical overload (ADR-0053). machineId, when non-null, pins the ask
     // to a specific machine so the router can skip the agent turn if the RAG
     // index holds no chunks for it. Null preserves prior free-text behaviour.
     IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
@@ -349,7 +349,7 @@ shim, and the 4-arg canonical body — all reachable on the concrete type.
 In the canonical method body, immediately after the cache-miss `if/else` block (the `else { PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1); }` that closes at line 377) and BEFORE `var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);` (line 379), insert:
 
 ```csharp
-        // ── Machine-scope zero-content gate (ADR-0052) ────────────────
+        // ── Machine-scope zero-content gate (ADR-0053) ────────────────
         // When the caller pins the ask to a specific machine and the RAG
         // index holds no chunks for it, the agent turn can only end in a
         // NoCitation refusal. Reproduce that refusal deterministically —
@@ -489,7 +489,7 @@ git add src/PinballWizard.Application/Ai/IAiRouter.cs \
         src/PinballWizard.Application/Ai/AiRouter.cs \
         tests/PinballWizard.Infrastructure.Tests/Ai/AiRouterStreamingTests.cs
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
-  commit -m "feat(ai) machine-scope zero-content gate in AiRouter — skip agent on empty machine (ADR-0052)"
+  commit -m "feat(ai) machine-scope zero-content gate in AiRouter — skip agent on empty machine (ADR-0053)"
 ```
 
 ---
@@ -588,7 +588,7 @@ Expected: PASS (existing tests still green after the 4-arg stub update; new roun
 git add src/PinballWizard.Api/Endpoints/WizardAskStreamEndpoint.cs \
         tests/PinballWizard.Web.Tests/Components/Wizard/WizardAskStreamEndpointTests.cs
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
-  commit -m "feat(api) thread machineId through wizard ask:stream endpoint (ADR-0052)"
+  commit -m "feat(api) thread machineId through wizard ask:stream endpoint (ADR-0053)"
 ```
 
 ---
@@ -745,7 +745,7 @@ git add src/PinballWizard.Web/Components/Wizard/IWizardStreamingClient.cs \
         src/PinballWizard.Web/Components/Pages/Wizard.razor \
         src/PinballWizard.Web/Components/Shared/MachineDetail.razor
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
-  commit -m "feat(web) pass machineId from Ask-the-Wizard button through to the router (ADR-0052)"
+  commit -m "feat(web) pass machineId from Ask-the-Wizard button through to the router (ADR-0053)"
 ```
 
 ---
@@ -753,12 +753,12 @@ git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.
 ### Task 6: ADR status flip + full-suite verification
 
 **Files:**
-- Modify: `docs/adr/0052-deterministic-zero-content-shortcircuit.md` (Status: Proposed → Accepted)
+- Modify: `docs/adr/0053-deterministic-zero-content-shortcircuit.md` (Status: Proposed → Accepted)
 - Modify: `docs/adr/README.md` (index row status Proposed → Accepted)
 
 - [ ] **Step 1: Flip the ADR status**
 
-In `docs/adr/0052-deterministic-zero-content-shortcircuit.md`, change `**Status:** Proposed` to `**Status:** Accepted`.
+In `docs/adr/0053-deterministic-zero-content-shortcircuit.md`, change `**Status:** Proposed` to `**Status:** Accepted`.
 In `docs/adr/README.md`, change the `0052` row's trailing `| Proposed |` to `| Accepted |`.
 
 - [ ] **Step 2: Run the full CI-equivalent suite**
@@ -769,7 +769,7 @@ Expected: PASS (all projects). Investigate and fix any failure before proceeding
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/adr/0052-deterministic-zero-content-shortcircuit.md docs/adr/README.md
+git add docs/adr/0053-deterministic-zero-content-shortcircuit.md docs/adr/README.md
 git -c user.name="Jim Keeley" -c user.email="94459922+jkeeley2073@users.noreply.github.com" \
   commit -m "docs(adr) 0052 Accepted — machine-scope zero-content gate shipped"
 ```

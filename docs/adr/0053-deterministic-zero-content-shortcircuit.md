@@ -1,4 +1,4 @@
-# 0052 — Deterministic zero-content short-circuit in the Wizard ask pipeline
+# 0053 — Deterministic zero-content short-circuit in the Wizard ask pipeline
 
 **Status:** Accepted
 **Date:** 2026-07-07

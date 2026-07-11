@@ -204,7 +204,7 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 6. machineId round-trips from JSON body to the router (ADR-0052)
+    // 6. machineId round-trips from JSON body to the router (ADR-0053)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]

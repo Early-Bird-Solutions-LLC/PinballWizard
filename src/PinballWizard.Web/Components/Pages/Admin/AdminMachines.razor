@@ -49,6 +49,16 @@
         </MudText>
     }
 
+    @if (ManufacturerFilter is { Length: > 0 })
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3" data-testid="machines-manufacturer-filter">
+            <MudText Typo="Typo.body2">
+                Showing machines for <strong>@FilterDisplayName</strong>
+            </MudText>
+            <MudLink Href="/admin/machines" Typo="Typo.body2">Clear filter</MudLink>
+        </MudStack>
+    }
+
     @if (_loading)
     {
         <AdminLoadingBar Label="Loading machine catalog" />
@@ -63,8 +73,10 @@
         </AppErrorAlert>
     }
 
+    <CatalogHealthLegend />
+
     <AppDataGrid T="MachineCatalogRow"
-                 Items="@_machines"
+                 Items="@FilteredMachines"
                  SearchContext="admin-machines"
                  RowClick="@(EventCallback.Factory.Create<DataGridRowClickEventArgs<MachineCatalogRow>>(this, OnRowClick))"
                  data-testid="admin-machines-grid">
@@ -87,10 +99,12 @@
                 <CellTemplate>
                     @foreach (var flag in context.Item.HealthFlags)
                     {
-                        <AppStatusChip Color="@HealthFlagColor(flag)"
-                                       Class="mr-1">
-                            @flag.ToString()
-                        </AppStatusChip>
+                        <MudTooltip Text="@CatalogHealthColors.Describe(flag)">
+                            <AppStatusChip Color="@HealthFlagColor(flag)"
+                                           Class="mr-1">
+                                @flag.ToString()
+                            </AppStatusChip>
+                        </MudTooltip>
                     }
                 </CellTemplate>
             </PropertyColumn>
@@ -110,7 +124,7 @@
             </PropertyColumn>
             <PropertyColumn Property="x => x.Title" Title="Title" />
             <PropertyColumn Property="x => x.Edition" Title="Edition" />
-            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" HeaderClass="text-right" CellClass="text-right" />
+            <PropertyColumn Property="x => x.DocCount" Title="Docs" Sortable="true" HeaderClass="text-right" CellClass="text-right" Format="N0" />
 
         </Columns>
         <NoRecordsContent>
@@ -131,6 +145,14 @@
 </AppPageShell>
 
 @code {
+    // ── Query parameters ───────────────────────────────────────────────────────
+
+    // When set, restricts the displayed rows to a single manufacturer partition
+    // key (e.g. "stern"). Supplied by the /admin/manufacturers page "Machines"
+    // link. Case-insensitive; empty string is treated as no filter.
+    [SupplyParameterFromQuery(Name = "manufacturer")]
+    public string? ManufacturerFilter { get; set; }
+
     // ── Row model ──────────────────────────────────────────────────────────────
     private sealed record MachineCatalogRow(
         string MachineId,
@@ -237,6 +259,24 @@
         var row = args.Item;
         Nav.NavigateTo($"/admin/machines/{row.MachineId}?mfr={Uri.EscapeDataString(row.Manufacturer)}");
     }
+
+    // ── Filter helpers ─────────────────────────────────────────────────────────
+
+    // Applies the ManufacturerFilter query parameter (if any) to the full row list.
+    // Returns all rows when no filter is active (empty / null).
+    private IEnumerable<MachineCatalogRow> FilteredMachines =>
+        string.IsNullOrEmpty(ManufacturerFilter)
+            ? _machines
+            : _machines.Where(m => m.Manufacturer.Equals(ManufacturerFilter, StringComparison.OrdinalIgnoreCase));
+
+    // Human-readable label for the active filter indicator: uses the ManufacturerDisplayName
+    // from the first matching row when available; falls back to the raw key.
+    private string FilterDisplayName =>
+        string.IsNullOrEmpty(ManufacturerFilter)
+            ? string.Empty
+            : _machines
+                  .FirstOrDefault(m => m.Manufacturer.Equals(ManufacturerFilter, StringComparison.OrdinalIgnoreCase))
+                  ?.ManufacturerDisplayName ?? ManufacturerFilter;
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 

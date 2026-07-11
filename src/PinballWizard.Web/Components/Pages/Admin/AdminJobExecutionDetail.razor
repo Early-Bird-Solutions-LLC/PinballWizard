@@ -63,7 +63,7 @@
 
         @if (!_isAdmin)
         {
-            <MudAlert Severity="Severity.Info" data-testid="exec-log-signin">
+            <MudAlert Severity="Severity.Normal" data-testid="exec-log-signin">
                 <MudLink Href="@AdminSignIn.Href($"/admin/jobs/{JobName}/executions/{ExecutionName}")">
                     Sign in as an admin
                 </MudLink> to view this run's console logs.
@@ -82,7 +82,7 @@
             }
             @if (_logResult is null || _logResult.Availability == JobLogAvailability.Unconfigured)
             {
-                <MudAlert Severity="Severity.Info" data-testid="exec-log-unconfigured">
+                <MudAlert Severity="Severity.Normal" data-testid="exec-log-unconfigured">
                     Logs are available only against live Azure (Log Analytics workspace not configured).
                 </MudAlert>
             }

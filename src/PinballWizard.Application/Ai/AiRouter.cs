@@ -387,7 +387,7 @@ public sealed class AiRouter : IAiRouter
             PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
         }
 
-        // ── Machine-scope zero-content gate (ADR-0052) ────────────────
+        // ── Machine-scope zero-content gate (ADR-0053) ────────────────
         // When the caller pins the ask to a specific machine and the RAG
         // index holds no chunks for it, the agent turn can only end in a
         // NoCitation refusal. Reproduce that refusal deterministically —

@@ -457,7 +457,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
     }
 
     // The endpoint invokes the four-argument (history + machineId) overload since
-    // ADR-0052; NSubstitute proxies intercept default interface members, so
+    // ADR-0053; NSubstitute proxies intercept default interface members, so
     // the substitute must stub the overload the endpoint actually calls —
     // an unconfigured intercepted member returns null and the endpoint's
     // await-foreach would NRE.

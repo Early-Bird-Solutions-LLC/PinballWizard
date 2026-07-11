@@ -27,7 +27,7 @@ public sealed record SourceStatusView(SourceStatus Status, string Label, Color C
             "NoSource" => new SourceStatusView(
                 SourceStatus.NoSource, "No source", Color.Default, Icons.Material.Filled.RemoveCircleOutline),
             "Deferred" => new SourceStatusView(
-                SourceStatus.Deferred, "Deferred", Color.Warning, Icons.Material.Filled.PauseCircleOutline),
+                SourceStatus.Deferred, "Deferred", Color.Default, Icons.Material.Filled.PauseCircleOutline),
             _ => new SourceStatusView(
                 SourceStatus.Disabled, "Disabled", Color.Default, Icons.Material.Filled.Block),
         };

@@ -121,12 +121,12 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> AiMachineScopeGateShortCircuits = Meter.CreateCounter<long>(
         "pinwiz.ai.machine_scope_gate.short_circuits_total",
         unit: "{question}",
-        description: "Machine-scoped asks answered by the deterministic zero-content gate (ADR-0052) — the machine had zero indexed chunks, so the community-resource refusal was returned WITHOUT invoking the Foundry agent. The firing rate is the token/latency saving; a rise for a supported manufacturer is a leading indicator of an ingestion gap.");
+        description: "Machine-scoped asks answered by the deterministic zero-content gate (ADR-0053) — the machine had zero indexed chunks, so the community-resource refusal was returned WITHOUT invoking the Foundry agent. The firing rate is the token/latency saving; a rise for a supported manufacturer is a leading indicator of an ingestion gap.");
 
     public static readonly Counter<long> AiMachineScopeGateErrors = Meter.CreateCounter<long>(
         "pinwiz.ai.machine_scope_gate.errors_total",
         unit: "{failure}",
-        description: "Coverage-count lookups that failed while evaluating the ADR-0052 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
+        description: "Coverage-count lookups that failed while evaluating the ADR-0053 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
 
     public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
         "pinwiz.ai.escalations",

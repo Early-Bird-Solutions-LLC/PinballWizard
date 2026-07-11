@@ -345,14 +345,8 @@ else if (_machine is not null)
                 _                            => "OK",
             };
 
-    private static Color LinkStatusColor(string? status) => status switch
-    {
-        "Linked" or "linked"         => Color.Success,
-        "PlatformGeneric" or "platform_generic" => Color.Warning,
-        "Failed" or "failed"         => Color.Error,
-        "NotInCatalog" or "not_in_catalog"   => Color.Error,
-        _                            => Color.Default,
-    };
+    private static Color LinkStatusColor(string? status) =>
+        DocumentLinkStatusColor.For(status);
 
     private static string FileNameFromUrl(string url)
     {

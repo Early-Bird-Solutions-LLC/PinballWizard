@@ -51,7 +51,7 @@ public interface IAiRouter
         CancellationToken cancellationToken)
         => AnswerStreamingAsync(question, history, machineId: null, cancellationToken);
 
-    // Canonical overload (ADR-0052). machineId, when non-null, pins the ask
+    // Canonical overload (ADR-0053). machineId, when non-null, pins the ask
     // to a specific machine so the router can skip the agent turn if the RAG
     // index holds no chunks for it. Null preserves prior free-text behaviour.
     IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(

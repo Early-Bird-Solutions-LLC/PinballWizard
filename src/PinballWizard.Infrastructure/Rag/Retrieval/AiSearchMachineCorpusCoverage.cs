@@ -3,7 +3,7 @@ using PinballWizard.Application.Ai.Retrieval;
 
 namespace PinballWizard.Infrastructure.Rag.Retrieval;
 
-// AI Search implementation of IMachineCorpusCoverage (ADR-0052). Issues a
+// AI Search implementation of IMachineCorpusCoverage (ADR-0053). Issues a
 // Size=0, IncludeTotalCount=true count over the corpus index scoped to
 // machine_id — the same pattern CosmosAiSearchRagReconciler.CountChunksAsync
 // uses — and reuses AiSearchRagRetriever.BuildFilter so the machine filter
