@@ -72,6 +72,7 @@ public sealed class AiRouter : IAiRouter
     private readonly ToolTraceCitationExtractor _toolTraceExtractor;
     private readonly RegexLegacyCitationExtractor _regexLegacyExtractor;
     private readonly IRefusalRecoveryService _refusalRecovery;
+    private readonly IMachineCorpusCoverage _machineCorpusCoverage;
     private readonly IDegradationContext _degradationContext;
     private readonly AiFoundryOptions _options;
     private readonly ILogger<AiRouter> _logger;
@@ -87,6 +88,7 @@ public sealed class AiRouter : IAiRouter
         ToolTraceCitationExtractor toolTraceExtractor,
         RegexLegacyCitationExtractor regexLegacyExtractor,
         IRefusalRecoveryService refusalRecovery,
+        IMachineCorpusCoverage machineCorpusCoverage,
         IDegradationContext degradationContext,
         IOptions<AiFoundryOptions> options,
         ILogger<AiRouter> logger,
@@ -101,6 +103,7 @@ public sealed class AiRouter : IAiRouter
         ArgumentNullException.ThrowIfNull(toolTraceExtractor);
         ArgumentNullException.ThrowIfNull(regexLegacyExtractor);
         ArgumentNullException.ThrowIfNull(refusalRecovery);
+        ArgumentNullException.ThrowIfNull(machineCorpusCoverage);
         ArgumentNullException.ThrowIfNull(degradationContext);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
@@ -119,6 +122,7 @@ public sealed class AiRouter : IAiRouter
         _toolTraceExtractor = toolTraceExtractor;
         _regexLegacyExtractor = regexLegacyExtractor;
         _refusalRecovery = refusalRecovery;
+        _machineCorpusCoverage = machineCorpusCoverage;
         _degradationContext = degradationContext;
         _options = options.Value;
         _logger = logger;
@@ -301,11 +305,18 @@ public sealed class AiRouter : IAiRouter
     public IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
         string question,
         CancellationToken cancellationToken)
-        => AnswerStreamingAsync(question, history: null, cancellationToken);
+        => AnswerStreamingAsync(question, history: null, machineId: null, cancellationToken);
+
+    public IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
+        => AnswerStreamingAsync(question, history, machineId: null, cancellationToken);
 
     public async IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
         string question,
         IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
@@ -374,6 +385,66 @@ public sealed class AiRouter : IAiRouter
         else
         {
             PinballWizardTelemetry.AiCacheBypassMultiturn.Add(1);
+        }
+
+        // ── Machine-scope zero-content gate (ADR-0053) ────────────────
+        // When the caller pins the ask to a specific machine and the RAG
+        // index holds no chunks for it, the agent turn can only end in a
+        // NoCitation refusal. Reproduce that refusal deterministically —
+        // no LLM call — via the same recovery the post-agent guardrail
+        // would build. Gate ONLY on chunk count (not the page's doc-link
+        // count, which misses synthesized metadata cards/overviews).
+        if (!string.IsNullOrEmpty(machineId))
+        {
+            bool hasIndexedContent;
+            try
+            {
+                hasIndexedContent = await _machineCorpusCoverage
+                    .HasIndexedContentAsync(machineId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Degrade visibly (invariant #17): a coverage-check failure
+                // must not gate NOR be swallowed. Meter it and fall through
+                // to the full agent path, which runs its own grounded search.
+                PinballWizardTelemetry.AiMachineScopeGateErrors.Add(1);
+                _logger.LogWarning(
+                    ex,
+                    "AiRouter machine-scope coverage check failed for MachineId={MachineId}; proceeding to the agent without gating.",
+                    machineId);
+                hasIndexedContent = true;
+            }
+
+            if (!hasIndexedContent)
+            {
+                PinballWizardTelemetry.AiMachineScopeGateShortCircuits.Add(1);
+                _logger.LogInformation(
+                    "AiRouter machine-scope gate short-circuit: MachineId={MachineId} has zero indexed chunks; returning the deterministic community-resource recovery without invoking the agent.",
+                    machineId);
+
+                var gateRecovery = await _refusalRecovery
+                    .BuildRecoveryAsync(normalized, RefusalCategory.NoCitation, cancellationToken)
+                    .ConfigureAwait(false);
+
+                var gateAnswer = new WizardAnswer(
+                    Text: BuildRefusalText(RefusalCategory.NoCitation),
+                    Citations: [],
+                    SubAgentUsed: AgentName.Wizard,
+                    Confidence: 0.0,
+                    Escalated: false,
+                    IsRefusal: true,
+                    RefusalCategory: RefusalCategory.NoCitation,
+                    PromptVersion: promptVersion,
+                    FoundryThreadId: null,
+                    RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals: null, recovery: gateRecovery),
+                    Degradation: _degradationContext.Snapshot());
+
+                RecordFirstTokenMs(requestStopwatch, cacheState: "miss", outcome: "refusal");
+                yield return new AnswerChunk.Refusal(RefusalCategory.NoCitation, gateAnswer.Text);
+                yield return new AnswerChunk.Final(gateAnswer);
+                yield break;
+            }
         }
 
         var wizardAgent = _agentFactory.GetAgent(AgentName.Wizard);

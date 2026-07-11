@@ -321,5 +321,12 @@ public sealed class AnswerChunkContractTests
 
             yield return new AnswerChunk.Final(answer);
         }
+
+        public IAsyncEnumerable<AnswerChunk> AnswerStreamingAsync(
+            string question,
+            IReadOnlyList<ConversationTurn>? history,
+            string? machineId,
+            CancellationToken cancellationToken)
+            => AnswerStreamingAsync(question, cancellationToken);
     }
 }
