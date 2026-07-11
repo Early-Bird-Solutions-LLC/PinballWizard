@@ -113,7 +113,7 @@ public sealed class TiltForumsGameMatcherTests
 
         var result = await TiltForumsGameMatcher.ResolveAsync(repo, null, "Some Game", "Stern Pinball", CancellationToken.None);
 
-        Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
+        Assert.Equal(TiltForumsGameMatchStatus.Ambiguous, result.Status);
         Assert.Empty(result.Machines);
         repo.DidNotReceive().GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -133,7 +133,7 @@ public sealed class TiltForumsGameMatcherTests
 
         var result = await TiltForumsGameMatcher.ResolveAsync(repo, null, "Some Game", "Stern Pinball", CancellationToken.None);
 
-        Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
+        Assert.Equal(TiltForumsGameMatchStatus.Ambiguous, result.Status);
         Assert.Empty(result.Machines);
         repo.DidNotReceive().GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -250,7 +250,7 @@ public sealed class TiltForumsGameMatcherTests
         var result = await TiltForumsGameMatcher.ResolveAsync(
             repo, index, "Star Trek", "Stern Pinball", CancellationToken.None);
 
-        Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
+        Assert.Equal(TiltForumsGameMatchStatus.Ambiguous, result.Status);
         Assert.Empty(result.Machines);
         repo.DidNotReceive().GetSiblingsByGroupIdAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -388,7 +388,7 @@ public sealed class TiltForumsGameMatcherTests
         var result = await TiltForumsGameMatcher.ResolveAsync(
             repo, machineSearchIndex: null, "Star Wars", manufacturerHeaderText: null, CancellationToken.None);
 
-        Assert.Equal(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, result.Status);
+        Assert.Equal(TiltForumsGameMatchStatus.Ambiguous, result.Status);
         Assert.Empty(result.Machines);
         // A genuine cross-manufacturer collision must never be fanned out.
         // (No await: GetSiblingsByGroupIdAsync returns IAsyncEnumerable, not Task.)

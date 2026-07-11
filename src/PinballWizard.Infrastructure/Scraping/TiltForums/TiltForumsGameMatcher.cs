@@ -25,8 +25,8 @@ public enum TiltForumsGameMatchStatus
     /// <summary>No machine matched the title within the resolved manufacturer partition.</summary>
     NoMatchInManufacturerPartition,
 
-    /// <summary>Multiple machines matched, NOT an edition family (different GroupIds/Years, or missing GroupId/Year data) — a genuine cross-game title collision. Not guessed.</summary>
-    MultipleMatchesInManufacturerPartition,
+    /// <summary>Multiple machines matched but they are NOT one edition family (different GroupIds/Years, or missing GroupId/Year data) — a genuine same-title-different-game collision that the matcher refuses to guess. Covers both the scoped case (2+ games sharing the title inside the hinted manufacturer partition) and the unscoped case (the same title exists across 2+ manufacturer partitions, where no partition is in scope) — hence the scope-neutral name.</summary>
+    Ambiguous,
 }
 
 /// <summary>One machine target a resolved rulesheet should be indexed against.</summary>
@@ -35,7 +35,7 @@ public sealed record TiltForumsMachineMatch(string MachineId, string MachineTitl
 /// <summary>
 /// Result of <see cref="TiltForumsGameMatcher.ResolveAsync"/>. <see cref="Machines"/> is empty for
 /// <see cref="TiltForumsGameMatchStatus.NoMatchInManufacturerPartition"/> and
-/// <see cref="TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition"/>, has exactly one
+/// <see cref="TiltForumsGameMatchStatus.Ambiguous"/>, has exactly one
 /// entry for <see cref="TiltForumsGameMatchStatus.Resolved"/>, and one entry per sibling edition
 /// for <see cref="TiltForumsGameMatchStatus.ResolvedEditionFamily"/>.
 /// </summary>
@@ -115,7 +115,7 @@ public static class TiltForumsGameMatcher
                 return new TiltForumsGameMatchResult(TiltForumsGameMatchStatus.ResolvedEditionFamily, siblings);
             }
 
-            return new TiltForumsGameMatchResult(TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, []);
+            return new TiltForumsGameMatchResult(TiltForumsGameMatchStatus.Ambiguous, []);
         }
 
         // matches.Count == 0 — exact miss. Try the forgiving machine-index path,
@@ -197,7 +197,7 @@ public static class TiltForumsGameMatcher
                 && string.Equals(other.Title, topHit.Title, StringComparison.OrdinalIgnoreCase))
             {
                 return new TiltForumsGameMatchResult(
-                    TiltForumsGameMatchStatus.MultipleMatchesInManufacturerPartition, []);
+                    TiltForumsGameMatchStatus.Ambiguous, []);
             }
         }
 
