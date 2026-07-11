@@ -20,6 +20,16 @@
  *      zero-@onclick layout subtree keeps the rail's interactivity profile
  *      identical to the previous inline admin drawer.
  *
+ *      Opt-in CSS/JS collapse (ShowCollapseToggle=true, default false):
+ *        Adds a plain HTML <button> to the rail header — NOT a MudIconButton, and
+ *        NOT wired with @onclick. The button is wired entirely by the vanilla JS
+ *        module wwwroot/js/admin-nav-collapse.js, which toggles the
+ *        pw-admin-nav--collapsed class on <html> and persists to localStorage
+ *        (key: pinwiz.admin.nav.collapsed). Using a plain <button> preserves the
+ *        static circuit profile — the "hamburger bug" is specifically a Blazor
+ *        @onclick on the admin chrome; a plain HTML button is invisible to Blazor.
+ *        Spec: docs/superpowers/specs/2026-07-07-admin-consistency-design.md §5.1
+ *
  * Footer slot (optional): a RenderFragment pinned to the drawer bottom via CSS
  * flex column. When null (the default) no extra DOM is emitted and the public
  * rail layout is unchanged. AdminLayout populates it with AdminStatusFooter.
@@ -34,7 +44,7 @@
            Variant="DrawerVariant.Mini"
            Breakpoint="@Breakpoint"
            Elevation="2"
-           Class="app-nav-rail"
+           Class="@DrawerClass"
            aria-label="@(IsOpen ? HeaderText : "Navigation")"
            @onpointerenter="OnPointerEnter"
            @onpointerleave="OnPointerLeave">
@@ -48,9 +58,25 @@
                            aria-label="@(_pinned ? "Collapse navigation" : (_peek ? "Pin navigation" : "Expand navigation"))"
                            title="@(_pinned ? "Collapse navigation" : (_peek ? "Pin navigation" : "Expand navigation"))" />
         }
+        @if (ShowCollapseToggle)
+        {
+            @* CSS/JS collapse toggle — plain <button>, no @onclick.
+               MudIconButton is intentionally NOT used here: its OnClick parameter
+               wires a Blazor @onclick, which would require @rendermode on the admin
+               chrome and break the admin circuit profile (the "hamburger bug").
+               This plain <button> is wired entirely by admin-nav-collapse.js. *@
+            <button class="pw-admin-collapse-toggle"
+                    type="button"
+                    data-testid="admin-nav-collapse-toggle"
+                    aria-label="Collapse navigation"
+                    aria-expanded="true"
+                    title="Collapse navigation">
+                <MudIcon Icon="@Icons.Material.Filled.Menu" aria-hidden="true" />
+            </button>
+        }
         @if (IsOpen)
         {
-            <MudText Typo="Typo.subtitle1" Class="@(ShowToggle ? "ml-2" : null)">@HeaderText</MudText>
+            <MudText Typo="Typo.subtitle1" Class="@HeaderTextCssClass">@HeaderText</MudText>
         }
     </MudDrawerHeader>
 
@@ -62,7 +88,11 @@
                         Icon="@item.Icon"
                         title="@item.Label"
                         aria-label="@item.Label">
-                @item.Label
+                @* pw-nav-label: targeted by the CSS collapse rule so label text hides
+                   in the collapsed state. The icon remains visible via the MudNavLink
+                   Icon parameter. title + aria-label on the link ensure keyboard/screen
+                   reader users can navigate icon-only links (spec §5.1 a11y note). *@
+                <span class="pw-nav-label">@item.Label</span>
             </MudNavLink>
         }
     </MudNavMenu>
@@ -87,6 +117,13 @@
     // @rendermode on the host. See the file header for the two hosting modes.
     [Parameter] public bool ShowToggle { get; set; } = true;
 
+    // When true, renders a plain HTML <button> (NOT a MudIconButton — no @onclick)
+    // whose click is wired by wwwroot/js/admin-nav-collapse.js. The button toggles
+    // the pw-admin-nav--collapsed class on <html> and persists state to localStorage.
+    // Designed for AdminLayout where the rail must remain static (no @rendermode).
+    // Default false so the public MainLayout rail is completely unaffected.
+    [Parameter] public bool ShowCollapseToggle { get; set; }
+
     [Parameter] public Breakpoint Breakpoint { get; set; } = Breakpoint.Md;
 
     // When true, pointer-enter peeks the rail open (only if not pinned);
@@ -107,6 +144,18 @@
     private bool _peek;
 
     private bool IsOpen => _pinned || _peek;
+
+    // CSS class string for the MudDrawer. The 'app-nav-rail--collapsible' modifier
+    // is added when ShowCollapseToggle is active so the JS module and CSS rules
+    // can target the admin rail specifically without affecting the public rail.
+    private string DrawerClass =>
+        ShowCollapseToggle ? "app-nav-rail app-nav-rail--collapsible" : "app-nav-rail";
+
+    // CSS class for the header text element. ml-2 adds left margin when a button
+    // sits to the left (either the Blazor toggle or the CSS/JS collapse button).
+    // pw-nav-header-text is targeted by the CSS collapse rule to hide the label.
+    private string HeaderTextCssClass =>
+        (ShowToggle || ShowCollapseToggle) ? "ml-2 pw-nav-header-text" : "pw-nav-header-text";
 
     protected override void OnInitialized() => _pinned = Open;
 

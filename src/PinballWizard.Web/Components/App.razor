@@ -37,10 +37,15 @@
                 if (t !== 'modern-lcd') document.documentElement.classList.add('theme-' + t);
                 var m = localStorage.getItem('pinwiz.motion');
                 if (m) document.documentElement.dataset.motion = m;
+                if (localStorage.getItem('pinwiz.admin.nav.collapsed') === 'true')
+                    document.documentElement.classList.add('pw-admin-nav--collapsed');
             } catch (_) { }
         })();
     </script>
     <script src="app.js"></script>
+    @* Admin sidebar collapse toggle (spec §5.1). External file → no CSP hash needed.
+       Toggles the pw-admin-nav--collapsed class only; width is CSS-driven (app.css). *@
+    <script src="js/admin-nav-collapse.js"></script>
     <script src="_framework/blazor.web.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 </body>

@@ -39,7 +39,12 @@
 <MudDialogProvider @rendermode="InteractiveServer" />
 <MudSnackbarProvider @rendermode="InteractiveServer" />
 
-<MudLayout>
+@* pw-admin-layout scopes the sidebar-collapse width override (app.css) to the admin
+   layout only. The collapse class rides on <html> (persisted, applied on every page by
+   the App.razor IIFE), so without this scope a collapsed-admin visitor would shrink the
+   public rail too. As a common ancestor of both the rail and MudMainContent, the single
+   --mud-drawer-width-left override here drives the drawer width AND the content reflow. *@
+<MudLayout Class="pw-admin-layout">
     <MudAppBar Elevation="1">
         <MudText Typo="Typo.h6" Class="ml-2">
             PinballWizard Admin
@@ -63,8 +68,10 @@
        interactivity profile of the previous inline drawer so the admin page
        circuits are unaffected. Open="true" keeps all ten links visible on load.
        Footer slot is populated with AdminStatusFooter — also static, no @onclick,
-       no @rendermode — so the admin circuit profile is unchanged. *@
-    <AppNavRail Open="true" ShowToggle="false" HeaderText="Admin Navigation" Items="@AdminNav">
+       no @rendermode — so the admin circuit profile is unchanged.
+       ShowCollapseToggle="true" adds the CSS/JS collapse button (plain <button>,
+       wired by admin-nav-collapse.js — NOT a Blazor @onclick, see §5.1). *@
+    <AppNavRail Open="true" ShowToggle="false" ShowCollapseToggle="true" HeaderText="Admin Navigation" Items="@AdminNav">
         <Footer>
             <AdminStatusFooter />
         </Footer>
