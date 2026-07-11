@@ -608,6 +608,23 @@ html, body {
     max-width: 60rem;
 }
 
+/* ── Sticky footer (public chrome) ────────────────────────────────────── */
+/* Applied by MainLayout to MudLayout's root. The conventional sticky-footer
+   layout: a viewport-tall flex column whose last in-flow child (BrandFooter,
+   `margin-top: auto` below) absorbs the leftover space. Short pages (/status,
+   /about) then pin the footer to the viewport bottom instead of leaving it
+   floating mid-screen; tall pages push it below the fold and it flows after
+   the content as before.
+
+   MudAppBar and the MudDrawer nav rail are position:fixed, so they sit outside
+   this flex flow — only MudMainContent and BrandFooter are flex items. 100dvh
+   (not 100vh) so mobile browser chrome doesn't overshoot the viewport. */
+.pw-sticky-footer {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+}
+
 /* ── BrandFooter (global — not scoped) ────────────────────────────────── */
 /* Premium multi-section footer with arcade-glow divider, organized link
    columns, coverage callout, and bottom meta bar. Consumes --pw-* design
