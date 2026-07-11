@@ -26,6 +26,7 @@
  * layered over the embedded git default. Prompt Templates is admin-only.
  *
  * ADR-0008 — MudBlazor strict; ADR-0009 — Entra auth (AdminOnly gated per-control).
+ * ADR-0046 — shared Blazor component library (AppPageShell)
  *@
 
 @using Microsoft.AspNetCore.Components.Authorization
@@ -45,10 +46,9 @@
 
 <PageTitle>Settings — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Wizard Settings"
-                   Subtitle="Runtime configuration. Changes apply to live asks within two minutes — no restart. Reset returns a setting to its deployed default."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Wizard Settings"
+              Subtitle="Runtime configuration. Changes apply to live asks within two minutes — no restart. Reset returns a setting to its deployed default."
+              Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -63,7 +63,14 @@
     }
     else
     {
+        @* pw-readable caps the measure at 60rem inside the full-width shell. Settings is the
+         * one form-heavy page in the converged set: at full width on a 2560px monitor its
+         * sliders and the 16-line prompt editor would stretch the whole viewport. The page
+         * keeps the shared shell (uniform gutters + vertical rhythm) and constrains only its
+         * own content — the sanctioned alternative to re-pinning MaxWidth per page, which is
+         * exactly the drift this convergence removes. *@
         <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-6"
+                 Class="pw-readable"
                  data-testid="settings-tabs">
 
             <MudTabPanel Text="Guardrails" data-testid="tab-guardrails">
@@ -318,7 +325,7 @@
             </MudStack>
         }
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     // Cascades when AddCascadingAuthenticationState is wired (auth-configured

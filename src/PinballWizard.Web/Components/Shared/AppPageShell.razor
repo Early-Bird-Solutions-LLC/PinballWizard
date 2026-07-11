@@ -16,6 +16,9 @@
  * Header: rendered only when Title is set. Pages whose heading depends on loaded
  * data (e.g. /manufacturers/{key}) omit Title and render their own header inside
  * ChildContent — they still get the identical container so layout stays uniform.
+ * Such a page can still hand the shell its Breadcrumbs: with no Title, the shell
+ * renders the trail alone (above ChildContent), so the crumbs survive the loading /
+ * not-found / load-failed branches that a post-load header never reaches.
  *
  * ADR-0008 — MudBlazor strict   ADR-0046 — shared Blazor component library
  *@
@@ -27,6 +30,17 @@
                        Subtitle="@Subtitle"
                        Breadcrumbs="@Breadcrumbs"
                        Actions="@Actions" />
+    }
+    else if (Breadcrumbs is not null)
+    {
+        @* Breadcrumbs without a Title. Detail pages whose heading depends on loaded
+         * data (/admin/machines/{id}, /admin/jobs/{job}/executions/{exec}) still owe the
+         * user a trail in EVERY state — loading, not-found, load-failed — not just the
+         * loaded one. Rendering them here means those pages pass Breadcrumbs to the shell
+         * like everyone else instead of hand-rolling a MudBreadcrumbs, and a supplied
+         * Breadcrumbs is never silently swallowed just because Title is null.
+         *@
+        <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
     }
     @ChildContent
 </MudContainer>

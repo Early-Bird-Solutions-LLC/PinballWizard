@@ -29,14 +29,14 @@
  * ADR-0026  § 1 — routing inventory (/admin)
  * ADR-0034  — render-mode doctrine (static default)
  * ADR-0036  — Cosmos read-access (bounded reads only)
+ * ADR-0046  — shared Blazor component library (AppPageShell)
  *@
 
 <PageTitle>Dashboard — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Admin Dashboard"
-                   Subtitle="System overview — counts and status for the ingestion pipeline."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Admin Dashboard"
+              Subtitle="System overview — counts and status for the ingestion pipeline."
+              Breadcrumbs="@_breadcrumbs">
 
     <WizardUsageStrip />
 
@@ -134,7 +134,7 @@
             </AppSummaryCard>
         </MudItem>
     </MudGrid>
-</MudContainer>
+</AppPageShell>
 
 @code {
     // Machines + Documents + Manufacturers share the catalog_stats load.

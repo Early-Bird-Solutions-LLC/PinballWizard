@@ -16,7 +16,13 @@
 @* AdminJobExecutionDetail — /admin/jobs/{JobName}/executions/{ExecutionName}.
  * Public run header (status/times/duration); admin-gated console-log panel.
  * Logs come from Log Analytics via IJobLogReader; every non-happy state renders
- * a distinct message (Invariant #17). Spec: 2026-07-02-admin-job-execution-log-detail. *@
+ * a distinct message (Invariant #17). Spec: 2026-07-02-admin-job-execution-log-detail.
+ *
+ * Breadcrumbs are rendered unconditionally (before all conditional branches) so
+ * they appear in every state: loading, not-found, error, and loaded.
+ *
+ * ADR-0046  — shared Blazor component library (AppPageShell)
+ *@
 
 @inject IServiceProvider ServiceProvider
 @inject IJSRuntime JS
@@ -25,8 +31,7 @@
 
 <PageTitle>Run @AbbreviatedExec — Jobs — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
+<AppPageShell Breadcrumbs="@_breadcrumbs">
 
     @if (_loading)
     {
@@ -159,7 +164,7 @@
             }
         }
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     [Parameter] public string JobName { get; set; } = "";
@@ -188,13 +193,20 @@
         }
     }
 
-    private List<BreadcrumbItem> Breadcrumbs =>
-    [
-        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
-        new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
-        new BreadcrumbItem(JobName, href: $"/admin/jobs/{JobName}"),
-        new BreadcrumbItem(AbbreviatedExec, href: null, disabled: true),
-    ];
+    // Rebuilt when the route parameters change, not on every render: this page auto-refreshes
+    // the running execution, and an expression-bodied property would hand AppPageShell a fresh
+    // List reference each cycle, re-rendering the trail for nothing. The crumbs depend only on
+    // JobName + ExecutionName, so OnParametersSet is the correct (and only) time to rebuild.
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    protected override void OnParametersSet() =>
+        _breadcrumbs =
+        [
+            new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+            new BreadcrumbItem("Jobs", href: "/admin/jobs", icon: Icons.Material.Filled.Schedule),
+            new BreadcrumbItem(JobName, href: $"/admin/jobs/{JobName}"),
+            new BreadcrumbItem(AbbreviatedExec, href: null, disabled: true),
+        ];
 
     protected override async Task OnInitializedAsync() =>
         _isAdmin = await Guard.IsAdminAsync(AuthState).ConfigureAwait(true);
