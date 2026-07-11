@@ -134,6 +134,15 @@ public sealed class InteractiveAdminWebApplicationFactory : IAsyncLifetime
         builder.Services.AddScoped<IClientDegradationStore, ClientDegradationStore>();
         builder.Services.AddScoped<IUserPreferencesService, UserPreferencesService>();
 
+        // AdminStatusFooter (admin nav-rail footer, so on every /admin/* page)
+        // @injects BuildInfo. Like the a11y PlaywrightWebApplicationFactory, this
+        // self-built host does not run the real Program.cs, so the new dependency
+        // must be registered here too — otherwise the admin chrome cannot be
+        // constructed, the page never hydrates, and every interactive-admin Circuit
+        // test times out at 60s. No env vars → BuildInfo yields its honest local
+        // fallback (Invariant #17).
+        builder.Services.AddSingleton<BuildInfo>();
+
         // ── Stub HTTP clients (admin pages don't use the wizard SSE path) ─
         builder.Services
             .AddHttpClient<IWizardLandingClient, WizardLandingClient>(

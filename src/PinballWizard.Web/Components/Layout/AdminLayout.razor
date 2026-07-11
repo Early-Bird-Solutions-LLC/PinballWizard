@@ -61,8 +61,14 @@
     @* Shared AppNavRail in static always-expanded mode (ShowToggle="false", no
        @rendermode): renders anchor-only nav with zero @onclick, matching the
        interactivity profile of the previous inline drawer so the admin page
-       circuits are unaffected. Open="true" keeps all nine links visible on load. *@
-    <AppNavRail Open="true" ShowToggle="false" HeaderText="Admin Navigation" Items="@AdminNav" />
+       circuits are unaffected. Open="true" keeps all ten links visible on load.
+       Footer slot is populated with AdminStatusFooter — also static, no @onclick,
+       no @rendermode — so the admin circuit profile is unchanged. *@
+    <AppNavRail Open="true" ShowToggle="false" HeaderText="Admin Navigation" Items="@AdminNav">
+        <Footer>
+            <AdminStatusFooter />
+        </Footer>
+    </AppNavRail>
 
     <MudMainContent>
         <TiltErrorBoundary>

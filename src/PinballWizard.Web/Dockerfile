@@ -58,6 +58,14 @@ USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .
 
+# Build metadata injected by the CI/CD pipeline (deploy.yml build-args).
+# Defaults are empty so local builds succeed without these args being supplied.
+# Declared here (final runtime stage only) so the web image is the single owner;
+# the other Dockerfiles declare the same ARGs (no ENV) to silence Docker's
+# "unused build-arg" warning when deploy.yml passes them to every matrix leg.
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+
 # ACA terminates TLS and forwards plain HTTP to port 8080.
 # ASPNETCORE_FORWARDEDHEADERS_ENABLED lets Kestrel trust the X-Forwarded-*
 # headers that ACA injects so redirect URIs and scheme detection work correctly.
@@ -69,7 +77,9 @@ ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_USE_POLLING_FILE_WATCHER=false \
     AzureAd__Instance=https://login.microsoftonline.com/ \
     AzureAd__TenantId=00000000-0000-0000-0000-000000000000 \
-    AzureAd__ClientId=00000000-0000-0000-0000-000000000000
+    AzureAd__ClientId=00000000-0000-0000-0000-000000000000 \
+    PINWIZ_BUILD_SHA=$BUILD_SHA \
+    PINWIZ_BUILD_TIME=$BUILD_TIME
 
 EXPOSE 8080
 

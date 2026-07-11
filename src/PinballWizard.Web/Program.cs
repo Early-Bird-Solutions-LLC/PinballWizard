@@ -175,6 +175,12 @@ builder.Services.AddScoped<PinballWizard.Web.Security.AdminActionGuard>();
 // no-auth path too.
 builder.Services.AddSingleton<PinballWizard.Application.Ai.EmbeddedResourceAgentPromptProvider>();
 
+// ── Build identity (injected at image build via Dockerfile ARG → ENV) ─────
+// Singleton: reads PINWIZ_BUILD_SHA / PINWIZ_BUILD_TIME once at startup and
+// exposes ShortSha + BuildTimeUtc + Environment to the AdminStatusFooter.
+// Local dev (vars absent) degrades visibly: ShortSha = "local", BuildTimeUtc = null.
+builder.Services.AddSingleton<BuildInfo>();
+
 // ── Engineering live-docs provider ────────────────────────────────────────
 // Loads and Markdig-parses all /engineering docs + ADRs from the assembly's
 // embedded resources exactly once at startup. Singleton: zero per-request
