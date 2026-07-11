@@ -204,6 +204,42 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
     }
 
     // ──────────────────────────────────────────────────────────────
+    // 6. machineId round-trips from JSON body to the router (ADR-0053)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Ask_WithMachineId_PassesMachineIdToRouter()
+    {
+        string? capturedMachineId = null;
+        var router = Substitute.For<IAiRouter>();
+        router
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Do<string?>(m => capturedMachineId = m),
+                Arg.Any<CancellationToken>())
+            .Returns(ToAsyncEnumerable(
+            [
+                new AnswerChunk.Final(
+                    new WizardAnswer(
+                        Text: "ok", Citations: [], SubAgentUsed: "wizard",
+                        Confidence: 1.0, Escalated: false, IsRefusal: false,
+                        RefusalCategory: null, PromptVersion: "v1", FoundryThreadId: null)),
+            ]));
+
+        using var server = BuildServer(router: router);
+        using var client = server.CreateClient();
+
+        var body = JsonSerializer.Serialize(
+            new { question = "tell me about Super Flipp", machineId = "G4X1D-M2Yy1" }, JsonOptions);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/api/wizard/ask:stream", content);
+
+        Assert.True(response.IsSuccessStatusCode);
+        Assert.Equal("G4X1D-M2Yy1", capturedMachineId);
+    }
+
+    // ──────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────
 
@@ -257,7 +293,11 @@ public sealed class WizardAskStreamEndpointTests : IDisposable
     {
         var router = Substitute.For<IAiRouter>();
         router
-            .AnswerStreamingAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<ConversationTurn>?>(), Arg.Any<CancellationToken>())
+            .AnswerStreamingAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
             .Returns(ToAsyncEnumerable(chunks));
         return router;
     }

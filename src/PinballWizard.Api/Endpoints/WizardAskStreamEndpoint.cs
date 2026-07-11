@@ -200,7 +200,7 @@ public static class WizardAskStreamEndpoint
         try
         {
             await foreach (var chunk in router
-                .AnswerStreamingAsync(request.Question, request.History, cancellationToken)
+                .AnswerStreamingAsync(request.Question, request.History, request.MachineId, cancellationToken)
                 .ConfigureAwait(false))
             {
                 var eventName = chunk switch
@@ -341,4 +341,5 @@ public static class WizardAskStreamEndpoint
 // what that layer can see.
 internal sealed record WizardAskRequest(
     string Question,
-    IReadOnlyList<ConversationTurn>? History = null);
+    IReadOnlyList<ConversationTurn>? History = null,
+    string? MachineId = null);

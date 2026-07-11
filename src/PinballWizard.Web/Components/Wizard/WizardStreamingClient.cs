@@ -61,11 +61,18 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
     public IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
         CancellationToken cancellationToken)
-        => StreamAsync(question, history: null, cancellationToken);
+        => StreamAsync(question, history: null, machineId: null, cancellationToken);
+
+    public IAsyncEnumerable<AnswerChunk> StreamAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        CancellationToken cancellationToken)
+        => StreamAsync(question, history, machineId: null, cancellationToken);
 
     public async IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
         IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
@@ -77,7 +84,7 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
         // catches stream exceptions, shows the honest Error state, and owns
         // the one deliberate fallback re-attempt. The placeholder is reserved
         // for the explicit 503 "Foundry not wired" dev signal below.
-        var response = await SendCoreAsync(question, history, cancellationToken).ConfigureAwait(false);
+        var response = await SendCoreAsync(question, history, machineId, cancellationToken).ConfigureAwait(false);
 
         // ── 503: Foundry not configured (Development env only) ───────────
         // Yield hardcoded hello-world stream so the dev experience proves
@@ -166,15 +173,16 @@ public sealed class WizardStreamingClient : IWizardStreamingClient
     private async Task<HttpResponseMessage> SendCoreAsync(
         string question,
         IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
         CancellationToken cancellationToken)
     {
-        // Null history serializes away entirely (WhenWritingNull), so the
-        // single-shot wire shape is byte-identical to the pre-multi-turn
-        // contract.
+        // Null history and null machineId serialize away entirely (WhenWritingNull),
+        // so the single-shot unscoped wire shape is byte-identical to the
+        // pre-machine-scope contract.
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/wizard/ask:stream")
         {
             Content = JsonContent.Create(
-                new { question, history },
+                new { question, history, machineId },
                 options: SseJsonOptions),
         };
         request.Headers.Accept.ParseAdd("text/event-stream");

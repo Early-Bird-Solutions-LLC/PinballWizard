@@ -36,7 +36,7 @@
 <PageTitle>PinballWizard — Ask the Wizard</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8" data-testid="wizard-page">
-    <WizardAnswerStream Question="@_resolvedQuestion" />
+    <WizardAnswerStream Question="@_resolvedQuestion" MachineId="@MachineId" />
 </MudContainer>
 
 @code {
@@ -54,6 +54,13 @@
     // exact question text, no lookup needed.
     [SupplyParameterFromQuery(Name = "q")]
     public string? Q { get; set; }
+
+    // OPDB canonical machine id from /wizard?machineId={id} — set by the
+    // "Ask the Wizard about this machine" button on the machine detail page.
+    // Forwarded to WizardAnswerStream so the streaming client includes it in
+    // the POST body, allowing the router to scope retrieval to that machine.
+    [SupplyParameterFromQuery(Name = "machineId")]
+    public string? MachineId { get; set; }
 
     // Resolved question text. Null for /wizard (Idle state); populated from
     // ?q= directly or from /wizard/q/{slug} after lookup.
