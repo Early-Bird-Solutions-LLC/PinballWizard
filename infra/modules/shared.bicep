@@ -2261,6 +2261,27 @@ resource cicdRagIndexerContributor 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
+// Grants the CI OIDC deployer identity the Monitoring Metrics Publisher role on
+// App Insights so the perf emitter (Phase 7 Lighthouse runner) can ingest
+// telemetry via Entra auth — no InstrumentationKey required (DisableLocalAuth=true
+// is already set on appInsights). Built-in role definition GUID is stable/well-known:
+//   Monitoring Metrics Publisher = 3913510d-42f4-4e42-8a64-420c390055eb
+// Reuses cicdDeployPrincipalId — the CI OIDC SP is the same identity that
+// deploy.yml and lighthouse.yml both authenticate as (secrets.AZURE_CLIENT_ID),
+// so the perf emitter and the deploy workflow share one principal. Scope is the
+// appInsights resource (least-privilege); gated on deployPhase2 (appInsights is a
+// Phase 2 resource) and a non-empty cicdDeployPrincipalId so a bare stack deploy
+// without the SP skips cleanly, matching the sibling cicd* role assignments below.
+resource perfMetricsPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployPhase2 && !empty(cicdDeployPrincipalId)) {
+  name: guid(appInsights.id, cicdDeployPrincipalId, 'Monitoring Metrics Publisher')
+  scope: appInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+    principalId: cicdDeployPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Linker ACA Job (document-to-machine linking nightly batch)
 // -----------------------------------------------------------------------------

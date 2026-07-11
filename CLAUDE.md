@@ -37,10 +37,12 @@ src/
 ├── PinballWizard.Web                ← Blazor front end (+ PinballWizard.Web.Client)
 ├── PinballWizard.RagIngestionWorker ← Change-Feed-driven RAG ingestion (ACA)
 ├── PinballWizard.AppHost            ← .NET Aspire orchestrator (Cosmos preview emulator + Azurite)
-└── PinballWizard.ServiceDefaults    ← Aspire shared OTel + health + service discovery + resilience
+├── PinballWizard.ServiceDefaults    ← Aspire shared OTel + health + service discovery + resilience
+└── PinballWizard.PerfMetrics        ← Lighthouse LHR → App Insights perf-trend emitter (Phase 7)
 tests/                               ← seven per-layer test projects (ADR-0030): Core, Application,
                                        Infrastructure (largest — scrapers, Cosmos, OPDB, RAG, AI),
-                                       Cli, Api, Web, ServiceDefaults
+                                       Cli, Api, Web, ServiceDefaults — plus PinballWizard.PerfMetrics.Tests
+                                       for the perf-emitter tool
 ```
 
 ADRs live in [`docs/adr/`](docs/adr/) — index in [`docs/adr/README.md`](docs/adr/README.md); don't hardcode the numeric range here, it drifts. The slnx is `PinballWizard.slnx`.
