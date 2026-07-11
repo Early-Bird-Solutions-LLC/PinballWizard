@@ -462,6 +462,79 @@ public sealed class AdminMonitoringTests : AsyncBunitContext
         var el = cut.Find($"[data-testid='{testid}']");
         Assert.Equal("OK", el.TextContent.Trim());
     }
+
+    // ── Loading state — skeleton assertions ───────────────────────────────────
+    // Renders with a blocking reader so _loading stays true while we inspect.
+    // Verifies the three live tiles and three pipeline rows show MudSkeleton
+    // instead of the static "…" placeholder, and that the two genuinely-final
+    // sections (Daily AI Cost, Short-circuits) do NOT show a skeleton.
+
+    private IRenderedComponent<AdminMonitoring> RenderInLoadingState()
+    {
+        var blockingReader = Substitute.For<IMonitoringStatsReader>();
+        blockingReader.GetSnapshotAsync(Arg.Any<MonitoringWindow>(), Arg.Any<CancellationToken>())
+                      .Returns(async callInfo =>
+                      {
+                          await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
+                          return new MonitoringSnapshot
+                          {
+                              Window = MonitoringWindow.TwentyFourHours,
+                              GeneratedAt = DateTimeOffset.UtcNow,
+                          };
+                      });
+        Services.AddSingleton(blockingReader);
+
+        var fragment = Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AdminMonitoring>(1);
+            builder.CloseComponent();
+        });
+        return fragment.FindComponent<AdminMonitoring>();
+    }
+
+    [Theory]
+    [InlineData("mon-tile-latency-value")]
+    [InlineData("mon-tile-5xx-value")]
+    [InlineData("mon-tile-refusal-value")]
+    public void LoadingState_LiveTile_RendersMudSkeleton(string tileValueTestId)
+    {
+        var cut = RenderInLoadingState();
+        var region = cut.Find($"[data-testid='{tileValueTestId}']");
+        Assert.NotEmpty(region.QuerySelectorAll(".mud-skeleton"));
+    }
+
+    [Theory]
+    [InlineData("mon-pipeline-lease")]
+    [InlineData("mon-pipeline-deadletter")]
+    [InlineData("mon-pipeline-drift")]
+    public void LoadingState_PipelineRow_RendersMudSkeleton(string rowTestId)
+    {
+        var cut = RenderInLoadingState();
+        var region = cut.Find($"[data-testid='{rowTestId}']");
+        Assert.NotEmpty(region.QuerySelectorAll(".mud-skeleton"));
+    }
+
+    [Fact]
+    public void LoadingState_CostTile_DoesNotRenderSkeleton()
+    {
+        // Daily AI Cost is eval-only and always shows —; it is not a loading state.
+        var cut = RenderInLoadingState();
+        var costValue = cut.Find("[data-testid='mon-tile-cost-value']");
+        Assert.Empty(costValue.QuerySelectorAll(".mud-skeleton"));
+        // Confirm the em-dash sentinel is still present (not a zero or blank).
+        Assert.Contains("—", costValue.TextContent);
+    }
+
+    [Fact]
+    public void LoadingState_ShortCircuitsRow_DoesNotRenderSkeleton()
+    {
+        // Short-circuits "expected" is an intentional final state label; no skeleton.
+        var cut = RenderInLoadingState();
+        var row = cut.Find("[data-testid='mon-pipeline-shortcircuit']");
+        Assert.Empty(row.QuerySelectorAll(".mud-skeleton"));
+    }
 }
 
 // Dispose-mid-load guard (#615): disposing AdminMonitoring while OnAfterRenderAsync is

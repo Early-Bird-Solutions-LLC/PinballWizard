@@ -95,7 +95,7 @@
             <span class="mon-tile__value" data-testid="mon-tile-latency-value">
                 @if (_loading)
                 {
-                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="80px" Height="36px" />
                 }
                 else if (_snapshot?.LatencyP95Ms is { } latency)
                 {
@@ -131,7 +131,7 @@
             <span class="mon-tile__value" data-testid="mon-tile-5xx-value">
                 @if (_loading)
                 {
-                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="80px" Height="36px" />
                 }
                 else if (_snapshot?.FivexxRatePercent is { } rate)
                 {
@@ -188,7 +188,7 @@
             <span class="mon-tile__value" data-testid="mon-tile-refusal-value">
                 @if (_loading)
                 {
-                    <span class="mon-tile__value--loading" aria-hidden="true">…</span>
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="80px" Height="36px" />
                 }
                 else if (_snapshot?.RefusalRatePercent is { } refRate)
                 {
@@ -311,8 +311,15 @@
                             <span class="mon-pipeline__name">Lease lag</span>
                             <span class="mon-pipeline__sub">changefeed_lease_lag</span>
                         </div>
-                        <span class="mon-pipeline__count @(_snapshot?.LeaseLag is null ? "mon-pipeline__count--unavailable" : "")">
-                            @PipelineCount(_snapshot?.LeaseLag)
+                        <span class="mon-pipeline__count @(_snapshot?.LeaseLag is null && !_loading ? "mon-pipeline__count--unavailable" : "")">
+                            @if (_loading)
+                            {
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="36px" Height="22px" />
+                            }
+                            else
+                            {
+                                @(_snapshot?.LeaseLag?.ToString() ?? "—")
+                            }
                         </span>
                         <span class="mon-pip-state @LeaseStateClass()" data-testid="mon-pipeline-lease-state">
                             @LeaseStateText()
@@ -323,8 +330,15 @@
                             <span class="mon-pipeline__name">Dead letters (24h)</span>
                             <span class="mon-pipeline__sub">RequestFailed · Cosmos</span>
                         </div>
-                        <span class="mon-pipeline__count @(_snapshot?.DeadLetters is null ? "mon-pipeline__count--unavailable" : "")">
-                            @PipelineCount(_snapshot?.DeadLetters)
+                        <span class="mon-pipeline__count @(_snapshot?.DeadLetters is null && !_loading ? "mon-pipeline__count--unavailable" : "")">
+                            @if (_loading)
+                            {
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="36px" Height="22px" />
+                            }
+                            else
+                            {
+                                @(_snapshot?.DeadLetters?.ToString() ?? "—")
+                            }
                         </span>
                         <span class="mon-pip-state @DeadLetterStateClass()" data-testid="mon-pipeline-deadletter-state">
                             @DeadLetterStateText()
@@ -346,8 +360,15 @@
                             <span class="mon-pipeline__name mon-pipeline__name--canary">Reconcile drift</span>
                             <span class="mon-pipeline__sub">the durability canary</span>
                         </div>
-                        <span class="mon-pipeline__count mon-pipeline__count--canary @(_snapshot?.ReconcileDrift is null ? "mon-pipeline__count--unavailable" : "")">
-                            @PipelineCount(_snapshot?.ReconcileDrift)
+                        <span class="mon-pipeline__count mon-pipeline__count--canary @(_snapshot?.ReconcileDrift is null && !_loading ? "mon-pipeline__count--unavailable" : "")">
+                            @if (_loading)
+                            {
+                                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Width="36px" Height="22px" />
+                            }
+                            else
+                            {
+                                @(_snapshot?.ReconcileDrift?.ToString() ?? "—")
+                            }
                         </span>
                         <span class="mon-pip-state @DriftStateClass()" data-testid="mon-pipeline-drift-state">
                             @DriftStateText()
