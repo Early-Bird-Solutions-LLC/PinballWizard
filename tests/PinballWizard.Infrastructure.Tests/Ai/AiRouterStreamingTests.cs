@@ -954,8 +954,14 @@ public sealed class AiRouterStreamingTests
             chunks.Add(chunk);
         }
 
-        // Assert: agent never resolved, and a NoCitation refusal Final chunk came back.
+        // Assert: agent never resolved, and the stream emits Refusal THEN Final
+        // (ADR-0026 §5 ordering contract — a Refusal chunk tells the client to
+        // discard any prior text, and the trailing Final closes the stream; a
+        // reorder must fail this test, not slip through).
         agentFactory.DidNotReceive().GetAgent(Arg.Any<string>());
+
+        var refusal = Assert.IsType<AnswerChunk.Refusal>(chunks[0]);
+        Assert.Equal(RefusalCategory.NoCitation, refusal.Category);
 
         var final = Assert.IsType<AnswerChunk.Final>(chunks[^1]);
         Assert.True(final.Answer.IsRefusal);
