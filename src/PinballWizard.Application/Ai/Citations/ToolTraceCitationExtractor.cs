@@ -439,26 +439,13 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
     // Priority: typed C# hit values first (non-null when the typed arm
     // fires, e.g. unit tests); sink values second (non-null on the real
     // JSON path). Either or both may be null for pre-C3 chunks.
-    // Per ADR-0022 § Algorithm step 2: each retrieved chunk is a
-    // citation candidate; multiple chunks from the same DocumentId
-    // collapse via the seenUrls set so the user sees one entry per
-    // source document. The first hit's page range + section heading
-    // wins for the title. Phase 5 may layer union-of-ranges across
-    // collapsed chunks (ADR-0022 § Negative consequence #4); for
-    // Phase 4, single-anchor citations are the contract.
     //
-    // Two-channel design (fix/citation-metadata-channel, ADR-0035):
-    // Score and LastScrapedUtc are [JsonIgnore] on SearchCorpusHit so
-    // the model never sees retrieval internals. On the real Foundry path,
-    // FunctionResultContent.Result is a JsonElement produced by
-    // AIFunctionFactory.Create serializing the C# return value — and
-    // [JsonIgnore] strips Score + LastScrapedUtc from that JSON, so
-    // hit.Score and hit.LastScrapedUtc arrive as null here. The
-    // _metadataSink (populated by SearchCorpusTool before the agent run)
-    // carries those values out-of-band and is the fallback source.
-    // Priority: typed C# hit values first (non-null when the typed arm
-    // fires, e.g. unit tests); sink values second (non-null on the real
-    // JSON path). Either or both may be null for pre-C3 chunks.
+    // ADR-0052: machine-derived structured-record projections
+    // (MetadataCard, GameOverview) have no scraped_documents_raw row.
+    // Their DocumentId does not resolve at /documents/{id} — the link
+    // 404s. They are classified by IsMachineDerivedStructuredRecord and
+    // emitted as MachineRecord citations so CitationCard links to the
+    // machine page (/machines/resolve/{MachineId}) instead.
     //
     // sourceIndex: every hit's DocumentUrl is appended in tool-trace order,
     // regardless of dedup. This gives the reconciler the k→SourceUrl table
@@ -492,23 +479,63 @@ public sealed partial class ToolTraceCitationExtractor : ICitationExtractor
             _metadataSink?.TryGet(hit.DocumentUrl, out sinkMeta);
 
             var title = BuildCorpusCitationTitle(hit);
-            AddOrUpgrade(byUrl, citations, new Citation(
-                Title: title,
-                SourceUrl: hit.DocumentUrl,
-                MachineId: hit.MachineId,
-                DocumentChunkId: hit.DocumentId,
-                PageStart: hit.PageStart,
-                PageEnd: hit.PageEnd,
-                SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
-                SourceType: CitationSourceType.CorpusChunk,
-                // Typed C# value wins (non-null on the unit-test / typed arm);
-                // sink value is the fallback for the real Foundry JSON path
-                // where [JsonIgnore] strips Score from FunctionResultContent.
-                RelevanceScore: hit.Score ?? sinkMeta?.RelevanceScore,
-                // Same two-channel pattern for LastScrapedUtc (ADR-0026 § 4).
-                // Null for pre-C3 chunks regardless of path.
-                LastScrapedUtc: hit.LastScrapedUtc ?? sinkMeta?.LastScrapedUtc));
+
+            // ADR-0052: route by source knowledge-shape.
+            // Machine-derived structured records (MetadataCard / GameOverview)
+            // are cited as MachineRecord so the internal link goes to the
+            // machine page, not the non-existent /documents/{id} page.
+            // Defensive: a structured-record hit with no MachineId (unexpected)
+            // falls through to the corpus-chunk shape rather than dropping the
+            // citation — better a slightly-wrong link than silence.
+            if (IsMachineDerivedStructuredRecord(hit.DocumentType)
+                && !string.IsNullOrWhiteSpace(hit.MachineId))
+            {
+                AddOrUpgrade(byUrl, citations, new Citation(
+                    Title: title,
+                    SourceUrl: hit.DocumentUrl,
+                    MachineId: hit.MachineId,
+                    DocumentChunkId: null,
+                    SourceType: CitationSourceType.MachineRecord,
+                    // Typed C# value wins; sink is the fallback for the real
+                    // Foundry JSON path where [JsonIgnore] strips Score.
+                    RelevanceScore: hit.Score ?? sinkMeta?.RelevanceScore,
+                    LastScrapedUtc: hit.LastScrapedUtc ?? sinkMeta?.LastScrapedUtc));
+            }
+            else
+            {
+                AddOrUpgrade(byUrl, citations, new Citation(
+                    Title: title,
+                    SourceUrl: hit.DocumentUrl,
+                    MachineId: hit.MachineId,
+                    DocumentChunkId: hit.DocumentId,
+                    PageStart: hit.PageStart,
+                    PageEnd: hit.PageEnd,
+                    SectionHeading: string.IsNullOrWhiteSpace(hit.SectionHeading) ? null : hit.SectionHeading,
+                    SourceType: CitationSourceType.CorpusChunk,
+                    // Typed C# value wins (non-null on the unit-test / typed arm);
+                    // sink value is the fallback for the real Foundry JSON path
+                    // where [JsonIgnore] strips Score from FunctionResultContent.
+                    RelevanceScore: hit.Score ?? sinkMeta?.RelevanceScore,
+                    // Same two-channel pattern for LastScrapedUtc (ADR-0026 § 4).
+                    // Null for pre-C3 chunks regardless of path.
+                    LastScrapedUtc: hit.LastScrapedUtc ?? sinkMeta?.LastScrapedUtc));
+            }
         }
+    }
+
+    // ADR-0052: classifies a corpus hit's DocumentType as a machine-derived
+    // structured-record projection (MetadataCard or GameOverview). These are
+    // synthesized from Machine Cosmos records — they have no scraped_documents_raw
+    // row and their /documents/{id} link 404s. Tolerate both the PascalCase
+    // enum-name form the index stores ("MetadataCard"/"GameOverview") and the
+    // snake_case alias used on the filter side ("metadata_card"/"game_overview")
+    // by stripping underscores and case-folding before comparing.
+    internal static bool IsMachineDerivedStructuredRecord(string? documentType)
+    {
+        if (string.IsNullOrWhiteSpace(documentType)) return false;
+        var normalized = documentType.Replace("_", "", StringComparison.Ordinal)
+                                     .ToLowerInvariant();
+        return normalized is "metadatacard" or "gameoverview";
     }
 
     private static string BuildCorpusCitationTitle(SearchCorpusHit hit)

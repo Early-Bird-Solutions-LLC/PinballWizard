@@ -10,6 +10,7 @@ using PinballWizard.Application.Ai.Citations;
 using PinballWizard.Application.Ai.Confidence;
 using PinballWizard.Application.Ai.Cost;
 using PinballWizard.Application.Ai.Degradation;
+using PinballWizard.Application.Ai.Retrieval;
 using PinballWizard.Application.Ai.Tools;
 using PinballWizard.Core.Configuration;
 using Xunit;
@@ -336,6 +337,12 @@ public sealed class AiRouterMultiTurnTests
             .BuildRecoveryAsync(Arg.Any<string>(), Arg.Any<RefusalCategory>(), Arg.Any<CancellationToken>())
             .Returns((RefusalDetail?)null);
 
+        // Default coverage: machines have content so existing multi-turn tests still hit the agent.
+        var machineCorpusCoverage = Substitute.For<IMachineCorpusCoverage>();
+        machineCorpusCoverage
+            .HasIndexedContentAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
         var router = new AiRouter(
             agentFactory,
             cache,
@@ -346,6 +353,7 @@ public sealed class AiRouterMultiTurnTests
             new ToolTraceCitationExtractor(),
             new RegexLegacyCitationExtractor(),
             refusalRecovery,
+            machineCorpusCoverage,
             new AmbientDegradationContext(),
             options,
             NullLogger<AiRouter>.Instance);

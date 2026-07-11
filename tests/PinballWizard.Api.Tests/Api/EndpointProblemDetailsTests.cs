@@ -320,6 +320,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
             .AnswerStreamingAsync(
                 Arg.Any<string>(),
                 Arg.Do<IReadOnlyList<ConversationTurn>?>(h => captured = h),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());
 
@@ -353,6 +354,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
             .AnswerStreamingAsync(
                 Arg.Any<string>(),
                 Arg.Do<IReadOnlyList<ConversationTurn>?>(h => sawNullHistory = h is null),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());
 
@@ -454,8 +456,8 @@ public sealed class EndpointProblemDetailsTests : IDisposable
         return host.GetTestServer();
     }
 
-    // The endpoint invokes the three-argument (history) overload since
-    // PR-A2; NSubstitute proxies intercept default interface members, so
+    // The endpoint invokes the four-argument (history + machineId) overload since
+    // ADR-0053; NSubstitute proxies intercept default interface members, so
     // the substitute must stub the overload the endpoint actually calls —
     // an unconfigured intercepted member returns null and the endpoint's
     // await-foreach would NRE.
@@ -466,6 +468,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
             .AnswerStreamingAsync(
                 Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(AsyncEnumerable.Empty<AnswerChunk>());
         return router;
@@ -480,6 +483,7 @@ public sealed class EndpointProblemDetailsTests : IDisposable
             .AnswerStreamingAsync(
                 Arg.Any<string>(),
                 Arg.Any<IReadOnlyList<ConversationTurn>?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>())
             .Returns(ThrowAfterFirstChunk());
         return router;

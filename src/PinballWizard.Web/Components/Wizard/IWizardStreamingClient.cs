@@ -31,17 +31,27 @@ public interface IWizardStreamingClient
     // yields a fake uncited answer in QA or Prod (invariant #17, issue #367).
     IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken)
+        => StreamAsync(question, history: null, machineId: null, cancellationToken);
 
     // Multi-turn overload (PR-A3, 2026-06-12): sends the conversation's
     // completed prior turns alongside the question. Null/empty history is
     // contractually identical to the two-argument overload. The default
-    // implementation drops history so existing test doubles keep compiling
-    // (same compatibility-shim pattern as IAiRouter); the production
-    // WizardStreamingClient overrides it for real.
+    // implementation funnels into the canonical 4-arg so existing test
+    // doubles keep compiling (same compatibility-shim pattern as IAiRouter).
     IAsyncEnumerable<AnswerChunk> StreamAsync(
         string question,
         IReadOnlyList<ConversationTurn>? history,
         CancellationToken cancellationToken)
-        => StreamAsync(question, cancellationToken);
+        => StreamAsync(question, history, machineId: null, cancellationToken);
+
+    // Canonical overload (Task 5): machine-scoped streaming. machineId is
+    // the OPDB canonical id forwarded from the Ask-the-Wizard button on the
+    // machine detail page. Null when the question arrives from the bare /wizard
+    // page — the router applies no corpus filter in that case.
+    IAsyncEnumerable<AnswerChunk> StreamAsync(
+        string question,
+        IReadOnlyList<ConversationTurn>? history,
+        string? machineId,
+        CancellationToken cancellationToken);
 }
