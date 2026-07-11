@@ -63,8 +63,10 @@
        interactivity profile of the previous inline drawer so the admin page
        circuits are unaffected. Open="true" keeps all ten links visible on load.
        Footer slot is populated with AdminStatusFooter — also static, no @onclick,
-       no @rendermode — so the admin circuit profile is unchanged. *@
-    <AppNavRail Open="true" ShowToggle="false" HeaderText="Admin Navigation" Items="@AdminNav">
+       no @rendermode — so the admin circuit profile is unchanged.
+       ShowCollapseToggle="true" adds the CSS/JS collapse button (plain <button>,
+       wired by admin-nav-collapse.js — NOT a Blazor @onclick, see §5.1). *@
+    <AppNavRail Open="true" ShowToggle="false" ShowCollapseToggle="true" HeaderText="Admin Navigation" Items="@AdminNav">
         <Footer>
             <AdminStatusFooter />
         </Footer>

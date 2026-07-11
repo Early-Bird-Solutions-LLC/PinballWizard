@@ -331,6 +331,106 @@ public sealed class AppNavRailTests : AsyncBunitContext
             Assert.Equal("Expand navigation", cut.Find("[data-testid='nav-rail-toggle']").GetAttribute("aria-label")));
     }
 
+    // ── ShowCollapseToggle — CSS/JS collapse button ──────────────────────────
+
+    // Renders the admin rail in static mode (ShowToggle=false) with ShowCollapseToggle set.
+    private IRenderedComponent<AppNavRail> RenderAdminRailWithCollapse(bool showCollapseToggle)
+    {
+        return Render(builder =>
+        {
+            builder.OpenComponent<MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AppNavRail>(1);
+            builder.AddAttribute(2, nameof(AppNavRail.Items), SampleItems);
+            builder.AddAttribute(3, nameof(AppNavRail.Open), true);
+            builder.AddAttribute(4, nameof(AppNavRail.ShowToggle), false);
+            builder.AddAttribute(5, nameof(AppNavRail.ShowCollapseToggle), showCollapseToggle);
+            builder.CloseComponent();
+        }).FindComponent<AppNavRail>();
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_Default_NoButton()
+    {
+        // Default ShowCollapseToggle=false: the admin collapse button must NOT render.
+        // Guards that the public MainLayout rail (and any ShowToggle=false usage
+        // that does not opt in) is completely unaffected by the new parameter.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: false);
+        Assert.Empty(cut.FindAll("[data-testid='admin-nav-collapse-toggle']"));
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_True_RendersButton()
+    {
+        // When opted in, exactly one collapse toggle button is rendered in the rail header.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: true);
+        Assert.Single(cut.FindAll("[data-testid='admin-nav-collapse-toggle']"));
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_True_ButtonIsPlainHtml_NoOnclick()
+    {
+        // Circuit-safety invariant: the collapse toggle MUST be a plain <button> with
+        // NO onclick or blazor:onclick attribute. A Blazor @onclick handler on the admin
+        // chrome requires @rendermode on the layout subtree, which breaks admin-page
+        // circuit hydration (the documented "hamburger bug" — see AdminLayout.razor header
+        // comment and the reference_interactive_island_static_layout_circuit_break memory).
+        // This test is the machine-readable guard for that invariant.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: true);
+        var btn = cut.Find("[data-testid='admin-nav-collapse-toggle']");
+        Assert.Equal("BUTTON", btn.TagName, StringComparer.OrdinalIgnoreCase);
+        // OuterHtml must carry no onclick variant — neither the plain HTML form nor the
+        // Blazor event-handler form that the renderer emits when @onclick is present.
+        Assert.DoesNotContain("onclick", btn.OuterHtml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_True_ButtonHasAriaExpandedAndAriaLabel()
+    {
+        // Accessibility: aria-expanded reflects the initial expanded state (true), and
+        // aria-label provides a descriptive label for assistive technology. Both are
+        // required per WCAG 2.1 AA (the JS module keeps them in sync on toggle).
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: true);
+        var btn = cut.Find("[data-testid='admin-nav-collapse-toggle']");
+        var ariaExpanded = btn.GetAttribute("aria-expanded");
+        var ariaLabel = btn.GetAttribute("aria-label");
+        Assert.NotNull(ariaExpanded);
+        Assert.NotNull(ariaLabel);
+        Assert.NotEmpty(ariaLabel!);
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_True_NavLinksStillRender()
+    {
+        // Sanity: the collapse button coexists with the nav links; it must not
+        // displace or suppress any navigation items.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: true);
+        Assert.NotNull(cut.Find("a[href='/']"));
+        Assert.NotNull(cut.Find("a[href='/about']"));
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_True_DrawerHasCollapsibleClass()
+    {
+        // The 'app-nav-rail--collapsible' class is added to the MudDrawer when
+        // ShowCollapseToggle is true. This class scopes the CSS rules that control
+        // width and text visibility so they target only the collapsible admin rail
+        // and not the public MainLayout rail.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: true);
+        var drawer = cut.FindComponent<MudDrawer>();
+        Assert.Contains("app-nav-rail--collapsible", drawer.Instance.Class ?? "", StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShowCollapseToggle_False_DrawerHasNoCollapsibleClass()
+    {
+        // Public rail (ShowCollapseToggle=false) must NOT carry the collapsible
+        // modifier class — the CSS rules should not apply to it.
+        var cut = RenderAdminRailWithCollapse(showCollapseToggle: false);
+        var drawer = cut.FindComponent<MudDrawer>();
+        Assert.DoesNotContain("app-nav-rail--collapsible", drawer.Instance.Class ?? "", StringComparison.Ordinal);
+    }
+
     // ── Footer slot ───────────────────────────────────────────────────────────
 
     [Fact]

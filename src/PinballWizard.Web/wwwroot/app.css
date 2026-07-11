@@ -826,3 +826,37 @@ html, body {
         scroll-behavior: auto !important;
     }
 }
+
+/* ── Admin nav rail collapse (spec §5.1) ────────────────────────────────── */
+/* Class pw-admin-nav--collapsed is toggled on <html> by:
+ *   1. The IIFE in App.razor (before first paint — reads localStorage and applies
+ *      the class + drawer width + main content padding immediately in the HTML
+ *      stream, before the browser's first layout paint).
+ *   2. admin-nav-collapse.js on button click.
+ * Width and main-content padding-left are managed by the JS module via
+ * element.style (more reliable across MudBlazor internals than CSS !important on
+ * the drawer's inline style). These CSS rules handle the visual text-hiding only —
+ * they are cheap to apply and do not depend on MudBlazor's layout JS having run.
+ *
+ * Selectors use descriptive class names added to the AppNavRail markup:
+ *   .pw-nav-label       — <span> wrapping each MudNavLink label (nav items)
+ *   .pw-nav-header-text — class on the header MudText ("Admin Navigation")
+ *   .admin-status-footer__text — text node in the Task-1 status strip
+ * Icons, the collapse toggle button, and accessibility attributes are NOT hidden
+ * (spec: "icon-only with title tooltips for a11y").
+ */
+
+/* Nav link label text — icon remains visible via MudNavLink Icon parameter */
+html.pw-admin-nav--collapsed .app-nav-rail .pw-nav-label {
+    display: none;
+}
+
+/* Rail header label ("Admin Navigation") — collapses to button icon only */
+html.pw-admin-nav--collapsed .app-nav-rail .pw-nav-header-text {
+    display: none;
+}
+
+/* Status footer text — collapses to the green dot only (spec §5.2) */
+html.pw-admin-nav--collapsed .admin-status-footer__text {
+    display: none;
+}

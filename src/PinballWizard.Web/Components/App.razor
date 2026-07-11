@@ -37,10 +37,22 @@
                 if (t !== 'modern-lcd') document.documentElement.classList.add('theme-' + t);
                 var m = localStorage.getItem('pinwiz.motion');
                 if (m) document.documentElement.dataset.motion = m;
+                // Admin sidebar collapse: apply initial state before first paint.
+                // Routes has been server-rendered above in the stream, so DOM
+                // queries are available here. Only runs on admin pages (button present).
+                if (document.querySelector('[data-testid="admin-nav-collapse-toggle"]')) {
+                    var collapsed = localStorage.getItem('pinwiz.admin.nav.collapsed') === 'true';
+                    if (collapsed) document.documentElement.classList.add('pw-admin-nav--collapsed');
+                    var d = document.querySelector('.mud-drawer.app-nav-rail');
+                    var c = document.querySelector('.mud-main-content');
+                    if (d) d.style.width = collapsed ? '64px' : '260px';
+                    if (c) c.style.paddingLeft = collapsed ? '64px' : '260px';
+                }
             } catch (_) { }
         })();
     </script>
     <script src="app.js"></script>
+    <script src="js/admin-nav-collapse.js"></script>
     <script src="_framework/blazor.web.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
 </body>
