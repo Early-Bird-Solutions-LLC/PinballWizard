@@ -169,15 +169,32 @@ public sealed class WizardE2ETests : IAsyncLifetime
             return;
         }
 
-        // Click the citation's primary internal link. Prefer the document
-        // source-link (corpus chunk → /documents/{id}); fall back to the machine
-        // title-link (machine record → /machines/resolve/{id}) so the test still
-        // exercises the click-through when retrieval returns only machine records.
+        // Click the citation's primary INTERNAL link. Discriminate by the
+        // source-link's href, not its mere presence: `citation-source-link` is
+        // emitted on BOTH a document citation's internal link (href="/documents/{id}")
+        // AND a machine/curated citation's EXTERNAL link (href=SourceUrl,
+        // target="_blank"). Presence alone misclassifies a machine citation as a
+        // document, then clicks the external link — which opens a new tab and never
+        // navigates this page, so the /documents/ wait below times out (#667).
+        // A document citation → click the internal source-link (→ /documents/{id});
+        // a machine record → click the title-link (→ /machines/resolve/{id}).
         var sourceLink = page.Locator("[data-testid='citation-source-link']").First;
-        var expectDocument = await sourceLink.CountAsync() > 0;
-        var primaryLink = expectDocument
-            ? sourceLink
-            : page.Locator("[data-testid='citation-title-link']").First;
+        var sourceHref = await sourceLink.CountAsync() > 0
+            ? await sourceLink.GetAttributeAsync("href") ?? string.Empty
+            : string.Empty;
+        var expectDocument = sourceHref.StartsWith("/documents/", StringComparison.OrdinalIgnoreCase);
+
+        var titleLink = page.Locator("[data-testid='citation-title-link']").First;
+        // A curated/external-only citation has no internal detail page (no
+        // /documents link, no machine title-link) — nothing to click through to,
+        // so bail green like the refusal case above rather than assert a nav that
+        // cannot happen.
+        if (!expectDocument && await titleLink.CountAsync() == 0)
+        {
+            return;
+        }
+
+        var primaryLink = expectDocument ? sourceLink : titleLink;
         await primaryLink.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 15_000 });
         await primaryLink.ClickAsync();
 
