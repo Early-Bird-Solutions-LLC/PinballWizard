@@ -11,15 +11,18 @@
 
 @* AdminMachineDetail — /admin/machines/{opdbId} per-game diagnostic view.
  *
- * Refactored to wrap the shared MachineDetail component.
+ * Wraps the shared MachineDetail component inside AppPageShell (ADR-0046).
+ * Breadcrumbs are rendered unconditionally (before the missing-mfr guard) so
+ * they appear in every branch, including the guard alert.
+ *
+ * ADR-0046  — shared Blazor component library (AppPageShell)
  *@
 
 @inject NavigationManager Nav
 
 <PageTitle>@(OpdbId) — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <MudBreadcrumbs Items="_breadcrumbs" Class="pa-0 mb-4" />
+<AppPageShell Breadcrumbs="@_breadcrumbs">
 
     @if (string.IsNullOrWhiteSpace(Mfr))
     {
@@ -35,7 +38,7 @@
                                                           ManufacturerKey="@Mfr" 
                                                           IsAdmin="true" />
     }
-</MudContainer>
+</AppPageShell>
 
 @code {
     [Parameter] public string OpdbId { get; set; } = string.Empty;

@@ -6,9 +6,20 @@
 @using PinballWizard.Web.Components.Shared
 @rendermode InteractiveServer
 
+@* AdminDocumentDetail — /admin/documents/{documentId} document provenance view.
+ *
+ * Thin page wrapper: delegates all content to the shared DocumentDetail component
+ * (handles its own loading, error, and found states) and provides the consistent
+ * page container via AppPageShell.
+ *
+ * ADR-0046  — shared Blazor component library (AppPageShell)
+ *@
+
 <PageTitle>PinballWizard Admin — Document</PageTitle>
 
-<PinballWizard.Web.Components.Shared.DocumentDetail DocumentId="@DocumentId" IsAdmin="true" />
+<AppPageShell>
+    <PinballWizard.Web.Components.Shared.DocumentDetail DocumentId="@DocumentId" IsAdmin="true" />
+</AppPageShell>
 
 @code {
     [Parameter] public string DocumentId { get; set; } = null!;

@@ -28,15 +28,15 @@
  * ADR-0009  — Entra External ID (Zero Trust gate)
  * ADR-0026  § 1 — routing inventory (/admin/monitoring)
  * ADR-0034  — render-mode doctrine (interactive admin pages)
+ * ADR-0046  — shared Blazor component library (AppPageShell)
  * Invariant #17 — degrade visibly; never fabricate metric values
  *@
 
 <PageTitle>Monitoring — PinballWizard Admin</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
-    <AppPageHeader Title="Monitoring"
-                   Subtitle="Live SLO health and pipeline signals from the OpenTelemetry stream."
-                   Breadcrumbs="@_breadcrumbs" />
+<AppPageShell Title="Monitoring"
+              Subtitle="Live SLO health and pipeline signals from the OpenTelemetry stream."
+              Breadcrumbs="@_breadcrumbs">
 
     @* Toolbar — refresh stamp + time-period window buttons *@
     <div class="mon-toolbar" data-testid="monitoring-toolbar">
@@ -437,7 +437,7 @@
         </div>
     </div>
 
-</MudContainer>
+</AppPageShell>
 
 @code {
     private MonitoringWindow _window = MonitoringWindow.TwentyFourHours;

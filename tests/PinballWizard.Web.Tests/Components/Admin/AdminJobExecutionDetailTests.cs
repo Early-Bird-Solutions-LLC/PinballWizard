@@ -123,6 +123,23 @@ public sealed class AdminJobExecutionDetailTests : AsyncBunitContext
         cut.Find("[data-testid='exec-not-found']");
     }
 
+    // Breadcrumbs are rendered before all conditional branches (not inside the
+    // loaded branch only), so they must appear even when the execution is not found.
+    // This pins the AppPageShell refactor: breadcrumbs must survive the not-found path.
+    [Fact]
+    public async Task Breadcrumbs_PresentOnNotFoundBranch()
+    {
+        this.AddAuthorization().SetAuthorized("admin@example.com").SetPolicies(AuthorizationPolicies.AdminOnly);
+        _svc.GetExecutionAsync(Job, Exec, Arg.Any<CancellationToken>()).Returns((JobExecution?)null);
+
+        var cut = Render();
+        await cut.InvokeAsync(() => Task.CompletedTask);
+
+        // Both the /admin and /admin/jobs breadcrumb links must be present on the not-found branch.
+        Assert.NotNull(cut.Find("a[href='/admin']"));
+        Assert.NotNull(cut.Find("a[href='/admin/jobs']"));
+    }
+
     [Fact]
     public async Task Admin_Search_RequeriesServerWithTerm()
     {
