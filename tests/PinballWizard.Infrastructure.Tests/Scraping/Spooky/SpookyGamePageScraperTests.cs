@@ -287,6 +287,66 @@ public sealed class SpookyGamePageScraperTests
     }
 
     [Fact]
+    public async Task ScrapeAsync_TwoSlugPage_YieldsBothGamesAndNoFirmwareLinks()
+    {
+        // Regression guard for Halloween/Ultraman shared-hardware pages.
+        // A 2-slug WP page must yield exactly 2 Game items (one per slug) and zero
+        // firmware-link items (ExtractDownloads returns [] when canonicalSlug is null).
+        // The 3-slug aggregator page must still be rejected and yield nothing.
+        var twoSlugPageLink = $"{BaseUrl}/halloween-ultraman/";
+        var aggregatorPageLink = $"{BaseUrl}/2445-2/";
+
+        var pagesJson = $$"""
+            [
+              {
+                "id": 1450,
+                "slug": "halloween-ultraman",
+                "link": "{{twoSlugPageLink}}",
+                "parent": 0,
+                "modified": "2026-04-10T23:25:43",
+                "title": { "rendered": "Halloween / Ultraman" },
+                "content": {
+                  "rendered": "<a href=\"https://{{S3Host}}/halloween/software_versions/v1.17/code_H78.pkg\">Halloween v1.17</a> <a href=\"https://{{S3Host}}/ultraman/software_versions/v1.00/ultraman.pkg\">Ultraman v1.00</a>"
+                }
+              },
+              {
+                "id": 2445,
+                "slug": "2445-2",
+                "link": "{{aggregatorPageLink}}",
+                "parent": 0,
+                "modified": "2026-02-15T08:00:00",
+                "title": { "rendered": "SCOOBY BASE IMAGE UPDATE" },
+                "content": {
+                  "rendered": "<a href=\"https://{{S3Host}}/scooby/x\">a</a><a href=\"https://{{S3Host}}/beetlejuice/x\">b</a><a href=\"https://{{S3Host}}/texaschainsaw/x\">c</a>"
+                }
+              }
+            ]
+            """;
+
+        var (scraper, _, _) = BuildScraper(h => h
+            .MapJson(BuildPagesUrl(page: 1), pagesJson));
+
+        var items = await ScrapeAllAsync(scraper);
+
+        // 2 Game items only — no firmware links (ExtractDownloads returns [] for 2-slug pages).
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, i => i.Game?.Slug == "halloween");
+        Assert.Contains(items, i => i.Game?.Slug == "ultraman");
+
+        // Provenance must be propagated on both items.
+        Assert.All(items, item =>
+        {
+            Assert.Equal(SourceType.SpookyPinballGamePage, item.SourceType);
+            Assert.Equal(twoSlugPageLink, item.DiscoveryUrl);
+            Assert.Equal("Spooky Pinball Game Page", item.DiscoveryContext);
+        });
+
+        // The 3-slug aggregator page must yield zero items.
+        Assert.DoesNotContain(items, i => i.Game?.Slug == "scooby");
+        Assert.DoesNotContain(items, i => i.DiscoveryUrl.Contains("/2445-2/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ScrapeAsync_GateThrowsOnReport_BubblesUp()
     {
         // Symmetric to the acquire-throws case: a politeness violation

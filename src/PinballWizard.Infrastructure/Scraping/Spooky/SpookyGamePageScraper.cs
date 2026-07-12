@@ -77,16 +77,22 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         {
             if (cancellationToken.IsCancellationRequested) yield break;
 
-            var (record, downloads) = TryExtract(page);
-            if (record is null) continue;
+            var games = TryExtractGames(page);
+            // Downloads only when the page produced at least one game. For 2-slug
+            // pages ExtractDownloads returns [] (canonicalSlug is null) — acceptable
+            // for this PR; shared-page firmware linking is a follow-up, not a regression.
+            List<DiscoveredLink> downloads = games.Count > 0 ? TryExtractDownloads(page) : [];
 
-            yield return new ScrapedItem
+            foreach (var game in games)
             {
-                Game = record,
-                SourceType = SourceType.SpookyPinballGamePage,
-                DiscoveryUrl = page.Link,
-                DiscoveryContext = "Spooky Pinball Game Page",
-            };
+                yield return new ScrapedItem
+                {
+                    Game = game,
+                    SourceType = SourceType.SpookyPinballGamePage,
+                    DiscoveryUrl = page.Link,
+                    DiscoveryContext = "Spooky Pinball Game Page",
+                };
+            }
 
             foreach (var link in downloads)
             {
@@ -103,22 +109,33 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         Logger.LogInformation("Spooky Pinball scraper complete");
     }
 
-    private (GameRecord? Game, IReadOnlyList<DiscoveredLink> Downloads) TryExtract(SpookyPageRaw page)
+    private IReadOnlyList<GameRecord> TryExtractGames(SpookyPageRaw page)
     {
         try
         {
-            var record = SpookyGamePageExtractor.ExtractGame(page, _options.S3Host);
-            if (record is null) return (null, []);
-            var downloads = SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
-            return (record, downloads);
+            return SpookyGamePageExtractor.ExtractGames(page, _options.S3Host);
         }
         catch (Exception ex)
         {
             // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
             // propagate via the runtime. One bad page is logged and skipped.
             Logger.LogWarning(
-                ex, "Spooky scraper: failed to extract page {Url}; skipping.", page.Link);
-            return (null, []);
+                ex, "Spooky scraper: failed to extract games from page {Url}; skipping.", page.Link);
+            return [];
+        }
+    }
+
+    private List<DiscoveredLink> TryExtractDownloads(SpookyPageRaw page)
+    {
+        try
+        {
+            return SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(
+                ex, "Spooky scraper: failed to extract downloads from page {Url}; skipping.", page.Link);
+            return [];
         }
     }
 }
