@@ -25,6 +25,10 @@ public sealed class ApBulletinExtractorTests
         Assert.Contains(links, l => l.FileUrl == "http://s4.american-pinball.com/img/support/2021-5/Oktoberfest-SB-002.pdf" && l.LinkText == "Oktoberfest Service Bulletin 002");
         Assert.Contains(links, l => l.FileUrl == "http://s4.american-pinball.com/img/support/2022-1/HotWheels-SB-003.pdf" && l.LinkText == "Hot Wheels Service Bulletin 003");
         Assert.All(links, l => Assert.Equal("American Pinball Support Page", l.DiscoveryContext));
+        // GameSlug must be populated so the linker can narrow to AP machines.
+        Assert.Contains(links, l => l.GameSlug == "houdini");
+        Assert.Contains(links, l => l.GameSlug == "oktoberfest");
+        Assert.Contains(links, l => l.GameSlug == "hotwheels");
     }
 
     [Fact]
@@ -65,4 +69,23 @@ public sealed class ApBulletinExtractorTests
         var links = ApBulletinExtractor.ExtractBulletins(string.Empty, SupportPageUrl);
         Assert.Empty(links);
     }
+
+    // DeriveGameSlug — verifies the AP-specific "-SB-NNN" suffix is stripped and
+    // the title portion is lowercased to produce a linker-usable slug.
+    [Theory]
+    [InlineData("http://s4.american-pinball.com/img/support/2020-2/Houdini-SB-001.pdf", "houdini")]
+    [InlineData("http://s4.american-pinball.com/img/support/2021-5/Oktoberfest-SB-002.pdf", "oktoberfest")]
+    [InlineData("http://s4.american-pinball.com/img/support/2022-1/HotWheels-SB-003.pdf", "hotwheels")]
+    // Case-insensitive "-sb-" match
+    [InlineData("http://s4.american-pinball.com/img/support/2023-1/Houdini-sb-004.pdf", "houdini")]
+    public void DeriveGameSlug_StripsBulletinSuffix_ReturnsLowercasedTitlePart(string fileUrl, string expectedSlug)
+        => Assert.Equal(expectedSlug, ApBulletinExtractor.DeriveGameSlug(fileUrl));
+
+    [Theory]
+    // No "-SB-" pattern → return null rather than fabricating a slug
+    [InlineData("http://s4.american-pinball.com/img/support/2020-2/someother.pdf")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void DeriveGameSlug_WithoutBulletinSuffix_ReturnsNull(string? fileUrl)
+        => Assert.Null(ApBulletinExtractor.DeriveGameSlug(fileUrl!));
 }

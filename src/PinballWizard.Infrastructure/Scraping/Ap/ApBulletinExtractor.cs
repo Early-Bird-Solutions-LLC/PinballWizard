@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
 
@@ -44,9 +45,46 @@ public static class ApBulletinExtractor
                 FileUrl = url,
                 LinkText = string.IsNullOrEmpty(text) ? null : text,
                 DiscoveryContext = DiscoveryCtx,
+                GameSlug = DeriveGameSlug(url),
             });
         }
 
         return links;
+    }
+
+    // Derives a best-effort game slug from an AP bulletin PDF URL by extracting the
+    // title portion that precedes the service-bulletin suffix ("-SB-NNN").
+    //
+    // AP CDN filenames follow the pattern: {GameTitle}-SB-{number}.pdf
+    // e.g. "Houdini-SB-001.pdf"    → "houdini"
+    //      "Oktoberfest-SB-002.pdf" → "oktoberfest"
+    //      "HotWheels-SB-003.pdf"  → "hotwheels"
+    //
+    // If the filename does not contain a recognisable bulletin suffix, returns null
+    // so the linker falls back to its Tier-2 filename-matching strategy.
+    public static string? DeriveGameSlug(string fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl)) return null;
+
+        try
+        {
+            var filename = Path.GetFileNameWithoutExtension(
+                Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri)
+                    ? uri.AbsolutePath
+                    : fileUrl);
+
+            if (string.IsNullOrWhiteSpace(filename)) return null;
+
+            // Strip the service-bulletin suffix "-SB-NNN" (and anything after).
+            var sbIdx = filename.IndexOf("-SB-", StringComparison.OrdinalIgnoreCase);
+            if (sbIdx <= 0) return null;
+
+            var titlePart = filename[..sbIdx].ToLowerInvariant().Trim('-', '_');
+            return string.IsNullOrEmpty(titlePart) ? null : titlePart;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

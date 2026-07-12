@@ -19,6 +19,10 @@ public enum SourceType
     MultimorphicProductPage,
     JjpSupportPage,
     PinballBrothersFreshdeskArticle,
+    // American Pinball /support/ page — distinct from Stern's ServiceBulletinPage so
+    // InferManufacturerKey can route AP bulletins to the "americanpinball" partition
+    // rather than "stern". Additive; ServiceBulletinPage remains Stern-only.
+    AmericanPinballBulletinPage,
     // Kineticist tutorials, Tilt Forums rulesheets, TWIP newsletters — index + doc-store, no scraper
     SynthesizedArticle,
 }

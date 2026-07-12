@@ -70,7 +70,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
             yield return new ScrapedItem
             {
                 Link = link,
-                SourceType = SourceType.ServiceBulletinPage,
+                SourceType = SourceType.AmericanPinballBulletinPage,
                 DiscoveryUrl = supportPageUrl.ToString(),
                 DiscoveryContext = "American Pinball Support Page",
             };
