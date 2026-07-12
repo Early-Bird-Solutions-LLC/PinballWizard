@@ -1,0 +1,105 @@
+# Scheduled corpus-coverage probe against the live RAG index.
+#
+# Proves that every ingested (source × document_type) cell is present and
+# retrievable — the coverage guarantee the eval harness (a curated regression
+# floor) does not provide. No LLM calls: presence is a facet/count query,
+# retrievability is one retrieval per cell. A gap opens/refreshes a pinned issue
+# (honest-failure surfacing, invariant #17); a green run closes it.
+#
+# Auth: azure/login (OIDC, no long-lived secret), same federated credential as
+# deploy.yml. The CLI's SharedAzureCredential resolves against the AI Search
+# index; AZURE_TOKEN_CREDENTIALS=dev forces the developer chain (AzureCli, which
+# azure/login populates) per the local live-load runbook.
+
+name: Corpus coverage
+
+on:
+  schedule:
+    - cron: '41 6 * * *' # daily, offset off top-of-hour
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write   # OIDC token exchange for azure/login
+
+concurrency:
+  group: corpus-coverage
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    name: Corpus coverage probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run corpus-coverage probe
+        env:
+          AiSearch__Endpoint: https://pinwiz-search-dev-buutj.search.windows.net
+          AZURE_TOKEN_CREDENTIALS: dev
+        run: |
+          dotnet run --project src/PinballWizard.Cli --configuration Release -- --corpus-coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: data/eval/results/coverage.*.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Raise the alarm
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Corpus coverage GAP against the deployed index"
+          body="Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still gapping. $body"
+          else
+            alarm_body=$(printf 'The daily corpus-coverage probe found a gap: a (source × document_type) cell is not retrievable, or an expected source has zero indexed chunks. %s\n\nTriage: download the coverage-report artifact; each gap names the source + document_type. Closes automatically when a run goes green.' "$body")
+            gh issue create --title "$title" --label bug --body "$alarm_body"
+          fi
+
+      - name: Close the alarm on green
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Corpus coverage GAP against the deployed index"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Coverage is back to full. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            gh issue close "$existing"
+          fi
