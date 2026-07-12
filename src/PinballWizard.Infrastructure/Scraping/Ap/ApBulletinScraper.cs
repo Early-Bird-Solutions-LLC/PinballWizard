@@ -72,7 +72,7 @@ public sealed class ApBulletinScraper : PoliteScraperBase, ISourceScraper
                 Link = link,
                 SourceType = SourceType.AmericanPinballBulletinPage,
                 DiscoveryUrl = supportPageUrl.ToString(),
-                DiscoveryContext = "American Pinball Support Page",
+                DiscoveryContext = ApBulletinExtractor.DiscoveryCtx,
             };
         }
 

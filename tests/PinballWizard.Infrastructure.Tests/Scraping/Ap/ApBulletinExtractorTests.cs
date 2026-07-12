@@ -76,6 +76,9 @@ public sealed class ApBulletinExtractorTests
     [InlineData("http://s4.american-pinball.com/img/support/2020-2/Houdini-SB-001.pdf", "houdini")]
     [InlineData("http://s4.american-pinball.com/img/support/2021-5/Oktoberfest-SB-002.pdf", "oktoberfest")]
     [InlineData("http://s4.american-pinball.com/img/support/2022-1/HotWheels-SB-003.pdf", "hotwheels")]
+    // Hyphenated title: internal hyphens are preserved (only leading/trailing are trimmed);
+    // the linker's NormalizeForMatch treats the hyphen as a word separator.
+    [InlineData("http://s4.american-pinball.com/img/support/2022-1/Hot-Wheels-SB-003.pdf", "hot-wheels")]
     // Case-insensitive "-sb-" match
     [InlineData("http://s4.american-pinball.com/img/support/2023-1/Houdini-sb-004.pdf", "houdini")]
     public void DeriveGameSlug_StripsBulletinSuffix_ReturnsLowercasedTitlePart(string fileUrl, string expectedSlug)
@@ -87,5 +90,5 @@ public sealed class ApBulletinExtractorTests
     [InlineData("")]
     [InlineData(null)]
     public void DeriveGameSlug_WithoutBulletinSuffix_ReturnsNull(string? fileUrl)
-        => Assert.Null(ApBulletinExtractor.DeriveGameSlug(fileUrl!));
+        => Assert.Null(ApBulletinExtractor.DeriveGameSlug(fileUrl));
 }

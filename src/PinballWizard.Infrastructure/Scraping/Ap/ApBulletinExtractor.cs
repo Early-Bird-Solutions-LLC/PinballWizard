@@ -10,7 +10,9 @@ public static class ApBulletinExtractor
     private static readonly HtmlParser Parser = new();
 
     private const string BulletinCdnHost = "s4.american-pinball.com";
-    private const string DiscoveryCtx = "American Pinball Support Page";
+    // internal so ApBulletinScraper sets the same DiscoveryContext on the ScrapedItem —
+    // one literal, no drift between the extractor's DiscoveredLink and the scraper's item.
+    internal const string DiscoveryCtx = "American Pinball Support Page";
 
     public static List<DiscoveredLink> ExtractBulletins(string html, Uri supportPageUrl)
     {
@@ -61,7 +63,7 @@ public static class ApBulletinExtractor
     //
     // If the filename does not contain a recognisable bulletin suffix, returns null
     // so the linker falls back to its Tier-2 filename-matching strategy.
-    public static string? DeriveGameSlug(string fileUrl)
+    public static string? DeriveGameSlug(string? fileUrl)
     {
         if (string.IsNullOrWhiteSpace(fileUrl)) return null;
 
@@ -83,7 +85,10 @@ public static class ApBulletinExtractor
         }
         catch
         {
-            // Defensive null for a malformed URL; the linker's Tier-2 filename-matching handles a null slug.
+            // Unreachable in practice: Uri.TryCreate returns false rather than throwing,
+            // Path.GetFileNameWithoutExtension accepts any string, and the slice is guarded.
+            // Kept as a defensive null (never a fabricated slug) — a null lets the linker's
+            // Tier-2 filename-matching take over rather than mis-attributing the document.
             return null;
         }
     }
