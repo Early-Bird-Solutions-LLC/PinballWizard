@@ -143,3 +143,40 @@ Metrics: `pinwiz.rag.coverage.cells_total`, `...cells_covered`,
   override table only if a cell's auto-query proves a poor proxy.
 - Making `CosmosAiSearchRagReconciler` exhaustive — complementary presence-only
   concern, not this probe.
+
+## As-built adjustments (from the live dry-run)
+
+Running the probe read-only against the live `pinwiz-rag-v1` index (31,444 chunks)
+surfaced several things unit tests could not, all now fixed on this branch:
+
+- **AI Search `$filter` has no `startswith`.** The recognizer prefix match is a
+  range comparison instead: `document_id ge 'doc_' and document_id lt 'doc` `` (the
+  upper bound is the prefix with its last char incremented). The unit test had
+  pinned the unsupported `startswith` form — only the live call caught it.
+- **Retrievability is scoped to the cell.** The retrieval passes the cell's
+  `document_type` (and the manufacturer when the source has exactly one value) so
+  the derived query tests the cell's own findability instead of losing to
+  cross-cell ranking (unscoped, even `stern/Manual` with 22k chunks false-missed).
+- **Retrievability miss is a warning, not a gap.** The auto-derived query is an
+  imperfect proxy on tiny cells; the hard gate is source-floor presence
+  (an `ExpectedNonEmpty` source with zero chunks). Cell misses are reported as
+  `RetrievabilityWarnings` and do not set the non-zero exit code.
+- **Sub-doc sources roll up into their parent.** `jjp_support`, `ap_bulletins`,
+  `spooky_support`, `pb_docs` carry the parent manufacturer + `doc_` and are
+  indistinguishable from the parent in the index, so they are covered by the
+  parent `RagSource` and excluded from the drift-guard (with a comment).
+- **The verb needs Foundry + AI Search (no Cosmos).** Retrieval embeds the query,
+  so `AiFoundry:ProjectEndpoint` is required alongside `AiSearch:Endpoint`. A
+  pre-existing CLI bug (eager `ScraperOrchestrator` resolution + lost
+  `Environment.ExitCode`) was fixed so utility verbs run without Cosmos and their
+  exit codes propagate.
+- **Real ingestion gaps found.** American Pinball, Spooky, and Pinball Brothers
+  have zero scraped (`doc_`) documents indexed — a genuine finding, tracked in
+  issue #745. Their `RagSource` entries stay `ExpectedNonEmpty=true` so the probe
+  flags them until the ingestion is fixed.
+
+Verified live matrix (indexed `doc_`/synthesized content per source): Stern
+(Manual 22,713; FeatureMatrix 131; ServiceBulletin 68), JJP/"Jersey Jack Pinball"
+(Manual 2,672), Chicago Gaming (Manual 17), Kineticist (Rulesheet 1,636), Tilt
+Forums (Rulesheet 1,706), TWIP (NewsDigest 2,000), OPDB (MetadataCard 262;
+GameOverview 67).
