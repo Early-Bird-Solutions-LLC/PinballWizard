@@ -73,37 +73,50 @@ public sealed class MachineSearchIndexSchemaTests
     }
 
     [Fact]
-    public void Build_TitleUsesStandardAnalyzerAndSynonymMap()
+    public void Build_TitleUsesAsciiFoldingAnalyzerAndSynonymMap()
     {
-        // ADR-0049: "title" uses standard analyzer for BM25 + synonym expansion.
-        // Must be searchable + filterable + sortable.
+        // ADR-0049 + diacritic-fold fix: "title" uses the custom asciifold analyzer
+        // for BM25 + synonym expansion so "Pokemon" query matches "Pokémon" catalog
+        // entry. Both index-time and query-time fold diacritics because AnalyzerName
+        // is a single analyzer that applies to both sides. Must be searchable +
+        // filterable + sortable.
         var index = Build();
         var title = index.Fields.Single(f => f.Name == MachineSearchIndexFields.Title);
         Assert.True(title.IsSearchable);
         Assert.True(title.IsFilterable);
         Assert.True(title.IsSortable);
-        Assert.Equal(LexicalAnalyzerName.StandardLucene, title.AnalyzerName);
+        Assert.Equal(
+            new LexicalAnalyzerName(MachineSearchIndexSchema.AsciiFoldingAnalyzerName),
+            title.AnalyzerName);
+        // Single-analyzer path (not split) — so the one asciifold analyzer folds BOTH
+        // index-time and query-time. If either split slot were set, AnalyzerName would
+        // be ignored and one side could stop folding (the title_prefix test asserts the
+        // mirror image: split slots set, AnalyzerName null).
+        Assert.Null(title.IndexAnalyzerName);
+        Assert.Null(title.SearchAnalyzerName);
         Assert.Contains(MachineSearchIndexSchema.SynonymMapName, title.SynonymMapNames);
     }
 
     [Fact]
-    public void Build_TitlePrefixUsesSplitIndexSearchAnalyzerWithoutSynonymMap()
+    public void Build_TitlePrefixUsesSplitAsciiFoldIndexAndSearchAnalyzerWithoutSynonymMap()
     {
-        // ADR-0049: "title_prefix" uses split index/search analyzers.
-        // At INDEX time: edge-n-gram (emits 2..25-char n-grams for typeahead).
-        // At SEARCH time: standard Lucene (applying edge-n-gram at query time
-        // would n-gram the user's input and cause false positives on every
-        // 2-char prefix). No synonym map: abbreviation expansion is the
-        // standard "title" field's job; applying it here double-compounds.
+        // ADR-0049 + diacritic-fold fix: "title_prefix" uses split index/search analyzers.
+        // At INDEX time: edge-n-gram+asciifold (folds diacritics BEFORE emitting n-grams
+        //   so "Pokémon" produces n-grams "po","pok","poke",…,"pokemon" in the index).
+        // At SEARCH time: asciifold (folds "Pokemon" → "pokemon"; does NOT apply edgengram
+        //   at query time — that would n-gram the user's input and cause false positives).
+        // No synonym map: abbreviation expansion is the "title" field's job.
         var index = Build();
         var titlePrefix = index.Fields.Single(f => f.Name == MachineSearchIndexFields.TitlePrefix);
         Assert.True(titlePrefix.IsSearchable);
         // Split analyzer pair — AnalyzerName must be null (single-analyzer path unused)
         Assert.Null(titlePrefix.AnalyzerName);
         Assert.Equal(
-            new LexicalAnalyzerName(MachineSearchIndexSchema.EdgeNGramAnalyzerName),
+            new LexicalAnalyzerName(MachineSearchIndexSchema.EdgeNGramAsciiFoldAnalyzerName),
             titlePrefix.IndexAnalyzerName);
-        Assert.Equal(LexicalAnalyzerName.StandardLucene, titlePrefix.SearchAnalyzerName);
+        Assert.Equal(
+            new LexicalAnalyzerName(MachineSearchIndexSchema.AsciiFoldingAnalyzerName),
+            titlePrefix.SearchAnalyzerName);
         // No synonym map on the prefix field
         Assert.Empty(titlePrefix.SynonymMapNames);
     }
@@ -229,14 +242,55 @@ public sealed class MachineSearchIndexSchemaTests
     }
 
     [Fact]
-    public void Build_HasEdgeNGramAndPhoneticCustomAnalyzers()
+    public void Build_HasAllFourCustomAnalyzers()
     {
-        // Both analyzers must be registered so the index API accepts the
+        // All custom analyzers must be registered so the index API accepts the
         // schema — referencing an undefined analyzer name causes a 400.
         var index = Build();
         var analyzerNames = index.Analyzers.Select(a => a.Name).ToHashSet();
-        Assert.Contains(MachineSearchIndexSchema.EdgeNGramAnalyzerName, analyzerNames);
-        Assert.Contains(MachineSearchIndexSchema.PhoneticAnalyzerName, analyzerNames);
+        Assert.Contains(MachineSearchIndexSchema.EdgeNGramAnalyzerName,        analyzerNames);
+        Assert.Contains(MachineSearchIndexSchema.PhoneticAnalyzerName,         analyzerNames);
+        Assert.Contains(MachineSearchIndexSchema.AsciiFoldingAnalyzerName,     analyzerNames);
+        Assert.Contains(MachineSearchIndexSchema.EdgeNGramAsciiFoldAnalyzerName, analyzerNames);
+    }
+
+    [Fact]
+    public void Build_AsciiFoldingAnalyzerUsesLowercaseThenAsciiFoldingFilters()
+    {
+        // The diacritic-fold fix relies on this exact filter chain:
+        //   lowercase (before fold, so "É" → "é" before "é" → "e")
+        //   asciifolding (strips accents so "é" → "e")
+        // Applied to "title" field (both index+query) and the search side of
+        // "title_prefix" so "Pokemon" ↔ "Pokémon" match at both layers.
+        var index = Build();
+        var analyzer = index.Analyzers
+            .OfType<CustomAnalyzer>()
+            .Single(a => a.Name == MachineSearchIndexSchema.AsciiFoldingAnalyzerName);
+        Assert.Equal(LexicalTokenizerName.Standard, analyzer.TokenizerName);
+        var filters = analyzer.TokenFilters.ToList();
+        Assert.Equal(2, filters.Count);
+        Assert.Equal(TokenFilterName.Lowercase,     filters[0]);
+        Assert.Equal(TokenFilterName.AsciiFolding,  filters[1]);
+    }
+
+    [Fact]
+    public void Build_EdgeNGramAsciiFoldAnalyzerUsesLowercaseAsciiFoldThenEdgeNGramFilters()
+    {
+        // The index-side analyzer for "title_prefix" must fold diacritics BEFORE
+        // generating n-grams: "Pokémon" → lowercase → "pokémon" → asciifold →
+        // "pokemon" → n-grams → "po","pok","poke",…,"pokemon". Without the
+        // asciifold step before edgengram the n-grams carry accented characters
+        // and a query "Pokemon" → "pokemon" would not match them.
+        var index = Build();
+        var analyzer = index.Analyzers
+            .OfType<CustomAnalyzer>()
+            .Single(a => a.Name == MachineSearchIndexSchema.EdgeNGramAsciiFoldAnalyzerName);
+        Assert.Equal(LexicalTokenizerName.Standard, analyzer.TokenizerName);
+        var filters = analyzer.TokenFilters.ToList();
+        Assert.Equal(3, filters.Count);
+        Assert.Equal(TokenFilterName.Lowercase,                          filters[0]);
+        Assert.Equal(TokenFilterName.AsciiFolding,                       filters[1]);
+        Assert.Equal(new TokenFilterName(MachineSearchIndexSchema.EdgeNGramFilterName), filters[2]);
     }
 
     [Fact]
