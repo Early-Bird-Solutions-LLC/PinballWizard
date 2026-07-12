@@ -36,7 +36,7 @@ public sealed class CorpusCoverageProberTests
         var cell = report.Cells.Single(c => c.Source == "kineticist_tutorials" && c.DocumentType == "Rulesheet");
         Assert.True(cell.Retrievable);
         Assert.Equal("Godzilla Wizard Mode", cell.Query);
-        Assert.Empty(report.CellGaps);
+        Assert.Empty(report.Warnings);
 
         // Retrieval must be scoped to the cell's doc_type; kineticist is a synthesized
         // (zero-manufacturer-value) source so Manufacturer must be null.
@@ -46,7 +46,7 @@ public sealed class CorpusCoverageProberTests
     }
 
     [Fact]
-    public async Task Cell_WhoseContentIsNotInRetrieval_IsAGap()
+    public async Task Cell_WhoseContentIsNotInRetrieval_IsARetrievabilityWarning_NotAGap()
     {
         var index = Substitute.For<ICorpusIndexQuery>();
         var kin = RagSourceCatalog.All.Single(s => s.SourceId == "kineticist_tutorials");
@@ -55,7 +55,10 @@ public sealed class CorpusCoverageProberTests
              .Returns([new DocTypeCount("Rulesheet", 5)]);
         index.SampleAsync(kin, "Rulesheet", Arg.Any<CancellationToken>())
              .Returns(new CorpusSample("kineticist_godzilla_GRBN", "Stern", "Rulesheet", "Godzilla", "Wizard Mode"));
-        index.CountAsync(Arg.Is<RagSource>(s => s != kin), Arg.Any<CancellationToken>()).Returns(0L);
+        // All other sources: 1 chunk (no source-floor gaps) + empty doc-type facets (no cells generated).
+        index.CountAsync(Arg.Is<RagSource>(s => s != kin), Arg.Any<CancellationToken>()).Returns(1L);
+        index.FacetDocumentTypesAsync(Arg.Is<RagSource>(s => s != kin), Arg.Any<CancellationToken>())
+             .Returns<IReadOnlyList<DocTypeCount>>([]);
 
         var retriever = Substitute.For<IRagRetriever>();
         // Retrieval returns a DIFFERENT source's chunk (a scraped doc_), not the Kineticist cell.
@@ -66,7 +69,10 @@ public sealed class CorpusCoverageProberTests
 
         var cell = report.Cells.Single(c => c.Source == "kineticist_tutorials");
         Assert.False(cell.Retrievable);
-        Assert.Contains(report.CellGaps, c => c.Source == "kineticist_tutorials");
+        // Unretrievable cell is a soft warning, not a hard gap.
+        Assert.Contains(report.Warnings, c => c.Source == "kineticist_tutorials");
+        Assert.Equal(1, report.RetrievabilityWarnings);
+        Assert.Equal(0, report.GapsTotal); // no source-floor gaps in this fixture
     }
 
     [Fact]
@@ -80,6 +86,7 @@ public sealed class CorpusCoverageProberTests
 
         Assert.Contains(report.SourceGaps, s => s.Source == "stern");        // ExpectedNonEmpty
         Assert.DoesNotContain(report.SourceGaps, s => s.Source == "twip");   // not ExpectedNonEmpty
+        Assert.True(report.GapsTotal >= 1);                                   // source-floor gaps are hard gaps
     }
 
     [Fact]

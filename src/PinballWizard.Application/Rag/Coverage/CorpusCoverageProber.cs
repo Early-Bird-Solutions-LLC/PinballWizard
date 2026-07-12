@@ -58,8 +58,9 @@ public sealed class CorpusCoverageProber : ICorpusCoverageProber
         }
 
         var covered = cells.Count(c => c.Retrievable);
-        var gaps = cells.Count(c => !c.Retrievable) + sources.Count(s => s.IsGap);
-        return new CoverageReport(cells, sources, cells.Count, covered, gaps);
+        var warnings = cells.Count(c => !c.Retrievable);
+        var gaps = sources.Count(s => s.IsGap);
+        return new CoverageReport(cells, sources, cells.Count, covered, gaps, warnings);
     }
 
     private async Task<CoverageCell> ProbeCellAsync(RagSource source, DocTypeCount dt, CancellationToken ct)

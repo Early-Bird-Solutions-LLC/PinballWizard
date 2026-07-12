@@ -1059,6 +1059,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
         PinballWizardTelemetry.RagCoverageCellsTotal.Add(report.CellsTotal);
         PinballWizardTelemetry.RagCoverageCellsCovered.Add(report.CellsCovered);
         PinballWizardTelemetry.RagCoverageGaps.Add(report.GapsTotal);
+        PinballWizardTelemetry.RagCoverageRetrievabilityWarnings.Add(report.RetrievabilityWarnings);
 
         var resultsDir = Path.Combine("data", "eval", "results");
         Directory.CreateDirectory(resultsDir);
@@ -1071,15 +1072,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
 
         Console.WriteLine();
         Console.WriteLine($"Corpus coverage: {report.CellsCovered}/{report.CellsTotal} cells retrievable, " +
-                          $"{report.GapsTotal} gaps. Report at {path}");
+                          $"{report.GapsTotal} source gaps, {report.RetrievabilityWarnings} retrievability warnings. " +
+                          $"Report at {path}");
         foreach (var g in report.SourceGaps)
         {
             Console.WriteLine($"  SOURCE GAP: {g.Source} has zero indexed chunks (ExpectedNonEmpty).");
         }
-        foreach (var g in report.CellGaps)
+        foreach (var w in report.Warnings)
         {
-            Console.WriteLine($"  CELL GAP: {g.Source} / {g.DocumentType} not retrievable" +
-                              (g.Error is null ? "." : $" ({g.Error})."));
+            Console.WriteLine($"  RETRIEVABILITY WARNING: {w.Source} / {w.DocumentType} not retrievable" +
+                              (w.Error is null ? "." : $" ({w.Error})."));
         }
 
         if (report.GapsTotal > 0)

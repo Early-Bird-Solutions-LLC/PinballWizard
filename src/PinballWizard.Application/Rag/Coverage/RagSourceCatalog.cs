@@ -22,15 +22,15 @@ public static class RagSourceCatalog
         new(IngestionSourceIds.Opdb, None, "overview_", None, ExpectedNonEmpty: true),
 
         // Scraped manufacturers — manufacturer value AND the doc_ prefix.
+        // Sub-doc sources (JjpSupportDocs, ApBulletins, SpookySupport, PinballBrothersDocuments)
+        // are omitted: their chunks carry the parent manufacturer value + doc_ prefix, making
+        // them indistinguishable from the parent RagSource in the index. They are covered by
+        // the parent entry and excluded from the drift-guard test accordingly.
         new(IngestionSourceIds.Stern, ["Stern"], "doc_", None, true),
         new(IngestionSourceIds.Jjp, ["Jersey Jack Pinball"], "doc_", None, true),
-        new(IngestionSourceIds.JjpSupportDocs, ["Jersey Jack Pinball"], "doc_", None, false),
         new(IngestionSourceIds.Ap, ["American Pinball"], "doc_", None, true),
-        new(IngestionSourceIds.ApBulletins, ["American Pinball"], "doc_", None, false),
         new(IngestionSourceIds.Spooky, ["Spooky", "Spooky Pinball"], "doc_", None, true),
-        new(IngestionSourceIds.SpookySupport, ["Spooky", "Spooky Pinball"], "doc_", None, false),
         new(IngestionSourceIds.PinballBrothers, ["Pinball Brothers"], "doc_", None, true),
-        new(IngestionSourceIds.PinballBrothersDocuments, ["Pinball Brothers"], "doc_", None, false),
         new(IngestionSourceIds.BarrelsOfFun, ["Barrels of Fun"], "doc_", None, false),
         new(IngestionSourceIds.Multimorphic, ["Multimorphic"], "doc_", None, false),
         new(IngestionSourceIds.Cgc, ["Chicago Gaming", "Chicago Gaming Company"], "doc_", None, true),

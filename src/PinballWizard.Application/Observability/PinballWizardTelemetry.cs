@@ -149,7 +149,12 @@ public static class PinballWizardTelemetry
     public static readonly Counter<long> RagCoverageGaps = Meter.CreateCounter<long>(
         "pinwiz.rag.coverage.gaps_total",
         unit: "{gap}",
-        description: "Corpus-coverage gaps: cells not retrievable, plus ExpectedNonEmpty sources with zero chunks.");
+        description: "Corpus-coverage hard gaps: ExpectedNonEmpty sources with zero indexed chunks. Drives the non-zero exit code for the --corpus-coverage verb.");
+
+    public static readonly Counter<long> RagCoverageRetrievabilityWarnings = Meter.CreateCounter<long>(
+        "pinwiz.rag.coverage.retrievability_warnings_total",
+        unit: "{cell}",
+        description: "Cells whose sample content was not retrievable by the auto-derived query — a reported signal, not a hard gap (the query is an imperfect proxy).");
 
     public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
         "pinwiz.ai.escalations",

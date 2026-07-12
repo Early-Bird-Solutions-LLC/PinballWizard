@@ -22,11 +22,12 @@ public sealed record CoverageReport(
     IReadOnlyList<SourceFloor> Sources,
     int CellsTotal,
     int CellsCovered,
-    int GapsTotal)
+    int GapsTotal,
+    int RetrievabilityWarnings)
 {
-    // A cell gap: a live cell whose content was not retrievable.
-    public IEnumerable<CoverageCell> CellGaps => Cells.Where(c => !c.Retrievable);
-
-    // A source-floor gap: an ExpectedNonEmpty source with zero chunks.
+    // Hard gaps: an ExpectedNonEmpty source with zero indexed chunks.
     public IEnumerable<SourceFloor> SourceGaps => Sources.Where(s => s.IsGap);
+    // Soft warnings: a live cell whose sample content wasn't retrievable (the
+    // auto-derived query is an imperfect proxy — reported, not gated).
+    public IEnumerable<CoverageCell> Warnings => Cells.Where(c => !c.Retrievable);
 }

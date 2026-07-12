@@ -17,6 +17,12 @@ public sealed class RagSourceCatalogTests
         var excluded = new HashSet<string>(StringComparer.Ordinal)
         {
             IngestionSourceIds.PinballMap, // location data, never RAG-indexed
+            // sub-doc sources indexed under the parent manufacturer's (manufacturer + doc_) recognizer —
+            // covered by the parent RagSource, not separately distinguishable in the index
+            IngestionSourceIds.JjpSupportDocs,
+            IngestionSourceIds.ApBulletins,
+            IngestionSourceIds.SpookySupport,
+            IngestionSourceIds.PinballBrothersDocuments,
         };
 
         var allSourceIds = typeof(IngestionSourceIds)
