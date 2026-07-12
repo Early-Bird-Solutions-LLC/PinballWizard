@@ -37,8 +37,18 @@ namespace PinballWizard.Infrastructure.Rag.Indexing;
 internal static class MachineSearchIndexSchema
 {
     // Custom analyzer names defined on this index
-    internal const string EdgeNGramAnalyzerName   = "pinwiz-machines-edgengram-v1";
-    internal const string PhoneticAnalyzerName    = "pinwiz-machines-phonetic-v1";
+    internal const string EdgeNGramAnalyzerName        = "pinwiz-machines-edgengram-v1";
+    internal const string PhoneticAnalyzerName         = "pinwiz-machines-phonetic-v1";
+    // ASCII-fold analyzer: standard tokenizer → lowercase → asciifolding.
+    // Fixes diacritic mismatch: "Pokemon" query hits "Pokémon" catalog entry
+    // because both sides fold accents to their ASCII equivalents before BM25.
+    internal const string AsciiFoldingAnalyzerName     = "pinwiz-machines-asciifold-v1";
+    // Edge-n-gram + ASCII-fold: standard tokenizer → lowercase → asciifolding → edgengram.
+    // Index-side analyzer for "title_prefix": n-grams are generated from the folded
+    // form so a query "Pokemon" matches the n-gram "pokemon" that was emitted when
+    // "Pokémon" was indexed. The asciifolding step is placed BEFORE the edgengram
+    // filter so n-grams cover the diacritic-stripped token, not the accented original.
+    internal const string EdgeNGramAsciiFoldAnalyzerName = "pinwiz-machines-edgengram-asciifold-v1";
 
     // Custom token filter names
     internal const string EdgeNGramFilterName     = "pinwiz-machines-edgengram-filter-v1";
@@ -64,34 +74,44 @@ internal static class MachineSearchIndexSchema
                 IsFilterable = true,
             },
 
-            // title — standard analyzer (BM25). The primary relevance field
+            // title — ASCII-fold analyzer (BM25). The primary relevance field
             // that semantic ranker and synonym expansion operate on. Sortable
             // + filterable for admin queries by exact title; facetable so the
             // frontend can bucket results by exact title match.
             // Synonym map attached so abbreviations expand at query time.
+            //
+            // Uses AsciiFoldingAnalyzerName (standard tokenizer → lowercase →
+            // asciifolding) rather than StandardLucene so diacritic-stripped
+            // queries ("Pokemon") match catalog entries that carry accents
+            // ("Pokémon"): both sides fold to "pokemon" before BM25. Synonym
+            // expansion is unaffected — AI Search applies the synonym map after
+            // analysis, so synonyms still expand on the lowercased+folded tokens.
             new(MachineSearchIndexFields.Title, SearchFieldDataType.String)
             {
                 IsSearchable  = true,
                 IsFilterable  = true,
                 IsSortable    = true,
                 IsFacetable   = false,  // title has too many distinct values for a useful facet
-                AnalyzerName  = LexicalAnalyzerName.StandardLucene,
+                AnalyzerName  = new LexicalAnalyzerName(AsciiFoldingAnalyzerName),
                 SynonymMapNames = { SynonymMapName },
             },
 
             // title_prefix — split index/search analyzer. At index time the
-            // edge-n-gram analyzer emits 2..25-char n-grams so prefix queries
-            // and typeahead work without wildcard syntax. At search time the
-            // standard analyzer is used — applying the edge-n-gram at query time
-            // would n-gram the user's input, causing every 2-char prefix to
-            // match everything in the index (false positives). No synonym map:
-            // synonym expansion on an n-gram field double-compounds the query
-            // path; abbreviation resolution is the standard "title" field's job.
+            // edge-n-gram+asciifold analyzer emits 2..25-char n-grams from the
+            // diacritic-stripped form so prefix queries and typeahead work without
+            // wildcard syntax and without diacritic mismatch ("Poké" prefix hits
+            // "Pokémon" because the index stores "poke", "pokem", …, "pokemon").
+            // At search time the asciifold analyzer is used (not edgengram) —
+            // applying the edge-n-gram at query time would n-gram the user's input,
+            // causing every 2-char prefix to match everything in the index (false
+            // positives). No synonym map: synonym expansion on an n-gram field
+            // double-compounds the query path; abbreviation resolution is the
+            // "title" field's job.
             new(MachineSearchIndexFields.TitlePrefix, SearchFieldDataType.String)
             {
-                IsSearchable      = true,
-                IndexAnalyzerName = new LexicalAnalyzerName(EdgeNGramAnalyzerName),
-                SearchAnalyzerName = LexicalAnalyzerName.StandardLucene,
+                IsSearchable       = true,
+                IndexAnalyzerName  = new LexicalAnalyzerName(EdgeNGramAsciiFoldAnalyzerName),
+                SearchAnalyzerName = new LexicalAnalyzerName(AsciiFoldingAnalyzerName),
             },
 
             // title_phonetic — doubleMetaphone phonetic analyzer. Indexes
@@ -249,6 +269,40 @@ internal static class MachineSearchIndexSchema
                     {
                         TokenFilterName.Lowercase,
                         new TokenFilterName(PhoneticFilterName),
+                    },
+                },
+
+                // ASCII-fold: standard tokenizer → lowercase → asciifolding.
+                // Applied to the "title" field (AnalyzerName — both index+query)
+                // and the search side of "title_prefix" (SearchAnalyzerName). By
+                // folding diacritics on both sides, "Pokemon" at query time and
+                // "Pokémon" at index time both resolve to "pokemon", enabling BM25
+                // to score them as a match. Lowercase before asciifold is the
+                // standard convention: "É" → "é" (lowercase) → "e" (fold).
+                new CustomAnalyzer(AsciiFoldingAnalyzerName, LexicalTokenizerName.Standard)
+                {
+                    TokenFilters =
+                    {
+                        TokenFilterName.Lowercase,
+                        TokenFilterName.AsciiFolding,
+                    },
+                },
+
+                // Edge-n-gram + ASCII-fold: standard tokenizer → lowercase →
+                // asciifolding → edgengram filter.
+                // Applied to the INDEX side of "title_prefix" only. The asciifold
+                // step is placed BEFORE the edgengram filter so n-grams are
+                // generated from the folded form: "Pokémon" → "pokemon" →
+                // n-grams "po","pok","poke","pokem","pokemo","pokemon". A query
+                // "Pokemon" via the AsciiFoldingAnalyzer yields "pokemon", which
+                // matches the n-gram "pokemon" produced here.
+                new CustomAnalyzer(EdgeNGramAsciiFoldAnalyzerName, LexicalTokenizerName.Standard)
+                {
+                    TokenFilters =
+                    {
+                        TokenFilterName.Lowercase,
+                        TokenFilterName.AsciiFolding,
+                        new TokenFilterName(EdgeNGramFilterName),
                     },
                 },
             },
