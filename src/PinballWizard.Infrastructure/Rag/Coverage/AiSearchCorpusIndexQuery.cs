@@ -10,8 +10,8 @@ namespace PinballWizard.Infrastructure.Rag.Coverage;
 // ICorpusIndexQuery over Azure AI Search. Builds its SearchClient inline from
 // AiSearchOptions + SharedAzureCredential, mirroring AiSearchRagCorpusStatsReader.
 // Translates a RagSource recognizer into an OData filter (manufacturer value(s)
-// AND/OR document_id prefix); document_id is filterable (startswith), so a
-// per-source facet on document_type yields that source's live cells.
+// AND/OR document_id prefix); document_id is filterable via a range comparison,
+// so a per-source facet on document_type yields that source's live cells.
 public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
 {
     private readonly AiSearchOptions _options;
@@ -96,7 +96,7 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
     }
 
     // Recognizer → OData. manufacturer value(s) via equality OR-group; document_id
-    // prefix via startswith. At least one clause is always present.
+    // prefix via range (ge/lt). At least one clause is always present.
     internal static string BuildSourceFilter(RagSource source)
     {
         var clauses = new List<string>(2);
@@ -110,10 +110,23 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
 
         if (source.DocumentIdPrefix is { } prefix)
         {
-            clauses.Add($"startswith({AiSearchIndexFields.DocumentId}, '{Escape(prefix)}')");
+            clauses.Add(
+                $"({AiSearchIndexFields.DocumentId} ge '{Escape(prefix)}' and " +
+                $"{AiSearchIndexFields.DocumentId} lt '{Escape(PrefixUpperBound(prefix))}')");
         }
 
         return string.Join(" and ", clauses);
+    }
+
+    // Azure AI Search $filter has no startswith(); a prefix match is expressed as a
+    // range: id ge 'prefix' and id lt 'prefixUpperBound', where the upper bound is the
+    // prefix with its final char incremented by one code unit (e.g. "doc_" -> "doc`").
+    private static string PrefixUpperBound(string prefix)
+    {
+        // All recognizer prefixes are non-empty; the caller only passes non-null prefixes.
+        var chars = prefix.ToCharArray();
+        chars[^1] = (char)(chars[^1] + 1);
+        return new string(chars);
     }
 
     private static string Escape(string value) =>
