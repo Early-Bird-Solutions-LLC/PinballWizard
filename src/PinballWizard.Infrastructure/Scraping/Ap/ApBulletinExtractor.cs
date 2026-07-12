@@ -83,12 +83,13 @@ public static class ApBulletinExtractor
             var titlePart = filename[..sbIdx].ToLowerInvariant().Trim('-', '_');
             return string.IsNullOrEmpty(titlePart) ? null : titlePart;
         }
-        catch
+        catch (ArgumentException)
         {
-            // Unreachable in practice: Uri.TryCreate returns false rather than throwing,
-            // Path.GetFileNameWithoutExtension accepts any string, and the slice is guarded.
-            // Kept as a defensive null (never a fabricated slug) — a null lets the linker's
-            // Tier-2 filename-matching take over rather than mis-attributing the document.
+            // Defensive against malformed path/URL input: yield no slug (never a
+            // fabricated one) so the linker's Tier-2 filename-matching takes over
+            // rather than mis-attributing the document. Any *other* exception is
+            // unexpected and propagates to the scraper's outer handler, which logs
+            // it and aborts the run visibly (invariant #17 — degrade, don't mask).
             return null;
         }
     }
