@@ -11,7 +11,6 @@ public sealed record RagSource(
     string SourceId,
     IReadOnlyList<string> ManufacturerValues,
     string? DocumentIdPrefix,
-    IReadOnlyList<string> MachineIdSentinels,
     bool ExpectedNonEmpty)
 {
     // True when a retrieved chunk belongs to this source. Used to verify a

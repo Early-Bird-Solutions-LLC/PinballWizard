@@ -15,26 +15,26 @@ namespace PinballWizard.Infrastructure.Rag.Coverage;
 public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
 {
     private readonly AiSearchOptions _options;
+    private readonly Lazy<SearchClient> _client;
 
     public AiSearchCorpusIndexQuery(IOptions<AiSearchOptions> options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options.Value;
-    }
-
-    private SearchClient CreateClient()
-    {
-        if (!Uri.TryCreate(_options.Endpoint, UriKind.Absolute, out var endpoint))
+        _client = new Lazy<SearchClient>(() =>
         {
-            throw new InvalidOperationException(
-                $"Corpus coverage unavailable: {AiSearchOptions.EndpointKey} '{_options.Endpoint}' is not a valid absolute URL.");
-        }
-        return new SearchClient(endpoint, _options.IndexName, SharedAzureCredential.Instance);
+            if (!Uri.TryCreate(_options.Endpoint, UriKind.Absolute, out var endpoint))
+            {
+                throw new InvalidOperationException(
+                    $"Corpus coverage unavailable: {AiSearchOptions.EndpointKey} '{_options.Endpoint}' is not a valid absolute URL.");
+            }
+            return new SearchClient(endpoint, _options.IndexName, SharedAzureCredential.Instance);
+        });
     }
 
     public async Task<long> CountAsync(RagSource source, CancellationToken ct)
     {
-        var response = await CreateClient().SearchAsync<RetrievedChunkDocument>(
+        var response = await _client.Value.SearchAsync<RetrievedChunkDocument>(
             "*",
             new SearchOptions { Filter = BuildSourceFilter(source), IncludeTotalCount = true, Size = 0 },
             ct).ConfigureAwait(false);
@@ -43,7 +43,7 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
 
     public async Task<IReadOnlyList<DocTypeCount>> FacetDocumentTypesAsync(RagSource source, CancellationToken ct)
     {
-        var response = await CreateClient().SearchAsync<object>(
+        var response = await _client.Value.SearchAsync<object>(
             "*",
             new SearchOptions
             {
@@ -72,7 +72,7 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
     public async Task<CorpusSample?> SampleAsync(RagSource source, string documentType, CancellationToken ct)
     {
         var filter = $"{BuildSourceFilter(source)} and {AiSearchIndexFields.DocumentType} eq '{Escape(documentType)}'";
-        var response = await CreateClient().SearchAsync<RetrievedChunkDocument>(
+        var response = await _client.Value.SearchAsync<RetrievedChunkDocument>(
             "*",
             new SearchOptions
             {
@@ -96,7 +96,8 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
     }
 
     // Recognizer → OData. manufacturer value(s) via equality OR-group; document_id
-    // prefix via range (ge/lt). At least one clause is always present.
+    // prefix via range (ge/lt). At least one clause is always present — a source
+    // with neither is a catalog-configuration error and is caught here at call time.
     internal static string BuildSourceFilter(RagSource source)
     {
         var clauses = new List<string>(2);
@@ -113,6 +114,12 @@ public sealed class AiSearchCorpusIndexQuery : ICorpusIndexQuery
             clauses.Add(
                 $"({AiSearchIndexFields.DocumentId} ge '{Escape(prefix)}' and " +
                 $"{AiSearchIndexFields.DocumentId} lt '{Escape(PrefixUpperBound(prefix))}')");
+        }
+
+        if (clauses.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"RagSource '{source.SourceId}' has no recognizer (no manufacturer values and no document_id prefix).");
         }
 
         return string.Join(" and ", clauses);

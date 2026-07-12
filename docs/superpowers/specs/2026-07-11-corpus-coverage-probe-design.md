@@ -109,8 +109,10 @@ workflow: parse gaps → open/refresh pinned issue or close when green
 `CoverageReport`:
 - Per cell: `{ source, document_type, chunk_count, retrievable, sample_document_id, query }`
 - Aggregate: `{ cells_total, cells_covered, sources_total, sources_populated, gaps[] }`
-- A **gap** = (`ExpectedNonEmpty` source with 0 chunks) OR (a live cell whose
-  content was not retrievable).
+- A **gap** = `ExpectedNonEmpty` source with 0 chunks (source-floor only). A live
+  cell whose content was not retrievable is a **warning** (`RetrievabilityWarnings`),
+  not a gap — the auto-derived query is an imperfect proxy; the hard gate is source
+  presence.
 
 Metrics: `pinwiz.rag.coverage.cells_total`, `...cells_covered`,
 `...gaps_total` (tagged `source`, `document_type`).
