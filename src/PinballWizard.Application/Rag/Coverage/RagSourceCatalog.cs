@@ -23,8 +23,8 @@ public static class RagSourceCatalog
 
         // Scraped manufacturers — manufacturer value AND the doc_ prefix.
         new(IngestionSourceIds.Stern, ["Stern"], "doc_", None, true),
-        new(IngestionSourceIds.Jjp, ["Jersey Jack"], "doc_", None, true),
-        new(IngestionSourceIds.JjpSupportDocs, ["Jersey Jack"], "doc_", None, false),
+        new(IngestionSourceIds.Jjp, ["Jersey Jack Pinball"], "doc_", None, true),
+        new(IngestionSourceIds.JjpSupportDocs, ["Jersey Jack Pinball"], "doc_", None, false),
         new(IngestionSourceIds.Ap, ["American Pinball"], "doc_", None, true),
         new(IngestionSourceIds.ApBulletins, ["American Pinball"], "doc_", None, false),
         new(IngestionSourceIds.Spooky, ["Spooky", "Spooky Pinball"], "doc_", None, true),
