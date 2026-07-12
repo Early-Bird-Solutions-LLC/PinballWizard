@@ -51,12 +51,14 @@ public static class SpookyGamePageExtractor
         }
 
         // slugs.Count == 2 — shared-hardware page (e.g., Halloween + Ultraman).
+        // pageUrl is loop-invariant: a page with no Link can't yield a traceable
+        // record for either game, so bail once (mirrors ExtractGame's guard).
         var pageUrl = page.Link;
+        if (string.IsNullOrWhiteSpace(pageUrl)) return [];
+
         var games = new List<GameRecord>(2);
         foreach (var slug in slugs)
         {
-            if (string.IsNullOrWhiteSpace(pageUrl)) continue;
-
             games.Add(new GameRecord
             {
                 GameId = $"game_spooky_{slug}",

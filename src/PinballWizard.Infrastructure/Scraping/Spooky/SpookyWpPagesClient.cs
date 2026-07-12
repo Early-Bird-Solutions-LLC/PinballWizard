@@ -15,11 +15,12 @@ namespace PinballWizard.Infrastructure.Scraping.Spooky;
 /// </summary>
 /// <remarks>
 /// "Looks like a game page" means the page's content body contains
-/// firmware-download URLs at Spooky's S3 host AND those URLs all share
-/// a single distinct first path segment (the game's canonical slug).
-/// Aggregator pages — e.g., a base-image-update notice listing
-/// firmware for several games — naturally fail the single-slug check
-/// and are excluded.
+/// firmware-download URLs at Spooky's S3 host whose first path segments
+/// resolve to one or two distinct game slugs. One slug is the common
+/// case; two indicates a shared-hardware page (e.g. Halloween+Ultraman on
+/// the Pinotaur platform). Aggregator pages — e.g., a base-image-update
+/// notice listing firmware for three or more games — carry three or more
+/// distinct slugs, fail the check, and are excluded.
 /// </remarks>
 public sealed class SpookyWpPagesClient : PoliteScraperBase
 {
