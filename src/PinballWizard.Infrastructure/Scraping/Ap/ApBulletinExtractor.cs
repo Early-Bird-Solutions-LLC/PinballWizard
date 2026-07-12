@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using AngleSharp.Html.Parser;
 using PinballWizard.Core.Models;
 
@@ -84,6 +83,7 @@ public static class ApBulletinExtractor
         }
         catch
         {
+            // Defensive null for a malformed URL; the linker's Tier-2 filename-matching handles a null slug.
             return null;
         }
     }
