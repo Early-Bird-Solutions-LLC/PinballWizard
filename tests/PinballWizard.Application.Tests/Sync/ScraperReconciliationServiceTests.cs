@@ -435,6 +435,118 @@ public sealed class ScraperReconciliationServiceTests
         Assert.Equal("cactus-canyon", existing.ManufacturerSlugs["cgc"]);
     }
 
+    // ── Trailing-qualifier fallback (issue #660) ─────────────────────────
+    //
+    // CGC's current listing for Medieval Madness is "Medieval Madness Merlin Edition
+    // Pinball". NormalizeFranchiseTitle strips the trailing "pinball" decoration but
+    // leaves "merlinedition", so the exact franchise match (Pass 2) finds nothing.
+    // Pass 3 checks whether the scraped franchise starts with a catalog franchise title
+    // AND the remainder is entirely composed of DecorationWords tokens.
+
+    [Fact]
+    public async Task TrailingQualifierFallback_MerlinEditionPinball_MatchesEditionFamily()
+    {
+        // Positive case — the exact title from issue #660. Two CGC "Medieval Madness"
+        // bases share GroupId "G5pe4" (Remake 2015, Cosmic Edition 2021). The scraped
+        // title "Medieval Madness Merlin Edition Pinball" must match the whole edition
+        // family, not just one member, and must write the slug to both.
+        //
+        // NormalizeFranchiseTitle("Medieval Madness Merlin Edition Pinball"):
+        //   single-strips "pinball" -> "medievalmadnessmerlinedition"
+        // Exact match vs catalog "medievalmadness": FAILS (Pass 2 returns 0).
+        // Fallback: starts-with "medievalmadness" = true; remainder "merlinedition" is
+        // a DecorationWords token -> fully consumed -> MATCH (Pass 3). Two same-GroupId
+        // machines -> MatchedByGroup.
+        var remake = MakeMachine("G5pe4-MePZv", "cgc", "Medieval Madness");
+        remake.GroupId = "G5pe4"; remake.Year = 2015;
+        var cosmic = MakeMachine("G5pe4-MkPRV", "cgc", "Medieval Madness");
+        cosmic.GroupId = "G5pe4"; cosmic.Year = 2021;
+        StubPartition("cgc", remake, cosmic);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_medieval-madness",
+            Title = "Medieval Madness Merlin Edition Pinball",
+            Slug = "medieval-madness",
+            GamePageUrl = "https://www.chicago-gaming.com/coinop/medieval-madness/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.MatchedByGroup);
+        Assert.Equal(0, result.AmbiguousTitle);
+        Assert.Equal(0, result.Unmatched);
+        Assert.Equal(2, result.Upserts);
+        Assert.Equal("medieval-madness", remake.ManufacturerSlugs["cgc"]);
+        Assert.Equal("medieval-madness", cosmic.ManufacturerSlugs["cgc"]);
+    }
+
+    [Fact]
+    public async Task TrailingQualifierFallback_NonQualifierRemainder_DoesNotFalseMatch()
+    {
+        // False-positive guard — the most critical property of the fallback.
+        // "Medieval Madness Returns" shares the prefix "medievalmadness" with the
+        // catalog game, but "returns" is not in the qualifier set. The fallback must
+        // NOT match — accepting it would silently map a different game (or a future
+        // different franchise) onto the Medieval Madness slug. Result: Unmatched.
+        //
+        // This test proves the fallback is a narrow qualifier-only check, not a loose
+        // starts-with/prefix match. Any word absent from DecorationWords blocks the match.
+        var machine = MakeMachine("G5pe4-MePZv", "cgc", "Medieval Madness");
+        machine.GroupId = "G5pe4";
+        StubPartition("cgc", machine);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_medieval-madness-returns",
+            Title = "Medieval Madness Returns",   // "returns" is not a qualifier
+            Slug = "medieval-madness-returns",
+            GamePageUrl = "https://www.chicago-gaming.com/coinop/medieval-madness-returns/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.Unmatched);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(machine.ManufacturerSlugs);
+    }
+
+    [Fact]
+    public async Task TrailingQualifierFallback_NonFamilyMultiMatch_ReturnsAmbiguous()
+    {
+        // Ambiguity guard. Two catalog machines share the same franchise title "Foo"
+        // but belong to different OPDB groups (cross-era title reuse, the "Big Ben"
+        // pattern). The scraped title "Foo Edition Pinball" fails the exact match
+        // ("fooedition" != "foo") and then hits the fallback:
+        //   NormalizeFranchiseTitle strips "pinball" -> "fooedition"
+        //   Starts with "foo" (both machines) AND remainder "edition" is a qualifier.
+        //
+        // Both machines are prefix-matched but they are NOT an edition family
+        // (different GroupIds), so the reconciler must return Ambiguous — the same
+        // posture as the exact-match ambiguity guard (#657). The slug must not be
+        // smeared onto either machine.
+        var older = MakeMachine("AAAA-1", "cgc", "Foo");
+        older.GroupId = "AAAA";
+        var newer = MakeMachine("BBBB-1", "cgc", "Foo");
+        newer.GroupId = "BBBB";
+        StubPartition("cgc", older, newer);
+
+        var catalog = CatalogOf(new GameRecord
+        {
+            GameId = "game_cgc_foo",
+            Title = "Foo Edition Pinball",
+            Slug = "foo",
+            GamePageUrl = "https://www.chicago-gaming.com/coinop/foo/",
+        });
+
+        var result = await _service.ReconcileAsync(catalog, CancellationToken.None);
+
+        Assert.Equal(1, result.AmbiguousTitle);
+        Assert.Equal(0, result.Upserts);
+        Assert.Empty(older.ManufacturerSlugs);
+        Assert.Empty(newer.ManufacturerSlugs);
+    }
+
     // ── NormalizeTitle pure function ─────────────────────────────────────
 
     [Theory]
