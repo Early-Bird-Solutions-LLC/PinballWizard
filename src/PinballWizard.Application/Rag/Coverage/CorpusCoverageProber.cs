@@ -75,8 +75,16 @@ public sealed class CorpusCoverageProber : ICorpusCoverageProber
         var query = $"{sample.MachineTitle} {sample.SectionHeading}".Trim();
         try
         {
+            // Scope to the cell's doc_type (always) and single-value manufacturer (when
+            // unambiguous): tests whether the cell's own content is findable rather than
+            // letting cross-cell ranking bury it.  searchCorpus supports these same filters,
+            // so this is still a real end-to-end retrieval-pipeline test.
+            var options = new RetrievalOptions(
+                TopK: RetrievalTopK,
+                DocumentType: dt.DocumentType,
+                Manufacturer: source.ManufacturerValues.Count == 1 ? source.ManufacturerValues[0] : null);
             var hits = await _retriever
-                .RetrieveAsync(query, new RetrievalOptions(TopK: RetrievalTopK), ct)
+                .RetrieveAsync(query, options, ct)
                 .ConfigureAwait(false);
             var retrievable = hits.Any(h =>
                 source.Matches(h.DocumentId, h.Manufacturer) &&

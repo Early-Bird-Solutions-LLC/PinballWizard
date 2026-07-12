@@ -26,8 +26,9 @@ public sealed class CorpusCoverageProberTests
         // Every other source: empty + not expected, so no gaps from them.
         index.CountAsync(Arg.Is<RagSource>(s => s != kin), Arg.Any<CancellationToken>()).Returns(0L);
 
+        RetrievalOptions? capturedOptions = null;
         var retriever = Substitute.For<IRagRetriever>();
-        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Any<RetrievalOptions>(), Arg.Any<CancellationToken>())
+        retriever.RetrieveAsync(Arg.Any<string>(), Arg.Do<RetrievalOptions>(o => capturedOptions = o), Arg.Any<CancellationToken>())
                  .Returns([Chunk("kineticist_godzilla_GRBN", "Stern", "Rulesheet")]);
 
         var report = await BuildProber(index, retriever).RunAsync(CancellationToken.None);
@@ -36,6 +37,12 @@ public sealed class CorpusCoverageProberTests
         Assert.True(cell.Retrievable);
         Assert.Equal("Godzilla Wizard Mode", cell.Query);
         Assert.Empty(report.CellGaps);
+
+        // Retrieval must be scoped to the cell's doc_type; kineticist is a synthesized
+        // (zero-manufacturer-value) source so Manufacturer must be null.
+        Assert.NotNull(capturedOptions);
+        Assert.Equal("Rulesheet", capturedOptions!.DocumentType);
+        Assert.Null(capturedOptions.Manufacturer);
     }
 
     [Fact]
