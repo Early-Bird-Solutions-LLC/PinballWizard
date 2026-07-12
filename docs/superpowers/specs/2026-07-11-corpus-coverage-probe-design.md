@@ -1,7 +1,7 @@
 # Design — Corpus coverage probe (source × doc-type queryability)
 
 **Date:** 2026-07-11
-**Status:** Approved (design) — implementation plan to follow
+**Status:** Implemented
 
 ## Problem
 
