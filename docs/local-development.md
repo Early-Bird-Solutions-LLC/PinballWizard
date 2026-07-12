@@ -58,6 +58,7 @@ Foundry and AI Search require a live Azure identity. The emulator containers are
 - Aspire CLI (`dotnet tool install -g Microsoft.Aspire.Cli` or via workload)
 - An OPDB API token — register at [opdb.org/api](https://opdb.org/api); stored as machine env var `OPDB_API_TOKEN`
 - Access to the personal Earlybird Azure subscription (`b1f33f17`) — the Foundry project and AI Search index live there
+- **Preflight before any local-live CLI run** (i.e. any command that touches live Cosmos / AI Search / Foundry): run `pwsh ./infra/scripts/Check-DeveloperRbac.ps1`. The three developer data-plane RBAC grants (Cosmos Built-in Data Contributor, Search Index Data Contributor, Cognitive Services OpenAI User on Foundry) are stripped whenever a Deployment Stack runs without `developerObjectId` set — the committed `main-shared.dev.bicepparam` intentionally leaves it empty, so any deploy from a fresh clone silently removes them. Without them every live call 403s with no useful error. See [#744](https://github.com/Early-Bird-Solutions-LLC/PinballWizard/issues/744).
 
 ---
 
