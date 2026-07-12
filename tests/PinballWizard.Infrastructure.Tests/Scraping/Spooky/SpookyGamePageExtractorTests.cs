@@ -267,6 +267,14 @@ public sealed class SpookyGamePageExtractorTests
     // ExtractGames — new method that returns one GameRecord per S3 slug (1–2 slugs).
 
     [Fact]
+    public void ExtractGames_NullArgsThrow()
+    {
+        Assert.Throws<ArgumentNullException>(() => SpookyGamePageExtractor.ExtractGames(null!, S3Host));
+        Assert.ThrowsAny<ArgumentException>(() =>
+            SpookyGamePageExtractor.ExtractGames(new SpookyPageRaw(), "  "));
+    }
+
+    [Fact]
     public void ExtractGames_TwoSlugPage_ReturnsBothGamesWithSlugDerivedTitles()
     {
         // Halloween+Ultraman shared-hardware page: 2 distinct S3 slugs → 2 GameRecords.

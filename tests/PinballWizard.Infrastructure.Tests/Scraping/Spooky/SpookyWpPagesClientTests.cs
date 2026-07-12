@@ -121,7 +121,7 @@ public sealed class SpookyWpPagesClientTests
     }
 
     [Fact]
-    public void FilterGamePages_KeepsSingleSlugPagesOnly()
+    public void FilterGamePages_KeepsGamePages_RejectsAggregators()
     {
         var pages = new List<SpookyPageRaw>
         {

@@ -115,10 +115,10 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         {
             return SpookyGamePageExtractor.ExtractGames(page, _options.S3Host);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Broad catch: per-URL failure must not abort the loop; OOM/cancellation still
-            // propagate via the runtime. One bad page is logged and skipped.
+            // Broad catch: one bad page must not abort the loop — it is logged and skipped.
+            // Cancellation is excluded above so it propagates (the loop also re-checks the token).
             Logger.LogWarning(
                 ex, "Spooky scraper: failed to extract games from page {Url}; skipping.", page.Link);
             return [];
@@ -131,7 +131,7 @@ public sealed class SpookyGamePageScraper : PoliteScraperBase, ISourceScraper
         {
             return SpookyGamePageExtractor.ExtractDownloads(page, _options.S3Host);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Logger.LogWarning(
                 ex, "Spooky scraper: failed to extract downloads from page {Url}; skipping.", page.Link);

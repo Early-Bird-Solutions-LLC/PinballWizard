@@ -40,10 +40,10 @@ public sealed class SpookyGamePageScraperTests
     {
         // Two game pages — Beetlejuice (2 firmware assets) and
         // Texas Chainsaw (1) — plus an aggregator-page (3 distinct
-        // S3 slugs) that the single-S3-slug filter MUST reject. The
+        // S3 slugs) that the 1-or-2-slug filter MUST reject. The
         // aggregator's presence is the load-bearing fixture: a
-        // regression that loosened the filter would yield it as a
-        // game and the assertions below would catch it.
+        // regression that loosened the filter past two slugs would
+        // yield it as a game and the assertions below would catch it.
         var pagesJson = $$"""
             [
               {
