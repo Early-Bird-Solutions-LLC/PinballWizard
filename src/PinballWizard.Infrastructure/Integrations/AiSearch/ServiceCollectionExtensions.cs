@@ -100,6 +100,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IQueryEmbedder>(BuildQueryEmbedder);
         services.TryAddSingleton<IChunkEmbedder>(BuildChunkEmbedder);
         services.TryAddSingleton<IRagRetriever>(BuildRagRetriever);
+        services.TryAddSingleton<PinballWizard.Application.Rag.Coverage.ICorpusIndexQuery,
+            PinballWizard.Infrastructure.Rag.Coverage.AiSearchCorpusIndexQuery>();
+        services.TryAddSingleton<PinballWizard.Application.Rag.Coverage.ICorpusCoverageProber,
+            PinballWizard.Application.Rag.Coverage.CorpusCoverageProber>();
         services.TryAddSingleton<IMachineCorpusCoverage>(BuildMachineCorpusCoverage);
         services.TryAddSingleton<IRetrievalRankProbe, RetrievalRankProbe>();
         services.TryAddSingleton<IRagIndexer>(BuildRagIndexer);

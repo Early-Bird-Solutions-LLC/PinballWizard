@@ -15,11 +15,12 @@ namespace PinballWizard.Infrastructure.Scraping.Spooky;
 /// </summary>
 /// <remarks>
 /// "Looks like a game page" means the page's content body contains
-/// firmware-download URLs at Spooky's S3 host AND those URLs all share
-/// a single distinct first path segment (the game's canonical slug).
-/// Aggregator pages — e.g., a base-image-update notice listing
-/// firmware for several games — naturally fail the single-slug check
-/// and are excluded.
+/// firmware-download URLs at Spooky's S3 host whose first path segments
+/// resolve to one or two distinct game slugs. One slug is the common
+/// case; two indicates a shared-hardware page (e.g. Halloween+Ultraman on
+/// the Pinotaur platform). Aggregator pages — e.g., a base-image-update
+/// notice listing firmware for three or more games — carry three or more
+/// distinct slugs, fail the check, and are excluded.
 /// </remarks>
 public sealed class SpookyWpPagesClient : PoliteScraperBase
 {
@@ -108,8 +109,11 @@ public sealed class SpookyWpPagesClient : PoliteScraperBase
     /// <summary>
     /// Returns the subset of <paramref name="pages"/> whose content
     /// contains at least one S3 URL at <paramref name="s3Host"/> AND
-    /// whose S3 URLs all share a single distinct first path segment
-    /// (the game slug).
+    /// whose S3 URLs share one or two distinct first-path-segment slugs
+    /// (the game slug(s)). Two-slug pages are shared-hardware pages
+    /// (e.g., Halloween+Ultraman on the Pinotaur platform). Pages with
+    /// three or more distinct slugs are aggregator/update notices and
+    /// are excluded.
     /// </summary>
     public static List<SpookyPageRaw> FilterGamePages(IEnumerable<SpookyPageRaw> pages, string s3Host)
     {
@@ -120,7 +124,7 @@ public sealed class SpookyWpPagesClient : PoliteScraperBase
         foreach (var page in pages)
         {
             var slugs = ExtractS3Slugs(page.Content.Rendered, s3Host);
-            if (slugs.Count == 1)
+            if (slugs.Count is >= 1 and <= 2)
             {
                 result.Add(page);
             }
