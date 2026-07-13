@@ -100,6 +100,13 @@ param(
     [Parameter()]
     [switch]$SkipEnsureContainers,
 
+    # Deploy even though the resolved parameters leave developerObjectId empty,
+    # which STRIPS the developer's data-plane role assignments (see the
+    # developerObjectId guard below). Only pass this when that is genuinely what
+    # you want — e.g. a service-principal deploy that grants no human any roles.
+    [Parameter()]
+    [switch]$AllowNoDeveloperRbac,
+
     # Image tags for the Wizard web app and Api. If not supplied, the script
     # reads the currently-deployed image from the running ACA app so a manual
     # Bicep re-deploy does not revert the image to the placeholder.
@@ -160,6 +167,64 @@ if (-not (Test-Path $templateFile)) {
 }
 if (-not (Test-Path $parametersFile)) {
     throw "Parameters file not found: $parametersFile"
+}
+
+# -----------------------------------------------------------------------------
+# developerObjectId guard (#744)
+# -----------------------------------------------------------------------------
+# shared.bicep grants the developer data-plane roles (Cosmos Data Contributor,
+# Search Index Data Contributor, Cognitive Services OpenAI User) gated on
+# `!empty(developerObjectId)`. The COMMITTED main-shared.<env>.bicepparam sets it
+# to '' — deliberately, because this repo is PUBLIC and a personal AAD object id
+# does not belong in it. The real value lives only in the gitignored
+# main-shared.<env>.local.bicepparam.
+#
+# The failure mode that keeps recurring: deploy from a tree WITHOUT that local
+# file, the stack resolves developerObjectId='', and — because the stack owns
+# those assignments and runs deleteResources — it silently DELETES them. Nothing
+# fails; the roles are simply gone, and the next local CLI run against live dies
+# with an opaque 403 that reads like an outage. It has happened at least twice.
+#
+# So refuse. A destructive default must be an explicit choice, not a silent one
+# (invariant #17: degrade visibly, never silently).
+$developerObjectId = ''
+$paramMatch = Select-String -Path $parametersFile -Pattern "^\s*param\s+developerObjectId\s*=\s*'([^']*)'" |
+    Select-Object -First 1
+if ($paramMatch) {
+    $developerObjectId = $paramMatch.Matches[0].Groups[1].Value
+}
+
+if ([string]::IsNullOrWhiteSpace($developerObjectId)) {
+    if ($AllowNoDeveloperRbac) {
+        Write-Host '[!] developerObjectId is EMPTY and -AllowNoDeveloperRbac was passed.' -ForegroundColor Yellow
+        Write-Host '    This deploy will REMOVE the developer data-plane role assignments.' -ForegroundColor Yellow
+    }
+    else {
+        Write-Error @"
+developerObjectId is empty in: $parametersFile
+
+Deploying now would STRIP the developer data-plane role assignments (Cosmos Data
+Contributor, Search Index Data Contributor, Cognitive Services OpenAI User) — the
+stack owns them, and with an empty developerObjectId it deletes them. Local CLI
+runs against live would then fail with an opaque 403. See issue #744.
+
+Fix — create the gitignored local override with your object id:
+
+  cp infra/main-shared.$Environment.bicepparam infra/main-shared.$Environment.local.bicepparam
+  # then set, in that new file:
+  #   param developerObjectId = '<your az ad signed-in-user object id>'
+  # get it with:  az ad signed-in-user show --query id -o tsv
+
+Verify afterwards with:  pwsh ./infra/scripts/Check-DeveloperRbac.ps1
+
+If you genuinely intend a deploy that grants no human these roles (e.g. a
+service-principal-only deploy), re-run with -AllowNoDeveloperRbac.
+"@
+        exit 1
+    }
+}
+else {
+    Write-Host "  developerObjectId present ($($developerObjectId.Substring(0,8))…) — stack will own the developer data-plane roles." -ForegroundColor DarkGray
 }
 
 # -----------------------------------------------------------------------------
@@ -393,6 +458,35 @@ else {
 
     Write-Host ''
     Write-Host "[5/6] Deployment Stack '$stackName' updated successfully." -ForegroundColor Green
+
+    # Post-deploy RBAC assertion (#744). The guard above stops a deploy that WOULD strip
+    # the developer roles; this confirms the deploy actually LEFT them in place. Without
+    # it, a strip stays invisible until someone's next local-live CLI run dies on a 403
+    # that looks like an outage — which is exactly how this was found, twice.
+    if (-not [string]::IsNullOrWhiteSpace($developerObjectId)) {
+        Write-Host ''
+        Write-Host '  Verifying developer data-plane RBAC survived the deploy...' -ForegroundColor Cyan
+        $rbacCheck = Join-Path $PSScriptRoot 'Check-DeveloperRbac.ps1'
+        # Check-DeveloperRbac.ps1 takes no -Environment: its resource-name defaults are the
+        # dev account names (the 'buutj' suffix is not derivable from the env name). So only
+        # auto-verify for dev; a prod stack would need its own account names passed in.
+        if ((Test-Path $rbacCheck) -and $Environment -eq 'dev') {
+            & $rbacCheck -DeveloperObjectId $developerObjectId
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning @"
+The deploy succeeded but the developer data-plane role assignments are NOT all present.
+Local CLI runs against live will fail with a 403 until this is fixed. See issue #744.
+Re-grant with:  pwsh ./infra/scripts/Check-DeveloperRbac.ps1 -Fix
+"@
+            }
+        }
+        elseif ($Environment -ne 'dev') {
+            Write-Host "  (RBAC verification is dev-only — Check-DeveloperRbac.ps1's account defaults are dev names.)" -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host '  (Check-DeveloperRbac.ps1 not found — skipping RBAC verification.)' -ForegroundColor DarkGray
+        }
+    }
 
     # Print Bicep outputs so the operator can copy endpoints without a
     # separate az call. Stack outputs live at .properties.outputs.
