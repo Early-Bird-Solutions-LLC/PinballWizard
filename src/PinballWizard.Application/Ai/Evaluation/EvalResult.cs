@@ -50,7 +50,12 @@ public sealed record EvalScores(
     [property: JsonPropertyName("refusal_correctness")] double? RefusalCorrectness,
     [property: JsonPropertyName("answered_all_editions")] double? AnsweredAllEditions = null,
     [property: JsonPropertyName("honest_substitution")] double? HonestSubstitution = null,
-    [property: JsonPropertyName("grounding_integrity")] double? GroundingIntegrity = null);
+    [property: JsonPropertyName("grounding_integrity")] double? GroundingIntegrity = null,
+    // MachineIdCoverage (issue #719): 1.0 when all searchCorpus calls in the
+    // tool-call trace carried a non-null machineId; 0.0 when at least one
+    // was missing. Null when the question did not name a machine, the answer
+    // was a refusal, or the trace was unavailable (cache hit, early-exit).
+    [property: JsonPropertyName("machine_id_coverage")] double? MachineIdCoverage = null);
 
 // Per-metric means are computed only over rows where the metric is
 // defined (non-null score); the *_count fields carry the denominator so
@@ -73,7 +78,9 @@ public sealed record EvalAggregate(
     [property: JsonPropertyName("honest_substitution_mean")] double? HonestSubstitutionMean = null,
     [property: JsonPropertyName("honest_substitution_count")] int HonestSubstitutionCount = 0,
     [property: JsonPropertyName("grounding_integrity_mean")] double? GroundingIntegrityMean = null,
-    [property: JsonPropertyName("grounding_integrity_count")] int GroundingIntegrityCount = 0);
+    [property: JsonPropertyName("grounding_integrity_count")] int GroundingIntegrityCount = 0,
+    [property: JsonPropertyName("machine_id_coverage_mean")] double? MachineIdCoverageMean = null,
+    [property: JsonPropertyName("machine_id_coverage_count")] int MachineIdCoverageCount = 0);
 
 public sealed record EvalRunResult(
     [property: JsonPropertyName("evaluation_id")] string EvaluationId,

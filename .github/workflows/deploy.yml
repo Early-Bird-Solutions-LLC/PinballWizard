@@ -345,6 +345,10 @@ jobs:
       issues: write
     env:
       GH_TOKEN: ${{ github.token }}
+      # This job deliberately has no checkout — it only calls the issues API. Without
+      # GH_REPO, `gh issue` tries to infer the repo from a local git remote and dies
+      # with "not a git repository", silently disabling the whole alarm.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Open or update the deploy-failure issue
         if: ${{ contains(needs.*.result, 'failure') }}

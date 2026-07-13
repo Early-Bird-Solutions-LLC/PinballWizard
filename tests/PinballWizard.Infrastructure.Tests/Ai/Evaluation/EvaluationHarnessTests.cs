@@ -595,6 +595,165 @@ public sealed class EvaluationHarnessTests
         Assert.Equal(result.Aggregate.CitationPrecisionMean, unslicedAgg.CitationPrecisionMean);
     }
 
+    // ── MachineIdCoverage harness-wiring tests (issue #719) ──────────────────
+
+    [Fact]
+    public async Task RunAsync_MachineIdQuestion_AllSearchCorpusCallsScoped_ScoresMachineIdCoverage1()
+    {
+        // Core fixture for issue #719: a machine-named question where the
+        // agent correctly calls searchCorpus with the machine's OPDB ID must
+        // score machine_id_coverage=1.0 — the trace shows the scope was set.
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-mic-001","question":"What is the wizard mode in Stern Godzilla?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false,"machine_id":"GweeP-MW95j"}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "The wizard mode is King of the Monsters.",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Pro Rules", "https://sternpinball.com/manuals/godzilla-rules.pdf",
+                        DocumentChunkId: "doc_gzrules01"),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.9,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null,
+                ToolCallTrace: new List<ToolCallRecord>
+                {
+                    // getMachineByTitle first — machineId arg not applicable here
+                    new("getMachineByTitle", new Dictionary<string, string?> { ["title"] = "Stern Godzilla" }),
+                    // searchCorpus with machineId set — the correct, scoped call
+                    new("searchCorpus", new Dictionary<string, string?>
+                    {
+                        ["query"] = "What is the wizard mode in Stern Godzilla?",
+                        ["machineId"] = "GweeP-MW95j",
+                    }),
+                }));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // MachineIdCoverage must be 1.0 — all searchCorpus calls were scoped.
+        Assert.Equal(1.0, result.Questions[0].Scores.MachineIdCoverage);
+        Assert.Equal(1, result.Aggregate.MachineIdCoverageCount);
+        Assert.Equal(1.0, result.Aggregate.MachineIdCoverageMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_MachineIdQuestion_SearchCorpusMissingMachineId_ScoresMachineIdCoverage0()
+    {
+        // The regression scenario issue #719 is designed to catch: a machine-
+        // named question where the agent called searchCorpus WITHOUT machineId
+        // (retrieved corpus-wide, risking cross-machine citation bleed).
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-mic-002","question":"How do I fix the left flipper on Godzilla?","expected_sub_agent":"Repair","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false,"machine_id":"GweeP-MW95j"}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "Check the flipper coil and EOS switch.",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Service Manual", "https://sternpinball.com/manuals/godzilla-service.pdf",
+                        DocumentChunkId: "doc_gzsvc01"),
+                },
+                SubAgentUsed: "Repair",
+                Confidence: 0.85,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null,
+                ToolCallTrace: new List<ToolCallRecord>
+                {
+                    // searchCorpus WITHOUT machineId — the regression
+                    new("searchCorpus", new Dictionary<string, string?>
+                    {
+                        ["query"] = "left flipper repair",
+                        // machineId intentionally absent to exercise the regression path
+                    }),
+                }));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // MachineIdCoverage must be 0.0 — searchCorpus was called unscoped.
+        Assert.Equal(0.0, result.Questions[0].Scores.MachineIdCoverage);
+        Assert.Equal(1, result.Aggregate.MachineIdCoverageCount);
+        Assert.Equal(0.0, result.Aggregate.MachineIdCoverageMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_QuestionWithoutMachineId_MachineIdCoverageIsNull()
+    {
+        // A question without machine_id set (e.g., out-of-scope, manufacturer-
+        // level) must have machine_id_coverage=null — metric undefined,
+        // excluded from the aggregate denominator.
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-mic-003","question":"Who makes the most pinball machines?","expected_sub_agent":"Wizard","expected_citation_set":[],"acceptable_refusal":true}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "I don't know — that's outside the pinball domain.",
+                Citations: [],
+                SubAgentUsed: "Wizard",
+                Confidence: 0.1,
+                Escalated: false,
+                IsRefusal: true,
+                RefusalCategory: RefusalCategory.OutOfScope,
+                PromptVersion: "v-test",
+                FoundryThreadId: null));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        Assert.Null(result.Questions[0].Scores.MachineIdCoverage);
+        Assert.Equal(0, result.Aggregate.MachineIdCoverageCount);
+        Assert.Null(result.Aggregate.MachineIdCoverageMean);
+    }
+
+    [Fact]
+    public async Task RunAsync_MachineIdQuestion_CacheHitNullTrace_MachineIdCoverageIsNull()
+    {
+        // A cache hit returns ToolCallTrace=null (the trace was not available
+        // when the answer was cached). The metric must be null — we cannot grade
+        // a trace we don't have.
+        using var fixture = new HarnessFixture();
+        fixture.WriteGroundTruth(
+            """{"id":"ev-mic-004","question":"What are the rules for Godzilla?","expected_sub_agent":"Rules","expected_citation_set":["GweeP-MW95j"],"acceptable_refusal":false,"machine_id":"GweeP-MW95j"}""");
+
+        fixture.Router.AnswerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new WizardAnswer(
+                Text: "Godzilla rules: ...",
+                Citations: new List<Citation>
+                {
+                    new("Godzilla Rules", "https://sternpinball.com/manuals/godzilla-rules.pdf",
+                        DocumentChunkId: "doc_gzrules01"),
+                },
+                SubAgentUsed: "Rules",
+                Confidence: 0.92,
+                Escalated: false,
+                IsRefusal: false,
+                RefusalCategory: null,
+                PromptVersion: "v-test",
+                FoundryThreadId: null
+                // ToolCallTrace intentionally null — simulates a cache hit
+            ));
+
+        var harness = fixture.BuildHarness();
+        var result = await harness.RunAsync(CancellationToken.None);
+
+        // Null trace → metric undefined → excluded from aggregate.
+        Assert.Null(result.Questions[0].Scores.MachineIdCoverage);
+        Assert.Equal(0, result.Aggregate.MachineIdCoverageCount);
+        Assert.Null(result.Aggregate.MachineIdCoverageMean);
+    }
+
     private sealed class HarnessFixture : IDisposable
     {
         public string Root { get; }
@@ -641,6 +800,7 @@ public sealed class EvaluationHarnessTests
                 new AnsweredAllEditionsEvaluator(),
                 new HonestSubstitutionEvaluator(),
                 new GroundingIntegrityEvaluator(),
+                new MachineIdCoverageEvaluator(),
                 evalOptions,
                 NullLogger<EvaluationHarness>.Instance);
         }

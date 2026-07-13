@@ -2,10 +2,10 @@ using PinballWizard.Application.Ai.Evaluation.Evaluators;
 
 namespace PinballWizard.Infrastructure.Integrations.Foundry;
 
-// Canonical Python equivalents of the eight custom code-based evaluators
+// Canonical Python equivalents of the nine custom code-based evaluators
 // per ADR-0016 (the original four + the AB#259 edition-aware additions:
 // answered_all_editions and honest_substitution + the issue #532 addition:
-// grounding_integrity). Foundry's evaluator
+// grounding_integrity + the issue #719 addition: machine_id_coverage). Foundry's evaluator
 // runtime executes Python; the .NET
 // classes in PinballWizard.Application.Ai.Evaluation.Evaluators are the
 // in-process Phase 3 implementation; these snippets are the spec for
@@ -29,6 +29,7 @@ internal static class EvaluatorPythonSpecs
         yield return $"{evaluatorNamespace}.{AnsweredAllEditionsEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{HonestSubstitutionEvaluator.EvaluatorName}";
         yield return $"{evaluatorNamespace}.{GroundingIntegrityEvaluator.EvaluatorName}";
+        yield return $"{evaluatorNamespace}.{MachineIdCoverageEvaluator.EvaluatorName}";
     }
 
     public const string CitationPrecisionPython = """
@@ -136,6 +137,25 @@ def evaluate(citations, predicted_sub_agent, predicted_refusal=False, **_):
         if (c.get("source_type") or "") == "CorpusChunk":
             return {"score": 1.0}
     return {"score": 0.0}
+""";
+
+    // MachineIdCoverage (issue #719): every searchCorpus call must carry a
+    // non-null machineId when the question names a machine. Mirrors
+    // MachineIdCoverageEvaluator; null when trace is absent or has no
+    // searchCorpus calls (metric undefined for those rows).
+    public const string MachineIdCoveragePython = """
+def evaluate(tool_call_trace, predicted_refusal=False, **_):
+    if bool(predicted_refusal):
+        return {"score": None}
+    trace = tool_call_trace or []
+    sc_calls = [c for c in trace if (c.get("tool_name") or "") == "searchCorpus"]
+    if not sc_calls:
+        return {"score": None}
+    for call in sc_calls:
+        mid = (call.get("arguments") or {}).get("machineId")
+        if not mid or not str(mid).strip():
+            return {"score": 0.0}
+    return {"score": 1.0}
 """;
 
     public const string HonestSubstitutionPython = """

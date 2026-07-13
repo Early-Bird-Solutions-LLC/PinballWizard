@@ -104,4 +104,11 @@ public sealed record EvalQuestion(
     // All three are optional so existing wizard.v2.jsonl rows parse unchanged.
     [property: JsonPropertyName("slice")] string? Slice = null,
     [property: JsonPropertyName("source")] string? Source = null,
-    [property: JsonPropertyName("first_stage_rank")] int? FirstStageRank = null);
+    [property: JsonPropertyName("first_stage_rank")] int? FirstStageRank = null,
+    // MachineId (issue #719): when set, the question explicitly names a machine
+    // and the MachineIdCoverageEvaluator applies — every searchCorpus call in
+    // the tool-call trace must carry a non-null machineId argument matching this
+    // OPDB ID. Absent on questions that don't name a machine (out-of-scope rows,
+    // cross-machine comparisons, manufacturer-level questions) so the metric is
+    // undefined and excluded from the aggregate denominator for those rows.
+    [property: JsonPropertyName("machine_id")] string? MachineId = null);
