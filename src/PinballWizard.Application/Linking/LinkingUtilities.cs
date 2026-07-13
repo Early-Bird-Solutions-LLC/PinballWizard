@@ -29,7 +29,6 @@ public static class LinkingUtilities
             SourceType.JjpProductPage => ScraperManufacturerKey.Jjp,
             SourceType.JjpSupportPage => ScraperManufacturerKey.Jjp,
             SourceType.AmericanPinballGamePage => ScraperManufacturerKey.AmericanPinball,
-            SourceType.AmericanPinballBulletinPage => ScraperManufacturerKey.AmericanPinball,
             SourceType.SpookyPinballGamePage => ScraperManufacturerKey.Spooky,
             SourceType.SpookyPinballSupportPage => ScraperManufacturerKey.Spooky,
             SourceType.PinballBrothersGamePage => ScraperManufacturerKey.PinballBrothers,
