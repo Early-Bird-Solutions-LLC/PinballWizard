@@ -278,7 +278,37 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             .Where(m => NormalizeFranchiseTitle(m.Title) == scrapedFranchise)
             .ToList();
 
-        if (matches.Count == 0) return ([], MatchOutcome.None);
+        // Pass 3: trailing-qualifier fallback (issue #660). Handles scraped titles
+        // where the manufacturer appends plain-word qualifiers that OPDB omits —
+        // e.g. CGC "Medieval Madness Merlin Edition Pinball" where NormalizeFranchiseTitle
+        // yields "medievalmadnessmerlinedition" (single-strip removes "pinball" but
+        // leaves "merlinedition"), which never equals catalog "medievalmadness" and
+        // so falls through to here with zero exact-match candidates.
+        //
+        // A catalog machine matches when:
+        //   1. Its normalized franchise title is a strict prefix of the scraped one.
+        //   2. The remaining suffix is entirely composed of DecorationWords tokens
+        //      consumed right-to-left (compound tokens precede their components so
+        //      "merlinedition" is consumed as a unit before "edition" can fire).
+        //   3. Only one franchise matches, OR the matches form a shared-GroupId edition
+        //      family — the same disambiguation guard as the exact-match path.
+        //      Multiple non-family matches → Ambiguous; the reconciler never guesses.
+        if (matches.Count == 0)
+        {
+            matches = partition
+                .Where(m =>
+                {
+                    var catalogFranchise = NormalizeFranchiseTitle(m.Title);
+                    return catalogFranchise.Length > 0
+                        && catalogFranchise.Length < scrapedFranchise.Length
+                        && scrapedFranchise.StartsWith(catalogFranchise, StringComparison.Ordinal)
+                        && IsTrailingQualifierOnly(scrapedFranchise[catalogFranchise.Length..]);
+                })
+                .ToList();
+
+            if (matches.Count == 0) return ([], MatchOutcome.None);
+        }
+
         if (matches.Count == 1) return (matches, MatchOutcome.Title);
 
         // Multiple franchise-title matches. This is an EDITION FAMILY — not a
@@ -356,14 +386,39 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
     };
 
     // Edition/format decoration tokens that manufacturer pages append but
-    // OPDB titles omit — stripped from the END of the normalized title so a
-    // scraped "Cactus Canyon Remake" matches the catalog "Cactus Canyon".
-    // Trailing-only by design: a leading/internal occurrence is part of the
-    // real title (none of these words legitimately start a pinball title).
+    // OPDB titles omit. Used in two places:
+    //
+    //   NormalizeTitle:           strips ONE trailing token so the normalized
+    //                             scraped title equals the catalog franchise title
+    //                             for exact-match (Pass 2 in FindMatch).
+    //
+    //   IsTrailingQualifierOnly:  iteratively strips tokens from a remaining
+    //                             suffix (Pass 3 trailing-qualifier fallback in
+    //                             FindMatch) to confirm the suffix is composed
+    //                             entirely of decoration, not real title words.
+    //
+    // ORDERING IS CRITICAL for IsTrailingQualifierOnly: compound tokens
+    // ("merlinedition") must appear BEFORE their components ("edition") so the
+    // compound is consumed as a unit before the shorter token can match a
+    // partial suffix.
+    //
+    // Only add tokens that are verified from real manufacturer branding and
+    // that NEVER appear as a meaningful word in any actual pinball franchise
+    // title — a false entry here would collapse two different games into one.
+    //
+    //   "merlinedition"   — CGC "Medieval Madness Merlin Edition Pinball" (issue #660)
+    //   "vaultedition"    — Stern vault-edition reissue branding
+    //   "limitededition"  — generic LE suffix
+    //   "standardedition" — generic SE suffix
+    //   "remake"          — CGC "Cactus Canyon Remake", "Medieval Madness Remake"
+    //   "pinball"         — CGC/JJP append "Pinball" as a product-line word
+    //   "gamekit"         — Multimorphic P3 game-kit naming
+    //   "deposit"         — pre-order deposit listings on manufacturer pages
+    //   "edition"         — generic trailing qualifier (must be last: component of compounds above)
     private static readonly string[] DecorationWords =
     {
-        "remake", "pinball", "gamekit", "deposit", "limitededition",
-        "merlinedition", "vaultedition", "standardedition", "edition",
+        "merlinedition", "vaultedition", "limitededition", "standardedition",
+        "remake", "pinball", "gamekit", "deposit", "edition",
     };
 
     /// <summary>
@@ -413,6 +468,38 @@ public sealed class ScraperReconciliationService : IScraperReconciliationService
             trimmed = trimmed[..open];
         }
         return NormalizeTitle(trimmed);
+    }
+
+    // Returns true when `remainder` (already in normalized form — lower-alphanumeric)
+    // is entirely consumed by iteratively stripping tokens from DecorationWords
+    // right-to-left. Used by FindMatch Pass 3 to confirm that the suffix after a
+    // catalog prefix is decoration only, with no real-title words mixed in.
+    //
+    // Uses >= so that a remainder equal in length to a single token reduces to ""
+    // (empty = fully consumed = match). NormalizeTitle uses strict > to avoid
+    // stripping a title that IS the decoration word; here we WANT full consumption.
+    //
+    // Array ordering in DecorationWords is critical: compound tokens must come
+    // before their components ("merlinedition" before "edition") so the compound
+    // is consumed as a unit and does not leave an orphan prefix.
+    private static bool IsTrailingQualifierOnly(string remainder)
+    {
+        while (remainder.Length > 0)
+        {
+            var matched = false;
+            foreach (var token in DecorationWords)
+            {
+                if (remainder.Length >= token.Length
+                    && remainder.EndsWith(token, StringComparison.Ordinal))
+                {
+                    remainder = remainder[..^token.Length];
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
+        }
+        return true;
     }
 
     // Shared by FindMatch's Pass 2 and BackfillSlugsFromCrossReferencesAsync:
