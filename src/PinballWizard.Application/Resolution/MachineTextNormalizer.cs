@@ -4,8 +4,13 @@ using System.Text;
 namespace PinballWizard.Application.Resolution;
 
 // The single normalizer for every text→machine match in the system (ADR-0054).
-// It replaces five divergent normalizers. The &/and retry loop in MachineGroundingTool
-// existed solely to bridge two of them — folding '&' to "and" here deletes that hack.
+// It is intended to replace five divergent normalizers. Nothing consumes it yet — the six
+// consumer migrations land later, and until they do the old normalizers remain in place.
+//
+// Folding '&' to "and" is the one deliberate behavioural delta from the normalizer it most
+// directly supersedes (LinkingUtilities.NormalizeForMatch, which treats '&' as a separator).
+// It is what will let us delete the &/and retry loop in MachineGroundingTool, which exists
+// solely to bridge that inconsistency between two of our own normalizers.
 public static class MachineTextNormalizer
 {
     public static string Key(string? text) => string.Join(' ', Tokenize(text));
