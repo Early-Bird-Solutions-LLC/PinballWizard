@@ -46,6 +46,15 @@ public class LinkingUtilitiesTests
         return data;
     }
 
+    // AmericanPinballBulletinPage must resolve to the "americanpinball" partition key so the
+    // linker narrows bulletin candidates to AP machines, not the Stern partition (the bug that
+    // ServiceBulletinPage caused — Stern's page type, wrong for AP bulletins).
+    [Fact]
+    public void InferManufacturerKey_AmericanPinballBulletinPage_ResolvesToAmericanPinball()
+        => Assert.Equal(
+            PinballWizard.Application.Sync.ScraperManufacturerKey.AmericanPinball,
+            LinkingUtilities.InferManufacturerKey(SourceWith(SourceType.AmericanPinballBulletinPage)));
+
     // The exhaustiveness guard's inverse: SynthesizedArticle MUST have no manufacturer key,
     // because its manufacturer is per-record (DocumentRecord.Manufacturer), not inferable from
     // the source type. This pins that intent so a future change can't quietly give it one.
