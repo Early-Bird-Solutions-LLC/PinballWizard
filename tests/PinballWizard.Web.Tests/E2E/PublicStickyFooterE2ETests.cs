@@ -51,7 +51,7 @@ public sealed class PublicStickyFooterE2ETests : IAsyncLifetime
             return;
 
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _browser = await _playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
     }
 
     public async Task DisposeAsync()
@@ -142,10 +142,10 @@ public sealed class PublicStickyFooterE2ETests : IAsyncLifetime
 
     private async Task<IPage> NewPageAsync()
     {
-        var ctx = await _browser!.NewContextAsync(new()
+        var ctx = await _browser!.NewContextAsync(E2EEdgeAccess.ContextOptions(new()
         {
             ViewportSize = new ViewportSize { Width = ViewportWidth, Height = ViewportHeight },
-        });
+        }));
         return await ctx.NewPageAsync();
     }
 

@@ -47,7 +47,7 @@ public sealed class PublicRouteThemeNavigationE2ETests : IAsyncLifetime
             return;
 
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _browser = await _playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
     }
 
     public async Task DisposeAsync()
@@ -71,7 +71,7 @@ public sealed class PublicRouteThemeNavigationE2ETests : IAsyncLifetime
     [InlineData("/settings", "[data-testid='theme-card-paper']")]
     public async Task NewVisitor_EnhancedNavigation_KeepsPaperTheme(string route, string destinationSelector)
     {
-        var ctx = await _browser!.NewContextAsync(); // fresh visitor ⇒ no saved theme
+        var ctx = await _browser!.NewContextAsync(E2EEdgeAccess.ContextOptions()); // fresh visitor ⇒ no saved theme
         var page = await ctx.NewPageAsync();
 
         // Land on the static landing page and confirm the Paper base is applied

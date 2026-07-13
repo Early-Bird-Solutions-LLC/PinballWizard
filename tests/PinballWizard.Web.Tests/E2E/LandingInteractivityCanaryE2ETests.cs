@@ -38,7 +38,7 @@ public sealed class LandingInteractivityCanaryE2ETests : IAsyncLifetime
             return;
 
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _browser = await _playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
     }
 
     public async Task DisposeAsync()
@@ -102,7 +102,7 @@ public sealed class LandingInteractivityCanaryE2ETests : IAsyncLifetime
 
     private async Task<IPage> NewPageAsync()
     {
-        var ctx = await _browser!.NewContextAsync();
+        var ctx = await _browser!.NewContextAsync(E2EEdgeAccess.ContextOptions());
         return await ctx.NewPageAsync();
     }
 }
