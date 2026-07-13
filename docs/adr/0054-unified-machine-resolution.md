@@ -128,6 +128,16 @@ reaches the same place safely.
 - Twelve-plus PRs across three waves. This is deliberate: the alternative is one unreviewable change
   to the system's attribution core.
 
+**Known limitation (accepted)**
+
+- `ResolutionResult` is intended as a closed set of four outcomes, but C# cannot enforce that: the
+  compiler always synthesizes a protected copy constructor on a record, so a private constructor
+  does not prevent external derivation. The closure is **convention-enforced, not compiler-enforced**.
+  Consumers must therefore include a defensive default arm in any `switch` over it, throwing rather
+  than silently treating an unrecognised outcome as "no match" — a resolution outcome we fail to
+  recognise must never degrade into a silent non-attribution (invariant #17). Recorded here rather
+  than papered over: claiming a guarantee we do not hold is how #752 happened.
+
 **Neutral**
 
 - `ManufacturerSlugs` is not removed — it remains a legitimate, high-confidence evidence source.

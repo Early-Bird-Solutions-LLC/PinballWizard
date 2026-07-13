@@ -61,6 +61,17 @@ public sealed record ResolutionEvidence(
 public sealed record ResolutionCandidate(
     string MachineId, string MachineTitle, VariantKind VariantKind, string MatchedVariant);
 
+// Intended as a closed set (discriminated union) of the four outcomes below.
+//
+// The private constructor blocks the ordinary derivation path, but it does NOT make the
+// hierarchy compiler-enforced: C# always synthesizes a protected copy constructor on a
+// record, and that cannot be suppressed — so an external type could still derive from this.
+// The closure is therefore convention-enforced, not sealed by the compiler.
+//
+// Practical consequence for consumers: a `switch` over ResolutionResult is not provably
+// exhaustive. Always include a defensive default arm that throws rather than silently
+// treating an unknown outcome as "no match" — a resolution outcome we fail to recognise
+// must never degrade into a silent non-attribution (invariant #17).
 public abstract record ResolutionResult
 {
     private ResolutionResult() { }
