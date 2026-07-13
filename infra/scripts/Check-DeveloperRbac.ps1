@@ -247,9 +247,14 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($cosmosListJson)) {
 }
 else {
     $cosmosAssignments = $cosmosListJson | ConvertFrom-Json
+    # `az cosmosdb sql role assignment list` returns principalId / roleDefinitionId at the
+    # TOP LEVEL of each item — there is no `.properties` envelope (verified against live:
+    # the item's properties are id, name, principalId, resourceGroup, roleDefinitionId,
+    # scope, type). Reading $_.properties.principalId yields $null for every item, so the
+    # Cosmos check reported MISSING even when the assignment was plainly there.
     $cosmosMatch = $cosmosAssignments | Where-Object {
-        $_.properties.principalId -eq $DeveloperObjectId -and
-        $_.properties.roleDefinitionId -like "*$COSMOS_ROLE_DEF_ID"
+        $_.principalId -eq $DeveloperObjectId -and
+        $_.roleDefinitionId -like "*$COSMOS_ROLE_DEF_ID"
     }
 
     if ($cosmosMatch) {
@@ -407,15 +412,26 @@ Write-Host '[4/4] Summary' -ForegroundColor Cyan
 Write-Host ''
 
 # Build rows for the summary table.
+#
+# These MUST be objects, not nested arrays. The previous form —
+#     $rows = @( @('Cosmos DB', 'Built-in Data Contributor', $cosmosStatus)  <newline> ... )
+# — has no commas between the inner arrays, so PowerShell flattened it into NINE loose
+# strings. Every downstream use then indexed a *character*: the table printed "C  o  s",
+# and, far worse, `Where-Object { $_[2] -eq 'MISSING' }` compared the 3rd character of a
+# string against 'MISSING' and never matched. $stillMissing was therefore ALWAYS empty —
+# the script reported "All developer data-plane role assignments are present" and exited 0
+# no matter how many roles were actually gone. A safety check that cannot fail is worse
+# than no check: it is a masking fallback (invariant #17), and Deploy-SharedResources.ps1's
+# post-deploy assertion keys off this exit code.
 $rows = @(
-    @('Cosmos DB',  'Built-in Data Contributor',       $cosmosStatus)
-    @('AI Search',  'Search Index Data Contributor',   $searchStatus)
-    @('AI Foundry', 'Cognitive Services OpenAI User',  $foundryStatus)
+    [pscustomobject]@{ Resource = 'Cosmos DB';  Role = 'Built-in Data Contributor';      Status = $cosmosStatus }
+    [pscustomobject]@{ Resource = 'AI Search';  Role = 'Search Index Data Contributor';  Status = $searchStatus }
+    [pscustomobject]@{ Resource = 'AI Foundry'; Role = 'Cognitive Services OpenAI User'; Status = $foundryStatus }
 )
 
 # Compute column widths from content.
-$w0 = ($rows | ForEach-Object { $_[0].Length } | Measure-Object -Maximum).Maximum
-$w1 = ($rows | ForEach-Object { $_[1].Length } | Measure-Object -Maximum).Maximum
+$w0 = ($rows | ForEach-Object { $_.Resource.Length } | Measure-Object -Maximum).Maximum
+$w1 = ($rows | ForEach-Object { $_.Role.Length }     | Measure-Object -Maximum).Maximum
 
 $header = "  {0,-$w0}  {1,-$w1}  {2}" -f 'Resource', 'Role', 'Status'
 $sep    = "  {0}  {1}  {2}" -f ('-' * $w0), ('-' * $w1), '------'
@@ -424,18 +440,18 @@ Write-Host $header -ForegroundColor White
 Write-Host $sep    -ForegroundColor DarkGray
 
 foreach ($row in $rows) {
-    $color = switch ($row[2]) {
+    $color = switch ($row.Status) {
         $STATUS_PASS    { 'Green'  }
         $STATUS_FIXED   { 'Cyan'   }
         default         { 'Red'    }
     }
-    Write-Host ("  {0,-$w0}  {1,-$w1}  {2}" -f $row[0], $row[1], $row[2]) -ForegroundColor $color
+    Write-Host ("  {0,-$w0}  {1,-$w1}  {2}" -f $row.Resource, $row.Role, $row.Status) -ForegroundColor $color
 }
 
 Write-Host ''
 
-# Determine overall outcome.
-$stillMissing = $rows | Where-Object { $_[2] -eq $STATUS_MISSING }
+# Determine overall outcome. @() so a single missing row doesn't collapse to a scalar.
+$stillMissing = @($rows | Where-Object { $_.Status -eq $STATUS_MISSING })
 
 if (-not $stillMissing) {
     Write-Host '  All developer data-plane role assignments are present.' -ForegroundColor Green
@@ -451,7 +467,13 @@ if (-not $stillMissing) {
         Write-Host '         cp infra/main-shared.dev.bicepparam infra/main-shared.dev.local.bicepparam' -ForegroundColor DarkGray
         Write-Host "         # Then set: param developerObjectId = '$DeveloperObjectId'" -ForegroundColor DarkGray
         Write-Host '    2. Delete the ad-hoc grants to avoid RoleAssignmentExists conflict on next deploy:' -ForegroundColor White
-        Write-Host "         az cosmosdb sql role assignment delete --account-name $CosmosAccount --resource-group $ResourceGroup --role-definition-id $COSMOS_ROLE_DEF_ID --principal-id $DeveloperObjectId --scope $cosmosResourceId" -ForegroundColor DarkGray
+        # `az cosmosdb sql role assignment delete` takes ONLY --role-assignment-id (-i) —
+        # it has no --role-definition-id / --principal-id / --scope, so you must look the
+        # assignment's id up first. The command previously printed here used those flags
+        # and would simply have failed.
+        Write-Host "         # find the assignment id, then delete it by id:" -ForegroundColor DarkGray
+        Write-Host "         az cosmosdb sql role assignment list --account-name $CosmosAccount --resource-group $ResourceGroup --query `"[?principalId=='$DeveloperObjectId'].name`" -o tsv" -ForegroundColor DarkGray
+        Write-Host "         az cosmosdb sql role assignment delete --account-name $CosmosAccount --resource-group $ResourceGroup --role-assignment-id <id-from-above> --yes" -ForegroundColor DarkGray
         Write-Host "         az role assignment delete --assignee $DeveloperObjectId --role $SEARCH_ROLE_DEF_ID --scope $searchScope" -ForegroundColor DarkGray
         Write-Host "         az role assignment delete --assignee $DeveloperObjectId --role $FOUNDRY_ROLE_DEF_ID --scope $foundryScope" -ForegroundColor DarkGray
         Write-Host '    3. Re-deploy (the stack re-creates all three assignments and owns them):' -ForegroundColor White
@@ -478,7 +500,7 @@ else {
     Write-Host '  Or run each missing grant individually (copy-paste):' -ForegroundColor Yellow
     Write-Host ''
     foreach ($fc in $fixCommands) {
-        if ($rows | Where-Object { $_[1] -like "*$($fc.Label.Split(' ')[0])*" -and $_[2] -eq $STATUS_MISSING }) {
+        if ($rows | Where-Object { $_.Role -like "*$($fc.Label.Split(' ')[0])*" -and $_.Status -eq $STATUS_MISSING }) {
             Write-Host "  # $($fc.Label)" -ForegroundColor DarkCyan
             Write-Host $fc.Command -ForegroundColor White
             Write-Host ''
