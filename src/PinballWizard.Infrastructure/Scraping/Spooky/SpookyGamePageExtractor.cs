@@ -23,6 +23,60 @@ public static class SpookyGamePageExtractor
     private static readonly HtmlParser Parser = new();
 
     /// <summary>
+    /// Extracts one <see cref="GameRecord"/> per distinct S3 slug for pages
+    /// with one or two slugs. Returns an empty list for zero-slug (non-game)
+    /// or three-or-more-slug (aggregator) pages.
+    /// </summary>
+    /// <remarks>
+    /// For a single-slug page this delegates to <see cref="ExtractGame"/> so
+    /// the full title-decode and link-validation logic applies. For two-slug
+    /// shared-hardware pages (e.g., Halloween+Ultraman on the Pinotaur
+    /// platform) a <see cref="GameRecord"/> is synthesised per slug with the
+    /// title derived from the slug itself — this matches OPDB's own titles
+    /// so the reconciler's <c>NormalizeFranchiseTitle</c> pass can bind them.
+    /// </remarks>
+    public static IReadOnlyList<GameRecord> ExtractGames(SpookyPageRaw page, string s3Host)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrWhiteSpace(s3Host);
+
+        var slugs = SpookyWpPagesClient.ExtractS3Slugs(page.Content.Rendered, s3Host);
+
+        if (slugs.Count == 0 || slugs.Count > 2) return [];
+
+        if (slugs.Count == 1)
+        {
+            var record = ExtractGame(page, s3Host);
+            return record is not null ? [record] : [];
+        }
+
+        // slugs.Count == 2 — shared-hardware page (e.g., Halloween + Ultraman).
+        // pageUrl is loop-invariant: a page with no Link can't yield a traceable
+        // record for either game, so bail once (mirrors ExtractGame's guard).
+        var pageUrl = page.Link;
+        if (string.IsNullOrWhiteSpace(pageUrl)) return [];
+
+        var games = new List<GameRecord>(2);
+        foreach (var slug in slugs)
+        {
+            games.Add(new GameRecord
+            {
+                GameId = $"game_spooky_{slug}",
+                Slug = slug,
+                Title = char.ToUpperInvariant(slug[0]) + slug[1..],
+                GamePageUrl = pageUrl,
+                DiscoveredOn = ["spooky_wp_pages"],
+                Source = new GameSourceInfo
+                {
+                    ScrapedFrom = pageUrl,
+                    ScrapedAt = DateTime.UtcNow,
+                },
+            });
+        }
+        return games;
+    }
+
+    /// <summary>
     /// Extracts a <see cref="GameRecord"/> from a Spooky WP page.
     /// Returns null if the page doesn't pass the single-S3-slug check
     /// (i.e., it's an aggregator / non-game page).
