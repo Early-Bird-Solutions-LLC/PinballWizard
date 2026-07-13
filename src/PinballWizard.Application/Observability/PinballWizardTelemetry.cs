@@ -128,6 +128,34 @@ public static class PinballWizardTelemetry
         unit: "{failure}",
         description: "Coverage-count lookups that failed while evaluating the ADR-0053 gate. On failure the router does NOT gate and falls through to the full agent path (no masking, invariant #17); this counter makes the skipped-optimization visible rather than silent.");
 
+    // ── Corpus-coverage probe instrumentation ───────────────────────────────
+    // Emitted by the corpus-coverage probe CLI verb. Each probe run iterates
+    // the (source × document_type) matrix and samples the RAG corpus to
+    // determine which cells are covered. The three counters below track total
+    // cells probed, cells found to have retrievable content, and gaps (cells
+    // with no retrievable content, plus ExpectedNonEmpty sources with zero
+    // chunks in any cell).
+
+    public static readonly Counter<long> RagCoverageCellsTotal = Meter.CreateCounter<long>(
+        "pinwiz.rag.coverage.cells_total",
+        unit: "{cell}",
+        description: "Total (source × document_type) cells probed by the corpus-coverage run.");
+
+    public static readonly Counter<long> RagCoverageCellsCovered = Meter.CreateCounter<long>(
+        "pinwiz.rag.coverage.cells_covered",
+        unit: "{cell}",
+        description: "Cells whose sample content was retrievable in the corpus-coverage run.");
+
+    public static readonly Counter<long> RagCoverageGaps = Meter.CreateCounter<long>(
+        "pinwiz.rag.coverage.gaps_total",
+        unit: "{gap}",
+        description: "Corpus-coverage hard gaps: ExpectedNonEmpty sources with zero indexed chunks. Drives the non-zero exit code for the --corpus-coverage verb.");
+
+    public static readonly Counter<long> RagCoverageRetrievabilityWarnings = Meter.CreateCounter<long>(
+        "pinwiz.rag.coverage.retrievability_warnings_total",
+        unit: "{cell}",
+        description: "Cells whose sample content was not retrievable by the auto-derived query — a reported signal, not a hard gap (the query is an imperfect proxy).");
+
     public static readonly Counter<long> AiEscalations = Meter.CreateCounter<long>(
         "pinwiz.ai.escalations",
         unit: "{question}",

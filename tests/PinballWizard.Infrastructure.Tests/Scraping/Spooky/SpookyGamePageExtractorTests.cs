@@ -263,4 +263,122 @@ public sealed class SpookyGamePageExtractorTests
         Assert.ThrowsAny<ArgumentException>(() =>
             SpookyGamePageExtractor.ExtractDownloads(new SpookyPageRaw(), "  "));
     }
+
+    // ExtractGames — new method that returns one GameRecord per S3 slug (1–2 slugs).
+
+    [Fact]
+    public void ExtractGames_NullArgsThrow()
+    {
+        Assert.Throws<ArgumentNullException>(() => SpookyGamePageExtractor.ExtractGames(null!, S3Host));
+        Assert.ThrowsAny<ArgumentException>(() =>
+            SpookyGamePageExtractor.ExtractGames(new SpookyPageRaw(), "  "));
+    }
+
+    [Fact]
+    public void ExtractGames_TwoSlugPage_ReturnsBothGamesWithSlugDerivedTitles()
+    {
+        // Halloween+Ultraman shared-hardware page: 2 distinct S3 slugs → 2 GameRecords.
+        // Title is derived from the slug (slug[0].ToUpperInvariant + slug[1..]) so the
+        // reconciler's NormalizeFranchiseTitle pass can match OPDB titles (Halloween, Ultraman).
+        var page = new SpookyPageRaw
+        {
+            Id = 1450,
+            Slug = "halloween-ultraman",
+            Link = "https://www.spookypinball.com/halloween-ultraman/",
+            Title = new() { Rendered = "Halloween / Ultraman" },
+            Content = new()
+            {
+                Rendered = """
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/halloween/software_versions/v1.17/code_H78.pkg">Halloween v1.17</a>
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/ultraman/software_versions/v1.00/ultraman.pkg">Ultraman v1.00</a>
+                """,
+            },
+        };
+
+        var records = SpookyGamePageExtractor.ExtractGames(page, S3Host);
+
+        // HashSet iteration order is non-deterministic; use Assert.Contains.
+        Assert.Equal(2, records.Count);
+        Assert.Contains(records, r =>
+            r.Slug == "halloween" &&
+            r.Title == "Halloween" &&
+            r.GameId == "game_spooky_halloween" &&
+            r.GamePageUrl == page.Link &&
+            r.DiscoveredOn.Contains("spooky_wp_pages"));
+        Assert.Contains(records, r =>
+            r.Slug == "ultraman" &&
+            r.Title == "Ultraman" &&
+            r.GameId == "game_spooky_ultraman");
+    }
+
+    [Fact]
+    public void ExtractGames_SingleSlugPage_ReturnsSingleGameMatchingExtractGame()
+    {
+        // Single-slug pages must behave identically to the old ExtractGame path
+        // (backward compatibility — existing Beetlejuice, TCM, etc. are unaffected).
+        var page = new SpookyPageRaw
+        {
+            Id = 6438,
+            Slug = "beetlejuice",
+            Link = "https://www.spookypinball.com/beetlejuice/",
+            Title = new() { Rendered = "Beetlejuice" },
+            Content = new()
+            {
+                Rendered = """
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/beetlejuice/software_versions/release/v1.beetlejuice">v1</a>
+                """,
+            },
+        };
+
+        var records = SpookyGamePageExtractor.ExtractGames(page, S3Host);
+
+        Assert.Single(records);
+        var record = records[0];
+        Assert.Equal("beetlejuice", record.Slug);
+        Assert.Equal("Beetlejuice", record.Title);
+        Assert.Equal("game_spooky_beetlejuice", record.GameId);
+    }
+
+    [Fact]
+    public void ExtractGames_AggregatorPage_ReturnsEmpty()
+    {
+        // Pages with 3+ distinct S3 slugs are aggregator/update notices — never game pages.
+        var page = new SpookyPageRaw
+        {
+            Id = 2445,
+            Slug = "2445-2",
+            Link = "https://www.spookypinball.com/2445-2/",
+            Title = new() { Rendered = "SCOOBY BASE IMAGE UPDATE" },
+            Content = new()
+            {
+                Rendered = """
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/scooby/x">a</a>
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/beetlejuice/x">b</a>
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/texaschainsaw/x">c</a>
+                """,
+            },
+        };
+
+        var records = SpookyGamePageExtractor.ExtractGames(page, S3Host);
+
+        Assert.Empty(records);
+    }
+
+    [Fact]
+    public void ExtractGames_NoSlugPage_ReturnsEmpty()
+    {
+        // Pages with no S3 URLs are non-game pages (About Us, Privacy, etc.).
+        var page = new SpookyPageRaw
+        {
+            Id = 477,
+            Slug = "about-us",
+            Link = "https://www.spookypinball.com/about-us/",
+            Title = new() { Rendered = "About Us" },
+            Content = new() { Rendered = "<p>About Spooky.</p>" },
+        };
+
+        var records = SpookyGamePageExtractor.ExtractGames(page, S3Host);
+
+        Assert.Empty(records);
+    }
 }

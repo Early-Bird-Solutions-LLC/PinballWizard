@@ -121,7 +121,7 @@ public sealed class SpookyWpPagesClientTests
     }
 
     [Fact]
-    public void FilterGamePages_KeepsSingleSlugPagesOnly()
+    public void FilterGamePages_KeepsGamePages_RejectsAggregators()
     {
         var pages = new List<SpookyPageRaw>
         {
@@ -160,6 +160,34 @@ public sealed class SpookyWpPagesClientTests
         Assert.Single(filtered);
         Assert.Equal(1, filtered[0].Id);
         Assert.Equal("Beetlejuice", filtered[0].Title.Rendered);
+    }
+
+    [Fact]
+    public void FilterGamePages_TwoSlugPage_IsIncluded()
+    {
+        // Halloween+Ultraman share the Pinotaur hardware platform — their firmware
+        // is hosted under two distinct S3 slugs on the same WP page.  The widened
+        // predicate (>= 1 and <= 2) must include this page so both games get slugs
+        // written into the machine index and Halloween docs can be linked.
+        var twoSlugPage = new SpookyPageRaw
+        {
+            Id = 1450,
+            Slug = "halloween-ultraman",
+            Link = "https://www.spookypinball.com/halloween-ultraman/",
+            Title = new() { Rendered = "Halloween / Ultraman" },
+            Content = new()
+            {
+                Rendered = """
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/halloween/software_versions/v1.17/code_H78.pkg">Halloween v1.17</a>
+                    <a href="https://spookypinball.s3.us-east-2.amazonaws.com/ultraman/software_versions/v1.00/ultraman.pkg">Ultraman v1.00</a>
+                """,
+            },
+        };
+
+        var filtered = SpookyWpPagesClient.FilterGamePages([twoSlugPage], S3Host);
+
+        Assert.Single(filtered);
+        Assert.Equal(1450, filtered[0].Id);
     }
 
     [Fact]

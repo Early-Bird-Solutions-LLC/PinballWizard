@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using PinballWizard.Cli.Commands;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +33,9 @@ using PinballWizard.Infrastructure.Integrations.SilverballLabs;
 using PinballWizard.Infrastructure.Integrations.PinballMap;
 using PinballWizard.Infrastructure.Catalog;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Rag.Chunking;
+using PinballWizard.Application.Rag.Coverage;
 using PinballWizard.Application.Rag.Indexing;
 using PinballWizard.Application.Rag.Ingestion;
 using PinballWizard.Application.Rag.MetadataCards;
@@ -140,6 +143,11 @@ var askOption = new Option<string?>("--ask")
 var evalOption = new Option<bool>("--eval")
 {
     Description = "Phase 3 evaluation harness (ADR-0016): drives every question in data/eval/wizard.v1.jsonl through IAiRouter, scores responses with the four custom code-based evaluators (citation precision/recall, subagent accuracy, refusal correctness), and writes a timestamped JSON file to data/eval/results/. Idempotently registers the evaluator definitions with the Foundry project so they are surfaced in the portal alongside built-ins. Requires AiFoundry:ProjectEndpoint to be configured."
+};
+
+var corpusCoverageOption = new Option<bool>("--corpus-coverage")
+{
+    Description = "Corpus coverage probe: for each (source × document_type) cell with indexed content, assert presence + retrievability (a query auto-derived from a sample chunk retrieves content from that cell). Writes data/eval/results/coverage.{ts}.json and exits non-zero on gaps. Requires AiSearch:Endpoint. No LLM calls."
 };
 
 var probeRetrievalOption = new Option<string?>("--probe-retrieval")
@@ -276,6 +284,7 @@ rootCommand.Options.Add(ensureMachineIndexOption);
 rootCommand.Options.Add(rebuildMachineIndexOption);
 rootCommand.Options.Add(askOption);
 rootCommand.Options.Add(evalOption);
+rootCommand.Options.Add(corpusCoverageOption);
 rootCommand.Options.Add(probeRetrievalOption);
 rootCommand.Options.Add(runRagBackfillOption);
 rootCommand.Options.Add(syncMetadataCardsOption);
@@ -317,6 +326,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var rebuildMachineIndex = parseResult.GetValue(rebuildMachineIndexOption);
     var ask = parseResult.GetValue(askOption);
     var eval = parseResult.GetValue(evalOption);
+    var corpusCoverage = parseResult.GetValue(corpusCoverageOption);
     var probeRetrieval = parseResult.GetValue(probeRetrievalOption);
     var runRagBackfill = parseResult.GetValue(runRagBackfillOption);
     var syncMetadataCards = parseResult.GetValue(syncMetadataCardsOption);
@@ -352,19 +362,20 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // Build host with DI
     using var host = CreateHost(args);
 
-    // ScraperOrchestrator is only registered when AddCosmosPersistence was wired
-    // (i.e., Cosmos config is present). GetService<T>() returns null rather than
-    // throwing an opaque DI exception; the null-check below surfaces a friendly
-    // remediation message instead.
-    var orchestrator = host.Services.GetService<ScraperOrchestrator>();
-    if (orchestrator is null)
+    // Resolve the scraper orchestrator lazily/gracefully: its Cosmos-backed
+    // dependencies are not activatable without Cosmos config, and utility verbs
+    // (--eval, --corpus-coverage, --ensure-*, --gc-rag-index, etc.) do not need
+    // it. GetService throws an activation exception (not null) when Cosmos is
+    // unconfigured, so catch that and leave orchestrator null; the two scraper
+    // paths (below) guard on null with a friendly remediation message.
+    ScraperOrchestrator? orchestrator;
+    try
     {
-        Console.Error.WriteLine(
-            "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
-            "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
-            "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
-        Environment.ExitCode = 2;
-        return;
+        orchestrator = host.Services.GetService<ScraperOrchestrator>();
+    }
+    catch (InvalidOperationException)
+    {
+        orchestrator = null;
     }
 
     // Handle --ensure-cosmos-containers (post-deploy Cosmos smoke-test).
@@ -737,6 +748,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     // without re-launching the process. --dry-run runs the scrape but skips the sync.
     if (refreshGameOverviews)
     {
+        if (orchestrator is null)
+        {
+            Console.Error.WriteLine(
+                "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+                "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
+                "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
         var refreshScrapeResult = await orchestrator.ScrapeAsync("games", dryRun, cancellationToken);
         Console.WriteLine();
         Console.WriteLine($"--refresh-game-overviews: scrape done ({refreshScrapeResult.TotalLinks} links discovered). Syncing overviews...");
@@ -1015,6 +1036,58 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
                           $"citation_coverage={FormatMean(runResult.Aggregate.CitationCoverageMean)} " +
                           $"subagent_accuracy={FormatMean(runResult.Aggregate.SubagentAccuracyMean)} " +
                           $"refusal_correctness={FormatMean(runResult.Aggregate.RefusalCorrectnessMean)}");
+        return;
+    }
+
+    // Handle --corpus-coverage. Resolves ICorpusCoverageProber (registered only
+    // when AddAzureAiSearchIntegration was wired, i.e. AiSearch:Endpoint is set).
+    // Writes a timestamped CoverageReport JSON and exits non-zero on gaps so the
+    // scheduled workflow can alarm. No Foundry/Cosmos required.
+    if (corpusCoverage)
+    {
+        var prober = host.Services.GetService<ICorpusCoverageProber>();
+        if (prober is null)
+        {
+            Console.Error.WriteLine(
+                $"--corpus-coverage requires AI Search to be configured. Set {AiSearchOptions.EndpointKey}.");
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var report = await prober.RunAsync(cancellationToken);
+
+        PinballWizardTelemetry.RagCoverageCellsTotal.Add(report.CellsTotal);
+        PinballWizardTelemetry.RagCoverageCellsCovered.Add(report.CellsCovered);
+        PinballWizardTelemetry.RagCoverageGaps.Add(report.GapsTotal);
+        PinballWizardTelemetry.RagCoverageRetrievabilityWarnings.Add(report.RetrievabilityWarnings);
+
+        var resultsDir = Path.Combine("data", "eval", "results");
+        Directory.CreateDirectory(resultsDir);
+        var stamp = DateTime.UtcNow.ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture);
+        var path = Path.Combine(resultsDir, $"coverage.{stamp}.json");
+        await File.WriteAllTextAsync(
+            path,
+            JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }),
+            cancellationToken);
+
+        Console.WriteLine();
+        Console.WriteLine($"Corpus coverage: {report.CellsCovered}/{report.CellsTotal} cells retrievable, " +
+                          $"{report.GapsTotal} source gaps, {report.RetrievabilityWarnings} retrievability warnings. " +
+                          $"Report at {path}");
+        foreach (var g in report.SourceGaps)
+        {
+            Console.WriteLine($"  SOURCE GAP: {g.Source} has zero indexed chunks (ExpectedNonEmpty).");
+        }
+        foreach (var w in report.Warnings)
+        {
+            Console.WriteLine($"  RETRIEVABILITY WARNING: {w.Source} / {w.DocumentType} not retrievable" +
+                              (w.Error is null ? "." : $" ({w.Error})."));
+        }
+
+        if (report.GapsTotal > 0)
+        {
+            Environment.ExitCode = 1;
+        }
         return;
     }
 
@@ -1955,6 +2028,16 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     }
 
     // Default behavior: scrape (discover + upsert to Cosmos).
+    if (orchestrator is null)
+    {
+        Console.Error.WriteLine(
+            "Scraping requires Cosmos to be configured. Set ConnectionStrings:cosmos " +
+            "(Aspire) or Cosmos:AccountEndpoint (production) in appsettings or environment, " +
+            "then re-run. See docs/adr/0012-cosmos-arm-schema-data-plane-items.md for setup.");
+        Environment.ExitCode = 2;
+        return;
+    }
+
     var scrapeResult = await orchestrator.ScrapeAsync(source, dryRun, cancellationToken);
 
     Console.WriteLine();
@@ -1973,7 +2056,9 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     }
 });
 
-return await rootCommand.Parse(args).InvokeAsync();
+// Honor Environment.ExitCode set by verb handlers; InvokeAsync returns 0 on a handled command, so a handler's ExitCode=2 would otherwise be lost.
+var invokeExitCode = await rootCommand.Parse(args).InvokeAsync();
+return invokeExitCode != 0 ? invokeExitCode : Environment.ExitCode;
 
 // ── Shared synthesized-doc helpers ────────────────────────────────────────────
 
