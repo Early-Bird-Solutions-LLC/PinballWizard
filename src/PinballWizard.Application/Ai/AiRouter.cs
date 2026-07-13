@@ -1061,6 +1061,16 @@ public sealed class AiRouter : IAiRouter
         // the Wizard answered directly without delegating.
         var subAgentUsed = SubAgentTraceReader.Read(response);
 
+        // Issue #719: surface the full tool-call sequence so eval can assert
+        // on tool arguments directly (e.g. every searchCorpus call carried a
+        // non-null machineId when the question named a machine). Read from the
+        // same AgentResponse immediately after SubAgentTraceReader so both
+        // readers iterate the same messages list in a single pass through
+        // ApplyPostAgentGuardrailsAsync. The trace is threaded to every
+        // WizardAnswer construction below — refusals carry it too so a
+        // tool-arg regression that causes a refusal is still detectable.
+        var toolCallTrace = ToolCallTraceReader.Read(response);
+
         // Cost attribution per ADR-0015. ITokenUsageReader returns null
         // when usage isn't yet exposed by Microsoft.Agents.AI (1.4.0
         // does not standardize a Usage property — see issue #2688).
@@ -1124,7 +1134,8 @@ public sealed class AiRouter : IAiRouter
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(RefusalCategory.CostCeilingHit, signals: null, recovery: costCeilingRecovery),
-                Degradation: _degradationContext.Snapshot());
+                Degradation: _degradationContext.Snapshot(),
+                ToolCallTrace: toolCallTrace);
         }
 
         var (citations, sourceIndex) = _toolTraceExtractor.ExtractWithSourceIndex(response);
@@ -1229,7 +1240,8 @@ public sealed class AiRouter : IAiRouter
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(category, signals, recovery: confidenceRecovery),
-                Degradation: _degradationContext.Snapshot());
+                Degradation: _degradationContext.Snapshot(),
+                ToolCallTrace: toolCallTrace);
         }
 
         if (citations.Count == 0)
@@ -1279,7 +1291,8 @@ public sealed class AiRouter : IAiRouter
                 PromptVersion: promptVersion,
                 FoundryThreadId: null,
                 RefusalDetail: BuildRefusalDetail(RefusalCategory.NoCitation, signals, recovery: noCitationRecovery),
-                Degradation: _degradationContext.Snapshot());
+                Degradation: _degradationContext.Snapshot(),
+                ToolCallTrace: toolCallTrace);
         }
 
         // Debug-level (not Info) so per-question log volume stays
@@ -1304,7 +1317,8 @@ public sealed class AiRouter : IAiRouter
             PromptVersion: promptVersion,
             FoundryThreadId: null,
             RefusalDetail: null,
-            Degradation: _degradationContext.Snapshot());
+            Degradation: _degradationContext.Snapshot(),
+            ToolCallTrace: toolCallTrace);
     }
 
     // Caps the prior turns sent to the model at MaxConversationTurns,

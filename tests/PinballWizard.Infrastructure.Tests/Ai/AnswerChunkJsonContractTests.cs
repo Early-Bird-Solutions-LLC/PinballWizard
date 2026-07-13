@@ -178,6 +178,33 @@ public sealed class AnswerChunkJsonContractTests
         Assert.Equal(answer.Confidence, result.Answer.Confidence);
     }
 
+    // WizardAnswer.ToolCallTrace (#719) is eval-only scaffolding — read in-process
+    // by the eval harness, never over the wire. It MUST NOT leak into the SSE
+    // AnswerChunk.Final payload (it carries internal tool args: search queries,
+    // machineId). This pins the [JsonIgnore] so a future refactor can't silently
+    // start shipping the trace to clients.
+    [Fact]
+    public void Final_ToolCallTrace_IsNotSerializedToTheWire()
+    {
+        var answer = BuildAnswer() with
+        {
+            ToolCallTrace =
+            [
+                new ToolCallRecord(
+                    "searchCorpus",
+                    new Dictionary<string, string?> { ["machineId"] = "GBLZz-M4ok4", ["query"] = "multiball" }),
+            ],
+        };
+
+        var json = JsonSerializer.Serialize<AnswerChunk>(new AnswerChunk.Final(answer), Options);
+
+        Assert.DoesNotContain("toolCallTrace", json, StringComparison.OrdinalIgnoreCase);
+        // The internal argument values must not appear anywhere in the wire payload.
+        Assert.DoesNotContain("GBLZz-M4ok4", json, StringComparison.Ordinal);
+        // Sanity: the in-process object still carries the trace for eval to read.
+        Assert.Single(answer.ToolCallTrace!);
+    }
+
     // ──────────────────────────────────────────────────────────────
     // 4. Null-optional fields (WhenWritingNull) are omitted from JSON
     //    so the SSE payload stays compact.

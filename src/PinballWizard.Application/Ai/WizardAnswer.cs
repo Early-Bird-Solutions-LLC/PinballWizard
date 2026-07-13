@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PinballWizard.Application.Ai;
 
 // The single shape returned to callers of IAiRouter.AnswerAsync. Per
@@ -29,4 +31,18 @@ public sealed record WizardAnswer(
     string? PromptVersion,
     string? FoundryThreadId,
     RefusalDetail? RefusalDetail = null,
-    DegradationContext? Degradation = null);
+    DegradationContext? Degradation = null,
+    // Tool-call trace captured from the AgentResponse by ToolCallTraceReader.
+    // Null on cache hits and early-exit paths (429, machine-scope gate) where
+    // no agent run occurred — null means "no trace available", [] means the
+    // agent ran but issued no tool calls. Eval reads this IN-PROCESS off the
+    // WizardAnswer object (EvaluationHarness → MachineIdCoverageEvaluator) to
+    // assert on tool arguments directly (issue #719).
+    //
+    // [JsonIgnore] is load-bearing: WizardAnswer is serialized to clients verbatim
+    // inside AnswerChunk.Final on the SSE stream. This trace is internal eval
+    // scaffolding (search queries, machineId, other tool args) — it must NOT ride
+    // the public wire (payload bloat + leaking internal tool detail). Eval never
+    // deserializes WizardAnswer, so ignoring it on the wire costs eval nothing.
+    [property: JsonIgnore]
+    IReadOnlyList<ToolCallRecord>? ToolCallTrace = null);

@@ -125,6 +125,10 @@ public static class ServiceCollectionExtensions
         // must carry ≥1 corpus chunk citation — not only a MachineRecord.
         services.TryAddSingleton<GroundingIntegrityEvaluator>();
 
+        // MachineIdCoverage evaluator (issue #719): when the question names a
+        // machine, every searchCorpus call must carry a non-null machineId.
+        services.TryAddSingleton<MachineIdCoverageEvaluator>();
+
         // Findability retrieval-quality evaluators (Recall@k, MRR, NDCG@k).
         // Architecture-agnostic offline infrastructure — no dependency on any
         // specific AI Search or Phase 2 implementation. Pure deterministic
