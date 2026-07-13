@@ -49,6 +49,8 @@ publish/
 !.claude/README.md
 !.claude/standards/
 !.claude/standards/**
+!.claude/bin/
+!.claude/bin/**
 *.user
 *.suo
 *.DotSettings.user
