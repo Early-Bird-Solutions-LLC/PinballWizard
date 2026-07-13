@@ -32,6 +32,10 @@ internal static class E2EEdgeAccess
     private static string? ClientId => Env("E2E__CfAccessClientId");
     private static string? ClientSecret => Env("E2E__CfAccessClientSecret");
 
+    // True when we are driving the Cloudflare edge rather than the ACA origin — i.e. a service
+    // token was supplied. Everything gated on this is inert for the CI canary.
+    public static bool IsEdgeTarget => Headers is not null;
+
     // Present only when BOTH halves of the service token are supplied — half a
     // credential is a misconfiguration, and sending one header alone would fail at
     // the edge with a confusing OTP redirect rather than an obvious error.
