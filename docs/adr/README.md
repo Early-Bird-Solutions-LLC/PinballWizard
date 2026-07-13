@@ -64,6 +64,7 @@ negative) it carries.
 | [0051](0051-agent-categories-foundry-vs-ci.md) | Two agent categories: Foundry product agents vs Claude Code CI automation | Accepted |
 | [0052](0052-citation-link-target-follows-source-shape.md) | Citation link target follows source knowledge-shape (fixes 404 on MetadataCard/GameOverview citations) | Accepted |
 | [0053](0053-deterministic-zero-content-shortcircuit.md) | Deterministic zero-content short-circuit in the Wizard ask pipeline (index-chunk-count gate) | Accepted |
+| [0054](0054-unified-machine-resolution.md) | Unified machine resolution: canonical identity + curated aliases + confidence tiers (replaces the slug-only join) | Accepted |
 
 ## Conventions
 
