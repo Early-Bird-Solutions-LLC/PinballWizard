@@ -408,7 +408,7 @@ Every stream branches from `main` **after S0 merges**. They touch disjoint files
 
 **Branch:** `feat/resolution-core` · **Gate:** resolver policy tests (incl. the single-word guard) + full CI suite.
 
-### Task S1.1: `MachineIdentityVariants`
+### Task 3: `MachineIdentityVariants`
 
 **Files:**
 
@@ -626,7 +626,7 @@ git add src/PinballWizard.Application/Resolution/MachineIdentityVariants.cs \
 git commit -m "feat(resolution) derive machine variants from canonical catalog identity (ADR-0054)"
 ```
 
-### Task S1.2: `InMemoryMachineIndex` + `MachineResolver`
+### Task 4: `InMemoryMachineIndex` + `MachineResolver`
 
 **Files:**
 
@@ -989,6 +989,8 @@ git commit -m "feat(resolution) evidence-aware machine resolver + in-memory vari
 
 **Branch:** `fix/upsert-scraper-owned-fields` · **Gate:** upsert tests (linker state preserved / scraper fields refreshed / re-link-on-change / ETag conflict) + full CI suite. **Independent of S1.**
 
+### Task 5: Upsert semantics (#762)
+
 **Files:**
 
 - Modify: `src/PinballWizard.Infrastructure/Persistence/Cosmos/CosmosRawDocumentRepository.cs` (the `existing is not null` branch)
@@ -1088,6 +1090,8 @@ git commit -m "fix(persistence) refresh scraper-owned fields on re-scrape; prese
 
 **Branch:** `feat/golden-link-set` · **Gate:** the captured snapshot replays green against the CURRENT linker (proving the harness is correct before it judges the new one). **Independent of S1.**
 
+### Task 6: Golden-set + parity capture
+
 **Files:**
 
 - Create: `src/PinballWizard.Cli/Commands/CaptureGoldenSetCommand.cs`
@@ -1151,6 +1155,8 @@ git commit -m "test(linking) capture golden link set + reconciler parity snapsho
 ## S4 — AP classification
 
 **Branch:** `fix/ap-document-classification` · **Gate:** classification tests driven by the **captured** AP URL list; full CI suite. **Independent of S1.**
+
+### Task 7: AP classification + TEST-05 fixture rule
 
 **Files:**
 
@@ -1238,6 +1244,8 @@ the live source, never hand-authored. This is the #758 guard."
 
 **Branch:** `feat/machine-alias-seed` · **Gate:** contract tests (every alias resolves to a real group/machine; no duplicate `(alias, manufacturerKey)`); full CI suite. **Independent of S1.**
 
+### Task 8: Alias seed + loader
+
 **Files:**
 
 - Create: `data/seeds/machine_aliases.v1.json`
@@ -1314,6 +1322,8 @@ git commit -m "feat(resolution) curated machine-alias seed + fail-fast loader (A
 ## S6 — `needs_review` status + admin queue
 
 **Branch:** `feat/link-review-queue` · **Gate:** bUnit component test + `CrossPartitionQueryAllowListTests` updated; full CI suite. **Independent of S1** (persists the status; the resolver starts producing it in Plan 2).
+
+### Task 9: needs_review status + admin queue
 
 **Files:**
 
