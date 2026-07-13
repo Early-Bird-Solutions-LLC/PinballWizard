@@ -10,7 +10,9 @@ public static class ApBulletinExtractor
     private static readonly HtmlParser Parser = new();
 
     private const string BulletinCdnHost = "s4.american-pinball.com";
-    private const string DiscoveryCtx = "American Pinball Support Page";
+    // internal so ApBulletinScraper sets the same DiscoveryContext on the ScrapedItem —
+    // one literal, no drift between the extractor's DiscoveredLink and the scraper's item.
+    internal const string DiscoveryCtx = "American Pinball Support Page";
 
     public static List<DiscoveredLink> ExtractBulletins(string html, Uri supportPageUrl)
     {
@@ -44,9 +46,51 @@ public static class ApBulletinExtractor
                 FileUrl = url,
                 LinkText = string.IsNullOrEmpty(text) ? null : text,
                 DiscoveryContext = DiscoveryCtx,
+                GameSlug = DeriveGameSlug(url),
             });
         }
 
         return links;
+    }
+
+    // Derives a best-effort game slug from an AP bulletin PDF URL by extracting the
+    // title portion that precedes the service-bulletin suffix ("-SB-NNN").
+    //
+    // AP CDN filenames follow the pattern: {GameTitle}-SB-{number}.pdf
+    // e.g. "Houdini-SB-001.pdf"    → "houdini"
+    //      "Oktoberfest-SB-002.pdf" → "oktoberfest"
+    //      "HotWheels-SB-003.pdf"  → "hotwheels"
+    //
+    // If the filename does not contain a recognisable bulletin suffix, returns null
+    // so the linker falls back to its Tier-2 filename-matching strategy.
+    public static string? DeriveGameSlug(string? fileUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fileUrl)) return null;
+
+        try
+        {
+            var filename = Path.GetFileNameWithoutExtension(
+                Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri)
+                    ? uri.AbsolutePath
+                    : fileUrl);
+
+            if (string.IsNullOrWhiteSpace(filename)) return null;
+
+            // Strip the service-bulletin suffix "-SB-NNN" (and anything after).
+            var sbIdx = filename.IndexOf("-SB-", StringComparison.OrdinalIgnoreCase);
+            if (sbIdx <= 0) return null;
+
+            var titlePart = filename[..sbIdx].ToLowerInvariant().Trim('-', '_');
+            return string.IsNullOrEmpty(titlePart) ? null : titlePart;
+        }
+        catch (ArgumentException)
+        {
+            // Defensive against malformed path/URL input: yield no slug (never a
+            // fabricated one) so the linker's Tier-2 filename-matching takes over
+            // rather than mis-attributing the document. Any *other* exception is
+            // unexpected and propagates to the scraper's outer handler, which logs
+            // it and aborts the run visibly (invariant #17 — degrade, don't mask).
+            return null;
+        }
     }
 }
