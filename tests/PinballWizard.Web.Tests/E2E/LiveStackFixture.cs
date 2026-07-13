@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Microsoft.Playwright;
 using Xunit;
 
 namespace PinballWizard.Web.Tests.E2E;
@@ -46,30 +47,20 @@ public sealed class LiveStackFixture : IAsyncLifetime
         {
             // Deployed-target mode: drive the running deployment directly.
             WebBaseUrl = deployedBaseUrl.TrimEnd('/');
-            using var probe = new HttpClient();
 
-            // When the target is the edge (pinwiz.ai) rather than the ACA origin, this
-            // probe passes through Cloudflare Access and would 403 without the service
-            // token — aborting the run before a single browser starts. Same credential
-            // the browser contexts use (E2EEdgeAccess); absent for the origin-targeting
-            // CI canary, which never meets Access.
-            if (E2EEdgeAccess.Headers is { } accessHeaders)
-            {
-                foreach (var (name, value) in accessHeaders)
-                {
-                    probe.DefaultRequestHeaders.Add(name, value);
-                }
-            }
+            var status = E2EEdgeAccess.IsEdgeTarget
+                ? await ProbeAliveThroughEdgeAsync()
+                : await ProbeAliveDirectAsync();
 
-            var alive = await probe.GetAsync($"{WebBaseUrl}/alive");
-            if (alive.StatusCode != HttpStatusCode.OK)
+            if (status != (int)HttpStatusCode.OK)
             {
                 throw new InvalidOperationException(
-                    $"Deployed target {WebBaseUrl}/alive returned {(int)alive.StatusCode} — refusing to run E2E against an unhealthy deployment." +
-                    (alive.StatusCode == HttpStatusCode.Forbidden && E2EEdgeAccess.Headers is null
-                        ? " A 403 against the pinwiz.ai edge means the Cloudflare Access service token is missing — set E2E__CfAccessClientId and E2E__CfAccessClientSecret (see docs/local-development.md)."
+                    $"Deployed target {WebBaseUrl}/alive returned {status} — refusing to run E2E against an unhealthy deployment." +
+                    (status == (int)HttpStatusCode.Forbidden
+                        ? " A 403 from the pinwiz.ai edge is a GATE, not an unhealthy app: check the Cloudflare Access service token (E2E__CfAccessClientId / E2E__CfAccessClientSecret) and that E2E__Headed is set."
                         : string.Empty));
             }
+
             return;
         }
 
@@ -238,6 +229,42 @@ public sealed class LiveStackFixture : IAsyncLifetime
         {
             // Already exited between the check and the kill — fine.
         }
+    }
+
+    // Origin (ACA FQDN) health probe — the CI canary path. No Cloudflare in front, so a
+    // plain HttpClient is the cheapest correct thing. Unchanged behaviour.
+    private async Task<int> ProbeAliveDirectAsync()
+    {
+        using var probe = new HttpClient();
+        var alive = await probe.GetAsync($"{WebBaseUrl}/alive");
+        return (int)alive.StatusCode;
+    }
+
+    // Edge (pinwiz.ai) health probe — deliberately a BROWSER, not an HttpClient.
+    //
+    // Super Bot Fight Mode fingerprints the CLIENT, not just its User-Agent: measured against
+    // the live edge, .NET's HttpClient is 403'd while holding a perfectly valid Access service
+    // token, with no UA, with an honest UA, and with a browser-like UA alike — whereas curl and
+    // python sending the *identical* headers both get 200. No header will fix an HttpClient here.
+    //
+    // Probing with the same browser stack the tests use is therefore not just the workaround,
+    // it is the more honest check: it asserts health over exactly the path the tests exercise,
+    // rather than over a channel no test uses. The alternative — a WAF rule exempting the runner
+    // from bot protection — would widen the bot surface of a public showcase site, and is not
+    // worth it to save one HTTP call.
+    private async Task<int> ProbeAliveThroughEdgeAsync()
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
+        await using var context = await browser.NewContextAsync(E2EEdgeAccess.ContextOptions());
+        var page = await context.NewPageAsync();
+
+        var response = await page.GotoAsync($"{WebBaseUrl}/alive",
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30_000 });
+
+        // A null response means the navigation produced none at all (DNS/TLS failure) — that is
+        // not health, so report it as such rather than letting a null read as success.
+        return response?.Status ?? 0;
     }
 
     private static int GetFreePort()
