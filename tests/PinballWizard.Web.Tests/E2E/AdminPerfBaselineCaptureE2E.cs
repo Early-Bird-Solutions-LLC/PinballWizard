@@ -45,7 +45,7 @@ public sealed class AdminPerfBaselineCaptureE2E : IAsyncLifetime
         if (!E2EFactAttribute.IsConfigured)
             return;
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _browser = await _playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
     }
 
     public async Task DisposeAsync()
@@ -121,7 +121,7 @@ public sealed class AdminPerfBaselineCaptureE2E : IAsyncLifetime
 
     private async Task<Sample> CaptureAsync(string route, string kind)
     {
-        var ctx = await _browser!.NewContextAsync();
+        var ctx = await _browser!.NewContextAsync(E2EEdgeAccess.ContextOptions());
         try
         {
             var page = await ctx.NewPageAsync();
@@ -169,7 +169,7 @@ public sealed class AdminPerfBaselineCaptureE2E : IAsyncLifetime
 
     private async Task<string?> FirstLinkUnderAsync(string listRoute, string hrefPrefix)
     {
-        var ctx = await _browser!.NewContextAsync();
+        var ctx = await _browser!.NewContextAsync(E2EEdgeAccess.ContextOptions());
         try
         {
             var page = await ctx.NewPageAsync();

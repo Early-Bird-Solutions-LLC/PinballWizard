@@ -69,10 +69,32 @@ resource "cloudflare_zero_trust_access_application" "prelaunch_gate" {
   ]
 
   policies = [
+    # Service Auth — evaluated before the identity policy below. Lets the E2E
+    # suite drive the REAL edge (pinwiz.ai, i.e. through Cloudflare's WAF, cache,
+    # and security headers) instead of only the ACA origin, which is all the CI
+    # canary can reach today. Without this, an automated run hits the OTP screen
+    # and the only way through is a human pasting a mailed code — a human
+    # credential in an automation path, with a 24h session lifetime.
+    #
+    # decision = "non_identity" is the API value for what the dashboard labels
+    # "Service Auth". It MUST be non_identity: an "allow" policy would send the
+    # request to the IdP and prompt for a login anyway.
+    {
+      name       = "E2E service token"
+      decision   = "non_identity"
+      precedence = 1
+      include = [
+        {
+          service_token = {
+            token_id = one(cloudflare_zero_trust_access_service_token.e2e).id
+          }
+        },
+      ]
+    },
     {
       name       = "Maintainer only"
       decision   = "allow"
-      precedence = 1
+      precedence = 2
       include = [
         {
           email = {
@@ -82,6 +104,28 @@ resource "cloudflare_zero_trust_access_application" "prelaunch_gate" {
       ]
     },
   ]
+}
+
+# Credential for non-interactive access through the gate above. The holder sends
+# CF-Access-Client-Id / CF-Access-Client-Secret on every request; Cloudflare
+# validates them itself and never redirects to the OTP identity provider.
+#
+# client_secret is returned by the API exactly ONCE, at creation, and is
+# unreadable afterwards — capture it from the tofu output on first apply and
+# store it outside the repo. Rotate by bumping client_secret_version.
+#
+# NOTE: this satisfies Cloudflare *Access* only. Super Bot Fight Mode
+# (sbfm_definitely_automated = "block" in waf.tf) runs in a separate pipeline
+# that a service token does NOT exempt, so a HEADLESS browser can still be
+# blocked at the edge even holding a valid token. The E2E runner therefore drives
+# a headed browser when targeting pinwiz.ai. Deliberately no WAF skip rule: that
+# would widen the bot surface of a public showcase site to save a window.
+resource "cloudflare_zero_trust_access_service_token" "e2e" {
+  count = var.prelaunch_gate_enabled ? 1 : 0
+
+  account_id = var.account_id
+  name       = "pinwiz.ai E2E test runner"
+  duration   = "8760h" # 1 year (provider default); rotate via client_secret_version
 }
 
 # This block is a TEMPLATE — uncomment and adjust when staging exists.

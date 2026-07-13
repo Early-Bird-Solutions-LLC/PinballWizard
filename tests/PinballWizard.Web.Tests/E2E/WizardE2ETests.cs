@@ -39,7 +39,7 @@ public sealed class WizardE2ETests : IAsyncLifetime
         }
 
         _playwright = await Playwright.CreateAsync();
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Headless = true });
+        _browser = await _playwright.Chromium.LaunchAsync(E2EEdgeAccess.LaunchOptions());
     }
 
     public async Task DisposeAsync()
@@ -283,7 +283,8 @@ public sealed class WizardE2ETests : IAsyncLifetime
     {
         // Fresh context per test: no shared cookies/cache, so each test
         // exercises the cold-visit path deterministically.
-        var context = await _browser!.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 900 } });
+        var context = await _browser!.NewContextAsync(
+            E2EEdgeAccess.ContextOptions(new() { ViewportSize = new() { Width = 1280, Height = 900 } }));
         return await context.NewPageAsync();
     }
 }

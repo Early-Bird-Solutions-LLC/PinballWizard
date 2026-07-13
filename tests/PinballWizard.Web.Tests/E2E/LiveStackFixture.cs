@@ -47,11 +47,28 @@ public sealed class LiveStackFixture : IAsyncLifetime
             // Deployed-target mode: drive the running deployment directly.
             WebBaseUrl = deployedBaseUrl.TrimEnd('/');
             using var probe = new HttpClient();
+
+            // When the target is the edge (pinwiz.ai) rather than the ACA origin, this
+            // probe passes through Cloudflare Access and would 403 without the service
+            // token — aborting the run before a single browser starts. Same credential
+            // the browser contexts use (E2EEdgeAccess); absent for the origin-targeting
+            // CI canary, which never meets Access.
+            if (E2EEdgeAccess.Headers is { } accessHeaders)
+            {
+                foreach (var (name, value) in accessHeaders)
+                {
+                    probe.DefaultRequestHeaders.Add(name, value);
+                }
+            }
+
             var alive = await probe.GetAsync($"{WebBaseUrl}/alive");
             if (alive.StatusCode != HttpStatusCode.OK)
             {
                 throw new InvalidOperationException(
-                    $"Deployed target {WebBaseUrl}/alive returned {(int)alive.StatusCode} — refusing to run E2E against an unhealthy deployment.");
+                    $"Deployed target {WebBaseUrl}/alive returned {(int)alive.StatusCode} — refusing to run E2E against an unhealthy deployment." +
+                    (alive.StatusCode == HttpStatusCode.Forbidden && E2EEdgeAccess.Headers is null
+                        ? " A 403 against the pinwiz.ai edge means the Cloudflare Access service token is missing — set E2E__CfAccessClientId and E2E__CfAccessClientSecret (see docs/local-development.md)."
+                        : string.Empty));
             }
             return;
         }
