@@ -137,9 +137,17 @@ public sealed class PublicRouteCanaryE2ETests : IAsyncLifetime
         var page = await NewPageAsync();
         await NavigateAsync(page, "/this-route-does-not-exist");
 
-        await page.WaitForURLAsync("**/error*", new() { Timeout = 15_000 });
+        // WaitUntil is explicit: WaitForURLAsync defaults to WaitUntilState.Load, which
+        // blocks until every subresource (fonts, images, CSS) on the error page settles.
+        // NavigateAsync already only waits for DOMContentLoaded, so the default silently
+        // imposed a STRICTER load state here than anywhere else in this suite — and the
+        // full load event is not something either assertion below needs. That mismatch,
+        // not the routing, is what made this the one flaky canary test.
+        await page.WaitForURLAsync("**/error*",
+            new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 15_000 });
         Assert.Contains("reason=not-found", page.Url, StringComparison.Ordinal);
-        // The themed surface renders (not a raw framework 404).
+        // The themed surface renders (not a raw framework 404). This selector wait — not
+        // the load event — is what actually proves the page came up.
         await page.WaitForSelectorAsync("[data-testid='tilt-heading']", new() { Timeout = 15_000 });
     }
 
