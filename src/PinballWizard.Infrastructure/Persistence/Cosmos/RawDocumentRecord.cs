@@ -14,7 +14,8 @@ namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 // The link_status field is stored as a string on the wire so that the
 // container is queryable via SQL literals without Cosmos needing to know
 // about the C# enum definition. Valid values: "pending", "linked",
-// "platform_generic", "not_in_catalog", "failed", "manually_linked".
+// "platform_generic", "not_in_catalog", "failed", "manually_linked",
+// "needs_review".
 internal sealed class RawDocumentCosmosRecord : IEntity
 {
     [JsonPropertyName("id")]
@@ -84,11 +85,40 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     [JsonPropertyName("manufacturer")]
     public string? Manufacturer { get; set; }
 
+    // Present when link_status = "needs_review" — written by the Wave 2 linker
+    // when ambiguity cannot be resolved without human input.
+    [JsonPropertyName("link_review")]
+    public RawLinkReviewInfo? LinkReview { get; set; }
+
     // Cosmos system property — populated from the JSON response when reading
     // an existing document. Used for ETag-conditional writes (ADR-0025 § 7)
     // to prevent lost updates when the scraper and linker write concurrently.
     [JsonPropertyName("_etag")]
     public string? ETag { get; set; }
+}
+
+internal sealed class RawLinkReviewInfo
+{
+    [JsonPropertyName("candidates")]
+    public List<RawLinkReviewCandidate> Candidates { get; set; } = [];
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; set; }
+}
+
+internal sealed class RawLinkReviewCandidate
+{
+    [JsonPropertyName("machine_id")]
+    public string MachineId { get; set; } = string.Empty;
+
+    [JsonPropertyName("machine_title")]
+    public string MachineTitle { get; set; } = string.Empty;
+
+    [JsonPropertyName("evidence_kind")]
+    public string EvidenceKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("matched_variant")]
+    public string MatchedVariant { get; set; } = string.Empty;
 }
 
 internal sealed class RawGameInfo

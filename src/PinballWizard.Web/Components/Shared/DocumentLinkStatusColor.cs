@@ -17,6 +17,11 @@ internal static class DocumentLinkStatusColor
         "failed" or "Failed"
             or "not_in_catalog" or "NotInCatalog"    => Color.Error,
         "platform_generic" or "PlatformGeneric"      => Color.Default, // non-status tag → neutral
+        // needs_review: admin-queue signal — informational, not a failure, so it
+        // takes the neutral role (matching SourceStatusView's "Deferred"). Info
+        // (blue) is banned as a status color by the closed palette; the queue
+        // surfaces urgency through the admin review list, not through chip color.
+        "needs_review" or "NeedsReview"              => Color.Default,
         _                                            => Color.Default,
     };
 }

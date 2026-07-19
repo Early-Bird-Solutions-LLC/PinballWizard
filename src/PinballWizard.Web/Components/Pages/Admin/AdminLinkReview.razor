@@ -1,0 +1,257 @@
+@page "/admin/link-review"
+@layout AdminLayout
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@inherits AdminPageBase
+
+@* AdminLinkReview — /admin/link-review needs_review queue.
+ *
+ * Public-read after the admin showcase split: candidate rows are visible to
+ * everyone; the Assign action is gated by _isAdmin (UI) and AdminActionGuard
+ * (server). Renders one row per (document, candidate) pair for every raw
+ * document whose link_status is NeedsReview — the resolver never guesses on
+ * ambiguity (invariant #17), so a human picks the correct machine here.
+ *
+ * Assign writes a Tier-0 link_overrides row scoped to the document's
+ * source_pattern (LinkOverrideRecord.BuildSourcePattern) and flips the
+ * document back to Pending so the linker re-processes it and applies the
+ * override on its next pass — the same Tier-0 lookup DocumentLinker already
+ * performs for every other document (see DocumentLinker.TryTier0Override).
+ *
+ * ADR-0008  — MudBlazor strict
+ * ADR-0009  — Entra External ID auth
+ * ADR-0046  — shared Blazor component library (AppDataGrid / AppEmptyState)
+ * ADR-0054  — NeedsReview status + admin queue
+ *@
+
+@using PinballWizard.Application.Persistence
+@using PinballWizard.Core.Models
+
+@inject IRawDocumentRepository RawDocRepo
+@inject ILinkOverrideRepository OverrideRepo
+@inject ISnackbar Snackbar
+@inject ILogger<AdminLinkReview> Logger
+@inject PinballWizard.Web.Security.AdminActionGuard Guard
+
+<PageTitle>Link Review — PinballWizard Admin</PageTitle>
+
+<AppPageShell Title="Link Review"
+              Subtitle="Documents the resolver could not link without human input."
+              Breadcrumbs="@_breadcrumbs">
+
+    @if (_loading)
+    {
+        <AdminLoadingBar Label="Loading link review queue" />
+    }
+
+    @if (_loadFailed)
+    {
+        <AppErrorAlert data-testid="link-review-load-failed">
+            The link review queue could not be loaded. Please refresh the page or check Cosmos connectivity.
+        </AppErrorAlert>
+    }
+
+    <AppDataGrid T="LinkReviewRow"
+                 Items="@_rows"
+                 SearchContext="admin-link-review"
+                 data-testid="admin-link-review-grid">
+
+        <Columns>
+            <TemplateColumn Title="Document">
+                <CellTemplate>
+                    <MudLink Href="@($"/documents/{context.Item.DocumentId}")">@context.Item.DocumentId</MudLink>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Item.DiscoveryUrl</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.Manufacturer" Title="Manufacturer" />
+            <PropertyColumn Property="x => x.MachineTitle" Title="Candidate Machine" />
+            <TemplateColumn Title="Evidence">
+                <CellTemplate>
+                    <AppStatusChip Color="Color.Default">@context.Item.EvidenceKind</AppStatusChip>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Item.MatchedVariant</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    @if (context.Item.ActionBusy)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    }
+                    else if (_isAdmin)
+                    {
+                        <MudButton Size="Size.Small"
+                                   Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   data-testid="@($"link-review-assign-{context.Item.DocumentId}-{context.Item.MachineId}")"
+                                   OnClick="@(() => AssignAsync(context.Item))">
+                            Assign
+                        </MudButton>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+
+        <NoRecordsContent>
+            @if (!_loadFailed)
+            {
+                <AppEmptyState Heading="No documents awaiting review."
+                               Detail="Ambiguous links surface here when the resolver finds multiple plausible machines and declines to guess."
+                               Icon="@Icons.Material.Outlined.CheckCircle"
+                               data-testid="link-review-empty" />
+            }
+        </NoRecordsContent>
+
+    </AppDataGrid>
+</AppPageShell>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _isAdmin;
+
+    private sealed class LinkReviewRow
+    {
+        public required string DocumentId { get; init; }
+        public required string SourcePattern { get; init; }
+        public required string DiscoveryUrl { get; init; }
+        public required string Manufacturer { get; init; }
+        public required string MachineId { get; init; }
+        public required string MachineTitle { get; init; }
+        public required string EvidenceKind { get; init; }
+        public required string MatchedVariant { get; init; }
+        public bool ActionBusy { get; set; }
+    }
+
+    private List<LinkReviewRow> _rows = [];
+    private bool _loading = true;
+    private bool _loadFailed;
+
+    private readonly List<BreadcrumbItem> _breadcrumbs =
+    [
+        new BreadcrumbItem("Admin", href: "/admin", icon: Icons.Material.Filled.Dashboard),
+        new BreadcrumbItem("Link Review", href: "/admin/link-review", icon: Icons.Material.Filled.RateReview),
+    ];
+
+    // Use OnAfterRenderAsync so the page shell (with the loading spinner) is sent
+    // to the client immediately on first render rather than blocking the pre-render
+    // pass until Cosmos data returns. The spinner is visible within ~100 ms of
+    // navigation; data populates when the query completes.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    private async Task LoadAsync()
+    {
+        using var cts = CreateLoadCts(TimeSpan.FromSeconds(30));
+        try
+        {
+            _isAdmin = await Guard.IsAdminAsync(AuthState);
+            var rows = new List<LinkReviewRow>();
+            await foreach (var doc in RawDocRepo.StreamByStatusAsync([LinkStatus.NeedsReview], cts.Token))
+            {
+                var sourcePattern = LinkOverrideRecord.BuildSourcePattern(doc.Source.DiscoveryUrl, doc.DocumentType);
+                foreach (var candidate in doc.LinkReview?.Candidates ?? [])
+                {
+                    rows.Add(new LinkReviewRow
+                    {
+                        DocumentId = doc.DocumentId,
+                        SourcePattern = sourcePattern,
+                        DiscoveryUrl = doc.Source.DiscoveryUrl,
+                        Manufacturer = doc.Manufacturer ?? string.Empty,
+                        MachineId = candidate.MachineId,
+                        MachineTitle = candidate.MachineTitle,
+                        EvidenceKind = candidate.EvidenceKind,
+                        MatchedVariant = candidate.MatchedVariant,
+                    });
+                }
+
+                // NeedsReview is expected to stay small — the resolver only lands here on
+                // genuine ambiguity, not routine unlinked volume (that's AdminDocumentTriage).
+                // The cap guards against a runaway linker pass flooding this page the way
+                // AdminDocumentTriage caps its own queue at 200 rows.
+                if (rows.Count >= 500) break;
+            }
+            _rows = rows;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("Admin link review load timed out after 30 s.");
+            Snackbar.Add("Link review queue load timed out — please refresh.", Severity.Warning);
+            _loadFailed = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load admin link review queue.");
+            Snackbar.Add($"Failed to load link review queue: {ex.Message}", Severity.Error);
+            _loadFailed = true;
+        }
+        finally
+        {
+            _loading = false;
+            SafeStateHasChanged();
+        }
+    }
+
+    private async Task AssignAsync(LinkReviewRow row)
+    {
+        if (!await Guard.IsAdminAsync(AuthState))
+        {
+            Snackbar.Add("Sign in as an administrator to perform this action.", Severity.Warning);
+            return;
+        }
+        row.ActionBusy = true;
+        SafeStateHasChanged();
+
+        // Tracks which half of the two-step write (override upsert, then status flip)
+        // completed, so a failure log tells an operator exactly what state the document
+        // is in — both steps are upserts, so retrying Assign is always safe either way.
+        var overrideWritten = false;
+        try
+        {
+            var record = new LinkOverrideRecord
+            {
+                SourcePattern = row.SourcePattern,
+                MachineIds = [row.MachineId],
+                CreatedBy = "admin",
+                CreatedAt = DateTimeOffset.UtcNow,
+                Notes = $"Assigned from link-review queue: {row.MachineTitle} ({row.EvidenceKind}: {row.MatchedVariant})",
+            };
+            await OverrideRepo.UpsertAsync(record, CancellationToken.None);
+            overrideWritten = true;
+
+            // Flip back to Pending rather than stamping Linked directly — the
+            // linker's Tier-0 override lookup (DocumentLinker.TryTier0Override)
+            // is what actually applies this override on the next pass. That
+            // keeps this admin action and the automated linker agreeing on the
+            // one code path that decides link outcomes.
+            await RawDocRepo.UpdateLinkStatusAsync(
+                row.DocumentId,
+                LinkStatus.Pending,
+                resolutionStrategy: null,
+                failureReason: null,
+                overrideId: null,
+                CancellationToken.None);
+
+            _rows.RemoveAll(r => r.DocumentId == row.DocumentId);
+            Snackbar.Add($"Assigned {row.MachineTitle}; document queued for re-linking.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex,
+                "Link-review assign failed for document {DocumentId} to machine {MachineId} (override written: {OverrideWritten}).",
+                row.DocumentId, row.MachineId, overrideWritten);
+            Snackbar.Add($"Assign failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            row.ActionBusy = false;
+            SafeStateHasChanged();
+        }
+    }
+}
