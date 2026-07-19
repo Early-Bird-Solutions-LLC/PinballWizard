@@ -523,7 +523,13 @@ public static class MachineIdentityVariants
 {
     // Copied verbatim from ScraperReconciliationService.DecorationWords (ownership moves here).
     // Longest-first so compound qualifiers are consumed before their fragments.
-    private static readonly string[] TrailingQualifiers =
+    //
+    // internal, not private: MachineResolver (Task 4) initialises its own lookup FROM
+    // this array. Task 4's snippet references TrailingQualifiers directly, so the list
+    // must exist exactly once — do not let the resolver declare a second copy kept in
+    // step by a comment. "pinball" here is the guard that stopped the 1977 Stern
+    // machine from claiming 172 documents.
+    internal static readonly string[] TrailingQualifiers =
     [
         "merlinedition", "vaultedition", "limitededition", "standardedition",
         "remake", "pinball", "gamekit", "deposit", "edition",
@@ -589,6 +595,28 @@ public static class MachineIdentityVariants
     }
 
     // Consumes trailing qualifier tokens right-to-left. Never strips the last remaining token.
+    // CORRECTED during S1 implementation — the original snippet checked ONLY
+    // single tokens:
+    //
+    //     foreach (var q in TrailingQualifiers)
+    //         if (work.Count > 1 && string.Equals(work[^1], q, ...)) { remove; }
+    //
+    // Under that version the compound entries in TrailingQualifiers
+    // ("merlinedition", "vaultedition", "limitededition", "standardedition")
+    // are DEAD: they can never equal a single token, because the tokenizer has
+    // already split "Merlin Edition" into ["merlin", "edition"]. They were
+    // carried over from ScraperReconciliationService, which matches against a
+    // pre-concatenated string where "merlinedition" IS a substring — the
+    // tokenized form here needs an adjacent-pair join to see it.
+    //
+    // Consequence: "Medieval Madness Merlin Edition Pinball" would strip only
+    // "pinball" and stop, since "edition" IS a single-token entry but "merlin"
+    // is not — leaving "medieval madness merlin" rather than the intended
+    // "medieval madness". For_StripsTrailingQualifiers pins the correct result.
+    //
+    // Compound is checked BEFORE single-token (longest match first, same
+    // principle as the reconciler's ordering), and requires >2 tokens so the
+    // one-token floor is never breached.
     public static IReadOnlyList<string> StripTrailingQualifiers(IReadOnlyList<string> tokens)
     {
         var work = tokens.ToList();
@@ -596,13 +624,32 @@ public static class MachineIdentityVariants
         while (changed && work.Count > 1)
         {
             changed = false;
-            foreach (var q in TrailingQualifiers)
+
+            if (work.Count > 2)
             {
-                if (work.Count > 1 && string.Equals(work[^1], q, StringComparison.Ordinal))
+                var compound = work[^2] + work[^1];
+                foreach (var q in TrailingQualifiers)
                 {
-                    work.RemoveAt(work.Count - 1);
-                    changed = true;
-                    break;
+                    if (string.Equals(compound, q, StringComparison.Ordinal))
+                    {
+                        work.RemoveAt(work.Count - 1);
+                        work.RemoveAt(work.Count - 1);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!changed)
+            {
+                foreach (var q in TrailingQualifiers)
+                {
+                    if (work.Count > 1 && string.Equals(work[^1], q, StringComparison.Ordinal))
+                    {
+                        work.RemoveAt(work.Count - 1);
+                        changed = true;
+                        break;
+                    }
                 }
             }
         }
