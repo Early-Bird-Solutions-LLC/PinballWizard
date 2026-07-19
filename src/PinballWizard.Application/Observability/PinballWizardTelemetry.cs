@@ -678,6 +678,24 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Count of already-stored raw documents whose scraper-owned field block (Source, Game, Classification, Manufacturer) was refreshed by UpsertRawAsync. Tagged with manufacturer and link_reset. A flat rate during an active scrape means the refresh path has regressed — the #762/#752 failure mode.");
 
+    // ── Machine resolution instrumentation (ADR-0054) ────────────────────
+    // One increment per IMachineResolver.Resolve call, tagged with outcome
+    // (resolved / resolved_family / ambiguous / no_match), the stage that
+    // produced it, and the evidence kind of the query.
+    //
+    // A full relink resolves tens of thousands of documents in a batch with no
+    // user watching. Without this, a regression to always-NoMatch — a bad
+    // eligibility rule, an empty index, a normalizer change — looks exactly
+    // like a quiet successful run and is only discoverable later via the
+    // corpus-coverage probe. The outcome MIX is the signal: a sudden collapse
+    // of resolved toward no_match, or a spike in ambiguous, means resolution
+    // policy moved. Ambiguous is a healthy outcome, not an error — it is the
+    // resolver refusing to guess (invariant #17) and routing to needs_review.
+    public static readonly Counter<long> MachineResolutionTotal = Meter.CreateCounter<long>(
+        "pinwiz.resolution.total",
+        unit: "{document}",
+        description: "Count of machine-resolution attempts, tagged with outcome (resolved/resolved_family/ambiguous/no_match), stage, and evidence_kind. Watch the outcome MIX, not the absolute rate: a collapse toward no_match indicates a resolution regression, while ambiguous is the resolver correctly declining to guess (ADR-0054).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";
