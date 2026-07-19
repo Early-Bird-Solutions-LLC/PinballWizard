@@ -340,6 +340,12 @@ public sealed class ScraperOrchestrator
             return DocumentType.Rulesheet;
 
         if (url.Contains("manual")) return DocumentType.Manual;
+
+        // AP quick-reference guides (e.g. "Houdini--Quick-Reference-Guide.pdf")
+        // are operator manuals-lite and should be indexed — derived from the
+        // captured AP support-page fixture (TEST-05 / #745).
+        if (url.Contains("quick-reference-guide")) return DocumentType.Manual;
+
         if (url.Contains("schematic")) return DocumentType.Schematic;
         if (url.Contains("sb") && url.Contains(".pdf")) return DocumentType.ServiceBulletin;
         if (url.EndsWith(".zip") || url.EndsWith(".spk")) return DocumentType.Firmware;
@@ -350,6 +356,18 @@ public sealed class ScraperOrchestrator
         if ((url.Contains("rules") || url.Contains("rulesheet")) &&
             !url.Contains("manual"))
             return DocumentType.Rulesheet;
+
+        // AP service-bulletin signals — derived from the captured AP support-page
+        // fixture (TEST-05 / #745).  These keywords appear in AP's ad-hoc file
+        // naming scheme and are strong service-bulletin signals for any manufacturer:
+        //   fix        e.g. Houdini-Skill-Shot-Fix.pdf
+        //   update     e.g. Hotwheels-GI-EPIC-3-Wire-update.pdf
+        //   improvement e.g. Houdini--Coil-Performance-Improvement-Kit.pdf
+        //   kit        e.g. Power-Supply-Kit-Installation.pdf
+        //   install    e.g. Knocker-Installation.pdf, HWL--shaker-install.pdf
+        if (url.Contains("fix") || url.Contains("update") || url.Contains("improvement") ||
+            url.Contains("kit") || url.Contains("install"))
+            return DocumentType.ServiceBulletin;
 
         return DocumentType.Other;
     }
