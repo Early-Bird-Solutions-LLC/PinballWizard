@@ -659,6 +659,25 @@ public static class PinballWizardTelemetry
         unit: "{error}",
         description: "Count of AiSearchMachineIndex.SearchAsync failures that triggered a degrade path — to Cosmos in MachineGroundingTool (reason=query_failed, ADR-0049 phase 2b) or to an empty typeahead in the suggest service (reason=suggest_unavailable, phase 3). Tagged with reason. A sustained non-zero rate indicates AI Search machine-index availability or configuration issues.");
 
+    // ── Raw-document upsert instrumentation (#762) ───────────────────────
+    // Emitted when UpsertRawAsync refreshes the scraper-owned field block on an
+    // ALREADY-STORED document, tagged with manufacturer and whether the refresh
+    // invalidated the linker binding (link_reset=true when game.slug or
+    // document_type changed).
+    //
+    // This exists because the #752 defect was INVISIBLE: re-scraping silently
+    // failed to overwrite source.source_type on existing records, so a scraper
+    // fix looked correct in review and did nothing against live data. RU/latency
+    // metrics showed the write happening — they could not show that the write
+    // carried no new scraper state. If this counter goes flat while scrapes are
+    // running, the refresh has regressed; that is the alertable signal the
+    // original bug lacked (invariant #17 — a degradation nobody can see is the
+    // failure mode, not just a fabricated success).
+    public static readonly Counter<long> RawDocScraperFieldsRefreshed = Meter.CreateCounter<long>(
+        "pinwiz.rawdoc.scraper_fields_refreshed_total",
+        unit: "{document}",
+        description: "Count of already-stored raw documents whose scraper-owned field block (Source, Game, Classification, Manufacturer) was refreshed by UpsertRawAsync. Tagged with manufacturer and link_reset. A flat rate during an active scrape means the refresh path has regressed — the #762/#752 failure mode.");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

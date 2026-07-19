@@ -114,6 +114,10 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         existing.Timeline = new RawTimelineInfo { FirstDiscoveredAt = firstDiscovered };
         existing.File = new RawFileInfo { LocalPath = "data/manuals/houdini.pdf", Filename = "houdini.pdf" };
         existing.Http = new RawHttpInfo { ETag = "\"etag-abc123\"" };
+        // The two most operationally significant linker outputs — how the binding
+        // was reached, and whether an admin override produced it.
+        existing.ResolutionStrategy = "exact_slug";
+        existing.OverrideId = "ovr_42";
         SetupGetByIdFound(docId, existing);
 
         RawDocumentCosmosRecord? captured = null;
@@ -134,6 +138,8 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
         Assert.Equal(firstDiscovered, captured.Timeline?.FirstDiscoveredAt);
         Assert.Equal("data/manuals/houdini.pdf", captured.File?.LocalPath);
         Assert.Equal("\"etag-abc123\"", captured.Http?.ETag);
+        Assert.Equal("exact_slug", captured.ResolutionStrategy);
+        Assert.Equal("ovr_42", captured.OverrideId);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -378,6 +384,95 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
 
     private static ItemResponse<TItem> MakeItemResponse<TItem>(TItem? resource, HttpStatusCode statusCode)
         => new FakeItemResponse<TItem>(resource, statusCode);
+
+    // ────────────────────────────────────────────────────────────────
+    // 6. Gap-closers from local review — each trigger and guard in
+    //    isolation, so a half-broken condition cannot hide behind an OR.
+    // ────────────────────────────────────────────────────────────────
+
+    // The re-link trigger is (slugChanged || typeChanged). The slug half is
+    // covered above; without this the typeChanged half is never exercised
+    // alone, so a broken doc-type comparison would still pass the suite.
+    [Fact]
+    public async Task UpsertRaw_ChangedDocTypeOnly_FlipsToPending()
+    {
+        const string docId = "doc_doctype_changed";
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked",
+            linkedMachineIds: ["mch_111"], documentType: "Other");
+        existing.Game = new RawGameInfo { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        // Slug identical; ONLY the document type moves Other -> Manual.
+        var incoming = MakeDocumentRecord(docId);
+        incoming.Game = new GameReference { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
+
+        await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("pending", captured!.LinkStatus);
+        Assert.Empty(captured.LinkedMachineIds);
+    }
+
+    // The manually_linked override must beat EACH trigger independently.
+    // The existing test changes slug and doc-type together, so a guard that
+    // only covered one of them would still look correct.
+    [Fact]
+    public async Task UpsertRaw_ManuallyLinkedDoc_ChangedDocTypeOnly_StaysLinked()
+    {
+        const string docId = "doc_manual_doctype";
+        var existing = MakeCosmosRecord(docId, linkStatus: "manually_linked",
+            linkedMachineIds: ["mch_admin"], documentType: "Other");
+        existing.Game = new RawGameInfo { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
+        SetupGetByIdFound(docId, existing);
+
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(), Arg.Any<ItemRequestOptions>(), Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        var incoming = MakeDocumentRecord(docId);
+        incoming.Game = new GameReference { Title = "Same", Slug = "same-slug", GamePageUrl = "https://example.com/g" };
+
+        await _repository.UpsertRawAsync(incoming, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("manually_linked", captured!.LinkStatus);
+        Assert.Equal(["mch_admin"], captured.LinkedMachineIds);
+    }
+
+    // Roll-out safety: documents stored before the ETag field existed carry a
+    // null _etag. Those must still write, unconditionally, rather than throwing
+    // or silently skipping — otherwise the refresh never reaches legacy docs,
+    // which is the #762 bug wearing a different hat.
+    [Fact]
+    public async Task UpsertRaw_NullETag_WritesUnconditionally()
+    {
+        const string docId = "doc_null_etag";
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked", linkedMachineIds: ["mch_1"]);
+        existing.ETag = null;
+        SetupGetByIdFound(docId, existing);
+
+        ItemRequestOptions? capturedOptions = null;
+        RawDocumentCosmosRecord? captured = null;
+        _container
+            .UpsertItemAsync(Arg.Do<RawDocumentCosmosRecord>(r => captured = r),
+                Arg.Any<PartitionKey>(),
+                Arg.Do<ItemRequestOptions>(o => capturedOptions = o),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => MakeItemResponse(ci.ArgAt<RawDocumentCosmosRecord>(0), HttpStatusCode.OK));
+
+        await _repository.UpsertRawAsync(MakeDocumentRecord(docId), CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Null(capturedOptions?.IfMatchEtag);
+    }
 
     private static RawDocumentCosmosRecord MakeCosmosRecord(
         string documentId = "doc_test",

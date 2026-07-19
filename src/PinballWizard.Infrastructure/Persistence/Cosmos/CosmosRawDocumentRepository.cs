@@ -1,6 +1,7 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Integrations.Opdb;
@@ -12,9 +13,21 @@ namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 // Writes into the `scraped_documents_raw` container. Each record
 // represents a unique file URL; partition key = document_id, id = document_id.
 //
-// UpsertRawAsync is idempotent: on re-discovery it preserves all
-// linker-managed fields (link_status, resolution_strategy, etc.) and
-// only touches timeline.last_checked_at + cross_references.
+// UpsertRawAsync is idempotent, and on re-discovery it splits the record into
+// two field blocks:
+//
+//   scraper-owned      Source, Game, Classification, DocumentType, Manufacturer,
+//                      timeline.last_checked_at, cross_references
+//                      -> REFRESHED from the current run, every time.
+//   linker/admin-owned LinkedMachineIds, LinkStatus, ResolutionStrategy,
+//                      OverrideId, write-once RunId, timeline.first_discovered_at,
+//                      File (blob path), Http (cache metadata)
+//                      -> PRESERVED untouched.
+//
+// The refresh half is the fix for #762: this method previously touched only
+// timeline.last_checked_at + cross_references, so a scraper code change could
+// never reach an already-stored document. That is what made PR #752 inert
+// against live data while looking correct in review (#757/#758).
 internal sealed class CosmosRawDocumentRepository
     : CosmosRepository<RawDocumentCosmosRecord>, IRawDocumentRepository
 {
@@ -50,11 +63,13 @@ internal sealed class CosmosRawDocumentRepository
                 existing.Classification?.DocumentType, newDocType,
                 StringComparison.OrdinalIgnoreCase);
 
-            var isManuallyLinked = existing.LinkStatus == "manually_linked";
+            // Route through ToWireStatus rather than literals so a future wire-format
+            // change (e.g. "manually_linked" -> "manual") cannot miss these two sites.
+            var isManuallyLinked = existing.LinkStatus == ToWireStatus(LinkStatus.ManuallyLinked);
             if ((slugChanged || typeChanged) && !isManuallyLinked)
             {
                 // Binding is invalidated — reset link state so the linker re-runs.
-                existing.LinkStatus = "pending";
+                existing.LinkStatus = ToWireStatus(LinkStatus.Pending);
                 existing.LinkedMachineIds.Clear();
             }
 
@@ -94,6 +109,16 @@ internal sealed class CosmosRawDocumentRepository
                 DocumentType = newDocType,
                 FileFormat = record.Classification.FileFormat,
             };
+
+            // Forward-path signal. RU/latency metrics prove a write happened; they
+            // cannot prove the write carried new scraper state — which is exactly
+            // why #752 was invisible. A flat rate here during an active scrape means
+            // this refresh has regressed (invariant #17: make the degradation
+            // observable, not just the failure).
+            PinballWizardTelemetry.RawDocScraperFieldsRefreshed.Add(
+                1,
+                new KeyValuePair<string, object?>("manufacturer", record.Manufacturer ?? "unknown"),
+                new KeyValuePair<string, object?>("link_reset", slugChanged || typeChanged));
 
             // ── Preserve linker/admin-owned fields ───────────────────────────────
             //
