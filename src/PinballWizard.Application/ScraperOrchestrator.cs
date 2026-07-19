@@ -341,9 +341,11 @@ public sealed class ScraperOrchestrator
 
         if (url.Contains("manual")) return DocumentType.Manual;
 
-        // AP quick-reference guides (e.g. "Houdini--Quick-Reference-Guide.pdf")
-        // are operator manuals-lite and should be indexed — derived from the
-        // captured AP support-page fixture (TEST-05 / #745).
+        // Quick-reference guides are operator manuals-lite and should be indexed.
+        // First observed on AP ("Houdini--Quick-Reference-Guide.pdf", from the
+        // captured support-page fixture, TEST-05 / #745), but deliberately NOT
+        // host-gated: the term means the same thing for every manufacturer, so
+        // unlike the AP bulletin keywords below this one generalizes safely.
         if (url.Contains("quick-reference-guide")) return DocumentType.Manual;
 
         if (url.Contains("schematic")) return DocumentType.Schematic;

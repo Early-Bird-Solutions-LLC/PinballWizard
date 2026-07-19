@@ -66,7 +66,7 @@ public sealed class ApDocumentClassificationTests
     [InlineData("Houdini-Skill-Shot-Fix.pdf", DocumentType.ServiceBulletin)]
     [InlineData("Hotwheels-GI-EPIC-3-Wire-update.pdf", DocumentType.ServiceBulletin)]
     [InlineData("Houdini--Coil-Performance-Improvement-Kit.pdf", DocumentType.ServiceBulletin)]
-    public void Classify_ApSupportDocument_IsIndexable(string filename, DocumentType expected)
+    public void ClassifyDocumentType_ApSupportDocument_IsIndexable(string filename, DocumentType expected)
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
@@ -78,7 +78,7 @@ public sealed class ApDocumentClassificationTests
     // ── Full captured-list sweep ───────────────────────────────────────────
 
     [Fact]
-    public void EveryCapturedApUrl_ClassifiesToAnIndexableType_OrIsAKnownGenericDoc()
+    public void ClassifyDocumentType_AllCapturedApUrls_AreIndexableOrKnownGenericDocs()
     {
         var urls = File.ReadAllLines(CapturedApUrlList);
         Assert.NotEmpty(urls);
@@ -104,7 +104,7 @@ public sealed class ApDocumentClassificationTests
     [InlineData("https://sternpinball.com/files/Godzilla-software-update.pdf")]
     [InlineData("https://spookypinball.com/files/Halloween-kit-list.pdf")]
     [InlineData("https://pinballbrothers.com/docs/Alien-prefix-notes.pdf")]
-    public void Classify_NonApUrl_DoesNotInheritApBulletinHeuristics(string url)
+    public void ClassifyDocumentType_NonApUrl_DoesNotInheritApBulletinHeuristics(string url)
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(Link(url), "Support");
         Assert.NotEqual(DocumentType.ServiceBulletin, actual);
@@ -116,7 +116,7 @@ public sealed class ApDocumentClassificationTests
     [InlineData("prefix-table.pdf")]
     [InlineData("suffix-chart.pdf")]
     [InlineData("kitchen-cabinet-artwork.pdf")]
-    public void Classify_ApUrl_SubstringOnlyKeyword_IsNotABulletin(string filename)
+    public void ClassifyDocumentType_ApUrl_SubstringOnlyKeyword_IsNotABulletin(string filename)
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
@@ -131,7 +131,7 @@ public sealed class ApDocumentClassificationTests
     [InlineData("Knocker-Installation.pdf")]
     [InlineData("HWL--shaker-install.pdf")]
     [InlineData("Power-Supply-Kit-Installation.pdf")]
-    public void Classify_ApUrl_WholeTokenKeyword_IsABulletin(string filename)
+    public void ClassifyDocumentType_ApUrl_WholeTokenKeyword_IsABulletin(string filename)
     {
         var actual = ScraperOrchestrator.ClassifyDocumentType(
             Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
