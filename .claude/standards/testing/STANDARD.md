@@ -46,9 +46,18 @@ CHECK:  (qualitative — /local-review) — test-name convention
 SEV:    ⚠️
 REF:    quality-spec
 
+**RULE TEST-05** (captured-scraper-fixtures)
+WHEN:   adding or changing a fixture for a scraped source
+THEN:   the fixture is captured from the live source, never hand-authored; the directory contains CAPTURE.md recording the source URL and capture date
+NEVER:  invent filenames, HTML shapes, or URL patterns in a fixture — invented fixtures validate the implementation's assumptions, not reality (#758)
+CHECK:  every `tests/**/Fixtures/{source}/` directory contains CAPTURE.md — enforced by CaptureFixtureStandardTests
+SEV:    🔴
+REF:    #758 · docs/learning-from-failure.md
+
 ## Definition of Done
 
 - TEST-01: named behavior is actually triggered.
 - TEST-02: SourceAliasContractTests green for new scrapers.
 - TEST-03: sibling-copied tests diffed for drift.
 - TEST-04: Method_State_Expectation naming.
+- TEST-05: every `Fixtures/{source}/` dir has CAPTURE.md; no hand-authored fixture shapes.
