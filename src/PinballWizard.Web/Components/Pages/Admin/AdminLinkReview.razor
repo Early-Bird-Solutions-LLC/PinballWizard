@@ -85,7 +85,7 @@
                         <MudButton Size="Size.Small"
                                    Variant="Variant.Filled"
                                    Color="Color.Primary"
-                                   data-testid="@($"link-review-assign-{context.Item.RowIndex}")"
+                                   data-testid="@($"link-review-assign-{context.Item.DocumentId}-{context.Item.MachineId}")"
                                    OnClick="@(() => AssignAsync(context.Item))">
                             Assign
                         </MudButton>
@@ -115,7 +115,6 @@
 
     private sealed class LinkReviewRow
     {
-        public required int RowIndex { get; init; }
         public required string DocumentId { get; init; }
         public required string SourcePattern { get; init; }
         public required string DiscoveryUrl { get; init; }
@@ -161,7 +160,6 @@
                 {
                     rows.Add(new LinkReviewRow
                     {
-                        RowIndex = rows.Count,
                         DocumentId = doc.DocumentId,
                         SourcePattern = sourcePattern,
                         DiscoveryUrl = doc.Source.DiscoveryUrl,
@@ -172,6 +170,12 @@
                         MatchedVariant = candidate.MatchedVariant,
                     });
                 }
+
+                // NeedsReview is expected to stay small — the resolver only lands here on
+                // genuine ambiguity, not routine unlinked volume (that's AdminDocumentTriage).
+                // The cap guards against a runaway linker pass flooding this page the way
+                // AdminDocumentTriage caps its own queue at 200 rows.
+                if (rows.Count >= 500) break;
             }
             _rows = rows;
         }
@@ -203,6 +207,11 @@
         }
         row.ActionBusy = true;
         SafeStateHasChanged();
+
+        // Tracks which half of the two-step write (override upsert, then status flip)
+        // completed, so a failure log tells an operator exactly what state the document
+        // is in — both steps are upserts, so retrying Assign is always safe either way.
+        var overrideWritten = false;
         try
         {
             var record = new LinkOverrideRecord
@@ -214,6 +223,7 @@
                 Notes = $"Assigned from link-review queue: {row.MachineTitle} ({row.EvidenceKind}: {row.MatchedVariant})",
             };
             await OverrideRepo.UpsertAsync(record, CancellationToken.None);
+            overrideWritten = true;
 
             // Flip back to Pending rather than stamping Linked directly — the
             // linker's Tier-0 override lookup (DocumentLinker.TryTier0Override)
@@ -233,7 +243,9 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Link-review assign failed for document {DocumentId} to machine {MachineId}.", row.DocumentId, row.MachineId);
+            Logger.LogError(ex,
+                "Link-review assign failed for document {DocumentId} to machine {MachineId} (override written: {OverrideWritten}).",
+                row.DocumentId, row.MachineId, overrideWritten);
             Snackbar.Add($"Assign failed: {ex.Message}", Severity.Error);
         }
         finally

@@ -14,7 +14,8 @@ namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 // The link_status field is stored as a string on the wire so that the
 // container is queryable via SQL literals without Cosmos needing to know
 // about the C# enum definition. Valid values: "pending", "linked",
-// "platform_generic", "not_in_catalog", "failed", "manually_linked".
+// "platform_generic", "not_in_catalog", "failed", "manually_linked",
+// "needs_review".
 internal sealed class RawDocumentCosmosRecord : IEntity
 {
     [JsonPropertyName("id")]
