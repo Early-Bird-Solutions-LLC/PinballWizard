@@ -659,6 +659,21 @@ public static class PinballWizardTelemetry
         unit: "{error}",
         description: "Count of AiSearchMachineIndex.SearchAsync failures that triggered a degrade path — to Cosmos in MachineGroundingTool (reason=query_failed, ADR-0049 phase 2b) or to an empty typeahead in the suggest service (reason=suggest_unavailable, phase 3). Tagged with reason. A sustained non-zero rate indicates AI Search machine-index availability or configuration issues.");
 
+    // ── Machine linking review instrumentation (ADR-0054) ────────────────
+    // Emitted by the Wave 2 linker when it cannot resolve ambiguity without
+    // human input and sets LinkStatus.NeedsReview. The counter is tagged with
+    // `manufacturer` and `evidence_kind` so dashboards can see which sources
+    // produce the most ambiguous links — a sustained non-zero rate for a
+    // manufacturer is a leading indicator that its title / slug normalisation
+    // needs improvement or that OPDB catalog coverage is incomplete.
+    //
+    // Invariant #17: ambiguity must be VISIBLE (counter + admin queue), never
+    // a silent drop into NotInCatalog or a forced guess.
+    public static readonly Counter<long> LinkingNeedsReviewTotal = Meter.CreateCounter<long>(
+        "pinwiz.linking.needs_review_total",
+        unit: "{document}",
+        description: "Documents where the linker found multiple plausible machine matches and set link_status=needs_review. Tagged with manufacturer and evidence_kind. A sustained non-zero rate for a manufacturer indicates normalisation gaps or OPDB coverage gaps (ADR-0054). Degrade-visibly signal: ambiguity is always surfaced to the admin queue, never silently resolved or dropped (invariant #17).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

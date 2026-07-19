@@ -83,6 +83,35 @@ internal sealed class RawDocumentCosmosRecord : IEntity
 
     [JsonPropertyName("manufacturer")]
     public string? Manufacturer { get; set; }
+
+    // Present when link_status = "needs_review" — written by the Wave 2 linker
+    // when ambiguity cannot be resolved without human input.
+    [JsonPropertyName("link_review")]
+    public RawLinkReviewInfo? LinkReview { get; set; }
+}
+
+internal sealed class RawLinkReviewInfo
+{
+    [JsonPropertyName("candidates")]
+    public List<RawLinkReviewCandidate> Candidates { get; set; } = [];
+
+    [JsonPropertyName("created_at")]
+    public DateTime CreatedAt { get; set; }
+}
+
+internal sealed class RawLinkReviewCandidate
+{
+    [JsonPropertyName("machine_id")]
+    public string MachineId { get; set; } = string.Empty;
+
+    [JsonPropertyName("machine_title")]
+    public string MachineTitle { get; set; } = string.Empty;
+
+    [JsonPropertyName("evidence_kind")]
+    public string EvidenceKind { get; set; } = string.Empty;
+
+    [JsonPropertyName("matched_variant")]
+    public string MatchedVariant { get; set; } = string.Empty;
 }
 
 internal sealed class RawGameInfo

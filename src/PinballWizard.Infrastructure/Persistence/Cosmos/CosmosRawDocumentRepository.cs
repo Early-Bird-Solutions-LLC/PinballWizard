@@ -688,6 +688,21 @@ internal sealed class CosmosRawDocumentRepository
                 : null,
             RunId = cosmos.RunId,
             Manufacturer = cosmos.Manufacturer,
+            LinkReview = cosmos.LinkReview is { } lr
+                ? new LinkReviewInfo
+                {
+                    CreatedAt = lr.CreatedAt,
+                    Candidates = lr.Candidates
+                        .Select(c => new LinkReviewCandidate
+                        {
+                            MachineId = c.MachineId,
+                            MachineTitle = c.MachineTitle,
+                            EvidenceKind = c.EvidenceKind,
+                            MatchedVariant = c.MatchedVariant,
+                        })
+                        .ToList(),
+                }
+                : null,
         };
     }
 
@@ -700,6 +715,7 @@ internal sealed class CosmosRawDocumentRepository
         LinkStatus.NotInCatalog => "not_in_catalog",
         LinkStatus.Failed => "failed",
         LinkStatus.ManuallyLinked => "manually_linked",
+        LinkStatus.NeedsReview => "needs_review",
         _ => throw new InvalidOperationException($"Unhandled LinkStatus value: {status}"),
     };
 
@@ -714,6 +730,7 @@ internal sealed class CosmosRawDocumentRepository
         "not_in_catalog" => "NotInCatalog",
         "failed" => "Failed",
         "manually_linked" => "ManuallyLinked",
+        "needs_review" => "NeedsReview",
         _ => string.Empty,
     };
 }

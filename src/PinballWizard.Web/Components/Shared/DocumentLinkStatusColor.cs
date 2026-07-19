@@ -17,6 +17,10 @@ internal static class DocumentLinkStatusColor
         "failed" or "Failed"
             or "not_in_catalog" or "NotInCatalog"    => Color.Error,
         "platform_generic" or "PlatformGeneric"      => Color.Default, // non-status tag → neutral
+        // needs_review: admin-queue signal — informational, not an error.
+        // Public surfaces treat NeedsReview the same as NotInCatalog (no machine link,
+        // LinkStatus null for unauthenticated viewers — see StreamDocumentsAsync).
+        "needs_review" or "NeedsReview"              => Color.Info,
         _                                            => Color.Default,
     };
 }
