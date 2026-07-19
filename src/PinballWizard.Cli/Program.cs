@@ -267,6 +267,29 @@ var backfillManufacturerSlugsOption = new Option<bool>("--backfill-manufacturer-
     Description = "Backfills Machine.ManufacturerSlugs from /game/{slug}/ cross-reference URLs already captured in scraped_documents_raw, for machines a scraper reconciliation run never reached (issue #672). A --source games run's reconciliation only covers games discoverable in that run — e.g. Stern's currently-marketed lineup — so titles retired from that listing keep an empty ManufacturerSlugs entry forever, even though their documents already carry a valid cross-reference to the game page (captured e.g. when a manual's 'Specs & Manual tab' was scraped). Reuses the same franchise-title matching as scraper reconciliation. No external HTTP calls — operates entirely on already-stored Cosmos data. Idempotent: a slug already present on any machine in the partition is left untouched. Run --relink-all afterward so the linker's Tier 1 (xref_slug) re-resolves documents against the newly-backfilled slugs. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
 };
 
+// READ-ONLY capture verbs that write fixture files for the Wave-2 regression gate (ADR-0054 S3).
+// Neither touches any application state in Cosmos — they only stream and write local JSON files.
+
+var captureGoldenSetOption = new Option<bool>("--capture-golden-set")
+{
+    Description = "READ-ONLY. Streams scraped_documents_raw where link_status in (Linked, ManuallyLinked) and " +
+                  "writes tests/PinballWizard.Application.Tests/Fixtures/Linking/golden-link-set.captured.json " +
+                  "and a companion CAPTURE.md. The resulting fixture is the Wave-2 regression gate: " +
+                  "GoldenLinkSetReplayTests replays every binding and fails on mis-attribution. " +
+                  "Operator-gated: run only against the fully re-linked corpus, after --relink-all. " +
+                  "Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
+var captureReconcilerParityOption = new Option<bool>("--capture-reconciler-parity")
+{
+    Description = "READ-ONLY. Streams the machines container and writes a per-manufacturer ManufacturerSlugs " +
+                  "snapshot to tests/PinballWizard.Application.Tests/Fixtures/Sync/reconciler-parity.captured.json " +
+                  "and a companion CAPTURE.md. The resulting fixture is used by ReconcilerParityReplayTests to " +
+                  "assert that the reconciler algorithm still matches the same slug count as at capture time — " +
+                  "a normalization regression shows up as a count drop. " +
+                  "Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
+};
+
 var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scraper");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
@@ -307,6 +330,8 @@ rootCommand.Options.Add(rebuildCatalogStatsOption);
 rootCommand.Options.Add(reclassifyDocumentsOption);
 rootCommand.Options.Add(auditCatalogOption);
 rootCommand.Options.Add(backfillManufacturerSlugsOption);
+rootCommand.Options.Add(captureGoldenSetOption);
+rootCommand.Options.Add(captureReconcilerParityOption);
 
 rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancellationToken) =>
 {
@@ -349,6 +374,8 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var reclassifyDocuments  = parseResult.GetValue(reclassifyDocumentsOption);
     var auditCatalog         = parseResult.GetValue(auditCatalogOption);
     var backfillManufacturerSlugs = parseResult.GetValue(backfillManufacturerSlugsOption);
+    var captureGoldenSet = parseResult.GetValue(captureGoldenSetOption);
+    var captureReconcilerParity = parseResult.GetValue(captureReconcilerParityOption);
 
     // Handle --install-playwright
     if (installPw)
@@ -2024,6 +2051,29 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     if (backfillManufacturerSlugs)
     {
         await BackfillManufacturerSlugsCommand.RunAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --capture-golden-set (ADR-0054 S3 — read-only fixture capture for the
+    // Wave-2 regression gate). Streams scraped_documents_raw where link_status is
+    // Linked / ManuallyLinked and writes a JSON fixture + CAPTURE.md so that
+    // GoldenLinkSetReplayTests can assert no mis-attribution offline (no Cosmos).
+    // Operator-gated: run only after --relink-all against the fully re-linked corpus.
+    if (captureGoldenSet)
+    {
+        await CaptureGoldenSetCommand.RunGoldenLinkSetAsync(host.Services, cancellationToken);
+        return;
+    }
+
+    // Handle --capture-reconciler-parity (ADR-0054 S3 — read-only fixture capture for
+    // the reconciler regression gate). Streams the machines container, records
+    // ManufacturerSlugs per machine, and writes a per-manufacturer count snapshot +
+    // CAPTURE.md so that ReconcilerParityReplayTests can assert the slug-match count
+    // does not drop offline (no Cosmos). Operator-gated: run only after a full OPDB
+    // sync + scraper reconciliation pass.
+    if (captureReconcilerParity)
+    {
+        await CaptureGoldenSetCommand.RunReconcilerParityAsync(host.Services, cancellationToken);
         return;
     }
 
