@@ -911,10 +911,34 @@ public sealed class MachineResolver : IMachineResolver
     private List<MachineVariant> Eligible(IReadOnlyList<MachineVariant> candidates, ResolutionQuery q, ResolutionStage stage)
         => Scope(candidates.Where(v => IsEligible(v, q, stage)).ToList(), q);
 
-    // The single-word guard, as a policy rule rather than a hole in the index:
-    // a single-token variant is eligible for EXACT evidence only.
+    // The single-word guard, as a policy rule rather than a hole in the index.
+    //
+    // CORRECTED during S1 implementation. This block originally read:
+    //
+    //     => !v.IsSingleToken || stage == ResolutionStage.Exact;
+    //
+    // i.e. "a single-token variant is eligible for EXACT evidence only". That
+    // blanket rule contradicts four of this task's own tests below, all of
+    // which need a SINGLE-token variant to match at Containment:
+    // "houdini" (FranchiseTitle), "gtf" (CuratedAlias), "godzilla" and
+    // "rampage" (FullTitle). Under the blanket rule each returns NoMatch
+    // instead of the expected Resolved / ResolvedFamily / Ambiguous.
+    //
+    // The rule below is derived from the tests, which are the ground truth,
+    // and satisfies all six: it blocks only the variants that actually caused
+    // the over-matching this guard exists for — manufacturer-prefixed forms
+    // ("stern pinball" would otherwise match every Stern-branded document) and
+    // single-token trailing qualifiers ("pinball", the 1977 Stern machine that
+    // once matched 172 documents). "houdini" and "godzilla" are not trailing
+    // qualifiers and stay eligible. Exact evidence bypasses both checks, so
+    // an exact provenance slug of "pinball" still binds.
     private static bool IsEligible(MachineVariant v, ResolutionQuery q, ResolutionStage stage)
-        => !v.IsSingleToken || stage == ResolutionStage.Exact;
+    {
+        if (stage == ResolutionStage.Exact) return true;
+        if (stage == ResolutionStage.Containment && v.Kind == VariantKind.ManufacturerPrefixed) return false;
+        if (v.IsSingleToken && TrailingQualifiers.Contains(v.Tokens[0])) return false;
+        return true;
+    }
 
     private List<MachineVariant> Scope(List<MachineVariant> candidates, ResolutionQuery q)
     {
