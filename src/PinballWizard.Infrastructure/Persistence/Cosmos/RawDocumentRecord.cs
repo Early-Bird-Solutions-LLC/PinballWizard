@@ -88,6 +88,12 @@ internal sealed class RawDocumentCosmosRecord : IEntity
     // when ambiguity cannot be resolved without human input.
     [JsonPropertyName("link_review")]
     public RawLinkReviewInfo? LinkReview { get; set; }
+
+    // Cosmos system property — populated from the JSON response when reading
+    // an existing document. Used for ETag-conditional writes (ADR-0025 § 7)
+    // to prevent lost updates when the scraper and linker write concurrently.
+    [JsonPropertyName("_etag")]
+    public string? ETag { get; set; }
 }
 
 internal sealed class RawLinkReviewInfo

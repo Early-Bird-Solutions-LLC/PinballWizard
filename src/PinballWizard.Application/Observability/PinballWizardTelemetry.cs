@@ -674,6 +674,43 @@ public static class PinballWizardTelemetry
         unit: "{document}",
         description: "Documents where the linker found multiple plausible machine matches and set link_status=needs_review. Tagged with manufacturer and evidence_kind. A sustained non-zero rate for a manufacturer indicates normalisation gaps or OPDB coverage gaps (ADR-0054). Degrade-visibly signal: ambiguity is always surfaced to the admin queue, never silently resolved or dropped (invariant #17).");
 
+    // ── Raw-document upsert instrumentation (#762) ───────────────────────
+    // Emitted when UpsertRawAsync refreshes the scraper-owned field block on an
+    // ALREADY-STORED document, tagged with manufacturer and whether the refresh
+    // invalidated the linker binding (link_reset=true when game.slug or
+    // document_type changed).
+    //
+    // This exists because the #752 defect was INVISIBLE: re-scraping silently
+    // failed to overwrite source.source_type on existing records, so a scraper
+    // fix looked correct in review and did nothing against live data. RU/latency
+    // metrics showed the write happening — they could not show that the write
+    // carried no new scraper state. If this counter goes flat while scrapes are
+    // running, the refresh has regressed; that is the alertable signal the
+    // original bug lacked (invariant #17 — a degradation nobody can see is the
+    // failure mode, not just a fabricated success).
+    public static readonly Counter<long> RawDocScraperFieldsRefreshed = Meter.CreateCounter<long>(
+        "pinwiz.rawdoc.scraper_fields_refreshed_total",
+        unit: "{document}",
+        description: "Count of already-stored raw documents whose scraper-owned field block (Source, Game, Classification, Manufacturer) was refreshed by UpsertRawAsync. Tagged with manufacturer and link_reset. A flat rate during an active scrape means the refresh path has regressed — the #762/#752 failure mode.");
+
+    // ── Machine resolution instrumentation (ADR-0054) ────────────────────
+    // One increment per IMachineResolver.Resolve call, tagged with outcome
+    // (resolved / resolved_family / ambiguous / no_match), the stage that
+    // produced it, and the evidence kind of the query.
+    //
+    // A full relink resolves tens of thousands of documents in a batch with no
+    // user watching. Without this, a regression to always-NoMatch — a bad
+    // eligibility rule, an empty index, a normalizer change — looks exactly
+    // like a quiet successful run and is only discoverable later via the
+    // corpus-coverage probe. The outcome MIX is the signal: a sudden collapse
+    // of resolved toward no_match, or a spike in ambiguous, means resolution
+    // policy moved. Ambiguous is a healthy outcome, not an error — it is the
+    // resolver refusing to guess (invariant #17) and routing to needs_review.
+    public static readonly Counter<long> MachineResolutionTotal = Meter.CreateCounter<long>(
+        "pinwiz.resolution.total",
+        unit: "{document}",
+        description: "Count of machine-resolution attempts, tagged with outcome (resolved/resolved_family/ambiguous/no_match), stage, and evidence_kind. Watch the outcome MIX, not the absolute rate: a collapse toward no_match indicates a resolution regression, while ambiguous is the resolver correctly declining to guess (ADR-0054).");
+
     // ── Activity (trace) names ───────────────────────────────────────────
 
     public const string OpdbSyncActivity = "pinwiz.opdb.sync";

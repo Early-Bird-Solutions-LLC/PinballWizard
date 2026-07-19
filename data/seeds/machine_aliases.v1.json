@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "aliases": [
+    {
+      "alias": "GTF",
+      "opdbGroupId": "Gj6PZ",
+      "machineId": null,
+      "manufacturerKey": "americanpinball",
+      "notes": "GTF-Quick-Reference-Guide.pdf",
+      "addedBy": "jkeeley2073"
+    },
+    {
+      "alias": "Okto",
+      "opdbGroupId": "GLWBV",
+      "machineId": null,
+      "manufacturerKey": "americanpinball",
+      "notes": "Okto-english-manual-10-5-21.pdf",
+      "addedBy": "jkeeley2073"
+    },
+    {
+      "alias": "HW",
+      "opdbGroupId": "GEL31",
+      "machineId": null,
+      "manufacturerKey": "americanpinball",
+      "notes": "HW-car-attachment-instructions[6658].pdf",
+      "addedBy": "jkeeley2073"
+    },
+    {
+      "alias": "HWL",
+      "opdbGroupId": "GEL31",
+      "machineId": null,
+      "manufacturerKey": "americanpinball",
+      "notes": "HWL--shaker-install.pdf",
+      "addedBy": "jkeeley2073"
+    },
+    {
+      "alias": "LOV",
+      "opdbGroupId": "GWyyq",
+      "machineId": null,
+      "manufacturerKey": "americanpinball",
+      "notes": "DBA-for-LOV.pdf",
+      "addedBy": "jkeeley2073"
+    }
+  ]
+}

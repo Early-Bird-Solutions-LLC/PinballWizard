@@ -1,6 +1,7 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Core.Models;
 using PinballWizard.Infrastructure.Integrations.Opdb;
@@ -12,9 +13,21 @@ namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 // Writes into the `scraped_documents_raw` container. Each record
 // represents a unique file URL; partition key = document_id, id = document_id.
 //
-// UpsertRawAsync is idempotent: on re-discovery it preserves all
-// linker-managed fields (link_status, resolution_strategy, etc.) and
-// only touches timeline.last_checked_at + cross_references.
+// UpsertRawAsync is idempotent, and on re-discovery it splits the record into
+// two field blocks:
+//
+//   scraper-owned      Source, Game, Classification, DocumentType, Manufacturer,
+//                      timeline.last_checked_at, cross_references
+//                      -> REFRESHED from the current run, every time.
+//   linker/admin-owned LinkedMachineIds, LinkStatus, ResolutionStrategy,
+//                      OverrideId, write-once RunId, timeline.first_discovered_at,
+//                      File (blob path), Http (cache metadata)
+//                      -> PRESERVED untouched.
+//
+// The refresh half is the fix for #762: this method previously touched only
+// timeline.last_checked_at + cross_references, so a scraper code change could
+// never reach an already-stored document. That is what made PR #752 inert
+// against live data while looking correct in review (#757/#758).
 internal sealed class CosmosRawDocumentRepository
     : CosmosRepository<RawDocumentCosmosRecord>, IRawDocumentRepository
 {
@@ -36,17 +49,106 @@ internal sealed class CosmosRawDocumentRepository
         RawDocumentCosmosRecord cosmos;
         if (existing is not null)
         {
-            // Preserve all linker-managed state; update only what the
-            // scraper owns: timeline.last_checked_at and cross-references.
+            // ── Detect scraper-evidence changes that invalidate the existing binding ──
+            //
+            // game.slug and classification.document_type are the two scraper fields
+            // the linker uses to select a machine. If either changes the stored
+            // binding is stale, so we reset to pending for re-link — unless an admin
+            // has manually overridden the link (ManuallyLinked wins unconditionally).
+            var slugChanged = !string.Equals(
+                existing.Game?.Slug, record.Game?.Slug,
+                StringComparison.OrdinalIgnoreCase);
+            var newDocType = record.Classification.DocumentType.ToString();
+            var typeChanged = !string.Equals(
+                existing.Classification?.DocumentType, newDocType,
+                StringComparison.OrdinalIgnoreCase);
+
+            // Route through ToWireStatus rather than literals so a future wire-format
+            // change (e.g. "manually_linked" -> "manual") cannot miss these two sites.
+            var isManuallyLinked = existing.LinkStatus == ToWireStatus(LinkStatus.ManuallyLinked);
+            if ((slugChanged || typeChanged) && !isManuallyLinked)
+            {
+                // Binding is invalidated — reset link state so the linker re-runs.
+                existing.LinkStatus = ToWireStatus(LinkStatus.Pending);
+                existing.LinkedMachineIds.Clear();
+            }
+
+            // ── Refresh scraper-owned fields ──────────────────────────────────────
+            //
+            // Source, Game, and Classification are stamped by the scraper and must
+            // reflect the current run — this is the fix for the #752-class problem
+            // where a scraper code change could never reach the stored record.
+            if (record.Source is { } newSrc)
+            {
+                existing.Source = new RawSourceInfo
+                {
+                    DiscoveryUrl = newSrc.DiscoveryUrl,
+                    DiscoveryContext = newSrc.DiscoveryContext,
+                    FileUrl = newSrc.FileUrl,
+                    LinkText = newSrc.LinkText,
+                    SourceType = newSrc.SourceType.ToString(),
+                    ActionType = newSrc.ActionType.ToString(),
+                    Tab = newSrc.Tab,
+                    ScrapedAt = newSrc.ScrapedAt,
+                };
+            }
+
+            existing.Game = record.Game is { } g
+                ? new RawGameInfo
+                {
+                    Title = g.Title,
+                    Slug = g.Slug,
+                    Edition = g.Edition,
+                    GamePageUrl = g.GamePageUrl,
+                }
+                : null;
+
+            existing.DocumentType = newDocType;
+            existing.Classification = new RawClassificationInfo
+            {
+                DocumentType = newDocType,
+                FileFormat = record.Classification.FileFormat,
+            };
+
+            // Forward-path signal. RU/latency metrics prove a write happened; they
+            // cannot prove the write carried new scraper state — which is exactly
+            // why #752 was invisible. A flat rate here during an active scrape means
+            // this refresh has regressed (invariant #17: make the degradation
+            // observable, not just the failure).
+            PinballWizardTelemetry.RawDocScraperFieldsRefreshed.Add(
+                1,
+                new KeyValuePair<string, object?>("manufacturer", record.Manufacturer ?? "unknown"),
+                new KeyValuePair<string, object?>("link_reset", slugChanged || typeChanged));
+
+            // ── Preserve linker/admin-owned fields ───────────────────────────────
+            //
+            // Everything below this line is owned by the linker or admin and must
+            // survive a re-scrape unchanged:
+            //   LinkedMachineIds, LinkStatus, ResolutionStrategy, OverrideId,
+            //   RunId (write-once), Timeline.FirstDiscoveredAt,
+            //   File (blob download path), Http (HTTP cache metadata).
+            //
             // run_id is write-once: the original value on `existing` is kept;
             // record.RunId (from the current run) is intentionally NOT copied here.
+
             existing.Timeline ??= new RawTimelineInfo
             {
                 FirstDiscoveredAt = record.Timeline.FirstDiscoveredAt,
             };
             existing.Timeline.LastCheckedAt = DateTime.UtcNow;
 
-            // Merge new cross-references (deduplicate by AlsoFoundAt URL).
+            // Propagate download/content timestamps if the scraper produced new ones.
+            if (record.Timeline.LastDownloadedAt.HasValue)
+            {
+                existing.Timeline.LastDownloadedAt = record.Timeline.LastDownloadedAt;
+            }
+
+            if (record.Timeline.LastContentChangedAt.HasValue)
+            {
+                existing.Timeline.LastContentChangedAt = record.Timeline.LastContentChangedAt;
+            }
+
+            // Merge new cross-references (deduplicated by AlsoFoundAt URL).
             var existingUrls = new HashSet<string>(
                 existing.CrossReferences.Select(x => x.AlsoFoundAt),
                 StringComparer.OrdinalIgnoreCase);
@@ -63,17 +165,6 @@ internal sealed class CosmosRawDocumentRepository
                         DiscoveredAt = xref.DiscoveredAt,
                     });
                 }
-            }
-
-            // Propagate download/content timestamps if the scraper produced new ones.
-            if (record.Timeline.LastDownloadedAt.HasValue)
-            {
-                existing.Timeline.LastDownloadedAt = record.Timeline.LastDownloadedAt;
-            }
-
-            if (record.Timeline.LastContentChangedAt.HasValue)
-            {
-                existing.Timeline.LastContentChangedAt = record.Timeline.LastContentChangedAt;
             }
 
             // Update content_hash if the scraper produced a new one.
@@ -95,7 +186,25 @@ internal sealed class CosmosRawDocumentRepository
             }
 
             cosmos = existing;
-            await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
+
+            // Use ETag-conditional write to prevent lost updates when the scraper
+            // and linker write concurrently (ADR-0025 § 7 revisit trigger).
+            // existing.ETag is populated from the _etag system property on read;
+            // null ETag (first write after ETag field was added) falls back to
+            // an unconditional write, which is safe during the roll-out window.
+            await ExecuteWithMetricsAsync(
+                "upsert",
+                async ct =>
+                {
+                    var response = await Container.UpsertItemAsync(
+                        cosmos,
+                        new PartitionKey(cosmos.PartitionKey),
+                        new ItemRequestOptions { IfMatchEtag = cosmos.ETag },
+                        ct).ConfigureAwait(false);
+                    return (cosmos, response.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
+
             return new RawDocumentUpsertResult(MapToDomain(cosmos), UpsertOutcome.Updated);
         }
         else
