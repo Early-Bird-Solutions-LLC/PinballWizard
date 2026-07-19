@@ -79,15 +79,19 @@ public sealed class LinkReviewTests : AsyncBunitContext
         var assignButton = cut.Find("[data-testid='link-review-assign-0']");
         await cut.InvokeAsync(() => assignButton.Click());
 
-        // Assert: link_overrides upsert was called with the first candidate's machine ID
-        _overrideRepo.Received(1).UpsertAsync(
+        // Assert: link_overrides upsert was called with the first candidate's machine ID.
+        // NSubstitute's Received() verification call returns the mocked Task from the
+        // interface signature — it is not meant to be awaited (the assertion already ran
+        // synchronously by the time Received() returns), so discard it explicitly rather
+        // than let CS4014 flag a real fire-and-forget bug.
+        _ = _overrideRepo.Received(1).UpsertAsync(
             Arg.Is<LinkOverrideRecord>(r =>
                 r.MachineIds.Length == 1 &&
                 r.MachineIds[0] == "mch_000"),
             Arg.Any<CancellationToken>());
 
         // Assert: doc was flipped back to Pending so the linker re-processes it
-        _rawDocRepo.Received(1).UpdateLinkStatusAsync(
+        _ = _rawDocRepo.Received(1).UpdateLinkStatusAsync(
             "doc_abc123",
             LinkStatus.Pending,
             Arg.Any<string?>(),
