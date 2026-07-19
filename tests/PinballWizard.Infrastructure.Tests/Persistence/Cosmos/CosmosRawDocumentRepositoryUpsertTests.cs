@@ -302,6 +302,68 @@ public sealed class CosmosRawDocumentRepositoryUpsertTests
     }
 
     // ────────────────────────────────────────────────────────────────
+    // 6. ETag conflict — the stored ETag is forwarded as IfMatchEtag so
+    //    the write is conditional, and a 412 PreconditionFailed from Cosmos
+    //    propagates to the caller for retry/back-off handling.
+    //
+    //    ADR-0025 § 7: the scraper and the linker can write the same doc
+    //    concurrently. Forwarding the ETag lets Cosmos detect the lost-update
+    //    and reject the stale write with HTTP 412 instead of silently clobbering
+    //    the linker's state change.
+    // ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task UpsertRaw_ETagConflict_ForwardsETagAndPropagatesCosmosException()
+    {
+        // The scraper reads a document that the linker updated between
+        // the read and the write. The stored _etag ("etag-conflict-xyz")
+        // no longer matches what Cosmos holds, so Cosmos rejects the write
+        // with HTTP 412 PreconditionFailed.
+        //
+        // We verify both halves of ADR-0025 lost-update protection:
+        //   (a) The ETag from the stored record is forwarded as IfMatchEtag —
+        //       the write is conditional, not unconditional.
+        //   (b) The resulting CosmosException propagates to the caller —
+        //       ExecuteWithMetricsAsync must not swallow a 412.
+        const string docId = "doc_etag_conflict";
+        const string storedETag = "\"etag-conflict-xyz\"";
+
+        var existing = MakeCosmosRecord(docId, linkStatus: "linked", linkedMachineIds: ["mch_abc"]);
+        // Set ETag as populated from the Cosmos _etag system property on read.
+        existing.ETag = storedETag;
+        SetupGetByIdFound(docId, existing);
+
+        ItemRequestOptions? capturedOptions = null;
+        _container
+            .UpsertItemAsync(
+                Arg.Any<RawDocumentCosmosRecord>(),
+                Arg.Any<PartitionKey>(),
+                Arg.Do<ItemRequestOptions>(o => capturedOptions = o),
+                Arg.Any<CancellationToken>())
+            // Return a faulted task to simulate Cosmos rejecting the write because
+            // the document was updated by the linker between our read and this write.
+            .Returns(Task.FromException<ItemResponse<RawDocumentCosmosRecord>>(
+                new CosmosException(
+                    "ETag precondition failed",
+                    HttpStatusCode.PreconditionFailed,
+                    subStatusCode: 0,
+                    activityId: string.Empty,
+                    requestCharge: 1.0)));
+
+        var incoming = MakeDocumentRecord(docId);
+
+        var ex = await Assert.ThrowsAsync<CosmosException>(
+            () => _repository.UpsertRawAsync(incoming, CancellationToken.None));
+
+        // (b) The 412 propagates — ExecuteWithMetricsAsync re-throws, does not swallow.
+        Assert.Equal(HttpStatusCode.PreconditionFailed, ex.StatusCode);
+
+        // (a) The write was conditional: IfMatchEtag carries the ETag from the stored doc.
+        Assert.NotNull(capturedOptions);
+        Assert.Equal(storedETag, capturedOptions!.IfMatchEtag);
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // Helpers — follow same pattern as CosmosRawDocumentRepositoryTests.
     // ────────────────────────────────────────────────────────────────
 
