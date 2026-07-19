@@ -36,17 +36,94 @@ internal sealed class CosmosRawDocumentRepository
         RawDocumentCosmosRecord cosmos;
         if (existing is not null)
         {
-            // Preserve all linker-managed state; update only what the
-            // scraper owns: timeline.last_checked_at and cross-references.
+            // ── Detect scraper-evidence changes that invalidate the existing binding ──
+            //
+            // game.slug and classification.document_type are the two scraper fields
+            // the linker uses to select a machine. If either changes the stored
+            // binding is stale, so we reset to pending for re-link — unless an admin
+            // has manually overridden the link (ManuallyLinked wins unconditionally).
+            var slugChanged = !string.Equals(
+                existing.Game?.Slug, record.Game?.Slug,
+                StringComparison.OrdinalIgnoreCase);
+            var newDocType = record.Classification.DocumentType.ToString();
+            var typeChanged = !string.Equals(
+                existing.Classification?.DocumentType, newDocType,
+                StringComparison.OrdinalIgnoreCase);
+
+            var isManuallyLinked = existing.LinkStatus == "manually_linked";
+            if ((slugChanged || typeChanged) && !isManuallyLinked)
+            {
+                // Binding is invalidated — reset link state so the linker re-runs.
+                existing.LinkStatus = "pending";
+                existing.LinkedMachineIds.Clear();
+            }
+
+            // ── Refresh scraper-owned fields ──────────────────────────────────────
+            //
+            // Source, Game, and Classification are stamped by the scraper and must
+            // reflect the current run — this is the fix for the #752-class problem
+            // where a scraper code change could never reach the stored record.
+            if (record.Source is { } newSrc)
+            {
+                existing.Source = new RawSourceInfo
+                {
+                    DiscoveryUrl = newSrc.DiscoveryUrl,
+                    DiscoveryContext = newSrc.DiscoveryContext,
+                    FileUrl = newSrc.FileUrl,
+                    LinkText = newSrc.LinkText,
+                    SourceType = newSrc.SourceType.ToString(),
+                    ActionType = newSrc.ActionType.ToString(),
+                    Tab = newSrc.Tab,
+                    ScrapedAt = newSrc.ScrapedAt,
+                };
+            }
+
+            existing.Game = record.Game is { } g
+                ? new RawGameInfo
+                {
+                    Title = g.Title,
+                    Slug = g.Slug,
+                    Edition = g.Edition,
+                    GamePageUrl = g.GamePageUrl,
+                }
+                : null;
+
+            existing.DocumentType = newDocType;
+            existing.Classification = new RawClassificationInfo
+            {
+                DocumentType = newDocType,
+                FileFormat = record.Classification.FileFormat,
+            };
+
+            // ── Preserve linker/admin-owned fields ───────────────────────────────
+            //
+            // Everything below this line is owned by the linker or admin and must
+            // survive a re-scrape unchanged:
+            //   LinkedMachineIds, LinkStatus, ResolutionStrategy, OverrideId,
+            //   RunId (write-once), Timeline.FirstDiscoveredAt,
+            //   File (blob download path), Http (HTTP cache metadata).
+            //
             // run_id is write-once: the original value on `existing` is kept;
             // record.RunId (from the current run) is intentionally NOT copied here.
+
             existing.Timeline ??= new RawTimelineInfo
             {
                 FirstDiscoveredAt = record.Timeline.FirstDiscoveredAt,
             };
             existing.Timeline.LastCheckedAt = DateTime.UtcNow;
 
-            // Merge new cross-references (deduplicate by AlsoFoundAt URL).
+            // Propagate download/content timestamps if the scraper produced new ones.
+            if (record.Timeline.LastDownloadedAt.HasValue)
+            {
+                existing.Timeline.LastDownloadedAt = record.Timeline.LastDownloadedAt;
+            }
+
+            if (record.Timeline.LastContentChangedAt.HasValue)
+            {
+                existing.Timeline.LastContentChangedAt = record.Timeline.LastContentChangedAt;
+            }
+
+            // Merge new cross-references (deduplicated by AlsoFoundAt URL).
             var existingUrls = new HashSet<string>(
                 existing.CrossReferences.Select(x => x.AlsoFoundAt),
                 StringComparer.OrdinalIgnoreCase);
@@ -63,17 +140,6 @@ internal sealed class CosmosRawDocumentRepository
                         DiscoveredAt = xref.DiscoveredAt,
                     });
                 }
-            }
-
-            // Propagate download/content timestamps if the scraper produced new ones.
-            if (record.Timeline.LastDownloadedAt.HasValue)
-            {
-                existing.Timeline.LastDownloadedAt = record.Timeline.LastDownloadedAt;
-            }
-
-            if (record.Timeline.LastContentChangedAt.HasValue)
-            {
-                existing.Timeline.LastContentChangedAt = record.Timeline.LastContentChangedAt;
             }
 
             // Update content_hash if the scraper produced a new one.
@@ -95,7 +161,25 @@ internal sealed class CosmosRawDocumentRepository
             }
 
             cosmos = existing;
-            await base.UpsertAsync(cosmos, cancellationToken).ConfigureAwait(false);
+
+            // Use ETag-conditional write to prevent lost updates when the scraper
+            // and linker write concurrently (ADR-0025 § 7 revisit trigger).
+            // existing.ETag is populated from the _etag system property on read;
+            // null ETag (first write after ETag field was added) falls back to
+            // an unconditional write, which is safe during the roll-out window.
+            await ExecuteWithMetricsAsync(
+                "upsert",
+                async ct =>
+                {
+                    var response = await Container.UpsertItemAsync(
+                        cosmos,
+                        new PartitionKey(cosmos.PartitionKey),
+                        new ItemRequestOptions { IfMatchEtag = cosmos.ETag },
+                        ct).ConfigureAwait(false);
+                    return (cosmos, response.RequestCharge);
+                },
+                cancellationToken).ConfigureAwait(false);
+
             return new RawDocumentUpsertResult(MapToDomain(cosmos), UpsertOutcome.Updated);
         }
         else
