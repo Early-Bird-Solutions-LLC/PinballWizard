@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using MudBlazor;
 using PinballWizard.Application.Catalog;
+using PinballWizard.Core.Models;
 using PinballWizard.Web.Components.Pages.Admin;
 using PinballWizard.Web.Components.Shared;
 using Xunit;
@@ -14,17 +16,32 @@ public sealed class ClosedStatusPaletteTests
 {
     private static readonly Color[] Allowed = { Color.Success, Color.Error, Color.Default };
 
+    // Reflects over LinkStatus rather than enumerating strings: a hardcoded input
+    // list silently exempts every status added after it was written (which is how
+    // NeedsReview → Color.Info escaped this guard). Both accepted forms are covered
+    // — PascalCase (LinkStatus.ToString()) and the snake_case Cosmos wire form.
     [Fact]
     public void DocumentLinkStatusColor_OnlyEmitsAllowedColors()
     {
-        string?[] inputs =
+        foreach (var status in Enum.GetValues<LinkStatus>())
         {
-            "linked", "Linked", "manually_linked", "failed", "Failed",
-            "not_in_catalog", "NotInCatalog", "platform_generic", "PlatformGeneric",
-            "unknown", null,
-        };
-        Assert.All(inputs, s => Assert.Contains(DocumentLinkStatusColor.For(s), Allowed));
+            var pascal = status.ToString();
+            var snake = ToSnakeCase(pascal);
+
+            Assert.Contains(DocumentLinkStatusColor.For(pascal), Allowed);
+            Assert.Contains(DocumentLinkStatusColor.For(snake), Allowed);
+        }
+
+        // Non-status and unmapped inputs must also stay inside the palette.
+        string?[] extras = { "unknown", "", null };
+        Assert.All(extras, s => Assert.Contains(DocumentLinkStatusColor.For(s), Allowed));
     }
+
+    // "NotInCatalog" -> "not_in_catalog"; mirrors the mapper in
+    // CosmosRawDocumentRepository.ToWireStatus.
+    private static string ToSnakeCase(string pascal) =>
+        string.Concat(pascal.Select((c, i) =>
+            char.IsUpper(c) && i > 0 ? "_" + char.ToLowerInvariant(c) : char.ToLowerInvariant(c).ToString()));
 
     [Fact]
     public void JobStatusColor_OnlyEmitsAllowedColors()
