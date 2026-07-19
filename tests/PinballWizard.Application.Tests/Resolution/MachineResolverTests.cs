@@ -134,4 +134,57 @@ public class MachineResolverTests
         var resolved = Assert.IsType<ResolutionResult.Resolved>(r);
         Assert.Equal("GT-M1", resolved.MachineId);
     }
+
+    // ── Edge-case contracts (added from local review) ──────────────────────
+    //
+    // These document the resolver's behavior at its boundaries for the six Wave-2
+    // consumers that will call it. Each was reachable but unexercised.
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("---__--")]   // normalizes to zero tokens
+    public void Resolve_QueryWithNoTokens_IsNoMatch(string text)
+    {
+        var r = Build(Houdini, GTF).Resolve(
+            new ResolutionQuery(text, EvidenceKind.Filename, "americanpinball"));
+
+        Assert.IsType<ResolutionResult.NoMatch>(r);
+    }
+
+    [Fact]
+    public void Resolve_NullManufacturerHint_StillResolves()
+    {
+        // Scope() early-returns when the hint is null, so an unscoped query must
+        // still bind rather than silently falling through to NoMatch.
+        var r = Build(Houdini, HotWheels).Resolve(
+            new ResolutionQuery("Houdini--Quick-Reference-Guide.pdf", EvidenceKind.Filename, null));
+
+        var resolved = Assert.IsType<ResolutionResult.Resolved>(r);
+        Assert.Equal("GH-M1", resolved.MachineId);
+    }
+
+    [Fact]
+    public void Resolve_EmptyIndex_IsNoMatch()
+    {
+        var r = Build().Resolve(
+            new ResolutionQuery("Houdini--Quick-Reference-Guide.pdf", EvidenceKind.Filename, "americanpinball"));
+
+        Assert.IsType<ResolutionResult.NoMatch>(r);
+    }
+
+    [Fact]
+    public void Resolve_MultiMatchWithNullGroupId_IsAmbiguous_NotResolved()
+    {
+        // Two same-titled machines with no group id cannot be proven a family, so
+        // the resolver must decline rather than pick one. This is the never-guess
+        // invariant at its least obvious boundary.
+        var a = M("GN-M1", "Rampage", null!, "americanpinball");
+        var b = M("GN-M2", "Rampage", null!, "americanpinball");
+
+        var r = Build(a, b).Resolve(
+            new ResolutionQuery("Rampage-Manual.pdf", EvidenceKind.Filename, "americanpinball"));
+
+        Assert.IsType<ResolutionResult.Ambiguous>(r);
+    }
 }

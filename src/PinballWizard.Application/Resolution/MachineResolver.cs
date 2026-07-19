@@ -1,3 +1,4 @@
+using PinballWizard.Application.Observability;
 using PinballWizard.Core.Domain;
 
 namespace PinballWizard.Application.Resolution;
@@ -10,15 +11,13 @@ public sealed class MachineResolver : IMachineResolver
     private readonly InMemoryMachineIndex _index;
     private readonly IReadOnlyDictionary<string, Machine> _machines;
 
-    // Must stay in sync with MachineIdentityVariants.TrailingQualifiers — both are owned by S1.
-    // Trailing-qualifier single-token variants are the root cause of the 172-document
-    // "Pinball" incident: the 1977 Stern machine titled "Pinball" matched any document
-    // whose filename contained the word "pinball". We guard against this in Stage 3.
-    private static readonly HashSet<string> TrailingQualifiers = new(StringComparer.Ordinal)
-    {
-        "merlinedition", "vaultedition", "limitededition", "standardedition",
-        "remake", "pinball", "gamekit", "deposit", "edition",
-    };
+    // Initialised FROM MachineIdentityVariants.TrailingQualifiers — one list, not two kept
+    // in step by convention. Trailing-qualifier single-token variants are the root cause of
+    // the 172-document "Pinball" incident: the 1977 Stern machine titled "Pinball" matched
+    // any document whose filename contained the word "pinball". Stage 3 guards against it,
+    // so a divergence between the two lists would silently reopen that class.
+    private static readonly HashSet<string> TrailingQualifiers =
+        new(MachineIdentityVariants.TrailingQualifiers, StringComparer.Ordinal);
 
     public MachineResolver(InMemoryMachineIndex index, IReadOnlyDictionary<string, Machine> machines)
     {
@@ -33,10 +32,35 @@ public sealed class MachineResolver : IMachineResolver
     // (preserves DocumentLinker's deliberate NarrowToSourceManufacturer vs PreferByManufacturer split).
     private static bool IsFuzzy(EvidenceKind k) => k is EvidenceKind.Filename or EvidenceKind.PageText;
 
+    // Meters at the single exit rather than at each of ResolveCore's five return
+    // points — one place to keep correct, and no return path can escape the counter.
+    // A full relink runs this tens of thousands of times unattended, so the outcome
+    // mix is the only signal that resolution policy still behaves.
     public ResolutionResult Resolve(ResolutionQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
 
+        var result = ResolveCore(query);
+
+        var (outcome, stage) = result switch
+        {
+            ResolutionResult.Resolved r => ("resolved", r.Evidence.Stage.ToString()),
+            ResolutionResult.ResolvedFamily f => ("resolved_family", f.Evidence.Stage.ToString()),
+            ResolutionResult.Ambiguous a => ("ambiguous", a.Evidence.Stage.ToString()),
+            _ => ("no_match", "none"),
+        };
+
+        PinballWizardTelemetry.MachineResolutionTotal.Add(
+            1,
+            new KeyValuePair<string, object?>("outcome", outcome),
+            new KeyValuePair<string, object?>("stage", stage),
+            new KeyValuePair<string, object?>("evidence_kind", query.EvidenceKind.ToString()));
+
+        return result;
+    }
+
+    private ResolutionResult ResolveCore(ResolutionQuery query)
+    {
         var tokens = MachineTextNormalizer.Tokenize(query.Text);
         if (tokens.Count == 0) return new ResolutionResult.NoMatch();
         var key = string.Join(' ', tokens);

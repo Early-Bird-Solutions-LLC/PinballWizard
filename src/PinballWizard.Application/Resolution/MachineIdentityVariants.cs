@@ -22,7 +22,12 @@ public static class MachineIdentityVariants
     // tokenized arrays, so compound entries require the two-token join check — that is why
     // StripTrailingQualifiers checks adjacent-token compounds before single tokens (longest match
     // first, same principle as the reconciler's ordering comment).
-    private static readonly string[] TrailingQualifiers =
+    // internal, not private: MachineResolver initialises its lookup from this array so the
+    // list exists exactly once. It previously held a second hand-maintained copy kept in
+    // step by a comment — and one of these entries ("pinball") is the guard that stopped
+    // the 1977 Stern machine from claiming 172 documents. A guard that depends on someone
+    // remembering to edit two files is not a guard.
+    internal static readonly string[] TrailingQualifiers =
     [
         "merlinedition", "vaultedition", "limitededition", "standardedition",
         "remake", "pinball", "gamekit", "deposit", "edition",
