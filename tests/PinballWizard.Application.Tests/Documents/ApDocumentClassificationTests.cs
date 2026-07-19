@@ -92,6 +92,54 @@ public sealed class ApDocumentClassificationTests
         }
     }
 
+    // ── The AP heuristics must not leak to other manufacturers ─────────────
+    //
+    // The fix/update/improvement/kit/install words are evidence of a bulletin
+    // only because AP's real filenames use them. As a global substring test they
+    // misfire badly, so they are host-gated and token-matched. These cases pin
+    // that: each would classify ServiceBulletin under the naive rule.
+
+    [Theory]
+    // Same filename shapes, different manufacturer → must NOT become a bulletin.
+    [InlineData("https://sternpinball.com/files/Godzilla-software-update.pdf")]
+    [InlineData("https://spookypinball.com/files/Halloween-kit-list.pdf")]
+    [InlineData("https://pinballbrothers.com/docs/Alien-prefix-notes.pdf")]
+    public void Classify_NonApUrl_DoesNotInheritApBulletinHeuristics(string url)
+    {
+        var actual = ScraperOrchestrator.ClassifyDocumentType(Link(url), "Support");
+        Assert.NotEqual(DocumentType.ServiceBulletin, actual);
+    }
+
+    [Theory]
+    // On the AP host, but the keyword only appears INSIDE a longer word.
+    // Substring matching would call all three bulletins; token matching must not.
+    [InlineData("prefix-table.pdf")]
+    [InlineData("suffix-chart.pdf")]
+    [InlineData("kitchen-cabinet-artwork.pdf")]
+    public void Classify_ApUrl_SubstringOnlyKeyword_IsNotABulletin(string filename)
+    {
+        var actual = ScraperOrchestrator.ClassifyDocumentType(
+            Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
+            ApSupportContext);
+
+        Assert.NotEqual(DocumentType.ServiceBulletin, actual);
+    }
+
+    [Theory]
+    // Real captured filenames whose bulletin token is a whole word — these MUST
+    // still classify, including the "Installation" inflection of "install".
+    [InlineData("Knocker-Installation.pdf")]
+    [InlineData("HWL--shaker-install.pdf")]
+    [InlineData("Power-Supply-Kit-Installation.pdf")]
+    public void Classify_ApUrl_WholeTokenKeyword_IsABulletin(string filename)
+    {
+        var actual = ScraperOrchestrator.ClassifyDocumentType(
+            Link($"http://s4.american-pinball.com/img/support/2021-11/{filename}"),
+            ApSupportContext);
+
+        Assert.Equal(DocumentType.ServiceBulletin, actual);
+    }
+
     // ── Repo-root locator (same pattern as CrossPartitionQueryAllowListTests) ─
 
     private static string RepoRoot()

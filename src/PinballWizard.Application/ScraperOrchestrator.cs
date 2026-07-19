@@ -358,18 +358,52 @@ public sealed class ScraperOrchestrator
             return DocumentType.Rulesheet;
 
         // AP service-bulletin signals — derived from the captured AP support-page
-        // fixture (TEST-05 / #745).  These keywords appear in AP's ad-hoc file
-        // naming scheme and are strong service-bulletin signals for any manufacturer:
-        //   fix        e.g. Houdini-Skill-Shot-Fix.pdf
-        //   update     e.g. Hotwheels-GI-EPIC-3-Wire-update.pdf
-        //   improvement e.g. Houdini--Coil-Performance-Improvement-Kit.pdf
-        //   kit        e.g. Power-Supply-Kit-Installation.pdf
-        //   install    e.g. Knocker-Installation.pdf, HWL--shaker-install.pdf
-        if (url.Contains("fix") || url.Contains("update") || url.Contains("improvement") ||
-            url.Contains("kit") || url.Contains("install"))
+        // fixture (TEST-05 / #745). AP has no bulletin naming convention, so these
+        // are the recurring words in its ad-hoc filenames:
+        //   fix          e.g. Houdini-Skill-Shot-Fix.pdf
+        //   update       e.g. Hotwheels-GI-EPIC-3-Wire-update.pdf
+        //   improvement  e.g. Houdini--Coil-Performance-Improvement-Kit.pdf
+        //   kit          e.g. Power-Supply-Kit-Installation.pdf
+        //   install*     e.g. Knocker-Installation.pdf, HWL--shaker-install.pdf
+        //
+        // Deliberately scoped to American Pinball and matched on whole filename
+        // tokens, NOT as a global substring test. Unscoped `url.Contains("fix")`
+        // also matches "prefix"/"suffix"/"fixture", `Contains("kit")` matches
+        // "kitchen", and `Contains("update")` would steal Stern's
+        // "software-update" firmware from the Firmware branch. These words are
+        // only evidence of a bulletin *because* AP's real filenames use them;
+        // they are not a general-purpose signal, so they stay behind the host gate.
+        if (IsAmericanPinball(url) && HasBulletinToken(url))
             return DocumentType.ServiceBulletin;
 
         return DocumentType.Other;
+    }
+
+    // Host gate for the AP-specific filename heuristics above. Matches the
+    // registrable domain rather than the CDN subdomain: the captured fixture
+    // serves from s4.american-pinball.com while the support page itself is
+    // www.american-pinball.com.
+    private static bool IsAmericanPinball(string lowercaseUrl) =>
+        lowercaseUrl.Contains("american-pinball.com");
+
+    // Whole-token match over the URL's final path segment. Splitting on the
+    // non-alphanumeric separators AP uses (-, _, ., --) keeps "Fix" from
+    // matching "prefix" and "Kit" from matching "kitchen".
+    private static bool HasBulletinToken(string lowercaseUrl)
+    {
+        var filename = lowercaseUrl.AsSpan(lowercaseUrl.LastIndexOf('/') + 1).ToString();
+        var tokens = filename.Split(
+            ['-', '_', '.', ' ', '[', ']', '(', ')'],
+            StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var token in tokens)
+        {
+            if (token is "fix" or "update" or "improvement" or "kit") return true;
+            // install / installation, but NOT "instructions".
+            if (token.StartsWith("install", StringComparison.Ordinal)) return true;
+        }
+
+        return false;
     }
 
     private static GameReference? BuildGameReference(ScrapedItem item)
