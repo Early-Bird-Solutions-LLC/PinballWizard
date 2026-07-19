@@ -40,10 +40,17 @@ public sealed class GoldenLinkSetReplayTests
 
     // ── Fixture file path ──────────────────────────────────────────────────────
 
-    // Path resolved from the test assembly root — SeedPathResolver walks up to
-    // find PinballWizard.slnx then navigates into tests/. Must survive both
-    // `dotnet test` from the repo root and IDE test runners that set a different
-    // working directory.
+    // ONE definition of the fixture path, shared by the [RequiresCapturedFixtureFact]
+    // decoration and the test body. Previously each spelled the path independently: a
+    // typo in the attribute would set Skip forever while the fixture sat correctly on
+    // disk, and nothing would ever report it — a permanently green-looking gate that
+    // never runs. Referencing the same const makes that divergence unrepresentable.
+    internal const string CapturedFixtureRepoPath =
+        "tests/PinballWizard.Application.Tests/Fixtures/Linking/golden-link-set.captured.json";
+
+    // Path resolved from the test assembly root — walks up to find PinballWizard.slnx
+    // then navigates into tests/. Must survive both `dotnet test` from the repo root
+    // and IDE test runners that set a different working directory.
     private static string CapturedFixturePath()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -52,8 +59,7 @@ public sealed class GoldenLinkSetReplayTests
         var root = dir?.FullName ?? throw new InvalidOperationException(
             "Could not locate repo root (no PinballWizard.slnx found walking up from test assembly).");
         return Path.Combine(
-            root, "tests", "PinballWizard.Application.Tests",
-            "Fixtures", "Linking", "golden-link-set.captured.json");
+            root, CapturedFixtureRepoPath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     // ── Shared linker builder ──────────────────────────────────────────────────
@@ -100,7 +106,14 @@ public sealed class GoldenLinkSetReplayTests
         string fileUrl,
         string gameSlug,
         string manufacturerKey,
-        DocumentType docType = DocumentType.Manual)
+        DocumentType docType = DocumentType.Manual,
+        // The captured source_type must be replayed faithfully. LinkingUtilities
+        // .InferManufacturerKey derives the manufacturer hint FROM SourceType
+        // (ManualsPage => Stern), and that hint drives PreferByManufacturer. Hardcoding
+        // ManualsPage would stamp every replayed document "stern" regardless of its real
+        // manufacturer, so a non-Stern document whose slug collides with a Stern machine
+        // would fail the gate as a mis-attribution the linker never made.
+        SourceType sourceType = SourceType.ManualsPage)
         => new()
         {
             DocumentId = documentId,
@@ -112,7 +125,7 @@ public sealed class GoldenLinkSetReplayTests
                 DiscoveryContext = $"{manufacturerKey} Manuals page",
                 FileUrl = fileUrl,
                 ScrapedAt = DateTime.UtcNow,
-                SourceType = SourceType.ManualsPage,
+                SourceType = sourceType,
             },
             Timeline = new TimelineInfo { FirstDiscoveredAt = DateTime.UtcNow },
             Game = new GameReference
@@ -140,7 +153,11 @@ public sealed class GoldenLinkSetReplayTests
     // Runs the replay policy against one entry and returns (misattribution:bool, needsReview:bool, win:bool).
     // The policy mirrors GoldenLinkSet_Replays_WithNoMisattribution exactly, so any divergence in
     // the policy also shows up in the synthetic tests.
-    private static async Task<(bool IsMisattribution, bool IsNeedsReview, bool IsWin)> ReplayEntryAsync(
+    // ResolvedIds is returned so a failing gate can NAME the machine the linker actually
+    // chose. Without it the mismatch message can only restate what was expected, which is
+    // useless for triage — the whole point of the gate is to identify where a document
+    // went instead.
+    private static async Task<(bool IsMisattribution, bool IsNeedsReview, bool IsWin, IReadOnlyList<string> ResolvedIds)> ReplayEntryAsync(
         DocumentLinker linker,
         GoldenLinkEntryDto entry,
         CancellationToken ct = default)
@@ -150,23 +167,25 @@ public sealed class GoldenLinkSetReplayTests
             fileUrl: entry.FileUrl,
             gameSlug: entry.GameSlug ?? string.Empty,
             manufacturerKey: entry.ManufacturerKey ?? string.Empty,
-            docType: Enum.TryParse<DocumentType>(entry.DocumentType, out var dt) ? dt : DocumentType.Manual);
+            docType: Enum.TryParse<DocumentType>(entry.DocumentType, out var dt) ? dt : DocumentType.Manual,
+            sourceType: Enum.TryParse<SourceType>(entry.SourceType, out var st) ? st : SourceType.ManualsPage);
 
         var result = await linker.LinkAsync(raw, ct);
+        var resolved = result.LinkedMachineIds ?? [];
 
         // linked → different machine: the linker produced a machine ID that is NOT the
         // expected one. This is a mis-attribution and must cause the test to fail.
         if (result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked
-            && !result.LinkedMachineIds.Contains(entry.ExpectedMachineId, StringComparer.OrdinalIgnoreCase))
+            && !resolved.Contains(entry.ExpectedMachineId, StringComparer.OrdinalIgnoreCase))
         {
-            return (IsMisattribution: true, IsNeedsReview: false, IsWin: false);
+            return (IsMisattribution: true, IsNeedsReview: false, IsWin: false, ResolvedIds: resolved);
         }
 
         // linked → needs_review: the linker could not resolve the document. Report but
         // do NOT fail — the mock catalog only seeds slug-resolvable machines.
         if (result.FinalStatus is LinkStatus.NotInCatalog or LinkStatus.Failed)
         {
-            return (IsMisattribution: false, IsNeedsReview: true, IsWin: false);
+            return (IsMisattribution: false, IsNeedsReview: true, IsWin: false, ResolvedIds: resolved);
         }
 
         // not_in_catalog → linked: would occur if entry captured with status
@@ -174,10 +193,10 @@ public sealed class GoldenLinkSetReplayTests
         if (result.FinalStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked
             && entry.ExpectedMachineId == NotInCatalogSentinel)
         {
-            return (IsMisattribution: false, IsNeedsReview: false, IsWin: true);
+            return (IsMisattribution: false, IsNeedsReview: false, IsWin: true, ResolvedIds: resolved);
         }
 
-        return (IsMisattribution: false, IsNeedsReview: false, IsWin: false);
+        return (IsMisattribution: false, IsNeedsReview: false, IsWin: false, ResolvedIds: resolved);
     }
 
     // Sentinel used to mark "was not_in_catalog at capture time" in the fixture.
@@ -204,6 +223,50 @@ public sealed class GoldenLinkSetReplayTests
     // SyntheticMachineC is intentionally NOT added to the linker catalog, so
     // documents linking to "synth-gamma" always return NotInCatalog (needs_review).
 
+    // Two machines from DIFFERENT manufacturers sharing the same slug string.
+    // _machinesBySlug is keyed by slug alone across the whole catalog, so these
+    // collide into one candidate list and NarrowToSourceManufacturer must pick
+    // the right one using the manufacturer hint DERIVED FROM SourceType.
+    private static readonly Machine SyntheticSternShared = MakeMachine(
+        id: "SYNTH-STERN03",
+        manufacturerKey: "stern",
+        title: "Synth Shared (Stern)",
+        slug: "synth-shared");
+
+    private static readonly Machine SyntheticJjpShared = MakeMachine(
+        id: "SYNTH-JJP04",
+        manufacturerKey: "jjp",
+        title: "Synth Shared (JJP)",
+        slug: "synth-shared");
+
+    [Fact]
+    public async Task SyntheticHarness_SourceType_DrivesManufacturerHint_ForSlugCollision()
+    {
+        // Two manufacturers share a slug. If MakeRaw ignored entry.SourceType (the
+        // regression the local review found), every replayed document would carry
+        // the ManualsPage->stern hint regardless of its real source, so this JJP
+        // document would narrow to the Stern candidate and the gate would report a
+        // mis-attribution the linker never actually made — a false positive baked
+        // into the harness itself, not a real regression in Wave 2.
+        var linker = await BuildLinkerAsync([SyntheticSternShared, SyntheticJjpShared]);
+        var entry = new GoldenLinkEntryDto
+        {
+            DocumentId = "doc_synth005",
+            FileUrl = "https://example.com/jjp/synth-shared-manual.pdf",
+            SourceType = "JjpProductPage",
+            GameSlug = "synth-shared",
+            DocumentType = "Manual",
+            ManufacturerKey = "jjp",
+            ExpectedMachineId = SyntheticJjpShared.Id,
+        };
+
+        var (isMisattribution, _, _, resolvedIds) = await ReplayEntryAsync(linker, entry);
+
+        Assert.False(isMisattribution,
+            $"SourceType=JjpProductPage must hint manufacturer=jjp so the slug collision " +
+            $"resolves to {SyntheticJjpShared.Id}, not the Stern sibling. Resolved: [{string.Join(",", resolvedIds)}]");
+    }
+
     [Fact]
     public async Task SyntheticHarness_CorrectBinding_PassesQuietly()
     {
@@ -222,7 +285,7 @@ public sealed class GoldenLinkSetReplayTests
         };
 
         // Act
-        var (isMisattribution, isNeedsReview, isWin) = await ReplayEntryAsync(linker, entry);
+        var (isMisattribution, isNeedsReview, isWin, _) = await ReplayEntryAsync(linker, entry);
 
         // Assert: no mis-attribution, no needs_review — clean pass
         Assert.False(isMisattribution,
@@ -251,7 +314,7 @@ public sealed class GoldenLinkSetReplayTests
         };
 
         // Act
-        var (isMisattribution, _, _) = await ReplayEntryAsync(linker, entry);
+        var (isMisattribution, _, _, _) = await ReplayEntryAsync(linker, entry);
 
         // Assert: the harness correctly identifies the mis-attribution
         Assert.True(isMisattribution,
@@ -280,7 +343,7 @@ public sealed class GoldenLinkSetReplayTests
         };
 
         // Act
-        var (isMisattribution, isNeedsReview, _) = await ReplayEntryAsync(linker, entry);
+        var (isMisattribution, isNeedsReview, _, _) = await ReplayEntryAsync(linker, entry);
 
         // Assert: not a mis-attribution (linker returned no machine, not a different one)
         // but classified as needs_review
@@ -338,7 +401,7 @@ public sealed class GoldenLinkSetReplayTests
 
         foreach (var entry in new[] { entry1, entry2, entry3 })
         {
-            var (isMisattribution, isNR, _) = await ReplayEntryAsync(linker, entry);
+            var (isMisattribution, isNR, _, _) = await ReplayEntryAsync(linker, entry);
             if (isMisattribution)
                 mismatches.Add(entry.DocumentId);
             if (isNR)
@@ -362,7 +425,7 @@ public sealed class GoldenLinkSetReplayTests
     // "Skipped" for "Passed". Once the operator runs --capture-golden-set and the file
     // lands, the attribute stops skipping and the test runs for real.
     [RequiresCapturedFixtureFact(
-        "tests/PinballWizard.Application.Tests/Fixtures/Linking/golden-link-set.captured.json",
+        CapturedFixtureRepoPath,
         "Run: dotnet run --project src/PinballWizard.Cli -c Release -- --capture-golden-set " +
         "(see tests/PinballWizard.Application.Tests/Fixtures/Linking/CAPTURE.md)")]
     public async Task GoldenLinkSet_Replays_WithNoMisattribution()
@@ -403,10 +466,10 @@ public sealed class GoldenLinkSetReplayTests
 
         foreach (var entry in fixture.Entries)
         {
-            var (isMisattribution, isNR, isWin) = await ReplayEntryAsync(linker, entry);
+            var (isMisattribution, isNR, isWin, resolvedIds) = await ReplayEntryAsync(linker, entry);
             if (isMisattribution)
                 mismatches.Add($"{entry.DocumentId}: expected {entry.ExpectedMachineId}, " +
-                               $"got {string.Join(",", entry.ExpectedMachineId)}");
+                               $"got [{string.Join(",", resolvedIds)}]");
             if (isNR)
                 needsReview.Add(entry.DocumentId);
             if (isWin)

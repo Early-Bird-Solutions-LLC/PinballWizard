@@ -39,6 +39,13 @@ public sealed class ReconcilerParityReplayTests
 
     // ── Fixture file path ──────────────────────────────────────────────────────
 
+    // ONE definition, shared by the [RequiresCapturedFixtureFact] decoration and the
+    // test body — see the same const in GoldenLinkSetReplayTests. Two independent
+    // spellings mean a typo in the attribute skips forever while the fixture sits
+    // correctly on disk, and nothing ever reports it.
+    internal const string CapturedFixtureRepoPath =
+        "tests/PinballWizard.Application.Tests/Fixtures/Sync/reconciler-parity.captured.json";
+
     private static string CapturedFixturePath()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -47,8 +54,7 @@ public sealed class ReconcilerParityReplayTests
         var root = dir?.FullName ?? throw new InvalidOperationException(
             "Could not locate repo root (no PinballWizard.slnx found walking up from test assembly).");
         return Path.Combine(
-            root, "tests", "PinballWizard.Application.Tests",
-            "Fixtures", "Sync", "reconciler-parity.captured.json");
+            root, CapturedFixtureRepoPath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     // ── Shared builder ─────────────────────────────────────────────────────────
@@ -77,7 +83,11 @@ public sealed class ReconcilerParityReplayTests
     }
 
     // Derives the GameId prefix for a manufacturer key, matching ScraperManufacturerKey.FromGameId
-    // in reverse so we can reconstruct the GameId the reconciler expects.
+    // in reverse so we can reconstruct the GameId the reconciler expects. This is a parallel
+    // table to the production switch in FromGameId — kept honest by
+    // GameIdPrefix_RoundTripsThrough_RealFromGameId below, which asserts every entry here
+    // actually round-trips through the PRODUCTION method. If the two drift, that canary fails
+    // loudly instead of this table silently producing the wrong GameId for a new manufacturer.
     private static string GameIdPrefix(string manufacturerKey) => manufacturerKey switch
     {
         "stern"            => "game_",
@@ -93,6 +103,28 @@ public sealed class ReconcilerParityReplayTests
         // surfaced as a regression even when the prefix is wrong.
         _                  => "game_",
     };
+
+    // Round-trips every entry in GameIdPrefix through the REAL ScraperManufacturerKey
+    // .FromGameId. If someone adds a ninth manufacturer to FromGameId and forgets this table
+    // (or edits one without the other), this fails immediately instead of GameIdPrefix silently
+    // reconstructing the wrong GameId and the parity tests validating against a phantom slug.
+    [Theory]
+    [InlineData(ScraperManufacturerKey.Stern)]
+    [InlineData(ScraperManufacturerKey.Jjp)]
+    [InlineData(ScraperManufacturerKey.AmericanPinball)]
+    [InlineData(ScraperManufacturerKey.Spooky)]
+    [InlineData(ScraperManufacturerKey.PinballBrothers)]
+    [InlineData(ScraperManufacturerKey.BarrelsOfFun)]
+    [InlineData(ScraperManufacturerKey.ChicagoGaming)]
+    [InlineData(ScraperManufacturerKey.Multimorphic)]
+    public void GameIdPrefix_RoundTripsThrough_RealFromGameId(string manufacturerKey)
+    {
+        var gameId = GameIdPrefix(manufacturerKey) + "canary-slug";
+
+        var resolved = ScraperManufacturerKey.FromGameId(gameId);
+
+        Assert.Equal(manufacturerKey, resolved);
+    }
 
     private static Machine MakeMachine(string id, string manufacturerKey, string title, string slug)
     {
@@ -271,7 +303,7 @@ public sealed class ReconcilerParityReplayTests
     // "Skipped" for "Passed". Once the operator runs --capture-reconciler-parity and the
     // file lands, the attribute stops skipping and the test runs for real.
     [RequiresCapturedFixtureFact(
-        "tests/PinballWizard.Application.Tests/Fixtures/Sync/reconciler-parity.captured.json",
+        CapturedFixtureRepoPath,
         "Run: dotnet run --project src/PinballWizard.Cli -c Release -- --capture-reconciler-parity " +
         "(see tests/PinballWizard.Application.Tests/Fixtures/Sync/CAPTURE.md)")]
     public async Task ReconcilerParity_Replays_WithNoSlugCountDrop()
