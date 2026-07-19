@@ -7,9 +7,10 @@ namespace PinballWizard.Application.Tests.Resolution;
 
 // Exercises MachineAliasLoader in isolation using temp-file fixtures and an
 // in-memory fake catalog so no Cosmos call is ever made from tests.
-// Contract tests (every alias resolves to a known group; validation rules)
-// live here. The production seed is NOT loaded in these tests — the production
-// manifest is exercised by contract tests that read the real file on disk.
+// Validation rules are exercised here against synthetic fixtures. The production
+// seed is NOT loaded in these tests — it is pinned separately by
+// MachineAliasContractTests (PinballWizard.Infrastructure.Tests/Resolution),
+// which reads the real data/seeds/machine_aliases.v1.json off disk.
 public sealed class MachineAliasLoaderTests : IDisposable
 {
     // ── Fake catalog ─────────────────────────────────────────────────────────

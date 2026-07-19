@@ -19,13 +19,3 @@ public interface IMachineAliasLoader
     // entries. Subsequent calls return the cached in-memory list.
     Task<IReadOnlyList<MachineAliasEntry>> LoadAsync(CancellationToken cancellationToken);
 }
-
-// Catalog abstraction injected into MachineAliasLoader to verify that each
-// alias resolves to a real group or machine. Production binds this against
-// IMachineRepository; contract tests supply an in-memory fake so no Cosmos
-// call is made from tests.
-public interface IMachineAliasCatalog
-{
-    Task<bool> GroupExistsAsync(string groupId, string manufacturerKey, CancellationToken cancellationToken);
-    Task<bool> MachineExistsAsync(string machineId, string manufacturerKey, CancellationToken cancellationToken);
-}

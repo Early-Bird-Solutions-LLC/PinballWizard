@@ -207,7 +207,10 @@ public sealed class MachineAliasLoader : IMachineAliasLoader, IDisposable
             "Loaded {Count} machine alias(es) from '{SeedPath}'.",
             seed.Aliases.Count, _seedPath);
 
-        return seed.Aliases;
+        // Copy + AsReadOnly so the cached value cannot be mutated by a caller
+        // downcasting the IReadOnlyList back to the List that STJ actually
+        // deserialized. Matches CommunityResourceLoader.
+        return seed.Aliases.ToList().AsReadOnly();
     }
 
     public void Dispose() => _lock.Dispose();
