@@ -23,11 +23,12 @@ public sealed class ClosedStatusPaletteTests
     [Fact]
     public void DocumentLinkStatusColor_OnlyEmitsAllowedColors()
     {
-        foreach (var status in Enum.GetValues<LinkStatus>())
-        {
-            var pascal = status.ToString();
-            var snake = ToSnakeCase(pascal);
+        var forms = Enum.GetValues<LinkStatus>()
+            .Select(status => status.ToString())
+            .Select(pascal => (Pascal: pascal, Snake: ToSnakeCase(pascal)));
 
+        foreach (var (pascal, snake) in forms)
+        {
             Assert.Contains(DocumentLinkStatusColor.For(pascal), Allowed);
             Assert.Contains(DocumentLinkStatusColor.For(snake), Allowed);
         }
