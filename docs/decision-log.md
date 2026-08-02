@@ -757,3 +757,50 @@ Or via Cloudflare Configuration Rules: disable "Automatic HTTPS Rewrites" for th
 **Related:** quality-spec.md § Code quality / Coverage policy, tests/coverage.runsettings, .github/workflows/ci.yml.
 
 **Related:** PR #271, `memory/project_adi_inline_scale_watch.md`, ADR-0012 (Cosmos ARM vs data-plane — relevant if Pass 3 is later wired into the RAG ingestion pipeline).
+
+## 2026-08-02 — H-Alerts: ACA job-failure alert proven to fire (first real receipt)
+
+**Decision:** Record `pinwiz-alert-aca-job-failure` as PROVEN. Email received at
+2026-08-02 15:34:35 UTC — "Fired:Sev2 Azure Monitor Alert PinballWizard — ACA Job
+failed on pinwiz-law-dev". This satisfies the build-spec § Alert routing
+"alert-proven requirement" for this rule.
+
+**What was proven, precisely:** two alert instances fired ~1s apart, one per failing
+job, and the payload carries the dimension `{"name": "JobName_s", "value":
+"pinwiz-job-linker"}`. So the per-dimension split works and the alert names the job
+rather than saying only "something failed". Deploy completed 15:21:43 UTC; first
+alert 15:34:35 UTC — ~13 minutes.
+
+**Why this entry matters more than a routine drill record:** the rule this replaced,
+`pinwiz-alert-linker-job-failure`, was deployed, enabled, Sev2 and correctly wired to
+the action group for weeks, and had never been capable of firing. It filtered ACA
+*job* logs on `ContainerAppName_s`, which is empty for jobs (they populate
+`JobName_s`), so `failCount` was permanently 0. It sat silent through 7/7 failed
+linker nights. It was also absent from both the build-spec alert table and
+`Invoke-AlertProof.ps1`, so nothing ever asked it to prove itself. Configuration
+review would not have caught this; only firing it did.
+
+**Second finding, from widening the predicate:** `pinwiz-job-stern-bulletins` had also
+been failing 7/7 nights, unnoticed for the same reason. The standing "the other 19
+jobs succeed" reading was an artifact of the blind alert, not an observation.
+
+**Third finding, from running the new proof step:** the step added alongside the fix
+reported "every job is currently healthy" while two jobs were failing — PowerShell
+dropped the KQL's embedded double quotes, `az` errored, and `2>$null` made the error
+indistinguishable from a clean result. Fixed to check `$LASTEXITCODE` and refuse to
+report healthy on a failed query.
+
+**Alternatives considered:** proving the alert by synthetic injection like alerts 1–5.
+Not possible — those POST to the App Insights `/v2/track` endpoint, and this alert
+reads `ContainerAppSystemLogs_CL`, populated by Container Apps' own log streaming. The
+options are a real failing execution or a DCR + Logs Ingestion API endpoint (not
+wired). Step 6 therefore evaluates the live predicate instead of injecting.
+
+**Revisit when:** the linker and stern-bulletins failures are fixed. At that point the
+alert stops having a standing true condition, and re-proving it requires inducing a
+real failure — `Invoke-AlertProof.ps1 -AlertIndex 6` will say so explicitly rather
+than implying proof.
+
+**Related:** PR #777 (the fix), PR #779 (the proof-step correction), PR #778 (the
+AI Search region drift that was blocking all infra deploys), build-spec.md § Alert
+routing, `infra/scripts/Invoke-AlertProof.ps1` step 6.
