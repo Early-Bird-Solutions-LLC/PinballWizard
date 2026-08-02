@@ -31,9 +31,9 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="MudBlazor" />
     <!--
-      Override transitive System.Security.Cryptography.Xml to avoid
-      NU1903 (high-severity vuln in 9.0.0 pulled by bunit 2.x). Direct-pinned
-      in Directory.Packages.props.
+      Override the vulnerable System.Security.Cryptography.Xml that bunit 2.x
+      pulls transitively, which would otherwise fail restore with NU1903.
+      The version and its advisory history live in Directory.Packages.props.
     -->
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <!--
