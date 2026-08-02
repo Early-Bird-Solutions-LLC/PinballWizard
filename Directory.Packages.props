@@ -168,8 +168,17 @@
       TFM forward-compat path. Pin to a specific minor so template / theme
       shape is reproducible. Bump majors as a dedicated, reviewed PR (the
       Renovate Dependency Dashboard holds them — ADR-0037).
+
+      HELD at 9.5.0 — do not bump without an accompanying a11y fix. 9.7.0
+      changes MudSelect's rendered markup: the input slot gains
+      role="combobox" with no accessible name, which trips the axe rule
+      aria-input-field-name (WCAG 2.1 AA) on /admin/document-triage and
+      /admin/link-overrides. Caught by the Accessibility-category suite in
+      the ui-tests CI job, which is excluded from the main test filter — so
+      a green "Build, test, coverage" does NOT clear a MudBlazor bump.
+      Moving to 9.7.0 means labelling those MudSelects first.
     -->
-    <PackageVersion Include="MudBlazor" Version="9.7.0" />
+    <PackageVersion Include="MudBlazor" Version="9.5.0" />
     <!--
       Microsoft.Identity.Web supports Entra External ID tenants natively per
       ADR-0009. The app uses only AddMicrosoftIdentityWebApp + AddMicrosoftIdentityUI
