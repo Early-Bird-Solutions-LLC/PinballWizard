@@ -58,6 +58,10 @@
 /* ── TILT heading ──────────────────────────────────────────────────────── */
 
 .tilt-heading {
+    /* Pinned so the element could move to <h1> (it was <h2>, leaving /error and
+       /tilt with no <h1>) without the TILT wordmark growing: theme H1 is 2.5rem
+       against H2's 2rem. Semantics changed; rendering did not. */
+    font-size: 2rem;
     color: var(--mud-palette-warning);
     letter-spacing: 0.25em;
     font-weight: 900;
@@ -98,4 +102,13 @@
     letter-spacing: 0.08em;
     word-break: break-all;
     text-align: center;
+}
+
+/* "Something rattled the machine." is now an <h2> rather than an <h6> so the
+   heading order under the TILT <h1> does not skip four levels. Theme H2 is
+   2rem/700 against H6's 1rem/500, so restate H6's scale here to keep the
+   rendering identical - only the semantics moved. */
+.tilt-subheading {
+    font-size: 1rem;
+    font-weight: 500;
 }

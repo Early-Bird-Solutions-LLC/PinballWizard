@@ -937,3 +937,47 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
     white-space: nowrap;
     border: 0;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Visually-hidden text (#790)
+
+   Available to assistive technology, removed from the visual layout. Used for
+   the <h1> on pages whose visible design has no title bar - /wizard, and the
+   admin detail pages in their loading / not-found / load-failed states. Those
+   states rendered no heading at all, so axe's page-has-heading-one failed on
+   every one of them.
+
+   Not `display: none` or `visibility: hidden`: both remove the element from the
+   accessibility tree as well, which would defeat the purpose. The clip-path +
+   1px box is the standard technique — the same one the collapsed-nav-rail rule
+   above applies to .mud-nav-link-text, for the same reason. */
+.pw-visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Minimum 44x44 CSS-px hit area (WCAG 2.2 SC 2.5.8 target-size, #790).
+
+   These five controls are shared chrome, so they failed on every route at once:
+   the admin collapse toggle, the sound toggle, the nav-rail toggle, and the
+   DataGrid column-options activators. MudBlazor's Size.Small icon buttons are
+   32px by default, hence the override rather than a per-page fix.
+
+   min-block-size/min-inline-size rather than width/height so the controls can
+   still grow with their content, and the icon stays centred because these are
+   all flex-centred buttons already. */
+.pw-admin-collapse-toggle,
+[data-testid="nav-rail-toggle"],
+[data-testid="sound-controller-toggle"],
+.mud-menu-icon-button-activator.mud-icon-button-size-small,
+.mud-icon-button-size-small {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+}

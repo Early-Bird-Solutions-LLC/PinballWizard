@@ -42,6 +42,24 @@
          *@
         <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
     }
+
+    @* Guarantee exactly one <h1> in EVERY state, by the same argument this file
+     * already makes for breadcrumbs a few lines up: a detail page owes the user its
+     * identity while loading, when not found, and when the load failed - not only on
+     * the happy path. Before this, pages whose header lives inside a loaded-branch
+     * @if rendered no heading at all in the other three states, and axe's
+     * page-has-heading-one failed on every one (#790).
+     *
+     * Hidden rather than visible because these pages deliberately have no title bar
+     * in their visual design; the heading is for the document outline and screen
+     * readers. Falls back to the last breadcrumb, which names the page and is
+     * already supplied in every state.
+     *@
+    @if (Title is null && AccessibleHeading is not null)
+    {
+        <h1 class="pw-visually-hidden">@AccessibleHeading</h1>
+    }
+
     @ChildContent
 </MudContainer>
 
@@ -51,6 +69,13 @@
     [Parameter] public string? Title { get; set; }
 
     [Parameter] public string? Subtitle { get; set; }
+
+    // Accessible page heading used only when Title is null - i.e. when the page
+    // renders no visible header. Defaults to the final breadcrumb.
+    [Parameter] public string? AccessibleTitle { get; set; }
+
+    private string? AccessibleHeading =>
+        AccessibleTitle ?? (Breadcrumbs is { Count: > 0 } b ? b[^1].Text : null);
     [Parameter] public IReadOnlyList<BreadcrumbItem>? Breadcrumbs { get; set; }
 
     // Header action slot (buttons beside the title). Has no effect when Title is

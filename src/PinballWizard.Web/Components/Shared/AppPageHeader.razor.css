@@ -3,8 +3,8 @@
    needs restoring, since PinballTheme gives H1 and H4 the same family
    (Barlow Condensed) and weight (700).
 
-   ::deep is required: MudText is a child component, and Blazor CSS isolation
-   does not stamp the scope attribute onto a child component's rendered element. */
-::deep .pw-page-title {
+   Styled without ::deep, matching .tilt-heading in Error.razor.css: MudText
+   splats its attributes, so the scope identifier reaches its rendered element. */
+.pw-page-title {
     font-size: 1.5rem;
 }

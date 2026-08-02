@@ -35,6 +35,12 @@
 
 <PageTitle>PinballWizard — Ask the Wizard</PageTitle>
 
+@* /wizard is an ask surface with no title bar by design, so it shipped with no
+   <h1> at all - axe's page-has-heading-one failed here once the rule was allowed
+   to run (#790). Visually hidden so the document outline and screen readers get a
+   heading without adding chrome the design deliberately omits. *@
+<h1 class="pw-visually-hidden">Ask the Wizard</h1>
+
 <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8" data-testid="wizard-page">
     <WizardAnswerStream Question="@_resolvedQuestion" MachineId="@MachineId" />
 </MudContainer>
