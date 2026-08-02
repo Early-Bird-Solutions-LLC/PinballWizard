@@ -46,7 +46,7 @@
 
     <!-- Microsoft.ML.Tokenizers 2.0.0 transitively pulls
          Microsoft.Bcl.Memory 9.0.4, which has a high-severity vuln
-         (GHSA-73j8-2gch-69rq). Direct-pin to 10.0.7 to override the
+         (GHSA-73j8-2gch-69rq). Direct-pin to a current 10.x to override the
          transitive resolution and clear the NU1903 build break. The
          override is package-version-floor; remove it once
          Microsoft.ML.Tokenizers ships a release that depends on

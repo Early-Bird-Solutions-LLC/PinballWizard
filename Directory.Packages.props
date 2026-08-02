@@ -33,9 +33,9 @@
   </ItemGroup>
   <ItemGroup Label="Azure data-plane SDKs — Foundry / OpenAI / Cosmos / AI Search / Identity / ARM">
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.1.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.1" />
     <PackageVersion Include="Azure.AI.Projects" Version="2.0.1" />
-    <PackageVersion Include="Azure.Core" Version="1.59.0" />
+    <PackageVersion Include="Azure.Core" Version="1.60.0" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Blobs" Version="1.5.3" />
     <PackageVersion Include="Azure.Extensions.AspNetCore.DataProtection.Keys" Version="1.6.3" />
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />
@@ -48,31 +48,31 @@
          Microsoft.App/jobs (list, read executions, trigger). GA stable.
          Source: https://www.nuget.org/packages/Azure.ResourceManager.AppContainers -->
     <PackageVersion Include="Azure.ResourceManager.AppContainers" Version="1.5.0" />
-    <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.4.1" />
+    <PackageVersion Include="Azure.ResourceManager.CosmosDB" Version="1.5.0" />
     <PackageVersion Include="Azure.Search.Documents" Version="12.0.0" />
-    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.61.0" />
+    <PackageVersion Include="Microsoft.Azure.Cosmos" Version="3.62.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft Agent Framework — Foundry-bound IAiRouter primitives (ADR-0014)">
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.5.0" />
     <PackageVersion Include="Microsoft.Agents.AI.Foundry" Version="1.5.0" />
   </ItemGroup>
   <ItemGroup Label="Microsoft.Extensions.* — Hosting / DI / Configuration / Logging / Options">
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
-    <!-- Microsoft.Extensions.Logging 10.0.9 — concrete LoggerFactory.Create used by the
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.8.0" />
+    <!-- Microsoft.Extensions.Logging — concrete LoggerFactory.Create used by the
          PerfMetrics console tool. Abstractions alone don't ship LoggerFactory. Verified via
          `dotnet package search Microsoft.Extensions.Logging` on 2026-07-09. -->
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.7.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.8.0" />
   </ItemGroup>
   <ItemGroup Label="Phase 4 RAG pipeline — chunking + PDF extraction">
     <!--
@@ -86,37 +86,37 @@
     <!--
       Microsoft.ML.Tokenizers 2.0.0 transitively pulls Microsoft.Bcl.Memory
       9.0.4, which has a high-severity vuln (GHSA-73j8-2gch-69rq).
-      Direct-pin to 10.0.7 here so consuming projects (Application) can add
+      Direct-pin to a current 10.x here so consuming projects (Application) can add
       a no-Version PackageReference and pick up the override without a
       transitive-resolution NU1903 build break. Remove once
       Microsoft.ML.Tokenizers ships a release that depends on Bcl.Memory
       >= 10.x.
     -->
-    <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.10" />
     <!--
       PdfPig (namespace UglyToad.PdfPig) is the pure-managed PDF reader
       used by Phase 4 W1-5's PdfPigDocumentTextExtractor. Reads text +
       outline from PDF streams; no native dependencies; compatible with
       the showcase posture (no GPL/AGPL like iText 7 community license).
     -->
-    <PackageVersion Include="PdfPig" Version="0.1.14" />
+    <PackageVersion Include="PdfPig" Version="0.1.15" />
   </ItemGroup>
   <ItemGroup Label="OpenTelemetry — exporters + auto-instrumentation (ServiceDefaults)">
-    <!-- Azure.Monitor.OpenTelemetry.Exporter 1.8.2 — Entra-authenticated log exporter for the
+    <!-- Azure.Monitor.OpenTelemetry.Exporter — Entra-authenticated log exporter for the
          PerfMetrics console tool (Phase 1 perf-trend tracking). Verified latest stable via
          `dotnet package search Azure.Monitor.OpenTelemetry.Exporter` on 2026-07-09. -->
-    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.2" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+    <PackageVersion Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.3" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
   </ItemGroup>
   <ItemGroup Label="Scraping / parsing / browser automation">
-    <PackageVersion Include="AngleSharp" Version="1.5.1" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.60.0" />
+    <PackageVersion Include="AngleSharp" Version="1.7.0" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
   </ItemGroup>
   <ItemGroup Label="Accessibility testing — axe-core via Playwright (Wave 3 PR-Q1b)">
     <!--
@@ -125,11 +125,11 @@
       tests/PinballWizard.Web.Tests/A11y/ to assert WCAG 2.1 AA compliance
       on every public route via a real Chromium browser.
     -->
-    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.11.3" />
+    <PackageVersion Include="Deque.AxeCore.Playwright" Version="4.12.0" />
   </ItemGroup>
   <ItemGroup Label="Tests — xUnit + NSubstitute + bUnit + test SDK">
-    <PackageVersion Include="bunit" Version="2.7.2" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
+    <PackageVersion Include="bunit" Version="2.8.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <!--
       System.Security.Cryptography.Xml is still pulled transitively by bunit 2.x
       at a vulnerable version, so it stays direct-pinned here to a safe one.
@@ -146,8 +146,8 @@
       for WizardAskStreamEndpointTests (Wave 1 PR-F2). Version matches
       ASP.NET Core / .NET 10 GA train.
     -->
-    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
@@ -164,10 +164,19 @@
   </ItemGroup>
   <ItemGroup Label="Web — Blazor frontend (ADR-0026) + Entra External ID auth (ADR-0009)">
     <!--
-      MudBlazor 9.x targets .NET 8+; 9.5.0 supports .NET 10 via the .NET 8
+      MudBlazor 9.x targets .NET 8+ and supports .NET 10 via the .NET 8
       TFM forward-compat path. Pin to a specific minor so template / theme
       shape is reproducible. Bump majors as a dedicated, reviewed PR (the
       Renovate Dependency Dashboard holds them — ADR-0037).
+
+      HELD at 9.5.0 — do not bump without an accompanying a11y fix. 9.7.0
+      changes MudSelect's rendered markup: the input slot gains
+      role="combobox" with no accessible name, which trips the axe rule
+      aria-input-field-name (WCAG 2.1 AA) on /admin/document-triage and
+      /admin/link-overrides. Caught by the Accessibility-category suite in
+      the ui-tests CI job, which is excluded from the main test filter — so
+      a green "Build, test, coverage" does NOT clear a MudBlazor bump.
+      Moving to 9.7.0 means labelling those MudSelects first.
     -->
     <PackageVersion Include="MudBlazor" Version="9.5.0" />
     <!--
@@ -177,8 +186,8 @@
       TokenAcquirer credentials, sync client-credential shims). Majors land via the
       Renovate Dependency Dashboard as reviewed PRs (ADR-0037).
     -->
-    <PackageVersion Include="Microsoft.Identity.Web" Version="4.10.0" />
-    <PackageVersion Include="Microsoft.Identity.Web.UI" Version="4.10.0" />
+    <PackageVersion Include="Microsoft.Identity.Web" Version="4.14.2" />
+    <PackageVersion Include="Microsoft.Identity.Web.UI" Version="4.14.2" />
     <!--
       Blazor auto-render mode (ADR-0026 § 1) requires the WASM runtime
       in the Client project and the WASM static-asset server in the
@@ -189,7 +198,7 @@
       referenced by the Server (PinballWizard.Web) so Kestrel serves
       the WASM bootstrap and static framework files.
     -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.10" />
   </ItemGroup>
 </Project>
