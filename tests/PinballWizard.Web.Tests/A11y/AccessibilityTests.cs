@@ -27,7 +27,7 @@ public sealed class AccessibilityTests(PlaywrightWebApplicationFactory factory)
         RunOnly = new RunOnlyOptions
         {
             Type = "tag",
-            Values = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+            Values = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"],
         },
         ResultTypes = [ResultType.Violations],
     };
