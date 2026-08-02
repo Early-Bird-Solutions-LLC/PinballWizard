@@ -16,14 +16,32 @@ param environment = 'dev'
 param location = 'eastus2'
 param namePrefix = 'pinwiz'
 
-// Region for the AI Search service. Defaults to East US 2 (matching `location`)
-// for normal capacity conditions. Override in main-shared.dev.local.bicepparam
-// to a sibling region (e.g., 'eastus') when East US 2 returns
-// `InsufficientResourcesAvailable` on Basic-SKU search service creation —
-// Phase 3 lesson 3. The rest of the stack stays in `location`; only AI Search
-// relocates. Cross-region traffic at Phase 4's curated-subset volume is
-// negligible.
-param searchLocation = 'eastus2'
+// Region for the AI Search service. EAST US, deliberately — everything else in
+// this environment is East US 2 (`location` above).
+//
+// East US 2 could not supply a Basic-SKU search service: the H1 deploy failed
+// with `InsufficientResourcesAvailable` for Microsoft.Search/searchServices
+// (decision-log.md, Phase 3 lesson 3). The sanctioned response there is to move
+// AI Search alone to a sibling region rather than relocate the whole stack, and
+// that is what the live environment did — pinwiz-search-dev-buutj has been
+// running in East US ever since. Cross-region traffic between Search and the
+// rest of the stack is negligible at this workload.
+//
+// This value used to say 'eastus2', with a comment directing you to override it
+// in main-shared.dev.local.bicepparam. That does not work, and it is why the
+// shared-resources deploy was broken: .local.bicepparam is gitignored, so the
+// override existed only on the machine that ran the original deploy. Every
+// other run — another developer, CI, a fresh clone — resolved 'eastus2',
+// disagreed with the deployed service, and died in preflight with
+// `InvalidResourceLocation` (a search service cannot change region in place).
+// A gitignored file is the wrong home for a durable fact about the environment;
+// .local overrides are for per-developer values like developerObjectId. The
+// environment's actual shape belongs here, committed.
+//
+// Do not "restore" this to eastus2 without first confirming Basic-SKU capacity
+// in East US 2 AND accepting that the move means recreating the service and
+// reindexing the corpus. Changing this parameter alone cannot relocate it.
+param searchLocation = 'eastus'
 
 // Optional: Entra Object ID of the developer principal to grant deploy-time RBAC.
 // Leave empty to skip role assignments (assignments can be made manually later
