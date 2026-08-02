@@ -240,7 +240,13 @@ if ($AlertIndex -eq 0 -or $AlertIndex -eq 6) {
     Write-Host "`n[6/6] Checking pinwiz-alert-aca-job-failure predicate against live logs..." -ForegroundColor Cyan
     Write-Host "  (no injection possible — this alert reads ContainerAppSystemLogs_CL)" -ForegroundColor DarkGray
 
-    $kql = 'ContainerAppSystemLogs_CL | where TimeGenerated > ago(1d) | where JobName_s startswith "pinwiz-job-" | where Log_s startswith "Saw completed job" | where Log_s contains "condition: Failed" | summarize failCount = count() by JobName_s'
+    # KQL string literals are SINGLE-quoted on purpose. PowerShell does not preserve
+    # embedded double quotes when handing a string to a native command, so the
+    # double-quoted form arrived at az already split and az rejected it with
+    # "unrecognized arguments". Single quotes are equally valid in KQL and survive
+    # the handoff intact. Do not "tidy" these back to double quotes.
+    $kql = "ContainerAppSystemLogs_CL | where TimeGenerated > ago(1d) | where JobName_s startswith 'pinwiz-job-' | where Log_s startswith 'Saw completed job' | where Log_s contains 'condition: Failed' | summarize failCount = count() by JobName_s"
+
     $wsGuid = az monitor log-analytics workspace show -g $ResourceGroup -n $WorkspaceName --query customerId -o tsv 2>$null
 
     if (-not $wsGuid) {
@@ -249,8 +255,27 @@ if ($AlertIndex -eq 0 -or $AlertIndex -eq 6) {
         Write-Host "  Do NOT record this alert as proven." -ForegroundColor Red
     }
     else {
-        $result = az monitor log-analytics query -w $wsGuid --analytics-query $kql -o json 2>$null | ConvertFrom-Json
-        if ($result -and $result.Count -gt 0) {
+        # Capture stderr and the exit code instead of discarding them. A failed query
+        # must never be reportable as "healthy" - that is the same false reassurance
+        # this alert exists to eliminate, and the first version of this step had it:
+        # it sent 2>$null, got nothing back, and printed "every job is currently
+        # healthy" while two jobs were in fact failing nightly.
+        $raw  = az monitor log-analytics query -w $wsGuid --analytics-query $kql -o json 2>&1
+        $code = $LASTEXITCODE
+
+        if ($code -ne 0) {
+            Write-Host "  FAILED: the log query itself errored (az exit $code)." -ForegroundColor Red
+            foreach ($line in (($raw | Out-String).Trim() -split "`n" | Select-Object -First 3)) {
+                Write-Host ("    " + $line.Trim()) -ForegroundColor Red
+            }
+            Write-Host "  This is NOT a healthy result. Do NOT record this alert as proven." -ForegroundColor Red
+            $result = @()
+        }
+        else {
+            $result = @($raw | ConvertFrom-Json)
+        }
+
+        if ($code -eq 0 -and $result.Count -gt 0) {
             Write-Host "  Predicate MATCHES — the alert condition is already true right now:" -ForegroundColor Yellow
             foreach ($row in $result) {
                 Write-Host ("    {0}  failCount={1}" -f $row.JobName_s, $row.failCount) -ForegroundColor Yellow
@@ -258,7 +283,7 @@ if ($AlertIndex -eq 0 -or $AlertIndex -eq 6) {
             Write-Host "  Expect an email within 24h: 'PinballWizard — ACA Job failed'." -ForegroundColor Yellow
             Write-Host "  Receipt of that email is the proof. Record the timestamp in decision-log.md." -ForegroundColor Yellow
         }
-        else {
+        elseif ($code -eq 0) {
             Write-Host "  Predicate matches nothing in the last 24h — every job is currently healthy." -ForegroundColor Green
             Write-Host "  That is good news, but it means the alert is NOT proven by this run." -ForegroundColor Yellow
             Write-Host "  To prove it, induce one real failure, e.g.:" -ForegroundColor Yellow
