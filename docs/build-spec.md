@@ -1118,7 +1118,7 @@ Phase 6 provisions a single Application Insights workbook titled **"PinballWizar
 
 ### Alert routing
 
-Five metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phase 2 block (`deployPhase2 = true`). All route to a single action group `pinwiz-ops-alerts` with the personal Earlybird email; no PagerDuty for v1 (single operator, hobby-cadence response, per `quality-spec.md` § Alerting).
+Six metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Phase 2 block (`deployPhase2 = true`). All route to a single action group `pinwiz-ops-alerts` with the personal Earlybird email; no PagerDuty for v1 (single operator, hobby-cadence response, per `quality-spec.md` § Alerting).
 
 | Alert rule name | Condition | Severity | Action |
 | --- | --- | --- | --- |
@@ -1127,8 +1127,19 @@ Five metric alert rules, defined in Bicep under `infra/modules/shared.bicep` Pha
 | `pinwiz-alert-daily-cost` | Daily `pinwiz.ai.cost_usd_cents` sum > ($300 ÷ 30) × 1.5 ≈ 1 500 cents/day | Sev 2 | Email notify; investigate per runbook `02-cost-anomaly.md` |
 | `pinwiz-alert-dead-letters` | `pinwiz.rag.changefeed_dead_letter_total` cumulative increment > 50 in a 1-h window | Sev 3 | Email notify; investigate per runbook `04-ai-search-rebuild.md` § triage section |
 | `pinwiz-alert-availability` | Availability test success rate < 99.5% over rolling 7-day window | Sev 1 | Email notify; investigate per runbook `01-incident-response.md` |
+| `pinwiz-alert-aca-job-failure` | Any `pinwiz-job-*` ACA Job logs `Saw completed job … condition: Failed`; evaluated daily over a matching 1-day window with `autoMitigate: false`, split by `JobName_s`, so a job failing nightly yields one email per failing night naming the job | Sev 2 | Email notify; `az containerapp job execution list -n <job>` |
 
 **Alert-proven requirement (pre-launch gate item):** before launch, each alert is proven to fire by inducing a synthetic condition in a dev environment. The proof is recorded as a dated comment in `docs/decision-log.md` per the DR drill procedure.
+
+> **Why this gate is not optional — a worked example.** `pinwiz-alert-aca-job-failure`
+> replaced a `pinwiz-alert-linker-job-failure` rule that was deployed, enabled, correctly
+> wired to the action group — and structurally incapable of firing, because it filtered ACA
+> *Job* logs on `ContainerAppName_s`, a column that is empty for jobs (they populate
+> `JobName_s`). It was never in the table above and never in `Invoke-AlertProof.ps1`, so
+> nothing ever asked it to prove itself. It stayed silent through 7/7 nightly linker
+> failures — and widening it surfaced a second job, `pinwiz-job-stern-bulletins`, that had
+> been failing 7/7 nights entirely unnoticed. An alert that has not been proven to fire is not an alert; it is a rule that
+> makes you believe you are covered.
 
 ### Runbook templates
 

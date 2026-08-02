@@ -1863,26 +1863,73 @@ resource alertAvailability 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   }
 }
 
-resource alertLinkerJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
-  name: 'pinwiz-alert-linker-job-failure'
+// Covers EVERY pinwiz-job-* ACA job, not just the linker, and splits the result
+// by JobName_s so the alert email names the job that failed.
+//
+// Two things were wrong with the previous linker-only version, and the first one
+// meant this alert had never been able to fire at all:
+//
+//  1. It filtered on `ContainerAppName_s`. Container App *Jobs* populate
+//     `JobName_s` and leave `ContainerAppName_s` EMPTY — that column only ever
+//     carries the long-running apps (wizard/api/ragindexer). The predicate
+//     therefore matched zero rows on every evaluation, `failCount` was
+//     permanently 0, and the rule sat enabled-and-silent while the linker failed
+//     nightly from 2026-07-14 onward. Verified 2026-08-02 over an identical 2-day
+//     window: the old predicate returned 0, `JobName_s` returned 6.
+//
+//  2. It was scoped to one job. Widening to `pinwiz-job-` immediately surfaced a
+//     SECOND job that had been failing 7/7 nights unnoticed for the same reason —
+//     pinwiz-job-stern-bulletins. The other 18 jobs were clean over the same
+//     window, so this predicate is not noisy.
+//
+// Matching on the `Saw completed job ... condition: Failed` line rather than a
+// bare `contains "Failed"` keys the alert to exactly one line per finished
+// execution, so a single failure cannot be counted several times by the
+// surrounding PodDeletion/BackoffLimitExceeded chatter.
+resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (deployPhase2) {
+  name: 'pinwiz-alert-aca-job-failure'
   location: location
   tags: tags
   properties: {
-    displayName: 'PinballWizard — Linker ACA Job failed'
-    description: 'The nightly document-to-machine linker job completed with status Failed or did not complete. Investigate via az containerapp job execution list.'
+    displayName: 'PinballWizard — ACA Job failed'
+    description: 'A scheduled pinwiz-job-* Container App Job completed with condition Failed. The alert dimension names the job. Investigate via az containerapp job execution list -n <job>.'
     severity: 2
     enabled: true
-    evaluationFrequency: 'PT1H'
-    windowSize: 'PT2880M'
+    // Daily evaluation over a matching 1-day window, with autoMitigate OFF, gives
+    // exactly one email per failing night per job — which is the cadence the jobs
+    // themselves run at.
+    //
+    // The inherited PT1H / PT2880M pairing was wrong for a nightly job in a way
+    // that matters: autoMitigate defaults to TRUE, so once the alert fired it
+    // stayed active and suppressed re-notification for as long as any failure
+    // remained in the 48-hour window. A job failing every night keeps the window
+    // permanently dirty, so you would get ONE email ever and then silence — for
+    // the linker that would have been a single mail covering 7 consecutive failed
+    // nights. Turning autoMitigate off while leaving the hourly frequency would
+    // have been worse in the other direction: 48 emails a day, per job.
+    //
+    // Keeping windowSize equal to evaluationFrequency is what makes it
+    // exactly-once — an overlapping window would re-report the same failure on
+    // consecutive evaluations.
+    evaluationFrequency: 'P1D'
+    windowSize: 'P1D'
+    autoMitigate: false
     scopes: [logAnalytics.id]
     criteria: {
       allOf: [
         {
-          query: 'ContainerAppSystemLogs_CL | where ContainerAppName_s startswith "pinwiz-job-linker" | where Log_s contains "Failed" | summarize failCount = count()'
+          query: 'ContainerAppSystemLogs_CL | where JobName_s startswith "pinwiz-job-" | where Log_s startswith "Saw completed job" | where Log_s contains "condition: Failed" | summarize failCount = count() by JobName_s'
           timeAggregation: 'Total'
           metricMeasureColumn: 'failCount'
           operator: 'GreaterThan'
           threshold: 0
+          dimensions: [
+            {
+              name: 'JobName_s'
+              operator: 'Include'
+              values: ['*']
+            }
+          ]
           failingPeriods: {
             numberOfEvaluationPeriods: 1
             minFailingPeriodsToAlert: 1

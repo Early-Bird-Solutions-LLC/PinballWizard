@@ -1,7 +1,9 @@
 <#
 .SYNOPSIS
-    Proves each of the 5 PinballWizard alert rules by injecting synthetic
-    App Insights telemetry directly via the v2/track REST endpoint.
+    Proves each of the 6 PinballWizard alert rules. Alerts 1-5 are proven by
+    injecting synthetic App Insights telemetry via the v2/track REST endpoint;
+    alert 6 reads Log Analytics container logs and CANNOT use that path, so it
+    is proven differently (see step 6).
 
 .DESCRIPTION
     Sends telemetry events to the App Insights workspace that push each metric
@@ -22,6 +24,8 @@
       3. pinwiz-alert-daily-cost        — customMetrics: pinwiz.ai.cost_usd_cents
       4. pinwiz-alert-dead-letters      — customMetrics: pinwiz.rag.changefeed_dead_letter_total
       5. pinwiz-alert-availability      — availabilityResults: synthetic failures
+      6. pinwiz-alert-aca-job-failure    — ContainerAppSystemLogs_CL: real job execution
+                                           (NOT injectable via v2/track — see step 6)
 
 .PARAMETER IKey
     App Insights instrumentation key. Defaults to the dev workspace key.
@@ -30,12 +34,18 @@
     App Insights ingestion endpoint. Defaults to the East US 2 endpoint.
 
 .PARAMETER AlertIndex
-    If specified, runs only that alert (1–5). Useful for re-running a single
+    If specified, runs only that alert (1–6). Useful for re-running a single
     proof without re-triggering all alerts.
+
+.PARAMETER ResourceGroup
+    Resource group holding the Log Analytics workspace. Step 6 only.
+
+.PARAMETER WorkspaceName
+    Log Analytics workspace backing the ACA job logs. Step 6 only.
 
 .EXAMPLE
     pwsh ./infra/scripts/Invoke-AlertProof.ps1
-    Runs all 5 alert proofs in sequence.
+    Runs all 6 alert proofs in sequence.
 
 .EXAMPLE
     pwsh ./infra/scripts/Invoke-AlertProof.ps1 -AlertIndex 1
@@ -46,7 +56,12 @@
 param(
     [string]$IKey             = 'c275b795-18b2-4d26-81a9-14e7aa0e6401',
     [string]$IngestionEndpoint = 'https://eastus2-3.in.applicationinsights.azure.com',
-    [int]$AlertIndex          = 0   # 0 = all
+    [int]$AlertIndex          = 0,  # 0 = all
+
+    # Step 6 only. That alert reads Log Analytics rather than App Insights, so it
+    # needs the workspace (and an authenticated az session) instead of $IKey.
+    [string]$ResourceGroup    = 'rg-pinwiz-shared-dev',
+    [string]$WorkspaceName    = 'pinwiz-law-dev'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -199,11 +214,67 @@ if ($AlertIndex -eq 0 -or $AlertIndex -eq 5) {
     Write-Host "  NOTE: this is the slowest alert — may take up to 60 min after injection." -ForegroundColor Yellow
 }
 
+# =============================================================================
+# Alert 6 — pinwiz-alert-aca-job-failure
+# Query: ContainerAppSystemLogs_CL | JobName_s startswith "pinwiz-job-"
+#                                  | "Saw completed job" + "condition: Failed"
+# Threshold: failCount > 0, split by JobName_s
+# Eval: daily (1-day window, autoMitigate off => one email per failing night)
+#
+# This alert CANNOT be proven the way alerts 1-5 are. The v2/track endpoint
+# writes App Insights telemetry; this alert reads ContainerAppSystemLogs_CL, a
+# Log Analytics custom table populated by Container Apps' own log streaming.
+# There is no way to push a row into it from here. The two honest options are
+# to let a real job fail, or to stand up a DCR + Logs Ingestion API endpoint
+# for the table (not currently wired).
+#
+# So this step does not inject anything. It evaluates the alert's own predicate
+# against the live workspace and tells the operator where they stand. That is a
+# real proof of the query - which is exactly what was broken before: the
+# predecessor rule filtered ACA *job* logs on ContainerAppName_s (empty for
+# jobs; they populate JobName_s), so it matched zero rows forever and sat
+# silent through 7/7 failed linker nights. It was absent from this script, so
+# nothing ever asked it to prove itself.
+# =============================================================================
+if ($AlertIndex -eq 0 -or $AlertIndex -eq 6) {
+    Write-Host "`n[6/6] Checking pinwiz-alert-aca-job-failure predicate against live logs..." -ForegroundColor Cyan
+    Write-Host "  (no injection possible — this alert reads ContainerAppSystemLogs_CL)" -ForegroundColor DarkGray
+
+    $kql = 'ContainerAppSystemLogs_CL | where TimeGenerated > ago(1d) | where JobName_s startswith "pinwiz-job-" | where Log_s startswith "Saw completed job" | where Log_s contains "condition: Failed" | summarize failCount = count() by JobName_s'
+    $wsGuid = az monitor log-analytics workspace show -g $ResourceGroup -n $WorkspaceName --query customerId -o tsv 2>$null
+
+    if (-not $wsGuid) {
+        Write-Host "  SKIPPED: could not resolve the Log Analytics workspace GUID." -ForegroundColor Red
+        Write-Host "  This step needs an authenticated az session (AZURE_CONFIG_DIR set for the pinwiz org)." -ForegroundColor Red
+        Write-Host "  Do NOT record this alert as proven." -ForegroundColor Red
+    }
+    else {
+        $result = az monitor log-analytics query -w $wsGuid --analytics-query $kql -o json 2>$null | ConvertFrom-Json
+        if ($result -and $result.Count -gt 0) {
+            Write-Host "  Predicate MATCHES — the alert condition is already true right now:" -ForegroundColor Yellow
+            foreach ($row in $result) {
+                Write-Host ("    {0}  failCount={1}" -f $row.JobName_s, $row.failCount) -ForegroundColor Yellow
+            }
+            Write-Host "  Expect an email within 24h: 'PinballWizard — ACA Job failed'." -ForegroundColor Yellow
+            Write-Host "  Receipt of that email is the proof. Record the timestamp in decision-log.md." -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "  Predicate matches nothing in the last 24h — every job is currently healthy." -ForegroundColor Green
+            Write-Host "  That is good news, but it means the alert is NOT proven by this run." -ForegroundColor Yellow
+            Write-Host "  To prove it, induce one real failure, e.g.:" -ForegroundColor Yellow
+            Write-Host "    az containerapp job start -g $ResourceGroup -n <a pinwiz-job-*> \" -ForegroundColor DarkGray
+            Write-Host "      --image <an image whose entrypoint exits non-zero>" -ForegroundColor DarkGray
+            Write-Host "  then re-run: pwsh ./infra/scripts/Invoke-AlertProof.ps1 -AlertIndex 6" -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "`n============================================================" -ForegroundColor Cyan
 Write-Host "Synthetic telemetry injected. Expected email timeline:" -ForegroundColor Cyan
 Write-Host "  ~5 min  — latency, 5xx, dead-letters alerts" -ForegroundColor White
 Write-Host "  ~15 min — daily cost alert" -ForegroundColor White
 Write-Host "  ~60 min — availability alert (1-hour eval cycle)" -ForegroundColor White
+Write-Host "  ~24 h   — ACA job failure alert (daily eval; not injected, see step 6)" -ForegroundColor White
 Write-Host "" -ForegroundColor White
 Write-Host "Record each receipt timestamp in docs/decision-log.md." -ForegroundColor White
 Write-Host "After proof, synthetic data ages out of the 48-h window automatically." -ForegroundColor White
