@@ -1895,8 +1895,25 @@ resource alertAcaJobFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
     description: 'A scheduled pinwiz-job-* Container App Job completed with condition Failed. The alert dimension names the job. Investigate via az containerapp job execution list -n <job>.'
     severity: 2
     enabled: true
-    evaluationFrequency: 'PT1H'
-    windowSize: 'PT2880M'
+    // Daily evaluation over a matching 1-day window, with autoMitigate OFF, gives
+    // exactly one email per failing night per job — which is the cadence the jobs
+    // themselves run at.
+    //
+    // The inherited PT1H / PT2880M pairing was wrong for a nightly job in a way
+    // that matters: autoMitigate defaults to TRUE, so once the alert fired it
+    // stayed active and suppressed re-notification for as long as any failure
+    // remained in the 48-hour window. A job failing every night keeps the window
+    // permanently dirty, so you would get ONE email ever and then silence — for
+    // the linker that would have been a single mail covering 7 consecutive failed
+    // nights. Turning autoMitigate off while leaving the hourly frequency would
+    // have been worse in the other direction: 48 emails a day, per job.
+    //
+    // Keeping windowSize equal to evaluationFrequency is what makes it
+    // exactly-once — an overlapping window would re-report the same failure on
+    // consecutive evaluations.
+    evaluationFrequency: 'P1D'
+    windowSize: 'P1D'
+    autoMitigate: false
     scopes: [logAnalytics.id]
     criteria: {
       allOf: [
