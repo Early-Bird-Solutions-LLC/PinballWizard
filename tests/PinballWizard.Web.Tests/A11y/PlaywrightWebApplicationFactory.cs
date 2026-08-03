@@ -158,18 +158,67 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
         // Random loopback port; actual address is read from IServerAddressesFeature.
         builder.WebHost.ConfigureKestrel(opts => opts.Listen(System.Net.IPAddress.Loopback, 0));
 
+        // Serve the real stylesheets (#790). WITHOUT this the host has no web root
+        // (there is no wwwroot under the test project's bin), so every request for
+        // app.css / PinballWizard.Web.styles.css / _content/MudBlazor/MudBlazor.min.css
+        // fell through to the Blazor catch-all route and was answered with the HTML
+        // error page — at 200 OK, content-type text/html. The browser parsed ~48KB of
+        // HTML as CSS, yielding 8 CSS rules in total, and axe scanned a completely
+        // unstyled DOM. Any CSS-dependent rule (target-size, and the planned overflow
+        // invariants) therefore could not fail for the right reason, and a status-code
+        // check would NOT have caught it — only a computed-style probe does.
+        //
+        // Two things had to be true for the assets to load, and neither was:
+        //
+        // 1. WebApplication.CreateBuilder calls UseStaticWebAssets automatically ONLY in
+        //    the Development environment. This host sets no env vars, so it resolves to
+        //    Production and the call never happened.
+        // 2. Calling UseStaticWebAssets() alone is still not enough here. Per
+        //    StaticWebAssetsLoader.ResolveManifest, with no explicit configuration key it
+        //    looks for "{environment.ApplicationName}.staticwebassets.runtime.json" — and
+        //    under `dotnet test` the entry assembly is the VSTest *testhost*, so
+        //    ApplicationName is "testhost" and it hunts for a manifest that does not
+        //    exist. On a miss it returns null SILENTLY ("a missing manifest might simply
+        //    mean the feature is not enabled"), so the failure is invisible.
+        //
+        // Hence the explicit manifest path below, plus a hard assert: a silent no-op is
+        // precisely the failure mode this issue exists to eliminate, so if the manifest
+        // ever stops being copied the suite must break loudly rather than quietly resume
+        // scanning unstyled pages.
+        builder.WebHost.UseSetting(WebHostDefaults.StaticWebAssetsKey, ResolveManifest("runtime"));
+        builder.WebHost.UseStaticWebAssets();
+
         var app = builder.Build();
 
-        app.UseStaticFiles();
         app.UseAntiforgery();
         app.UseAuthentication();
         app.UseAuthorization();
 
-        // MapStaticAssets() requires a staticwebassets.endpoints.json manifest
-        // that only exists in the published Web project, not in the test host.
-        // For SSR accessibility testing we don't need fingerprinted static assets —
-        // axe runs on the server-rendered HTML (DOMContentLoaded) before Blazor.js
-        // initialises, which is the content screen readers and crawlers encounter.
+        // Note: this previously read "MapStaticAssets() requires a
+        // staticwebassets.endpoints.json manifest that only exists in the published
+        // Web project, not in the test host." That was wrong — the test bin carries
+        // its own PinballWizard.Web.Tests.staticwebassets.endpoints.json — and the
+        // belief that static assets were simply unavailable here is what let the
+        // unstyled-DOM false-green survive (#790).
+        //
+        // MapStaticAssets serves the stylesheets, mirroring Program.cs:409. A
+        // UseStaticFiles() call used to sit above and has been removed: it was dead
+        // middleware, and that is the second half of the #790 harness bug.
+        // StaticFileMiddleware declines whenever routing has already selected an
+        // endpoint
+        // (StaticFileMiddleware.ValidateNoEndpointDelegate — "context.GetEndpoint()
+        // ?.RequestDelegate is null"), and MapRazorComponents' catch-all "/{**slug}"
+        // route matches literally every path, /app.css included. So the request skipped
+        // the file middleware, fell through to the catch-all, and was answered with the
+        // rendered HTML error page at 200 OK. There is no path on which UseStaticFiles
+        // could ever have fired here. MapStaticAssets registers real endpoints, which
+        // outrank the catch-all and win the route match.
+        //
+        // Axe still runs on the server-rendered HTML at DOMContentLoaded, before
+        // Blazor.js initialises — that is the content screen readers and crawlers
+        // encounter — but it now runs against it *styled*.
+        app.MapStaticAssets(ResolveManifest("endpoints")).AllowAnonymous();
+
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode()
             .AddInteractiveWebAssemblyRenderMode()
@@ -177,6 +226,32 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
 
         _app = app;
         await _app.StartAsync();
+    }
+
+    // Locates a static-web-assets manifest in the test output ("runtime" or "endpoints").
+    //
+    // Passed explicitly because the framework's own lookup cannot find it here: both
+    // StaticWebAssetsLoader and MapStaticAssets default to
+    // "{ApplicationName}.staticwebassets.<kind>.json", and under `dotnet test` the entry
+    // assembly is the VSTest testhost — so ApplicationName is "testhost" and the lookup
+    // misses. StaticWebAssetsLoader treats a miss as "feature not enabled" and returns
+    // null SILENTLY, which is how the unstyled-DOM false-green stayed invisible (#790).
+    //
+    // The throw is therefore the point: if the manifest ever stops being copied to the
+    // output, this suite must fail loudly rather than quietly go back to scanning
+    // unstyled pages and reporting green.
+    private static string ResolveManifest(string kind)
+    {
+        var name = typeof(PlaywrightWebApplicationFactory).Assembly.GetName().Name;
+        var path = Path.Combine(AppContext.BaseDirectory, $"{name}.staticwebassets.{kind}.json");
+
+        if (!File.Exists(path))
+            throw new InvalidOperationException(
+                $"Static web assets '{kind}' manifest not found at '{path}'. Without it this host "
+                + "serves no stylesheets, and every CSS-dependent accessibility assertion silently "
+                + "passes against an unstyled DOM (#790).");
+
+        return path;
     }
 
     public async Task DisposeAsync()

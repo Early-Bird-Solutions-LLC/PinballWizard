@@ -281,6 +281,18 @@ public sealed class DmdClassicThemeContractTests
 // Spec authority: docs/ui/themes/sibling-themes-overview.md § Paper.
 //
 // Any palette change must update both CreatePaper() AND these constants together.
+//
+// AccentPrimary and Success were deepened for WCAG 1.4.3 in #790. The original spec
+// values failed the 4.5:1 body-text minimum on Paper's own backgrounds — copper
+// #b8763e measured 3.26:1 on --pw-bg-base, and #1a8a45 measured 3.9:1 as text and
+// 4.4:1 as a fill behind white. They had read as compliant only because the
+// accessibility gate was scanning an unstyled DOM and could not evaluate colour at
+// all; the numbers above are axe's, taken once that was fixed.
+//
+// Paper is the DEFAULT theme (UserPreferencesService.CurrentTheme), so this affected
+// every user who never opened Settings. The external design handoff
+// (design_handoff_pinwiz_themes/README.md) is not in this repo and still carries the
+// original values — it needs the same correction applied at source.
 public static class PaperTheme
 {
     public const string CssClass            = "theme-paper";
@@ -289,10 +301,10 @@ public static class PaperTheme
     public const string AppbarBackground    = "#1a1410";
     public const string TextPrimary         = "#1a1408";
     public const string TextSecondary       = "#5c5042";
-    public const string AccentPrimary       = "#b8763e";
+    public const string AccentPrimary       = "#8e5b30";   // was #b8763e — 3.26:1 -> 5.05:1
     public const string AccentGrounded      = "#1f6f54";
     public const string BorderQuiet         = "#d8cdb5";
-    public const string Success             = "#1a8a45";
+    public const string Success             = "#16763b";   // was #1a8a45 — 3.9:1 -> 5.05:1
     public const string Error               = "#c0200e";
 }
 
@@ -307,10 +319,10 @@ public sealed class PaperThemeContractTests
     [InlineData(PaperTheme.BgSurface,        "#faf8f2")]
     [InlineData(PaperTheme.AppbarBackground, "#1a1410")]
     [InlineData(PaperTheme.TextPrimary,      "#1a1408")]
-    [InlineData(PaperTheme.AccentPrimary,    "#b8763e")]
+    [InlineData(PaperTheme.AccentPrimary,    "#8e5b30")]
     [InlineData(PaperTheme.AccentGrounded,   "#1f6f54")]
     [InlineData(PaperTheme.BorderQuiet,      "#d8cdb5")]
-    [InlineData(PaperTheme.Success,          "#1a8a45")]
+    [InlineData(PaperTheme.Success,          "#16763b")]
     [InlineData(PaperTheme.Error,            "#c0200e")]
     public void Token_MatchesSpec(string actual, string expected)
         => Assert.Equal(expected, actual, ignoreCase: true);
@@ -319,8 +331,8 @@ public sealed class PaperThemeContractTests
     [InlineData("AppbarBackground", "#1a1410")]
     [InlineData("Background",       "#f4f1ea")]
     [InlineData("Surface",          "#faf8f2")]
-    [InlineData("Primary",          "#b8763e")]
-    [InlineData("Success",          "#1a8a45")]
+    [InlineData("Primary",          "#8e5b30")]   // deepened for WCAG 1.4.3 (#790)
+    [InlineData("Success",          "#16763b")]   // deepened for WCAG 1.4.3 (#790)
     [InlineData("Error",            "#c0200e")]
     [InlineData("TextPrimary",      "#1a1408")]
     [InlineData("TextSecondary",    "#5c5042")]
