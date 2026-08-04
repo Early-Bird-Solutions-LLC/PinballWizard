@@ -42,7 +42,7 @@
 
 @inject IUserPreferencesService Prefs
 
-<AppPageShell AccessibleTitle="Source detail">
+<AppPageShell AccessibleTitle="Source detail" ChildProvidesHeading="@(_source is not null)">
 
     @if (_loading)
     {
@@ -68,7 +68,7 @@
 
         @* a. Source config + run stats *@
         <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-config">
-            <MudText Typo="Typo.h6" GutterBottom="true">Configuration &amp; run stats</MudText>
+            <MudText Typo="Typo.h6" HtmlTag="h2" GutterBottom="true">Configuration &amp; run stats</MudText>
             <MudStack Spacing="1">
                 @KeyValue("Scraper key", _source.ScraperImplKey)
                 <MudStack Row="true" Spacing="2" Justify="Justify.SpaceBetween">
@@ -121,7 +121,7 @@
          * A null field (or a null PolitenessOverrides) means the global default
          * applies; that is shown explicitly, not as a blank. *@
         <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-politeness">
-            <MudText Typo="Typo.h6" GutterBottom="true">Politeness overrides</MudText>
+            <MudText Typo="Typo.h6" HtmlTag="h2" GutterBottom="true">Politeness overrides</MudText>
             <MudStack Spacing="1">
                 @{ var p = _source.PolitenessOverrides; var po = PolitenessOpts.Value; }
                 @KeyValue("Request delay (ms)", p?.RequestDelayMs?.ToString() ?? $"{po.RequestDelayMs} (default)")
@@ -134,7 +134,7 @@
         @* c. Catalog contribution — null stats = not a manufacturer catalog
          * source (n/a); a thrown read is a section-scoped error (Invariant #17). *@
         <MudPaper Class="pa-4 mb-4 pw-readable" Elevation="2" data-testid="source-catalog">
-            <MudText Typo="Typo.h6" GutterBottom="true">Catalog contribution</MudText>
+            <MudText Typo="Typo.h6" HtmlTag="h2" GutterBottom="true">Catalog contribution</MudText>
             @if (_catalogFailed)
             {
                 <AppErrorAlert data-testid="catalog-load-failed">
@@ -161,7 +161,7 @@
          * isolated: a read failure shows a scoped alert; an empty set is the honest state
          * for sources not yet instrumented (every ISourceScraper source until 5b). *@
         <MudPaper Class="pa-4 mt-4" Elevation="2" data-testid="source-run-history">
-            <MudText Typo="Typo.h6" GutterBottom="true">Run history</MudText>
+            <MudText Typo="Typo.h6" HtmlTag="h2" GutterBottom="true">Run history</MudText>
             @if (_runHistoryFailed)
             {
                 <AppErrorAlert data-testid="run-history-failed">
@@ -182,7 +182,19 @@
                              RowsPerPage="@Prefs.PageSize"
                              data-testid="run-history-table">
                     <Columns>
-                        <HierarchyColumn T="ScrapeRunRecord" />
+                        @* HeaderTemplate, not Title: HierarchyColumn rejects Title (MudBlazor
+                           analyzer MUD0002). Without a header MudBlazor emits an empty <th>
+                           for the expand-toggle column, which axe reports as
+                           empty-table-header — a header cell naming nothing leaves screen
+                           reader users no way to identify the column (#790). The label is
+                           visually hidden because the column is a narrow icon toggle where a
+                           visible caption would look wrong; pw-visually-hidden keeps it in
+                           the accessibility tree, which is the whole point. *@
+                        <HierarchyColumn T="ScrapeRunRecord">
+                            <HeaderTemplate>
+                                <span class="pw-visually-hidden">Expand run details</span>
+                            </HeaderTemplate>
+                        </HierarchyColumn>
                         <TemplateColumn Title="Run (UTC)" HeaderClass="text-right" CellClass="text-right">
                             <CellTemplate>
                                 <MudText Typo="Typo.body2">@context.Item.RunAt.UtcDateTime.ToString("u")</MudText>

@@ -54,8 +54,16 @@
      * in their visual design; the heading is for the document outline and screen
      * readers. Falls back to the last breadcrumb, which names the page and is
      * already supplied in every state.
+     *
+     * ChildProvidesHeading is the escape hatch for pages whose LOADED branch renders
+     * its own AppPageHeader — which is itself an <h1>. Without it the shell's hidden
+     * heading and the page's visible one both render once the data arrives, giving two
+     * competing <h1>s (a generic one, then the real name). axe cannot see that: it
+     * scans at DOMContentLoaded, when these interactive pages still show only their
+     * loading bar, and no axe rule asserts *exactly* one <h1> anyway. So the page must
+     * declare it, which is why this is a parameter rather than something inferred.
      *@
-    @if (Title is null && AccessibleHeading is not null)
+    @if (Title is null && AccessibleHeading is not null && !ChildProvidesHeading)
     {
         <h1 class="pw-visually-hidden">@AccessibleHeading</h1>
     }
@@ -73,6 +81,12 @@
     // Accessible page heading used only when Title is null - i.e. when the page
     // renders no visible header. Defaults to the final breadcrumb.
     [Parameter] public string? AccessibleTitle { get; set; }
+
+    // Set by pages whose loaded branch renders its own AppPageHeader (an <h1>).
+    // Bind it to the loaded condition, not to `true`: while loading / not-found /
+    // load-failed the page has no header of its own, and the shell's hidden heading
+    // is exactly what those states need.
+    [Parameter] public bool ChildProvidesHeading { get; set; }
 
     private string? AccessibleHeading =>
         AccessibleTitle ?? (Breadcrumbs is { Count: > 0 } b ? b[^1].Text : null);

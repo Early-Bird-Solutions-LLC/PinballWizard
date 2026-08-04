@@ -119,8 +119,36 @@ public sealed class AppPageShellTests : AsyncBunitContext
         // The trail renders...
         Assert.Contains("/admin/machines", cut.Markup);
         Assert.Contains("Machines", cut.Markup);
-        // ...without the shell injecting a heading it has no title for.
-        Assert.Empty(cut.FindAll(".mud-typography-h4"));
+
+        // ...and no VISIBLE header is injected, because there is no Title.
+        Assert.Empty(cut.FindAll(".pw-page-title"));
+
+        // A hidden <h1> IS injected, named from the last breadcrumb. Asserted
+        // explicitly: this test previously only checked that the old .mud-typography-h4
+        // was absent and carried a comment claiming the shell "injects no heading",
+        // which stopped being true the moment the hidden-h1 landed. An assertion that
+        // merely confirms something old is gone says nothing about what replaced it.
+        var heading = cut.Find("h1");
+        Assert.Equal("Machines", heading.TextContent.Trim());
+        Assert.Contains("pw-visually-hidden", heading.ClassName);
+    }
+
+    [Fact]
+    public void OmitsHiddenHeading_WhenChildProvidesHeading()
+    {
+        // Detail pages whose loaded branch renders its own AppPageHeader (an <h1>)
+        // set ChildProvidesHeading so the shell stands down. Without this the loaded
+        // state carried TWO <h1>s — the shell's generic hidden one and the page's real
+        // visible one. axe never caught it: it scans at DOMContentLoaded, when these
+        // interactive pages still show only a loading bar, and no axe rule asserts
+        // *exactly* one <h1>.
+        var cut = Render<AppPageShell>(p => p
+            .Add(x => x.AccessibleTitle, "Source detail")
+            .Add(x => x.ChildProvidesHeading, true)
+            .Add(x => x.ChildContent, Body("content")));
+
+        Assert.Empty(cut.FindAll("h1"));
+        cut.Find("[data-testid='shell-body']");
     }
 
     [Fact]

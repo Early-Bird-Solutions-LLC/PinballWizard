@@ -972,12 +972,20 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
 
    min-block-size/min-inline-size rather than width/height so the controls can
    still grow with their content, and the icon stays centred because these are
-   all flex-centred buttons already. */
+   all flex-centred buttons already.
+
+   A bare `.mud-icon-button-size-small` used to close this list. That is not
+   "these five controls" — it is EVERY Size.Small icon button in the app,
+   including MudDataGrid's column-header sort and filter toggles, which would
+   have been forced from 32px to 44px and pushed header rows out of alignment
+   with their data rows. The specific
+   `.mud-menu-icon-button-activator.mud-icon-button-size-small` above already
+   covers the column-options activator this rule actually needed, so the bare
+   selector was both over-broad and redundant. */
 .pw-admin-collapse-toggle,
 [data-testid="nav-rail-toggle"],
 [data-testid="sound-controller-toggle"],
-.mud-menu-icon-button-activator.mud-icon-button-size-small,
-.mud-icon-button-size-small {
+.mud-menu-icon-button-activator.mud-icon-button-size-small {
     min-block-size: 44px;
     min-inline-size: 44px;
 }
