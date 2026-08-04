@@ -242,8 +242,14 @@ public class PlaywrightWebApplicationFactory : IAsyncLifetime
     // unstyled pages and reporting green.
     private static string ResolveManifest(string kind)
     {
+        // Path.GetFileName strips any directory or root component before combining.
+        // Neither input can actually be rooted — an assembly simple name cannot contain
+        // a path separator, and `kind` is a literal at both call sites — so this is
+        // defence in depth rather than a live bug, but it costs nothing and keeps
+        // Path.Combine from ever silently discarding AppContext.BaseDirectory.
         var name = typeof(PlaywrightWebApplicationFactory).Assembly.GetName().Name;
-        var path = Path.Combine(AppContext.BaseDirectory, $"{name}.staticwebassets.{kind}.json");
+        var fileName = Path.GetFileName($"{name}.staticwebassets.{kind}.json");
+        var path = Path.Combine(AppContext.BaseDirectory, fileName);
 
         if (!File.Exists(path))
             throw new InvalidOperationException(
