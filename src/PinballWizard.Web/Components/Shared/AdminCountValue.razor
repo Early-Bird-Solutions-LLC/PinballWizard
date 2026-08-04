@@ -13,7 +13,7 @@
 
 @if (Loading)
 {
-    <MudText Typo="Typo.h5" data-testid="@TestId">
+    <MudText Typo="Typo.h5" HtmlTag="div" data-testid="@TestId">
         <MudProgressCircular Size="Size.Small" Indeterminate="true" />
     </MudText>
 }
@@ -26,7 +26,7 @@ else if (Failed)
 }
 else
 {
-    <MudText Typo="Typo.h5" data-testid="@TestId">@Count?.ToString("N0")</MudText>
+    <MudText Typo="Typo.h5" HtmlTag="div" data-testid="@TestId">@Count?.ToString("N0")</MudText>
 }
 
 @code {

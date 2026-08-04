@@ -46,10 +46,10 @@ else if (_machine is not null)
 {
     @* Header *@
     <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="2" Class="mb-1">
-        <MudText Typo="Typo.h4" data-testid="detail-title">@_machine.Title</MudText>
+        <MudText Typo="Typo.h4" HtmlTag="h2" data-testid="detail-title">@_machine.Title</MudText>
         @if (!string.IsNullOrWhiteSpace(_machine.EditionLabel))
         {
-            <MudText Typo="Typo.h6" Color="Color.Secondary" data-testid="detail-edition">@_machine.EditionLabel</MudText>
+            <MudText Typo="Typo.h6" HtmlTag="div" Color="Color.Secondary" data-testid="detail-edition">@_machine.EditionLabel</MudText>
         }
     </MudStack>
 
@@ -91,7 +91,7 @@ else if (_machine is not null)
     @* ── Edition-sibling strip ─────────────────────────────────────────────── *@
     @if (_siblings.Count > 1) @* Only show if there are actual siblings *@
     {
-        <MudText Typo="Typo.h6" Class="mb-2">Other Editions</MudText>
+        <MudText Typo="Typo.h6" HtmlTag="h3" Class="mb-2">Other Editions</MudText>
 
         @if (IsAdmin && _siblings.Any(s => s.DocCount == 0) && _siblings.Any(s => s.DocCount > 0))
         {
@@ -133,7 +133,7 @@ else if (_machine is not null)
     }
 
     @* ── Linked-documents table ─────────────────────────────────────────────── *@
-    <MudText Typo="Typo.h6" Class="mb-2">Documents</MudText>
+    <MudText Typo="Typo.h6" HtmlTag="h3" Class="mb-2">Documents</MudText>
 
     @if (_docs.Count == 0)
     {
@@ -152,7 +152,11 @@ else if (_machine is not null)
                 <PropertyColumn Property="d => d.DocumentType" Title="Type" Sortable="true" />
                 <TemplateColumn Title="Document">
                     <CellTemplate>
-                        <MudStack Spacing="0">
+                        @* pw-doc-links: stable hook for the target-size rule in app.css.
+                           These two links stack inside one grid cell, so they are
+                           list-like rather than inline-in-a-sentence and SC 2.5.8's
+                           inline exception does not cover them (#790). *@
+                        <MudStack Spacing="0" Class="pw-doc-links">
                             <MudLink Href="@($"/documents/{context.Item.DocumentId}")"
                                      data-testid="detail-doc-link">
                                 @(context.Item.LinkText ?? FileNameFromUrl(context.Item.DocumentUrl))

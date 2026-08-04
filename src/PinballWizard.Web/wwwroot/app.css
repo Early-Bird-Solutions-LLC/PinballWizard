@@ -981,3 +981,22 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
     min-block-size: 44px;
     min-inline-size: 44px;
 }
+
+/* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
+
+   Measured 110x19.9 with only 16px between the two links, against the rule's
+   24x24 minimum and 24px minimum neighbour spacing. They sit stacked in a single
+   grid cell, which makes them list-like rather than inline-in-a-sentence, so the
+   success criterion's inline-link exception does not apply.
+
+   24px, not the 44px used for the icon buttons above: 24x24 is what SC 2.5.8
+   actually requires, and 44px on two stacked links would nearly double every row
+   of the documents table. The icon buttons keep 44px because they are standalone
+   touch targets where the larger figure costs no layout. Giving each link a 24px
+   box also fixes the neighbour-spacing failure, since adjacent 24px boxes put
+   their centres 24px apart. */
+.pw-doc-links .mud-link {
+    min-block-size: 24px;
+    display: inline-flex;
+    align-items: center;
+}

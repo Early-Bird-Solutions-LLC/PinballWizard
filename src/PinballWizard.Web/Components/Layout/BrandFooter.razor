@@ -19,7 +19,14 @@
         @* ── Top row: tagline + link columns ───────────────────────────── *@
         <div class="brand-footer__top">
             <div class="brand-footer__brand-col">
-                <MudText Typo="Typo.h6" Class="brand-footer__logo">
+                @* HtmlTag="div": this is the footer wordmark, not a section heading.
+                   As an <h6> it landed directly after the page <h1> on every route that
+                   renders this footer, so axe's heading-order failed on all of them at
+                   once (#790) — 4 of the 10 sites, from this one element. Typo.h6 is
+                   kept purely for the type scale; decoupling the rendered element from
+                   the visual style is what HtmlTag is for, so this is a semantic change
+                   with no visual change. *@
+                <MudText Typo="Typo.h6" HtmlTag="div" Class="brand-footer__logo">
                     &#x25CF; PinballWizard
                 </MudText>
                 <MudText Typo="Typo.body2" Class="brand-footer__tagline">
