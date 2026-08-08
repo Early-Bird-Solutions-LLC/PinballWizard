@@ -17,3 +17,13 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Azure CLI isolated config dir
+.azure/
+
+# Agent tooling / session artifacts (local only)
+.claude/
+.claude-gates/
+.continue/
+.work-item-context
+*.code-workspace.backup.*
