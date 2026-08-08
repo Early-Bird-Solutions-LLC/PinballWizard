@@ -41,7 +41,7 @@ WORKDIR /src
 # package changes. Copying every csproj + props file first lets `restore`
 # warm the package cache; the source copy (and the slow build) only
 # reruns when actual source changes.
-COPY Directory.Build.props Directory.Packages.props ./
+COPY Directory.Build.props Directory.Packages.props NuGet.Config ./
 COPY src/PinballWizard.Core/PinballWizard.Core.csproj src/PinballWizard.Core/
 COPY src/PinballWizard.Application/PinballWizard.Application.csproj src/PinballWizard.Application/
 COPY src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj src/PinballWizard.Infrastructure/
