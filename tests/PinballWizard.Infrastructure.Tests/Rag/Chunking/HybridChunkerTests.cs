@@ -517,7 +517,12 @@ public sealed class HybridChunkerTests
     {
         // Sanity: each chunk's TokenCount stays within a small slop
         // above TargetTokens (heading prefix is added but bounded).
-        var sut = NewChunker(targetTokens: 256);
+        // The trailing-merge refinement is disabled here so this test
+        // isolates the heading-prefix budget: a merged chunk may legally
+        // exceed TargetTokens by up to MinTrailingChunkTokens, which is a
+        // separate bound pinned by
+        // Chunk_MergedTrailingChunk_StaysWithinTargetPlusFloorPlusPrefix.
+        var sut = NewChunker(targetTokens: 256, minTrailingChunkTokens: 0);
         var pages = new[]
         {
             new ExtractedPage(1, RepeatingFillerParagraph("Setup section content. ", 1500)),
@@ -534,6 +539,134 @@ public sealed class HybridChunkerTests
             Assert.True(chunk.TokenCount <= 256 + 32,
                 $"Chunk token count {chunk.TokenCount} exceeded budget+slop.");
         }
+    }
+
+    [Fact]
+    public void Chunk_TrailingWindowBelowMinTokens_MergedIntoPreviousChunk()
+    {
+        // Refinement #4: the sliding window steps by (Target − Overlap),
+        // so a section whose length lands just past a step boundary emits
+        // a final window that is mostly — sometimes entirely — overlap
+        // already carried by its predecessor. At Target=64/Overlap=16
+        // (step 48) a 113-token section windows to [0,64), [48,112),
+        // [96,113): that last chunk is 17 tokens of which 16 are a
+        // duplicate of the previous chunk, leaving ONE novel token. Such
+        // a chunk still costs an embedding call and competes for a
+        // top-k retrieval slot on a lopsided vector.
+        const int floor = 24;
+        var sut = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: floor);
+        var doc = MakeDoc(
+            ExtractionStatus.Success,
+            pages: [new ExtractedPage(1, SingleTokenWords(113))]);
+
+        var chunks = sut.Chunk(doc, ManualRequest);
+
+        Assert.True(chunks.Count >= 2, $"Fixture must produce ≥2 chunks to exercise the merge; got {chunks.Count}.");
+        Assert.True(
+            chunks[^1].TokenCount >= floor,
+            $"Trailing chunk has {chunks[^1].TokenCount} tokens, below the {floor}-token floor — it should have been merged into its predecessor.");
+    }
+
+    [Fact]
+    public void Chunk_TrailingWindowMerged_RetainsTheTailsNovelContent()
+    {
+        // The merge must EXTEND the predecessor, not discard the tail.
+        // The whole point of the tail window is the sliver of content
+        // past the previous window's end — here a single "zebra" token
+        // after 112 identical filler tokens. Losing it would silently
+        // drop the last words of a section from the index.
+        var sut = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: 24);
+        var doc = MakeDoc(
+            ExtractionStatus.Success,
+            pages: [new ExtractedPage(1, SingleTokenWords(112) + " zebra")]);
+
+        var chunks = sut.Chunk(doc, ManualRequest);
+
+        Assert.Contains("zebra", chunks[^1].Text);
+    }
+
+    [Fact]
+    public void Chunk_MinTrailingChunkTokensZero_LeavesTheUndersizedTailInPlace()
+    {
+        // Ablation switch: 0 disables the refinement so H3 calibration
+        // can measure with/without, matching how the other three
+        // refinements are flagged. Same fixture as the merge test.
+        var merged = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: 24)
+            .Chunk(MakeDoc(ExtractionStatus.Success, pages: [new ExtractedPage(1, SingleTokenWords(113))]), ManualRequest);
+        var unmerged = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: 0)
+            .Chunk(MakeDoc(ExtractionStatus.Success, pages: [new ExtractedPage(1, SingleTokenWords(113))]), ManualRequest);
+
+        Assert.Equal(merged.Count + 1, unmerged.Count);
+        Assert.True(unmerged[^1].TokenCount < 24,
+            $"Disabled floor should leave the {unmerged[^1].TokenCount}-token tail unmerged.");
+    }
+
+    [Fact]
+    public void Chunk_TrailingWindowOnLaterPage_ExtendsMergedChunkPageEnd()
+    {
+        // Provenance (ADR-0019 page-anchored citations): the merge
+        // rewrites the predecessor's PageEnd. If it failed to, a chunk
+        // would cite p.1 while its text ran onto p.2 — a citation
+        // pointing at a page that does not contain the quoted text.
+        // Fixture puts the predecessor window wholly on page 1 and the
+        // undersized tail on page 2.
+        var sut = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: 24);
+        var doc = MakeDoc(
+            ExtractionStatus.Success,
+            pages:
+            [
+                new ExtractedPage(1, SingleTokenWords(112)),
+                new ExtractedPage(2, " zebra"),
+            ]);
+
+        var chunks = sut.Chunk(doc, ManualRequest);
+
+        var last = chunks[^1];
+        Assert.Contains("zebra", last.Text);
+        Assert.Equal(2, last.PageEnd);
+        Assert.Equal(1, last.PageStart);
+        Assert.True(last.PageEnd >= last.PageStart, "Merged chunk page range must not invert.");
+    }
+
+    [Fact]
+    public void Chunk_MergedTrailingChunk_StaysWithinTargetPlusFloorPlusPrefix()
+    {
+        // The merge deliberately trades a slightly-over-target chunk for
+        // the removal of a near-duplicate one, but the overage is
+        // bounded: a merged chunk is the predecessor window plus at most
+        // (floor − 1) novel tail tokens, plus the heading prefix.
+        const int target = 64;
+        const int floor = 24;
+        var sut = NewChunker(targetTokens: target, overlapTokens: 16, minTrailingChunkTokens: floor);
+        var doc = MakeDoc(
+            ExtractionStatus.Success,
+            pages: [new ExtractedPage(1, SingleTokenWords(113))]);
+
+        var chunks = sut.Chunk(doc, ManualRequest);
+
+        foreach (var chunk in chunks)
+        {
+            Assert.True(chunk.TokenCount <= target + floor + 32,
+                $"Chunk token count {chunk.TokenCount} exceeded target({target}) + floor({floor}) + prefix slop.");
+        }
+    }
+
+    [Fact]
+    public void Chunk_SectionEntirelyBelowFloor_StillEmitsItsLoneChunk()
+    {
+        // Documented limitation, pinned so it stays a conscious choice:
+        // the floor governs a section's TRAILING window only. A section
+        // shorter than the floor in total has no predecessor to merge
+        // into, and merging across a section boundary would corrupt
+        // SectionHeading and the page range. Its content is short but
+        // genuine — dropping it would lose text from the index.
+        var sut = NewChunker(targetTokens: 64, overlapTokens: 16, minTrailingChunkTokens: 512);
+        var doc = MakeDoc(
+            ExtractionStatus.Success,
+            pages: [new ExtractedPage(1, "Symptom: flipper is weak. Resolution: rebuild the coil stop.")]);
+
+        var chunk = Assert.Single(sut.Chunk(doc, BulletinRequest));
+        Assert.Contains("coil stop", chunk.Text);
     }
 
     [Fact]
@@ -557,14 +690,38 @@ public sealed class HybridChunkerTests
         int? targetTokens = null,
         int? overlapTokens = null,
         bool? applyHeadingPrefix = null,
-        bool? bulletinTreatAsSingleSection = null)
+        bool? bulletinTreatAsSingleSection = null,
+        int? minTrailingChunkTokens = null)
     {
         var options = new ChunkerOptions();
         if (targetTokens is { } t) options.TargetTokens = t;
         if (overlapTokens is { } o) options.OverlapTokens = o;
         if (applyHeadingPrefix is { } p) options.ApplyHeadingPrefix = p;
         if (bulletinTreatAsSingleSection is { } b) options.BulletinTreatAsSingleSection = b;
+        if (minTrailingChunkTokens is { } m) options.MinTrailingChunkTokens = m;
         return new HybridChunker(Options.Create(options), NullLogger<HybridChunker>.Instance);
+    }
+
+    // Builds text of approximately `count` cl100k_base tokens. " apple"
+    // encodes as exactly one token, so repeating it gives a predictable
+    // token length — necessary to land a section deliberately just past
+    // a window-step boundary.
+    //
+    // This is the one fixture in the file coupled to the tokenizer's
+    // vocabulary rather than to chunker behavior. A Microsoft.ML.Tokenizers
+    // bump that changed the cl100k_base encoding of " apple" would shift
+    // the token counts and could stop the trailing-merge tests from
+    // landing on the boundary they target — they would still pass, but
+    // vacuously. If those tests ever go green after a tokenizer bump
+    // without the merge running, re-derive `count` here first.
+    private static string SingleTokenWords(int count)
+    {
+        var sb = new StringBuilder(capacity: count * 6);
+        for (var i = 0; i < count; i++)
+        {
+            sb.Append(" apple");
+        }
+        return sb.ToString();
     }
 
     private static ExtractedDocument MakeDoc(
