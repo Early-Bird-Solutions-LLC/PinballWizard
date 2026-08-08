@@ -1,0 +1,122 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-pinballwizard-prod
+  ACR_NAME: pwacr
+  BICEP_FILE: infra/main.bicep
+  PARAMS_FILE: infra/environments/prod.bicepparam
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore PinballWizard.slnx
+
+      - name: Build
+        run: dotnet build PinballWizard.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test PinballWizard.slnx --no-build --configuration Release --verbosity normal
+
+  build-images:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Set image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push scraper image
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-scraper:${{ steps.meta.outputs.tag }} -f Dockerfile.scraper .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-scraper:${{ steps.meta.outputs.tag }}
+
+      - name: Build and push processor image
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-processor:${{ steps.meta.outputs.tag }} -f Dockerfile.processor .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-processor:${{ steps.meta.outputs.tag }}
+
+      - name: Build and push web image
+        run: |
+          docker build -t ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-web:${{ steps.meta.outputs.tag }} -f Dockerfile.web .
+          docker push ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-web:${{ steps.meta.outputs.tag }}
+
+  deploy-infra:
+    needs: build-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep via deployment stack
+        run: |
+          az stack group create \
+            --name pinballwizard \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters ${{ env.PARAMS_FILE }} \
+            --parameters imageTag=${{ needs.build-images.outputs.image-tag }} \
+            --deny-settings-mode denyWriteAndDelete \
+            --action-on-unmanage deleteAll \
+            --yes
+
+      - name: Update scraper revision
+        run: |
+          az containerapp update \
+            --name pw-scraper-prod \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-scraper:${{ needs.build-images.outputs.image-tag }}
+
+      - name: Update processor revision
+        run: |
+          az containerapp update \
+            --name pw-processor-prod \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-processor:${{ needs.build-images.outputs.image-tag }}
+
+      - name: Update web revision
+        run: |
+          az containerapp update \
+            --name pw-web-prod \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/pinballwizard-web:${{ needs.build-images.outputs.image-tag }}
