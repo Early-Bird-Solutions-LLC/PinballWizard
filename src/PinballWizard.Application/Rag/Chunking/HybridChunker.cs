@@ -8,8 +8,8 @@ using PinballWizard.Core.Models;
 namespace PinballWizard.Application.Rag.Chunking;
 
 // Phase 4 hybrid chunker (ADR-0019) — token-budgeted chunks within
-// heading-bounded sections. Three customer-delight refinements layer on
-// top of the ADR's baseline algorithm:
+// heading-bounded sections. Four refinements layer on top of the ADR's
+// baseline algorithm:
 //
 //   1. Repeating header/footer detection + strip. Stern manuals carry a
 //      running header on every page ("STERN PINBALL — GODZILLA OPS
@@ -32,7 +32,17 @@ namespace PinballWizard.Application.Rag.Chunking;
 //      boundaries — a query for "X symptom" retrieves the whole
 //      bulletin, not just the Symptom paragraph.
 //
-// All three refinements are switchable via ChunkerOptions so H3
+//   4. Undersized trailing window merged into its predecessor. The
+//      window steps by (Target − Overlap), so a section whose length
+//      lands just past a step boundary emits a final chunk that is
+//      mostly — sometimes entirely — overlap already carried by the
+//      previous chunk. At the defaults (step 461) a 974-token section
+//      yields a 52-token tail of which 51 are duplicate: one novel
+//      token, but a full embedding call and a top-k retrieval slot
+//      contested on a lopsided vector. Below MinTrailingChunkTokens the
+//      tail is folded into the preceding chunk of the same section.
+//
+// All four refinements are switchable via ChunkerOptions so H3
 // calibration can ablate each independently.
 public sealed class HybridChunker : IChunker
 {
@@ -270,6 +280,14 @@ public sealed class HybridChunker : IChunker
         var step = Math.Max(1, _options.TargetTokens - _options.OverlapTokens);
         var chunkIndex = startingIndex;
 
+        // Clamp so a floor configured at or above TargetTokens can't
+        // swallow every window into one unbounded chunk.
+        var trailingFloor = Math.Min(_options.MinTrailingChunkTokens, _options.TargetTokens - 1);
+
+        // Char offset where the most recently emitted chunk of THIS
+        // section began — the merge target for an undersized tail.
+        var lastChunkCharStart = -1;
+
         for (var windowStart = 0; windowStart < tokens.Count; windowStart += step)
         {
             var windowEnd = Math.Min(windowStart + _options.TargetTokens, tokens.Count);
@@ -281,6 +299,42 @@ public sealed class HybridChunker : IChunker
             {
                 if (windowEnd >= tokens.Count) break;
                 continue;
+            }
+
+            var isFinalWindow = windowEnd >= tokens.Count;
+
+            // Refinement #4: fold an undersized trailing window into the
+            // preceding chunk rather than emitting a near-duplicate. Only
+            // when this section already emitted a chunk to merge into —
+            // a section whose entire content is below the floor keeps its
+            // lone small chunk (that text is short, not duplicated, and
+            // merging across a section boundary would corrupt
+            // SectionHeading and the page range).
+            if (isFinalWindow
+                && trailingFloor > 0
+                && (windowEnd - windowStart) < trailingFloor
+                && chunkIndex > startingIndex
+                && lastChunkCharStart >= 0)
+            {
+                var mergedBody = sectionText[lastChunkCharStart..charEnd];
+                var (mergedText, mergedTokenCount) = ApplyHeadingPrefixIfEnabled(
+                    section.Heading, mergedBody, _tokenizer.CountTokens(mergedBody));
+
+                // Sections are chunked sequentially and `chunkIndex >
+                // startingIndex` proves this section already emitted at
+                // least one chunk, so output[^1] is this section's own
+                // predecessor — never a previous section's last chunk.
+                output[^1] = output[^1] with
+                {
+                    Text = mergedText,
+                    PageEnd = PageAtChar(pageMap, charEnd - 1),
+                    TokenCount = mergedTokenCount,
+                };
+
+                _logger.LogDebug(
+                    "Merged {TailTokens}-token trailing window into the preceding chunk of section '{Section}' (floor {Floor}); merged chunk is {MergedTokens} tokens.",
+                    windowEnd - windowStart, section.Heading, trailingFloor, mergedTokenCount);
+                break;
             }
 
             var pageStart = PageAtChar(pageMap, charStart);
@@ -297,7 +351,9 @@ public sealed class HybridChunker : IChunker
                 PageEnd: pageEnd,
                 TokenCount: finalTokenCount));
 
-            if (windowEnd >= tokens.Count)
+            lastChunkCharStart = charStart;
+
+            if (isFinalWindow)
             {
                 break;
             }
