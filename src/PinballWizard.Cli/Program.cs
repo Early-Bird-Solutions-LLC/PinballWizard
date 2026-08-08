@@ -80,6 +80,11 @@ var installPlaywrightOption = new Option<bool>("--install-playwright")
     Description = "Install Playwright browsers and exit"
 };
 
+var playwrightWithDepsOption = new Option<bool>("--with-deps")
+{
+    Description = "With --install-playwright, also install Chromium's OS library dependencies. Requires root; intended for container image builds, where downloading the browser alone leaves it unable to launch."
+};
+
 var ensureCosmosContainersOption = new Option<bool>("--ensure-cosmos-containers")
 {
     Description = "Run CosmosBootstrapper.EnsureCreatedAsync against the configured Cosmos account: creates the database + every container in CosmosOptions.Containers if missing, asserts partition-key paths match. Idempotent. Useful as a post-deploy smoke-test that the configured Cosmos endpoint + Managed Identity / Aspire connection string actually work end-to-end. Requires Cosmos to be configured (ConnectionStrings:cosmos OR Cosmos:AccountEndpoint)."
@@ -294,6 +299,7 @@ var rootCommand = new RootCommand("PinballWizard — Stern Pinball content scrap
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(dryRunOption);
 rootCommand.Options.Add(installPlaywrightOption);
+rootCommand.Options.Add(playwrightWithDepsOption);
 rootCommand.Options.Add(ensureCosmosContainersOption);
 rootCommand.Options.Add(seedIngestionSourcesOption);
 rootCommand.Options.Add(seedFeaturedMachinesOption);
@@ -338,6 +344,7 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var source = parseResult.GetValue(sourceOption);
     var dryRun = parseResult.GetValue(dryRunOption);
     var installPw = parseResult.GetValue(installPlaywrightOption);
+    var installPwWithDeps = parseResult.GetValue(playwrightWithDepsOption);
     var ensureCosmos = parseResult.GetValue(ensureCosmosContainersOption);
     var seedIngestionSources = parseResult.GetValue(seedIngestionSourcesOption);
     var seedFeaturedMachines = parseResult.GetValue(seedFeaturedMachinesOption);
@@ -377,11 +384,24 @@ rootCommand.SetAction(async (ParseResult parseResult, CancellationToken cancella
     var captureGoldenSet = parseResult.GetValue(captureGoldenSetOption);
     var captureReconcilerParity = parseResult.GetValue(captureReconcilerParityOption);
 
+    // --with-deps only modifies --install-playwright. Accepting it silently on its
+    // own would let a mistyped or reordered container build look like it installed
+    // OS dependencies when it did nothing at all — the same class of quiet failure
+    // this change exists to fix.
+    if (installPwWithDeps && !installPw)
+    {
+        Console.Error.WriteLine("--with-deps has no effect without --install-playwright.");
+        Environment.ExitCode = 2;
+        return;
+    }
+
     // Handle --install-playwright
     if (installPw)
     {
-        Console.WriteLine("Installing Playwright browsers...");
-        PlaywrightFactory.InstallBrowsers();
+        Console.WriteLine(installPwWithDeps
+            ? "Installing Playwright browsers and OS dependencies..."
+            : "Installing Playwright browsers...");
+        PlaywrightFactory.InstallBrowsers(installPwWithDeps);
         Console.WriteLine("Playwright browsers installed successfully.");
         return;
     }
