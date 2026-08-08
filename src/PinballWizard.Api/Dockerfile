@@ -16,7 +16,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Directory.Build.props Directory.Packages.props ./
+COPY Directory.Build.props Directory.Packages.props NuGet.Config ./
 COPY src/PinballWizard.Core/PinballWizard.Core.csproj                         src/PinballWizard.Core/
 COPY src/PinballWizard.Application/PinballWizard.Application.csproj           src/PinballWizard.Application/
 COPY src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj     src/PinballWizard.Infrastructure/
