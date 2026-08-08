@@ -1,0 +1,36 @@
+@inject NavigationManager Navigation
+
+<MudCard Elevation="2" Class="game-card" Style="cursor: pointer;" @onclick="NavigateToGame">
+    <MudCardHeader>
+        <CardHeaderContent>
+            <MudText Typo="Typo.h6">@Game.Title</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @Game.Manufacturer @(Game.Year.HasValue ? $"({Game.Year})" : "")
+            </MudText>
+        </CardHeaderContent>
+        <CardHeaderActions>
+            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@(Game.MachineType ?? "Unknown")</MudChip>
+        </CardHeaderActions>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            @foreach (var edition in Game.Editions.Take(3))
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default">@edition.Name</MudChip>
+            }
+        </MudStack>
+        <MudText Typo="Typo.body2" Class="mt-2">
+            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" Class="mr-1" />
+            @Game.DocumentCount documents
+        </MudText>
+    </MudCardContent>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public GameSummary Game { get; set; } = null!;
+
+    private void NavigateToGame()
+    {
+        Navigation.NavigateTo($"/games/{Game.Slug}");
+    }
+}

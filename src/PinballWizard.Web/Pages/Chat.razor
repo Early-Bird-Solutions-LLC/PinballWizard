@@ -1,0 +1,11 @@
+@page "/chat"
+@page "/chat/{ConversationId}"
+
+<PageTitle>Chat — PinWiz.ai</PageTitle>
+
+<ChatContainer ConversationId="@ConversationId" InitialQuery="@_initialQuery" />
+
+@code {
+    [Parameter] public string? ConversationId { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? _initialQuery { get; set; }
+}

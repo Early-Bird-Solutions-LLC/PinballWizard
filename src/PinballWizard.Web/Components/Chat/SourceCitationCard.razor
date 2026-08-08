@@ -1,0 +1,35 @@
+<MudExpansionPanel Text="@HeaderText" MaxHeight="200" Class="source-citation-card mb-2">
+    <MudList T="SourceCitation" Dense="true">
+        @foreach (var source in Sources)
+        {
+            <MudListItem T="SourceCitation" Icon="@Icons.Material.Filled.Description">
+                <MudStack Spacing="0">
+                    <MudLink Href="@source.Url" Target="_blank" Typo="Typo.body2">
+                        [@source.Index] @source.Title
+                    </MudLink>
+                    <MudStack Row="true" Spacing="2">
+                        @if (!string.IsNullOrEmpty(source.DocumentType))
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">@source.DocumentType</MudChip>
+                        }
+                        @if (!string.IsNullOrEmpty(source.GameTitle))
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary">@source.GameTitle</MudChip>
+                        }
+                    </MudStack>
+                </MudStack>
+            </MudListItem>
+        }
+    </MudList>
+</MudExpansionPanel>
+
+@code {
+    [Parameter] public List<SourceCitation> Sources { get; set; } = [];
+
+    private string HeaderText => Sources.Count switch
+    {
+        0 => "No sources",
+        1 => "1 source",
+        _ => $"{Sources.Count} sources"
+    };
+}

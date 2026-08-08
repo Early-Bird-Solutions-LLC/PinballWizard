@@ -1,0 +1,127 @@
+@page "/games/{Slug}"
+@inject IGameCatalogService GameCatalog
+@inject NavigationManager Navigation
+
+<PageTitle>@(_game?.Title ?? "Game") — PinWiz.ai</PageTitle>
+
+@if (_game is null)
+{
+    @if (_loaded)
+    {
+        <MudContainer MaxWidth="MaxWidth.Medium" Class="py-8">
+            <MudAlert Severity="Severity.Warning">Game not found.</MudAlert>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/games" Class="mt-4">
+                Back to Games
+            </MudButton>
+        </MudContainer>
+    }
+    else
+    {
+        <MudContainer MaxWidth="MaxWidth.Medium" Class="py-8">
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+        </MudContainer>
+    }
+}
+else
+{
+    <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+        <MudBreadcrumbs Items="_breadcrumbs" />
+
+        <MudGrid Class="mt-4">
+            <MudItem xs="12" md="8">
+                <MudText Typo="Typo.h3" GutterBottom="true">@_game.Title</MudText>
+                <MudStack Row="true" Spacing="2" Class="mb-4">
+                    @if (_game.Manufacturer is not null)
+                    {
+                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled">@_game.Manufacturer</MudChip>
+                    }
+                    @if (_game.Year.HasValue)
+                    {
+                        <MudChip T="string" Color="Color.Secondary" Variant="Variant.Filled">@_game.Year</MudChip>
+                    }
+                    @if (_game.MachineType is not null)
+                    {
+                        <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">@_game.MachineType</MudChip>
+                    }
+                </MudStack>
+
+                @if (_game.Editions.Count > 0)
+                {
+                    <MudText Typo="Typo.h5" GutterBottom="true" Class="mt-6">Editions</MudText>
+                    <MudGrid>
+                        @foreach (var edition in _game.Editions)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudCard Elevation="1">
+                                    <MudCardContent>
+                                        <MudText Typo="Typo.h6">@edition.Name</MudText>
+                                        @if (!string.IsNullOrEmpty(edition.Msrp))
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">MSRP: @edition.Msrp</MudText>
+                                        }
+                                        @if (!string.IsNullOrEmpty(edition.Availability))
+                                        {
+                                            <MudText Typo="Typo.caption">@edition.Availability</MudText>
+                                        }
+                                        @if (edition.LimitedQuantity.HasValue)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">Limited: @edition.LimitedQuantity units</MudChip>
+                                        }
+                                    </MudCardContent>
+                                </MudCard>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudCard Elevation="2">
+                    <MudCardContent>
+                        <MudText Typo="Typo.h6" GutterBottom="true">Quick Facts</MudText>
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <tbody>
+                                <tr><td>Documents</td><td>@_game.DocumentCount</td></tr>
+                                <tr><td>Editions</td><td>@_game.Editions.Count</td></tr>
+                                @if (_game.MachineType is not null)
+                                {
+                                    <tr><td>Type</td><td>@_game.MachineType</td></tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.Chat"
+                                   Href="@($"/chat?q={Uri.EscapeDataString($"Tell me about {_game.Title}")}")">
+                            Ask about this game
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    </MudContainer>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    private GameSummary? _game;
+    private bool _loaded;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _game = await GameCatalog.GetGameBySlugAsync(Slug);
+        _loaded = true;
+
+        _breadcrumbs =
+        [
+            new BreadcrumbItem("Home", "/"),
+            new BreadcrumbItem("Games", "/games"),
+            new BreadcrumbItem(_game?.Title ?? "Not Found", null, disabled: true)
+        ];
+    }
+}

@@ -1,0 +1,30 @@
+<MudTooltip Text="@StatusText">
+    <div class="connection-indicator @StatusClass" aria-label="@StatusText"></div>
+</MudTooltip>
+
+@code {
+    [Parameter] public ConnectionState State { get; set; } = ConnectionState.Disconnected;
+
+    private string StatusText => State switch
+    {
+        ConnectionState.Connected => "Connected",
+        ConnectionState.Reconnecting => "Reconnecting...",
+        ConnectionState.Disconnected => "Disconnected",
+        _ => "Unknown"
+    };
+
+    private string StatusClass => State switch
+    {
+        ConnectionState.Connected => "connected",
+        ConnectionState.Reconnecting => "reconnecting",
+        ConnectionState.Disconnected => "disconnected",
+        _ => "disconnected"
+    };
+
+    public enum ConnectionState
+    {
+        Connected,
+        Reconnecting,
+        Disconnected
+    }
+}

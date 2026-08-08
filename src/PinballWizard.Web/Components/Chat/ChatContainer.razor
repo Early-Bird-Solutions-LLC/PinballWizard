@@ -1,0 +1,244 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IChatService ChatService
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<MudStack Class="chat-container" Style="height: calc(100vh - 120px);">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="px-4 pt-2" Spacing="2">
+        <GameSelector @bind-SelectedGameSlug="_gameFilter" />
+        <ConnectionIndicator State="_connectionState" />
+    </MudStack>
+
+    <div class="flex-grow-1 overflow-auto px-4">
+        <MessageThread Messages="_messages" IsStreaming="_isStreaming" />
+    </div>
+
+    <MudStack Row="true" Class="pa-4" Spacing="2" AlignItems="AlignItems.End">
+        <MudTextField @bind-Value="_userInput"
+                      Placeholder="Ask a pinball question..."
+                      Variant="Variant.Outlined"
+                      Lines="1"
+                      OnKeyDown="HandleKeyDown"
+                      Disabled="_isStreaming"
+                      Class="flex-grow-1"
+                      aria-label="Chat message input" />
+        <MudIconButton Icon="@Icons.Material.Filled.Send"
+                       Color="Color.Primary"
+                       OnClick="SendMessage"
+                       Disabled="@(_isStreaming || string.IsNullOrWhiteSpace(_userInput))"
+                       aria-label="Send message" />
+    </MudStack>
+</MudStack>
+
+@code {
+    private string? _userInput;
+    private string? _conversationId;
+    private string? _gameFilter;
+    private bool _isStreaming;
+    private HubConnection? _hubConnection;
+    private ConnectionIndicator.ConnectionState _connectionState = ConnectionIndicator.ConnectionState.Disconnected;
+    private System.Timers.Timer? _renderDebounce;
+    private bool _pendingRender;
+
+    private readonly List<MessageThread.ChatMessage> _messages = [];
+
+    [Parameter] public string? ConversationId { get; set; }
+    [Parameter] public string? InitialQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _conversationId = ConversationId;
+        await ConnectToHub();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrWhiteSpace(InitialQuery))
+        {
+            _userInput = InitialQuery;
+            await SendMessage();
+        }
+    }
+
+    private async Task ConnectToHub()
+    {
+        try
+        {
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/chat"))
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.Reconnecting += _ =>
+            {
+                _connectionState = ConnectionIndicator.ConnectionState.Reconnecting;
+                InvokeAsync(StateHasChanged);
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Reconnected += _ =>
+            {
+                _connectionState = ConnectionIndicator.ConnectionState.Connected;
+                InvokeAsync(StateHasChanged);
+                return Task.CompletedTask;
+            };
+
+            _hubConnection.Closed += _ =>
+            {
+                _connectionState = ConnectionIndicator.ConnectionState.Disconnected;
+                InvokeAsync(StateHasChanged);
+                return Task.CompletedTask;
+            };
+
+            await _hubConnection.StartAsync();
+            _connectionState = ConnectionIndicator.ConnectionState.Connected;
+        }
+        catch
+        {
+            // Hub not available (e.g., during development with mocks); fall back to direct service calls
+            _connectionState = ConnectionIndicator.ConnectionState.Disconnected;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_userInput) || _isStreaming) return;
+
+        var question = _userInput;
+        _userInput = string.Empty;
+        _isStreaming = true;
+
+        _messages.Add(new MessageThread.ChatMessage
+        {
+            Content = question,
+            IsUser = true
+        });
+
+        var assistantMessage = new MessageThread.ChatMessage
+        {
+            Content = string.Empty,
+            IsUser = false
+        };
+        _messages.Add(assistantMessage);
+        StateHasChanged();
+
+        try
+        {
+            if (_hubConnection?.State == HubConnectionState.Connected)
+            {
+                await StreamViaHub(question, assistantMessage);
+            }
+            else
+            {
+                await StreamViaService(question, assistantMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            assistantMessage.Content = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isStreaming = false;
+            StopDebounceTimer();
+            StateHasChanged();
+        }
+    }
+
+    private async Task StreamViaHub(string question, MessageThread.ChatMessage assistantMessage)
+    {
+        var request = new ChatRequest
+        {
+            Message = question,
+            ConversationId = _conversationId,
+            GameFilter = _gameFilter
+        };
+
+        var stream = _hubConnection!.StreamAsync<ChatStreamEvent>("SendMessage", request);
+        await ProcessStream(stream, assistantMessage);
+    }
+
+    private async Task StreamViaService(string question, MessageThread.ChatMessage assistantMessage)
+    {
+        var request = new ChatRequest
+        {
+            Message = question,
+            ConversationId = _conversationId,
+            GameFilter = _gameFilter
+        };
+
+        await ProcessStream(ChatService.StreamMessageAsync(request), assistantMessage);
+    }
+
+    private async Task ProcessStream(IAsyncEnumerable<ChatStreamEvent> stream, MessageThread.ChatMessage assistantMessage)
+    {
+        StartDebounceTimer();
+
+        await foreach (var evt in stream)
+        {
+            switch (evt.Type)
+            {
+                case ChatStreamEventType.Sources:
+                    if (evt.Sources is not null)
+                        assistantMessage.Sources = evt.Sources;
+                    break;
+
+                case ChatStreamEventType.TextDelta:
+                    assistantMessage.Content += evt.Text;
+                    RequestDebouncedRender();
+                    break;
+
+                case ChatStreamEventType.Complete:
+                    break;
+
+                case ChatStreamEventType.Error:
+                    assistantMessage.Content += $"\n\n**Error:** {evt.Error}";
+                    break;
+            }
+        }
+    }
+
+    private void StartDebounceTimer()
+    {
+        _renderDebounce = new System.Timers.Timer(50);
+        _renderDebounce.Elapsed += (_, _) =>
+        {
+            if (_pendingRender)
+            {
+                _pendingRender = false;
+                InvokeAsync(StateHasChanged);
+            }
+        };
+        _renderDebounce.AutoReset = true;
+        _renderDebounce.Start();
+    }
+
+    private void StopDebounceTimer()
+    {
+        _renderDebounce?.Stop();
+        _renderDebounce?.Dispose();
+        _renderDebounce = null;
+    }
+
+    private void RequestDebouncedRender()
+    {
+        _pendingRender = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopDebounceTimer();
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

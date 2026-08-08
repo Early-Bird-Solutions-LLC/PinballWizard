@@ -1,0 +1,15 @@
+<MudIconButton Icon="@(IsDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+               Color="Color.Inherit"
+               OnClick="Toggle"
+               aria-label="@(IsDarkMode ? "Switch to light mode" : "Switch to dark mode")" />
+
+@code {
+    [Parameter] public bool IsDarkMode { get; set; }
+    [Parameter] public EventCallback<bool> IsDarkModeChanged { get; set; }
+
+    private async Task Toggle()
+    {
+        IsDarkMode = !IsDarkMode;
+        await IsDarkModeChanged.InvokeAsync(IsDarkMode);
+    }
+}

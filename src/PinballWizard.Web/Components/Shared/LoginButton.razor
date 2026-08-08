@@ -1,0 +1,16 @@
+@inject NavigationManager Navigation
+
+<MudButton Variant="Variant.Outlined"
+           Color="Color.Inherit"
+           StartIcon="@Icons.Material.Filled.Login"
+           OnClick="Login"
+           aria-label="Sign in with Google">
+    Sign In
+</MudButton>
+
+@code {
+    private void Login()
+    {
+        Navigation.NavigateTo("/api/auth/google", forceLoad: true);
+    }
+}

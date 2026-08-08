@@ -1,0 +1,26 @@
+<div class="message-thread" @ref="_threadRef">
+    @foreach (var message in Messages)
+    {
+        <MessageBubble Content="@message.Content"
+                       IsUser="@message.IsUser"
+                       Sources="@message.Sources" />
+    }
+    @if (IsStreaming)
+    {
+        <StreamingIndicator />
+    }
+</div>
+
+@code {
+    private ElementReference _threadRef;
+
+    [Parameter] public List<ChatMessage> Messages { get; set; } = [];
+    [Parameter] public bool IsStreaming { get; set; }
+
+    public sealed class ChatMessage
+    {
+        public required string Content { get; set; }
+        public bool IsUser { get; init; }
+        public List<SourceCitation> Sources { get; set; } = [];
+    }
+}

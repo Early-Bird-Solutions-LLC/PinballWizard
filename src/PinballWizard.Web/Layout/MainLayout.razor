@@ -7,12 +7,30 @@
 
 <MudLayout>
     <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" />
-        <MudText Typo="Typo.h5" Class="ml-3">PinWiz.ai</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="ToggleDrawer"
+                       aria-label="Toggle navigation menu" />
+        <MudText Typo="Typo.h5" Class="ml-3">
+            <MudLink Href="/" Color="Color.Inherit" Underline="Underline.None">PinWiz.ai</MudLink>
+        </MudText>
         <MudSpacer />
-        <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
-                       Color="Color.Inherit" OnClick="ToggleDarkMode" />
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <SearchBar Class="mx-4" Placeholder="Search..." NavigateToChat="true" />
+        </MudHidden>
+        <ThemeToggle @bind-IsDarkMode="_isDarkMode" />
+        <LoginButton />
     </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen"
+               ClipMode="DrawerClipMode.Always"
+               Breakpoint="Breakpoint.Md"
+               Elevation="2"
+               Variant="@DrawerVariant.Mini">
+        <NavMenu />
+    </MudDrawer>
+
     <MudMainContent Class="pt-16 px-4">
         @Body
     </MudMainContent>
@@ -20,6 +38,7 @@
 
 @code {
     private bool _isDarkMode = true;
+    private bool _drawerOpen = true;
 
     private readonly MudTheme _theme = new()
     {
@@ -38,4 +57,5 @@
     };
 
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 }

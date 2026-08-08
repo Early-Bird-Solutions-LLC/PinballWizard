@@ -1,0 +1,41 @@
+@inject NavigationManager Navigation
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-8">
+    <MudText Typo="Typo.h5" Align="Align.Center" GutterBottom="true">
+        Popular Questions
+    </MudText>
+    <MudGrid Justify="Justify.Center">
+        @foreach (var question in _questions)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="2" Class="featured-question-card" Style="cursor: pointer;" @onclick="() => AskQuestion(question.Query)">
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@question.Icon" Color="Color.Secondary" />
+                            <MudText Typo="Typo.body1">@question.Text</MudText>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private readonly record struct FeaturedQuestion(string Text, string Query, string Icon);
+
+    private static readonly FeaturedQuestion[] _questions =
+    [
+        new("How do I fix a stuck flipper?", "How do I fix a stuck flipper?", Icons.Material.Filled.Build),
+        new("What's the rarest pinball machine?", "What's the rarest pinball machine?", Icons.Material.Filled.Diamond),
+        new("Medieval Madness rules explained", "Medieval Madness rules explained", Icons.Material.Filled.Castle),
+        new("How to clean and wax a playfield", "How to clean and wax a playfield", Icons.Material.Filled.CleanHands),
+        new("Best pinball machines for beginners", "Best pinball machines for beginners", Icons.Material.Filled.EmojiEvents),
+        new("Stern vs Williams: key differences", "Stern vs Williams key differences", Icons.Material.Filled.CompareArrows)
+    ];
+
+    private void AskQuestion(string query)
+    {
+        Navigation.NavigateTo($"/chat?q={Uri.EscapeDataString(query)}");
+    }
+}

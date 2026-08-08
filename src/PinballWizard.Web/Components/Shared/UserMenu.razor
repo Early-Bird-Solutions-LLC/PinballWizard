@@ -1,0 +1,33 @@
+@inject NavigationManager Navigation
+
+<MudMenu Icon="@Icons.Material.Filled.AccountCircle"
+         Color="Color.Inherit"
+         AnchorOrigin="Origin.BottomRight"
+         TransformOrigin="Origin.TopRight"
+         aria-label="User menu">
+    <MudMenuItem>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            @if (!string.IsNullOrEmpty(AvatarUrl))
+            {
+                <MudAvatar Size="Size.Small">
+                    <MudImage Src="@AvatarUrl" Alt="@DisplayName" />
+                </MudAvatar>
+            }
+            <MudText Typo="Typo.body2">@DisplayName</MudText>
+        </MudStack>
+    </MudMenuItem>
+    <MudDivider />
+    <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="Logout">
+        Sign Out
+    </MudMenuItem>
+</MudMenu>
+
+@code {
+    [Parameter] public string DisplayName { get; set; } = "User";
+    [Parameter] public string? AvatarUrl { get; set; }
+
+    private void Logout()
+    {
+        Navigation.NavigateTo("/api/auth/logout", forceLoad: true);
+    }
+}

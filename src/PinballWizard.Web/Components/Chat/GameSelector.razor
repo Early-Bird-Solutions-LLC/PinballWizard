@@ -1,0 +1,35 @@
+@inject IGameCatalogService GameCatalog
+
+<MudAutocomplete T="GameSummary"
+                 Label="Filter by game"
+                 Value="_selectedGame"
+                 ValueChanged="OnGameChanged"
+                 SearchFunc="SearchGames"
+                 ToStringFunc="@(g => g?.Title ?? string.Empty)"
+                 Variant="Variant.Outlined"
+                 Dense="true"
+                 Clearable="true"
+                 ResetValueOnEmptyText="true"
+                 aria-label="Select a game to filter chat" />
+
+@code {
+    private GameSummary? _selectedGame;
+
+    [Parameter] public string? SelectedGameSlug { get; set; }
+    [Parameter] public EventCallback<string?> SelectedGameSlugChanged { get; set; }
+
+    private async Task<IEnumerable<GameSummary>> SearchGames(string? value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return [];
+
+        var results = await GameCatalog.SearchGamesAsync(value, cancellationToken: ct);
+        return results;
+    }
+
+    private async Task OnGameChanged(GameSummary? game)
+    {
+        _selectedGame = game;
+        await SelectedGameSlugChanged.InvokeAsync(game?.Slug);
+    }
+}

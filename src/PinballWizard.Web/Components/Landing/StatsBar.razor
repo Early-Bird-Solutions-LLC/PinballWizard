@@ -1,0 +1,33 @@
+@inject IGameCatalogService GameCatalog
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-8">
+    <MudGrid Justify="Justify.Center">
+        <MudItem xs="4">
+            <MudStack AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h4" Color="Color.Primary">@_stats.TotalDocuments.ToString("N0")</MudText>
+                <MudText Typo="Typo.caption">Documents Indexed</MudText>
+            </MudStack>
+        </MudItem>
+        <MudItem xs="4">
+            <MudStack AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h4" Color="Color.Primary">@_stats.TotalGames.ToString("N0")</MudText>
+                <MudText Typo="Typo.caption">Games Cataloged</MudText>
+            </MudStack>
+        </MudItem>
+        <MudItem xs="4">
+            <MudStack AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.h4" Color="Color.Primary">@_stats.TotalQuestionsAnswered.ToString("N0")</MudText>
+                <MudText Typo="Typo.caption">Questions Answered</MudText>
+            </MudStack>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private GameCatalogStats _stats = new() { TotalGames = 0, TotalDocuments = 0, TotalQuestionsAnswered = 0 };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stats = await GameCatalog.GetStatsAsync();
+    }
+}

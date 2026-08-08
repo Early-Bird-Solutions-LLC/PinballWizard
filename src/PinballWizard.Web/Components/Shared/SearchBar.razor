@@ -1,0 +1,44 @@
+@inject NavigationManager Navigation
+
+<MudTextField @bind-Value="_query"
+              Placeholder="@Placeholder"
+              Variant="Variant.Outlined"
+              Adornment="Adornment.End"
+              AdornmentIcon="@Icons.Material.Filled.Search"
+              OnAdornmentClick="Submit"
+              OnKeyDown="HandleKeyDown"
+              Immediate="true"
+              Class="@Class"
+              aria-label="Search pinball knowledge base" />
+
+@code {
+    private string? _query;
+
+    [Parameter] public string Placeholder { get; set; } = "Ask anything about pinball...";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<string> OnSearch { get; set; }
+    [Parameter] public bool NavigateToChat { get; set; } = true;
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return;
+
+        if (OnSearch.HasDelegate)
+        {
+            await OnSearch.InvokeAsync(_query);
+        }
+
+        if (NavigateToChat)
+        {
+            Navigation.NavigateTo($"/chat?q={Uri.EscapeDataString(_query)}");
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Submit();
+        }
+    }
+}

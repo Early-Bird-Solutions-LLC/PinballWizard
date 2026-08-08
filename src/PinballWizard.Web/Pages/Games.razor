@@ -1,0 +1,97 @@
+@page "/games"
+@inject IGameCatalogService GameCatalog
+
+<PageTitle>Games — PinWiz.ai</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Game Catalog</MudText>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="4">
+            <MudTextField T="string" Value="_searchQuery"
+                          Placeholder="Search games..."
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          ValueChanged="OnSearchChanged"
+                          aria-label="Search games" />
+        </MudItem>
+        <MudItem xs="12" sm="3" md="3">
+            <MudSelect T="string" Value="_selectedManufacturer"
+                       Label="Manufacturer"
+                       Variant="Variant.Outlined"
+                       Clearable="true"
+                       ValueChanged="OnFilterChanged"
+                       aria-label="Filter by manufacturer">
+                @foreach (var mfg in _manufacturers)
+                {
+                    <MudSelectItem T="string" Value="mfg">@mfg</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3" md="2">
+            <MudNumericField T="int?" Value="_selectedYear"
+                             Label="Year"
+                             Variant="Variant.Outlined"
+                             Clearable="true"
+                             ValueChanged="OnYearChanged"
+                             Min="1950" Max="2030"
+                             aria-label="Filter by year" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        @foreach (var game in _games)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <GameCard Game="game" />
+            </MudItem>
+        }
+    </MudGrid>
+
+    @if (_games.Count == 0 && _loaded)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No games found matching your criteria.</MudAlert>
+    }
+</MudContainer>
+
+@code {
+    private string? _searchQuery;
+    private string? _selectedManufacturer;
+    private int? _selectedYear;
+    private List<GameSummary> _games = [];
+    private List<string> _manufacturers = [];
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _manufacturers = await GameCatalog.GetManufacturersAsync();
+        await LoadGames();
+    }
+
+    private async Task OnSearchChanged(string? value)
+    {
+        _searchQuery = value;
+        await LoadGames();
+    }
+
+    private async Task OnFilterChanged(string? value)
+    {
+        _selectedManufacturer = value;
+        await LoadGames();
+    }
+
+    private async Task OnYearChanged(int? value)
+    {
+        _selectedYear = value;
+        await LoadGames();
+    }
+
+    private async Task LoadGames()
+    {
+        _games = await GameCatalog.SearchGamesAsync(_searchQuery, _selectedManufacturer, _selectedYear);
+        _loaded = true;
+    }
+}

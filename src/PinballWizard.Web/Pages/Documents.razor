@@ -1,0 +1,136 @@
+@page "/documents"
+
+<PageTitle>Documents — PinWiz.ai</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Document Browser</MudText>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <MudTextField T="string" Value="_searchQuery"
+                          Placeholder="Search documents..."
+                          Variant="Variant.Outlined"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          ValueChanged="OnSearchChanged"
+                          aria-label="Search documents" />
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="string" Value="_selectedType"
+                       Label="Document Type"
+                       Variant="Variant.Outlined"
+                       Clearable="true"
+                       ValueChanged="OnTypeChanged"
+                       aria-label="Filter by document type">
+                @foreach (var docType in _documentTypes)
+                {
+                    <MudSelectItem T="string" Value="docType">@docType</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="string" Value="_selectedSource"
+                       Label="Source"
+                       Variant="Variant.Outlined"
+                       Clearable="true"
+                       ValueChanged="OnSourceChanged"
+                       aria-label="Filter by source">
+                @foreach (var source in _sources)
+                {
+                    <MudSelectItem T="string" Value="source">@source</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+
+    <MudTable Items="_filteredDocuments" Hover="true" Dense="true" Striped="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Title</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Game</MudTh>
+            <MudTh>Source</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Title">@context.Title</MudTd>
+            <MudTd DataLabel="Type">
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">@context.Type</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Game">@context.Game</MudTd>
+            <MudTd DataLabel="Source">@context.Source</MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    @if (_filteredDocuments.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">No documents found matching your criteria.</MudAlert>
+    }
+</MudContainer>
+
+@code {
+    private string? _searchQuery;
+    private string? _selectedType;
+    private string? _selectedSource;
+    private List<MockDocument> _allDocuments = [];
+    private List<MockDocument> _filteredDocuments = [];
+
+    private static readonly string[] _documentTypes = ["Manual", "Schematic", "Rulesheet", "RepairGuide", "ServiceBulletin", "Firmware"];
+    private static readonly string[] _sources = ["Stern Pinball", "IPDB", "PinWiki", "Internet Archive", "Tilt Forums"];
+
+    protected override void OnInitialized()
+    {
+        _allDocuments = GenerateMockDocuments();
+        _filteredDocuments = _allDocuments;
+    }
+
+    private void OnSearchChanged(string? value) { _searchQuery = value; ApplyFilters(); }
+    private void OnTypeChanged(string? value) { _selectedType = value; ApplyFilters(); }
+    private void OnSourceChanged(string? value) { _selectedSource = value; ApplyFilters(); }
+
+    private void ApplyFilters()
+    {
+        var results = _allDocuments.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            results = results.Where(d =>
+                d.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                d.Game.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(_selectedType))
+            results = results.Where(d => d.Type == _selectedType);
+
+        if (!string.IsNullOrWhiteSpace(_selectedSource))
+            results = results.Where(d => d.Source == _selectedSource);
+
+        _filteredDocuments = results.ToList();
+    }
+
+    private static List<MockDocument> GenerateMockDocuments() =>
+    [
+        new("Medieval Madness Service Manual", "Manual", "Medieval Madness", "Stern Pinball"),
+        new("Medieval Madness Schematics", "Schematic", "Medieval Madness", "IPDB"),
+        new("Medieval Madness Rulesheet", "Rulesheet", "Medieval Madness", "Tilt Forums"),
+        new("The Addams Family Manual", "Manual", "The Addams Family", "Internet Archive"),
+        new("TAF Repair Guide", "RepairGuide", "The Addams Family", "PinWiki"),
+        new("Twilight Zone Service Manual", "Manual", "Twilight Zone", "Stern Pinball"),
+        new("Twilight Zone Schematics", "Schematic", "Twilight Zone", "IPDB"),
+        new("Attack from Mars Manual", "Manual", "Attack from Mars", "Stern Pinball"),
+        new("Iron Maiden Service Manual", "Manual", "Iron Maiden", "Stern Pinball"),
+        new("Iron Maiden Firmware v1.05", "Firmware", "Iron Maiden", "Stern Pinball"),
+        new("Iron Maiden Rulesheet", "Rulesheet", "Iron Maiden", "Tilt Forums"),
+        new("Godzilla Service Bulletin #3", "ServiceBulletin", "Godzilla", "Stern Pinball"),
+        new("Godzilla Manual", "Manual", "Godzilla", "Stern Pinball"),
+        new("Monster Bash Repair Guide", "RepairGuide", "Monster Bash", "PinWiki"),
+        new("White Water Manual", "Manual", "White Water", "Internet Archive"),
+        new("Deadpool Rulesheet", "Rulesheet", "Deadpool", "Tilt Forums"),
+        new("Foo Fighters Manual", "Manual", "Foo Fighters", "Stern Pinball"),
+        new("Theatre of Magic Schematics", "Schematic", "Theatre of Magic", "IPDB"),
+        new("Indiana Jones Manual", "Manual", "Indiana Jones", "Internet Archive"),
+        new("Flipper Rebuild Guide (Universal)", "RepairGuide", "General", "PinWiki"),
+    ];
+
+    private sealed record MockDocument(string Title, string Type, string Game, string Source);
+}
