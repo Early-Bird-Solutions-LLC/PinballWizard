@@ -39,7 +39,43 @@ public sealed class RawDocumentLinkReviewTests
         Assert.Equal(LinkStatus.NeedsReview, stored!.LinkStatus);
         Assert.Single(stored.LinkReview!.Candidates);
         Assert.Equal("GweeP-MW95j", stored.LinkReview.Candidates[0].MachineId);
+        Assert.Equal("Godzilla (Pro)", stored.LinkReview.Candidates[0].MachineTitle);
+        Assert.Equal("Filename", stored.LinkReview.Candidates[0].EvidenceKind);
         Assert.Equal("godzilla", stored.LinkReview.Candidates[0].MatchedVariant);
+        Assert.Equal(new DateTime(2026, 8, 9, 0, 0, 0, DateTimeKind.Utc), stored.LinkReview.CreatedAt);
+    }
+
+    // Invariant #17: any status other than NeedsReview must clear an existing
+    // review block so a resolved document cannot keep a stale candidate list.
+    // Changing the ternary's false branch (dropping the null assignment) would
+    // pass the happy-path test above while silently breaking this invariant.
+    [Theory]
+    [InlineData(LinkStatus.Linked)]
+    [InlineData(LinkStatus.Failed)]
+    [InlineData(LinkStatus.NotInCatalog)]
+    [InlineData(LinkStatus.Pending)]
+    public async Task UpdateLinkStatusAsync_NonNeedsReviewStatus_ClearsExistingLinkReview(LinkStatus status)
+    {
+        var repo = await NewRepositoryWithDocumentAsync("doc-2");
+
+        // First write: stamp a review block on the document.
+        await repo.UpdateLinkStatusAsync(
+            "doc-2", LinkStatus.NeedsReview, resolutionStrategy: null, failureReason: null, overrideId: null,
+            CancellationToken.None,
+            new LinkReviewInfo
+            {
+                CreatedAt = new DateTime(2026, 8, 9, 0, 0, 0, DateTimeKind.Utc),
+                Candidates = [new LinkReviewCandidate { MachineId = "stale-id" }],
+            });
+
+        // Second write: resolve to any other status — review block must be cleared.
+        await repo.UpdateLinkStatusAsync(
+            "doc-2", status, resolutionStrategy: null, failureReason: null, overrideId: null,
+            CancellationToken.None);
+
+        var stored = await repo.GetAsync("doc-2", CancellationToken.None);
+        Assert.Equal(status, stored!.LinkStatus);
+        Assert.Null(stored.LinkReview);
     }
 
     // ────────────────────────────────────────────────────────────────
