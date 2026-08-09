@@ -159,7 +159,11 @@ public static class PinballTheme
     {
         PaletteLight = new PaletteLight
         {
-            Primary                = "#b8763e",   // accent-primary — warm copper
+            // Deepened from #b8763e for WCAG 1.4.3 — see the --pw-accent-primary note
+            // in app.css's html.theme-paper block (#790). Keep in step with it: this
+            // palette and that block describe the same theme, and MudBlazor derives its
+            // lighten/darken variants from this value.
+            Primary                = "#8e5b30",   // accent-primary — warm copper
             PrimaryContrastText    = "#ffffff",
             Secondary              = "#1f6f54",   // accent-grounded — forest green
             Background             = "#f4f1ea",   // bg-base — aged paper
@@ -168,7 +172,7 @@ public static class PinballTheme
             AppbarText             = "#f4f1ea",
             DrawerBackground       = "#ede9e1",
             DrawerText             = "#1a1408",
-            DrawerIcon             = "#b8763e",
+            DrawerIcon             = "#8e5b30",
             TextPrimary            = "#1a1408",   // near-black text
             TextSecondary          = "#5c5042",   // warm mid-tone
             TextDisabled           = "#9a9082",
@@ -176,7 +180,7 @@ public static class PinballTheme
             ActionDisabled         = "#9a9082",
             Divider                = "#d8cdb5",   // border-quiet — warm sand
             DividerLight           = "#e8e3da",
-            Success                = "#1a8a45",
+            Success                = "#16763b",   // deepened from #1a8a45 (#790)
             SuccessContrastText    = "#ffffff",
             Error                  = "#c0200e",
             ErrorContrastText      = "#ffffff",

@@ -311,22 +311,31 @@ html.theme-paper {
     --pw-bg-surface-hi:     #ede9e1;
     --pw-text-primary:      #1a1408;
     --pw-text-secondary:    #5c5042;
-    --pw-accent-primary:    #B8763E;
+    /* Copper deepened #B8763E -> #8E5B30 for WCAG 1.4.3 (#790). The original
+       measured 3.26:1 on --pw-bg-base and 3.46:1 on --pw-bg-surface, against the
+       4.5:1 body-text minimum; it read as compliant only because the a11y gate was
+       scanning an unstyled DOM and could not evaluate colour at all. The new value
+       holds the same warm-copper hue and clears 5.05:1 / 5.36:1, and 5.69:1 for
+       white on a primary-filled button. */
+    --pw-accent-primary:    #8E5B30;
     --pw-accent-grounded:   #1F6F54;
     --pw-accent-refusal:    #c0200e;
     --pw-accent-mode:       #8C5829;
     --pw-border-quiet:      #D8D2C2;
-    --pw-border-glow-amber:   #B8763E40;   /* 25% alpha — lighter glow on a light base */
+    --pw-border-glow-amber:   #8E5B3040;   /* 25% alpha — lighter glow on a light base */
     --pw-border-glow-green:   #1F6F5440;
     --pw-border-glow-magenta: #8C582940;
     --pw-border-glow-red:     #c0200e40;
     --pw-text-tertiary:     #3a2e22;
-    --pw-text-faint:        #8A8578;
+    /* Faint text darkened #8A8578 -> #6B675D: 3.26:1 -> 5.0:1 (#790). Used by the
+       brand-footer links, which are ordinary body-size text and so carry the full
+       4.5:1 requirement, not the 3:1 large-text allowance. */
+    --pw-text-faint:        #6B675D;
     --pw-border-faint:      #ECE6DA;
     --pw-bg-surface-2:      #EFEADE;
     --pw-panel-grounded:    #F1F6F2;
     /* MudBlazor gap fix — maps to PinballTheme.CreatePaper().PaletteLight */
-    --mud-palette-primary:             #b8763e;
+    --mud-palette-primary:             #8e5b30;
     --mud-palette-primary-text:        #ffffff;
     --mud-palette-secondary:           #1f6f54;
     --mud-palette-background:          #f4f1ea;
@@ -335,14 +344,33 @@ html.theme-paper {
     --mud-palette-appbar-text:         #f4f1ea;
     --mud-palette-drawer-background:   #ede9e1;
     --mud-palette-drawer-text:         #1a1408;
-    --mud-palette-drawer-icon:         #b8763e;
+    --mud-palette-drawer-icon:         #8e5b30;
     --mud-palette-text-primary:        #1a1408;
     --mud-palette-text-secondary:      #5c5042;
     --mud-palette-action-default:      #5c5042;
-    --mud-palette-success:             #1a8a45;
+    /* Success deepened #1a8a45 -> #16763b (#790): as text it measured 3.9:1 on the
+       paper base, and white on it as a fill measured 4.4:1 — both just under. */
+    --mud-palette-success:             #16763b;
     --mud-palette-error:               #c0200e;
     --mud-palette-divider:             #d8cdb5;
     --mud-palette-lines-default:       #d8cdb5;
+    /* Tertiary and warning were MISSING from this block (#790). That matters more
+       than it looks: MudThemeProvider is @rendermode="InteractiveServer", so it does
+       not render during static SSR — which is exactly when the accessibility gate
+       scans. Every --mud-palette-* value therefore comes from THIS block alone, and
+       anything omitted falls through to MudBlazor's own defaults, which are built for
+       a dark surface. On paper-cream that meant .mud-tertiary-text rendering in
+       MudBlazor's teal #1ec8a5 at 1.88:1, and alert text at 2.55:1.
+       Keep this block a complete mirror of PinballTheme.CreatePaper()'s PaletteLight:
+       a variable missing here is not "inherited", it is silently wrong. */
+    --mud-palette-tertiary:            #1f6f54;   /* citation green — 5.38:1 on base */
+    --mud-palette-warning:             #935600;   /* deepened from #b86c00 */
+    /* Derived variants matter too, not just the base colours. MudBlazor components
+       consume the generated -darken/-lighten/-hover forms directly — .mud-alert-text-
+       warning is `color: var(--mud-palette-warning-darken)` — and those are emitted by
+       MudThemeProvider, which never runs during SSR. Left undefined, the warning alert
+       rendered in MudBlazor's stock #d68100 at 2.55:1. */
+    --mud-palette-warning-darken:      #935600;   /* 5.02:1 on the alert's warm tint */
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -875,4 +903,37 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
         transition-duration: 0ms !important;
         scroll-behavior: auto !important;
     }
+}
+
+/* ── Collapsed nav rail: keep link names in the accessibility tree ────── */
+/* MudBlazor's mini drawer hides nav-link labels with `display:none` on
+   .mud-nav-link-text. That removes the subtree from the accessibility tree, so
+   every link in the collapsed rail exposed NO accessible name — the icon is
+   aria-hidden and the title lands on the wrapper div, not the <a> (#790,
+   axe: link-name). Swapping display:none for the screen-reader-only treatment
+   keeps the rail looking identical while restoring the name.
+
+   The selector deliberately mirrors MudBlazor's own, with .app-nav-rail added.
+   Theirs is
+     .mud-drawer--closed.mud-drawer-mini>.mud-drawer-content>.mud-navmenu
+     .mud-nav-link .mud-icon-root:first-child+.mud-nav-link-text
+   at specificity (0,8,0) — read from MudBlazor.min.css in 9.5.0, the pinned
+   version. A shorter override simply loses; this one is (0,9,0), and app.css is
+   linked after MudBlazor.min.css in App.razor. It stays scoped to the
+   closed-mini state, so an opened drawer still shows normal visible labels.
+
+   If a MudBlazor upgrade changes that selector, this rule stops applying and
+   link-name fails again — which the accessibility suite now actually catches,
+   because it finally runs against styled pages. */
+.app-nav-rail.mud-drawer--closed.mud-drawer-mini > .mud-drawer-content > .mud-navmenu .mud-nav-link .mud-icon-root:first-child + .mud-nav-link-text {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
 }

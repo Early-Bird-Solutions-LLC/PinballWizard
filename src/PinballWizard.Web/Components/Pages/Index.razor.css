@@ -18,7 +18,14 @@
     margin-top: 2rem;
 }
 
+/* The "muted" here was `opacity: 0.75` on the whole section, which dimmed the
+   architecture cards' TEXT along with their chrome and pushed it under WCAG 1.4.3
+   (#790): the card label measured 3.26:1 and the description 3.44:1 against the
+   4.5:1 minimum. Opacity on a text ancestor cannot be compensated for in the
+   palette — it fades whatever token sits underneath toward the background, so even
+   the deeper copper this change introduces was dragged back below threshold.
+   Lower visual weight is carried instead by the cards' own recessed surface and
+   quiet border, neither of which contains text. */
 .landing-page__section--muted {
     margin-top: 2.5rem;
-    opacity: 0.75;
 }

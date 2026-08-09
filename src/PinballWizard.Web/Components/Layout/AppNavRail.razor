@@ -83,15 +83,26 @@
     <MudNavMenu>
         @foreach (var item in Items)
         {
+            @* aria-label is deliberately NOT passed here. MudNavLink splats user
+               attributes onto its wrapper <div class="mud-nav-item">, not onto the
+               <a> — so the aria-label that used to sit here landed on a role-less
+               div, where ARIA prohibits it (axe: aria-prohibited-attr), and it never
+               named the link it was meant to name. title stays: it is valid on a div
+               and still supplies the hover tooltip. *@
             <MudNavLink Href="@item.Href"
                         Match="@(item.MatchAll ? NavLinkMatch.All : NavLinkMatch.Prefix)"
                         Icon="@item.Icon"
-                        title="@item.Label"
-                        aria-label="@item.Label">
-                @* pw-nav-label: targeted by the CSS collapse rule so label text hides
-                   in the collapsed state. The icon remains visible via the MudNavLink
-                   Icon parameter. title + aria-label on the link ensure keyboard/screen
-                   reader users can navigate icon-only links (spec §5.1 a11y note). *@
+                        title="@item.Label">
+                @* This label is the link's ONLY accessible name, and in the rail's
+                   default collapsed state it was reaching screen readers as nothing
+                   at all (axe: link-name) — the exact failure the old comment here
+                   claimed title + aria-label prevented. MudBlazor wraps ChildContent
+                   in <div class="mud-nav-link-text"> and sets display:none on it in
+                   the mini drawer, which drops the subtree out of the accessibility
+                   tree entirely. The fix is the collapsed-rail rule in app.css, which
+                   swaps that display:none for a screen-reader-only treatment; nothing
+                   here can compensate for it, because any markup added inside
+                   ChildContent is hidden by the same rule. *@
                 <span class="pw-nav-label">@item.Label</span>
             </MudNavLink>
         }

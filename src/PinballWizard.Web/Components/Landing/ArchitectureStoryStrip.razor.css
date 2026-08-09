@@ -24,8 +24,21 @@
     height: 100%;
     border: 1px solid var(--mud-palette-divider, #2a282d);
     background: var(--mud-palette-surface, #161519);
-    opacity: 0.85;
 }
+
+/* The "lower visual weight" above used to be `opacity: 0.85` on the whole card,
+   which dimmed the TEXT as well as the chrome and cost roughly 0.8:1 of contrast
+   (#790): the label rendered #c79569 on #f9f6f0 at 2.45:1 and the description
+   #54907a at 3.44:1, both under the 4.5:1 minimum, even though the underlying
+   tokens pass on their own. Card-level opacity cannot be made accessible by
+   retuning the palette — opacity compounds through the stacking context, so
+   whatever the token, 0.85 fades it toward the background and no child rule can
+   undo it.
+
+   The card now carries its lower weight through the recessed --mud-palette-surface
+   background and the quiet divider border it already had, both of which hold no
+   text. The visible result is a slightly crisper card; that is the intended
+   trade for text that is actually readable. */
 
 .arch-card__content {
     display: flex;
