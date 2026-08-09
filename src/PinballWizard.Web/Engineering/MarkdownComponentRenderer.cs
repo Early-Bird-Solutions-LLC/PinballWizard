@@ -105,15 +105,27 @@ internal static class MarkdownComponentRenderer
         HeadingBlock heading,
         Func<string, string?> slugLinkResolver)
     {
-        var typo = heading.Level switch
+        // Two separate concerns, deliberately decoupled (#790).
+        //
+        // Typo is the VISUAL scale: a doc's own `#` should not render at the same size
+        // as the page title, so level 1 is styled h4. That part was already right.
+        //
+        // HtmlTag is the SEMANTIC level, and it was missing — Typo alone also picks the
+        // rendered element, so a markdown `#` emitted a literal <h4> sitting directly
+        // under the page's <h1>. That skips h2 and h3, which axe reports as
+        // heading-order on every rendered doc (it surfaced on /engineering/docs/glossary
+        // but was never specific to that page). The page <h1> comes from AppPageShell,
+        // so doc headings start at h2.
+        var (typo, htmlTag) = heading.Level switch
         {
-            1 => Typo.h4,
-            2 => Typo.h5,
-            3 => Typo.h6,
-            _ => Typo.subtitle1,
+            1 => (Typo.h4, "h2"),
+            2 => (Typo.h5, "h3"),
+            3 => (Typo.h6, "h4"),
+            _ => (Typo.subtitle1, "h5"),
         };
         builder.OpenComponent<MudText>(0);
         builder.AddComponentParameter(0, "Typo", typo);
+        builder.AddComponentParameter(0, "HtmlTag", htmlTag);
         builder.AddComponentParameter(0, "ChildContent",
             (RenderFragment)(b => RenderInlines(b, heading.Inline, slugLinkResolver)));
         builder.CloseComponent();

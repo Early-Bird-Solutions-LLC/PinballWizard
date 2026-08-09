@@ -57,7 +57,11 @@
             <MudStack Spacing="4" AlignItems="AlignItems.Center">
 
                 @* ── TILT heading ──────────────────────────────────────── *@
-                <MudText Typo="Typo.h2"
+                @* TILT is the page's title, so it is the <h1>. It was Typo.h2, which
+                   left /error and /tilt with no <h1> at all and skipped a level into
+                   the h6 below. tilt-heading now pins font-size to the former H2
+                   scale, so this moves the element without moving the rendering. *@
+                <MudText Typo="Typo.h1"
                          Align="Align.Center"
                          Class="tilt-heading"
                          data-testid="tilt-heading">
@@ -71,7 +75,10 @@
                 </div>
 
                 @* ── Friendly prose ────────────────────────────────────── *@
-                <MudText Typo="Typo.h6" Align="Align.Center" Class="mt-2">
+                @* h2, not h6: this is the first heading under the h1, and jumping
+                   straight to h6 skipped four levels. Typo.h6 sizing is preserved via
+                   the class so only the semantics change. *@
+                <MudText Typo="Typo.h2" Align="Align.Center" Class="mt-2 tilt-subheading">
                     Something rattled the machine.
                 </MudText>
 

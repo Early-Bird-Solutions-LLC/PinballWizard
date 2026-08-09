@@ -77,10 +77,19 @@
         </Footer>
     </AppNavRail>
 
+    @* <main> landmark. MudMainContent renders a plain <div>, so before this the
+       document had no main landmark at all: axe reported landmark-one-main against
+       <html> on every route, and every piece of page content additionally tripped
+       `region` for sitting outside any landmark. Both rules are axe best-practice
+       and carry no WCAG tag, so the gate's WCAG-only tag filter meant neither was
+       ever evaluated (see #790). MudMainContent exposes no tag override, hence the
+       explicit element here rather than a component parameter. *@
     <MudMainContent>
-        <TiltErrorBoundary>
-            @Body
-        </TiltErrorBoundary>
+        <main id="main-content">
+            <TiltErrorBoundary>
+                @Body
+            </TiltErrorBoundary>
+        </main>
     </MudMainContent>
 </MudLayout>
 

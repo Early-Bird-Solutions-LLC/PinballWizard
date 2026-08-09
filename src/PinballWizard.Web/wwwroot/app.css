@@ -937,3 +937,74 @@ html.pw-admin-nav--collapsed .app-nav-rail--collapsible .admin-status-footer__te
     white-space: nowrap;
     border: 0;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Visually-hidden text (#790)
+
+   Available to assistive technology, removed from the visual layout. Used for
+   the <h1> on pages whose visible design has no title bar - /wizard, and the
+   admin detail pages in their loading / not-found / load-failed states. Those
+   states rendered no heading at all, so axe's page-has-heading-one failed on
+   every one of them.
+
+   Not `display: none` or `visibility: hidden`: both remove the element from the
+   accessibility tree as well, which would defeat the purpose. The clip-path +
+   1px box is the standard technique — the same one the collapsed-nav-rail rule
+   above applies to .mud-nav-link-text, for the same reason. */
+.pw-visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Minimum 44x44 CSS-px hit area (WCAG 2.2 SC 2.5.8 target-size, #790).
+
+   These five controls are shared chrome, so they failed on every route at once:
+   the admin collapse toggle, the sound toggle, the nav-rail toggle, and the
+   DataGrid column-options activators. MudBlazor's Size.Small icon buttons are
+   32px by default, hence the override rather than a per-page fix.
+
+   min-block-size/min-inline-size rather than width/height so the controls can
+   still grow with their content, and the icon stays centred because these are
+   all flex-centred buttons already.
+
+   A bare `.mud-icon-button-size-small` used to close this list. That is not
+   "these five controls" — it is EVERY Size.Small icon button in the app,
+   including MudDataGrid's column-header sort and filter toggles, which would
+   have been forced from 32px to 44px and pushed header rows out of alignment
+   with their data rows. The specific
+   `.mud-menu-icon-button-activator.mud-icon-button-size-small` above already
+   covers the column-options activator this rule actually needed, so the bare
+   selector was both over-broad and redundant. */
+.pw-admin-collapse-toggle,
+[data-testid="nav-rail-toggle"],
+[data-testid="sound-controller-toggle"],
+.mud-menu-icon-button-activator.mud-icon-button-size-small {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+}
+
+/* Stacked document links in the machine-detail grid (WCAG 2.2 SC 2.5.8, #790).
+
+   Measured 110x19.9 with only 16px between the two links, against the rule's
+   24x24 minimum and 24px minimum neighbour spacing. They sit stacked in a single
+   grid cell, which makes them list-like rather than inline-in-a-sentence, so the
+   success criterion's inline-link exception does not apply.
+
+   24px, not the 44px used for the icon buttons above: 24x24 is what SC 2.5.8
+   actually requires, and 44px on two stacked links would nearly double every row
+   of the documents table. The icon buttons keep 44px because they are standalone
+   touch targets where the larger figure costs no layout. Giving each link a 24px
+   box also fixes the neighbour-spacing failure, since adjacent 24px boxes put
+   their centres 24px apart. */
+.pw-doc-links .mud-link {
+    min-block-size: 24px;
+    display: inline-flex;
+    align-items: center;
+}

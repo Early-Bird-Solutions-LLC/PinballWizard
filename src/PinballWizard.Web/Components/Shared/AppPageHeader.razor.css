@@ -1,0 +1,10 @@
+/* Visual parity with the former Typo.h4 title. The element is now <h1> for
+   document semantics (one per page, axe page-has-heading-one); only the size
+   needs restoring, since PinballTheme gives H1 and H4 the same family
+   (Barlow Condensed) and weight (700).
+
+   Styled without ::deep, matching .tilt-heading in Error.razor.css: MudText
+   splats its attributes, so the scope identifier reaches its rendered element. */
+.pw-page-title {
+    font-size: 1.5rem;
+}

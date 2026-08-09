@@ -89,13 +89,13 @@
                                            Min="0.3" Max="0.95" Step="0.01"
                                            Class="flex-grow-1"
                                            aria-label="Confidence threshold" />
-                                <MudText Typo="Typo.h6" data-testid="confidence-value">@conf.NumericValue.ToString("0.00")</MudText>
+                                <MudText Typo="Typo.h6" HtmlTag="div" data-testid="confidence-value">@conf.NumericValue.ToString("0.00")</MudText>
                                 @ResetButton(conf)
                             </MudStack>
                         }
                         else
                         {
-                            <MudText Typo="Typo.h6" data-testid="confidence-value-readonly">@conf.NumericValue.ToString("0.00")</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" data-testid="confidence-value-readonly">@conf.NumericValue.ToString("0.00")</MudText>
                         }
                         @ProvenanceLine(conf)
                     </div>
@@ -120,7 +120,7 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.h6" data-testid="ceiling-value-readonly">@ceiling.NumericValue.ToString("0")</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" data-testid="ceiling-value-readonly">@ceiling.NumericValue.ToString("0")</MudText>
                         }
                         @ProvenanceLine(ceiling)
                     </div>
@@ -150,7 +150,7 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.h6" data-testid="turns-value-readonly">@turns.NumericValue.ToString("0")</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" data-testid="turns-value-readonly">@turns.NumericValue.ToString("0")</MudText>
                         }
                         @ProvenanceLine(turns)
                     </div>
@@ -180,7 +180,7 @@
                         }
                         else
                         {
-                            <MudText Typo="Typo.h6" data-testid="topk-value-readonly">@topK.NumericValue.ToString("0")</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" data-testid="topk-value-readonly">@topK.NumericValue.ToString("0")</MudText>
                         }
                         @ProvenanceLine(topK)
                     </div>
@@ -200,13 +200,13 @@
                                            Min="0" Max="1" Step="0.01"
                                            Class="flex-grow-1"
                                            aria-label="Minimum relevance score" />
-                                <MudText Typo="Typo.h6" data-testid="minscore-value">@minScore.NumericValue.ToString("0.00")</MudText>
+                                <MudText Typo="Typo.h6" HtmlTag="div" data-testid="minscore-value">@minScore.NumericValue.ToString("0.00")</MudText>
                                 @ResetButton(minScore)
                             </MudStack>
                         }
                         else
                         {
-                            <MudText Typo="Typo.h6" data-testid="minscore-value-readonly">@minScore.NumericValue.ToString("0.00")</MudText>
+                            <MudText Typo="Typo.h6" HtmlTag="div" data-testid="minscore-value-readonly">@minScore.NumericValue.ToString("0.00")</MudText>
                         }
                         @ProvenanceLine(minScore)
                     </div>

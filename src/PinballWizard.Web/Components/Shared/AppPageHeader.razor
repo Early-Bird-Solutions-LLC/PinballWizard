@@ -1,5 +1,19 @@
 @namespace PinballWizard.Web.Components.Shared
 
+@* The page title renders as a real <h1>.
+ *
+ * It was Typo.h4, so every page using this header (and every page using
+ * AppPageShell, which wraps it) shipped without an <h1> at all - 94 .razor files
+ * contained zero. axe's page-has-heading-one flagged 16 routes the moment the
+ * rule was allowed to run. It had never run: the rule is axe best-practice and
+ * carries no WCAG tag, and the gate filtered to WCAG tags only (#790).
+ *
+ * Typo.h1 changes the element AND the size (theme H1 is 2.5rem vs H4's 1.5rem),
+ * so pw-page-title pins font-size back to 1.5rem. Family and weight are already
+ * identical between H1 and H4 in PinballTheme, so nothing else needs restating
+ * and the rendering is unchanged.
+ *@
+
 @if (Breadcrumbs is not null)
 {
     <MudBreadcrumbs Items="@Breadcrumbs" Class="pa-0 mb-4" />
@@ -8,13 +22,13 @@
 @if (Actions is not null)
 {
     <MudStack Row="true" AlignItems="AlignItems.Center">
-        <MudText Typo="Typo.h4" GutterBottom="@(Subtitle is null)" Style="flex:1">@Title</MudText>
+        <MudText Typo="Typo.h1" Class="pw-page-title" GutterBottom="@(Subtitle is null)" Style="flex:1">@Title</MudText>
         @Actions
     </MudStack>
 }
 else
 {
-    <MudText Typo="Typo.h4" GutterBottom="@(Subtitle is null)">@Title</MudText>
+    <MudText Typo="Typo.h1" Class="pw-page-title" GutterBottom="@(Subtitle is null)">@Title</MudText>
 }
 
 @if (Subtitle is not null)
