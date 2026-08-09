@@ -369,9 +369,11 @@ internal sealed class CosmosRawDocumentRepository
             existing.LinkedAt = DateTimeOffset.UtcNow;
         }
 
-        // Write the review block only in NeedsReview; every other status clears it so a
-        // resolved document cannot keep a stale candidate list (invariant #17 — a leftover
-        // review block would make a linked doc look unresolved in the admin queue).
+        // Write the review block only when status is NeedsReview AND linkReview is non-null;
+        // any other combination — a different status, or NeedsReview with a null linkReview —
+        // clears the block so a resolved document cannot keep a stale candidate list
+        // (invariant #17 — a leftover review block would make a linked doc look unresolved
+        // in the admin queue).
         existing.LinkReview = status == LinkStatus.NeedsReview && linkReview is not null
             ? new RawLinkReviewInfo
             {

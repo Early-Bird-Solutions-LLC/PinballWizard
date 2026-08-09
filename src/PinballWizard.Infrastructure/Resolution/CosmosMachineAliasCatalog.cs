@@ -10,7 +10,7 @@ namespace PinballWizard.Infrastructure.Resolution;
 public sealed class CosmosMachineAliasCatalog : IMachineAliasCatalog
 {
     private readonly IMachineRepository _machineRepo;
-    private Dictionary<string, string>? _machineToMfr;
+    private volatile Dictionary<string, string>? _machineToMfr;
     private Dictionary<string, HashSet<string>>? _groupToMfrs;
 
     public CosmosMachineAliasCatalog(IMachineRepository machineRepo)
@@ -54,6 +54,13 @@ public sealed class CosmosMachineAliasCatalog : IMachineAliasCatalog
         }
 
         _groupToMfrs = groups;
-        _machineToMfr = machines;   // assigned LAST — it is the initialised sentinel
+        _machineToMfr = machines;   // assigned LAST and volatile: the volatile write is a
+                                    // release fence — any thread that subsequently reads
+                                    // _machineToMfr != null (an acquire read, because the
+                                    // field is volatile) is guaranteed to also see the
+                                    // completed _groupToMfrs write above. Do not remove
+                                    // volatile from _machineToMfr and do not reorder these
+                                    // two assignments; either change breaks the invariant on
+                                    // ARM and other weakly-ordered architectures.
     }
 }

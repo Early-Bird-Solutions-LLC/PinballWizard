@@ -54,6 +54,8 @@ public sealed class RawDocumentLinkReviewTests
     [InlineData(LinkStatus.Failed)]
     [InlineData(LinkStatus.NotInCatalog)]
     [InlineData(LinkStatus.Pending)]
+    [InlineData(LinkStatus.ManuallyLinked)]
+    [InlineData(LinkStatus.PlatformGeneric)]
     public async Task UpdateLinkStatusAsync_NonNeedsReviewStatus_ClearsExistingLinkReview(LinkStatus status)
     {
         var repo = await NewRepositoryWithDocumentAsync("doc-2");
