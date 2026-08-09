@@ -49,8 +49,10 @@ public interface IRawDocumentRepository
     Task DenormalizeContentHashAsync(string documentId, string sha256, CancellationToken cancellationToken);
 
     // Set link_status and linker metadata on an existing record.
-    // linkReview is written ONLY for LinkStatus.NeedsReview; any other status clears it,
-    // so a document that leaves review does not keep a stale candidate list.
+    // linkReview is written ONLY when status == NeedsReview AND linkReview is non-null;
+    // any other combination — a different status, or NeedsReview with a null linkReview —
+    // clears the block so a document that leaves review (or re-enters without a new candidate
+    // list) does not keep a stale candidate list (invariant #17).
     Task UpdateLinkStatusAsync(
         string documentId,
         LinkStatus status,

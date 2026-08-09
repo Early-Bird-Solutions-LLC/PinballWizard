@@ -80,6 +80,43 @@ public sealed class RawDocumentLinkReviewTests
         Assert.Null(stored.LinkReview);
     }
 
+    // Edge case: calling with NeedsReview but a null linkReview must clear an existing
+    // review block — not preserve it. The ternary's predicate is
+    // `status == NeedsReview && linkReview is not null`, so the null-linkReview path
+    // falls to the false branch (null assignment) even though the status is NeedsReview.
+    // Without this test, removing the `&& linkReview is not null` guard would cause the
+    // ternary to throw a NullReferenceException rather than silently keeping a stale block,
+    // but the invariant itself (block must be null) would be untested.
+    [Fact]
+    public async Task UpdateLinkStatusAsync_NeedsReviewWithNullLinkReview_ClearsExistingLinkReview()
+    {
+        var repo = await NewRepositoryWithDocumentAsync("doc-3");
+
+        // First write: seed a genuine review block.
+        await repo.UpdateLinkStatusAsync(
+            "doc-3", LinkStatus.NeedsReview, resolutionStrategy: null, failureReason: null, overrideId: null,
+            CancellationToken.None,
+            new LinkReviewInfo
+            {
+                CreatedAt = new DateTime(2026, 8, 9, 0, 0, 0, DateTimeKind.Utc),
+                Candidates = [new LinkReviewCandidate { MachineId = "seeded-id" }],
+            });
+
+        // Confirm the block is genuinely present so the final null-assert cannot pass vacuously.
+        var seeded = await repo.GetAsync("doc-3", CancellationToken.None);
+        Assert.NotNull(seeded!.LinkReview);
+
+        // Second write: NeedsReview again but with linkReview = null — block must be cleared.
+        await repo.UpdateLinkStatusAsync(
+            "doc-3", LinkStatus.NeedsReview, resolutionStrategy: null, failureReason: null, overrideId: null,
+            CancellationToken.None,
+            linkReview: null);
+
+        var stored = await repo.GetAsync("doc-3", CancellationToken.None);
+        Assert.Equal(LinkStatus.NeedsReview, stored!.LinkStatus);
+        Assert.Null(stored.LinkReview);
+    }
+
     // ────────────────────────────────────────────────────────────────
     // Helper — creates a CosmosRawDocumentRepository backed by a
     // NSubstitute Container seeded with a single pending document.
