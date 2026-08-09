@@ -40,6 +40,32 @@ dotnet run --project src/PinballWizard.Cli -c Release -- --capture-golden-set
 
 This needs live dev Cosmos **data-plane** access. If it fails on authorization, that is issue #744 (developer data-plane RBAC being stripped from `developerObjectId`); the value removed from the deleted local bicepparam was `fb4fdb3e-bc36-44b4-a06c-39627e98183f`. See `tests/PinballWizard.Application.Tests/Fixtures/Linking/CAPTURE.md`.
 
+### Second precondition, found during Task 2: ship the alias seed into the CLI image
+
+**Discovered 2026-08-09 while implementing Task 2; blocks Task 3, not Task 2.**
+
+`MachineAliasLoader` is **fail-closed** and resolves `data/seeds/machine_aliases.v1.json`
+at load time. That file is **not published into the CLI container**:
+
+| | |
+|---|---|
+| `src/PinballWizard.Api/Dockerfile:49` | `COPY --chown=pinwiz:pinwiz data/seeds/ data/seeds/` ✅ |
+| `src/PinballWizard.Cli/Dockerfile` | **no `data/seeds` line at all** ❌ |
+| `src/PinballWizard.Cli/*.csproj` | no `<Content Include>` for the seed ❌ |
+
+Task 2 (registration) is safe because the DI factory is lazy — nothing calls `LoadAsync`
+yet. **Task 3 makes `DocumentLinker.InitializeAsync` call it**, so without this fix the ACA
+linker job throws `FileNotFoundException` at startup and every nightly run dies.
+
+Fix before Task 3 merges — add to the CLI Dockerfile's **runtime** stage, mirroring the API's:
+
+```dockerfile
+COPY --chown=pinwiz:pinwiz data/seeds/ data/seeds/
+```
+
+Verify by running the built CLI image, not by reading the Dockerfile: a `COPY` in the wrong
+stage looks identical in a diff and fails identically at runtime.
+
 Outcome policy the replay enforces (unchanged by this plan):
 
 | Transition | Verdict |
