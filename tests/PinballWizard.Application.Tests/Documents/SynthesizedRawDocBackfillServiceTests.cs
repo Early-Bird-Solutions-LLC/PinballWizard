@@ -263,7 +263,7 @@ public sealed class SynthesizedRawDocBackfillServiceTests
             return Task.FromResult(new RawDocumentUpsertResult(raw, UpsertOutcome.Created));
         }
 
-        public Task UpdateLinkStatusAsync(string documentId, LinkStatus status, string? resolutionStrategy, string? failureReason, string? overrideId, CancellationToken cancellationToken)
+        public Task UpdateLinkStatusAsync(string documentId, LinkStatus status, string? resolutionStrategy, string? failureReason, string? overrideId, CancellationToken cancellationToken, LinkReviewInfo? linkReview = null)
         {
             if (documentId == ThrowOnLinkUpdateFor)
             {

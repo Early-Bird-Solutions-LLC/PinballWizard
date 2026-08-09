@@ -49,13 +49,16 @@ public interface IRawDocumentRepository
     Task DenormalizeContentHashAsync(string documentId, string sha256, CancellationToken cancellationToken);
 
     // Set link_status and linker metadata on an existing record.
+    // linkReview is written ONLY for LinkStatus.NeedsReview; any other status clears it,
+    // so a document that leaves review does not keep a stale candidate list.
     Task UpdateLinkStatusAsync(
         string documentId,
         LinkStatus status,
         string? resolutionStrategy,
         string? failureReason,
         string? overrideId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        LinkReviewInfo? linkReview = null);
 
     // Point-read by document_id (= partition key).
     Task<RawDocumentRecord?> GetAsync(string documentId, CancellationToken cancellationToken);
