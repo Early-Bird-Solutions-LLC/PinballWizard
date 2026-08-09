@@ -107,6 +107,31 @@ RUN dotnet PinballWizard.Cli.dll --install-playwright --with-deps \
     && chmod -R a+rx /ms-playwright \
     && rm -rf /var/lib/apt/lists/*
 
+# Runtime seed data. `MachineAliasLoader` (ADR-0054) reads
+# data/seeds/machine_aliases.v1.json via SeedPathResolver, which resolves the
+# repo-relative path against the working directory (/app) first — so the seed
+# must be copied here or it is simply absent in the container.
+#
+# The loader is deliberately FAIL-CLOSED: a missing or unreadable seed throws
+# rather than silently resolving zero aliases, because a curated alias that
+# quietly stops applying is a mis-attribution waiting to happen (invariant #17).
+# That makes this COPY load-bearing rather than cosmetic — without it the
+# nightly linker job dies at startup the moment DocumentLinker calls LoadAsync.
+#
+# Mirrors src/PinballWizard.Api/Dockerfile, which copies the same directory for
+# the landing endpoint's seed questions. The whole directory is copied rather
+# than the one file so a future seed consumer in the CLI does not reintroduce
+# this same gap.
+#
+# PLACEMENT IS DELIBERATE — keep this AFTER the Playwright RUN above. Docker
+# invalidates every layer from a changed one onward, so with the COPY placed
+# earlier, editing any seed (machine_aliases.v1.json is actively curated under
+# ADR-0054) would re-run the Chromium + `--with-deps` apt install on all four
+# deploy.yml matrix legs. Nothing between the publish COPY and here reads the
+# seeds: `--install-playwright` returns at Program.cs:407, before CreateHost at
+# :410, so no DI container is built and no seed is opened during that step.
+COPY --chown=pinwiz:pinwiz data/seeds/ data/seeds/
+
 USER pinwiz
 
 # Declared but not promoted to ENV — silences Docker's "unused build-arg" warning
