@@ -72,14 +72,27 @@ public sealed class PlaywrightFactory : IAsyncDisposable
     /// <summary>
     /// Installs Playwright browsers (called with --install-playwright CLI flag).
     /// </summary>
-    public static void InstallBrowsers()
+    /// <param name="withDeps">
+    /// Also install Chromium's operating-system library dependencies. Required when
+    /// building a container image: downloading the browser is useless on a base
+    /// image lacking libnss3 / libatk / libgbm and friends, and that gap surfaces
+    /// only much later, at scrape time, as a browser-launch failure. Needs root, so
+    /// it is opt-in rather than default — a developer running this on their own
+    /// machine neither needs it nor can necessarily elevate for it.
+    /// </param>
+    public static void InstallBrowsers(bool withDeps = false)
     {
-        var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+        var exitCode = Microsoft.Playwright.Program.Main(BuildInstallArgs(withDeps));
         if (exitCode != 0)
         {
             throw new InvalidOperationException($"Playwright browser installation failed with exit code {exitCode}");
         }
     }
+
+    // Extracted so the argument contract is assertable without actually shelling
+    // out to a browser download.
+    internal static string[] BuildInstallArgs(bool withDeps) =>
+        withDeps ? ["install", "--with-deps", "chromium"] : ["install", "chromium"];
 
     public async ValueTask DisposeAsync()
     {
