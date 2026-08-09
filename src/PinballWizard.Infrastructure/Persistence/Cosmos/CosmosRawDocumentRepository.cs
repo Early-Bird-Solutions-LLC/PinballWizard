@@ -338,7 +338,8 @@ internal sealed class CosmosRawDocumentRepository
         string? resolutionStrategy,
         string? failureReason,
         string? overrideId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LinkReviewInfo? linkReview = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
 
@@ -367,6 +368,27 @@ internal sealed class CosmosRawDocumentRepository
         {
             existing.LinkedAt = DateTimeOffset.UtcNow;
         }
+
+        // Write the review block only when status is NeedsReview AND linkReview is non-null;
+        // any other combination — a different status, or NeedsReview with a null linkReview —
+        // clears the block so a resolved document cannot keep a stale candidate list
+        // (invariant #17 — a leftover review block would make a linked doc look unresolved
+        // in the admin queue).
+        existing.LinkReview = status == LinkStatus.NeedsReview && linkReview is not null
+            ? new RawLinkReviewInfo
+            {
+                CreatedAt = linkReview.CreatedAt,
+                Candidates = linkReview.Candidates
+                    .Select(c => new RawLinkReviewCandidate
+                    {
+                        MachineId = c.MachineId,
+                        MachineTitle = c.MachineTitle,
+                        EvidenceKind = c.EvidenceKind,
+                        MatchedVariant = c.MatchedVariant,
+                    })
+                    .ToList(),
+            }
+            : null;
 
         await base.UpsertAsync(existing, cancellationToken).ConfigureAwait(false);
     }

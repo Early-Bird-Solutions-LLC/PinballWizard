@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Infrastructure.Persistence.Cosmos;
 using Xunit;
 
@@ -49,6 +50,32 @@ public sealed class AddCosmosPersistenceTests
 
         Assert.NotNull(client);
         Assert.Equal("https://test-cosmos.documents.azure.com/", client.Endpoint.ToString());
+    }
+
+    [Fact]
+    public void AddCosmosPersistence_RegistersIMachineAliasLoader_AndIMachineAliasCatalog()
+    {
+        // Guard against a registration that throws only at runtime in an ACA job (ADR-0054 Wave 2).
+        // LoadAsync is not called here — the loader is lazy; this just verifies DI resolution succeeds.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cosmos:AccountEndpoint"] = "https://test-cosmos.documents.azure.com:443/",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
+        services.AddCosmosPersistence(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        var catalog = provider.GetRequiredService<IMachineAliasCatalog>();
+        var loader = provider.GetRequiredService<IMachineAliasLoader>();
+
+        Assert.NotNull(catalog);
+        Assert.NotNull(loader);
     }
 
     [Fact]

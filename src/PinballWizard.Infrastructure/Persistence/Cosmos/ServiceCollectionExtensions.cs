@@ -17,8 +17,10 @@ using PinballWizard.Application.Linking;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Ai.Hosting;
 using PinballWizard.Application.Rag.Extraction;
+using PinballWizard.Application.Resolution;
 using PinballWizard.Core.Configuration;
 using PinballWizard.Infrastructure.Landing;
+using PinballWizard.Infrastructure.Resolution;
 
 namespace PinballWizard.Infrastructure.Persistence.Cosmos;
 
@@ -237,6 +239,16 @@ public static class ServiceCollectionExtensions
             var container = ResolveContainer(sp, "featured_machines");
             return new FeaturedMachineRepository(container, sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<FeaturedMachineRepository>>());
         });
+
+        // ADR-0054 resolution core. The loader fails closed on an alias that does not
+        // resolve, so it must be able to see the catalog — hence the catalog binding.
+        services.AddSingleton<IMachineAliasCatalog>(sp =>
+            new CosmosMachineAliasCatalog(sp.GetRequiredService<IMachineRepository>()));
+
+        services.AddSingleton<IMachineAliasLoader>(sp =>
+            new MachineAliasLoader(
+                sp.GetRequiredService<IMachineAliasCatalog>(),
+                sp.GetRequiredService<ILogger<MachineAliasLoader>>()));
 
         services.AddSingleton<IDocumentLinker>(sp =>
         {
