@@ -62,6 +62,38 @@ public sealed class ChunkerOptions
     // ablation studies in H3 can compare with/without.
     public bool ApplyHeadingPrefix { get; set; } = true;
 
+    // Minimum size for the FINAL chunk of a section. The window steps by
+    // (TargetTokens − OverlapTokens), so a section whose token count
+    // lands just past a step boundary emits a trailing window that is
+    // mostly — sometimes entirely — overlap already carried by its
+    // predecessor. At the defaults (step 461) a 974-token section yields
+    // a 52-token tail of which 51 duplicate the previous chunk: one
+    // novel token, but a full embedding call and a top-k retrieval slot
+    // contested on a lopsided vector. When the trailing window falls
+    // below this floor it is folded into the preceding chunk of the same
+    // section instead of being emitted.
+    //
+    // Applies only to a section's trailing window. A section whose
+    // ENTIRE content is below the floor still emits one small chunk —
+    // that text is genuinely short, not duplicated, and merging it would
+    // require crossing a section boundary and corrupting SectionHeading.
+    //
+    // Consequence: a merged chunk may exceed TargetTokens by up to
+    // (MinTrailingChunkTokens − 1). `text-embedding-3-large` accepts 8191
+    // tokens (ADR-0020), so the overage is immaterial to embedding; it is
+    // a deliberate trade of a slightly-over-target chunk for the removal
+    // of a near-duplicate one. Values ≥ TargetTokens are clamped at use.
+    //
+    // Set to 0 to disable (restores pre-refinement behavior) so H3
+    // calibration can ablate it like the other refinements.
+    //
+    // The Range cap is deliberately below the largest legal TargetTokens
+    // (2048): a floor above 1024 would be merging half a maximum-size
+    // window, which is a chunking-strategy change rather than a
+    // degenerate-tail guard. The runtime clamp handles the remainder.
+    [Range(0, 1024)]
+    public int MinTrailingChunkTokens { get; set; } = 128;
+
     // When true (default), service bulletins are treated as a single
     // section regardless of outline. Bulletins are short, single-issue
     // documents whose sub-headings (Symptom / Cause / Resolution)

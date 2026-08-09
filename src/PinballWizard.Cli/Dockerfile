@@ -41,7 +41,7 @@ WORKDIR /src
 # package changes. Copying every csproj + props file first lets `restore`
 # warm the package cache; the source copy (and the slow build) only
 # reruns when actual source changes.
-COPY Directory.Build.props Directory.Packages.props ./
+COPY Directory.Build.props Directory.Packages.props NuGet.Config ./
 COPY src/PinballWizard.Core/PinballWizard.Core.csproj src/PinballWizard.Core/
 COPY src/PinballWizard.Application/PinballWizard.Application.csproj src/PinballWizard.Application/
 COPY src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj src/PinballWizard.Infrastructure/
@@ -71,9 +71,43 @@ WORKDIR /app
 # without explicit id pins.
 RUN groupadd --system pinwiz \
     && useradd --system --no-create-home --gid pinwiz --shell /usr/sbin/nologin pinwiz
-USER pinwiz
 
 COPY --from=build --chown=pinwiz:pinwiz /app/publish .
+
+# Playwright browser + the OS libraries it links against.
+#
+# Several jobs running this image (stern-bulletins, stern-games) scrape via
+# Playwright, and the aspnet base carries neither Chromium nor its shared
+# libraries (libnss3, libatk, libgbm, …). Without this the image builds and
+# deploys perfectly happily and then fails at scrape time with "Looks like
+# Playwright was just installed or updated" — which is exactly how
+# pinwiz-job-stern-bulletins failed 26 of its last 30 nightly runs while every
+# build stayed green.
+#
+# --with-deps is the part that installs the OS libraries; downloading the browser
+# alone reproduces the same runtime failure. It shells out to apt, so it must run
+# as root — which is why USER pinwiz now comes after this step instead of before
+# the COPY.
+#
+# PLAYWRIGHT_BROWSERS_PATH is set explicitly because Playwright's default is
+# $HOME/.cache/ms-playwright and pinwiz is created --no-create-home: the browser
+# would land in root's cache, unreadable after the privilege drop. The chmod is
+# what makes the shared location usable by the runtime user.
+#
+# chmod uses lowercase `x`, not `X`, deliberately. Uppercase X only adds execute
+# where execute is already set for somebody, which sounds like the tidier choice —
+# but the install step downloads and unpacks the browser without ever launching
+# it, so "root can execute this" is never established for the binaries and helper
+# scripts Chromium actually needs at launch. If the unpack missed an execute bit,
+# a+rX preserves that mistake and the job fails at scrape time exactly as it does
+# today. Lowercase x marks some .so and data files executable too, which is untidy
+# and harmless.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN dotnet PinballWizard.Cli.dll --install-playwright --with-deps \
+    && chmod -R a+rx /ms-playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+USER pinwiz
 
 # Declared but not promoted to ENV — silences Docker's "unused build-arg" warning
 # when deploy.yml passes BUILD_SHA / BUILD_TIME to all matrix legs.

@@ -22,7 +22,7 @@ WORKDIR /src
 # Restore stage: copy only csproj + props files first to maximise Docker
 # layer cache hits. The slow restore only re-runs when package dependencies
 # change, not on every source edit.
-COPY Directory.Build.props Directory.Packages.props ./
+COPY Directory.Build.props Directory.Packages.props NuGet.Config ./
 COPY src/PinballWizard.Core/PinballWizard.Core.csproj                         src/PinballWizard.Core/
 COPY src/PinballWizard.Application/PinballWizard.Application.csproj           src/PinballWizard.Application/
 COPY src/PinballWizard.Infrastructure/PinballWizard.Infrastructure.csproj     src/PinballWizard.Infrastructure/
