@@ -880,7 +880,22 @@ git commit -m "feat(linking) migrate Tier 1 provenance slug to MachineResolver (
 
 ### Task 7: Emit `needs_review` instead of silently dropping ambiguity
 
-Today an ambiguous match becomes `NotInCatalog` with no record of the candidates. ADR-0054 §5: ambiguity is never guessed, and it must become visible and curatable. The S6 admin queue already exists and is waiting for this data.
+Today an ambiguous match becomes `NotInCatalog` with no record of the candidates.
+
+> **Implementation corrections (2026-08-10):** (1) the plan's `_lastAmbiguous` instance
+> field is a data race — `RunBatchAsync` runs `LinkAsync` concurrently
+> (`Parallel.ForEachAsync`, `MaxDegreeOfParallelism = _cosmosWriteConcurrency`), so one
+> document's ambiguity could stamp another document's review record. Implemented as a
+> per-call `AmbiguityCapture` object threaded through the (synchronous) tier methods
+> instead. (2) The legacy Tier-2 ambiguous bail returns `NotInCatalog` directly and
+> short-circuits the no-tier-matched path the plan converts — when the resolver also saw
+> the ambiguity, that bail now defers (returns null) so the conversion runs; the
+> resolver-less path is byte-identical (pinned by the pre-existing
+> `LinkAsync_Tier2FilenameSlug_AmbiguousMatch_NotInCatalog`). (3)
+> `LinkingNeedsReviewTotal.Add` carries the manufacturer + evidence_kind tags its
+> declaration documents — the plan's bare `.Add(1)` answered the open question wrongly.
+> (4) `RunBatchAsync`'s tuple gained a `NeedsReview` bucket (interface + CLI summary
+> updated) rather than counting needs_review documents in no bucket. ADR-0054 §5: ambiguity is never guessed, and it must become visible and curatable. The S6 admin queue already exists and is waiting for this data.
 
 **Files:**
 - Modify: `src/PinballWizard.Application/Linking/DocumentLinker.cs` (`LinkAsync` no-match path, lines 290-318)
@@ -890,7 +905,7 @@ Today an ambiguous match becomes `NotInCatalog` with no record of the candidates
 - Consumes: `LinkReviewInfo`/`LinkReviewCandidate` (Core), `UpdateLinkStatusAsync(..., LinkReviewInfo?)` from Task 1, `ResolutionResult.Ambiguous`.
 - Produces: private `LinkReviewInfo BuildReview(ResolutionResult.Ambiguous ambiguous)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 [Fact]
@@ -914,12 +929,12 @@ public async Task Ambiguous_WritesNeedsReview_WithCandidates()
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Ambiguous_WritesNeedsReview`
 Expected: FAIL — actual is `NotInCatalog`.
 
-- [ ] **Step 3: Capture the ambiguous outcome and stamp NeedsReview**
+- [x] **Step 3: Capture the ambiguous outcome and stamp NeedsReview**
 
 Add a field `private ResolutionResult.Ambiguous? _lastAmbiguous;` — set it in each tier's `Ambiguous` arm before returning null, and clear it at the top of `LinkAsync`. Then in the no-tier-matched path replace the `noMatchResult` construction:
 
@@ -966,22 +981,22 @@ Add a field `private ResolutionResult.Ambiguous? _lastAmbiguous;` — set it in 
 
 Also add `LinkStatus.NeedsReview` to the `RunBatchAsync` switch (it currently has no arm, so needs-review documents would be counted in none of the buckets) and to the idempotency skip-set at line 190 — a document awaiting human review must not be re-linked on the next run.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter Ambiguous_`
 Expected: PASS.
 
-- [ ] **Step 5: Verify `needs_review` is NOT counted as a regression**
+- [x] **Step 5: Verify `needs_review` is NOT counted as a regression**
 
 Run: `dotnet test --filter GoldenLinkSet`
 Expected: PASS. `linked → needs_review` is report-only by the harness's own policy; if it fails the build, the harness policy was misread — re-read `GoldenLinkSetReplayTests` lines 28-32 before changing anything.
 
-- [ ] **Step 6: Full build and suite**
+- [x] **Step 6: Full build and suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs \

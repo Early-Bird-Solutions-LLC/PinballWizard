@@ -1709,7 +1709,7 @@ public class DocumentLinkerTests
         var linker = BuildLinker(rawRepo, overrideRepo, machineRepo, docWriter, machines: [machine]);
 
         await linker.InitializeAsync(CancellationToken.None);
-        var (processed, linked, platformGeneric, notInCatalog, failed) =
+        var (processed, linked, platformGeneric, notInCatalog, failed, needsReview) =
             await linker.RunBatchAsync(CancellationToken.None);
 
         Assert.Equal(2, processed);
@@ -1717,6 +1717,7 @@ public class DocumentLinkerTests
         Assert.Equal(0, platformGeneric);
         Assert.Equal(1, notInCatalog);
         Assert.Equal(0, failed);
+        Assert.Equal(0, needsReview);
     }
 
     // -------------------------------------------------------------------------

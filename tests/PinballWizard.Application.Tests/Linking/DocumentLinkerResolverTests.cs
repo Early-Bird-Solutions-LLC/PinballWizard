@@ -262,6 +262,78 @@ public sealed class DocumentLinkerResolverTests
         Assert.Equal(EditionScope.FranchiseWide, result.EditionScope);
     }
 
+    // ── Task 7: ambiguity becomes needs_review, never a silent drop ────────────
+
+    [Fact]
+    public async Task Ambiguous_WritesNeedsReview_WithCandidates()
+    {
+        // Two same-manufacturer machines, different GroupIds → not an edition
+        // family → the resolver reports Ambiguous. ADR-0054 §5: ambiguity is never
+        // guessed — it must surface as needs_review for the admin queue, not an
+        // honest-looking NotInCatalog that hides a real decision.
+        var machines = new[]
+        {
+            MakeMachine("Stern-A", "Mystery Machine", "stern", groupId: "GrpA"),
+            MakeMachine("Stern-B", "Mystery Machine", "stern", groupId: "GrpB"),
+        };
+        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        var linker = await BuildLinkerWithResolverAsync(machines, rawRepo: rawRepo);
+
+        var raw = MakeRaw("doc-amb", "https://sternpinball.com/mystery-machine.pdf",
+            gameSlug: "", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        Assert.Equal(LinkStatus.NeedsReview, result.FinalStatus);
+        Assert.Empty(result.LinkedMachineIds);
+
+        // The review block must actually be WRITTEN, with both candidates — the test
+        // name says "WithCandidates", so pin the persisted content, not just the status.
+        await rawRepo.Received(1).UpdateLinkStatusAsync(
+            Arg.Is("doc-amb"), Arg.Is(LinkStatus.NeedsReview),
+            Arg.Is<string?>(s => s == null),
+            Arg.Is<string?>(s => s != null && s.Contains("Ambiguous")),
+            Arg.Is<string?>(s => s == null),
+            Arg.Any<CancellationToken>(),
+            Arg.Is<LinkReviewInfo?>(r =>
+                r != null
+                && r.Candidates.Count == 2
+                && r.Candidates.Any(c => c.MachineId == "Stern-A")
+                && r.Candidates.Any(c => c.MachineId == "Stern-B")));
+    }
+
+    [Fact]
+    public async Task Tier1Ambiguity_DoesNotLeakInto_FilenameAmbiguityBail()
+    {
+        // Cross-tier guard: a Tier-1 (ProvenanceSlug) ambiguity concerns machines X/Y;
+        // the legacy filename tier independently finds a DIFFERENT ambiguity (P/Q,
+        // whose single-token trailing-qualifier slug the resolver refuses to match).
+        // The filename bail must NOT defer to the needs_review conversion here —
+        // deferring would write X/Y as the candidate list for a P/Q decision.
+        var machines = new[]
+        {
+            MakeMachine("Stern-X", "Mystery Alpha", "stern", groupId: "GrpX",
+                slugs: new Dictionary<string, string> { ["stern"] = "mystery" }),
+            MakeMachine("Stern-Y", "Mystery Beta", "stern", groupId: "GrpY",
+                slugs: new Dictionary<string, string> { ["stern"] = "mystery" }),
+            MakeMachine("Stern-P", "Pinball Prime", "stern", groupId: "GrpP",
+                slugs: new Dictionary<string, string> { ["stern"] = "pinball" }),
+            MakeMachine("Stern-Q", "Pinball Ultra", "stern", groupId: "GrpQ",
+                slugs: new Dictionary<string, string> { ["stern"] = "pinball" }),
+        };
+        var linker = await BuildLinkerWithResolverAsync(machines);
+
+        var raw = MakeRaw("doc-cross", "https://sternpinball.com/service-pinball.pdf",
+            gameSlug: "mystery", manufacturerKey: "stern", sourceType: SourceType.ManualsPage);
+
+        var result = await linker.LinkAsync(raw, CancellationToken.None);
+
+        // Pre-migration behaviour preserved: the filename tier's own explicit
+        // ambiguity bail wins, not a needs_review record carrying Tier 1's candidates.
+        Assert.Equal(LinkStatus.NotInCatalog, result.FinalStatus);
+        Assert.Contains("Ambiguous filename match", result.FailureReason);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     // Mirrors GoldenLinkSetReplayTests.MakeMachine but adds groupId and makes slugs
@@ -290,12 +362,13 @@ public sealed class DocumentLinkerResolverTests
         IEnumerable<Machine> machines,
         IReadOnlyList<MachineAliasEntry>? aliases = null,
         string? pageText = null,
+        IRawDocumentRepository? rawRepo = null,
         CancellationToken ct = default)
     {
         var aliasLoader = Substitute.For<IMachineAliasLoader>();
         aliasLoader.LoadAsync(Arg.Any<CancellationToken>())
             .Returns(aliases ?? []);
-        return BuildLinkerAsync(machines, aliasLoader, pageText, ct);
+        return BuildLinkerAsync(machines, aliasLoader, pageText, rawRepo, ct);
     }
 
     // Mirrors GoldenLinkSetReplayTests.MakeRaw. The sourceType parameter is
@@ -342,9 +415,12 @@ public sealed class DocumentLinkerResolverTests
         IEnumerable<Machine> machines,
         IMachineAliasLoader? aliasLoader,
         string? pageText = null,
+        IRawDocumentRepository? rawRepo = null,
         CancellationToken ct = default)
     {
-        var rawRepo = Substitute.For<IRawDocumentRepository>();
+        // Caller-supplied rawRepo lets a test verify the persisted write (e.g. the
+        // needs_review LinkReviewInfo); default substitute otherwise.
+        rawRepo ??= Substitute.For<IRawDocumentRepository>();
         var overrideRepo = Substitute.For<ILinkOverrideRepository>();
         var machineRepo = Substitute.For<IMachineRepository>();
         var docWriter = Substitute.For<IScrapedDocumentRepository>();

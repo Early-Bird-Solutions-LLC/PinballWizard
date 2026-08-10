@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging;
 using PinballWizard.Application.Documents;
+using PinballWizard.Application.Observability;
 using PinballWizard.Application.Persistence;
 using PinballWizard.Application.Rag.Extraction;
 using PinballWizard.Application.Resolution;
@@ -75,6 +76,17 @@ public sealed class DocumentLinker : IDocumentLinker
 
     // Test-only observability of the built index size.
     internal int ResolverVariantCountForTest { get; private set; }
+
+    // Per-LinkAsync-call capture of a resolver Ambiguous outcome, threaded through the
+    // tier methods so the no-tier-matched path can convert it to needs_review.
+    // Deliberately NOT an instance field: RunBatchAsync runs LinkAsync concurrently
+    // (Parallel.ForEachAsync, MaxDegreeOfParallelism = _cosmosWriteConcurrency), and a
+    // shared field would let one document's ambiguity leak into another document's
+    // review record — a false candidate list is the same defect class as a mis-link.
+    private sealed class AmbiguityCapture
+    {
+        public ResolutionResult.Ambiguous? Last;
+    }
 
     public DocumentLinker(
         IRawDocumentRepository rawRepo,
@@ -235,8 +247,13 @@ public sealed class DocumentLinker : IDocumentLinker
     {
         ArgumentNullException.ThrowIfNull(raw);
 
+        var ambiguity = new AmbiguityCapture();
+
         // Idempotency: skip documents that are already in a terminal state.
-        if (raw.LinkStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric)
+        // NeedsReview is terminal-until-human-action: a document awaiting review
+        // must not be re-linked (and its candidate list overwritten) on the next run.
+        if (raw.LinkStatus is LinkStatus.Linked or LinkStatus.ManuallyLinked or LinkStatus.PlatformGeneric
+            or LinkStatus.NeedsReview)
         {
             return new LinkingResult(
                 raw.DocumentId,
@@ -258,7 +275,7 @@ public sealed class DocumentLinker : IDocumentLinker
         }
 
         // Tier 1: cross-reference slug.
-        var xrefResult = TryTier1ProvenanceSlug(raw);
+        var xrefResult = TryTier1ProvenanceSlug(raw, ambiguity);
         if (xrefResult is not null)
         {
             await FanOutAndUpdateAsync(raw, xrefResult, cancellationToken).ConfigureAwait(false);
@@ -269,7 +286,7 @@ public sealed class DocumentLinker : IDocumentLinker
         }
 
         // Tier 2: filename word-boundary match.
-        var filenameResult = TryTier2FilenameSlug(raw);
+        var filenameResult = TryTier2FilenameSlug(raw, ambiguity);
         if (filenameResult is not null)
         {
             await FanOutAndUpdateAsync(raw, filenameResult, cancellationToken).ConfigureAwait(false);
@@ -310,7 +327,7 @@ public sealed class DocumentLinker : IDocumentLinker
 
             if (extracted is not null)
             {
-                var tier3Result = TryMatchPage(raw, extracted, pageIndex: 0, "page_1");
+                var tier3Result = TryMatchPage(raw, extracted, pageIndex: 0, "page_1", ambiguity);
                 if (tier3Result is not null)
                 {
                     await FanOutAndUpdateAsync(raw, tier3Result, cancellationToken).ConfigureAwait(false);
@@ -320,7 +337,7 @@ public sealed class DocumentLinker : IDocumentLinker
                     return tier3Result;
                 }
 
-                var tier4Result = TryMatchPage(raw, extracted, pageIndex: 1, "page_2");
+                var tier4Result = TryMatchPage(raw, extracted, pageIndex: 1, "page_2", ambiguity);
                 if (tier4Result is not null)
                 {
                     await FanOutAndUpdateAsync(raw, tier4Result, cancellationToken).ConfigureAwait(false);
@@ -335,6 +352,58 @@ public sealed class DocumentLinker : IDocumentLinker
         // Tier 5 (ADI OCR) deferred: requires IDocumentTextExtractor.ExtractWithOcrAsync
         // or an OCR-mode parameter. Currently ~2 docs qualify. Wire when extractor
         // exposes the mode; for now those docs fall to NotInCatalog and surface in the admin UI.
+
+        // Ambiguity is never guessed (ADR-0054 §5). If any tier's resolver call saw
+        // multiple plausible non-family candidates, record them for the admin review
+        // queue rather than reporting an honest-looking NotInCatalog that hides a
+        // real decision.
+        if (ambiguity.Last is { } ambiguousOutcome)
+        {
+            var review = new LinkReviewInfo
+            {
+                CreatedAt = DateTime.UtcNow,
+                Candidates = ambiguousOutcome.Candidates.Select(c => new LinkReviewCandidate
+                {
+                    MachineId = c.MachineId,
+                    MachineTitle = c.MachineTitle,
+                    EvidenceKind = ambiguousOutcome.Evidence.EvidenceKind.ToString(),
+                    MatchedVariant = c.MatchedVariant,
+                }).ToList(),
+            };
+
+            var reviewResult = new LinkingResult(
+                raw.DocumentId, LinkStatus.NeedsReview, ResolutionStrategy: null,
+                LinkedMachineIds: [],
+                FailureReason: $"Ambiguous: {ambiguousOutcome.Candidates.Count} candidates");
+
+            // Resolved set is empty — all prior fan-out rows are now stale.
+            await PruneStaleFanOutRowsAsync(raw.DocumentId, keepMachineIds: new HashSet<string>(), cancellationToken)
+                .ConfigureAwait(false);
+
+            await _rawRepo.UpdateLinkStatusAsync(
+                raw.DocumentId, reviewResult.FinalStatus, reviewResult.ResolutionStrategy,
+                reviewResult.FailureReason, overrideId: null, cancellationToken, review)
+                .ConfigureAwait(false);
+
+            // Tags per the counter's contract (manufacturer + evidence_kind) — a
+            // sustained per-manufacturer rate signals normalisation/coverage gaps.
+            PinballWizardTelemetry.LinkingNeedsReviewTotal.Add(1,
+                new KeyValuePair<string, object?>("manufacturer",
+                    LinkingUtilities.InferManufacturerKey(raw.Source) ?? "unknown"),
+                new KeyValuePair<string, object?>("evidence_kind",
+                    ambiguousOutcome.Evidence.EvidenceKind.ToString()));
+
+            DocumentsProcessedCounter.Add(1,
+                new KeyValuePair<string, object?>("resolution_strategy", "none"),
+                new KeyValuePair<string, object?>("link_status", "needs_review"));
+
+            _logger.LogInformation(
+                "DocumentLinker: {DocumentId} → NeedsReview ({Count} candidates, {EvidenceKind}).",
+                raw.DocumentId, ambiguousOutcome.Candidates.Count,
+                ambiguousOutcome.Evidence.EvidenceKind);
+
+            return reviewResult;
+        }
 
         // No tier resolved.
         var noMatchResult = new LinkingResult(
@@ -367,10 +436,10 @@ public sealed class DocumentLinker : IDocumentLinker
         return noMatchResult;
     }
 
-    public async Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed)>
+    public async Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed, int NeedsReview)>
         RunBatchAsync(CancellationToken cancellationToken)
     {
-        int processed = 0, linked = 0, platformGeneric = 0, notInCatalog = 0, failed = 0;
+        int processed = 0, linked = 0, platformGeneric = 0, notInCatalog = 0, failed = 0, needsReview = 0;
 
         var statuses = new[] { LinkStatus.Pending, LinkStatus.Failed, LinkStatus.NotInCatalog };
 
@@ -435,6 +504,9 @@ public sealed class DocumentLinker : IDocumentLinker
                     case LinkStatus.Failed:
                         Interlocked.Increment(ref failed);
                         break;
+                    case LinkStatus.NeedsReview:
+                        Interlocked.Increment(ref needsReview);
+                        break;
                 }
             });
 
@@ -442,10 +514,10 @@ public sealed class DocumentLinker : IDocumentLinker
         RunDurationHistogram.Record(sw.Elapsed.TotalMilliseconds);
 
         _logger.LogInformation(
-            "DocumentLinker batch complete: processed={Processed} linked={Linked} platformGeneric={PlatformGeneric} notInCatalog={NotInCatalog} failed={Failed}",
-            processed, linked, platformGeneric, notInCatalog, failed);
+            "DocumentLinker batch complete: processed={Processed} linked={Linked} platformGeneric={PlatformGeneric} notInCatalog={NotInCatalog} failed={Failed} needsReview={NeedsReview}",
+            processed, linked, platformGeneric, notInCatalog, failed, needsReview);
 
-        return (processed, linked, platformGeneric, notInCatalog, failed);
+        return (processed, linked, platformGeneric, notInCatalog, failed, needsReview);
     }
 
     public async Task<int> ResetForRelinkAsync(CancellationToken cancellationToken)
@@ -575,7 +647,7 @@ public sealed class DocumentLinker : IDocumentLinker
     // (genuinely different GroupIds) is left to the manufacturer-preference path.
     private static bool IsEditionFamily(List<Machine> candidates) => EditionFamily.IsEditionFamilyByGroup(candidates);
 
-    private LinkingResult? TryTier1ProvenanceSlug(RawDocumentRecord raw)
+    private LinkingResult? TryTier1ProvenanceSlug(RawDocumentRecord raw, AmbiguityCapture ambiguity)
     {
         var mfrHint = LinkingUtilities.InferManufacturerKey(raw.Source);
         var filename = ExtractFilename(raw.Source.FileUrl ?? string.Empty);
@@ -631,7 +703,10 @@ public sealed class DocumentLinker : IDocumentLinker
                             "game_slug_resolver_edition", "game_slug_resolver_edition_group");
                         break;
 
-                    case ResolutionResult.Ambiguous:
+                    case ResolutionResult.Ambiguous a:
+                        ambiguity.Last = a;
+                        break;   // fall through to the legacy lookup below
+
                     case ResolutionResult.NoMatch:
                         break;   // fall through to the legacy lookup below
 
@@ -739,7 +814,7 @@ public sealed class DocumentLinker : IDocumentLinker
         return null;
     }
 
-    private LinkingResult? TryTier2FilenameSlug(RawDocumentRecord raw)
+    private LinkingResult? TryTier2FilenameSlug(RawDocumentRecord raw, AmbiguityCapture ambiguity)
     {
         var fileUrl = raw.Source.FileUrl;
         if (string.IsNullOrEmpty(fileUrl)) return null;
@@ -755,7 +830,7 @@ public sealed class DocumentLinker : IDocumentLinker
         // below remains the fallback until Task 8 retires it.
         if (_resolver is not null)
         {
-            var viaResolver = TryTier2ViaResolver(raw, filename);
+            var viaResolver = TryTier2ViaResolver(raw, filename, ambiguity);
             if (viaResolver is not null) return viaResolver;
         }
 
@@ -823,6 +898,17 @@ public sealed class DocumentLinker : IDocumentLinker
             _logger.LogDebug(
                 "Tier2 filename_slug: {DocumentId} → ambiguous (multiple equal-length slug matches for '{Filename}').",
                 raw.DocumentId, normFilename);
+
+            // When the resolver ALSO saw this FILENAME ambiguity, defer to the
+            // no-tier-matched path, which converts it to needs_review with the
+            // candidate list (ADR-0054 §5). The evidence-kind check is load-bearing:
+            // a Tier-1 (ProvenanceSlug) ambiguity captured earlier concerns DIFFERENT
+            // machines, and deferring on it would write Tier 1's candidates into a
+            // review record for a filename decision — a false candidate list. The
+            // legacy NotInCatalog bail below is kept verbatim both for that cross-tier
+            // case and for the resolver-less construction path.
+            if (ambiguity.Last?.Evidence.EvidenceKind == EvidenceKind.Filename) return null;
+
             return new LinkingResult(
                 raw.DocumentId,
                 LinkStatus.NotInCatalog,
@@ -848,7 +934,7 @@ public sealed class DocumentLinker : IDocumentLinker
     // manufacturer filter — matching the pre-migration NarrowToSourceManufacturer contract.
     // Ambiguity returns null here and is converted to needs_review by the caller in Task 7;
     // never guessed.
-    private LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw, string filename)
+    private LinkingResult? TryTier2ViaResolver(RawDocumentRecord raw, string filename, AmbiguityCapture ambiguity)
     {
         var mfrKey = LinkingUtilities.InferManufacturerKey(raw.Source);
         var outcome = _resolver!.Resolve(new ResolutionQuery(filename, EvidenceKind.Filename, mfrKey));
@@ -891,8 +977,9 @@ public sealed class DocumentLinker : IDocumentLinker
                 return ResolveEditionFamily(raw, family, filename, page1Text: null,
                     "filename_resolver_edition", "filename_resolver_edition_group");
 
-            case ResolutionResult.Ambiguous:
-                return null;   // Task 7 converts this to needs_review
+            case ResolutionResult.Ambiguous a:
+                ambiguity.Last = a;   // converted to needs_review by the no-tier-matched path
+                return null;
 
             case ResolutionResult.NoMatch:
                 return null;
@@ -941,7 +1028,8 @@ public sealed class DocumentLinker : IDocumentLinker
         RawDocumentRecord raw,
         ExtractedDocument extracted,
         int pageIndex,
-        string strategyName)
+        string strategyName,
+        AmbiguityCapture ambiguity)
     {
         if (extracted.Pages.Count <= pageIndex) return null;
 
@@ -990,7 +1078,10 @@ public sealed class DocumentLinker : IDocumentLinker
                     if (viaEdition is not null) return viaEdition;
                     break;
 
-                case ResolutionResult.Ambiguous:
+                case ResolutionResult.Ambiguous a:
+                    ambiguity.Last = a;
+                    break;   // fall through to the legacy index below
+
                 case ResolutionResult.NoMatch:
                     break;   // fall through to the legacy index below
 

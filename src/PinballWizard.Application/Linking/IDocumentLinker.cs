@@ -56,8 +56,10 @@ public interface IDocumentLinker
     Task<LinkingResult> LinkAsync(RawDocumentRecord raw, CancellationToken cancellationToken);
 
     // Streams Pending + Failed + NotInCatalog docs and calls LinkAsync for each.
-    // Returns aggregate counters.
-    Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed)>
+    // Returns aggregate counters. NeedsReview counts documents parked for the
+    // admin review queue (ADR-0054 §5) — visible in the batch summary so a burst
+    // of newly-surfaced ambiguity is an expected, observable event, not noise.
+    Task<(int Processed, int Linked, int PlatformGeneric, int NotInCatalog, int Failed, int NeedsReview)>
         RunBatchAsync(CancellationToken cancellationToken);
 
     // Resets algorithm-derived terminal records (Linked / NotInCatalog) back to
