@@ -40,6 +40,14 @@
       "manufacturerKey": "americanpinball",
       "notes": "DBA-for-LOV.pdf",
       "addedBy": "jkeeley2073"
+    },
+    {
+      "alias": "MTMTE",
+      "opdbGroupId": "GBLzz",
+      "machineId": null,
+      "manufacturerKey": "stern",
+      "notes": "Transformers_MTMTE_Pro_web.pdf — MTMTE = More Than Meets the Eye (2026); without this the filename tier binds it to Transformers (2011). #802",
+      "addedBy": "jkeeley2073"
     }
   ]
 }

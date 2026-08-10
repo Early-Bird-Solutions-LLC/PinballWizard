@@ -37,6 +37,8 @@ public sealed class MachineAliasContractTests
         "GLWBV",  // Oktoberfest
         "GEL31",  // Hot Wheels
         "GWyyq",  // Legends of Valhalla
+        "GBLzz",  // Transformers: More Than Meets the Eye (2026) — #802; live ids
+                  // GBLzz-M4ok4 / GBLzz-M7Zd5, corroborated by both captured fixtures
     ];
 
     [Fact]
