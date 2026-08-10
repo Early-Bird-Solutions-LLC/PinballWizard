@@ -660,6 +660,14 @@ git commit -m "feat(linking) migrate Tier 2 filename matching to MachineResolver
 
 ### Task 5: Migrate Tiers 3-4 (page text) to the resolver
 
+> **Implementation note (2026-08-10):** in addition to the plan's regression-guard test, a
+> resolver-only red test was added (`PageTier_CuratedAlias_LinksAcronymPageText`) — the
+> legacy page index already matches multi-token titles, so the curated-alias path is the
+> capability only the resolver adds at these tiers. The `Resolved` arm deliberately stamps
+> `FranchiseWide` (not the Tier-2 `SingleEdition` routing) because the legacy page tier
+> never edition-resolves single matches — behavioural equivalence per tier, not uniformity
+> across tiers.
+
 **Files:**
 - Modify: `src/PinballWizard.Application/Linking/DocumentLinker.cs:772-867` (`TryMatchPage`)
 - Test: `tests/PinballWizard.Application.Tests/Linking/DocumentLinkerResolverTests.cs`
@@ -668,7 +676,7 @@ git commit -m "feat(linking) migrate Tier 2 filename matching to MachineResolver
 - Consumes: `_resolver`, `_machinesById`, `EvidenceKind.PageText`.
 - Produces: no new public surface; `TryMatchPage` keeps its signature `(RawDocumentRecord, ExtractedDocument, int, string) → LinkingResult?`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```csharp
 [Fact]
@@ -690,12 +698,12 @@ public async Task PageTier_DoesNotLinkAcrossManufacturers()
 
 `BuildLinkerWithResolverAsync` needs an optional `pageText` parameter that wires an `IDocumentTextExtractor` substitute returning a one-page `ExtractedDocument` with `ExtractionStatus.Success`, plus an `IDocumentBlobStore` substitute whose `TryOpenReadAsync` returns a non-null empty `MemoryStream`. Extend the helper rather than duplicating it.
 
-- [ ] **Step 2: Run test to verify it fails or passes for the right reason**
+- [x] **Step 2: Run test to verify it fails or passes for the right reason**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter PageTier_`
 Expected: PASS pre-change (the legacy hard filter already does this). It is the guard that the migration must not break. If it FAILS pre-change, stop — the legacy behaviour is not what this plan assumes, and the assumption must be corrected before migrating.
 
-- [ ] **Step 3: Add the resolver path to `TryMatchPage`**
+- [x] **Step 3: Add the resolver path to `TryMatchPage`**
 
 After `pageText` is normalized and before the `_machineSlugIndex` LINQ query:
 
@@ -737,17 +745,17 @@ After `pageText` is normalized and before the `_machineSlugIndex` LINQ query:
         }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/PinballWizard.Application.Tests --filter PageTier_`
 Expected: PASS.
 
-- [ ] **Step 5: Golden-set replay + full suite**
+- [x] **Step 5: Golden-set replay + full suite**
 
 Run: `dotnet build -c Release && dotnet test`
 Expected: 0 warnings, 0 errors; `GoldenLinkSet` green with zero mis-attributions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/PinballWizard.Application/Linking/DocumentLinker.cs \

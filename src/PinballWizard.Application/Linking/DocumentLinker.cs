@@ -830,10 +830,17 @@ public sealed class DocumentLinker : IDocumentLinker
                     .Where(_machinesById.ContainsKey)
                     .Select(id => _machinesById[id])
                     .ToList();
-                return family.Count == 0
-                    ? null
-                    : ResolveEditionFamily(raw, family, filename, page1Text: null,
-                        "filename_resolver_edition", "filename_resolver_edition_group");
+                if (family.Count == 0)
+                {
+                    // Index/machine-map drift must be visible, not a silent fall-through
+                    // to the legacy tier (invariant #17). Same guard as the page tiers.
+                    _logger.LogWarning(
+                        "Tier2 resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
+                        f.GroupId, f.MachineIds.Count, raw.DocumentId);
+                    return null;
+                }
+                return ResolveEditionFamily(raw, family, filename, page1Text: null,
+                    "filename_resolver_edition", "filename_resolver_edition_group");
 
             case ResolutionResult.Ambiguous:
                 return null;   // Task 7 converts this to needs_review
@@ -891,6 +898,59 @@ public sealed class DocumentLinker : IDocumentLinker
 
         var pageText = LinkingUtilities.NormalizeForMatch(extracted.Pages[pageIndex].Text);
         if (string.IsNullOrEmpty(pageText)) return null;
+
+        // ADR-0054 page-tier migration: consult the resolver first; the legacy index
+        // below remains the fallback until Task 8 retires it. PageText is FUZZY
+        // evidence, so the resolver applies the HARD manufacturer filter — the same
+        // contract as the legacy NarrowToSourceManufacturer drop below.
+        if (_resolver is not null)
+        {
+            var mfrKeyForQuery = LinkingUtilities.InferManufacturerKey(raw.Source);
+            var outcome = _resolver.Resolve(
+                new ResolutionQuery(extracted.Pages[pageIndex].Text, EvidenceKind.PageText, mfrKeyForQuery));
+
+            switch (outcome)
+            {
+                case ResolutionResult.Resolved r:
+                    _logger.LogDebug("{Tier} resolver: {DocumentId} → {MachineId} via {Variant}.",
+                        strategyName, raw.DocumentId, r.MachineId, r.Evidence.MatchedVariant);
+                    // FranchiseWide mirrors the legacy page tier: single matches are
+                    // never edition-resolved here (only the >1 family branch below is),
+                    // so the scope default is preserved for behavioural equivalence.
+                    return new LinkingResult(raw.DocumentId, LinkStatus.Linked,
+                        $"{strategyName}_resolver", [r.MachineId], FailureReason: null)
+                        { EditionScope = EditionScope.FranchiseWide };
+
+                case ResolutionResult.ResolvedFamily f:
+                    var family = f.MachineIds.Where(_machinesById.ContainsKey)
+                        .Select(id => _machinesById[id]).ToList();
+                    if (family.Count == 0)
+                    {
+                        // A resolver hit whose machines are all absent from _machinesById
+                        // means the index and machine map have drifted — surface it, or a
+                        // stale index degrades into silent NotInCatalog (invariant #17).
+                        _logger.LogWarning(
+                            "{Tier} resolver: ResolvedFamily {GroupId} but none of {Count} machine(s) present in index for {DocumentId}.",
+                            strategyName, f.GroupId, f.MachineIds.Count, raw.DocumentId);
+                        break;
+                    }
+                    var viaEdition = ResolveEditionFamily(
+                        raw, family, ExtractFilename(raw.Source.FileUrl ?? string.Empty),
+                        extracted.Pages[pageIndex].Text,
+                        $"{strategyName}_resolver_edition", $"{strategyName}_resolver_edition_group");
+                    if (viaEdition is not null) return viaEdition;
+                    break;
+
+                case ResolutionResult.Ambiguous:
+                case ResolutionResult.NoMatch:
+                    break;   // fall through to the legacy index below
+
+                // Invariant #17 — never silently degrade an unknown outcome.
+                default:
+                    throw new InvalidOperationException(
+                        $"Unrecognised ResolutionResult '{outcome.GetType().Name}' in {strategyName}.");
+            }
+        }
 
         var matchedMachines = _machineSlugIndex
             .Where(t => LinkingUtilities.IsWordBoundaryMatch(pageText, t.NormalizedSlug))
